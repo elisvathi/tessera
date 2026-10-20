@@ -515,7 +515,7 @@ json_t* Options::toJson() const {
     set(j, "laneCc", ccs);
     json_t* chans = json_array();
     for (const auto& [track, ch] : channels)
-        json_array_append_new(chans, json_pack("[Ii]", json_int_t(track), ch));
+        json_array_append_new(chans, json_pack("[Ii]", static_cast<json_int_t>(track), ch));
     set(j, "channels", chans);
     return j;
 }

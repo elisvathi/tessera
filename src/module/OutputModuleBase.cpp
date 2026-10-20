@@ -130,7 +130,7 @@ json_t* OutputModuleBase::dataToJson() {
     json_t* root = json_object();
     json_object_set_new(root, "source", json_integer(bindingData.sourceId));
     json_object_set_new(root, "sourceName", json_string(bindingData.sourceName.c_str()));
-    json_object_set_new(root, "track", json_integer(json_int_t(bindingData.track.value)));
+    json_object_set_new(root, "track", json_integer(static_cast<json_int_t>(bindingData.track.value)));
     json_object_set_new(root, "followSelected", json_boolean(bindingData.followSelected));
     return root;
 }

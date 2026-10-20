@@ -60,7 +60,7 @@ IdT readId(const json_t* j) {
 
 template <typename IdT>
 json_t* idJson(IdT id) {
-    return json_integer(json_int_t(id.value));
+    return json_integer(static_cast<json_int_t>(id.value));
 }
 
 // ---- Scales -------------------------------------------------------------------------------------------------
@@ -82,7 +82,7 @@ ScaleRef scaleFromJson(const json_t* j) {
 // ---- Automation ---------------------------------------------------------------------------------------------
 
 json_t* paramRefToJson(const ParamRef& r) {
-    return json_pack("[sIi]", enumName(r.kind, kParamOwners), json_int_t(r.owner), int(r.param));
+    return json_pack("[sIi]", enumName(r.kind, kParamOwners), static_cast<json_int_t>(r.owner), int(r.param));
 }
 
 ParamRef paramRefFromJson(const json_t* j) {
@@ -112,8 +112,8 @@ json_t* automationToJson(const AutomationEnvelope& a) {
 
     json_t* targets = json_array();
     for (const ParamTarget& t : a.targets)
-        json_array_append_new(
-            targets, json_pack("[IIff]", json_int_t(t.moduleId), json_int_t(t.paramId), double(t.min), double(t.max)));
+        json_array_append_new(targets, json_pack("[IIff]", static_cast<json_int_t>(t.moduleId),
+                                                 static_cast<json_int_t>(t.paramId), double(t.min), double(t.max)));
     set(j, "targets", targets);
     if (a.paramTarget.valid())
         set(j, "paramTarget", paramRefToJson(a.paramTarget));
@@ -121,8 +121,8 @@ json_t* automationToJson(const AutomationEnvelope& a) {
     // Points as [t, value, curve, tension]. Curve is an index: CurveType must only ever be appended to.
     json_t* points = json_array();
     for (const AutoPoint& p : a.points)
-        json_array_append_new(points,
-                              json_pack("[Ifif]", json_int_t(p.t), double(p.value), int(p.curve), double(p.tension)));
+        json_array_append_new(points, json_pack("[Ifif]", static_cast<json_int_t>(p.t), double(p.value), int(p.curve),
+                                                double(p.tension)));
     set(j, "points", points);
     return j;
 }
@@ -242,8 +242,9 @@ NoteOperators operatorsFromJson(const json_t* j) {
 
 json_t* noteToJson(const Note& n) {
     int flags = (n.muted ? kNoteMuted : 0) | (int(n.colorTag) << kNoteColorShift);
-    json_t* arr = json_pack("[IIifffiI]", json_int_t(n.start), json_int_t(n.length), int(n.pitch), double(n.velocity),
-                            double(n.releaseVelocity), double(n.microOffset), flags, json_int_t(n.id.value));
+    json_t* arr = json_pack("[IIifffiI]", static_cast<json_int_t>(n.start), static_cast<json_int_t>(n.length),
+                            int(n.pitch), double(n.velocity), double(n.releaseVelocity), double(n.microOffset), flags,
+                            static_cast<json_int_t>(n.id.value));
 
     json_t* extras = json_object();
     if (json_t* ops = operatorsToJson(n.ops))
@@ -378,8 +379,8 @@ json_t* modulationToJson(const Modulation& m) {
         break;
     case Modulation::Kind::RackKnob:
         set(j, "knob",
-            json_pack("[IIff]", json_int_t(m.knob.moduleId), json_int_t(m.knob.paramId), double(m.knob.min),
-                      double(m.knob.max)));
+            json_pack("[IIff]", static_cast<json_int_t>(m.knob.moduleId), static_cast<json_int_t>(m.knob.paramId),
+                      double(m.knob.min), double(m.knob.max)));
         break;
     }
     return j;
@@ -555,7 +556,7 @@ json_t* clipToJson(const Clip& c) {
     setString(j, "name", c.name);
     setInt(j, "color", c.color);
     setInt(j, "length", c.length);
-    set(j, "loop", json_pack("[II]", json_int_t(c.loopStart), json_int_t(c.loopEnd)));
+    set(j, "loop", json_pack("[II]", static_cast<json_int_t>(c.loopStart), static_cast<json_int_t>(c.loopEnd)));
     setString(j, "loopMode", enumName(c.loopMode, kLoopModes));
     json_t* notes = json_array();
     for (const Note& n : c.notes)
@@ -608,10 +609,10 @@ json_t* songToJson(const Song& s) {
         json_array_append_new(custom, cj);
     }
     set(j, "customScales", custom);
-    set(j, "loop", json_pack("[II]", json_int_t(s.loopStart), json_int_t(s.loopEnd)));
+    set(j, "loop", json_pack("[II]", static_cast<json_int_t>(s.loopStart), static_cast<json_int_t>(s.loopEnd)));
     setInt(j, "seed", s.seed);
     setString(j, "launchQuantize", enumName(s.launchQuantize, kLaunchQuantize));
-    setInt(j, "nextId", json_int_t(s.nextId));
+    setInt(j, "nextId", static_cast<json_int_t>(s.nextId));
 
     json_t* tracks = json_array();
     for (const Track& t : s.tracks)

@@ -44,24 +44,24 @@ json_t* viewToJson(const ViewState& v) {
     setNumber(j, "trackScroll", v.trackScroll);
     json_t* heights = json_array();
     for (const auto& [id, h] : v.trackHeights)
-        json_array_append_new(heights, json_pack("[If]", json_int_t(id), h));
+        json_array_append_new(heights, json_pack("[If]", static_cast<json_int_t>(id), h));
     set(j, "trackHeights", heights);
     json_t* folded = json_array();
     for (uint64_t id : v.foldedGroups)
-        json_array_append_new(folded, json_integer(json_int_t(id)));
+        json_array_append_new(folded, json_integer(static_cast<json_int_t>(id)));
     set(j, "foldedGroups", folded);
     json_t* open = json_array();
     for (uint64_t id : v.openAutomation)
-        json_array_append_new(open, json_integer(json_int_t(id)));
+        json_array_append_new(open, json_integer(static_cast<json_int_t>(id)));
     set(j, "openAutomation", open);
     setBool(j, "deviceStrip", v.deviceStrip);
     setNumber(j, "launcherPanelWidth", v.launcherPanelWidth);
     setBool(j, "clipsWide", v.clipsWide);
-    setInt(j, "lowerLane", json_int_t(v.lowerLane));
+    setInt(j, "lowerLane", static_cast<json_int_t>(v.lowerLane));
     setString(j, "noteLane", kNoteLaneNames[int(v.noteLane)]);
     json_t* lanes = json_array();
     for (const auto& [id, h] : v.laneHeights)
-        json_array_append_new(lanes, json_pack("[If]", json_int_t(id), h));
+        json_array_append_new(lanes, json_pack("[If]", static_cast<json_int_t>(id), h));
     set(j, "laneHeights", lanes);
     return j;
 }
@@ -119,8 +119,8 @@ ViewState viewFromJson(const json_t* j, ViewState v = ViewState()) {
 
 json_t* EditorState::toJson() const {
     json_t* j = json_object();
-    setInt(j, "selectedTrack", json_int_t(selectedTrack.value));
-    setInt(j, "selectedClip", json_int_t(selectedClip.value));
+    setInt(j, "selectedTrack", static_cast<json_int_t>(selectedTrack.value));
+    setInt(j, "selectedClip", static_cast<json_int_t>(selectedClip.value));
     setString(j, "follow", kFollowNames[int(follow)]);
     setNumber(j, "uiScale", uiScale);
     setInt(j, "panelHp", panelHp);
@@ -140,7 +140,7 @@ json_t* EditorState::toJson() const {
     setBool(j, "stackClips", stackClips);
     set(j, "export", exportOptions.toJson());
     setString(j, "ghosts", kGhostNames[int(ghosts)]);
-    setInt(j, "ghostTrack", json_int_t(ghostTrack.value));
+    setInt(j, "ghostTrack", static_cast<json_int_t>(ghostTrack.value));
     setBool(j, "transformBox", transformBox);
     setBool(j, "scaleHighlight", scaleHighlight);
     setBool(j, "scaleSnap", scaleSnap);

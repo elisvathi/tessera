@@ -31,7 +31,7 @@ void settingsFromJson(json_t* root) {
         // Walnut is gone; Gruvbox is the warm dark scheme now.
         constexpr Scheme kOld[] = {Scheme::FollowRack, Scheme::Plaster, Scheme::Sand, Scheme::Slate, Scheme::Gruvbox};
         json_int_t value = json_integer_value(scheme);
-        if (value >= 0 && value < json_int_t(std::size(kOld)))
+        if (value >= 0 && value < static_cast<json_int_t>(std::size(kOld)))
             tessera::theme::setScheme(kOld[value]);
     }
 }
