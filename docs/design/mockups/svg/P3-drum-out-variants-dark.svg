@@ -1,0 +1,878 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="860" viewBox="0 0 1600 860"><defs></defs>
+<rect x="0.00" y="0.00" width="1600.00" height="860.00" fill="#2B2B2B"/>
+<text x="40.00" y="46.00" font-family="Instrument Sans" font-size="22" font-weight="600" fill="#E8E8E8" text-anchor="start">Drum Out variants for lanes 9–16 · Slate</text>
+<text x="40.00" y="72.00" font-family="Instrument Sans" font-size="13" font-weight="400" fill="#A8A8A8" text-anchor="start">B is recommended: the same module twice, the second switched to lanes 9–16. No new module, no hidden per-jack settings.</text>
+<g transform="translate(40,110) scale(1.55)">
+<rect x="0.00" y="-15.00" width="980.00" height="15.00" fill="#A9ADB3"/>
+<rect x="0.00" y="-14.00" width="980.00" height="2.00" fill="#D8DBDF"/>
+<rect x="0.00" y="-3.00" width="980.00" height="3.00" fill="#7E8288"/>
+<circle cx="7.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="22.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="37.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="52.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="67.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="82.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="97.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="112.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="127.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="142.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="157.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="172.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="187.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="202.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="217.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="232.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="247.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="262.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="277.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="292.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="307.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="322.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="337.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="352.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="367.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="382.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="397.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="412.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="427.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="442.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="457.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="472.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="487.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="502.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="517.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="532.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="547.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="562.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="577.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="592.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="607.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="622.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="637.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="652.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="667.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="682.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="697.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="712.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="727.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="742.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="757.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="772.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="787.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="802.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="817.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="832.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="847.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="862.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="877.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="892.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="907.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="922.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="937.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="952.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="967.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<circle cx="982.50" cy="-7.00" r="2.4" fill="#45484D"/>
+<rect x="0.00" y="380.00" width="980.00" height="15.00" fill="#A9ADB3"/>
+<rect x="0.00" y="381.00" width="980.00" height="2.00" fill="#D8DBDF"/>
+<rect x="0.00" y="392.00" width="980.00" height="3.00" fill="#7E8288"/>
+<circle cx="7.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="22.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="37.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="52.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="67.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="82.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="97.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="112.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="127.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="142.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="157.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="172.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="187.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="202.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="217.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="232.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="247.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="262.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="277.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="292.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="307.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="322.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="337.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="352.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="367.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="382.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="397.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="412.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="427.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="442.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="457.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="472.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="487.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="502.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="517.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="532.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="547.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="562.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="577.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="592.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="607.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="622.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="637.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="652.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="667.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="682.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="697.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="712.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="727.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="742.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="757.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="772.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="787.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="802.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="817.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="832.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="847.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="862.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="877.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="892.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="907.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="922.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="937.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="952.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="967.50" cy="388.00" r="2.4" fill="#45484D"/>
+<circle cx="982.50" cy="388.00" r="2.4" fill="#45484D"/>
+<rect x="0.00" y="0.00" width="150.00" height="380.00" fill="#2B2E34"/>
+<rect x="0.00" y="0.00" width="150.00" height="1.00" fill="#FFFFFF" fill-opacity="0.06"/>
+<rect x="0.50" y="0.50" width="149.00" height="379.00" fill="none" stroke="#000" stroke-width="1" stroke-opacity="0.45"/>
+<circle cx="15.00" cy="7.50" r="5" fill="#5C626C"/>
+<circle cx="15.00" cy="7.50" r="4" fill="#30353D"/>
+<path d="M12.6 5.1 L17.4 9.9 M17.4 5.1 L12.6 9.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="135.00" cy="372.50" r="5" fill="#5C626C"/>
+<circle cx="135.00" cy="372.50" r="4" fill="#30353D"/>
+<path d="M132.6 370.1 L137.4 374.9 M137.4 370.1 L132.6 374.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="75.00" y="28.00" font-family="Instrument Sans" font-size="8.5" font-weight="700" fill="#D7DBE2" text-anchor="middle" letter-spacing="2.0">DRUM OUT</text>
+<rect x="7.00" y="36.00" width="136.00" height="40.00" rx="5" fill="#191C21"/>
+<rect x="7.50" y="36.50" width="135.00" height="39.00" rx="5" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="7.00" y="36.00" width="136.00" height="3.00" rx="1.5" fill="#ED8C84"/>
+<rect x="15.00" y="45.00" width="24.00" height="24.00" rx="5.5" fill="#ED8C84"/>
+<text x="27.00" y="62.00" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#13151B" text-anchor="middle">1</text>
+<text x="46.00" y="54.00" font-family="Instrument Sans" font-size="7.5" font-weight="600" fill="#969CA6" text-anchor="start">Main</text>
+<text x="46.00" y="67.00" font-family="Instrument Sans" font-size="10" font-weight="600" fill="#D8DBDF" text-anchor="start">Drums</text>
+<rect x="102.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="102.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="106.00" y1="49.60" x2="118.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(107.20,52.20) scale(0.600)">
+<path d="M10 3.5 L5.5 8 L10 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="123.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="123.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="127.00" y1="49.60" x2="139.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(128.20,52.20) scale(0.600)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="7.00" y="84.00" width="136.00" height="18.00" rx="5" fill="#24272B"/>
+<rect x="9.00" y="86.00" width="66.00" height="14.00" rx="4" fill="#3B3F45"/>
+<text x="42.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#D8DBDF" text-anchor="middle" letter-spacing="0.5">LANES 1–8</text>
+<text x="108.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#969CA6" text-anchor="middle" letter-spacing="0.5">9–16</text>
+<rect x="6.00" y="108.00" width="138.00" height="262.00" rx="6" fill="#E2DDD5"/>
+<text x="98.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIG</text>
+<text x="128.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VEL</text>
+<rect x="11.00" y="126.00" width="66.00" height="198.00" rx="4" fill="#191C21"/>
+<rect x="11.50" y="126.50" width="65.00" height="197.00" rx="4" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<text x="17.00" y="141.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">1</text>
+<text x="30.00" y="141.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Kick</text>
+<circle cx="71.00" cy="138.00" r="2.5" fill="#ED8C84"/>
+<circle cx="98.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="138.00" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="138.00" r="4.2" fill="#08090B"/>
+<text x="17.00" y="165.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">2</text>
+<text x="30.00" y="165.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Snare</text>
+<circle cx="98.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="162.50" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="162.50" r="4.2" fill="#08090B"/>
+<text x="17.00" y="190.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">3</text>
+<text x="30.00" y="190.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Clap</text>
+<circle cx="98.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="187.00" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="187.00" r="4.2" fill="#08090B"/>
+<text x="17.00" y="214.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">4</text>
+<text x="30.00" y="214.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">C. hat</text>
+<circle cx="71.00" cy="211.50" r="2.5" fill="#ED8C84"/>
+<circle cx="98.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="211.50" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="211.50" r="4.2" fill="#08090B"/>
+<text x="17.00" y="239.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">5</text>
+<text x="30.00" y="239.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">O. hat</text>
+<circle cx="98.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="236.00" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="236.00" r="4.2" fill="#08090B"/>
+<text x="17.00" y="263.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">6</text>
+<text x="30.00" y="263.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Low tom</text>
+<circle cx="98.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="260.50" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="260.50" r="4.2" fill="#08090B"/>
+<text x="17.00" y="288.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">7</text>
+<text x="30.00" y="288.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Hi tom</text>
+<circle cx="98.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="285.00" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="285.00" r="4.2" fill="#08090B"/>
+<text x="17.00" y="312.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">8</text>
+<text x="30.00" y="312.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Rim</text>
+<circle cx="98.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="98.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="98.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="98.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="98.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="128.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="128.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="128.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="128.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="128.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="38.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="38.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="38.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="38.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="38.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="38.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIGS</text>
+<circle cx="82.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="82.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="82.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="82.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="82.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="82.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VELS</text>
+<circle cx="124.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="124.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="124.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="124.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="124.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="124.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">AUTO</text>
+<rect x="190.00" y="0.00" width="150.00" height="380.00" fill="#2B2E34"/>
+<rect x="190.00" y="0.00" width="150.00" height="1.00" fill="#FFFFFF" fill-opacity="0.06"/>
+<rect x="190.50" y="0.50" width="149.00" height="379.00" fill="none" stroke="#000" stroke-width="1" stroke-opacity="0.45"/>
+<circle cx="205.00" cy="7.50" r="5" fill="#5C626C"/>
+<circle cx="205.00" cy="7.50" r="4" fill="#30353D"/>
+<path d="M202.6 5.1 L207.4 9.9 M207.4 5.1 L202.6 9.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="325.00" cy="372.50" r="5" fill="#5C626C"/>
+<circle cx="325.00" cy="372.50" r="4" fill="#30353D"/>
+<path d="M322.6 370.1 L327.4 374.9 M327.4 370.1 L322.6 374.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="265.00" y="28.00" font-family="Instrument Sans" font-size="8.5" font-weight="700" fill="#D7DBE2" text-anchor="middle" letter-spacing="2.0">DRUM OUT</text>
+<rect x="197.00" y="36.00" width="136.00" height="40.00" rx="5" fill="#191C21"/>
+<rect x="197.50" y="36.50" width="135.00" height="39.00" rx="5" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="197.00" y="36.00" width="136.00" height="3.00" rx="1.5" fill="#ED8C84"/>
+<rect x="205.00" y="45.00" width="24.00" height="24.00" rx="5.5" fill="#ED8C84"/>
+<text x="217.00" y="62.00" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#13151B" text-anchor="middle">1</text>
+<text x="236.00" y="54.00" font-family="Instrument Sans" font-size="7.5" font-weight="600" fill="#969CA6" text-anchor="start">Main</text>
+<text x="236.00" y="67.00" font-family="Instrument Sans" font-size="10" font-weight="600" fill="#D8DBDF" text-anchor="start">Drums</text>
+<rect x="292.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="292.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="296.00" y1="49.60" x2="308.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(297.20,52.20) scale(0.600)">
+<path d="M10 3.5 L5.5 8 L10 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="313.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="313.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="317.00" y1="49.60" x2="329.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(318.20,52.20) scale(0.600)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="197.00" y="84.00" width="136.00" height="18.00" rx="5" fill="#24272B"/>
+<rect x="199.00" y="86.00" width="66.00" height="14.00" rx="4" fill="#3B3F45"/>
+<text x="232.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#D8DBDF" text-anchor="middle" letter-spacing="0.5">LANES 1–8</text>
+<text x="298.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#969CA6" text-anchor="middle" letter-spacing="0.5">9–16</text>
+<rect x="196.00" y="108.00" width="138.00" height="262.00" rx="6" fill="#E2DDD5"/>
+<text x="288.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIG</text>
+<text x="318.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VEL</text>
+<rect x="201.00" y="126.00" width="66.00" height="198.00" rx="4" fill="#191C21"/>
+<rect x="201.50" y="126.50" width="65.00" height="197.00" rx="4" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<text x="207.00" y="141.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">1</text>
+<text x="220.00" y="141.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Kick</text>
+<circle cx="261.00" cy="138.00" r="2.5" fill="#ED8C84"/>
+<circle cx="288.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="138.00" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="138.00" r="4.2" fill="#08090B"/>
+<text x="207.00" y="165.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">2</text>
+<text x="220.00" y="165.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Snare</text>
+<circle cx="288.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="162.50" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="162.50" r="4.2" fill="#08090B"/>
+<text x="207.00" y="190.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">3</text>
+<text x="220.00" y="190.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Clap</text>
+<circle cx="288.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="187.00" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="187.00" r="4.2" fill="#08090B"/>
+<text x="207.00" y="214.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">4</text>
+<text x="220.00" y="214.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">C. hat</text>
+<circle cx="261.00" cy="211.50" r="2.5" fill="#ED8C84"/>
+<circle cx="288.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="211.50" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="211.50" r="4.2" fill="#08090B"/>
+<text x="207.00" y="239.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">5</text>
+<text x="220.00" y="239.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">O. hat</text>
+<circle cx="288.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="236.00" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="236.00" r="4.2" fill="#08090B"/>
+<text x="207.00" y="263.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">6</text>
+<text x="220.00" y="263.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Low tom</text>
+<circle cx="288.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="260.50" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="260.50" r="4.2" fill="#08090B"/>
+<text x="207.00" y="288.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">7</text>
+<text x="220.00" y="288.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Hi tom</text>
+<circle cx="288.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="285.00" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="285.00" r="4.2" fill="#08090B"/>
+<text x="207.00" y="312.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">8</text>
+<text x="220.00" y="312.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Rim</text>
+<circle cx="288.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="288.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="288.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="288.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="288.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="318.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="318.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="318.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="318.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="318.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="228.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="228.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="228.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="228.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="228.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="228.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIGS</text>
+<circle cx="272.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="272.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="272.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="272.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="272.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="272.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VELS</text>
+<circle cx="314.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="314.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="314.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="314.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="314.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="314.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">AUTO</text>
+<rect x="342.00" y="0.00" width="150.00" height="380.00" fill="#2B2E34"/>
+<rect x="342.00" y="0.00" width="150.00" height="1.00" fill="#FFFFFF" fill-opacity="0.06"/>
+<rect x="342.50" y="0.50" width="149.00" height="379.00" fill="none" stroke="#000" stroke-width="1" stroke-opacity="0.45"/>
+<circle cx="357.00" cy="7.50" r="5" fill="#5C626C"/>
+<circle cx="357.00" cy="7.50" r="4" fill="#30353D"/>
+<path d="M354.6 5.1 L359.4 9.9 M359.4 5.1 L354.6 9.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="477.00" cy="372.50" r="5" fill="#5C626C"/>
+<circle cx="477.00" cy="372.50" r="4" fill="#30353D"/>
+<path d="M474.6 370.1 L479.4 374.9 M479.4 370.1 L474.6 374.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="417.00" y="28.00" font-family="Instrument Sans" font-size="8.5" font-weight="700" fill="#D7DBE2" text-anchor="middle" letter-spacing="2.0">DRUM OUT</text>
+<rect x="349.00" y="36.00" width="136.00" height="40.00" rx="5" fill="#191C21"/>
+<rect x="349.50" y="36.50" width="135.00" height="39.00" rx="5" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="349.00" y="36.00" width="136.00" height="3.00" rx="1.5" fill="#ED8C84"/>
+<rect x="357.00" y="45.00" width="24.00" height="24.00" rx="5.5" fill="#ED8C84"/>
+<text x="369.00" y="62.00" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#13151B" text-anchor="middle">1</text>
+<text x="388.00" y="54.00" font-family="Instrument Sans" font-size="7.5" font-weight="600" fill="#969CA6" text-anchor="start">Main</text>
+<text x="388.00" y="67.00" font-family="Instrument Sans" font-size="10" font-weight="600" fill="#D8DBDF" text-anchor="start">Drums</text>
+<rect x="444.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="444.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="448.00" y1="49.60" x2="460.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(449.20,52.20) scale(0.600)">
+<path d="M10 3.5 L5.5 8 L10 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="465.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="465.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="469.00" y1="49.60" x2="481.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(470.20,52.20) scale(0.600)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="349.00" y="84.00" width="136.00" height="18.00" rx="5" fill="#24272B"/>
+<text x="384.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#969CA6" text-anchor="middle" letter-spacing="0.5">LANES 1–8</text>
+<rect x="417.00" y="86.00" width="66.00" height="14.00" rx="4" fill="#3B3F45"/>
+<text x="450.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#D8DBDF" text-anchor="middle" letter-spacing="0.5">9–16</text>
+<rect x="348.00" y="108.00" width="138.00" height="262.00" rx="6" fill="#E2DDD5"/>
+<text x="440.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIG</text>
+<text x="470.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VEL</text>
+<rect x="353.00" y="126.00" width="66.00" height="198.00" rx="4" fill="#191C21"/>
+<rect x="353.50" y="126.50" width="65.00" height="197.00" rx="4" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<text x="359.00" y="141.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">9</text>
+<text x="372.00" y="141.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Crash</text>
+<circle cx="440.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="138.00" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="138.00" r="4.2" fill="#08090B"/>
+<text x="359.00" y="165.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">10</text>
+<text x="372.00" y="165.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Ride</text>
+<circle cx="440.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="162.50" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="162.50" r="4.2" fill="#08090B"/>
+<text x="359.00" y="190.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">11</text>
+<text x="372.00" y="190.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Cowbell</text>
+<circle cx="440.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="187.00" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="187.00" r="4.2" fill="#08090B"/>
+<text x="359.00" y="214.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">12</text>
+<text x="372.00" y="214.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Shaker</text>
+<circle cx="440.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="211.50" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="211.50" r="4.2" fill="#08090B"/>
+<text x="359.00" y="239.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">13</text>
+<text x="372.00" y="239.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#969CA6" text-anchor="start">—</text>
+<circle cx="440.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="236.00" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="236.00" r="4.2" fill="#08090B"/>
+<text x="359.00" y="263.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">14</text>
+<text x="372.00" y="263.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#969CA6" text-anchor="start">—</text>
+<circle cx="440.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="260.50" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="260.50" r="4.2" fill="#08090B"/>
+<text x="359.00" y="288.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">15</text>
+<text x="372.00" y="288.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#969CA6" text-anchor="start">—</text>
+<circle cx="440.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="285.00" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="285.00" r="4.2" fill="#08090B"/>
+<text x="359.00" y="312.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">16</text>
+<text x="372.00" y="312.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#969CA6" text-anchor="start">—</text>
+<circle cx="440.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="440.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="440.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="440.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="440.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="470.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="470.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="470.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="470.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="470.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="380.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="380.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="380.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="380.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="380.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="380.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIGS</text>
+<circle cx="424.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="424.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="424.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="424.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="424.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="424.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VELS</text>
+<circle cx="466.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="466.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="466.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="466.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="466.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="466.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">AUTO</text>
+<rect x="540.00" y="0.00" width="240.00" height="380.00" fill="#2B2E34"/>
+<rect x="540.00" y="0.00" width="240.00" height="1.00" fill="#FFFFFF" fill-opacity="0.06"/>
+<rect x="540.50" y="0.50" width="239.00" height="379.00" fill="none" stroke="#000" stroke-width="1" stroke-opacity="0.45"/>
+<text x="660.00" y="28.00" font-family="Instrument Sans" font-size="8.5" font-weight="700" fill="#D7DBE2" text-anchor="middle" letter-spacing="2.0">DRUM OUT 16</text>
+<rect x="547.00" y="36.00" width="226.00" height="40.00" rx="5" fill="#191C21"/>
+<rect x="547.50" y="36.50" width="225.00" height="39.00" rx="5" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="555.00" y="45.00" width="24.00" height="24.00" rx="5.5" fill="#ED8C84"/>
+<text x="567.00" y="62.00" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#13151B" text-anchor="middle">1</text>
+<text x="586.00" y="64.00" font-family="Instrument Sans" font-size="10" font-weight="600" fill="#D8DBDF" text-anchor="start">Drums · 12 lanes</text>
+<rect x="546.00" y="90.00" width="228.00" height="280.00" rx="6" fill="#E2DDD5"/>
+<circle cx="576.00" cy="129.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="576.00" cy="128.00" r="11" fill="#C9C4BC"/>
+<circle cx="576.00" cy="128.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="576.00" cy="128.00" r="6.6" fill="#3A3E45"/>
+<circle cx="576.00" cy="128.00" r="4.2" fill="#08090B"/>
+<text x="576.00" y="112.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">1 KICK</text>
+<circle cx="632.00" cy="129.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="632.00" cy="128.00" r="11" fill="#C9C4BC"/>
+<circle cx="632.00" cy="128.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="632.00" cy="128.00" r="6.6" fill="#3A3E45"/>
+<circle cx="632.00" cy="128.00" r="4.2" fill="#08090B"/>
+<text x="632.00" y="112.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">2 SNARE</text>
+<circle cx="688.00" cy="129.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="688.00" cy="128.00" r="11" fill="#C9C4BC"/>
+<circle cx="688.00" cy="128.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="688.00" cy="128.00" r="6.6" fill="#3A3E45"/>
+<circle cx="688.00" cy="128.00" r="4.2" fill="#08090B"/>
+<text x="688.00" y="112.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">3 CLAP</text>
+<circle cx="744.00" cy="129.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="744.00" cy="128.00" r="11" fill="#C9C4BC"/>
+<circle cx="744.00" cy="128.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="744.00" cy="128.00" r="6.6" fill="#3A3E45"/>
+<circle cx="744.00" cy="128.00" r="4.2" fill="#08090B"/>
+<text x="744.00" y="112.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">4 C. HAT</text>
+<circle cx="576.00" cy="189.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="576.00" cy="188.00" r="11" fill="#C9C4BC"/>
+<circle cx="576.00" cy="188.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="576.00" cy="188.00" r="6.6" fill="#3A3E45"/>
+<circle cx="576.00" cy="188.00" r="4.2" fill="#08090B"/>
+<text x="576.00" y="172.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">5 O. HAT</text>
+<circle cx="632.00" cy="189.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="632.00" cy="188.00" r="11" fill="#C9C4BC"/>
+<circle cx="632.00" cy="188.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="632.00" cy="188.00" r="6.6" fill="#3A3E45"/>
+<circle cx="632.00" cy="188.00" r="4.2" fill="#08090B"/>
+<text x="632.00" y="172.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">6 LOW TOM</text>
+<circle cx="688.00" cy="189.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="688.00" cy="188.00" r="11" fill="#C9C4BC"/>
+<circle cx="688.00" cy="188.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="688.00" cy="188.00" r="6.6" fill="#3A3E45"/>
+<circle cx="688.00" cy="188.00" r="4.2" fill="#08090B"/>
+<text x="688.00" y="172.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">7 HI TOM</text>
+<circle cx="744.00" cy="189.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="744.00" cy="188.00" r="11" fill="#C9C4BC"/>
+<circle cx="744.00" cy="188.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="744.00" cy="188.00" r="6.6" fill="#3A3E45"/>
+<circle cx="744.00" cy="188.00" r="4.2" fill="#08090B"/>
+<text x="744.00" y="172.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">8 RIM</text>
+<circle cx="576.00" cy="249.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="576.00" cy="248.00" r="11" fill="#C9C4BC"/>
+<circle cx="576.00" cy="248.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="576.00" cy="248.00" r="6.6" fill="#3A3E45"/>
+<circle cx="576.00" cy="248.00" r="4.2" fill="#08090B"/>
+<text x="576.00" y="232.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">9 CRASH</text>
+<circle cx="632.00" cy="249.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="632.00" cy="248.00" r="11" fill="#C9C4BC"/>
+<circle cx="632.00" cy="248.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="632.00" cy="248.00" r="6.6" fill="#3A3E45"/>
+<circle cx="632.00" cy="248.00" r="4.2" fill="#08090B"/>
+<text x="632.00" y="232.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">10 RIDE</text>
+<circle cx="688.00" cy="249.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="688.00" cy="248.00" r="11" fill="#C9C4BC"/>
+<circle cx="688.00" cy="248.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="688.00" cy="248.00" r="6.6" fill="#3A3E45"/>
+<circle cx="688.00" cy="248.00" r="4.2" fill="#08090B"/>
+<text x="688.00" y="232.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">11 COWBELL</text>
+<circle cx="744.00" cy="249.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="744.00" cy="248.00" r="11" fill="#C9C4BC"/>
+<circle cx="744.00" cy="248.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="744.00" cy="248.00" r="6.6" fill="#3A3E45"/>
+<circle cx="744.00" cy="248.00" r="4.2" fill="#08090B"/>
+<text x="744.00" y="232.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">12 SHAKER</text>
+<circle cx="576.00" cy="309.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="576.00" cy="308.00" r="11" fill="#C9C4BC"/>
+<circle cx="576.00" cy="308.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="576.00" cy="308.00" r="6.6" fill="#3A3E45"/>
+<circle cx="576.00" cy="308.00" r="4.2" fill="#08090B"/>
+<text x="576.00" y="292.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">13</text>
+<circle cx="632.00" cy="309.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="632.00" cy="308.00" r="11" fill="#C9C4BC"/>
+<circle cx="632.00" cy="308.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="632.00" cy="308.00" r="6.6" fill="#3A3E45"/>
+<circle cx="632.00" cy="308.00" r="4.2" fill="#08090B"/>
+<text x="632.00" y="292.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">14</text>
+<circle cx="688.00" cy="309.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="688.00" cy="308.00" r="11" fill="#C9C4BC"/>
+<circle cx="688.00" cy="308.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="688.00" cy="308.00" r="6.6" fill="#3A3E45"/>
+<circle cx="688.00" cy="308.00" r="4.2" fill="#08090B"/>
+<text x="688.00" y="292.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">15</text>
+<circle cx="744.00" cy="309.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="744.00" cy="308.00" r="11" fill="#C9C4BC"/>
+<circle cx="744.00" cy="308.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="744.00" cy="308.00" r="6.6" fill="#3A3E45"/>
+<circle cx="744.00" cy="308.00" r="4.2" fill="#08090B"/>
+<text x="744.00" y="292.00" font-family="Instrument Sans" font-size="6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">16</text>
+<rect x="800.00" y="0.00" width="150.00" height="380.00" fill="#2B2E34"/>
+<rect x="800.00" y="0.00" width="150.00" height="1.00" fill="#FFFFFF" fill-opacity="0.06"/>
+<rect x="800.50" y="0.50" width="149.00" height="379.00" fill="none" stroke="#000" stroke-width="1" stroke-opacity="0.45"/>
+<circle cx="815.00" cy="7.50" r="5" fill="#5C626C"/>
+<circle cx="815.00" cy="7.50" r="4" fill="#30353D"/>
+<path d="M812.6 5.1 L817.4 9.9 M817.4 5.1 L812.6 9.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="935.00" cy="372.50" r="5" fill="#5C626C"/>
+<circle cx="935.00" cy="372.50" r="4" fill="#30353D"/>
+<path d="M932.6 370.1 L937.4 374.9 M937.4 370.1 L932.6 374.9" fill="none" stroke="#5C626C" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="875.00" y="28.00" font-family="Instrument Sans" font-size="8.5" font-weight="700" fill="#D7DBE2" text-anchor="middle" letter-spacing="2.0">DRUM OUT</text>
+<rect x="807.00" y="36.00" width="136.00" height="40.00" rx="5" fill="#191C21"/>
+<rect x="807.50" y="36.50" width="135.00" height="39.00" rx="5" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="807.00" y="36.00" width="136.00" height="3.00" rx="1.5" fill="#ED8C84"/>
+<rect x="815.00" y="45.00" width="24.00" height="24.00" rx="5.5" fill="#ED8C84"/>
+<text x="827.00" y="62.00" font-family="JetBrains Mono" font-size="14" font-weight="700" fill="#13151B" text-anchor="middle">1</text>
+<text x="846.00" y="54.00" font-family="Instrument Sans" font-size="7.5" font-weight="600" fill="#969CA6" text-anchor="start">Main</text>
+<text x="846.00" y="67.00" font-family="Instrument Sans" font-size="10" font-weight="600" fill="#D8DBDF" text-anchor="start">Drums</text>
+<rect x="902.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="902.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="906.00" y1="49.60" x2="918.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(907.20,52.20) scale(0.600)">
+<path d="M10 3.5 L5.5 8 L10 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="923.00" y="50.30" width="20.00" height="16.00" rx="5" fill="#000" fill-opacity="0.4"/>
+<rect x="923.00" y="49.00" width="20.00" height="16.00" rx="5" fill="#3B3F45"/>
+<line x1="927.00" y1="49.60" x2="939.00" y2="49.60" stroke="#fff" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.08"/>
+<g transform="translate(928.20,52.20) scale(0.600)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#AFB4BD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="807.00" y="84.00" width="136.00" height="18.00" rx="5" fill="#24272B"/>
+<rect x="809.00" y="86.00" width="66.00" height="14.00" rx="4" fill="#3B3F45"/>
+<text x="842.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#D8DBDF" text-anchor="middle" letter-spacing="0.5">LANES 1–8</text>
+<text x="908.00" y="96.00" font-family="Instrument Sans" font-size="7" font-weight="700" fill="#969CA6" text-anchor="middle" letter-spacing="0.5">9–16</text>
+<rect x="806.00" y="108.00" width="138.00" height="262.00" rx="6" fill="#E2DDD5"/>
+<text x="898.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIG</text>
+<text x="928.00" y="120.00" font-family="Instrument Sans" font-size="6.6" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VEL</text>
+<rect x="811.00" y="126.00" width="66.00" height="198.00" rx="4" fill="#191C21"/>
+<rect x="811.50" y="126.50" width="65.00" height="197.00" rx="4" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.06"/>
+<text x="817.00" y="141.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">1</text>
+<text x="830.00" y="141.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Kick</text>
+<circle cx="871.00" cy="138.00" r="2.5" fill="#ED8C84"/>
+<circle cx="898.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="138.00" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="139.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="138.00" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="138.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="138.00" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="138.00" r="4.2" fill="#08090B"/>
+<text x="817.00" y="165.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">2</text>
+<text x="830.00" y="165.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Snare</text>
+<circle cx="898.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="162.50" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="163.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="162.50" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="162.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="162.50" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="162.50" r="4.2" fill="#08090B"/>
+<text x="817.00" y="190.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">3</text>
+<text x="830.00" y="190.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Clap</text>
+<circle cx="898.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="187.00" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="188.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="187.00" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="187.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="187.00" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="187.00" r="4.2" fill="#08090B"/>
+<text x="817.00" y="214.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">4</text>
+<text x="830.00" y="214.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">C. hat</text>
+<circle cx="871.00" cy="211.50" r="2.5" fill="#ED8C84"/>
+<circle cx="898.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="211.50" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="212.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="211.50" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="211.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="211.50" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="211.50" r="4.2" fill="#08090B"/>
+<text x="817.00" y="239.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">5</text>
+<text x="830.00" y="239.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">O. hat</text>
+<circle cx="898.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="236.00" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="237.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="236.00" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="236.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="236.00" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="236.00" r="4.2" fill="#08090B"/>
+<text x="817.00" y="263.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">6</text>
+<text x="830.00" y="263.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Low tom</text>
+<circle cx="898.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="260.50" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="261.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="260.50" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="260.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="260.50" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="260.50" r="4.2" fill="#08090B"/>
+<text x="817.00" y="288.00" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">7</text>
+<text x="830.00" y="288.00" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Hi tom</text>
+<circle cx="898.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="285.00" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="286.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="285.00" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="285.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="285.00" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="285.00" r="4.2" fill="#08090B"/>
+<text x="817.00" y="312.50" font-family="JetBrains Mono" font-size="7.5" font-weight="500" fill="#969CA6" text-anchor="start">8</text>
+<text x="830.00" y="312.50" font-family="Instrument Sans" font-size="8.5" font-weight="600" fill="#D8DBDF" text-anchor="start">Rim</text>
+<circle cx="898.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="898.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="898.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="898.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="898.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="928.00" cy="310.50" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="928.00" cy="309.50" r="11" fill="#C9C4BC"/>
+<circle cx="928.00" cy="309.50" r="9.2" fill="#F4F1EC"/>
+<circle cx="928.00" cy="309.50" r="6.6" fill="#3A3E45"/>
+<circle cx="928.00" cy="309.50" r="4.2" fill="#08090B"/>
+<circle cx="838.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="838.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="838.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="838.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="838.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="838.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">TRIGS</text>
+<circle cx="882.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="882.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="882.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="882.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="882.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="882.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">VELS</text>
+<circle cx="924.00" cy="353.00" r="11" fill="#000" fill-opacity="0.12"/>
+<circle cx="924.00" cy="352.00" r="11" fill="#C9C4BC"/>
+<circle cx="924.00" cy="352.00" r="9.2" fill="#F4F1EC"/>
+<circle cx="924.00" cy="352.00" r="6.6" fill="#3A3E45"/>
+<circle cx="924.00" cy="352.00" r="4.2" fill="#08090B"/>
+<text x="924.00" y="337.50" font-family="Instrument Sans" font-size="6.2" font-weight="700" fill="#20242B" text-anchor="middle" letter-spacing="0.8">AUTO</text>
+</g>
+<text x="40.00" y="775.50" font-family="Instrument Sans" font-size="14" font-weight="600" fill="#F0F0F0" text-anchor="start">A · Keep, add lane names</text>
+<text x="40.00" y="797.50" font-family="Instrument Sans" font-size="11.5" font-weight="400" fill="#B0B0B0" text-anchor="start">8 jacks + poly. Lanes 9–16 need a poly split.</text>
+<text x="334.50" y="775.50" font-family="Instrument Sans" font-size="14" font-weight="600" fill="#F0F0F0" text-anchor="start">B · Bank switch  (recommended)</text>
+<text x="334.50" y="797.50" font-family="Instrument Sans" font-size="11.5" font-weight="400" fill="#B0B0B0" text-anchor="start">Second Drum Out set to 9–16. Same binding, one new field.</text>
+<text x="877.00" y="775.50" font-family="Instrument Sans" font-size="14" font-weight="600" fill="#F0F0F0" text-anchor="start">C · Wide 16-lane module (16 HP)</text>
+<text x="877.00" y="797.50" font-family="Instrument Sans" font-size="11.5" font-weight="400" fill="#B0B0B0" text-anchor="start">All lanes visible; big, and no per-lane velocity jacks.</text>
+<text x="1280.00" y="775.50" font-family="Instrument Sans" font-size="14" font-weight="600" fill="#F0F0F0" text-anchor="start">D · Pick a lane per jack</text>
+<text x="1280.00" y="797.50" font-family="Instrument Sans" font-size="11.5" font-weight="400" fill="#B0B0B0" text-anchor="start">Any 8 lanes on 8 jacks, via a menu per jack.</text>
+<rect x="1466.00" y="358.00" width="150.00" height="92.00" rx="6" fill="#2F3239"/>
+<text x="1476.00" y="378.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#9AA0A8" text-anchor="start">Jack 2 plays:</text>
+<text x="1476.00" y="398.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#E6E6E6" text-anchor="start">  Snare</text>
+<text x="1476.00" y="418.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#E6E6E6" text-anchor="start">✓ Ride (lane 10)</text>
+<text x="1476.00" y="438.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#E6E6E6" text-anchor="start">  Cowbell</text>
+</svg>

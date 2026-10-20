@@ -1,0 +1,584 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900"><defs></defs>
+<rect x="0.00" y="0.00" width="1440.00" height="900.00" fill="#E0DCD4"/>
+<rect x="6.00" y="6.00" width="1428.00" height="44.00" rx="8" fill="#F5F2ED"/>
+<rect x="6.50" y="6.50" width="1427.00" height="43.00" rx="8" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.1"/>
+<rect x="20.00" y="20.50" width="6.00" height="6.00" rx="1.4" fill="#DF6C65"/>
+<rect x="27.60" y="20.50" width="6.00" height="6.00" rx="1.4" fill="#00AF9B"/>
+<rect x="20.00" y="28.10" width="6.00" height="6.00" rx="1.4" fill="#4498E8"/>
+<g transform="rotate(12 30.60 31.10)">
+<rect x="27.60" y="28.10" width="6.00" height="6.00" rx="1.4" fill="#5356CD"/>
+</g>
+<text x="44.00" y="32.50" font-family="Instrument Sans" font-size="13" font-weight="600" fill="#171B21" text-anchor="start">Main</text>
+<g transform="translate(78.00,22.00) scale(0.750)">
+<path d="M4.5 6.5 L8 10 L11.5 6.5" fill="none" stroke="#646972" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<line x1="100.00" y1="16.00" x2="100.00" y2="40.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<rect x="110.00" y="13.00" width="34.00" height="30.00" rx="5" fill="#007D50"/>
+<g transform="translate(119.00,20.00) scale(1.000)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#FFFFFF"/>
+</g>
+<g transform="translate(155.00,20.00) scale(1.000)">
+<rect x="4.00" y="4.00" width="8.00" height="8.00" rx="1.5" fill="#484D56"/>
+</g>
+<rect x="182.00" y="13.00" width="44.00" height="30.00" rx="5" fill="#FFFFFF"/>
+<g transform="translate(190.50,20.50) scale(0.938)">
+<circle cx="8.00" cy="8.00" r="4.5" fill="#C9302D"/>
+</g>
+<g transform="translate(211.00,24.00) scale(0.625)">
+<path d="M4.5 6.5 L8 10 L11.5 6.5" fill="none" stroke="#646972" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(237.00,20.00) scale(1.000)">
+<path d="M8 3 V10 M5 7 L8 10 L11 7 M3.5 13 H12.5" fill="none" stroke="#484D56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<circle cx="253.00" cy="19.00" r="3" fill="#C9302D"/>
+<rect x="264.00" y="13.00" width="30.00" height="30.00" rx="5" fill="#5356CD" fill-opacity="0.13"/>
+<rect x="264.50" y="13.50" width="29.00" height="29.00" rx="5" fill="none" stroke="#5356CD" stroke-width="1" stroke-opacity="0.55"/>
+<g transform="translate(271.00,20.00) scale(1.000)">
+<path d="M3.5 9.5 V7 a2.5 2.5 0 0 1 2.5 -2.5 H12 M10 2.5 L12 4.5 L10 6.5 M12.5 6.5 V9 a2.5 2.5 0 0 1 -2.5 2.5 H4 M6 13.5 L4 11.5 L6 9.5" fill="none" stroke="#494AC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<line x1="304.00" y1="16.00" x2="304.00" y2="40.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<text x="316.00" y="31.50" font-family="Instrument Sans" font-size="9" font-weight="600" fill="#646972" text-anchor="start" letter-spacing="0.7">PLAYS</text>
+<rect x="352.00" y="13.00" width="162.00" height="30.00" rx="6" fill="#ECE9E4"/>
+<rect x="352.50" y="13.50" width="161.00" height="29.00" rx="6" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.12"/>
+<rect x="355.00" y="16.00" width="78.00" height="24.00" rx="4" fill="#007D50"/>
+<g transform="translate(366.70,21.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#FFFFFF"/>
+</g>
+<text x="386.20" y="32.32" font-family="Instrument Sans" font-size="12" font-weight="600" fill="#FFFFFF" text-anchor="start">Clips</text>
+<g transform="translate(434.62,21.50) scale(0.812)">
+<rect x="2.00" y="3.50" width="7.00" height="3.00" rx="1" fill="none" stroke="#646972" stroke-width="1.6"/>
+<rect x="6.00" y="9.50" width="8.00" height="3.00" rx="1" fill="none" stroke="#646972" stroke-width="1.6"/>
+</g>
+<text x="454.12" y="32.32" font-family="Instrument Sans" font-size="12" font-weight="500" fill="#646972" text-anchor="start">Timeline</text>
+<line x1="524.00" y1="16.00" x2="524.00" y2="40.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<text x="536.00" y="34.00" font-family="JetBrains Mono" font-size="19" font-weight="500" fill="#171B21" text-anchor="start">9.3.1</text>
+<text x="600.00" y="33.00" font-family="Instrument Sans" font-size="8" font-weight="600" fill="#646972" text-anchor="start" letter-spacing="0.7">BAR</text>
+<line x1="626.00" y1="18.00" x2="626.00" y2="38.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<text x="638.00" y="34.00" font-family="JetBrains Mono" font-size="19" font-weight="500" fill="#171B21" text-anchor="start">120.00</text>
+<text x="712.00" y="33.00" font-family="Instrument Sans" font-size="8" font-weight="600" fill="#646972" text-anchor="start" letter-spacing="0.7">BPM</text>
+<line x1="740.00" y1="18.00" x2="740.00" y2="38.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<text x="752.00" y="33.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#646972" text-anchor="start">Swing</text>
+<text x="788.00" y="33.50" font-family="JetBrains Mono" font-size="13" font-weight="500" fill="#171B21" text-anchor="start">12%</text>
+<line x1="826.00" y1="18.00" x2="826.00" y2="38.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<text x="838.00" y="33.50" font-family="JetBrains Mono" font-size="13" font-weight="500" fill="#171B21" text-anchor="start">4/4</text>
+<text x="891.74" y="32.32" font-family="Instrument Sans" font-size="12" font-weight="500" fill="#171B21" text-anchor="start">C minor</text>
+<g transform="translate(939.76,22.50) scale(0.688)">
+<path d="M4.5 6.5 L8 10 L11.5 6.5" fill="none" stroke="#171B21" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="982.00" y="13.00" width="232.00" height="30.00" rx="6" fill="#ECE9E4"/>
+<rect x="986.00" y="16.00" width="26.00" height="24.00" rx="4" fill="#FFFFFF"/>
+<rect x="986.50" y="16.50" width="25.00" height="23.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.15"/>
+<g transform="translate(991.50,20.50) scale(0.938)">
+<path d="M4.5 2.5 L4.5 12.5 L7.2 10 L9.2 14 L10.8 13.2 L8.9 9.4 L12.5 9.2 Z" fill="none" stroke="#494AC0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1019.50,20.50) scale(0.938)">
+<path d="M3 13 L3.6 10.4 L10.6 3.4 L12.6 5.4 L5.6 12.4 Z M9.4 4.6 L11.4 6.6" fill="none" stroke="#484D56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1047.50,20.50) scale(0.938)">
+<path d="M3 13 C3 11 4 10 5.5 10 L12.5 3 L13 3.5 L6 10.5 C6 12 5 13 3 13 Z" fill="none" stroke="#484D56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1075.50,20.50) scale(0.938)">
+<path d="M6 13.5 H13 M2.8 9.8 L8.8 3.8 L12.2 7.2 L7.9 11.5 L5.5 11.5 Z M5.8 6.8 L9.2 10.2" fill="none" stroke="#484D56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1103.50,20.50) scale(0.938)">
+<circle cx="4.50" cy="11.50" r="2" fill="none" stroke="#484D56" stroke-width="1.6"/>
+<circle cx="11.50" cy="11.50" r="2" fill="none" stroke="#484D56" stroke-width="1.6"/>
+<path d="M5.8 10 L11 2.5 M10.2 10 L5 2.5" fill="none" stroke="#484D56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1131.50,20.50) scale(0.938)">
+<rect x="2.50" y="6.00" width="11.00" height="4.00" rx="1" fill="none" stroke="#484D56" stroke-width="1.6"/>
+<path d="M3 13 L13 3" fill="none" stroke="#484D56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1159.50,20.50) scale(0.938)">
+<path d="M3 13.5 V9 M6.3 13.5 V5 M9.6 13.5 V7 M12.9 13.5 V3" fill="none" stroke="#484D56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1187.50,20.50) scale(0.938)">
+<path d="M3 3 V13 M13 3 V13 M5.5 8 H10.5 M7 6.5 L5.5 8 L7 9.5 M9 6.5 L10.5 8 L9 9.5" fill="none" stroke="#484D56" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1402.00,20.00) scale(1.000)">
+<path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="#484D56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="1378.00" y="33.00" font-family="Instrument Sans" font-size="14" font-weight="600" fill="#484D56" text-anchor="middle">?</text>
+<rect x="1332.00" y="14.00" width="28.00" height="28.00" rx="5" fill="#5356CD" fill-opacity="0.13"/>
+<rect x="1332.50" y="14.50" width="27.00" height="27.00" rx="5" fill="none" stroke="#5356CD" stroke-width="1" stroke-opacity="0.55"/>
+<g transform="translate(1338.00,20.00) scale(1.000)">
+<rect x="2.50" y="3.00" width="11.00" height="10.00" rx="2" fill="none" stroke="#494AC0" stroke-width="1.5"/>
+<path d="M9.5 3 V13" fill="none" stroke="#494AC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="1300.00" y="14.00" width="28.00" height="28.00" rx="5" fill="#5356CD" fill-opacity="0.13"/>
+<rect x="1300.50" y="14.50" width="27.00" height="27.00" rx="5" fill="none" stroke="#5356CD" stroke-width="1" stroke-opacity="0.55"/>
+<g transform="translate(1306.00,20.00) scale(1.000)">
+<path d="M4.5 3 V13 M7.5 8 H13 M11 6 L13 8 L11 10" fill="none" stroke="#494AC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<line x1="1292.00" y1="16.00" x2="1292.00" y2="40.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<g transform="translate(1264.00,20.00) scale(1.000)">
+<path d="M10.5 4 L13 6.5 L10.5 9 M13 6.5 H6.5 a3.5 3.5 0 0 0 0 7 H10" fill="none" stroke="#484D56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g transform="translate(1234.00,20.00) scale(1.000)">
+<path d="M5.5 4 L3 6.5 L5.5 9 M3 6.5 H9.5 a3.5 3.5 0 0 1 0 7 H6" fill="none" stroke="#484D56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="6.00" y="56.00" width="1428.00" height="838.00" rx="8" fill="#F5F2ED"/>
+<rect x="6.50" y="56.50" width="1427.00" height="837.00" rx="8" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.1"/>
+<rect x="239.00" y="57.00" width="1159.00" height="32.00" fill="#007D50" fill-opacity="0.08"/>
+<rect x="239.75" y="57.75" width="1157.50" height="834.50" rx="6" fill="none" stroke="#007D50" stroke-width="1.5" stroke-opacity="0.85"/>
+<text x="20.00" y="77.00" font-family="Instrument Sans" font-size="12" font-weight="600" fill="#171B21" text-anchor="start">Tracks</text>
+<text x="68.00" y="77.00" font-family="JetBrains Mono" font-size="11" font-weight="500" fill="#646972" text-anchor="start">6</text>
+<g transform="translate(208.00,64.00) scale(1.000)">
+<path d="M8 3.5 V12.5 M3.5 8 H12.5" fill="none" stroke="#484D56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<line x1="238.00" y1="62.00" x2="238.00" y2="888.00" stroke="#C2BDB5" stroke-width="1" stroke-linecap="butt" stroke-opacity="0.7"/>
+<text x="246.00" y="77.00" font-family="Instrument Sans" font-size="12" font-weight="600" fill="#171B21" text-anchor="start">Clips</text>
+<text x="292.00" y="77.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#646972" text-anchor="start">Launch</text>
+<rect x="334.00" y="62.00" width="167.11" height="20.00" rx="5" fill="#ECE9E4"/>
+<text x="352.75" y="76.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#484D56" text-anchor="middle">Off</text>
+<text x="386.24" y="76.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#484D56" text-anchor="middle">1/4</text>
+<rect x="402.98" y="64.00" width="45.15" height="16.00" rx="4" fill="#FFFFFF"/>
+<text x="425.56" y="76.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#171B21" text-anchor="middle">1 bar</text>
+<text x="473.62" y="76.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#484D56" text-anchor="middle">2 bars</text>
+<rect x="513.11" y="61.00" width="86.00" height="22.00" rx="5" fill="#FFFFFF"/>
+<rect x="513.61" y="61.50" width="85.00" height="21.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<g transform="translate(522.29,64.50) scale(0.938)">
+<rect x="4.00" y="4.00" width="8.00" height="8.00" rx="1.5" fill="#484D56"/>
+</g>
+<text x="543.79" y="75.96" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#484D56" text-anchor="start">Stop all</text>
+<rect x="605.11" y="61.00" width="168.00" height="22.00" rx="5" fill="#FFFFFF"/>
+<rect x="605.61" y="61.50" width="167.00" height="21.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<g transform="translate(620.31,64.50) scale(0.938)">
+<circle cx="8.00" cy="8.00" r="4.5" fill="#484D56"/>
+</g>
+<text x="641.81" y="75.96" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#484D56" text-anchor="start">Record into timeline</text>
+<rect x="789.11" y="63.00" width="66.00" height="18.00" rx="9" fill="#007D50" fill-opacity="0.14"/>
+<g transform="translate(795.61,67.50) scale(0.562)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#007D50"/>
+</g>
+<text x="808.11" y="75.50" font-family="Instrument Sans" font-size="8.5" font-weight="700" fill="#007D50" text-anchor="start" letter-spacing="0.6">PLAYING</text>
+<rect x="239.00" y="88.00" width="1194.00" height="28.00" fill="#F5F2ED"/>
+<g transform="translate(249.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="265.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#484D56" text-anchor="start">1 Intro</text>
+<g transform="translate(377.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="393.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#171B21" text-anchor="start">2 Verse</text>
+<g transform="translate(505.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="521.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#484D56" text-anchor="start">3 Drop</text>
+<text x="622.00" y="106.00" font-family="JetBrains Mono" font-size="9" font-weight="500" fill="#646972" text-anchor="end">128</text>
+<g transform="translate(633.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="649.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#484D56" text-anchor="start">4 Break</text>
+<g transform="translate(761.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="777.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#484D56" text-anchor="start">5 Outro</text>
+<g transform="translate(889.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="905.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#484D56" text-anchor="start">6 Bridge</text>
+<g transform="translate(1017.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="1033.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#484D56" text-anchor="start">7</text>
+<g transform="translate(1145.50,96.50) scale(0.688)">
+<path d="M4 3.5 L11 8 L4 12.5 Z" fill="#484D56"/>
+<path d="M13 3.5 V12.5" fill="none" stroke="#484D56" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="1161.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="600" fill="#484D56" text-anchor="start">8</text>
+<text x="1276.00" y="106.00" font-family="Instrument Sans" font-size="10.5" font-weight="500" fill="#646972" text-anchor="start">+ Scene</text>
+<line x1="7.00" y1="115.50" x2="238.00" y2="115.50" stroke="#E1DDD7" stroke-width="1" stroke-linecap="butt"/>
+<rect x="6.00" y="119.00" width="3.00" height="68.00" rx="1.5" fill="#DF6C65"/>
+<g transform="translate(14.50,127.50) scale(0.688)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#646972" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="30.00" y="124.00" width="18.00" height="18.00" rx="4.32" fill="#DF6C65"/>
+<text x="39.00" y="136.42" font-family="JetBrains Mono" font-size="10.799999999999999" font-weight="700" fill="#13151B" text-anchor="middle">1</text>
+<text x="55.00" y="137.00" font-family="Instrument Sans" font-size="12.5" font-weight="600" fill="#171B21" text-anchor="start">Drums</text>
+<g transform="translate(100.20,126.50) scale(0.750)">
+<path d="M3 6 a5 2 0 0 0 10 0 a5 2 0 0 0 -10 0 V10.5 a5 2 0 0 0 10 0 V6" fill="none" stroke="#646972" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="55.00" y="153.00" font-family="Instrument Sans" font-size="10.5" font-weight="500" fill="#007D50" text-anchor="start">▶ Beat A</text>
+<circle cx="111.52" cy="149.50" r="4.2" fill="#484D56"/>
+<circle cx="111.52" cy="149.50" r="1.8" fill="#F5F2ED"/>
+<text x="119.52" y="153.00" font-family="Instrument Sans" font-size="10.5" font-weight="400" fill="#646972" text-anchor="start">Drum Out</text>
+<rect x="184.00" y="125.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="184.50" y="125.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="195.00" y="138.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">M</text>
+<rect x="210.00" y="125.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="210.50" y="125.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="221.00" y="138.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">S</text>
+<line x1="6.00" y1="189.50" x2="238.00" y2="189.50" stroke="#E1DDD7" stroke-width="1" stroke-linecap="butt"/>
+<rect x="248.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#DF6C65" fill-opacity="1"/>
+<rect x="248.00" y="121.00" width="22.00" height="64.00" rx="4" fill="#000" fill-opacity="0.18"/>
+<g transform="translate(252.50,146.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#13151B"/>
+</g>
+<text x="275.00" y="137.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#13151B" text-anchor="start">Beat A</text>
+<rect x="275.00" y="157.82" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="287.00" y="168.22" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="294.00" y="152.35" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="301.00" y="147.46" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="313.00" y="166.36" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="320.00" y="154.15" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="329.00" y="159.60" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="336.00" y="158.67" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="345.00" y="155.86" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="354.00" y="170.19" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="361.00" y="153.34" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="270.00" y="182.00" width="62.00" height="3.00" fill="#13151B" fill-opacity="0.55"/>
+<rect x="376.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#DF6C65" fill-opacity="0.26"/>
+<g transform="translate(380.50,146.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#DF6C65"/>
+</g>
+<text x="403.00" y="137.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Beat B</text>
+<rect x="403.00" y="169.32" width="4.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="410.00" y="147.97" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="419.00" y="173.85" width="9.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="431.00" y="159.05" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="440.00" y="148.66" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="449.00" y="168.44" width="4.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="456.00" y="165.98" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="465.00" y="162.46" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="474.00" y="168.51" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="483.00" y="147.50" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="504.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="504.50" y="121.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="632.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#DF6C65" fill-opacity="0.26"/>
+<g transform="translate(636.50,146.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#DF6C65"/>
+</g>
+<text x="659.00" y="137.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Fill</text>
+<rect x="659.00" y="167.96" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="668.00" y="173.61" width="9.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="680.00" y="147.13" width="9.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="692.00" y="157.11" width="4.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="699.00" y="145.04" width="4.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="706.00" y="165.47" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="715.00" y="164.66" width="4.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="722.00" y="171.41" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="731.00" y="176.06" width="6.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="740.00" y="170.78" width="4.00" height="2.00" rx="1" fill="#DF6C65" fill-opacity="0.7"/>
+<rect x="760.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="760.50" y="121.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="888.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="888.50" y="121.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1016.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1016.50" y="121.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1144.00" y="121.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1144.50" y="121.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="6.00" y="193.00" width="3.00" height="68.00" rx="1.5" fill="#CB8100"/>
+<g transform="translate(14.50,201.50) scale(0.688)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#646972" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="30.00" y="198.00" width="18.00" height="18.00" rx="4.32" fill="#CB8100"/>
+<text x="39.00" y="210.42" font-family="JetBrains Mono" font-size="10.799999999999999" font-weight="700" fill="#13151B" text-anchor="middle">2</text>
+<text x="55.00" y="211.00" font-family="Instrument Sans" font-size="12.5" font-weight="600" fill="#171B21" text-anchor="start">Bass</text>
+<text x="55.00" y="227.00" font-family="Instrument Sans" font-size="10.5" font-weight="500" fill="#646972" text-anchor="start">Stopped</text>
+<circle cx="105.96" cy="223.50" r="4.2" fill="#484D56"/>
+<circle cx="105.96" cy="223.50" r="1.8" fill="#F5F2ED"/>
+<text x="113.96" y="227.00" font-family="Instrument Sans" font-size="10.5" font-weight="400" fill="#646972" text-anchor="start">Track Out</text>
+<rect x="184.00" y="199.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="184.50" y="199.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="195.00" y="212.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">M</text>
+<rect x="210.00" y="199.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="210.50" y="199.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="221.00" y="212.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">S</text>
+<line x1="6.00" y1="263.50" x2="238.00" y2="263.50" stroke="#E1DDD7" stroke-width="1" stroke-linecap="butt"/>
+<rect x="248.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#CB8100" fill-opacity="0.26"/>
+<g transform="translate(252.50,220.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#CB8100"/>
+</g>
+<text x="275.00" y="211.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Root</text>
+<rect x="275.00" y="245.96" width="6.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="284.00" y="230.99" width="6.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="293.00" y="224.20" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="300.00" y="239.77" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="307.00" y="243.75" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="314.00" y="242.88" width="9.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="326.00" y="226.25" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="333.00" y="231.95" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="340.00" y="227.80" width="9.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="352.00" y="249.42" width="9.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="376.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#CB8100" fill-opacity="0.26"/>
+<g transform="translate(380.50,220.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#CB8100"/>
+</g>
+<text x="403.00" y="211.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Walk</text>
+<rect x="403.00" y="225.91" width="9.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="415.00" y="234.10" width="6.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="424.00" y="239.99" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="431.00" y="242.27" width="9.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="443.00" y="219.31" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="450.00" y="224.06" width="6.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="459.00" y="222.10" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="466.00" y="241.15" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="473.00" y="224.65" width="4.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="480.00" y="222.05" width="6.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="489.00" y="238.18" width="6.00" height="2.00" rx="1" fill="#CB8100" fill-opacity="0.7"/>
+<rect x="376.75" y="195.75" width="120.50" height="62.50" rx="4" fill="none" stroke="#A06604" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="492.00" y="253.00" font-family="Instrument Sans" font-size="9.5" font-weight="600" fill="#A06604" text-anchor="end">queued</text>
+<rect x="504.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="504.50" y="195.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="632.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="632.50" y="195.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="760.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="760.50" y="195.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="888.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="888.50" y="195.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1016.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1016.50" y="195.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1144.00" y="195.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1144.50" y="195.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="6.00" y="264.00" width="232.00" height="74.00" fill="#EBE7E1"/>
+<rect x="6.00" y="267.00" width="3.00" height="68.00" rx="1.5" fill="#00AF9B"/>
+<g transform="translate(14.50,275.50) scale(0.688)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#646972" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="30.00" y="272.00" width="18.00" height="18.00" rx="4.32" fill="#00AF9B"/>
+<text x="39.00" y="284.42" font-family="JetBrains Mono" font-size="10.799999999999999" font-weight="700" fill="#13151B" text-anchor="middle">3</text>
+<text x="55.00" y="285.00" font-family="Instrument Sans" font-size="12.5" font-weight="600" fill="#171B21" text-anchor="start">Keys</text>
+<text x="55.00" y="301.00" font-family="Instrument Sans" font-size="10.5" font-weight="500" fill="#007D50" text-anchor="start">▶ Verse A</text>
+<circle cx="117.09" cy="297.50" r="4.2" fill="#484D56"/>
+<circle cx="117.09" cy="297.50" r="1.8" fill="#F5F2ED"/>
+<text x="125.09" y="301.00" font-family="Instrument Sans" font-size="10.5" font-weight="400" fill="#646972" text-anchor="start">Track Out</text>
+<rect x="184.00" y="273.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="184.50" y="273.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="195.00" y="286.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">M</text>
+<rect x="210.00" y="273.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="210.50" y="273.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="221.00" y="286.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">S</text>
+<line x1="6.00" y1="337.50" x2="238.00" y2="337.50" stroke="#E1DDD7" stroke-width="1" stroke-linecap="butt"/>
+<rect x="248.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="248.50" y="269.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="376.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#00AF9B" fill-opacity="1"/>
+<rect x="376.00" y="269.00" width="22.00" height="64.00" rx="4" fill="#000" fill-opacity="0.18"/>
+<g transform="translate(380.50,294.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#13151B"/>
+</g>
+<text x="403.00" y="285.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#13151B" text-anchor="start">Verse A</text>
+<rect x="403.00" y="325.57" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="415.00" y="322.50" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="424.00" y="300.86" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="433.00" y="306.59" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="445.00" y="323.79" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="457.00" y="313.08" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="464.00" y="294.89" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="471.00" y="297.70" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="483.00" y="306.60" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="398.00" y="330.00" width="62.00" height="3.00" fill="#13151B" fill-opacity="0.55"/>
+<rect x="504.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#00AF9B" fill-opacity="0.26"/>
+<g transform="translate(508.50,294.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#00AF9B"/>
+</g>
+<text x="531.00" y="285.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Chorus</text>
+<rect x="531.00" y="295.59" width="9.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="543.00" y="315.01" width="6.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="552.00" y="306.10" width="4.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="559.00" y="315.15" width="9.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="571.00" y="320.21" width="6.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="580.00" y="321.65" width="4.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="587.00" y="300.98" width="4.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="594.00" y="296.53" width="9.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="606.00" y="322.61" width="9.00" height="2.00" rx="1" fill="#00AF9B" fill-opacity="0.7"/>
+<rect x="632.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="632.50" y="269.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="760.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="760.50" y="269.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="888.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="888.50" y="269.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1016.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1016.50" y="269.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1144.00" y="269.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1144.50" y="269.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="6.00" y="341.00" width="3.00" height="68.00" rx="1.5" fill="#4498E8"/>
+<g transform="translate(14.50,349.50) scale(0.688)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#646972" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="30.00" y="346.00" width="18.00" height="18.00" rx="4.32" fill="#4498E8"/>
+<text x="39.00" y="358.42" font-family="JetBrains Mono" font-size="10.799999999999999" font-weight="700" fill="#13151B" text-anchor="middle">4</text>
+<text x="55.00" y="359.00" font-family="Instrument Sans" font-size="12.5" font-weight="600" fill="#171B21" text-anchor="start">Lead</text>
+<text x="55.00" y="375.00" font-family="Instrument Sans" font-size="10.5" font-weight="500" fill="#646972" text-anchor="start">Stopped</text>
+<circle cx="105.96" cy="371.50" r="4.2" fill="#484D56"/>
+<circle cx="105.96" cy="371.50" r="1.8" fill="#F5F2ED"/>
+<text x="113.96" y="375.00" font-family="Instrument Sans" font-size="10.5" font-weight="400" fill="#646972" text-anchor="start">Track Out</text>
+<rect x="158.00" y="347.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="158.50" y="347.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<circle cx="169.00" cy="357.00" r="4.2" fill="#646972"/>
+<rect x="184.00" y="347.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="184.50" y="347.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="195.00" y="360.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">M</text>
+<rect x="210.00" y="347.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="210.50" y="347.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="221.00" y="360.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">S</text>
+<line x1="6.00" y1="411.50" x2="238.00" y2="411.50" stroke="#E1DDD7" stroke-width="1" stroke-linecap="butt"/>
+<rect x="248.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="248.50" y="343.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="376.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="376.50" y="343.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="504.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#4498E8" fill-opacity="0.26"/>
+<g transform="translate(508.50,368.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#4498E8"/>
+</g>
+<text x="531.00" y="359.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Hook</text>
+<rect x="531.00" y="370.10" width="4.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="538.00" y="388.01" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="550.00" y="381.57" width="6.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="559.00" y="393.64" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="571.00" y="389.13" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="583.00" y="386.48" width="4.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="590.00" y="375.94" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="602.00" y="384.34" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="614.00" y="371.76" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="632.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="632.50" y="343.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="760.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#4498E8" fill-opacity="0.26"/>
+<g transform="translate(764.50,368.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#4498E8"/>
+</g>
+<text x="787.00" y="359.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Hook 2</text>
+<rect x="787.00" y="398.57" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="799.00" y="384.47" width="4.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="806.00" y="387.62" width="6.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="815.00" y="395.98" width="6.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="824.00" y="367.95" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="836.00" y="380.97" width="9.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="848.00" y="376.61" width="6.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="857.00" y="387.38" width="6.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="866.00" y="399.37" width="6.00" height="2.00" rx="1" fill="#4498E8" fill-opacity="0.7"/>
+<rect x="888.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="888.50" y="343.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1016.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1016.50" y="343.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1144.00" y="343.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1144.50" y="343.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="6.00" y="415.00" width="3.00" height="68.00" rx="1.5" fill="#B875CD"/>
+<g transform="translate(14.50,423.50) scale(0.688)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#646972" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="30.00" y="420.00" width="18.00" height="18.00" rx="4.32" fill="#B875CD"/>
+<text x="39.00" y="432.42" font-family="JetBrains Mono" font-size="10.799999999999999" font-weight="700" fill="#13151B" text-anchor="middle">5</text>
+<text x="55.00" y="433.00" font-family="Instrument Sans" font-size="12.5" font-weight="600" fill="#171B21" text-anchor="start">Pad</text>
+<text x="55.00" y="449.00" font-family="Instrument Sans" font-size="10.5" font-weight="500" fill="#007D50" text-anchor="start">▶ Air</text>
+<circle cx="94.83" cy="445.50" r="4" fill="none" stroke="#646972" stroke-width="1.2"/>
+<text x="102.83" y="449.00" font-family="Instrument Sans" font-size="10.5" font-weight="400" fill="#646972" text-anchor="start">no output</text>
+<rect x="184.00" y="421.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="184.50" y="421.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="195.00" y="434.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">M</text>
+<rect x="210.00" y="421.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="210.50" y="421.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="221.00" y="434.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">S</text>
+<line x1="6.00" y1="485.50" x2="238.00" y2="485.50" stroke="#E1DDD7" stroke-width="1" stroke-linecap="butt"/>
+<rect x="248.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#B875CD" fill-opacity="1"/>
+<rect x="248.00" y="417.00" width="22.00" height="64.00" rx="4" fill="#000" fill-opacity="0.18"/>
+<g transform="translate(252.50,442.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#13151B"/>
+</g>
+<text x="275.00" y="433.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#13151B" text-anchor="start">Air</text>
+<rect x="275.00" y="456.63" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="287.00" y="451.57" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="296.00" y="462.21" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="303.00" y="454.73" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="310.00" y="447.26" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="322.00" y="472.37" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="334.00" y="468.58" width="4.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="341.00" y="454.13" width="9.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="353.00" y="454.83" width="6.00" height="2.00" rx="1" fill="#13151B" fill-opacity="0.7"/>
+<rect x="270.00" y="478.00" width="62.00" height="3.00" fill="#13151B" fill-opacity="0.55"/>
+<rect x="376.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="376.50" y="417.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="504.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="504.50" y="417.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="632.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#B875CD" fill-opacity="0.26"/>
+<g transform="translate(636.50,442.50) scale(0.812)">
+<path d="M5 3.5 L12.5 8 L5 12.5 Z" fill="#B875CD"/>
+</g>
+<text x="659.00" y="433.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Swell</text>
+<rect x="659.00" y="449.36" width="4.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="666.00" y="469.71" width="6.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="675.00" y="446.64" width="4.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="682.00" y="470.04" width="9.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="694.00" y="457.43" width="4.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="701.00" y="452.18" width="9.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="713.00" y="464.67" width="4.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="720.00" y="472.89" width="9.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="732.00" y="471.06" width="6.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="741.00" y="469.04" width="6.00" height="2.00" rx="1" fill="#B875CD" fill-opacity="0.7"/>
+<rect x="760.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="760.50" y="417.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="888.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="888.50" y="417.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1016.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1016.50" y="417.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1144.00" y="417.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1144.50" y="417.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="6.00" y="489.00" width="3.00" height="68.00" rx="1.5" fill="#929D16"/>
+<g transform="translate(14.50,497.50) scale(0.688)">
+<path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="#646972" stroke-width="2.1818181818181817" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="30.00" y="494.00" width="18.00" height="18.00" rx="4.32" fill="#929D16"/>
+<text x="39.00" y="506.42" font-family="JetBrains Mono" font-size="10.799999999999999" font-weight="700" fill="#13151B" text-anchor="middle">6</text>
+<text x="55.00" y="507.00" font-family="Instrument Sans" font-size="12.5" font-weight="600" fill="#171B21" text-anchor="start">Arp</text>
+<text x="55.00" y="523.00" font-family="Instrument Sans" font-size="10.5" font-weight="500" fill="#646972" text-anchor="start">● Recording</text>
+<circle cx="128.22" cy="519.50" r="4.2" fill="#484D56"/>
+<circle cx="128.22" cy="519.50" r="1.8" fill="#F5F2ED"/>
+<text x="136.22" y="523.00" font-family="Instrument Sans" font-size="10.5" font-weight="400" fill="#646972" text-anchor="start">Track Out</text>
+<rect x="158.00" y="495.00" width="22.00" height="20.00" rx="5" fill="#C9302D" fill-opacity="0.13"/>
+<rect x="158.50" y="495.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#C9302D" stroke-width="1" stroke-opacity="0.55"/>
+<circle cx="169.00" cy="505.00" r="4.2" fill="#C9302D"/>
+<rect x="184.00" y="495.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="184.50" y="495.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="195.00" y="508.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">M</text>
+<rect x="210.00" y="495.00" width="22.00" height="20.00" rx="5" fill="#FFFFFF"/>
+<rect x="210.50" y="495.50" width="21.00" height="19.00" rx="5" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.13"/>
+<text x="221.00" y="508.60" font-family="Instrument Sans" font-size="10" font-weight="700" fill="#484D56" text-anchor="middle">S</text>
+<line x1="6.00" y1="559.50" x2="238.00" y2="559.50" stroke="#E1DDD7" stroke-width="1" stroke-linecap="butt"/>
+<rect x="248.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="248.50" y="491.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="376.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="376.50" y="491.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="504.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#929D16" fill-opacity="0.26"/>
+<rect x="504.00" y="491.00" width="22.00" height="64.00" rx="4" fill="#C9302D"/>
+<circle cx="515.00" cy="523.00" r="3.6" fill="#fff"/>
+<text x="531.00" y="507.00" font-family="Instrument Sans" font-size="11.5" font-weight="600" fill="#171B21" text-anchor="start">Spark</text>
+<rect x="531.00" y="534.92" width="4.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="538.00" y="529.82" width="4.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="545.00" y="536.29" width="6.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="554.00" y="535.74" width="4.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="561.00" y="546.73" width="9.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="573.00" y="536.78" width="4.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="580.00" y="526.11" width="4.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="587.00" y="515.49" width="6.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="596.00" y="517.84" width="6.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="605.00" y="531.19" width="9.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<rect x="617.00" y="518.15" width="4.00" height="2.00" rx="1" fill="#929D16" fill-opacity="0.7"/>
+<text x="620.00" y="549.00" font-family="Instrument Sans" font-size="9.5" font-weight="600" fill="#C9302D" text-anchor="end">recording</text>
+<rect x="632.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="632.50" y="491.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="760.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="760.50" y="491.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="888.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="888.50" y="491.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1016.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1016.50" y="491.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<rect x="1144.00" y="491.00" width="122.00" height="64.00" rx="4" fill="#ECE9E4"/>
+<rect x="1144.50" y="491.50" width="121.00" height="63.00" rx="4" fill="none" stroke="#3A2F1E" stroke-width="1" stroke-opacity="0.06"/>
+<text x="22.00" y="578.00" font-family="Instrument Sans" font-size="11" font-weight="500" fill="#646972" text-anchor="start">+ Add track</text>
+<rect x="1404.00" y="90.00" width="24.00" height="798.00" rx="5" fill="#FFFFFF"/>
+<g transform="rotate(-90 1419 475.0)">
+<text x="1419.00" y="479.00" font-family="Instrument Sans" font-size="11" font-weight="600" fill="#484D56" text-anchor="middle">Timeline  ◂  drag or double-click</text>
+</g>
+<rect x="1400.00" y="60.00" width="24.00" height="24.00" rx="5" fill="#5356CD" fill-opacity="0.13"/>
+<rect x="1400.50" y="60.50" width="23.00" height="23.00" rx="5" fill="none" stroke="#5356CD" stroke-width="1" stroke-opacity="0.55"/>
+<g transform="translate(1404.00,64.00) scale(1.000)">
+<path d="M13.5 2.5 L9.5 6.5 M9.5 3 V6.5 H13 M2.5 13.5 L6.5 9.5 M3 9.5 H6.5 V13" fill="none" stroke="#494AC0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>
