@@ -945,7 +945,7 @@ json_t* TesseraModule::dataToJson() {
     for (const Track& t : songData.tracks) {
         int playing = launcherStatus(t.id).playing;
         if (playing >= 0)
-            json_array_append_new(launcherJ, json_pack("[I, i]", json_int_t(t.id.value), playing));
+            json_array_append_new(launcherJ, json_pack("[I, i]", static_cast<json_int_t>(t.id.value), playing));
     }
     json_object_set_new(root, "launcher", launcherJ);
     json_object_set_new(root, "song", songToJson(songData));

@@ -49,6 +49,40 @@ RACK_DIR=~/Rack-SDK make dist        # makes the .vcvplugin package in dist/
 
 Restart Rack after `make install`. Rack only unpacks a new plugin when it starts.
 
+### NixOS and macOS with Nix (including nix-darwin)
+
+With `nixpkgs` available in your Nix search path, enter the development shell:
+
+```sh
+nix-shell
+make -j4
+make -j4 test
+make dist
+```
+
+The shell provides the native C++ compiler, formatting tools, jansson, OpenGL headers on Linux, and the
+tools needed to package the plugin. It downloads a checksum-verified Rack SDK 2.6.6 and sets `RACK_DIR`
+automatically. Supported hosts are x86_64 NixOS/Linux and Intel or Apple Silicon macOS. The first invocation
+needs network access to download the SDK and Nix dependencies. Nixpkgs comes from your configured channel
+or `NIX_PATH`; it is not pinned by this repository.
+
+To use your own matching SDK, run `RACK_DIR=/absolute/path/to/Rack-SDK nix-shell`. For a single command,
+use `nix-shell --run 'make -j4 test'`. Run `make clean` when switching SDKs or compilers to discard old objects.
+On macOS, `make dist` uses the host's `/usr/bin/codesign`. `make install` installs into Rack's usual user
+plugin directory; the shell does not install or launch the Rack application.
+
+Linux builds use Nix's libraries and may reference the Nix store. Use the existing GitHub release workflow
+for distributable binaries intended for machines without Nix.
+
+If the test binary hangs before printing anything on recent macOS, your Nixpkgs compiler may have the
+[AddressSanitizer startup bug](https://github.com/llvm/llvm-project/pull/182943). Update to a toolchain
+containing that fix, or run with only UndefinedBehaviorSanitizer in a separate build directory:
+
+```sh
+make -j4 test TEST_OBJ_DIR=build/tests/ubsan-obj TEST_BIN=build/tests/tessera_tests_ubsan \
+  TEST_FLAGS='-std=c++17 -O1 -g -Wall -Wextra -pthread -fsanitize=undefined'
+```
+
 ### Builds for every platform
 
 GitHub builds Tessera for Linux, Windows, Intel Macs and Apple Silicon Macs, and runs the tests. Start it from the
