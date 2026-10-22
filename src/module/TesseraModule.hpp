@@ -204,8 +204,12 @@ class TesseraModule : public rack::engine::Module {
 
     // Parameter mapping (DESIGN.md §6): track lanes drive knobs on other modules, no cable needed.
 
-    /// The next knob touched in the rack is mapped to this track lane. cancelLearn() stops waiting.
-    void startLearn(TrackId track, AutomationId lane);
+    /// The next MIDI control moved, or (for a track lane) knob touched in the rack, becomes what this lane records
+    /// from: the control is linked, the knob mapped. cancelLearn() stops waiting.
+    void startLearn(LaneOwner owner, AutomationId lane);
+    void startLearn(TrackId track, AutomationId lane) { startLearn(LaneOwner::ofTrack(track), lane); }
+    /// How many channels the AUTO REC input has patched now.
+    int autoRecInputs() const { return autoRecChannels.load(std::memory_order_relaxed); }
     /// The next knob touched in the rack is turned by this modulator (docs/DEVICES.md §3 "CV out").
     void startLearn(ModulatorId modulator);
     void cancelLearn() {
@@ -218,11 +222,6 @@ class TesseraModule : public rack::engine::Module {
     static std::string targetName(const ParamTarget& target);
     /// True when another mapping (a MIDI-Map, another Tessera) took this target over.
     bool targetTakenOver(AutomationId lane, int index) const;
-    /// The pass being recorded into a lane right now, or nullptr.
-    const AutomationTake* automationTake(AutomationId lane) const {
-        auto it = autoTakes.find(lane.value);
-        return it != autoTakes.end() ? &it->second.take : nullptr;
-    }
     // Devices and modulators (docs/DEVICES.md)
 
     /// While a device knob or modulator setting is dragged, the engine plays `value` (normalized) before the edit
@@ -235,8 +234,8 @@ class TesseraModule : public rack::engine::Module {
     float knobBase(const ParamRef& ref) const;
     /// Whether a lane turns this knob (playing or not).
     bool automated(const ParamRef& ref) const;
-    /// The armed track lane that records this knob now (the song records and plays), or nullptr. Turning the
-    /// knob then writes the lane instead of changing the knob.
+    /// The lane that records this knob now (its track is armed, the song records and plays), or nullptr. Turning
+    /// the knob then writes the lane instead of changing the knob.
     const AutomationEnvelope* recordingKnobLane(const ParamRef& ref) const;
     /// A modulator's output now: -1..1 when bipolar, else 0..1.
     float modulatorOutput(ModulatorId id) const;
@@ -296,11 +295,15 @@ class TesseraModule : public rack::engine::Module {
     void learnTouchedParam();
     /// The edit that adds the touched knob to the lane being learned, or null.
     CommandPtr learnLaneCommand(const ParamTarget& target);
+    /// While learning a lane: a MIDI control moved since learning started becomes the lane's source.
+    void learnMovedControl();
     /// Armed lanes record their source while the transport records; a loop wrap or stop ends the pass.
     void recordAutomation();
-    void commitAutomation();
     bool readAutomationSource(const AutomationEnvelope& lane, float& value) const;
     bool holds(const ParamRef& ref) const; // the mouse holds this knob (holdKnob)
+    /// The knob, device knob and AUTO REC lanes an armed track records: its own, and the playing clip's device
+    /// knob lanes. None when the track isn't armed or a lane is marked "don't record".
+    std::vector<const AutomationEnvelope*> recordableLanes(const Track& track) const;
 
     /// The recorder's view of this module.
     class Host : public RecorderHost {
@@ -356,15 +359,18 @@ class TesseraModule : public rack::engine::Module {
     // Handles leave the engine at once but are freed a frame later, when process() can no longer be using them.
     std::vector<std::unique_ptr<rack::engine::ParamHandle>> retiredHandles;
     uint64_t mappedRevision = ~uint64_t(0);
-    TrackId learnTrack;
+    LaneOwner learnOwner;
     AutomationId learnLane;
+    uint32_t learnMidiMoves = 0; // midiMoves when learning started: a later count is a control moved since
+    // Audio thread -> UI: the last MIDI control that moved, as (kind << 8 | cc), and how many moves so far.
+    std::atomic<uint32_t> lastMidiControl{0};
+    std::atomic<uint32_t> midiMoves{0};
     ModulatorId learnModulator;
-    struct LaneTake {
-        TrackId track;
-        AutomationTake take;
-    };
-    std::map<uint64_t, LaneTake> autoTakes; // by AutomationId value
-    double lastAutoTick = 0;
+    // Knob and AUTO REC lanes read this pass: each one's last value (a device knob let go keeps it), and the
+    // device knobs among them, which the pass holds until it ends.
+    std::map<uint64_t, float> laneValues;
+    std::vector<ParamRef> recordedKnobs;
+    bool automationRecording = false;
 
     // Audio thread -> UI
     RecordQueue recordEvents;

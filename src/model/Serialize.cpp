@@ -108,7 +108,6 @@ json_t* automationToJson(const AutomationEnvelope& a) {
     setBool(j, "mute", a.mute);
     setNumber(j, "slew", a.slewMs);
     setString(j, "combine", enumName(a.combine, kCombineModes));
-    setBool(j, "armed", a.armed);
     setString(j, "source", enumName(a.source, kAutoSources));
     setString(j, "recordMode", enumName(a.recordMode, kAutoRecordModes));
 
@@ -128,8 +127,10 @@ json_t* automationToJson(const AutomationEnvelope& a) {
         json_array_append_new(midi, json_integer(a.midi.cc));
         set(j, "midi", midi);
     }
-    if (a.midiIgnored)
-        setBool(j, "midiIgnored", true);
+    if (a.recInput >= 0)
+        setInt(j, "recInput", a.recInput);
+    if (a.noRecord)
+        setBool(j, "noRecord", true);
 
     // Points as [t, value, curve, tension]. Curve is an index: CurveType must only ever be appended to.
     json_t* points = json_array();
@@ -153,7 +154,7 @@ AutomationEnvelope automationFromJson(const json_t* j) {
     a.mute = getBool(j, "mute", a.mute);
     a.slewMs = getFloat(j, "slew", a.slewMs);
     a.combine = enumFromName(get(j, "combine"), kCombineModes, a.combine);
-    a.armed = getBool(j, "armed", a.armed);
+    // "armed" is no longer read: arming the track records its lanes (DECISIONS.md §73).
     a.source = enumFromName(get(j, "source"), kAutoSources, a.source);
     a.recordMode = enumFromName(get(j, "recordMode"), kAutoRecordModes, a.recordMode);
     forEach(get(j, "targets"), [&](const json_t* t) {
@@ -170,7 +171,8 @@ AutomationEnvelope automationFromJson(const json_t* j) {
         a.midi.kind = enumFromName(json_array_get(midi, 0), kMidiControls, a.midi.kind);
         a.midi.cc = uint8_t(std::clamp<int64_t>(intAt(midi, 1, 0), 0, 127));
     }
-    a.midiIgnored = getBool(j, "midiIgnored", a.midiIgnored);
+    a.recInput = saturate<int>(getInt(j, "recInput", a.recInput));
+    a.noRecord = getBool(j, "noRecord", a.noRecord);
     forEach(get(j, "points"), [&](const json_t* p) {
         if (json_array_size(p) < 2)
             return;

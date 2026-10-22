@@ -238,6 +238,10 @@ void TesseraModule::playMidiEvent(const MidiEvent& e) {
             v.control = {MidiControl::Kind::Cc, e.cc};
             break;
         }
+        if (!v.perNote) {
+            lastMidiControl.store(uint32_t(v.control.kind) << 8 | v.control.cc, std::memory_order_relaxed);
+            midiMoves.fetch_add(1, std::memory_order_release);
+        }
         engine.liveValue(v);
         return;
     }
@@ -247,8 +251,11 @@ void TesseraModule::playMidiEvent(const MidiEvent& e) {
 void TesseraModule::uiStep() {
     snapshots.collect();
     syncMappings();
-    if (learning())
-        learnTouchedParam();
+    if (learning()) {
+        learnMovedControl();
+        if (learning())
+            learnTouchedParam();
+    }
     recordAutomation();
     RecordEvent recordEvent;
     while (recordEvents.pop(recordEvent)) {
@@ -299,10 +306,11 @@ void TesseraModule::startLearn(ModulatorId modulator) {
         APP->scene->rack->touchedParam = nullptr;
 }
 
-void TesseraModule::startLearn(TrackId track, AutomationId lane) {
+void TesseraModule::startLearn(LaneOwner owner, AutomationId lane) {
     learnModulator = ModulatorId();
-    learnTrack = track;
+    learnOwner = owner;
     learnLane = lane;
+    learnMidiMoves = midiMoves.load(std::memory_order_relaxed);
     // Only a knob touched from now on counts.
     if (APP->scene && APP->scene->rack)
         APP->scene->rack->touchedParam = nullptr;
@@ -367,18 +375,40 @@ void TesseraModule::learnTouchedParam() {
 }
 
 CommandPtr TesseraModule::learnLaneCommand(const ParamTarget& target) {
-    LaneOwner owner = LaneOwner::ofTrack(learnTrack);
+    LaneOwner owner = learnOwner;
     AutomationId laneId = learnLane;
     learnLane = AutomationId();
     const AutomationEnvelope* lane = findLane(songData, owner, laneId);
-    if (!lane || target.moduleId == id || lane->targets.size() >= 4)
+    // Knobs are mapped on track lanes only; a clip lane plays its track lane's knobs.
+    if (!lane || !owner.track.valid() || target.moduleId == id || lane->targets.size() >= 4)
         return nullptr;
     for (const ParamTarget& t : lane->targets)
         if (t.moduleId == target.moduleId && t.paramId == target.paramId)
             return nullptr;
     AutomationEnvelope next = *lane;
+    // A lane still named by its channel takes its first knob's name.
+    if (next.targets.empty() && next.name == "Auto " + std::to_string(next.outputIndex + 1))
+        next.name = targetName(target);
     next.targets.push_back(target);
+    // Touching a knob makes it the source: it is what the lane records from now.
+    next.midi = MidiControl();
+    next.source = AutoSource::Knob;
     return replaceLane(songData, owner, next, "Map " + targetName(target));
+}
+
+void TesseraModule::learnMovedControl() {
+    if (!learnLane.valid() || midiMoves.load(std::memory_order_acquire) == learnMidiMoves)
+        return;
+    uint32_t key = lastMidiControl.load(std::memory_order_relaxed);
+    MidiControl control{MidiControl::Kind(key >> 8), uint8_t(key & 127)};
+    const AutomationEnvelope* lane = findLane(songData, learnOwner, learnLane);
+    LaneOwner owner = learnOwner;
+    learnLane = AutomationId();
+    if (!lane || !control.valid())
+        return;
+    AutomationEnvelope next = *lane;
+    next.midi = control;
+    perform(replaceLane(songData, owner, next, "Record " + midiControlName(control)));
 }
 
 bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& value) const {
@@ -389,9 +419,9 @@ bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& 
             value = heldKnobValue.load(std::memory_order_relaxed);
             return true;
         }
-        auto it = autoTakes.find(lane.id.value);
-        if (it != autoTakes.end() && it->second.take.started()) {
-            value = it->second.take.lastValue();
+        auto it = laneValues.find(lane.id.value);
+        if (it != laneValues.end()) {
+            value = it->second;
             return true;
         }
         if (lane.recordMode != AutoRecordMode::Write)
@@ -400,9 +430,10 @@ bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& 
         return true;
     }
     if (lane.source == AutoSource::Cv) {
-        if (lane.outputIndex >= autoRecChannels.load(std::memory_order_relaxed))
+        int channel = lane.recInput >= 0 ? lane.recInput : lane.outputIndex;
+        if (channel >= autoRecChannels.load(std::memory_order_relaxed))
             return false;
-        value = std::clamp(fromVolts(lane, autoRecVolts[size_t(lane.outputIndex)].load()), 0.f, 1.f);
+        value = std::clamp(fromVolts(lane, autoRecVolts[size_t(channel)].load()), 0.f, 1.f);
         return true;
     }
     if (lane.targets.empty())
@@ -417,50 +448,74 @@ bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& 
     return true;
 }
 
+std::vector<const AutomationEnvelope*> TesseraModule::recordableLanes(const Track& t) const {
+    std::vector<const AutomationEnvelope*> out;
+    if (!t.armed)
+        return out;
+    // MIDI lanes record what the engine hears; these are read here, each UI frame.
+    auto recordable = [](const AutomationEnvelope& l) { return !l.noRecord && !l.midi.valid(); };
+    for (const AutomationEnvelope& l : t.automation)
+        if (recordable(l))
+            out.push_back(&l);
+    // The playing clip's device knob lanes record too (they turn knobs only that clip turns).
+    int playing = launcherStatus(t.id).playing;
+    if (playing >= 0 && playing < int(t.slots.size()) && t.slots[size_t(playing)].clip)
+        if (const Clip* c = songData.findClip(*t.slots[size_t(playing)].clip))
+            for (const AutomationEnvelope& l : c->automation)
+                if (recordable(l) && l.paramTarget.valid())
+                    out.push_back(&l);
+    return out;
+}
+
 void TesseraModule::recordAutomation() {
     bool rec = recording() && playing();
-    double now = playheadTicks();
-    if (!rec || now < lastAutoTick)
-        commitAutomation();
-    lastAutoTick = now;
-    std::set<uint64_t> handHeld;
-    if (rec) {
+    if (!rec) {
+        if (automationRecording) {
+            // A knob recorded in Latch or Write mode stayed held after the mouse let go; the pass is over.
+            for (const ParamRef& ref : recordedKnobs)
+                if (holds(ref))
+                    releaseKnob();
+            laneValues.clear();
+            recordedKnobs.clear();
+            automationRecording = false;
+        }
+    } else {
+        automationRecording = true;
         double seconds = rack::system::getTime();
         for (const Track& t : songData.tracks) {
-            for (const AutomationEnvelope& lane : t.automation) {
+            for (const AutomationEnvelope* lane : recordableLanes(t)) {
                 float value;
-                if (!lane.armed || !readAutomationSource(lane, value))
+                if (!readAutomationSource(*lane, value))
                     continue;
-                auto it = autoTakes.find(lane.id.value);
-                if (it == autoTakes.end())
-                    it = autoTakes.emplace(lane.id.value, LaneTake{t.id, AutomationTake(lane.recordMode)}).first;
-                it->second.take.sample(Tick(std::llround(now)), value, seconds);
-                if (lane.source == AutoSource::Knob && it->second.take.writing())
-                    handHeld.insert(lane.id.value);
+                laneValues[lane->id.value] = value;
+                if (lane->paramTarget.valid() &&
+                    std::find(recordedKnobs.begin(), recordedKnobs.end(), lane->paramTarget) == recordedKnobs.end())
+                    recordedKnobs.push_back(lane->paramTarget);
+                RecordEvent e;
+                e.kind = RecordEvent::Kind::LaneValue;
+                e.track = t.id.value;
+                e.lane = lane->id.value;
+                e.value = value;
+                e.seconds = seconds;
+                e.recording = e.playing = true;
+                e.playTick = playTicks();
+                e.songTick = playheadTicks();
+                LauncherStatus status = launcherStatus(t.id);
+                if (status.playing >= 0 && !std::isnan(status.elapsed)) {
+                    e.slot = status.playing;
+                    e.clipStart = e.playTick - status.elapsed;
+                    e.clipTick = status.position;
+                }
+                recorder.handle(e);
             }
         }
     }
     int n = mapCount.load(std::memory_order_acquire);
-    for (int i = 0; i < n; i++)
-        maps[size_t(i)].paused.store(handHeld.count(maps[size_t(i)].lane) > 0, std::memory_order_relaxed);
-}
-
-void TesseraModule::commitAutomation() {
-    for (auto& [id, lt] : autoTakes) {
-        LaneOwner owner = LaneOwner::ofTrack(lt.track);
-        const AutomationEnvelope* lane = findLane(songData, owner, AutomationId(id));
-        if (!lane)
-            continue;
-        // A knob recorded in Latch or Write mode stayed held after the mouse let go; the pass is over.
-        if (lane->paramTarget.valid() && holds(lane->paramTarget))
-            releaseKnob();
-        if (lt.take.empty())
-            continue;
-        AutomationEnvelope next = *lane;
-        next.points = lt.take.apply(lane->points);
-        perform(replaceLane(songData, owner, next, "Record " + lane->name));
+    for (int i = 0; i < n; i++) {
+        AutomationId lane(maps[size_t(i)].lane);
+        // A mapped knob turned by hand while its lane records follows the hand, not the lane.
+        maps[size_t(i)].paused.store(rec && recorder.laneWriting(lane), std::memory_order_relaxed);
     }
-    autoTakes.clear();
 }
 
 void TesseraModule::syncMappings() {
@@ -627,9 +682,9 @@ const AutomationEnvelope* TesseraModule::recordingKnobLane(const ParamRef& ref) 
     if (!recording() || !playing())
         return nullptr;
     for (const Track& t : songData.tracks)
-        for (const AutomationEnvelope& lane : t.automation)
-            if (lane.armed && lane.paramTarget == ref)
-                return &lane;
+        for (const AutomationEnvelope* lane : recordableLanes(t))
+            if (lane->paramTarget == ref)
+                return lane;
     return nullptr;
 }
 

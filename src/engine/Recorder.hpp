@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../model/AutomationTake.hpp"
 #include "../model/Recording.hpp"
 #include "Engine.hpp"
 
@@ -69,8 +70,19 @@ class Recorder {
         // Controls moved and not yet committed, by controlKey(), in the order they first moved: their new lanes
         // take the free AUTO channels in that order, as they did while you heard them.
         std::vector<std::pair<int, Samples>> controls;
+        // Knob and AUTO REC lanes recorded in this take: the lane read (as it was) and its pass.
+        struct LaneRecording {
+            AutomationEnvelope source;
+            AutomationTake take;
+        };
+        std::vector<LaneRecording> lanes;
     };
     const std::vector<Session>& sessions() const { return active; }
+    /// Whether a knob or AUTO REC lane is being written now (a mapped knob then follows the hand, not the lane).
+    bool laneWriting(AutomationId lane) const;
+    /// What the take in progress is writing into a lane, in that lane's ticks, for drawing it live: one list per
+    /// stretch of writing.
+    std::vector<std::vector<AutoPoint>> liveRuns(LaneOwner owner, const AutomationEnvelope& lane) const;
     /// Where a held note has got to, in its target's ticks, for drawing it live.
     static Tick openLength(const Open& open, double playTick) { return Tick(std::max(1.0, playTick - open.playStart)); }
     /// A MIDI control as a map key, and back.
@@ -106,6 +118,12 @@ class Recorder {
     void bufferNote(const RecordEvent& event);
     /// A note's pressure, timbre or pitch, or a control, moved while recording.
     void handleValue(const RecordEvent& event);
+    /// A reading of a knob or AUTO REC lane's source while recording.
+    void handleLaneValue(const RecordEvent& event);
+    /// A lane of the track, or of one of its clips, by ID.
+    const AutomationEnvelope* findLane(const Track& track, AutomationId id) const;
+    /// Overdub ticks (not yet wrapped) wrapped into the clip's loop, split where they wrap.
+    static std::vector<std::vector<AutoPoint>> wrapRuns(const Session& s, const std::vector<AutoPoint>& points);
     /// A held note finished at `playTick`, its curves made from what the key played.
     static TakeNote finish(const Open& open, int pitch, double playTick, float release);
     /// The controls moved in a session, as thinned lane points.

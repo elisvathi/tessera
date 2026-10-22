@@ -192,7 +192,7 @@ bool read(const std::vector<uint8_t>& bytes, Imported& out) {
             part.name = withNotes > 1 ? base + " (ch " + std::to_string(channel + 1) + ")" : base;
             part.notes = std::move(b.notes);
             for (const auto& [control, values] : b.controls) {
-                TakeLane lane{control, lanePoints(control, values)};
+                TakeLane lane{control, std::nullopt, lanePoints(control, values)};
                 if (!lane.points.empty())
                     part.lanes.push_back(std::move(lane));
             }

@@ -35,8 +35,12 @@ void toggleMute(EditorContext& ctx, TrackId clicked);
 void toggleSolo(EditorContext& ctx, TrackId clicked, bool additive);
 /// Arms for recording the same way as solo: exclusive, or added with `additive`.
 void toggleArm(EditorContext& ctx, TrackId clicked, bool additive);
-/// A new automation lane on the track's first free AUTO channel; shows the track's lanes.
-void addAutomationLane(EditorContext& ctx, TrackId track);
+/// A new automation lane on the track's first free AUTO channel; shows the track's lanes. Returns its ID, invalid
+/// when every channel has a lane.
+AutomationId addAutomationLane(EditorContext& ctx, TrackId track);
+/// A new lane that waits for a knob touched in the rack: it maps the knob, takes its name, and records it when the
+/// track records.
+void automateKnob(EditorContext& ctx, TrackId track);
 /// Arm, input, MIDI channel and monitoring items for a track menu.
 void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vector<TrackId>& ids);
 /// The voice counts (Auto, 1..16) for the track menu and the inspector.

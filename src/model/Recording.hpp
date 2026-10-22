@@ -1,12 +1,15 @@
 #pragma once
 
 #include "ArrangementEdits.hpp"
+#include "AutomationEdits.hpp"
 #include "Commands.hpp"
 #include "MidiReader.hpp"
 #include "NoteEdits.hpp"
 
 #include <jansson.h>
 
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -50,9 +53,11 @@ struct TakeNote {
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr;
 };
 
-/// The values one MIDI control sent during a take, in the ticks of where it lands, already thinned.
+/// What one source sent during a take, in the ticks of where it lands, already thinned: a MIDI control, or the
+/// knob or AUTO REC channel of a track lane (`source`, whose own points don't matter).
 struct TakeLane {
     MidiControl control;
+    std::optional<AutomationEnvelope> source;
     std::vector<AutoPoint> points; // sorted by t
 };
 
@@ -72,6 +77,21 @@ std::string midiControlName(MidiControl control);
 /// A new lane for a MIDI control: pitch bend on the voices' pitch (±2 semitones), pressure on PRESS, a CC on AUTO
 /// channel `output` (0..10 V; switch controls such as sustain step instead of gliding).
 AutomationEnvelope makeMidiLane(AutomationId id, MidiControl control, int output, uint32_t color);
+
+/// A timeline take's knob and AUTO REC values written into the track's own lanes (Arranger mode keeps them there,
+/// song-wide like a mix). Null when there is nothing to write.
+CommandPtr recordTrackLanes(const Song& song, TrackId track, const std::vector<TakeLane>& take);
+
+/// Whether a take records into a lane now (shown on the lane): Off when its track isn't armed or it has no source,
+/// Records, Missing when its source isn't there (`why` says what), Kept when it is marked "don't record".
+enum class LaneRecordState { Off, Records, Missing, Kept };
+/// `autoRecInputs` is how many AUTO REC channels are patched; `knobExists` says whether a mapped rack knob is there.
+LaneRecordState laneRecordState(const Song& song, LaneOwner owner, const AutomationEnvelope& lane, int autoRecInputs,
+                                const std::function<bool(const ParamTarget&)>& knobExists, std::string* why = nullptr);
+/// What a lane records from, short: "CC 1", "bend", "pressure", "knob", "AUTO REC 3", "device knob"; "" for none.
+std::string laneSourceLabel(const AutomationEnvelope& lane);
+/// Where a lane plays: "AUTO 3", "V/OCT", "PRESS", or "knob".
+std::string laneOutputLabel(const AutomationEnvelope& lane);
 
 /// The AUTO channel a CC lane of `track` should use: the one a lane for the same control has anywhere on the track,
 /// else the first channel no lane of the track uses (`pending` counts too: lanes about to be added). -1 when all

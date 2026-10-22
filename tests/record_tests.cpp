@@ -571,7 +571,7 @@ TEST_CASE("record: a lane marked don't-record keeps its points, and a CC reuses 
     recordNewClip(song, song.tracks[0].id, 1, kBar, other, [&next] { return next++; }, &b)->apply(song);
     CHECK(song.findClip(b)->automation[0].outputIndex == song.findClip(a)->automation[1].outputIndex);
 
-    song.findClip(a)->automation[0].midiIgnored = true;
+    song.findClip(a)->automation[0].noRecord = true;
     Take again;
     again.lanes.push_back(takeLane(cc(20), {{0, 0.9f}}));
     recordIntoClip(song, a, again, [&next] { return next++; })->apply(song);
@@ -598,7 +598,7 @@ TEST_CASE("record: lanes save and load their drive and MIDI control") {
     Clip clip;
     clip.id = ClipId(1);
     AutomationEnvelope lane = makeMidiLane(AutomationId(5), {MidiControl::Kind::PitchBend, 0}, 0, 0);
-    lane.midiIgnored = true;
+    lane.noRecord = true;
     clip.automation.push_back(lane);
     clip.automation.push_back(makeLane(AutomationId(6), 2, 0));
     json_t* j = clipToJson(clip);
@@ -826,4 +826,111 @@ TEST_CASE("recorder: a take of only control moves still makes a clip") {
     CHECK(c->notes.empty());
     REQUIRE(c->automation.size() == 1);
     CHECK(c->automation[0].drive == LaneDrive::Pitch);
+}
+
+namespace {
+
+/// A knob lane reading for the recorder, on the timeline (no clip playing).
+RecordEvent laneReading(const Track& t, const AutomationEnvelope& lane, double play, float value, double seconds) {
+    RecordEvent e = note(t, 60, true, play, play);
+    e.kind = RecordEvent::Kind::LaneValue;
+    e.lane = lane.id.value;
+    e.value = value;
+    e.seconds = seconds;
+    return e;
+}
+
+/// A track lane that records from AUTO REC in Write mode.
+AutomationEnvelope cvLane(Song& song, int output) {
+    AutomationEnvelope lane = makeLane(song.newId<AutomationId>(), output, 0);
+    lane.source = AutoSource::Cv;
+    lane.recordMode = AutoRecordMode::Write;
+    return lane;
+}
+
+} // namespace
+
+TEST_CASE("recorder: on the timeline, a CV lane's take goes to the track lane, with the notes in one undo step") {
+    Song song = recordSong();
+    song.tracks[0].automation.push_back(cvLane(song, 2));
+    FakeHost host(song);
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    const AutomationEnvelope& lane = t.automation[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    for (int i = 0; i <= 8; i++)
+        rec.handle(laneReading(t, lane, i * kPpq / 2.0, i / 8.f, i * 0.1));
+    rec.handle(note(t, 60, false, kPpq, kPpq));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 4 * kPpq, 4 * kPpq));
+    REQUIRE(host.steps.size() == 1);
+    const AutomationEnvelope& recorded = host.song_.tracks[0].automation[0];
+    REQUIRE(recorded.points.size() >= 2);
+    CHECK(recorded.points.front().value == doctest::Approx(0));
+    CHECK(recorded.points.back().value == doctest::Approx(1));
+    CHECK(host.song_.tracks[0].arrangement.size() == 1); // the notes' clip
+}
+
+TEST_CASE("recorder: in a launcher take, a CV lane's take goes to the clip's lane on the same output") {
+    Song song = recordSong();
+    song.tracks[0].automation.push_back(cvLane(song, 3));
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    const AutomationEnvelope& lane = t.automation[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    for (int i = 0; i <= 4; i++)
+        rec.handle(laneReading(t, lane, i * kPpq / 2.0, 0.5f, i * 0.1));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    const Clip* c = slotClip(host.song_, 0, 0);
+    REQUIRE(c);
+    REQUIRE(c->automation.size() == 1);
+    CHECK(c->automation[0].outputIndex == 3);
+    CHECK(c->automation[0].targets.empty());
+    CHECK(host.song_.tracks[0].automation[0].points.empty()); // the track lane is untouched
+}
+
+TEST_CASE("recorder: a lane marked don't-record keeps its points") {
+    Song song = recordSong();
+    AutomationEnvelope kept = cvLane(song, 0);
+    kept.noRecord = true;
+    kept.points.push_back({0, 0.25f, CurveType::Linear, 0});
+    song.tracks[0].automation.push_back(kept);
+    FakeHost host(song);
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    rec.handle(laneReading(t, t.automation[0], 0, 1, 0));
+    rec.handle(laneReading(t, t.automation[0], kPpq, 1, 0.5));
+    rec.handle(note(t, 60, false, kPpq, kPpq));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    REQUIRE(host.song_.tracks[0].automation[0].points.size() == 1);
+    CHECK(host.song_.tracks[0].automation[0].points[0].value == doctest::Approx(0.25f));
+}
+
+TEST_CASE("lane record state: the track arm decides, then the lane's source") {
+    Song song = recordSong();
+    AutomationEnvelope drawn = makeLane(song.newId<AutomationId>(), 0, 0);
+    AutomationEnvelope cv = cvLane(song, 1);
+    AutomationEnvelope wheel = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::Cc, 1}, 2, 0);
+    AutomationEnvelope kept = wheel;
+    kept.noRecord = true;
+    LaneOwner armed = LaneOwner::ofTrack(song.tracks[0].id), idle = LaneOwner::ofTrack(song.tracks[1].id);
+    auto state = [&](LaneOwner o, const AutomationEnvelope& l, int inputs) {
+        return laneRecordState(song, o, l, inputs, nullptr);
+    };
+    CHECK(state(idle, wheel, 0) == LaneRecordState::Off);
+    CHECK(state(armed, drawn, 0) == LaneRecordState::Off); // drawn by hand: no warning
+    CHECK(state(armed, wheel, 0) == LaneRecordState::Records);
+    CHECK(state(armed, kept, 0) == LaneRecordState::Kept);
+    std::string why;
+    CHECK(laneRecordState(song, armed, cv, 1, nullptr, &why) == LaneRecordState::Missing);
+    CHECK(why == "Nothing patched to AUTO REC channel 2");
+    CHECK(state(armed, cv, 2) == LaneRecordState::Records);
+    CHECK(laneSourceLabel(cv) == "AUTO REC 2");
+    CHECK(laneSourceLabel(wheel) == "CC 1");
+    CHECK(laneOutputLabel(makeMidiLane(AutomationId(1), {MidiControl::Kind::PitchBend, 0}, 0, 0)) == "V/OCT");
 }

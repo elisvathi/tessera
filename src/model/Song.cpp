@@ -191,6 +191,7 @@ void normalizeAutomation(std::vector<AutomationEnvelope>& lanes, IdRepair& ids) 
     for (AutomationEnvelope& lane : lanes) {
         ids.fix(lane.id);
         clampValue(lane.outputIndex, 0, kMaxAutomationLanes - 1);
+        clampValue(lane.recInput, -1, kMaxAutomationLanes - 1);
         clampValue(lane.slewMs, 0.f, 100.f);
         if (lane.targets.size() > 4)
             lane.targets.resize(4);

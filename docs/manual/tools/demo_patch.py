@@ -111,7 +111,7 @@ def make_song():
                 "arrangement": arrangement, "automation": list(automation)}
 
     cutoff = {"id": ids.take(), "name": "Cutoff", "color": 0, "output": 0, "range": [0.0, 10.0], "bipolar": False,
-              "mute": False, "slew": 0.0, "combine": "override", "armed": False, "source": "knob",
+              "mute": False, "slew": 0.0, "combine": "override", "source": "knob", "midi": ["cc", 74],
               "recordMode": "touch", "targets": [],
               "points": [[0, 0.15, 1, 0.0], [4 * BAR, 0.35, 1, 0.0], [12 * BAR, 0.45, 3, 0.0],
                          [13 * BAR, 0.85, 1, 0.0], [20 * BAR, 0.6, 1, 0.0]]}

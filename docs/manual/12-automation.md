@@ -24,8 +24,18 @@ A track and a clip can each have up to 8 lanes.
 
 ![A track automation lane called Cutoff, under the Chords track](images/automation-lane.png)
 
-The lane header shows the lane's name, its AUTO channel, its value right now in volts, any knobs it turns, the
-record arm (●) and mute (M). Drag the lane's bottom edge to make it taller.
+The lane header shows the lane's name, where it plays (its AUTO channel, or **V/OCT** or **PRESS** for pitch bend and
+pressure lanes), its value right now in volts, what it records from, any knobs it turns, and mute (M). Drag the
+lane's bottom edge to make it taller.
+
+While its track is armed, a mark beside the lane says what the next take does to it:
+
+| Mark | Meaning |
+|---|---|
+| Red dot | It records. |
+| Amber **!** | It has a source that isn't there (the header says what, e.g. nothing patched to its AUTO REC channel). |
+| Crossed circle | You chose **Don't record this lane**: takes leave it as it is. |
+| Nothing | It has nothing to record from (a lane you draw), or the track isn't armed. |
 
 ## Drawing and editing points
 
@@ -64,17 +74,20 @@ Right-click the lane header.
 | **Bipolar** | The lane rests in the middle instead of at the bottom. |
 | **Slew** | Smooths jumps, from Off to 100 ms. |
 | **Mute** | The lane stops sending. |
-| **Armed**, **Record from**, **Record mode** | See [Recording automation](#recording-automation). |
+| **Records from**, **Learn**, **AUTO REC channel**, **Record mode**, **Don't record this lane** | See [Recording automation](#recording-automation). |
 | **Thin**, **Quantize times to the beat**, **Invert**, **Reverse**, **Randomize (±10%)**, **Clear** | Act on the selected points, or all of them. |
 | **Stamp a shape** | Pick a shape: Sine, Triangle, Saw up, Saw down, Square, Random steps, Smooth random, Exp rise or Exp fall. Then drag across the lane: one cycle per grid step, and dragging up or down sets the depth. |
-| **Map a knob: touch it in the rack** | See below. |
+| **Map another knob: touch it in the rack** | See below. |
 | **Delete lane** | Removes the lane. |
 
 ## Turning knobs without cables
 
-A track lane can turn up to four knobs anywhere in the rack:
+A track lane can turn up to four knobs anywhere in the rack. The quickest way: in the track menu, choose **Automate a
+knob: touch it in the rack**. It makes a lane, and the knob you touch is mapped to it, names it, and is what it
+records. To map a knob to a lane you already have:
 
-1. In the lane menu, choose **Map a knob: touch it in the rack**.
+1. In the lane menu, choose **Learn: move a MIDI control or touch a knob** (or **Map another knob** for a second
+   one).
 2. The editor shrinks to a banner. Click the banner to cancel.
 3. Turn or click the knob you want, for example a filter's cutoff. The editor comes back.
 4. The lane header now names the knob ("→ VCF · Cutoff"). The knob shows a small mark in the track's colour.
@@ -102,7 +115,8 @@ When a clip lane and a track lane use the same AUTO channel, the lane menu decid
 
 - Track lanes follow the song position in both Plays modes. While the timeline plays, a track taken over by a
   launched clip pauses its track lanes until **Back to timeline**.
-- A channel with nothing playing holds its last value.
+- A channel with nothing playing holds its last value. Pitch bend and pressure lanes go back to 0 instead, so a track
+  never stays bent.
 - Muted lanes are left out.
 
 ## Moving clips takes their automation along
@@ -113,16 +127,35 @@ change clips and automation together.
 
 ## Recording automation
 
-1. Arm the lane: click its **●** (or **Armed** in the lane menu).
-2. Choose **Record from**: the lane's **first mapped knob**, or the **AUTO** input on the Tessera panel (poly:
-   channel N records lanes on AUTO channel N).
-3. Choose a **Record mode**:
-   - **Touch**: records while the knob or input moves, and lets go half a second after it stops.
-   - **Latch**: records from the first move until recording stops.
-   - **Write**: records all the time.
-4. Record as usual (● or R). Move the knob.
+There is one switch: **arm the track**. When it records, every lane that has something to record from records too,
+into the same take as the notes, as one undo step.
 
-Each pass is drawn in red while it records. When recording stops (or the loop wraps), it is thinned to a few points
-and kept as one undo step. While you record a mapped knob, its playback pauses so your hand wins.
+What a lane records from (lane menu, **Records from**):
+
+- **A MIDI control**: pitch bend, channel aftertouch or a CC. Moving a control while recording makes its lane for you
+  (see [Recording](11-recording.md#expression-and-controls)); **Learn** links a lane you already have.
+- **The mapped knob**: the lane's first mapped knob, turned by hand.
+- **AUTO REC input**: a channel of the **AUTO** input on the Tessera panel. **AUTO REC channel** picks which one
+  (at first, the lane's own AUTO channel), so one mono cable is enough.
+
+**Learn: move a MIDI control or touch a knob** waits for the first thing you move and makes it the source.
+
+For knobs and AUTO REC, a **Record mode**:
+
+- **Touch** (knobs start here): records while the knob or input moves, and lets go half a second after it stops.
+- **Latch**: records from the first move until recording stops.
+- **Write** (AUTO REC starts here, since a steady CV doesn't move): records all the time.
+
+Where it goes:
+
+- **A launcher take** (into a clip in the clips panel): into the clip's lane on the same AUTO channel, made for you if
+  the clip has none. The knob mapping stays on the track lane.
+- **A timeline take**: knob and AUTO REC moves go to the track lane, song-wide like a mix. MIDI controls go into the
+  new timeline clip with the notes.
+
+To protect a lane, choose **Don't record this lane (keep what's there)** in its menu.
+
+Each pass is drawn in red while it records. When recording stops (or the loop wraps), it is thinned to a few points.
+While you record a mapped knob, its playback pauses so your hand wins.
 
 Device knobs inside Tessera can be automated too. See [Devices](13-devices.md#automating-a-device-knob).

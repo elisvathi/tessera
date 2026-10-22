@@ -37,7 +37,8 @@ struct ParamTarget {
 /// How clip automation combines with track automation on the same output.
 enum class CombineMode : uint8_t { Override, Modulate };
 
-/// What an armed lane records from: its first mapped knob, or its channel of Tessera's AUTO REC input.
+/// What a lane records from when no MIDI control is linked: its first mapped knob, or a channel of Tessera's AUTO
+/// REC input.
 enum class AutoSource : uint8_t { Knob, Cv };
 /// Touch: writes while the source moves, then the old curve comes back. Latch: from the first move until
 /// recording stops. Write: the whole time.
@@ -69,7 +70,6 @@ struct AutomationEnvelope {
     bool mute = false;
     float slewMs = 0; // 0..100
     CombineMode combine = CombineMode::Override;
-    bool armed = false; // records while the transport records
     AutoSource source = AutoSource::Knob;
     AutoRecordMode recordMode = AutoRecordMode::Touch;
     std::vector<ParamTarget> targets; // up to 4
@@ -78,15 +78,16 @@ struct AutomationEnvelope {
     /// channel. A target that no longer exists leaves the lane in place, showing "target missing".
     ParamRef paramTarget;
     LaneDrive drive = LaneDrive::Auto;
-    MidiControl midi;         // the control a take records into this lane
-    bool midiIgnored = false; // "Don't record this control": takes leave the lane as it is
+    MidiControl midi;      // the MIDI control a take records into this lane; set, it is the lane's source
+    int recInput = -1;     // the AUTO REC channel a CV lane records, 0..7; -1 = its own AUTO channel
+    bool noRecord = false; // "Don't record this lane": takes leave it as it is
 
     bool operator==(const AutomationEnvelope& o) const {
         return id == o.id && name == o.name && color == o.color && outputIndex == o.outputIndex &&
                rangeMin == o.rangeMin && rangeMax == o.rangeMax && bipolar == o.bipolar && mute == o.mute &&
-               slewMs == o.slewMs && combine == o.combine && armed == o.armed && source == o.source &&
+               slewMs == o.slewMs && combine == o.combine && source == o.source && recInput == o.recInput &&
                recordMode == o.recordMode && targets == o.targets && points == o.points &&
-               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && midiIgnored == o.midiIgnored;
+               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && noRecord == o.noRecord;
     }
 };
 

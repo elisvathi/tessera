@@ -1124,3 +1124,20 @@ Plan: `docs/design/EXPRESSION_INPUT.md`. Replaces the per-lane arm and the knob/
 - **Rest values:** bend, pressure and sustain return to 0 when no clip lane plays them.
 - **Sustain is only a lane;** it does not lengthen notes.
 - The note pitch curve grows to ±48 semitones (MPE's default). MPE notes record on channel 1.
+
+## 74. Lanes show whether they record; the track arm is the switch (22 Oct)
+
+Builds on §73. Mockup agreed 22 Oct.
+
+- **The lane arm button is gone.** In its place a mark: red dot (records), amber "!" (its source is missing, with the
+  reason on the header's second line), crossed circle ("Don't record this lane"), nothing (no source, or the track
+  isn't armed). A lane you only draw has no source and shows nothing, so arming never fills headers with warnings.
+- **Lane menu, "Recording":** Records from (a MIDI control / the mapped knob / AUTO REC input), Learn (the first MIDI
+  control moved or knob touched), AUTO REC channel (free, default the lane's own), Record mode (knob and CV; choosing
+  AUTO REC switches to Write), Don't record this lane. Clip lanes: a MIDI link and Don't record; knobs and AUTO REC
+  are set on the track lane of the same output.
+- **Where knob and CV takes land:** a launcher take writes the clip's lane on the same output (made from the track
+  lane, without its knob mappings); a timeline take writes the track lane. All in the take's one undo step
+  (`Recorder`, `RecordEvent::Kind::LaneValue`).
+- **Starting from a knob:** the track menu's "Automate a knob: touch it in the rack" makes the lane, maps the knob and
+  names the lane after it. Rack has no supported way to add items to other modules' knob menus, so not there.

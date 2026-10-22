@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace tessera {
 
@@ -28,6 +29,21 @@ TakeNote Recorder::finish(const Open& o, int pitch, double playTick, float relea
 
 std::vector<TakeLane> Recorder::takeLanes(const Session& s) {
     std::vector<TakeLane> out;
+    for (const Session::LaneRecording& r : s.lanes) {
+        for (const autoEdits::Points& run : r.take.written()) {
+            std::vector<double> x;
+            std::vector<float> y;
+            for (const AutoPoint& p : run) {
+                x.push_back(double(p.t));
+                y.push_back(p.value);
+            }
+            TakeLane lane;
+            lane.source = r.source;
+            for (size_t i : thinValues(x, y, AutomationTake::kThinTolerance, run.size()))
+                lane.points.push_back(run[i]);
+            out.push_back(std::move(lane));
+        }
+    }
     for (const auto& [key, samples] : s.controls) {
         TakeLane lane;
         lane.control = controlOfKey(key);
@@ -128,6 +144,8 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
     take.lanes = takeLanes(s);
     s.done.clear();
     s.controls.clear();
+    for (Session::LaneRecording& r : s.lanes)
+        r.take = AutomationTake(r.source.recordMode);
     if (take.empty())
         return; // nothing finished: no empty clips or steps
     const Song& song = host.song();
@@ -168,23 +186,41 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
         return;
     }
     case Target::Arranger: {
-        double first = s.passFrom, last = endSong;
-        for (const TakeNote& n : take.notes) {
-            first = std::min(first, double(n.start));
-            last = std::max(last, double(n.start + 1));
-        }
+        // Knob and AUTO REC moves on the timeline stay on the track's lanes: song-wide, like a mix.
+        std::vector<TakeLane> trackLanes;
+        const Track* track = song.findTrack(s.track);
+        auto onTrack = [&](const TakeLane& l) {
+            return l.source && track &&
+                   std::any_of(track->automation.begin(), track->automation.end(),
+                               [&](const AutomationEnvelope& a) { return a.id == l.source->id; });
+        };
         for (const TakeLane& l : take.lanes)
-            for (const AutoPoint& p : l.points) {
-                first = std::min(first, double(p.t));
-                last = std::max(last, double(p.t + 1));
+            if (onTrack(l))
+                trackLanes.push_back(l);
+        take.lanes.erase(std::remove_if(take.lanes.begin(), take.lanes.end(), onTrack), take.lanes.end());
+        auto out = std::make_unique<CompoundCommand>(take.notes.empty() ? "Record"
+                                                                        : "Record " + countNotes(take.notes.size()));
+        if (!take.empty()) {
+            double first = s.passFrom, last = endSong;
+            for (const TakeNote& n : take.notes) {
+                first = std::min(first, double(n.start));
+                last = std::max(last, double(n.start + 1));
             }
-        Tick from = std::max<Tick>(0, floorTo(first, bar));
-        Tick to = std::max(from + bar, ceilTo(last, bar));
-        CommandPtr command = recordToArrangement(song, s.track, from, to, take, settings.arranger, nextId, &clip, &ids);
-        if (!command)
+            for (const TakeLane& l : take.lanes)
+                for (const AutoPoint& p : l.points) {
+                    first = std::min(first, double(p.t));
+                    last = std::max(last, double(p.t + 1));
+                }
+            Tick from = std::max<Tick>(0, floorTo(first, bar));
+            Tick to = std::max(from + bar, ceilTo(last, bar));
+            out->add(recordToArrangement(song, s.track, from, to, take, settings.arranger, nextId, &clip, &ids));
+        }
+        out->add(recordTrackLanes(song, s.track, trackLanes));
+        if (out->empty())
             return;
-        host.perform(std::move(command));
-        quantize(clip, ids);
+        host.perform(std::move(out));
+        if (clip.valid())
+            quantize(clip, ids);
         return;
     }
     }
@@ -219,6 +255,9 @@ void Recorder::handle(const RecordEvent& e) {
     case RecordEvent::Kind::NoteValue:
     case RecordEvent::Kind::ChannelValue:
         handleValue(e);
+        return;
+    case RecordEvent::Kind::LaneValue:
+        handleLaneValue(e);
         return;
     case RecordEvent::Kind::Note:
         break;
@@ -270,6 +309,87 @@ void Recorder::handleValue(const RecordEvent& e) {
     if (it == s->controls.end())
         it = s->controls.insert(s->controls.end(), {key, Samples{}});
     it->second.push_back({double(targetTick(*s, e)), e.value});
+}
+
+const AutomationEnvelope* Recorder::findLane(const Track& track, AutomationId id) const {
+    for (const AutomationEnvelope& l : track.automation)
+        if (l.id == id)
+            return &l;
+    for (const ClipSlot& slot : track.slots)
+        if (slot.clip)
+            if (const Clip* c = host.song().findClip(*slot.clip))
+                for (const AutomationEnvelope& l : c->automation)
+                    if (l.id == id)
+                        return &l;
+    return nullptr;
+}
+
+void Recorder::handleLaneValue(const RecordEvent& e) {
+    if (!punched || e.track == 0)
+        return;
+    const Track* track = host.song().findTrack(TrackId(e.track));
+    const AutomationEnvelope* source = track ? findLane(*track, AutomationId(e.lane)) : nullptr;
+    if (!source)
+        return;
+    Session* s = find(TrackId(e.track));
+    if (!s && !(s = start(e)))
+        return;
+    auto it = std::find_if(s->lanes.begin(), s->lanes.end(),
+                           [&](const Session::LaneRecording& r) { return r.source.id == source->id; });
+    if (it == s->lanes.end())
+        it = s->lanes.insert(s->lanes.end(), {*source, AutomationTake(source->recordMode)});
+    it->take.sample(targetTick(*s, e), e.value, e.seconds);
+}
+
+bool Recorder::laneWriting(AutomationId lane) const {
+    for (const Session& s : active)
+        for (const Session::LaneRecording& r : s.lanes)
+            if (r.source.id == lane && r.take.writing())
+                return true;
+    return false;
+}
+
+std::vector<std::vector<AutoPoint>> Recorder::wrapRuns(const Session& s, const std::vector<AutoPoint>& points) {
+    std::vector<std::vector<AutoPoint>> out(1);
+    Tick last = std::numeric_limits<Tick>::min();
+    Tick start = Tick(s.passFrom);
+    for (AutoPoint p : points) {
+        if (s.loopLength > 0)
+            p.t = start + ((p.t - start) % s.loopLength + s.loopLength) % s.loopLength;
+        if (p.t < last)
+            out.emplace_back();
+        out.back().push_back(p);
+        last = p.t;
+    }
+    return out;
+}
+
+std::vector<std::vector<AutoPoint>> Recorder::liveRuns(LaneOwner owner, const AutomationEnvelope& lane) const {
+    std::vector<std::vector<AutoPoint>> out;
+    for (const Session& s : active) {
+        if (s.target == Target::Arranger && owner.track == s.track) {
+            for (const Session::LaneRecording& r : s.lanes)
+                if (r.source.id == lane.id)
+                    for (const autoEdits::Points& run : r.take.written())
+                        out.push_back(run);
+        } else if (s.target == Target::Overdub && owner.clip == s.clip) {
+            for (const Session::LaneRecording& r : s.lanes)
+                if (!lane.midi.valid() && sameTarget(r.source, lane))
+                    for (const autoEdits::Points& run : r.take.written())
+                        for (auto& wrapped : wrapRuns(s, run))
+                            out.push_back(std::move(wrapped));
+            if (lane.midi.valid())
+                for (const auto& [key, samples] : s.controls)
+                    if (key == controlKey(lane.midi)) {
+                        std::vector<AutoPoint> run;
+                        for (const auto& [t, v] : samples)
+                            run.push_back({Tick(std::llround(t)), v, CurveType::Linear, 0});
+                        for (auto& wrapped : wrapRuns(s, run))
+                            out.push_back(std::move(wrapped));
+                    }
+        }
+    }
+    return out;
 }
 
 void Recorder::update(double playTick) {

@@ -101,6 +101,7 @@ struct RecordEvent {
         LoopWrap,     // the song loop wrapped while recording
         NoteValue,    // a held note's pressure, timbre or pitch moved (curve, value), for one armed track
         ChannelValue, // a control the channel shares moved (control, value 0..1), for one armed track
+        LaneValue,    // a reading of a knob or AUTO REC lane's source (lane, value 0..1), from the UI thread
     };
     Kind kind = Kind::Note;
     uint64_t track = 0; // TrackId value; 0 = not routed to a track
@@ -119,6 +120,8 @@ struct RecordEvent {
     NoteCurve curve = NoteCurve::Pressure; // NoteValue
     MidiControl control;                   // ChannelValue
     float value = 0;                       // NoteValue: semitones for Pitch, else 0..1; ChannelValue: 0..1
+    uint64_t lane = 0;                     // LaneValue: the AutomationId value of the lane it was read for
+    double seconds = 0;                    // LaneValue: wall-clock time, for Touch mode's release
 };
 using RecordQueue = SpscQueue<RecordEvent, 4096>;
 

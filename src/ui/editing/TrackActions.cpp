@@ -192,17 +192,29 @@ void toggleArm(EditorContext& ctx, TrackId clicked, bool additive) {
     m->perform(exclusiveToggle(m->song(), targets(ctx, clicked), additive, &Track::armed, "Arm", "Disarm"));
 }
 
-void addAutomationLane(EditorContext& ctx, TrackId track) {
+AutomationId addAutomationLane(EditorContext& ctx, TrackId track) {
     TesseraModule* m = ctx.module();
     const Track* t = m ? m->song().findTrack(track) : nullptr;
     if (!t)
-        return;
+        return AutomationId();
     int output = freeOutput(t->automation);
     if (output < 0)
-        return; // all 8 AUTO channels have a lane
+        return AutomationId(); // all 8 AUTO channels have a lane
     AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
     m->perform(addLane(m->song(), LaneOwner::ofTrack(track), lane));
     ctx.view().openAutomation.insert(track.value);
+    return lane.id;
+}
+
+void automateKnob(EditorContext& ctx, TrackId track) {
+    AutomationId lane = addAutomationLane(ctx, track);
+    TesseraModule* m = ctx.module();
+    if (!m || !lane.valid()) {
+        ctx.toast("All 8 AUTO channels have a lane");
+        return;
+    }
+    m->startLearn(track, lane);
+    ctx.toast("Touch a knob in the rack: the new lane turns it and records it");
 }
 
 namespace {
@@ -292,23 +304,17 @@ void appendInputItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId id) {
                               : track->listenTrack == from && track->listen == ListenSource::TrackBefore
                                   ? "before devices"
                                   : "";
-        auto* item = rack::createSubmenuItem(other.name, loops ? "listens to this one" : current,
-                                             [c, id, from, is](rack::ui::Menu* sub) {
-                                                 sub->addChild(rack::createCheckMenuItem(
-                                                     "After its devices: what it plays", "",
-                                                     [is, from] { return is(ListenSource::TrackAfter, from, std::nullopt); },
-                                                     [c, id, from] {
-                                                         setListen(*c, id, ListenSource::TrackAfter, from, std::nullopt);
-                                                     }));
-                                                 sub->addChild(rack::createCheckMenuItem(
-                                                     "Before its devices: its clips as written", "",
-                                                     [is, from] {
-                                                         return is(ListenSource::TrackBefore, from, std::nullopt);
-                                                     },
-                                                     [c, id, from] {
-                                                         setListen(*c, id, ListenSource::TrackBefore, from, std::nullopt);
-                                                     }));
-                                             });
+        auto* item = rack::createSubmenuItem(
+            other.name, loops ? "listens to this one" : current, [c, id, from, is](rack::ui::Menu* sub) {
+                sub->addChild(rack::createCheckMenuItem(
+                    "After its devices: what it plays", "",
+                    [is, from] { return is(ListenSource::TrackAfter, from, std::nullopt); },
+                    [c, id, from] { setListen(*c, id, ListenSource::TrackAfter, from, std::nullopt); }));
+                sub->addChild(rack::createCheckMenuItem(
+                    "Before its devices: its clips as written", "",
+                    [is, from] { return is(ListenSource::TrackBefore, from, std::nullopt); },
+                    [c, id, from] { setListen(*c, id, ListenSource::TrackBefore, from, std::nullopt); }));
+            });
         item->disabled = loops;
         menu->addChild(item);
     }
@@ -320,9 +326,9 @@ void appendVoicesItems(rack::ui::Menu* menu, EditorContext& ctx, const std::vect
         const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
         return t && t->polyphony == voices;
     };
-    menu->addChild(rack::createCheckMenuItem("Auto", "", [has] { return has(kAutoVoices); }, [c, ids] {
-        setField(*c, ids, &Track::polyphony, kAutoVoices, "Set voices to auto");
-    }));
+    menu->addChild(rack::createCheckMenuItem(
+        "Auto", "", [has] { return has(kAutoVoices); },
+        [c, ids] { setField(*c, ids, &Track::polyphony, kAutoVoices, "Set voices to auto"); }));
     menu->addChild(new rack::ui::MenuSeparator);
     for (int v = 1; v <= kMaxVoices; v++)
         menu->addChild(rack::createCheckMenuItem(
@@ -444,9 +450,11 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
                 open.insert(first.value);
         }));
     menu->addChild(rack::createMenuItem("Add automation lane", "", [c, first] { addAutomationLane(*c, first); }));
-    menu->addChild(rack::createSubmenuItem("Input", inputLabel(song, *track), [c, first = ids.front()](rack::ui::Menu* sub) {
-        appendInputItems(sub, *c, first);
-    }));
+    menu->addChild(
+        rack::createMenuItem("Automate a knob: touch it in the rack", "", [c, first] { automateKnob(*c, first); }));
+    menu->addChild(
+        rack::createSubmenuItem("Input", inputLabel(song, *track),
+                                [c, first = ids.front()](rack::ui::Menu* sub) { appendInputItems(sub, *c, first); }));
     appendRecordMenu(menu, ctx, ids);
 
     menu->addChild(new rack::ui::MenuSeparator);

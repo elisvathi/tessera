@@ -120,31 +120,154 @@ void writePoints(AutomationEnvelope& lane, const std::vector<AutoPoint>& points,
                      [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
 }
 
-/// The take's lanes written into `lanes` (a clip's): into the lane that already records the control, or a new one.
-/// A lane marked "don't record" keeps its points; a CC with no AUTO channel left is dropped.
+/// A clip lane made for a track lane's take: the same output, range and name, but no points, knobs or MIDI link
+/// (the knobs stay mapped on the track lane).
+AutomationEnvelope clipLaneFor(const AutomationEnvelope& source, AutomationId id) {
+    AutomationEnvelope lane = source;
+    lane.id = id;
+    lane.points.clear();
+    lane.targets.clear();
+    lane.midi = MidiControl();
+    lane.noRecord = false;
+    return lane;
+}
+
+/// The take's lanes written into `lanes` (a clip's): into the lane that already records the control or plays the
+/// source's target, or a new one. A lane marked "don't record" keeps its points; a CC with no AUTO channel left is
+/// dropped.
 void mergeTakeLanes(const Song& song, const Track& track, std::vector<AutomationEnvelope>& lanes,
                     const std::vector<TakeLane>& take, Tick loopStart, Tick loopLength, const NextId& nextId) {
     for (const TakeLane& tl : take) {
-        if (!tl.control.valid() || tl.points.empty())
+        if ((!tl.control.valid() && !tl.source) || tl.points.empty())
             continue;
-        auto it =
-            std::find_if(lanes.begin(), lanes.end(), [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
-        if (it == lanes.end()) {
-            int output = 0;
-            if (tl.control.kind == MidiControl::Kind::Cc) {
-                output = midiLaneOutput(song, track, tl.control, lanes);
-                if (output < 0)
-                    continue;
+        std::vector<AutomationEnvelope>::iterator it;
+        if (tl.source) {
+            it = std::find_if(lanes.begin(), lanes.end(), [&](const AutomationEnvelope& l) {
+                return !l.midi.valid() && sameTarget(l, *tl.source);
+            });
+            if (it == lanes.end()) {
+                lanes.push_back(clipLaneFor(*tl.source, AutomationId(nextId())));
+                it = lanes.end() - 1;
             }
-            lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, output, track.color));
-            it = lanes.end() - 1;
+        } else {
+            it = std::find_if(lanes.begin(), lanes.end(),
+                              [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
+            if (it == lanes.end()) {
+                int output = 0;
+                if (tl.control.kind == MidiControl::Kind::Cc) {
+                    output = midiLaneOutput(song, track, tl.control, lanes);
+                    if (output < 0)
+                        continue;
+                }
+                lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, output, track.color));
+                it = lanes.end() - 1;
+            }
         }
-        if (!it->midiIgnored)
+        if (!it->noRecord)
             writePoints(*it, tl.points, loopStart, loopLength);
     }
 }
 
 } // namespace
+
+CommandPtr recordTrackLanes(const Song& song, TrackId trackId, const std::vector<TakeLane>& take) {
+    const Track* track = song.findTrack(trackId);
+    if (!track)
+        return nullptr;
+    auto out = std::make_unique<CompoundCommand>("Record");
+    LaneOwner owner = LaneOwner::ofTrack(trackId);
+    for (const TakeLane& tl : take) {
+        if (!tl.source || tl.points.empty())
+            continue;
+        for (size_t i = 0; i < track->automation.size(); i++) {
+            const AutomationEnvelope& lane = track->automation[i];
+            if (lane.id != tl.source->id || lane.noRecord)
+                continue;
+            AutomationEnvelope next = lane;
+            writePoints(next, tl.points, 0, 0);
+            out->add(std::make_unique<EditLane>("Record " + lane.name, owner, int(i), lane, next));
+        }
+    }
+    if (out->empty())
+        return nullptr;
+    return out;
+}
+
+namespace {
+
+/// Whether a track lane has a knob or AUTO REC source (MIDI lanes and device knob lanes aside).
+bool hasRackSource(const AutomationEnvelope& l) { return l.source == AutoSource::Cv || !l.targets.empty(); }
+
+} // namespace
+
+LaneRecordState laneRecordState(const Song& song, LaneOwner owner, const AutomationEnvelope& lane, int autoRecInputs,
+                                const std::function<bool(const ParamTarget&)>& knobExists, std::string* why) {
+    const Track* track = owner.track.valid() ? song.findTrack(owner.track) : trackOf(song, owner.clip);
+    if (!track || !track->armed)
+        return LaneRecordState::Off;
+    if (lane.noRecord)
+        return LaneRecordState::Kept;
+    if (lane.midi.valid() || lane.paramTarget.valid())
+        return LaneRecordState::Records;
+    // A clip lane records what its track's lane on the same output reads.
+    const AutomationEnvelope* source = &lane;
+    if (owner.clip.valid()) {
+        source = nullptr;
+        for (const AutomationEnvelope& l : track->automation)
+            if (!l.noRecord && !l.midi.valid() && hasRackSource(l) && sameTarget(l, lane))
+                source = &l;
+        if (!source)
+            return LaneRecordState::Off;
+    }
+    if (source->source == AutoSource::Cv) {
+        int channel = source->recInput >= 0 ? source->recInput : source->outputIndex;
+        if (channel < autoRecInputs)
+            return LaneRecordState::Records;
+        if (why)
+            *why = "Nothing patched to AUTO REC channel " + std::to_string(channel + 1);
+        return LaneRecordState::Missing;
+    }
+    if (source->targets.empty())
+        return LaneRecordState::Off; // a lane you draw: nothing to record from
+    if (knobExists && !knobExists(source->targets.front())) {
+        if (why)
+            *why = "Its knob's module is gone";
+        return LaneRecordState::Missing;
+    }
+    return LaneRecordState::Records;
+}
+
+std::string laneSourceLabel(const AutomationEnvelope& lane) {
+    switch (lane.midi.kind) {
+    case MidiControl::Kind::PitchBend:
+        return "bend";
+    case MidiControl::Kind::Pressure:
+        return "pressure";
+    case MidiControl::Kind::Cc:
+        return "CC " + std::to_string(lane.midi.cc);
+    case MidiControl::Kind::None:
+        break;
+    }
+    if (lane.paramTarget.valid())
+        return "device knob";
+    if (lane.source == AutoSource::Cv)
+        return "AUTO REC " + std::to_string((lane.recInput >= 0 ? lane.recInput : lane.outputIndex) + 1);
+    return lane.targets.empty() ? "" : "knob";
+}
+
+std::string laneOutputLabel(const AutomationEnvelope& lane) {
+    if (lane.paramTarget.valid())
+        return "knob";
+    switch (lane.drive) {
+    case LaneDrive::Pitch:
+        return "V/OCT";
+    case LaneDrive::Pressure:
+        return "PRESS";
+    case LaneDrive::Auto:
+    default:
+        return "AUTO " + std::to_string(lane.outputIndex + 1);
+    }
+}
 
 std::string midiControlName(MidiControl control) {
     switch (control.kind) {

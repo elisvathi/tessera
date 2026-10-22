@@ -242,7 +242,10 @@ class RandomSong {
         a.mute = coin();
         a.slewMs = unit() * 100;
         a.combine = coin() ? CombineMode::Override : CombineMode::Modulate;
-        a.armed = coin();
+        a.noRecord = coin();
+        a.recInput = int(range(-1, 7));
+        a.midi = {MidiControl::Kind(range(0, 3)), uint8_t(range(0, 127))};
+        a.drive = LaneDrive(range(0, 2));
         a.source = coin() ? AutoSource::Knob : AutoSource::Cv;
         a.recordMode = AutoRecordMode(range(0, 2));
         a.targets.push_back({int64_t(range(1, 1000)), int(range(0, 20)), unit() * 0.5f, 0.5f + unit() * 0.5f});

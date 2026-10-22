@@ -304,7 +304,7 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
     if (row.kind == TrackRow::Kind::Lane) {
         hit.part = pos.y >= top + h - kEdgeZone     ? Part::Edge
                    : soloRect(top, h).contains(pos) ? Part::LaneMute
-                   : muteRect(top, h).contains(pos) ? Part::LaneArm
+                   : muteRect(top, h).contains(pos) ? Part::LaneState
                                                     : Part::Body;
         return hit;
     }
@@ -430,19 +430,12 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
         LaneOwner laneOwner = LaneOwner::ofTrack(row.track);
         if (button == GLFW_MOUSE_BUTTON_RIGHT) {
             AutomationEditor::appendLaneMenu(rack::createMenu(), ctx, laneOwner, row.lane);
-        } else if (button == GLFW_MOUSE_BUTTON_LEFT && (hit.part == Part::LaneMute || hit.part == Part::LaneArm)) {
+        } else if (button == GLFW_MOUSE_BUTTON_LEFT && hit.part == Part::LaneMute) {
             TesseraModule* m = ctx.module();
             if (const AutomationEnvelope* l = findLane(m->song(), laneOwner, row.lane)) {
                 AutomationEnvelope next = *l;
-                std::string name;
-                if (hit.part == Part::LaneMute) {
-                    next.mute = !next.mute;
-                    name = next.mute ? "Mute lane" : "Unmute lane";
-                } else {
-                    next.armed = !next.armed;
-                    name = next.armed ? "Arm lane" : "Disarm lane";
-                }
-                m->perform(replaceLane(m->song(), laneOwner, next, name));
+                next.mute = !next.mute;
+                m->perform(replaceLane(m->song(), laneOwner, next, next.mute ? "Mute lane" : "Unmute lane"));
             }
         }
         return;
@@ -698,6 +691,35 @@ void TrackHeaders::drawGroupRow(NVGcontext* vg, int index, float top, float h) {
     nvgFill(vg);
 }
 
+void drawLaneRecordMark(NVGcontext* vg, rack::math::Vec at, LaneRecordState state) {
+    const theme::Palette& c = theme::colors();
+    switch (state) {
+    case LaneRecordState::Records:
+        nvgBeginPath(vg);
+        nvgCircle(vg, at.x, at.y, 3.5f);
+        nvgFillColor(vg, c.record);
+        nvgFill(vg);
+        return;
+    case LaneRecordState::Missing: {
+        draw::TextStyle bang{theme::fonts::uiStrong(), theme::metrics::kTextUi, c.queue,
+                             NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::text(vg, bang, at.x, at.y, "!");
+        return;
+    }
+    case LaneRecordState::Kept:
+        nvgBeginPath(vg);
+        nvgCircle(vg, at.x, at.y, 3.5f);
+        nvgMoveTo(vg, at.x - 2.5f, at.y + 2.5f);
+        nvgLineTo(vg, at.x + 2.5f, at.y - 2.5f);
+        nvgStrokeColor(vg, c.text2);
+        nvgStrokeWidth(vg, 1);
+        nvgStroke(vg);
+        return;
+    case LaneRecordState::Off:
+        return;
+    }
+}
+
 void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
     const theme::Palette& c = theme::colors();
     TesseraModule* m = ctx.module();
@@ -721,12 +743,13 @@ void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
     float y = lineY(top, h);
     Rect mute = soloRect(top, h);
     drawSmallButton(vg, mute, "M", lane->mute, hovered && hover.part == Part::LaneMute, c.queue);
+    // Whether the lane records: the track arm is the switch, this only says what will happen.
     Rect arm = muteRect(top, h);
-    drawSmallButton(vg, arm, "", lane->armed, hovered && hover.part == Part::LaneArm, c.record);
-    nvgBeginPath(vg);
-    nvgCircle(vg, arm.getCenter().x, arm.getCenter().y, 3.5f);
-    nvgFillColor(vg, lane->armed ? c.ink : c.record);
-    nvgFill(vg);
+    std::string missing;
+    LaneRecordState state = laneRecordState(
+        m->song(), LaneOwner::ofTrack(row.track), *lane, m->autoRecInputs(),
+        [](const ParamTarget& t) { return APP->engine->getModule(t.moduleId) != nullptr; }, &missing);
+    drawLaneRecordMark(vg, arm.getCenter(), state);
     draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextUi, lane->mute ? c.text2 : c.text1,
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     float x = indent + 8;
@@ -747,9 +770,17 @@ void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
             }
         } else {
             char volts[48];
-            snprintf(volts, sizeof(volts), "AUTO %d  ·  %.2f V", lane->outputIndex + 1,
-                     double(toVolts(*lane, evaluate(*lane, now))));
-            text = volts;
+            snprintf(volts, sizeof(volts), "  ·  %.2f V", double(toVolts(*lane, evaluate(*lane, now))));
+            text = laneOutputLabel(*lane) + volts;
+            std::string source = laneSourceLabel(*lane);
+            if (!source.empty())
+                text += "  ·  " + source;
+        }
+        if (state == LaneRecordState::Kept)
+            text += "  ·  kept";
+        if (state == LaneRecordState::Missing) {
+            text = missing;
+            detail.color = c.queue;
         }
         draw::text(vg, detail, x, top + kRowTopPad + kButtonH + 12,
                    draw::ellipsize(vg, detail, text, box.size.x - x - 6));
@@ -758,7 +789,7 @@ void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
         // What it is mapped to, or that it is waiting for a knob.
         std::string mapped;
         if (m->learningLane() == lane->id)
-            mapped = "Touch a knob in the rack…";
+            mapped = "Move a MIDI control or touch a knob…";
         else if (!lane->targets.empty())
             mapped = "→ " + TesseraModule::targetName(lane->targets.front()) +
                      (lane->targets.size() > 1 ? "  +" + std::to_string(lane->targets.size() - 1) : "");

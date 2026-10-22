@@ -27,6 +27,9 @@ In the track menu (or the inspector's **Recording** chip):
 - **Monitor while armed** (on by default): an armed track plays what comes in through its own outputs and devices, so
   you hear yourself.
 
+Arming a track also records its automation lanes: MIDI controls you move, knobs you turn, and CV on the AUTO input.
+See [Recording automation](12-automation.md#recording-automation).
+
 To play a track from MIDI or CV all the time, without arming it, set its **Input** instead (see
 [Tracks](04-tracks.md#a-track-that-plays-another-track-input)).
 

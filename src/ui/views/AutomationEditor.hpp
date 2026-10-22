@@ -44,6 +44,12 @@ class AutomationEditor {
     bool handleAction(Action action, Tick grid, double pasteAt);
 
     /// The lane menu: settings, functions, shape stamps, delete. Shared with the lane header.
+    /// Makes a menu action that changes a copy of a lane and records it as one undo step.
+    using LaneEdit = std::function<std::function<void()>(const std::string&, std::function<void(AutomationEnvelope&)>)>;
+    /// The lane menu's "Recording" items: what it records from, learn, the AUTO REC channel, the record mode and
+    /// "don't record".
+    static void appendRecordingItems(rack::ui::Menu* menu, EditorContext& ctx, LaneOwner owner,
+                                     const AutomationEnvelope& lane, const LaneEdit& edit);
     static void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, LaneOwner owner, AutomationId lane);
 
     // For gestures

@@ -357,7 +357,7 @@ Uses everything above, with lane rows instead of pitch rows (DESIGN.md §9). Add
 
 ### 6.5 Automation in the arranger
 
-- Each track's automation lanes expand below it. The lane header shows the lane name, current value (volts), range, mapped targets, arm, and a mini menu.
+- Each track's automation lanes expand below it. The lane header shows the lane name, current value (volts), range, mapped targets, its source, a record mark (no arm: the track arm records lanes, DECISIONS §73–74), and a mini menu.
 - Same point editing as DESIGN.md §12, using the shared modifier vocabulary: click adds a point, drag moves, Alt bypasses snap, Shift fine-adjusts value, drag a segment midpoint to bend the curve.
 - **Moving clips can carry automation** ("Automation follows clips" toggle): when on, moving or duplicating a clip moves the track automation within its time range too.
 - Range selection includes automation: deleting/duplicating a range affects points in that range on the selected tracks.
@@ -398,13 +398,13 @@ The same automation editing component is used in three places: track lanes in th
 - Functions in the lane menu: Thin (reduce points with tolerance), Quantize point times to grid, Smooth, Invert (flip around the center), Reverse, Randomize values, Set all to value, Clear.
 
 **Lane management**
-- Lane header: name, color, value readout, output channel, voltage range, bipolar flag, mute, arm, mapped targets (Map button), lane menu.
+- Lane header: name, color, value readout, output (AUTO channel, V/OCT or PRESS), source, voltage range, bipolar flag, mute, record mark, mapped targets, lane menu.
 - `+` at the bottom of a track's lanes adds a lane; drag lane headers to reorder (changes nothing in output routing — the output channel is a separate setting).
 - Show only lanes that have data: "Show used lanes" toggle per track (`Shift+A`).
 - Clip vs track automation: a small "clip / track" toggle in the clip's lower-pane lane header, and "Move clip automation to track" / "Move track automation into clip" in the lane menu.
 
 **Recording automation** (writes into the lane being edited)
-- Arm the lane, choose the source (CV input or mapped knob, DESIGN.md §12), choose Latch / Touch / Write. While recording, the curve draws live in red ahead of the existing curve. Recorded data is thinned on commit, one undoable command per pass.
+- Arm the track; each lane with a source records (MIDI control, mapped knob or AUTO REC channel; Learn picks one), with Latch / Touch / Write for knobs and CV. While recording, the curve draws live in red ahead of the existing curve. Recorded data is thinned on commit, one undoable command per pass.
 - Punch: if the loop is on, recording respects the loop region; Touch mode returns to the existing curve over 50 ms when the knob is released.
 
 **Playback feedback**
