@@ -85,8 +85,8 @@ struct AutomationEnvelope {
         return id == o.id && name == o.name && color == o.color && outputIndex == o.outputIndex &&
                rangeMin == o.rangeMin && rangeMax == o.rangeMax && bipolar == o.bipolar && mute == o.mute &&
                slewMs == o.slewMs && combine == o.combine && armed == o.armed && source == o.source &&
-               recordMode == o.recordMode && targets == o.targets && points == o.points && paramTarget == o.paramTarget &&
-               drive == o.drive && midi == o.midi && midiIgnored == o.midiIgnored;
+               recordMode == o.recordMode && targets == o.targets && points == o.points &&
+               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && midiIgnored == o.midiIgnored;
     }
 };
 

@@ -135,7 +135,8 @@ std::vector<KnobLanePlayback> flattenKnobLanes(const std::vector<AutomationEnvel
 
 /// Whether any of the lanes plays into the voices instead of an AUTO channel.
 bool playsIntoVoices(const std::vector<LanePlayback>& lanes) {
-    return std::any_of(lanes.begin(), lanes.end(), [](const LanePlayback& l) { return l.output >= kMaxAutomationLanes; });
+    return std::any_of(lanes.begin(), lanes.end(),
+                       [](const LanePlayback& l) { return l.output >= kMaxAutomationLanes; });
 }
 
 /// Where live MIDI controls play while monitoring: the AUTO channel and range of the lanes that record them, on the

@@ -473,7 +473,8 @@ TEST_CASE("recorded notes keep the MIDI channel they came in on") {
     uint64_t next = 100;
     ClipId clip;
     CommandPtr c = recordNewClip(
-        song, song.tracks[0].id, 0, ticksPerBar(song.timeSig), Take({played}), [&next] { return next++; }, &clip, nullptr);
+        song, song.tracks[0].id, 0, ticksPerBar(song.timeSig), Take({played}), [&next] { return next++; }, &clip,
+        nullptr);
     REQUIRE(c);
     c->apply(song);
     REQUIRE(song.findClip(clip)->notes.size() == 1);
