@@ -161,7 +161,9 @@ Where it goes:
 - **A launcher take** (into a clip in the clips panel): into the clip's lane on the same AUTO channel, made for you if
   the clip has none. The knob mapping stays on the track lane.
 - **A timeline take**: knob and AUTO REC moves go to the track lane, song-wide like a mix. MIDI controls go into the
-  new timeline clip with the notes.
+  clip the notes go into (which one depends on **Recording over arranger clips**: see
+  [Where the recording goes](11-recording.md#where-the-recording-goes)).
+- **Any take, for a MIDI control the track has its own lane for**: into that track lane, at the song position.
 
 To protect a lane, choose **Don't record this lane (keep what's there)** in its menu.
 

@@ -62,6 +62,22 @@ While the transport plays, clips wait for the next **launch line** (by default t
 - If you played nothing while recording, no clip is made. Try **Capture** (Ctrl+Shift+R) to keep what you played
   before pressing record.
 
+## A control I moved wasn't recorded
+
+- Did it really move? A value sent only once (a sound change, a fader's position) makes no lane, and nor does bank
+  select.
+- Is **MIDI controls with no lane** (the ▾ next to the record button) set to **Leave out**? Then only lanes you added
+  record. The message after the take has an **Add lane** button.
+- Are all 8 AUTO channels of the track in use? A message after the take says so. Delete a lane you don't need.
+- Did it go to the track? A control the track has its own lane for records into that lane, under the track, not
+  into the clip.
+
+## Recording over the timeline deleted or doubled my notes
+
+**Recording over arranger clips** (the ▾ next to the record button) decides: **Merge** adds to the clip that is
+there, **Stack** puts a new clip on top and keeps the old one, **Replace** cuts the old clip where you recorded. Press
+**Ctrl+Z** to undo the take. See [Where the recording goes](11-recording.md#where-the-recording-goes).
+
 ## My edit went wrong
 
 Press **Ctrl+Z**. Every change in Tessera can be undone, including track deletes, recordings and opening a project.
@@ -97,6 +113,8 @@ Give each Tessera its own **Instance name** (module menu). Output modules show t
 | Launch quantize | **Launch 1 bar ▾** above the track names |
 | Ripple, Stack, Automation follows clips | The ▾ next to Select and Draw in the song pane |
 | MPE input | The ▾ next to the record button |
+| Merge, Stack or Replace when recording on the timeline | The ▾ next to the record button: **Recording over arranger clips** |
+| Whether moved MIDI controls get a lane | The ▾ next to the record button: **MIDI controls with no lane** |
 | Recording a lane (the old lane arm) | Arm the track; the lane menu's **Records from** picks the source |
 | Automating a rack knob | **Add automation lane → Automate a knob: touch it in the rack** |
 | A sustain, mod wheel or other CC lane | **Add automation lane → MIDI control** |

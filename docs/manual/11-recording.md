@@ -74,8 +74,8 @@ It depends on what the armed track is doing when your first note arrives:
   - **Merge** (the default): what you play goes into the clip that plays at that moment, as if you had drawn it in.
     So you can record the notes first, then go back and record only the mod wheel over them. Nothing new appears
     on the timeline. Where clips are stacked, it goes into the one on top. Where no clip plays, a new clip is made
-    for just those notes, from the first to the end of the last. A clip that is placed more than once shares its notes, so the new notes
-    show in every copy.
+    for just those notes, from the first to the end of the last. A clip that is placed more than once shares its
+    notes, so the new notes show in every copy.
   - **Stack**: a new clip is made from exactly punch-in to punch-out, stacked over what was there. You can
     move, mute or delete each take on its own. Where stacked clips have a lane on the same AUTO channel, the clip on
     top plays it.
@@ -113,8 +113,8 @@ nothing to set up.
   track lane, at the song position, unless the clip you overdub has a lane for it.
 - Only controls that really move get a lane. A value sent once (the sound change or fader positions some keyboards
   send) leaves nothing behind, and nor do bank select and messages like "all notes off".
-- A control that already has a lane on the track, or in another of its clips, keeps that lane's AUTO channel, range
-  and name.
+- A control that already has a lane in another of the track's clips gets a new lane with the same AUTO channel,
+  range and name.
 - If all 8 AUTO channels are in use, the control isn't recorded and a message says so.
 - **MIDI controls with no lane** in the record button's ▾ menu: **Add a lane in the clip** (the default) or **Leave
   out**. With **Leave out**, only lanes you added (**Add automation lane → MIDI control**) record. A message after
