@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../model/ArrangementEdits.hpp"
+#include "../interaction/NoteBars.hpp"
 #include "AutomationEditor.hpp"
 #include "TimelineView.hpp"
 
@@ -123,7 +124,8 @@ class ArrangerLanes : public TimelineView {
     uint64_t previewGeneration = 0;
     arrange::Layout committedCache;
     uint64_t committedRevision = ~uint64_t(0);
-    std::vector<TimedNote> scratch; // reused while drawing note previews
+    std::vector<TimedNote> scratch;           // reused while drawing note previews
+    std::vector<NoteBar> noteSpans, noteBars; // the same, as pixel spans and the bars drawn
     /// The sub-row layout of each track, for the layout shown; rebuilt when it changes.
     const arrange::Stacking& stackingOf(TrackId track);
     std::unordered_map<TrackId, arrange::Stacking> stacks;
