@@ -607,3 +607,134 @@ TEST_CASE("record: lanes save and load their drive and MIDI control") {
     CHECK(back.automation[0] == clip.automation[0]);
     CHECK(back.automation[1] == clip.automation[1]);
 }
+
+namespace {
+
+/// A per-note live value from MIDI channel `channel`.
+LiveValue noteValue(int channel, int pitch, NoteCurve curve, float value) {
+    LiveValue v;
+    v.channel = uint8_t(channel);
+    v.pitch = int8_t(pitch);
+    v.curve = curve;
+    v.value = value;
+    return v;
+}
+
+/// A value MIDI channel `channel` shares.
+LiveValue channelValue(int channel, MidiControl control, float value) {
+    LiveValue v;
+    v.channel = uint8_t(channel);
+    v.perNote = false;
+    v.control = control;
+    v.value = value;
+    return v;
+}
+
+} // namespace
+
+TEST_CASE("live expression: a key's pressure and bend reach the voice it plays, and only that one") {
+    EngineRig rig(recordSong());
+    size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0.8f, true});
+    rig.engine.liveNote({LiveSource::Midi, 0, 64, 0.8f, true});
+    rig.engine.liveValue(noteValue(0, 64, NoteCurve::Pressure, 0.5f));
+    rig.engine.liveValue(noteValue(0, 64, NoteCurve::Pitch, 12));
+    rig.run(1);
+    const TrackFrame& f = rig.frames[slot];
+    CHECK(f.press[0] == doctest::Approx(0));
+    CHECK(f.press[1] == doctest::Approx(5));
+    CHECK(f.voct[1] == doctest::Approx(pitchToVolts(64) + 1));
+
+    // A new note on the voice starts flat (voices are handed out in turn: the fourth new note gets voice 1).
+    rig.engine.liveNote({LiveSource::Midi, 0, 64, 0, false});
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0, false});
+    for (int pitch : {62, 65, 67, 69})
+        rig.engine.liveNote({LiveSource::Midi, 0, int8_t(pitch), 0.8f, true});
+    rig.run(1);
+    CHECK(f.press[1] == doctest::Approx(0));
+}
+
+TEST_CASE("live expression: an MPE value for the whole channel reaches its one note") {
+    EngineRig rig(recordSong());
+    size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
+    LiveNote n{LiveSource::Midi, 3, 60, 0.8f, true};
+    n.partChannel = 0;
+    rig.engine.liveNote(n);
+    LiveValue v = noteValue(3, -1, NoteCurve::Timbre, 1);
+    v.partChannel = 0;
+    rig.engine.liveValue(v);
+    rig.run(1);
+    CHECK(rig.frames[slot].timbre[0] == doctest::Approx(10));
+}
+
+TEST_CASE("live expression: channel bend and pressure play on every voice of an armed, monitoring track") {
+    Song song = recordSong();
+    EngineRig rig(song);
+    size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0.8f, true});
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::PitchBend, 0}, 1));
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Pressure, 0}, 0.3f));
+    rig.run(1);
+    const TrackFrame& f = rig.frames[slot];
+    CHECK(f.voct[0] == doctest::Approx(pitchToVolts(60) + 2 / 12.f)); // the default ±2 semitones
+    CHECK(f.press[0] == doctest::Approx(3));
+    // The track that isn't armed hears nothing of it.
+    size_t other = size_t(rig.slots.slotOf(rig.song.tracks[1].id));
+    CHECK(rig.frames[other].press[0] == doctest::Approx(0));
+}
+
+TEST_CASE("live expression: a CC plays on the AUTO channel of the lane that records it") {
+    Song song = recordSong();
+    AutomationEnvelope lane = makeMidiLane(AutomationId(900), {MidiControl::Kind::Cc, 1}, 2, 0);
+    song.tracks[0].automation.push_back(lane);
+    EngineRig rig(song);
+    size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 1}, 0.5f));
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1)); // no lane: nowhere to play
+    rig.run(1);
+    REQUIRE(rig.frames[slot].autoChannels >= 3);
+    CHECK(rig.frames[slot].automation[2] == doctest::Approx(5));
+}
+
+TEST_CASE("live expression: armed tracks report values to the recorder while recording") {
+    EngineRig rig(recordSong());
+    rig.engine.toggleRecord(0);
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0.8f, true});
+    rig.drain();
+    rig.engine.liveValue(noteValue(0, 60, NoteCurve::Pressure, 0.7f));
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::PitchBend, 0}, 0));
+    auto events = rig.drain();
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].kind == RecordEvent::Kind::NoteValue);
+    CHECK(events[0].pitch == 60);
+    CHECK(events[0].value == doctest::Approx(0.7f));
+    CHECK(events[1].kind == RecordEvent::Kind::ChannelValue);
+    CHECK(events[1].value == doctest::Approx(0.5f)); // bend centre is the lane's middle
+}
+
+TEST_CASE("live expression: a pitch bend lane plays on V/OCT and rests at 0 without one") {
+    Song song = recordSong();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = kBar;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.length = kBar;
+    clip.notes.push_back(n);
+    AutomationEnvelope bend = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::PitchBend, 0}, 0, 0);
+    AutoPoint p;
+    p.value = 1;
+    bend.points.push_back(p);
+    clip.automation.push_back(bend);
+    song.tracks[1].slots[0].clip = clip.id;
+    song.clips[clip.id] = clip;
+    EngineRig rig(song);
+    size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[1].id));
+    rig.engine.launch({LaunchEvent::Kind::Slot, rig.song.tracks[1].id.value, 0, true, false});
+    rig.engine.play();
+    rig.run(200);
+    CHECK(rig.frames[slot].voct[0] == doctest::Approx(pitchToVolts(60) + 2 / 12.f));
+    rig.engine.launch({LaunchEvent::Kind::Slot, rig.song.tracks[1].id.value, 1, true, false}); // an empty slot
+    rig.run(20000);
+    CHECK(rig.frames[slot].voct[0] == doctest::Approx(pitchToVolts(60)));
+}

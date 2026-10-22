@@ -3,6 +3,7 @@
 #include "../model/Devices.hpp"
 #include "../model/Modulators.hpp"
 #include "DrumVoices.hpp"
+#include "MidiReader.hpp"
 #include "Snapshot.hpp"
 #include "SpscQueue.hpp"
 #include "TrackFrame.hpp"
@@ -63,7 +64,6 @@ struct CaptureEvent {
 };
 using CaptureQueue = SpscQueue<CaptureEvent, 1024>;
 
-/// Where a live note came from: the REC CV inputs or MIDI.
 /// Where a live note came from. Keyboard is the computer keyboard in the editor (EDITOR_UX §4.10).
 enum class LiveSource : uint8_t { Cv, Midi, Keyboard };
 
@@ -74,15 +74,33 @@ struct LiveNote {
     int8_t pitch = 60;
     float velocity = 0.8f;
     bool on = true;
+    // The channel tracks filter by and recordings keep; -1 = `channel`. MPE gives each note its own channel, so
+    // its notes report the zone's master channel here.
+    int8_t partChannel = -1;
+};
+
+/// A value from the record inputs besides notes (docs/design/EXPRESSION_INPUT.md): one held note's pressure,
+/// timbre or pitch, or a value the whole channel shares (pitch bend, channel pressure, a CC).
+struct LiveValue {
+    LiveSource source = LiveSource::Midi;
+    uint8_t channel = 0;    // 0..15
+    int8_t partChannel = -1; // as in LiveNote
+    bool perNote = true;
+    int8_t pitch = -1; // per note: the key as it came in; -1 = every key held on the channel
+    NoteCurve curve = NoteCurve::Pressure;
+    MidiControl control; // per channel
+    float value = 0;     // per note: semitones for Pitch, else 0..1; per channel: -1..1 for pitch bend, else 0..1
 };
 
 /// What the recorder on the UI thread hears from the engine (DESIGN.md §5 "Recording").
 struct RecordEvent {
     enum class Kind : uint8_t {
-        Note,     // a live note on or off, for one armed track, or (track 0) for the capture buffer
-        PunchIn,  // recording started
-        PunchOut, // recording stopped
-        LoopWrap, // the song loop wrapped while recording
+        Note,         // a live note on or off, for one armed track, or (track 0) for the capture buffer
+        PunchIn,      // recording started
+        PunchOut,     // recording stopped
+        LoopWrap,     // the song loop wrapped while recording
+        NoteValue,    // a held note's pressure, timbre or pitch moved (curve, value), for one armed track
+        ChannelValue, // a control the channel shares moved (control, value 0..1), for one armed track
     };
     Kind kind = Kind::Note;
     uint64_t track = 0; // TrackId value; 0 = not routed to a track
@@ -98,6 +116,9 @@ struct RecordEvent {
     int slot = kNoSlot;     // the launcher clip the track was playing
     double clipTick = NAN;  // where in that clip
     double clipStart = NAN; // the play tick that clip started at
+    NoteCurve curve = NoteCurve::Pressure; // NoteValue
+    MidiControl control;                   // ChannelValue
+    float value = 0;                       // NoteValue: semitones for Pitch, else 0..1; ChannelValue: 0..1
 };
 using RecordQueue = SpscQueue<RecordEvent, 4096>;
 
@@ -108,6 +129,7 @@ struct AuditionEvent {
     float velocity = 0.8f;
     float seconds = 0; // > 0: release by itself after this long; 0: hold until the matching note-off
     bool on = true;
+    uint32_t id = 0; // a live key's note ID, so its pressure and bend find the voice it plays
 };
 
 /// The audio-thread sequencer: transport, clip scheduling and voice allocation for every track.
@@ -186,6 +208,9 @@ class Engine {
     /// A note from the record inputs: armed tracks with a matching input play it (when monitoring) and it is
     /// reported to the recorder, once per armed track and once more for the capture buffer.
     void liveNote(const LiveNote& note);
+    /// A value from the record inputs: the voices playing the key (or the tracks taking the channel) follow it
+    /// while monitoring, and armed tracks report it to the recorder.
+    void liveValue(const LiveValue& value);
 
     /// Launches or stops clips. While playing, the change waits for the next launch-quantize line of the
     /// song position; while stopped it happens at once. Launching an empty slot stops the track.
@@ -272,13 +297,14 @@ class Engine {
         bool overridden = false; // launched or stopped by the launcher since the last "back to arrangement"
         size_t arrangementCursor = 0;
         // Automation per AUTO channel: the smoothed value (0..1), its volts, and where each lane list was.
-        std::array<float, kMaxAutomationLanes> autoValue{};
-        std::array<float, kMaxAutomationLanes> autoOut{}; // with modulators added
-        int autoChannels = 0;                             // the lanes' channels and the modulated ones
-        std::array<float, kMaxAutomationLanes> autoVolts{};
-        std::array<float, kMaxAutomationLanes> autoLow{}, autoHigh{};
-        std::array<float, kMaxAutomationLanes> slewMs{}, slewAlpha{};
-        std::array<size_t, kMaxAutomationLanes> trackLaneCursor{}, clipLaneCursor{};
+        // Slots past the AUTO channels are the lanes played into the voices (kPitchLaneSlot, kPressureLaneSlot).
+        std::array<float, kMaxPlayedLanes> autoValue{};
+        std::array<float, kMaxPlayedLanes> autoOut{}; // with modulators added
+        int autoChannels = 0;                         // the lanes' channels and the modulated ones
+        std::array<float, kMaxPlayedLanes> autoVolts{};
+        std::array<float, kMaxPlayedLanes> autoLow{}, autoHigh{};
+        std::array<float, kMaxPlayedLanes> slewMs{}, slewAlpha{};
+        std::array<size_t, kMaxPlayedLanes> trackLaneCursor{}, clipLaneCursor{};
         // Knob lanes: where each list was, and what they set this block (knob table index and value).
         std::array<size_t, kMaxKnobLanes> trackKnobCursor{}, clipKnobCursor{};
         std::array<std::pair<int, float>, 2 * kMaxKnobLanes> knobSets{};
@@ -306,6 +332,12 @@ class Engine {
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
         std::array<uint64_t, kMaxVoices> voiceClip{}, voiceNote{};
+        // What the record inputs play now: per voice its key's own bend (semitones), timbre and pressure (0..1),
+        // and for the track the values its channel shares, in volts (AUTO channels in `liveAutoMask`).
+        std::array<float, kMaxVoices> liveBend{}, liveTimbre{}, livePress{};
+        float liveChannelBend = 0, liveChannelPress = 0;
+        std::array<float, kMaxAutomationLanes> liveAuto{};
+        uint8_t liveAutoMask = 0;
         std::array<size_t, kMaxDrumLanes> laneCursor{}; // per own-loop lane of the playing clip
         // The device chain: what the snapshot says, and the runtime (an index into `chains`, -1 for none).
         const ChainPlayback* chainInfo = nullptr;
@@ -314,6 +346,20 @@ class Engine {
             return voices.changeCount() + drums.changeCount() + autoChanges + epoch;
         }
     };
+    /// The note ID a live key plays under, by source, channel and incoming pitch.
+    static uint32_t liveId(size_t source, size_t channel, size_t pitch) {
+        return chain::kLiveNote | uint32_t(source << 11 | channel << 7 | pitch);
+    }
+    /// A voice starting a new note forgets what the last live key on it was doing.
+    static void clearLiveVoice(TrackState& state, int voice) {
+        state.liveBend[size_t(voice)] = state.liveTimbre[size_t(voice)] = state.livePress[size_t(voice)] = 0;
+    }
+    /// Whether a track plays what comes in at the record inputs: armed with monitoring, or listening to them.
+    static bool hearsInput(const TrackPlayback& tp) { return tp.audible && (tp.armed ? tp.monitor : true); }
+    /// Whether a track plays the record inputs' values now: it takes the inputs and hears them.
+    static bool playsLiveValues(const TrackPlayback& tp) {
+        return (tp.armed || tp.listen == ListenSource::External) && hearsInput(tp);
+    }
     /// Every track works out what is next on the next sample (after anything that changes playback).
     static void setVoiceCurves(TrackState& state, int voice, const NoteExtras* extras) {
         const NoteExtras*& slot = state.voiceExtras[size_t(voice)];

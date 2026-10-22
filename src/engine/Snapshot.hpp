@@ -134,6 +134,15 @@ struct TrackPlayback {
     std::vector<InstanceLanes> arrangementLanes;
     std::vector<NoteExtras> arrangementExtras;
     int autoChannels = 0;
+    bool voiceLanes = false; // some lane plays into the voices (pitch bend or pressure)
+    /// Live monitoring of MIDI controls: where each CC plays (from the lanes that record it; output -1 = nowhere)
+    /// and the pitch bend range, so what you hear while playing matches what the take will play.
+    struct LiveControl {
+        int8_t output = -1;
+        float low = 0, high = 10; // volts at 0 and 1
+    };
+    std::array<LiveControl, 128> ccLive{};
+    LiveControl bendLive{kPitchLaneSlot, -2 / 12.f, 2 / 12.f};
     /// Keys of clips with their own key, for the devices that work in a key.
     std::vector<Scale> keys;
 
