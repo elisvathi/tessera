@@ -127,8 +127,8 @@ void mergeTakeLanes(const Song& song, const Track& track, std::vector<Automation
     for (const TakeLane& tl : take) {
         if (!tl.control.valid() || tl.points.empty())
             continue;
-        auto it = std::find_if(lanes.begin(), lanes.end(),
-                               [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
+        auto it =
+            std::find_if(lanes.begin(), lanes.end(), [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
         if (it == lanes.end()) {
             int output = 0;
             if (tl.control.kind == MidiControl::Kind::Cc) {
@@ -214,6 +214,77 @@ int midiLaneOutput(const Song& song, const Track& track, MidiControl control,
     return -1;
 }
 
+namespace {
+
+constexpr float kCurveTolerance = 0.01f; // of a curve's 0..1 range
+constexpr float kBendTolerance = 0.05f;  // semitones
+constexpr size_t kMaxCurvePoints = 64;   // per note curve
+constexpr size_t kMaxLanePoints = 4096;  // per lane and take
+
+/// Sustain, portamento, sostenuto, soft pedal, legato, hold 2: on or off, so their lanes step.
+bool isSwitch(MidiControl c) { return c.kind == MidiControl::Kind::Cc && c.cc >= 64 && c.cc <= 69; }
+
+/// A note's curve from what its key played, across the note (0..1 of `length` from `start`). A curve that starts
+/// late begins at `from` (pressure and bend are 0 before the key moved them); `from` NAN holds the first value.
+std::vector<ExprPoint> curveOf(const TimedValues& samples, double start, double length, float tolerance, float from) {
+    if (samples.empty())
+        return {};
+    std::vector<double> x;
+    std::vector<float> y;
+    if (!std::isnan(from) && samples.front().first > start) {
+        x.push_back(start);
+        y.push_back(from);
+    }
+    for (const auto& [t, v] : samples) {
+        x.push_back(std::max(t, start));
+        y.push_back(v);
+    }
+    std::vector<ExprPoint> out;
+    for (size_t i : thinValues(x, y, tolerance, kMaxCurvePoints))
+        out.push_back({float(std::clamp((x[i] - start) / length, 0.0, 1.0)), y[i], 0});
+    // Pressure or bend that stayed at rest says nothing. (A steady timbre does: it is where the finger sat.)
+    if (!std::isnan(from) && std::all_of(out.begin(), out.end(), [&](const ExprPoint& p) { return p.value == from; }))
+        return {};
+    return out;
+}
+
+} // namespace
+
+std::vector<ExprPoint> noteCurve(NoteCurve curve, const TimedValues& values, double start, double length) {
+    switch (curve) {
+    case NoteCurve::Pitch:
+        return curveOf(values, start, length, kBendTolerance, 0);
+    case NoteCurve::Timbre:
+        return curveOf(values, start, length, kCurveTolerance, NAN);
+    case NoteCurve::Pressure:
+    default:
+        return curveOf(values, start, length, kCurveTolerance, 0);
+    }
+}
+
+std::vector<AutoPoint> lanePoints(MidiControl control, const TimedValues& values) {
+    std::vector<AutoPoint> out;
+    if (isSwitch(control)) {
+        float last = -1;
+        for (const auto& [t, v] : values) {
+            float on = v >= 0.5f ? 1.f : 0.f;
+            if (on != last)
+                out.push_back({Tick(std::llround(t)), on, CurveType::Hold, 0});
+            last = on;
+        }
+        return out;
+    }
+    std::vector<double> x;
+    std::vector<float> y;
+    for (const auto& [t, v] : values) {
+        x.push_back(t);
+        y.push_back(v);
+    }
+    for (size_t i : thinValues(x, y, kCurveTolerance, kMaxLanePoints))
+        out.push_back({Tick(std::llround(x[i])), y[i], CurveType::Linear, 0});
+    return out;
+}
+
 std::vector<size_t> thinValues(const std::vector<double>& ticks, const std::vector<float>& values, float tolerance,
                                size_t maxPoints) {
     size_t n = std::min(ticks.size(), values.size());
@@ -263,12 +334,14 @@ std::vector<size_t> thinValues(const std::vector<double>& ticks, const std::vect
 namespace {
 
 /// The undo name of a take: "Record 5 notes", or "Record" when it holds only lane values.
-std::string takeName(const Take& take) { return take.notes.empty() ? "Record" : "Record " + countNotes(take.notes.size()); }
+std::string takeName(const Take& take) {
+    return take.notes.empty() ? "Record" : "Record " + countNotes(take.notes.size());
+}
 
 } // namespace
 
-CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length, const Take& take,
-                         const NextId& nextId, ClipId* clipId, edits::IdSet* noteIds, const std::string& name) {
+CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length, const Take& take, const NextId& nextId,
+                         ClipId* clipId, edits::IdSet* noteIds, const std::string& name) {
     const Track* t = song.findTrack(track);
     if (!t || slot < 0 || slot >= int(t->slots.size()) || t->slots[size_t(slot)].clip || length < 1)
         return nullptr;
@@ -311,8 +384,8 @@ CommandPtr recordIntoClip(const Song& song, ClipId clipId, const Take& take, con
         out->add(std::make_unique<EditNotes>(takeName(take), clipId, std::vector<Note>{}, std::move(added)));
     if (const Track* track = trackOf(song, clipId)) {
         std::vector<AutomationEnvelope> lanes = clip->automation;
-        mergeTakeLanes(song, *track, lanes, take.lanes, span.looping ? span.start : 0,
-                       span.looping ? span.length() : 0, nextId);
+        mergeTakeLanes(song, *track, lanes, take.lanes, span.looping ? span.start : 0, span.looping ? span.length() : 0,
+                       nextId);
         LaneOwner owner = LaneOwner::ofClip(clipId);
         for (size_t i = 0; i < lanes.size(); i++) {
             std::optional<AutomationEnvelope> before;

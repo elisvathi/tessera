@@ -7,6 +7,7 @@
 #include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/MidiFile.hpp"
+#include "../src/model/MidiImport.hpp"
 #include "../src/model/NoteOperators.hpp"
 #include "../src/model/Render.hpp"
 #include "../src/model/Zip.hpp"
@@ -715,4 +716,72 @@ TEST_CASE("dawproject: notes follow the export choices, and AUTO lanes become co
           std::string::npos);
     // A straight ramp thins to its two ends.
     CHECK(count(bypassed, "<RealPoint ") == 2);
+}
+
+TEST_CASE("export and import: MPE curves come back on their notes, as one part") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    a.pitchExpr = {{0, 0, 0}, {1, 12, 0}};
+    Note b = makeNote(song, 0, kBeat, 64);
+    b.pressureExpr = {{0, 0, 0}, {1, 1, 0}};
+    Clip& c = addClip(song, kBar, {a, b});
+    place(song, lead, c.id, 0, kBar);
+    Options o;
+    o.expressions = ExpressionMode::Mpe;
+    midiImport::Imported in;
+    REQUIRE(midiImport::read(smf::write(renderSong(song, o, Context())), in));
+    REQUIRE(in.parts.size() == 1);
+    const auto& notes = in.parts[0].notes;
+    REQUIRE(notes.size() == 2);
+    const Note& up = notes[0].pitch == 60 ? notes[0] : notes[1];
+    const Note& pressed = notes[0].pitch == 64 ? notes[0] : notes[1];
+    REQUIRE(!up.pitchExpr.empty());
+    CHECK(up.pitchExpr.back().value == doctest::Approx(12).epsilon(0.1)); // the last sample is just before the end
+    CHECK(up.pressureExpr.empty());
+    REQUIRE(!pressed.pressureExpr.empty());
+    CHECK(pressed.pressureExpr.back().value == doctest::Approx(1).epsilon(0.05));
+    CHECK(pressed.pitchExpr.empty());
+}
+
+TEST_CASE("export and import: poly aftertouch comes back as each note's pressure") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    a.pressureExpr = {{0, 0, 0}, {1, 1, 0}};
+    Clip& c = addClip(song, kBar, {a, makeNote(song, 0, kBeat, 67)});
+    place(song, lead, c.id, 0, kBar);
+    Options o;
+    o.expressions = ExpressionMode::Flatten;
+    midiImport::Imported in;
+    REQUIRE(midiImport::read(smf::write(renderSong(song, o, Context())), in));
+    REQUIRE(in.parts.size() == 1);
+    const auto& notes = in.parts[0].notes;
+    REQUIRE(notes.size() == 2);
+    const Note& pressed = notes[0].pitch == 60 ? notes[0] : notes[1];
+    const Note& other = notes[0].pitch == 60 ? notes[1] : notes[0];
+    REQUIRE(pressed.pressureExpr.size() >= 2);
+    CHECK(pressed.pressureExpr.back().value == doctest::Approx(1).epsilon(0.05));
+    CHECK(other.pressureExpr.empty());
+}
+
+TEST_CASE("import: channel controls become clip lanes") {
+    smf::File file;
+    file.ppq = 480;
+    smf::Track t;
+    t.events.push_back(smf::noteOn(0, 0, 60, 100));
+    t.events.push_back(smf::controlChange(0, 0, 1, 0));
+    t.events.push_back(smf::controlChange(240, 0, 1, 127));
+    t.events.push_back(smf::channelPressure(240, 0, 64));
+    t.events.push_back(smf::noteOff(480, 0, 60, 64));
+    file.tracks.push_back(t);
+    midiImport::Imported in;
+    REQUIRE(midiImport::read(smf::write(file), in));
+    REQUIRE(in.parts.size() == 1);
+    REQUIRE(in.parts[0].lanes.size() == 2);
+    Clip clip = midiImport::clipOf(in, 0, TimeSig(), [n = uint64_t(1)]() mutable { return n++; }, "x");
+    REQUIRE(clip.automation.size() == 2);
+    CHECK(clip.automation[0].name == "Mod wheel (CC 1)");
+    CHECK(clip.automation[0].outputIndex == 0);
+    CHECK(clip.automation[1].drive == LaneDrive::Pressure);
 }

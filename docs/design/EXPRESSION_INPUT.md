@@ -107,7 +107,7 @@ The output modules don't change; they already copy `TrackFrame`. The work is ups
 
 - **Rack knob menu: "Automate on track X"** creates a lane, maps the knob and is ready to record in one step.
 - Retrospective capture keeps bend, wheel and pressure with the notes.
-- MIDI file import reads poly aftertouch and MPE into note curves, using the same reader (`src/engine/MidiReader`).
+- MIDI file import reads poly aftertouch and MPE into note curves, using the same reader (`src/model/MidiReader`).
 - Tests: the reader with byte streams; values before a note-on; two notes in a row on one MPE channel; poly
   aftertouch after note-off (ignored); thinning keeps the shape; one take is one undo step; rest values.
 

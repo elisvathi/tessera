@@ -1,6 +1,6 @@
 #include "doctest.h"
 
-#include "../src/engine/MidiReader.hpp"
+#include "../src/model/MidiReader.hpp"
 
 #include <vector>
 

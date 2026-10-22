@@ -2,6 +2,7 @@
 
 #include "ArrangementEdits.hpp"
 #include "Commands.hpp"
+#include "MidiReader.hpp"
 #include "NoteEdits.hpp"
 
 #include <jansson.h>
@@ -78,6 +79,17 @@ AutomationEnvelope makeMidiLane(AutomationId id, MidiControl control, int output
 int midiLaneOutput(const Song& song, const Track& track, MidiControl control,
                    const std::vector<AutomationEnvelope>& pending);
 
+/// Values over time, as (tick, value) pairs in increasing tick order.
+using TimedValues = std::vector<std::pair<double, float>>;
+
+/// A note's curve from what its key played, across the note from `start` for `length` ticks, thinned. Pressure and
+/// bend start from 0 when the key moved them only later; a curve that stayed at rest is empty.
+std::vector<ExprPoint> noteCurve(NoteCurve curve, const TimedValues& values, double start, double length);
+
+/// A lane's points from what a control sent (values 0..1), thinned. Switch controls (sustain and the other pedals,
+/// CC 64-69) step between off and on instead.
+std::vector<AutoPoint> lanePoints(MidiControl control, const TimedValues& values);
+
 /// Which of `values` (at increasing ticks `ticks`) to keep so the line through the kept ones stays within
 /// `tolerance` of every value; never more than `maxPoints`. The first and last are always kept.
 std::vector<size_t> thinValues(const std::vector<double>& ticks, const std::vector<float>& values, float tolerance,
@@ -88,9 +100,8 @@ Tick wholeBars(Tick length, TimeSig ts);
 
 /// A new looping clip of `length` holding the take, in an empty launcher slot. `nextId` gives the clip and
 /// note IDs; `noteIds` receives the notes' IDs. Null when the slot is taken or doesn't exist.
-CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length, const Take& take,
-                         const NextId& nextId, ClipId* clipId = nullptr, edits::IdSet* noteIds = nullptr,
-                         const std::string& name = "");
+CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length, const Take& take, const NextId& nextId,
+                         ClipId* clipId = nullptr, edits::IdSet* noteIds = nullptr, const std::string& name = "");
 
 /// Adds the take to an existing clip (loop overdub: every pass merges). Notes and lane values land modulo the
 /// clip loop; a take's values replace the lane's points over the stretch they cover.

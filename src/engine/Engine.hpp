@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../model/Devices.hpp"
+#include "../model/MidiReader.hpp"
 #include "../model/Modulators.hpp"
 #include "DrumVoices.hpp"
-#include "MidiReader.hpp"
 #include "Snapshot.hpp"
 #include "SpscQueue.hpp"
 #include "TrackFrame.hpp"
@@ -83,7 +83,7 @@ struct LiveNote {
 /// timbre or pitch, or a value the whole channel shares (pitch bend, channel pressure, a CC).
 struct LiveValue {
     LiveSource source = LiveSource::Midi;
-    uint8_t channel = 0;    // 0..15
+    uint8_t channel = 0;     // 0..15
     int8_t partChannel = -1; // as in LiveNote
     bool perNote = true;
     int8_t pitch = -1; // per note: the key as it came in; -1 = every key held on the channel
@@ -112,10 +112,10 @@ struct RecordEvent {
     bool playing = false;
     double playTick = 0;
     double songTick = 0;
-    double freeTick = 0;    // a clock that runs even while stopped, for the capture buffer
-    int slot = kNoSlot;     // the launcher clip the track was playing
-    double clipTick = NAN;  // where in that clip
-    double clipStart = NAN; // the play tick that clip started at
+    double freeTick = 0;                   // a clock that runs even while stopped, for the capture buffer
+    int slot = kNoSlot;                    // the launcher clip the track was playing
+    double clipTick = NAN;                 // where in that clip
+    double clipStart = NAN;                // the play tick that clip started at
     NoteCurve curve = NoteCurve::Pressure; // NoteValue
     MidiControl control;                   // ChannelValue
     float value = 0;                       // NoteValue: semitones for Pitch, else 0..1; ChannelValue: 0..1

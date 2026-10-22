@@ -8,6 +8,7 @@
 #include <cmath>
 #include <deque>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <map>
 
@@ -15,11 +16,47 @@ namespace tessera::midiImport {
 
 namespace {
 
-/// The notes of one channel of one file track while it is read: open notes wait for their note-off.
+/// A note waiting for its note-off, and what its key played meanwhile (in file ticks).
+struct OpenNote {
+    Tick start = 0;
+    float velocity = 0;
+    TimedValues pitch, timbre, pressure;
+};
+
+/// The notes of one part of one file track while it is read: open notes wait for their note-off.
 struct Building {
     std::vector<Note> notes;
-    std::map<int, std::deque<std::pair<Tick, float>>> open; // pitch -> starts and velocities, oldest first
+    std::map<int, std::deque<OpenNote>> open; // by channel * 128 + pitch, oldest first
+    std::vector<std::pair<MidiControl, TimedValues>> controls;
 };
+
+/// The note an open key becomes once it ends at `end` (file ticks), with its curves.
+Note finishNote(const OpenNote& o, int pitch, Tick end, float release, const std::function<Tick(Tick)>& ticks) {
+    Note n;
+    n.start = ticks(o.start);
+    n.length = std::max<Tick>(1, ticks(end) - n.start);
+    n.pitch = int8_t(pitch);
+    n.velocity = o.velocity;
+    n.releaseVelocity = release;
+    double length = double(std::max<Tick>(1, end - o.start));
+    n.pitchExpr = noteCurve(NoteCurve::Pitch, o.pitch, double(o.start), length);
+    n.timbreExpr = noteCurve(NoteCurve::Timbre, o.timbre, double(o.start), length);
+    n.pressureExpr = noteCurve(NoteCurve::Pressure, o.pressure, double(o.start), length);
+    return n;
+}
+
+/// The control a channel value belongs to.
+MidiControl controlOf(const MidiEvent& e) {
+    switch (e.control) {
+    case ChannelControl::PitchBend:
+        return {MidiControl::Kind::PitchBend, 0};
+    case ChannelControl::Pressure:
+        return {MidiControl::Kind::Pressure, 0};
+    case ChannelControl::Cc:
+    default:
+        return {MidiControl::Kind::Cc, e.cc};
+    }
+}
 
 /// A drum lane for each pitch the part uses: General MIDI names where the kit knows the pitch, in the kit's order,
 /// then the others by pitch. At most kMaxDrumLanes; notes past that have no lane and stay silent.
@@ -58,12 +95,17 @@ bool read(const std::vector<uint8_t>& bytes, Imported& out) {
     if (!smf::read(bytes, file) || file.ppq <= 0 || (file.ppq & 0x8000))
         return false;
     out = Imported();
-    auto ticks = [&](Tick t) { return Tick(std::llround(double(t) * double(kPpq) / double(file.ppq))); };
+    std::function<Tick(Tick)> ticks = [&](Tick t) {
+        return Tick(std::llround(double(t) * double(kPpq) / double(file.ppq)));
+    };
     Tick tempoAt = 0, meterAt = 0;
+    bool mpeSeen = false; // a file announces MPE once; the tracks after it are read as MPE too
 
     for (size_t k = 0; k < file.tracks.size(); k++) {
         std::string trackName;
-        std::map<int, Building> channels; // by channel, in channel order
+        std::map<int, Building> parts; // by part channel, in channel order
+        MidiReader reader;
+        reader.setMpe(mpeSeen);
         Tick last = 0;
         for (const smf::Event& e : file.tracks[k].events) {
             last = std::max(last, e.tick);
@@ -88,44 +130,59 @@ bool read(const std::vector<uint8_t>& bytes, Imported& out) {
                 }
                 continue;
             }
-            if (e.bytes.size() < 3)
-                continue;
-            int kind = e.status() & 0xF0, channel = e.status() & 0x0F;
-            int pitch = e.bytes[1] & 0x7F, value = e.bytes[2] & 0x7F;
-            if (kind == 0x90 && value > 0) {
-                channels[channel].open[pitch].push_back({e.tick, float(value) / 127.f});
-            } else if (kind == 0x80 || kind == 0x90) {
-                Building& b = channels[channel];
-                auto& starts = b.open[pitch];
-                if (starts.empty())
-                    continue; // a note-off without its note-on
-                auto [start, velocity] = starts.front();
-                starts.pop_front();
-                Note n;
-                n.start = ticks(start);
-                n.length = std::max<Tick>(1, ticks(e.tick) - n.start);
-                n.pitch = int8_t(pitch);
-                n.velocity = velocity;
-                // A note-on with velocity 0 carries no release velocity.
-                n.releaseVelocity = kind == 0x80 && value > 0 ? float(value) / 127.f : 0.5f;
-                b.notes.push_back(n);
+            std::array<MidiEvent, MidiReader::kMaxEvents> events;
+            int count = reader.read(e.bytes.data(), int(e.bytes.size()), events);
+            for (int i = 0; i < count; i++) {
+                const MidiEvent& m = events[size_t(i)];
+                Building& b = parts[m.part];
+                int key = m.channel * 128 + (m.pitch & 127);
+                switch (m.kind) {
+                case MidiEvent::Kind::NoteOn:
+                    b.open[key].push_back(OpenNote{e.tick, m.value, {}, {}, {}});
+                    break;
+                case MidiEvent::Kind::NoteOff: {
+                    auto& starts = b.open[key];
+                    if (starts.empty())
+                        break; // a note-off without its note-on
+                    b.notes.push_back(finishNote(starts.front(), m.pitch, e.tick, m.value, ticks));
+                    starts.pop_front();
+                    break;
+                }
+                case MidiEvent::Kind::NoteValue:
+                    for (auto& [k, starts] : b.open) {
+                        // One key (poly aftertouch), or every key on the channel (MPE).
+                        if (starts.empty() || (m.pitch >= 0 ? k != key : k / 128 != m.channel))
+                            continue;
+                        OpenNote& o = starts.back();
+                        TimedValues& to = m.curve == NoteCurve::Pitch    ? o.pitch
+                                          : m.curve == NoteCurve::Timbre ? o.timbre
+                                                                         : o.pressure;
+                        to.push_back({double(e.tick), m.value});
+                    }
+                    break;
+                case MidiEvent::Kind::ChannelValue: {
+                    MidiControl control = controlOf(m);
+                    float value = control.kind == MidiControl::Kind::PitchBend ? (m.value + 1) / 2 : m.value;
+                    auto it = std::find_if(b.controls.begin(), b.controls.end(),
+                                           [&](const auto& c) { return c.first == control; });
+                    if (it == b.controls.end())
+                        it = b.controls.insert(b.controls.end(), {control, TimedValues{}});
+                    it->second.push_back({double(ticks(e.tick)), value});
+                    break;
+                }
+                }
             }
         }
+        mpeSeen |= reader.mpe();
         // Notes still held when the track ends stop there.
-        for (auto& [channel, b] : channels)
-            for (auto& [pitch, starts] : b.open)
-                for (auto [start, velocity] : starts) {
-                    Note n;
-                    n.start = ticks(start);
-                    n.length = std::max<Tick>(1, ticks(last) - n.start);
-                    n.pitch = int8_t(pitch);
-                    n.velocity = velocity;
-                    b.notes.push_back(n);
-                }
+        for (auto& [part, b] : parts)
+            for (auto& [key, starts] : b.open)
+                for (const OpenNote& o : starts)
+                    b.notes.push_back(finishNote(o, key % 128, last, 0.5f, ticks));
 
-        int withNotes = int(std::count_if(channels.begin(), channels.end(),
-                                          [](const auto& c) { return !c.second.notes.empty(); }));
-        for (auto& [channel, b] : channels) {
+        int withNotes =
+            int(std::count_if(parts.begin(), parts.end(), [](const auto& c) { return !c.second.notes.empty(); }));
+        for (auto& [channel, b] : parts) {
             if (b.notes.empty())
                 continue;
             Part part;
@@ -134,6 +191,11 @@ bool read(const std::vector<uint8_t>& bytes, Imported& out) {
             std::string base = trackName.empty() ? "MIDI " + std::to_string(out.parts.size() + 1) : trackName;
             part.name = withNotes > 1 ? base + " (ch " + std::to_string(channel + 1) + ")" : base;
             part.notes = std::move(b.notes);
+            for (const auto& [control, values] : b.controls) {
+                TakeLane lane{control, lanePoints(control, values)};
+                if (!lane.points.empty())
+                    part.lanes.push_back(std::move(lane));
+            }
             std::sort(part.notes.begin(), part.notes.end(), [](const Note& a, const Note& b) {
                 return a.start != b.start ? a.start < b.start : a.pitch < b.pitch;
             });
@@ -176,6 +238,27 @@ Clip clipOf(const Imported& in, int part, TimeSig timeSig, const NextId& nextId,
     }
     std::sort(clip.notes.begin(), clip.notes.end(),
               [](const Note& a, const Note& b) { return a.start != b.start ? a.start < b.start : a.pitch < b.pitch; });
+    int outputs = 0;
+    for (size_t i = 0; i < in.parts.size(); i++) {
+        if (part >= 0 && int(i) != part)
+            continue;
+        for (const TakeLane& tl : in.parts[i].lanes) {
+            auto it = std::find_if(clip.automation.begin(), clip.automation.end(),
+                                   [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
+            if (it == clip.automation.end()) {
+                bool cc = tl.control.kind == MidiControl::Kind::Cc;
+                if (cc && outputs >= kMaxAutomationLanes)
+                    continue;
+                clip.automation.push_back(makeMidiLane(AutomationId(nextId()), tl.control, cc ? outputs++ : 0, 0));
+                it = clip.automation.end() - 1;
+            }
+            it->points.insert(it->points.end(), tl.points.begin(), tl.points.end());
+            std::stable_sort(it->points.begin(), it->points.end(),
+                             [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+            for (const AutoPoint& p : tl.points)
+                end = std::max(end, p.t);
+        }
+    }
     // Whole bars, so the loop comes round on the downbeat.
     Tick bar = std::max<Tick>(1, ticksPerBar(timeSig));
     clip.length = std::max(bar, (end + bar - 1) / bar * bar);
@@ -192,8 +275,8 @@ CommandPtr importTracks(const Song& song, const Imported& in, const NextId& next
     auto compound = std::make_unique<CompoundCommand>("Import " + fileName);
     TimeSig timeSig = in.timeSig.value_or(song.timeSig);
     if (in.timeSig && *in.timeSig != song.timeSig)
-        compound->add(std::make_unique<SetSongField<TimeSig>>("Set time signature", &Song::timeSig, song.timeSig,
-                                                               *in.timeSig));
+        compound->add(
+            std::make_unique<SetSongField<TimeSig>>("Set time signature", &Song::timeSig, song.timeSig, *in.timeSig));
     int index = int(song.tracks.size());
     int count = std::min(room, int(in.parts.size()));
     for (int k = 0; k < count; k++) {

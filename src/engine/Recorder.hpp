@@ -45,7 +45,7 @@ class Recorder {
 
     enum class Target { NewClip, Overdub, Arranger };
     /// Values over time: play ticks for a note's curves, the target's ticks for a control's lane.
-    using Samples = std::vector<std::pair<double, float>>;
+    using Samples = TimedValues;
     struct Open {
         double playStart = 0;
         Tick start = 0; // in the target's ticks

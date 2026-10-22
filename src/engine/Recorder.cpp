@@ -15,85 +15,30 @@ double positiveMod(double x, double m) {
 Tick floorTo(double tick, Tick step) { return Tick(std::floor(tick / double(step))) * step; }
 Tick ceilTo(double tick, Tick step) { return Tick(std::ceil(tick / double(step))) * step; }
 
-constexpr float kCurveTolerance = 0.01f; // of a curve's 0..1 range
-constexpr float kBendTolerance = 0.05f;  // semitones
-constexpr size_t kMaxCurvePoints = 64;   // per note curve
-constexpr size_t kMaxLanePoints = 4096;  // per lane and take
-
-/// Sustain, portamento, sostenuto, soft pedal, legato, hold 2: on or off, so their lanes step.
-bool isSwitch(MidiControl c) { return c.kind == MidiControl::Kind::Cc && c.cc >= 64 && c.cc <= 69; }
-
-/// A note's curve from what its key played, across the note (0..1 of `length` from `start`). A curve that starts
-/// late begins at `from` (pressure and bend are 0 before the key moved them); `from` NAN holds the first value.
-std::vector<ExprPoint> curveOf(const Recorder::Samples& samples, double start, double length, float tolerance,
-                               float from) {
-    if (samples.empty())
-        return {};
-    std::vector<double> x;
-    std::vector<float> y;
-    if (!std::isnan(from) && samples.front().first > start) {
-        x.push_back(start);
-        y.push_back(from);
-    }
-    for (const auto& [t, v] : samples) {
-        x.push_back(std::max(t, start));
-        y.push_back(v);
-    }
-    std::vector<ExprPoint> out;
-    for (size_t i : thinValues(x, y, tolerance, kMaxCurvePoints))
-        out.push_back({float(std::clamp((x[i] - start) / length, 0.0, 1.0)), y[i], 0});
-    // Pressure or bend that stayed at rest says nothing. (A steady timbre does: it is where the finger sat.)
-    if (!std::isnan(from) && std::all_of(out.begin(), out.end(), [&](const ExprPoint& p) { return p.value == from; }))
-        return {};
-    return out;
-}
-
 } // namespace
 
 TakeNote Recorder::finish(const Open& o, int pitch, double playTick, float release) {
     TakeNote n{o.start, openLength(o, playTick), int8_t(pitch), o.velocity, release, o.channel};
     double length = double(n.length);
-    n.pitchExpr = curveOf(o.pitch, o.playStart, length, kBendTolerance, 0);
-    n.timbreExpr = curveOf(o.timbre, o.playStart, length, kCurveTolerance, NAN);
-    n.pressureExpr = curveOf(o.pressure, o.playStart, length, kCurveTolerance, 0);
+    n.pitchExpr = noteCurve(NoteCurve::Pitch, o.pitch, o.playStart, length);
+    n.timbreExpr = noteCurve(NoteCurve::Timbre, o.timbre, o.playStart, length);
+    n.pressureExpr = noteCurve(NoteCurve::Pressure, o.pressure, o.playStart, length);
     return n;
 }
 
 std::vector<TakeLane> Recorder::takeLanes(const Session& s) {
     std::vector<TakeLane> out;
     for (const auto& [key, samples] : s.controls) {
-        if (samples.empty())
-            continue;
         TakeLane lane;
         lane.control = controlOfKey(key);
-        if (isSwitch(lane.control)) {
-            // On or off: a step where it changes.
-            float last = -1;
-            for (const auto& [t, v] : samples) {
-                float on = v >= 0.5f ? 1.f : 0.f;
-                if (on == last)
-                    continue;
-                last = on;
-                lane.points.push_back({Tick(std::llround(t)), on, CurveType::Hold, 0});
-            }
-        } else {
-            std::vector<double> x;
-            std::vector<float> y;
-            for (const auto& [t, v] : samples) {
-                x.push_back(t);
-                y.push_back(v);
-            }
-            for (size_t i : thinValues(x, y, kCurveTolerance, kMaxLanePoints))
-                lane.points.push_back({Tick(std::llround(x[i])), y[i], CurveType::Linear, 0});
-        }
-        out.push_back(std::move(lane));
+        lane.points = lanePoints(lane.control, samples);
+        if (!lane.points.empty())
+            out.push_back(std::move(lane));
     }
     return out;
 }
 
-namespace {
-
-} // namespace
+namespace {} // namespace
 
 Recorder::Session* Recorder::find(TrackId track) {
     for (Session& s : active)
@@ -235,8 +180,7 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
             }
         Tick from = std::max<Tick>(0, floorTo(first, bar));
         Tick to = std::max(from + bar, ceilTo(last, bar));
-        CommandPtr command =
-            recordToArrangement(song, s.track, from, to, take, settings.arranger, nextId, &clip, &ids);
+        CommandPtr command = recordToArrangement(song, s.track, from, to, take, settings.arranger, nextId, &clip, &ids);
         if (!command)
             return;
         host.perform(std::move(command));

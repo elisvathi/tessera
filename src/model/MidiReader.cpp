@@ -178,8 +178,8 @@ int MidiReader::readMessage(uint8_t status, int channel, uint8_t d1, uint8_t d2,
         case kCcDataEntry:
             dataEntry(channel, d2);
             return 0;
-        case 38:  // data entry fine (cents): bend ranges are kept in whole semitones
-        case 98:  // NRPN select: nothing in Tessera answers to one
+        case 38: // data entry fine (cents): bend ranges are kept in whole semitones
+        case 98: // NRPN select: nothing in Tessera answers to one
         case 99:
             return 0;
         default:
