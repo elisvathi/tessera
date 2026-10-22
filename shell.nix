@@ -2,7 +2,7 @@
 
 let
   inherit (pkgs) lib stdenv;
-  sdkVersion = "2.6.6"; # Keep in sync with .github/workflows/build.yml.
+  sdkVersion = "2.6.6"; # Keep in sync with .github/workflows/build.yml and test.yml.
   sdkPlatforms = {
     x86_64-linux = {
       platform = "lin-x64";
