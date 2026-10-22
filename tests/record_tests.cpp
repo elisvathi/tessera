@@ -1,7 +1,9 @@
 #include "doctest.h"
 
 #include "../src/engine/Recorder.hpp"
+#include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Json.hpp"
+#include "../src/model/Serialize.hpp"
 
 #include <cmath>
 
@@ -471,9 +473,137 @@ TEST_CASE("recorded notes keep the MIDI channel they came in on") {
     uint64_t next = 100;
     ClipId clip;
     CommandPtr c = recordNewClip(
-        song, song.tracks[0].id, 0, ticksPerBar(song.timeSig), {played}, [&next] { return next++; }, &clip, nullptr);
+        song, song.tracks[0].id, 0, ticksPerBar(song.timeSig), Take({played}), [&next] { return next++; }, &clip, nullptr);
     REQUIRE(c);
     c->apply(song);
     REQUIRE(song.findClip(clip)->notes.size() == 1);
     CHECK(song.findClip(clip)->notes[0].channel == 3);
+}
+
+namespace {
+
+/// A take lane for `control` with values at the given ticks.
+TakeLane takeLane(MidiControl control, std::vector<std::pair<Tick, float>> values) {
+    TakeLane l;
+    l.control = control;
+    for (auto [t, v] : values) {
+        AutoPoint p;
+        p.t = t;
+        p.value = v;
+        l.points.push_back(p);
+    }
+    return l;
+}
+
+MidiControl cc(uint8_t n) { return {MidiControl::Kind::Cc, n}; }
+
+} // namespace
+
+TEST_CASE("record: a take's controls become clip lanes, each on its own output") {
+    Song song = recordSong();
+    Take take;
+    TakeNote n;
+    n.pressureExpr = {{0, 0.2f, 0}, {1, 0.9f, 0}};
+    take.notes.push_back(n);
+    take.lanes.push_back(takeLane({MidiControl::Kind::PitchBend, 0}, {{0, 0.5f}, {kPpq, 1}}));
+    take.lanes.push_back(takeLane(cc(1), {{0, 0}, {kPpq, 1}}));
+    take.lanes.push_back(takeLane(cc(64), {{0, 1}}));
+    uint64_t next = 100;
+    ClipId clip;
+    CommandPtr c = recordNewClip(song, song.tracks[0].id, 0, kBar, take, [&next] { return next++; }, &clip);
+    REQUIRE(c);
+    c->apply(song);
+    const Clip* made = song.findClip(clip);
+    REQUIRE(made->notes.size() == 1);
+    CHECK(made->notes[0].pressureExpr.size() == 2);
+    REQUIRE(made->automation.size() == 3);
+    CHECK(made->automation[0].drive == LaneDrive::Pitch);
+    CHECK(made->automation[0].name == "Pitch bend");
+    CHECK(made->automation[1].name == "Mod wheel (CC 1)");
+    CHECK(made->automation[1].outputIndex == 0);
+    CHECK(made->automation[2].name == "Sustain (CC 64)");
+    CHECK(made->automation[2].outputIndex == 1);
+    c->revert(song);
+    CHECK(!song.findClip(clip));
+}
+
+TEST_CASE("record: an overdub writes into the lane that has the control, only over the stretch it covers") {
+    Song song = recordSong();
+    uint64_t next = 100;
+    ClipId clip;
+    Take first;
+    first.lanes.push_back(takeLane(cc(1), {{0, 0.1f}, {kBar - 1, 0.1f}}));
+    first.notes.push_back(TakeNote{});
+    CommandPtr made = recordNewClip(song, song.tracks[0].id, 0, kBar, first, [&next] { return next++; }, &clip);
+    made->apply(song);
+
+    // A pass later, wrapping into the loop: only [kPpq, 2 kPpq] changes.
+    Take second;
+    second.lanes.push_back(takeLane(cc(1), {{kBar + kPpq, 0.8f}, {kBar + 2 * kPpq, 0.9f}}));
+    CommandPtr over = recordIntoClip(song, clip, second, [&next] { return next++; });
+    REQUIRE(over);
+    over->apply(song);
+    const Clip* c = song.findClip(clip);
+    REQUIRE(c->automation.size() == 1);
+    const auto& pts = c->automation[0].points;
+    REQUIRE(pts.size() == 4);
+    CHECK(pts[0].t == 0);
+    CHECK(pts[1].t == kPpq);
+    CHECK(pts[1].value == doctest::Approx(0.8f));
+    CHECK(pts[3].t == kBar - 1);
+    over->revert(song);
+    CHECK(song.findClip(clip)->automation[0].points.size() == 2);
+}
+
+TEST_CASE("record: a lane marked don't-record keeps its points, and a CC reuses its channel across clips") {
+    Song song = recordSong();
+    uint64_t next = 100;
+    ClipId a, b;
+    Take take;
+    take.notes.push_back(TakeNote{});
+    take.lanes.push_back(takeLane(cc(20), {{0, 0.3f}}));
+    take.lanes.push_back(takeLane(cc(1), {{0, 0.3f}}));
+    recordNewClip(song, song.tracks[0].id, 0, kBar, take, [&next] { return next++; }, &a)->apply(song);
+    Take other;
+    other.notes.push_back(TakeNote{});
+    other.lanes.push_back(takeLane(cc(1), {{0, 0.6f}}));
+    recordNewClip(song, song.tracks[0].id, 1, kBar, other, [&next] { return next++; }, &b)->apply(song);
+    CHECK(song.findClip(b)->automation[0].outputIndex == song.findClip(a)->automation[1].outputIndex);
+
+    song.findClip(a)->automation[0].midiIgnored = true;
+    Take again;
+    again.lanes.push_back(takeLane(cc(20), {{0, 0.9f}}));
+    recordIntoClip(song, a, again, [&next] { return next++; })->apply(song);
+    CHECK(song.findClip(a)->automation[0].points[0].value == doctest::Approx(0.3f));
+}
+
+TEST_CASE("record: thinning keeps the shape with few points") {
+    std::vector<double> ticks;
+    std::vector<float> values;
+    for (int i = 0; i <= 100; i++) {
+        ticks.push_back(i);
+        values.push_back(i <= 50 ? i / 50.f : 1.f); // a ramp, then flat
+    }
+    std::vector<size_t> kept = thinValues(ticks, values, 0.01f, 64);
+    REQUIRE(kept.size() == 3);
+    CHECK(kept[1] == 50);
+    // A wiggle needs more points than allowed: the tolerance loosens until it fits.
+    for (int i = 0; i <= 100; i++)
+        values[size_t(i)] = float(i % 2);
+    CHECK(thinValues(ticks, values, 0.01f, 8).size() <= 8);
+}
+
+TEST_CASE("record: lanes save and load their drive and MIDI control") {
+    Clip clip;
+    clip.id = ClipId(1);
+    AutomationEnvelope lane = makeMidiLane(AutomationId(5), {MidiControl::Kind::PitchBend, 0}, 0, 0);
+    lane.midiIgnored = true;
+    clip.automation.push_back(lane);
+    clip.automation.push_back(makeLane(AutomationId(6), 2, 0));
+    json_t* j = clipToJson(clip);
+    Clip back = clipFromJson(j);
+    json_decref(j);
+    REQUIRE(back.automation.size() == 2);
+    CHECK(back.automation[0] == clip.automation[0]);
+    CHECK(back.automation[1] == clip.automation[1]);
 }

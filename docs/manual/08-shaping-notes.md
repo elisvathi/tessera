@@ -76,7 +76,7 @@ The lower lane can also show **Chance**, **Repeats** and **Micro-timing** as ste
 
 Each note can carry three curves that change while it sounds:
 
-- **Pitch**: a bend of up to ±24 semitones. It is added to the Track Out's **V/OCT**.
+- **Pitch**: a bend of up to ±48 semitones. It is added to the Track Out's **V/OCT**.
 - **Timbre**: 0 to 100%, sent on the Track Out's **TIMB** jack.
 - **Pressure**: 0 to 100%, sent on the **PRESS** jack.
 

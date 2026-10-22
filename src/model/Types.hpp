@@ -12,6 +12,11 @@ constexpr int kMaxTracks = 64;
 constexpr int kMaxVoices = 16;
 constexpr int kMaxAutomationLanes = 8;
 constexpr int kMaxKnobLanes = 16; // lanes that turn device knobs, per track and per clip
+// Lanes played into the voices instead of an AUTO channel: pitch bend (on V/OCT) and pressure (on PRESS). The
+// engine keeps them after the AUTO channels, at these slots.
+constexpr int kPitchLaneSlot = kMaxAutomationLanes;
+constexpr int kPressureLaneSlot = kMaxAutomationLanes + 1;
+constexpr int kMaxPlayedLanes = kMaxAutomationLanes + 2;
 
 /// A strongly typed ID. The Tag keeps a TrackId from being passed where a ClipId is expected.
 /// Value 0 means "no ID".

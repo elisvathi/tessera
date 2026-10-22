@@ -186,8 +186,8 @@ class IdRepair {
 };
 
 void normalizeAutomation(std::vector<AutomationEnvelope>& lanes, IdRepair& ids) {
-    if (lanes.size() > size_t(kMaxAutomationLanes))
-        lanes.resize(kMaxAutomationLanes);
+    if (lanes.size() > size_t(kMaxPlayedLanes + kMaxKnobLanes))
+        lanes.resize(kMaxPlayedLanes + kMaxKnobLanes);
     for (AutomationEnvelope& lane : lanes) {
         ids.fix(lane.id);
         clampValue(lane.outputIndex, 0, kMaxAutomationLanes - 1);

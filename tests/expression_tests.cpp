@@ -50,7 +50,7 @@ TEST_CASE("expression: each curve has its own list and range") {
     CHECK(n.timbreExpr.size() == 1);
     CHECK(n.pitchExpr.empty());
     CHECK(n.pressureExpr.empty());
-    CHECK(expr::info(expr::Curve::Pitch).min == -24);
+    CHECK(expr::info(expr::Curve::Pitch).min == -48);
     CHECK(expr::info(expr::Curve::Pressure).max == 1);
 }
 

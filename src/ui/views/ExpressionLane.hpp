@@ -20,7 +20,7 @@ class ExpressionLane : public InteractiveView {
 
     expr::Curve curve = expr::Curve::Pitch;
 
-    /// The values the lane's height shows. Pitch has a choosable window (±2 to ±24 semitones).
+    /// The values the lane's height shows. Pitch has a choosable window (±2 to ±48 semitones).
     float low() const;
     float high() const;
     float valueAt(float y) const;

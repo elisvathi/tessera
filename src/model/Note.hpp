@@ -50,7 +50,7 @@ struct Note {
     uint8_t colorTag = 0; // 0 = inherit from clip
     uint8_t channel = 1;  // 1..16, like MIDI: lets one clip hold several parts that devices and export tell apart
     NoteOperators ops;
-    // Per-note expression curves; empty means flat. Pitch is in semitones (±24), the others 0..1.
+    // Per-note expression curves; empty means flat. Pitch is in semitones (±48, MPE's default range), the others 0..1.
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr;
 
     Tick end() const { return start + length; }

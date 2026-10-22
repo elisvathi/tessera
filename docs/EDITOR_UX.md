@@ -204,7 +204,7 @@ Randomness uses a per-track RNG seeded from (song seed, clip id, pass number), s
 
 The lower pane holds per-note value lanes. Several can be shown stacked (click lane names with Ctrl/Cmd to add to the stack) or one at a time as tabs.
 
-Lanes: **Velocity**, **Release velocity**, **Chance**, **Velocity spread**, **Repeats** (count), **Micro-timing**, and per-note expression curves **Pitch** (bend, ±24 semitones), **Timbre**, **Pressure** (MPE-style), plus the clip's **automation lanes** (continuous, not per note).
+Lanes: **Velocity**, **Release velocity**, **Chance**, **Velocity spread**, **Repeats** (count), **Micro-timing**, and per-note expression curves **Pitch** (bend, ±48 semitones), **Timbre**, **Pressure** (MPE-style), plus the clip's **automation lanes** (continuous, not per note).
 
 Editing in stem lanes (velocity, chance, release, spread, repeats, micro-timing):
 

@@ -10,7 +10,7 @@ namespace tessera::expr {
 namespace {
 
 const Info kInfo[] = {
-    {"Pitch", -24, 24, 0},
+    {"Pitch", -48, 48, 0},
     {"Timbre", 0, 1, 0},
     {"Pressure", 0, 1, 0},
 };

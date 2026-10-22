@@ -1,10 +1,13 @@
 #include "Recording.hpp"
 
+#include "AutomationEdits.hpp"
 #include "Json.hpp"
 #include "LauncherCommands.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <optional>
 
 namespace tessera {
 
@@ -53,14 +56,216 @@ Note toNote(const TakeNote& t, Tick start, const NextId& nextId) {
     n.velocity = std::clamp(t.velocity, 0.f, 1.f);
     n.releaseVelocity = std::clamp(t.release, 0.f, 1.f);
     n.channel = uint8_t(std::clamp<int>(t.channel, 1, kMaxNoteChannel));
+    n.pitchExpr = t.pitchExpr;
+    n.timbreExpr = t.timbreExpr;
+    n.pressureExpr = t.pressureExpr;
     return n;
 }
 
-std::string takeName(size_t notes) { return "Record " + countNotes(notes); }
+/// Every clip a track plays: its launcher clips and the clips on its timeline.
+std::vector<const Clip*> clipsOf(const Song& song, const Track& track) {
+    std::vector<const Clip*> out;
+    auto add = [&](ClipId id) {
+        const Clip* c = song.findClip(id);
+        if (c && std::find(out.begin(), out.end(), c) == out.end())
+            out.push_back(c);
+    };
+    for (const ClipSlot& slot : track.slots)
+        if (slot.clip)
+            add(*slot.clip);
+    for (const ArrangerClip& a : track.arrangement)
+        add(a.clip);
+    return out;
+}
+
+/// The track that plays a clip, from a launcher slot or its timeline; null when none does.
+const Track* trackOf(const Song& song, ClipId clip) {
+    for (const Track& t : song.tracks) {
+        for (const ClipSlot& slot : t.slots)
+            if (slot.clip && *slot.clip == clip)
+                return &t;
+        for (const ArrangerClip& a : t.arrangement)
+            if (a.clip == clip)
+                return &t;
+    }
+    return nullptr;
+}
+
+/// `lane` with the take's points over the stretch they cover replacing what was there. In a loop of `loopLength`
+/// from `loopStart` the points wrap into it; a take that crosses the loop end replaces both stretches.
+void writePoints(AutomationEnvelope& lane, const std::vector<AutoPoint>& points, Tick loopStart, Tick loopLength) {
+    std::vector<std::vector<AutoPoint>> runs(1);
+    Tick last = std::numeric_limits<Tick>::min();
+    for (AutoPoint p : points) {
+        if (loopLength > 0)
+            p.t = loopStart + positiveMod(p.t - loopStart, loopLength);
+        p.t = std::max<Tick>(0, p.t);
+        if (p.t < last)
+            runs.emplace_back();
+        runs.back().push_back(p);
+        last = p.t;
+    }
+    for (const std::vector<AutoPoint>& run : runs) {
+        if (run.empty())
+            continue;
+        Tick from = run.front().t, to = run.back().t;
+        auto& pts = lane.points;
+        pts.erase(std::remove_if(pts.begin(), pts.end(), [&](const AutoPoint& p) { return p.t >= from && p.t <= to; }),
+                  pts.end());
+        pts.insert(pts.end(), run.begin(), run.end());
+    }
+    std::stable_sort(lane.points.begin(), lane.points.end(),
+                     [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+}
+
+/// The take's lanes written into `lanes` (a clip's): into the lane that already records the control, or a new one.
+/// A lane marked "don't record" keeps its points; a CC with no AUTO channel left is dropped.
+void mergeTakeLanes(const Song& song, const Track& track, std::vector<AutomationEnvelope>& lanes,
+                    const std::vector<TakeLane>& take, Tick loopStart, Tick loopLength, const NextId& nextId) {
+    for (const TakeLane& tl : take) {
+        if (!tl.control.valid() || tl.points.empty())
+            continue;
+        auto it = std::find_if(lanes.begin(), lanes.end(),
+                               [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
+        if (it == lanes.end()) {
+            int output = 0;
+            if (tl.control.kind == MidiControl::Kind::Cc) {
+                output = midiLaneOutput(song, track, tl.control, lanes);
+                if (output < 0)
+                    continue;
+            }
+            lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, output, track.color));
+            it = lanes.end() - 1;
+        }
+        if (!it->midiIgnored)
+            writePoints(*it, tl.points, loopStart, loopLength);
+    }
+}
 
 } // namespace
 
-CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length, const std::vector<TakeNote>& take,
+std::string midiControlName(MidiControl control) {
+    switch (control.kind) {
+    case MidiControl::Kind::PitchBend:
+        return "Pitch bend";
+    case MidiControl::Kind::Pressure:
+        return "Pressure";
+    case MidiControl::Kind::Cc:
+        break;
+    case MidiControl::Kind::None:
+    default:
+        return "";
+    }
+    std::string number = "CC " + std::to_string(control.cc);
+    switch (control.cc) {
+    case 1:
+        return "Mod wheel (" + number + ")";
+    case 2:
+        return "Breath (" + number + ")";
+    case 4:
+        return "Foot (" + number + ")";
+    case 7:
+        return "Volume (" + number + ")";
+    case 11:
+        return "Expression (" + number + ")";
+    case 64:
+        return "Sustain (" + number + ")";
+    case 74:
+        return "Timbre (" + number + ")";
+    default:
+        return number;
+    }
+}
+
+AutomationEnvelope makeMidiLane(AutomationId id, MidiControl control, int output, uint32_t color) {
+    AutomationEnvelope lane = makeLane(id, output, color);
+    lane.name = midiControlName(control);
+    lane.midi = control;
+    if (control.kind == MidiControl::Kind::PitchBend) {
+        lane.drive = LaneDrive::Pitch;
+        lane.bipolar = true;
+        lane.rangeMin = -2 / 12.f;
+        lane.rangeMax = 2 / 12.f;
+    } else if (control.kind == MidiControl::Kind::Pressure) {
+        lane.drive = LaneDrive::Pressure;
+    }
+    return lane;
+}
+
+int midiLaneOutput(const Song& song, const Track& track, MidiControl control,
+                   const std::vector<AutomationEnvelope>& pending) {
+    std::vector<const std::vector<AutomationEnvelope>*> all{&track.automation, &pending};
+    for (const Clip* c : clipsOf(song, track))
+        all.push_back(&c->automation);
+    for (const auto* lanes : all)
+        for (const AutomationEnvelope& l : *lanes)
+            if (drivesOutput(l) && l.midi == control)
+                return l.outputIndex;
+    for (int o = 0; o < kMaxAutomationLanes; o++) {
+        bool used = false;
+        for (const auto* lanes : all)
+            for (const AutomationEnvelope& l : *lanes)
+                used |= drivesOutput(l) && l.outputIndex == o;
+        if (!used)
+            return o;
+    }
+    return -1;
+}
+
+std::vector<size_t> thinValues(const std::vector<double>& ticks, const std::vector<float>& values, float tolerance,
+                               size_t maxPoints) {
+    size_t n = std::min(ticks.size(), values.size());
+    if (n <= 2) {
+        std::vector<size_t> all(n);
+        for (size_t i = 0; i < n; i++)
+            all[i] = i;
+        return all;
+    }
+    maxPoints = std::max<size_t>(2, maxPoints);
+    // Keep the point furthest off the line between two kept ones, until every point is close enough. Too many
+    // points left: loosen the tolerance and try again.
+    for (float tol = tolerance;; tol *= 2) {
+        std::vector<bool> keep(n, false);
+        keep[0] = keep[n - 1] = true;
+        std::vector<std::pair<size_t, size_t>> spans{{0, n - 1}};
+        while (!spans.empty()) {
+            auto [a, b] = spans.back();
+            spans.pop_back();
+            float worst = 0;
+            size_t at = a;
+            for (size_t i = a + 1; i < b; i++) {
+                double span = ticks[b] - ticks[a];
+                double x = span > 0 ? (ticks[i] - ticks[a]) / span : 0;
+                float line = values[a] + float(x) * (values[b] - values[a]);
+                float off = std::fabs(values[i] - line);
+                if (off > worst) {
+                    worst = off;
+                    at = i;
+                }
+            }
+            if (worst > tol) {
+                keep[at] = true;
+                spans.push_back({a, at});
+                spans.push_back({at, b});
+            }
+        }
+        std::vector<size_t> out;
+        for (size_t i = 0; i < n; i++)
+            if (keep[i])
+                out.push_back(i);
+        if (out.size() <= maxPoints || tol > 1)
+            return out;
+    }
+}
+
+namespace {
+
+/// The undo name of a take: "Record 5 notes", or "Record" when it holds only lane values.
+std::string takeName(const Take& take) { return take.notes.empty() ? "Record" : "Record " + countNotes(take.notes.size()); }
+
+} // namespace
+
+CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length, const Take& take,
                          const NextId& nextId, ClipId* clipId, edits::IdSet* noteIds, const std::string& name) {
     const Track* t = song.findTrack(track);
     if (!t || slot < 0 || slot >= int(t->slots.size()) || t->slots[size_t(slot)].clip || length < 1)
@@ -71,37 +276,54 @@ CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length,
     clip.color = t->color;
     clip.length = length;
     clip.loopEnd = length;
-    for (const TakeNote& tn : take) {
+    for (const TakeNote& tn : take.notes) {
         clip.notes.push_back(toNote(tn, positiveMod(tn.start, length), nextId));
         if (noteIds)
             noteIds->insert(clip.notes.back().id);
     }
     clip.sortNotes();
+    mergeTakeLanes(song, *t, clip.automation, take.lanes, 0, length, nextId);
     if (clipId)
         *clipId = clip.id;
-    auto out = std::make_unique<CompoundCommand>(name.empty() ? takeName(take.size()) : name);
+    auto out = std::make_unique<CompoundCommand>(name.empty() ? takeName(take) : name);
     out->add(std::make_unique<AddClipToSlot>(track, slot, std::move(clip)));
     return out;
 }
 
-CommandPtr recordIntoClip(const Song& song, ClipId clipId, const std::vector<TakeNote>& take, const NextId& nextId,
+CommandPtr recordIntoClip(const Song& song, ClipId clipId, const Take& take, const NextId& nextId,
                           edits::IdSet* noteIds) {
     const Clip* clip = song.findClip(clipId);
     if (!clip || take.empty())
         return nullptr;
     ClipSpan span = clipSpan(*clip);
     std::vector<Note> added;
-    for (const TakeNote& tn : take) {
+    for (const TakeNote& tn : take.notes) {
         Tick start = span.looping && span.length() > 0 ? span.start + positiveMod(tn.start - span.start, span.length())
                                                        : std::max<Tick>(0, tn.start);
         added.push_back(toNote(tn, start, nextId));
         if (noteIds)
             noteIds->insert(added.back().id);
     }
-    return std::make_unique<EditNotes>(takeName(take.size()), clipId, std::vector<Note>{}, std::move(added));
+    auto out = std::make_unique<CompoundCommand>(takeName(take));
+    if (!added.empty())
+        out->add(std::make_unique<EditNotes>(takeName(take), clipId, std::vector<Note>{}, std::move(added)));
+    if (const Track* track = trackOf(song, clipId)) {
+        std::vector<AutomationEnvelope> lanes = clip->automation;
+        mergeTakeLanes(song, *track, lanes, take.lanes, span.looping ? span.start : 0,
+                       span.looping ? span.length() : 0, nextId);
+        LaneOwner owner = LaneOwner::ofClip(clipId);
+        for (size_t i = 0; i < lanes.size(); i++) {
+            std::optional<AutomationEnvelope> before;
+            if (i < clip->automation.size())
+                before = clip->automation[i];
+            if (!before || !(*before == lanes[i]))
+                out->add(std::make_unique<EditLane>("Record", owner, int(i), before, lanes[i]));
+        }
+    }
+    return out;
 }
 
-CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const std::vector<TakeNote>& take,
+CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const Take& take,
                                ArrangerRecordMode mode, const NextId& nextId, ClipId* clipId, edits::IdSet* noteIds) {
     const Track* t = song.findTrack(track);
     if (!t || to <= from || from < 0)
@@ -133,7 +355,7 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
             clip.notes.push_back(std::move(n));
         }
     }
-    for (const TakeNote& tn : take) {
+    for (const TakeNote& tn : take.notes) {
         if (tn.start < from || tn.start >= to)
             continue;
         clip.notes.push_back(toNote(tn, tn.start - from, nextId));
@@ -141,6 +363,11 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
             noteIds->insert(clip.notes.back().id);
     }
     clip.sortNotes();
+    std::vector<TakeLane> lanes = take.lanes;
+    for (TakeLane& l : lanes)
+        for (AutoPoint& p : l.points)
+            p.t -= from;
+    mergeTakeLanes(song, *t, clip.automation, lanes, 0, 0, nextId);
     if (clipId)
         *clipId = clip.id;
 
@@ -154,7 +381,7 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
     after.push_back(placed);
     after = arrange::resolveOverlaps(after, {placed.clip.id}, song.clips, [&] { return ArrangementId(nextId()); });
 
-    auto out = std::make_unique<CompoundCommand>(takeName(take.size()));
+    auto out = std::make_unique<CompoundCommand>(takeName(take));
     out->add(std::make_unique<AddClip>(std::move(clip)));
     out->add(arrange::replaceArrangement(song, "Record", before, after));
     return out;

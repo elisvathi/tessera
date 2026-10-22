@@ -58,7 +58,9 @@ std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& la
         if (l.mute || l.paramTarget.valid())
             continue;
         LanePlayback p;
-        p.output = std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1);
+        p.output = l.drive == LaneDrive::Pitch      ? kPitchLaneSlot
+                   : l.drive == LaneDrive::Pressure ? kPressureLaneSlot
+                                                    : std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1);
         p.rangeMin = l.rangeMin;
         p.rangeMax = l.rangeMax;
         p.rest = restValue(l);
@@ -134,7 +136,8 @@ std::vector<KnobLanePlayback> flattenKnobLanes(const std::vector<AutomationEnvel
 int channelsOf(const std::vector<LanePlayback>& lanes) {
     int n = 0;
     for (const LanePlayback& l : lanes)
-        n = std::max(n, l.output + 1);
+        if (l.output < kMaxAutomationLanes)
+            n = std::max(n, l.output + 1);
     return n;
 }
 

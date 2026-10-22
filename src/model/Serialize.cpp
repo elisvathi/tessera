@@ -33,6 +33,8 @@ const char* const kRecordInputs[] = {"any", "cv", "midi"};
 const char* const kListenSources[] = {"none", "external", "trackAfter", "trackBefore"};
 const char* const kAutoSources[] = {"knob", "cv"};
 const char* const kAutoRecordModes[] = {"touch", "latch", "write"};
+const char* const kLaneDrives[] = {"auto", "pitch", "pressure"};
+const char* const kMidiControls[] = {"none", "bend", "pressure", "cc"};
 const char* const kLoopModes[] = {"off", "loop"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
@@ -117,6 +119,17 @@ json_t* automationToJson(const AutomationEnvelope& a) {
     set(j, "targets", targets);
     if (a.paramTarget.valid())
         set(j, "paramTarget", paramRefToJson(a.paramTarget));
+    // Written only when set, so older patches load unchanged.
+    if (a.drive != LaneDrive::Auto)
+        setString(j, "drive", enumName(a.drive, kLaneDrives));
+    if (a.midi.valid()) {
+        json_t* midi = json_array();
+        json_array_append_new(midi, json_string(enumName(a.midi.kind, kMidiControls)));
+        json_array_append_new(midi, json_integer(a.midi.cc));
+        set(j, "midi", midi);
+    }
+    if (a.midiIgnored)
+        setBool(j, "midiIgnored", true);
 
     // Points as [t, value, curve, tension]. Curve is an index: CurveType must only ever be appended to.
     json_t* points = json_array();
@@ -152,6 +165,12 @@ AutomationEnvelope automationFromJson(const json_t* j) {
         a.targets.push_back(pt);
     });
     a.paramTarget = paramRefFromJson(get(j, "paramTarget"));
+    a.drive = enumFromName(get(j, "drive"), kLaneDrives, a.drive);
+    if (const json_t* midi = get(j, "midi"); json_is_array(midi)) {
+        a.midi.kind = enumFromName(json_array_get(midi, 0), kMidiControls, a.midi.kind);
+        a.midi.cc = uint8_t(std::clamp<int64_t>(intAt(midi, 1, 0), 0, 127));
+    }
+    a.midiIgnored = getBool(j, "midiIgnored", a.midiIgnored);
     forEach(get(j, "points"), [&](const json_t* p) {
         if (json_array_size(p) < 2)
             return;
