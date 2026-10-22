@@ -54,7 +54,23 @@ std::vector<TakeLane> Recorder::takeLanes(const Session& s) {
     return out;
 }
 
-namespace {} // namespace
+void Recorder::reportUnlinked(TrackId track, const std::vector<TakeLane>& lanes, std::vector<int>& reported) {
+    const Song& song = host.song();
+    const Track* t = song.findTrack(track);
+    if (!t)
+        return;
+    std::vector<MidiControl> unlinked;
+    for (const TakeLane& l : lanes) {
+        int key = controlKey(l.control);
+        if (l.control.kind != MidiControl::Kind::Cc || isSetupControl(l.control) || midiLaneOf(song, *t, l.control) ||
+            std::find(reported.begin(), reported.end(), key) != reported.end())
+            continue;
+        reported.push_back(key);
+        unlinked.push_back(l.control);
+    }
+    if (!unlinked.empty())
+        host.controlsWithoutLane(track, unlinked);
+}
 
 Recorder::Session* Recorder::find(TrackId track) {
     for (Session& s : active)
@@ -142,6 +158,7 @@ void Recorder::quantize(ClipId clip, const edits::IdSet& ids) {
 void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) {
     Take take(std::move(s.done));
     take.lanes = takeLanes(s);
+    reportUnlinked(s.track, take.lanes, s.reported);
     s.done.clear();
     s.controls.clear();
     for (Session::LaneRecording& r : s.lanes)
@@ -533,6 +550,8 @@ ClipId Recorder::capture(TrackId track) {
     }
     // Controls are placed by the free clock from the first note, which runs with the song while it plays.
     take.lanes = capturedLanes(notes[first].freeStart, phraseEnd, double(take.notes.front().start));
+    std::vector<int> reported;
+    reportUnlinked(track, take.lanes, reported);
     ClipId clip;
     edits::IdSet ids;
     CommandPtr command = recordNewClip(

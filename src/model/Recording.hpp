@@ -99,6 +99,14 @@ std::string laneOutputLabel(const AutomationEnvelope& lane);
 int midiLaneOutput(const Song& song, const Track& track, MidiControl control,
                    const std::vector<AutomationEnvelope>& pending);
 
+/// The lane that records `control` on the track itself, else on one of its clips; null when there is none. A take
+/// writes a CC only where the track has such a lane: you add the lanes you want, stray controls leave nothing.
+const AutomationEnvelope* midiLaneOf(const Song& song, const Track& track, MidiControl control);
+
+/// Bank select (CC 0 and 32) and the channel mode messages (CC 120-127, such as "all notes off"): they pick a sound
+/// or reset a synth, so they never get a lane.
+bool isSetupControl(MidiControl control);
+
 /// Values over time, as (tick, value) pairs in increasing tick order.
 using TimedValues = std::vector<std::pair<double, float>>;
 

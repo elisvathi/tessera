@@ -151,24 +151,14 @@ void findLiveControls(const Song& song, const Track& track, TrackPlayback& tp) {
                 tp.bendLive = {int8_t(kPitchLaneSlot), l.rangeMin, l.rangeMax};
         }
     };
-    std::array<bool, kMaxAutomationLanes> used{};
-    auto visit = [&](const std::vector<AutomationEnvelope>& lanes) {
-        scan(lanes);
-        for (const AutomationEnvelope& l : lanes)
-            if (drivesOutput(l))
-                used[size_t(std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1))] = true;
-    };
-    visit(track.automation);
+    scan(track.automation);
     for (const ClipSlot& slot : track.slots)
         if (slot.clip)
             if (const Clip* c = song.findClip(*slot.clip))
-                visit(c->automation);
+                scan(c->automation);
     for (const ArrangerClip& a : track.arrangement)
         if (const Clip* c = song.findClip(a.clip))
-            visit(c->automation);
-    for (int o = 0; o < kMaxAutomationLanes; o++)
-        if (!used[size_t(o)])
-            tp.freeAuto[size_t(tp.freeAutoCount++)] = int8_t(o);
+            scan(c->automation);
 }
 
 int channelsOf(const std::vector<LanePlayback>& lanes) {

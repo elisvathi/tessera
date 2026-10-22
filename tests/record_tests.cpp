@@ -87,7 +87,16 @@ struct FakeHost : RecorderHost {
     void launchAt(TrackId track, int slot, double playTick) override { launches.push_back({track, slot, playTick}); }
     PlayMode playMode() override { return mode; }
     int targetScene() override { return scene; }
+    std::vector<std::vector<MidiControl>> unlinked;
+    void controlsWithoutLane(TrackId, const std::vector<MidiControl>& controls) override {
+        unlinked.push_back(controls);
+    }
 };
+
+/// Gives the first track a lane that records `control` on AUTO channel `output`, as "Add lane" does.
+void addTrackMidiLane(Song& song, MidiControl control, int output) {
+    song.tracks[0].automation.push_back(makeMidiLane(song.newId<AutomationId>(), control, output, 0));
+}
 
 RecordEvent punch(RecordEvent::Kind kind, double play, double song, bool playing = true) {
     RecordEvent e;
@@ -504,8 +513,10 @@ MidiControl cc(uint8_t n) { return {MidiControl::Kind::Cc, n}; }
 
 } // namespace
 
-TEST_CASE("record: a take's controls become clip lanes, each on its own output") {
+TEST_CASE("record: a take writes a CC only where the track has a lane for it; bend always gets one") {
     Song song = recordSong();
+    addTrackMidiLane(song, cc(64), 3);
+    song.tracks[0].automation[0].rangeMax = 5;
     Take take;
     TakeNote n;
     n.pressureExpr = {{0, 0.2f, 0}, {1, 0.9f, 0}};
@@ -521,19 +532,22 @@ TEST_CASE("record: a take's controls become clip lanes, each on its own output")
     const Clip* made = song.findClip(clip);
     REQUIRE(made->notes.size() == 1);
     CHECK(made->notes[0].pressureExpr.size() == 2);
-    REQUIRE(made->automation.size() == 3);
+    // The mod wheel has no lane on the track, so it is left out.
+    REQUIRE(made->automation.size() == 2);
     CHECK(made->automation[0].drive == LaneDrive::Pitch);
     CHECK(made->automation[0].name == "Pitch bend");
-    CHECK(made->automation[1].name == "Mod wheel (CC 1)");
-    CHECK(made->automation[1].outputIndex == 0);
-    CHECK(made->automation[2].name == "Sustain (CC 64)");
-    CHECK(made->automation[2].outputIndex == 1);
+    CHECK(made->automation[1].name == "Sustain (CC 64)");
+    CHECK(made->automation[1].midi == cc(64));
+    CHECK(made->automation[1].outputIndex == 3);
+    CHECK(made->automation[1].rangeMax == 5);
+    CHECK(made->automation[1].id != song.tracks[0].automation[0].id);
     c->revert(song);
     CHECK(!song.findClip(clip));
 }
 
 TEST_CASE("record: an overdub writes into the lane that has the control, only over the stretch it covers") {
     Song song = recordSong();
+    addTrackMidiLane(song, cc(1), 0);
     uint64_t next = 100;
     ClipId clip;
     Take first;
@@ -562,6 +576,8 @@ TEST_CASE("record: an overdub writes into the lane that has the control, only ov
 
 TEST_CASE("record: a lane marked don't-record keeps its points, and a CC reuses its channel across clips") {
     Song song = recordSong();
+    addTrackMidiLane(song, cc(20), 0);
+    addTrackMidiLane(song, cc(1), 1);
     uint64_t next = 100;
     ClipId a, b;
     Take take;
@@ -695,11 +711,12 @@ TEST_CASE("live expression: a CC plays on the AUTO channel of the lane that reco
     EngineRig rig(song);
     size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
     rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 1}, 0.5f));
-    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1)); // no lane yet: the first free channel
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1)); // no lane: plays nowhere
     rig.run(1);
     REQUIRE(rig.frames[slot].autoChannels >= 3);
     CHECK(rig.frames[slot].automation[2] == doctest::Approx(5));
-    CHECK(rig.frames[slot].automation[0] == doctest::Approx(10));
+    CHECK(rig.frames[slot].automation[0] == doctest::Approx(0));
+    CHECK(rig.frames[slot].automation[1] == doctest::Approx(0));
 }
 
 TEST_CASE("live expression: armed tracks report values to the recorder while recording") {
@@ -790,7 +807,10 @@ TEST_CASE("recorder: what a held key played becomes the note's curves") {
 }
 
 TEST_CASE("recorder: moved controls become lanes in the take's clip, in the same undo step") {
-    FakeHost host(recordSong());
+    Song song = recordSong();
+    addTrackMidiLane(song, cc(1), 0);
+    addTrackMidiLane(song, cc(64), 1);
+    FakeHost host(song);
     Recorder rec(host);
     const Track& t = host.song_.tracks[0];
     rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
@@ -817,6 +837,33 @@ TEST_CASE("recorder: moved controls become lanes in the take's clip, in the same
     CHECK(c->automation[1].name == "Sustain (CC 64)");
     REQUIRE(c->automation[1].points.size() == 3); // off, on, off
     CHECK(c->automation[1].points[1].curve == CurveType::Hold);
+    CHECK(host.unlinked.empty());
+}
+
+TEST_CASE("recorder: a CC with no lane is not recorded and is reported once per recording") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    auto move = [&](MidiControl control, double at) {
+        RecordEvent e = valueEvent(t, RecordEvent::Kind::ChannelValue, at, 0.5f);
+        e.control = control;
+        rec.handle(e);
+    };
+    rec.settings.clipBars = 1;
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    move(cc(1), kPpq);
+    move(cc(0), kPpq); // bank select: never a lane, never reported
+    rec.handle(note(t, 60, false, kPpq, kPpq));
+    rec.update(kBar + 1); // the first pass ends
+    move(cc(1), kBar + kPpq);
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 2 * kBar, 2 * kBar));
+    const Clip* c = slotClip(host.song_, 0, 0);
+    REQUIRE(c);
+    CHECK(c->automation.empty());
+    REQUIRE(host.unlinked.size() == 1);
+    REQUIRE(host.unlinked[0].size() == 1);
+    CHECK(host.unlinked[0][0] == cc(1));
 }
 
 TEST_CASE("recorder: a take of only control moves still makes a clip") {
@@ -943,7 +990,9 @@ TEST_CASE("lane record state: the track arm decides, then the lane's source") {
 }
 
 TEST_CASE("capture keeps what the keys played and the controls moved during the phrase") {
-    FakeHost host(recordSong());
+    Song song = recordSong();
+    addTrackMidiLane(song, cc(1), 0);
+    FakeHost host(song);
     Recorder rec(host);
     auto free = [](RecordEvent e, double at) {
         e.track = 0;

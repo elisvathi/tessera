@@ -143,10 +143,6 @@ struct TrackPlayback {
     };
     std::array<LiveControl, 128> ccLive{};
     LiveControl bendLive{kPitchLaneSlot, -2 / 12.f, 2 / 12.f};
-    // AUTO channels no lane of the track uses, in order: a CC moved with no lane yet plays on the next one, as the
-    // lane its take makes will.
-    std::array<int8_t, kMaxAutomationLanes> freeAuto{};
-    int freeAutoCount = 0;
     /// Keys of clips with their own key, for the devices that work in a key.
     std::vector<Scale> keys;
 

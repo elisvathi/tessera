@@ -102,6 +102,8 @@ There are three ways in. Each is one undo step.
   lanes).
 - Notes keep their timing, velocity and release velocity. Clips are whole bars long and loop.
 - Poly aftertouch and MPE come in as each note's **Pressure**, **Timbre** and **Pitch** curves. Pitch bend, channel
-  aftertouch and controllers become clip lanes, as when you record them (see
-  [Expression and controls](11-recording.md#expression-and-controls)).
+  aftertouch and controllers become clip lanes (see [Expression and controls](11-recording.md#expression-and-controls)).
+- Only controllers that move get a lane, such as the mod wheel or expression. Setup a file sends once and never
+  changes (volume, pan, reverb and chorus amounts) gets none, and nor do bank select and messages like "all notes
+  off". So the AUTO channels go to what you want to hear.
 - Files timed in SMPTE frames can't be imported.

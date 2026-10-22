@@ -133,8 +133,8 @@ AutomationEnvelope clipLaneFor(const AutomationEnvelope& source, AutomationId id
 }
 
 /// The take's lanes written into `lanes` (a clip's): into the lane that already records the control or plays the
-/// source's target, or a new one. A lane marked "don't record" keeps its points; a CC with no AUTO channel left is
-/// dropped.
+/// source's target, or a new one. A new CC lane copies the track's lane for that CC (its channel, range and name);
+/// a CC the track has no lane for is dropped. A lane marked "don't record" keeps its points.
 void mergeTakeLanes(const Song& song, const Track& track, std::vector<AutomationEnvelope>& lanes,
                     const std::vector<TakeLane>& take, Tick loopStart, Tick loopLength, const NextId& nextId) {
     for (const TakeLane& tl : take) {
@@ -153,13 +153,15 @@ void mergeTakeLanes(const Song& song, const Track& track, std::vector<Automation
             it = std::find_if(lanes.begin(), lanes.end(),
                               [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
             if (it == lanes.end()) {
-                int output = 0;
                 if (tl.control.kind == MidiControl::Kind::Cc) {
-                    output = midiLaneOutput(song, track, tl.control, lanes);
-                    if (output < 0)
+                    const AutomationEnvelope* linked = midiLaneOf(song, track, tl.control);
+                    if (!linked)
                         continue;
+                    lanes.push_back(clipLaneFor(*linked, AutomationId(nextId())));
+                    lanes.back().midi = tl.control;
+                } else {
+                    lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, 0, track.color));
                 }
-                lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, output, track.color));
                 it = lanes.end() - 1;
             }
         }
@@ -315,6 +317,24 @@ AutomationEnvelope makeMidiLane(AutomationId id, MidiControl control, int output
         lane.drive = LaneDrive::Pressure;
     }
     return lane;
+}
+
+const AutomationEnvelope* midiLaneOf(const Song& song, const Track& track, MidiControl control) {
+    auto in = [&](const std::vector<AutomationEnvelope>& lanes) -> const AutomationEnvelope* {
+        auto it =
+            std::find_if(lanes.begin(), lanes.end(), [&](const AutomationEnvelope& l) { return l.midi == control; });
+        return it == lanes.end() ? nullptr : &*it;
+    };
+    if (const AutomationEnvelope* l = in(track.automation))
+        return l;
+    for (const Clip* c : clipsOf(song, track))
+        if (const AutomationEnvelope* l = in(c->automation))
+            return l;
+    return nullptr;
+}
+
+bool isSetupControl(MidiControl control) {
+    return control.kind == MidiControl::Kind::Cc && (control.cc == 0 || control.cc == 32 || control.cc >= 120);
 }
 
 int midiLaneOutput(const Song& song, const Track& track, MidiControl control,

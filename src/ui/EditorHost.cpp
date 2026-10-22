@@ -160,6 +160,44 @@ void EditorHost::trackHolds() {
         spaceUsed = true;
 }
 
+void EditorHost::showNotices() {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const TesseraModule::UnlinkedControls& u = m->unlinkedControls();
+    // An editor opened after a report doesn't bring up the old news.
+    bool fresh = noticesSeen && u.serial != unlinkedSeen;
+    noticesSeen = true;
+    unlinkedSeen = u.serial;
+    if (!fresh)
+        return;
+    const Track* t = m->song().findTrack(u.track);
+    if (!t || u.controls.empty())
+        return;
+    std::string what = u.controls.size() == 1 ? midiControlName(u.controls[0])
+                       : u.controls.size() == 2
+                           ? midiControlName(u.controls[0]) + " and " + midiControlName(u.controls[1])
+                           : std::to_string(u.controls.size()) + " controls";
+    bool one = u.controls.size() == 1;
+    EditorContext* c = &ctx;
+    ctx.toast(t->name + ": " + what + " not recorded, the track has no lane for " + (one ? "it" : "them"),
+              one ? "Add lane" : "Add lanes", [c, track = u.track, controls = u.controls] {
+                  for (MidiControl control : controls)
+                      trackActions::addMidiLane(*c, track, LaneOwner::ofTrack(track), control);
+              });
+}
+
+bool EditorHost::clickToast(rack::math::Vec pos) {
+    if (!ctx.toastAction || ctx.toastText.empty() || EditorContext::now() > ctx.toastUntil ||
+        !ctx.toastButtonBox.contains(pos))
+        return false;
+    std::function<void()> action = std::move(ctx.toastAction);
+    ctx.toastText.clear();
+    ctx.toastAction = nullptr;
+    action();
+    return true;
+}
+
 void EditorHost::updateCursor(bool active, std::optional<CursorShape> override) {
     if (active || ctx.dragging) {
         applyCursor(override.value_or(ctx.cursor));
@@ -457,13 +495,24 @@ void EditorHost::drawToast(NVGcontext* vg, rack::math::Vec bounds) {
         return;
     const theme::Palette& c = theme::colors();
     draw::TextStyle style{theme::fonts::ui(), theme::metrics::kTextUi, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    std::string text = draw::ellipsize(vg, style, ctx.toastText, bounds.x - 60);
-    float w = draw::textWidth(vg, style, text) + 24;
+    draw::TextStyle buttonStyle{theme::fonts::uiStrong(), theme::metrics::kTextUi, c.bg0,
+                                NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    bool button = ctx.toastAction && !ctx.toastButton.empty();
+    float buttonW = button ? draw::textWidth(vg, buttonStyle, ctx.toastButton) + 20 : 0;
+    std::string text = draw::ellipsize(vg, style, ctx.toastText, bounds.x - 60 - buttonW);
+    float w = draw::textWidth(vg, style, text) + 24 + (button ? buttonW + 8 : 0);
     float h = 28;
     rack::math::Rect r((bounds.x - w) / 2, bounds.y - h - 24, w, h);
     draw::roundedRect(vg, r, h / 2, nvgTransRGBAf(c.bg2, 0.97f));
     draw::roundedRectStroke(vg, r, h / 2, c.play, 1);
     draw::text(vg, style, r.pos.x + 12, r.getCenter().y, text);
+    ctx.toastButtonBox = rack::math::Rect();
+    if (!button)
+        return;
+    rack::math::Rect b(r.getRight() - buttonW - 4, r.pos.y + 4, buttonW, h - 8);
+    draw::roundedRect(vg, b, b.size.y / 2, c.play);
+    draw::text(vg, buttonStyle, b.getCenter().x, b.getCenter().y, ctx.toastButton);
+    ctx.toastButtonBox = b;
 }
 
 } // namespace tessera

@@ -6,6 +6,7 @@
 #include <rack.hpp>
 
 #include <cmath>
+#include <functional>
 
 #include <string>
 
@@ -52,8 +53,20 @@ class EditorContext {
     void toast(std::string text) {
         toastText = std::move(text);
         toastUntil = now() + kToastSeconds;
+        toastButton.clear();
+        toastAction = nullptr;
+    }
+    /// A toast with one button ("Add lane") that runs `action` and closes it. It stays up longer, to be read.
+    void toast(std::string text, std::string button, std::function<void()> action) {
+        toast(std::move(text));
+        toastUntil = now() + kActionToastSeconds;
+        toastButton = std::move(button);
+        toastAction = std::move(action);
     }
     std::string toastText;
+    std::string toastButton;
+    std::function<void()> toastAction;
+    rack::math::Rect toastButtonBox; // where the button was last drawn, in surface coordinates
     /// Where the running drag snapped, in the ticks of the viewport `snapAxis` (its ruler draws a mark there).
     double snapMark = NAN;
     const void* snapAxis = nullptr;
@@ -66,6 +79,7 @@ class EditorContext {
     bool clipsOpenNarrow = false;  // a narrow song pane shows the clips although the timeline plays
     double toastUntil = 0;
     static constexpr double kToastSeconds = 4;
+    static constexpr double kActionToastSeconds = 10;
 
     /// Call whenever the user scrolls or zooms by hand: follow-playhead waits a moment before taking over.
     void touchNavigation() { lastNavigation = now(); }

@@ -162,6 +162,7 @@ void EditorWindow::step() {
     layout();
     claimKeyboard(this, true);
     trackHolds();
+    showNotices();
     OpaqueWidget::step();
 
     std::optional<CursorShape> splitterCursor;
@@ -221,6 +222,10 @@ void EditorWindow::onButton(const ButtonEvent& e) {
     if (ctx.showHelp) {
         if (e.action == GLFW_PRESS)
             ctx.showHelp = false;
+        e.consume(this);
+        return;
+    }
+    if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && clickToast(e.pos)) {
         e.consume(this);
         return;
     }

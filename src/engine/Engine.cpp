@@ -104,8 +104,6 @@ void Engine::setSnapshot(const Snapshot* s) {
         state.autoChannels = std::max(tp.autoChannels, state.chainInfo ? state.chainInfo->autoChannels : 0);
         // Lanes may have come or gone: live controls find their channels again when they next move.
         state.liveAutoMask = 0;
-        state.liveCcOutput.fill(-1);
-        state.liveCcCount = 0;
         resolveSlots(tp, state);
         if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
             slotUsed[tp.busSlot] = true;
@@ -574,12 +572,8 @@ void Engine::liveValue(const LiveValue& lv) {
                 break;
             case MidiControl::Kind::Cc: {
                 size_t cc = lv.control.cc & 127;
+                // A CC plays only where a lane of the track records it.
                 TrackPlayback::LiveControl c = tp.ccLive[cc];
-                if (c.output < 0) {
-                    if (state.liveCcOutput[cc] < 0 && state.liveCcCount < tp.freeAutoCount)
-                        state.liveCcOutput[cc] = tp.freeAuto[size_t(state.liveCcCount++)];
-                    c.output = state.liveCcOutput[cc];
-                }
                 if (c.output >= 0) {
                     state.liveAuto[size_t(c.output)] = volts(c);
                     state.liveAutoMask |= uint8_t(1u << c.output);

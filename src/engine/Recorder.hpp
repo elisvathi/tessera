@@ -22,6 +22,8 @@ class RecorderHost {
     virtual PlayMode playMode() = 0;
     /// The scene whose slot a new launcher clip goes into when that slot is empty.
     virtual int targetScene() = 0;
+    /// A take moved CCs the track has no lane for, so they were not recorded: the editor offers to add the lanes.
+    virtual void controlsWithoutLane(TrackId track, const std::vector<MidiControl>& controls) {}
 };
 
 /// Turns the engine's record events into song edits on the UI thread (DESIGN.md §14). No Rack dependency.
@@ -70,6 +72,7 @@ class Recorder {
         // Controls moved and not yet committed, by controlKey(), in the order they first moved: their new lanes
         // take the free AUTO channels in that order, as they did while you heard them.
         std::vector<std::pair<int, Samples>> controls;
+        std::vector<int> reported; // controlKey()s already reported as having no lane, once per recording
         // Knob and AUTO REC lanes recorded in this take: the lane read (as it was) and its pass.
         struct LaneRecording {
             AutomationEnvelope source;
@@ -129,6 +132,9 @@ class Recorder {
     static TakeNote finish(const Open& open, int pitch, double playTick, float release);
     /// The controls moved in a session, as thinned lane points.
     static std::vector<TakeLane> takeLanes(const Session& s);
+    /// Tells the host about the CCs in `lanes` the track has no lane for (setup messages aside), leaving out those
+    /// already in `reported`, which gains the rest.
+    void reportUnlinked(TrackId track, const std::vector<TakeLane>& lanes, std::vector<int>& reported);
 
     RecorderHost& host;
     bool punched = false;

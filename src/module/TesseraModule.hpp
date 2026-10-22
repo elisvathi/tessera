@@ -200,6 +200,14 @@ class TesseraModule : public rack::engine::Module {
     bool canCapture() const { return recorder.canCapture(); }
     /// Turns the notes last played while not recording into a new clip on `track`. One undo step.
     ClipId capture(TrackId track) { return recorder.capture(track); }
+    /// The CCs the last take moved that its track has no lane for. `serial` grows with each report, so every
+    /// editor shows it once.
+    struct UnlinkedControls {
+        uint64_t serial = 0;
+        TrackId track;
+        std::vector<MidiControl> controls;
+    };
+    const UnlinkedControls& unlinkedControls() const { return unlinked; }
     rack::midi::InputQueue& midiInput() { return midiIn; }
 
     // Parameter mapping (DESIGN.md §6): track lanes drive knobs on other modules, no cable needed.
@@ -315,6 +323,9 @@ class TesseraModule : public rack::engine::Module {
         void launchAt(TrackId track, int slot, double playTick) override;
         PlayMode playMode() override { return m.playMode(); }
         int targetScene() override { return m.selectedScene(); }
+        void controlsWithoutLane(TrackId track, const std::vector<MidiControl>& controls) override {
+            m.unlinked = {m.unlinked.serial + 1, track, controls};
+        }
 
       private:
         TesseraModule& m;
@@ -346,6 +357,7 @@ class TesseraModule : public rack::engine::Module {
     bool captureSawPlaying = false;
     Host recorderHost{*this};
     Recorder recorder{recorderHost};
+    UnlinkedControls unlinked;
     // A knob held by a drag: kind, parameter and owner packed into one word (0 = none), then its value.
     std::atomic<uint64_t> heldKnobKey{0};
     std::atomic<float> heldKnobValue{0};

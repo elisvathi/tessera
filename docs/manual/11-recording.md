@@ -27,7 +27,8 @@ In the track menu (or the inspector's **Recording** chip):
 - **Monitor while armed** (on by default): an armed track plays what comes in through its own outputs and devices, so
   you hear yourself.
 
-Arming a track also records its automation lanes: MIDI controls you move, knobs you turn, and CV on the AUTO input.
+Arming a track also records its automation lanes: MIDI controls that have a lane, knobs you turn, and CV on the AUTO
+input.
 See [Recording automation](12-automation.md#recording-automation).
 
 To play a track from MIDI or CV all the time, without arming it, set its **Input** instead (see
@@ -89,15 +90,20 @@ nothing to set up.
 - **MPE**: each finger's bend, slide (CC 74) and pressure become the note's **Pitch**, **Timbre** and **Pressure**
   curves. Turn on **MPE input** in the record button's ▾ menu, unless your controller switches it on by itself.
 
-**For the whole track** (automation lanes in the take's clip, made for you):
+**For the whole track** (automation lanes in the take's clip):
 
 | You move | Lane | Comes out of |
 |---|---|---|
-| The pitch bend wheel | **Pitch bend**, ±2 semitones | Added to **V/OCT** on every voice. No cable needed. |
-| Channel aftertouch (one pressure for all keys) | **Pressure** | **PRESS** on every voice. Where a note has its own pressure too, the higher one wins. |
-| Any other control: mod wheel, sustain pedal, a knob that sends a CC | Named after it, like **Mod wheel (CC 1)** | The next free **AUTO** channel |
+| The pitch bend wheel | **Pitch bend**, ±2 semitones, made for you | Added to **V/OCT** on every voice. No cable needed. |
+| Channel aftertouch (one pressure for all keys) | **Pressure**, made for you | **PRESS** on every voice. Where a note has its own pressure too, the higher one wins. |
+| Any other control: mod wheel, sustain pedal, a knob that sends a CC | Only if the track has a lane for it, like **Mod wheel (CC 1)** | That lane's **AUTO** channel |
 
-- Only controls you move during the take get a lane. A later take writes into the same lane.
+- Pitch bend and pressure always record. They play into the voices, so they use no AUTO channel.
+- A CC records only into a lane you added for it: **Add automation lane → MIDI control** on the track. So a knob you
+  bump, or the bank change your keyboard sends with a new sound, leaves nothing behind. Each take writes into the
+  clip's lane for that CC, on the track lane's AUTO channel, with its range and name.
+- If you move a CC that has no lane, a message says so after the take, for example *Lead: Mod wheel (CC 1) not
+  recorded, the track has no lane for it*. Click **Add lane** in the message to add it. The next take records it.
 - The pitch bend and pressure lanes go back to 0 when no clip plays them, so a track never stays bent.
 - The sustain pedal is recorded as a lane that steps on and off. It doesn't make notes longer. Patch its AUTO channel
   to whatever should hold.
@@ -115,8 +121,8 @@ record button's ▾ menu.
 
 - Tessera keeps the last 64 bars of notes played while not recording.
 - Capture turns your last phrase (back to a gap of 4 bars of silence) into a clip on the selected track.
-- It keeps what you played on the keys (aftertouch, MPE) and the controls you moved during the phrase (bend, mod
-  wheel, pedals, CCs), as a recording does. Each control's lane starts where the control was when the phrase began.
+- It keeps what you played on the keys (aftertouch, MPE) and the controls you moved during the phrase (bend,
+  pressure, and the CCs the track has a lane for), as a recording does. Each control's lane starts where the control was when the phrase began.
 - If you played along with the song, the notes keep their place in the bar. If you played while stopped, the clip
   starts on the beat of the first note.
 

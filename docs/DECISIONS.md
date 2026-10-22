@@ -1154,3 +1154,21 @@ Builds on §73. Mockup agreed 22 Oct.
 - **"Add automation lane" is one menu** (track header row, track menu, the lower pane's "Add clip lane"): Empty lane,
   Automate a knob (track lanes), MIDI control (pitch bend, pressure, common CCs by name, any CC by number). Records
   from offers the same list, so no controller is needed to set a lane up.
+
+## 76. A CC records only into a lane you added (22 Oct)
+
+Replaces "any CC moved during the take its own lane" in §73.
+
+- **Why:** a MIDI file's setup (bank select, volume, pan, reverb, chorus, each sent once) and stray CCs from a
+  keyboard took every AUTO channel, so the mod wheel had none left. Lanes you didn't ask for are clutter.
+- **A CC records only where the track has a lane for it** (track lane, or a lane on one of its clips), added with
+  Add automation lane → MIDI control. A take's new clip lane is a copy of that lane: its AUTO channel, range and
+  name (`midiLaneOf`). A CC with no lane doesn't play live either; it no longer borrows a free AUTO channel.
+- **Pitch bend and pressure still make their lanes by themselves.** They play into the voices, use no AUTO channel,
+  and are part of how the notes sound.
+- **After a take, a toast names the CCs moved with no lane, with an "Add lane" button** that adds track lanes for
+  them. Once per recording per control. Bank select and channel mode messages (CC 0, 32, 120-127) are never
+  reported and never get a lane (`isSetupControl`).
+- **MIDI import keeps only CCs that move.** A CC that holds one value through the part is setup, not a performance.
+  Bend and pressure are kept even with one value.
+- Still 8 AUTO channels per track. A bank on Auto Out for channels 9-16 waits until someone needs it.

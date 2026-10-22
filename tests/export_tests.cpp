@@ -771,6 +771,10 @@ TEST_CASE("import: channel controls become clip lanes") {
     smf::Track t;
     t.events.push_back(smf::noteOn(0, 0, 60, 100));
     t.events.push_back(smf::controlChange(0, 0, 1, 0));
+    // Setup gets no lane: bank select, a volume set once and never moved.
+    t.events.push_back(smf::controlChange(0, 0, 0, 1));
+    t.events.push_back(smf::controlChange(0, 0, 32, 0));
+    t.events.push_back(smf::controlChange(0, 0, 7, 100));
     t.events.push_back(smf::controlChange(240, 0, 1, 127));
     t.events.push_back(smf::channelPressure(240, 0, 64));
     t.events.push_back(smf::noteOff(480, 0, 60, 64));

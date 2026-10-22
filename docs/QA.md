@@ -244,6 +244,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Input quantize 1/16: the take lands on the grid; one Ctrl+Z brings back the played timing.
 - [ ] Play a few notes while stopped, press Capture (Ctrl+Shift+R): a clip with them appears on the selected track.
 - [ ] Stop while recording: no hanging notes; save and reload keeps the record settings and the MIDI device.
+- [ ] Record while moving the mod wheel on a track with no Mod wheel lane: no lane appears, and a toast says it was
+      not recorded. Click **Add lane**: a Mod wheel track lane appears; the next take records into the clip. Bend
+      and pressure record with no lane set up. Changing the keyboard's sound (bank select) shows no toast.
+- [ ] Import a General MIDI file: each clip gets lanes only for controllers that move (no CC 0, 32, or one-value
+      volume, pan, reverb lanes).
 
 ## Automation
 - [ ] "A" on a track header shows its lanes; "+ Add automation lane" adds Auto 1, 2, … on free AUTO channels. Drag a
