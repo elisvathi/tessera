@@ -16,8 +16,10 @@
 /// Turning recorded notes into song edits (DESIGN.md §14). Each function returns one undo step.
 namespace tessera {
 
-/// What recording onto the timeline does to clips already there.
-enum class ArrangerRecordMode : uint8_t { Overdub, Replace };
+/// What recording onto the timeline does to clips already there. Merge: the take goes into the clip playing there
+/// (a new clip only where none plays). Stack: a new clip on top, the old one untouched. Replace: a new clip, the
+/// old ones cut around it.
+enum class ArrangerRecordMode : uint8_t { Merge, Stack, Replace };
 
 /// Recording settings of one Tessera, saved with it (not song content, so not undoable).
 struct RecordSettings {
@@ -25,15 +27,17 @@ struct RecordSettings {
 
     int countInBars = 0; // 0 = off
     int clipBars = 0;    // launcher: a new clip's length; 0 = until recording stops, rounded up to the bar
-    ArrangerRecordMode arranger = ArrangerRecordMode::Overdub;
+    ArrangerRecordMode arranger = ArrangerRecordMode::Merge;
     Tick quantize = 0; // input quantize grid; 0 = off
     float strength = 1;
-    bool toKey = false; // incoming pitches snap to the key
-    bool mpe = false;   // MIDI input reads MPE: each note on its own channel (docs/design/EXPRESSION_INPUT.md)
+    bool toKey = false;          // incoming pitches snap to the key
+    bool mpe = false;            // MIDI input reads MPE: each note on its own channel (docs/design/EXPRESSION_INPUT.md)
+    bool newControlLanes = true; // a moved CC that no lane records gets one in the take's clip; off: left out
 
     bool operator==(const RecordSettings& o) const {
         return countInBars == o.countInBars && clipBars == o.clipBars && arranger == o.arranger &&
-               quantize == o.quantize && strength == o.strength && toKey == o.toKey && mpe == o.mpe;
+               quantize == o.quantize && strength == o.strength && toKey == o.toKey && mpe == o.mpe &&
+               newControlLanes == o.newControlLanes;
     }
 
     json_t* toJson() const;
@@ -99,6 +103,14 @@ std::string laneOutputLabel(const AutomationEnvelope& lane);
 int midiLaneOutput(const Song& song, const Track& track, MidiControl control,
                    const std::vector<AutomationEnvelope>& pending);
 
+/// The lane that records `control` on the track itself, else on one of its clips; null when there is none. A take's
+/// new lane for that CC copies it, so the CC keeps one AUTO channel on the track.
+const AutomationEnvelope* midiLaneOf(const Song& song, const Track& track, MidiControl control);
+
+/// Bank select (CC 0 and 32) and the channel mode messages (CC 120-127, such as "all notes off"): they pick a sound
+/// or reset a synth, so they never get a lane.
+bool isSetupControl(MidiControl control);
+
 /// Values over time, as (tick, value) pairs in increasing tick order.
 using TimedValues = std::vector<std::pair<double, float>>;
 
@@ -124,15 +136,22 @@ CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length,
                          ClipId* clipId = nullptr, edits::IdSet* noteIds = nullptr, const std::string& name = "");
 
 /// Adds the take to an existing clip (loop overdub: every pass merges). Notes and lane values land modulo the
-/// clip loop; a take's values replace the lane's points over the stretch they cover.
+/// clip loop; a take's values replace the lane's points over the stretch they cover. Null when nothing changed.
 CommandPtr recordIntoClip(const Song& song, ClipId clip, const Take& take, const NextId& nextId,
                           edits::IdSet* noteIds = nullptr);
 
-/// A new clip on the timeline over [from, to) holding the take (timeline ticks). With Overdub it stacks over the
+/// A new clip on the timeline over [from, to) holding the take (timeline ticks). With Stack it stacks over the
 /// clips already there, which stay as they were; with Replace they are trimmed or split around it.
 CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const Take& take,
                                ArrangerRecordMode mode, const NextId& nextId, ClipId* clipId = nullptr,
                                edits::IdSet* noteIds = nullptr);
+
+/// A timeline take (timeline ticks) merged into the clips playing on the track where it was played: each note and
+/// lane value goes into the clip of the top instance there, at the clip time it plays (loops and stretch
+/// followed), like a loop overdub. What fell where no clip plays is left in `rest`, for a new clip. `noteIds`
+/// receives each changed clip with the IDs of the notes added to it. Null when nothing landed in a clip.
+CommandPtr mergeIntoArrangement(const Song& song, TrackId track, const Take& take, const NextId& nextId, Take& rest,
+                                std::vector<std::pair<ClipId, edits::IdSet>>* noteIds = nullptr);
 
 /// Moves note starts toward the grid by `strength` (0..1). Lengths stay.
 edits::NoteList quantizeStarts(const edits::NoteList& notes, const edits::IdSet& ids, Tick grid, float strength);

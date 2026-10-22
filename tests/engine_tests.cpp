@@ -524,6 +524,19 @@ TEST_CASE("arranger mode plays the timeline on exact samples; launcher mode leav
     CHECK(quiet.risingEdges(0, 5 * kPpq * kSamplesPerTick).empty());
 }
 
+TEST_CASE("a Replace take silences the armed track's timeline clips while it records; Stack and Merge keep them") {
+    for (bool replace : {true, false}) {
+        Song song = songWithInstance({{0, 100, 72}}, kPpq, 2 * kPpq, 2 * kPpq);
+        song.tracks[0].armed = true;
+        Harness h(song);
+        arrangerMode(h);
+        h.engine.setReplaceTakes(replace);
+        h.engine.toggleRecord(0);
+        CHECK(h.engine.recording());
+        CHECK(h.risingEdges(0, 5 * kPpq * kSamplesPerTick).empty() == replace);
+    }
+}
+
 TEST_CASE("at the loop wrap, arrangement notes stop and the loop start plays again") {
     // A note from 1 beat that lasts 4 beats, looping over the first 2 beats.
     Harness h(songWithInstance({{0, 4 * kPpq, 60}}, 4 * kPpq, kPpq, 4 * kPpq));
@@ -588,6 +601,24 @@ TEST_CASE("an edit while a bent note sounds keeps its curve, and an edited curve
     h.runTo(6 * kPpq * kSamplesPerTick);
     REQUIRE(h.gate(0));
     CHECK(h.frame().voct[0] * 12 == doctest::Approx(-6).epsilon(0.01));
+}
+
+TEST_CASE("a sounding note whose curve is gone after an edit lets go of the old snapshot") {
+    Song song = songWithInstance({{0, 8 * kPpq, 60}}, 8 * kPpq, 0, 8 * kPpq);
+    song.clips.begin()->second.notes[0].pitchExpr = {{0, 0, 0}, {1, 8, 0}};
+    Harness h(song);
+    arrangerMode(h);
+    h.runTo(2 * kPpq * kSamplesPerTick);
+    REQUIRE(h.gate(0));
+    // The curve is removed, and the old snapshot freed as the module does once the engine took the new one.
+    Song edited = h.song;
+    edited.clips.begin()->second.notes[0].pitchExpr.clear();
+    auto changed = buildSnapshot(edited, h.slots);
+    h.engine.setSnapshot(changed.get());
+    h.snapshot.reset();
+    h.runTo(3 * kPpq * kSamplesPerTick);
+    REQUIRE(h.gate(0));
+    CHECK(h.frame().voct[0] * 12 == doctest::Approx(0));
 }
 
 TEST_CASE("an arrangement track waiting for its next note still wraps when the loop is switched on") {

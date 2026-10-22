@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <optional>
 
 namespace tessera {
@@ -17,11 +18,15 @@ json_t* RecordSettings::toJson() const {
     json_t* j = json_object();
     setInt(j, "countInBars", countInBars);
     setInt(j, "clipBars", clipBars);
-    setString(j, "arranger", arranger == ArrangerRecordMode::Replace ? "replace" : "overdub");
+    setString(j, "arranger",
+              arranger == ArrangerRecordMode::Replace ? "replace"
+              : arranger == ArrangerRecordMode::Stack ? "stack"
+                                                      : "merge");
     setInt(j, "quantize", quantize);
     setNumber(j, "strength", strength);
     setBool(j, "toKey", toKey);
     setBool(j, "mpe", mpe);
+    setBool(j, "newControlLanes", newControlLanes);
     return j;
 }
 
@@ -31,12 +36,16 @@ RecordSettings RecordSettings::fromJson(const json_t* j) {
         return s;
     s.countInBars = int(std::clamp<int64_t>(getInt(j, "countInBars", s.countInBars), 0, kMaxCountInBars));
     s.clipBars = int(std::clamp<int64_t>(getInt(j, "clipBars", s.clipBars), 0, 64));
-    s.arranger =
-        getString(j, "arranger", "overdub") == "replace" ? ArrangerRecordMode::Replace : ArrangerRecordMode::Overdub;
+    // "overdub" is what Stack was called before Merge came.
+    std::string arranger = getString(j, "arranger", "merge");
+    s.arranger = arranger == "replace"                          ? ArrangerRecordMode::Replace
+                 : arranger == "stack" || arranger == "overdub" ? ArrangerRecordMode::Stack
+                                                                : ArrangerRecordMode::Merge;
     s.quantize = std::clamp<Tick>(getInt(j, "quantize", s.quantize), 0, 4 * kPpq);
     s.strength = std::clamp(getFloat(j, "strength", s.strength), 0.f, 1.f);
     s.toKey = getBool(j, "toKey", s.toKey);
     s.mpe = getBool(j, "mpe", s.mpe);
+    s.newControlLanes = getBool(j, "newControlLanes", s.newControlLanes);
     return s;
 }
 
@@ -133,8 +142,9 @@ AutomationEnvelope clipLaneFor(const AutomationEnvelope& source, AutomationId id
 }
 
 /// The take's lanes written into `lanes` (a clip's): into the lane that already records the control or plays the
-/// source's target, or a new one. A lane marked "don't record" keeps its points; a CC with no AUTO channel left is
-/// dropped.
+/// source's target, or a new one. A new CC lane copies a lane the track already has for that CC (its channel,
+/// range and name), else takes a free AUTO channel; with none free the CC is dropped. A lane marked "don't record"
+/// keeps its points.
 void mergeTakeLanes(const Song& song, const Track& track, std::vector<AutomationEnvelope>& lanes,
                     const std::vector<TakeLane>& take, Tick loopStart, Tick loopLength, const NextId& nextId) {
     for (const TakeLane& tl : take) {
@@ -153,13 +163,19 @@ void mergeTakeLanes(const Song& song, const Track& track, std::vector<Automation
             it = std::find_if(lanes.begin(), lanes.end(),
                               [&](const AutomationEnvelope& l) { return l.midi == tl.control; });
             if (it == lanes.end()) {
-                int output = 0;
                 if (tl.control.kind == MidiControl::Kind::Cc) {
-                    output = midiLaneOutput(song, track, tl.control, lanes);
-                    if (output < 0)
-                        continue;
+                    if (const AutomationEnvelope* linked = midiLaneOf(song, track, tl.control)) {
+                        lanes.push_back(clipLaneFor(*linked, AutomationId(nextId())));
+                        lanes.back().midi = tl.control;
+                    } else {
+                        int output = midiLaneOutput(song, track, tl.control, lanes);
+                        if (output < 0)
+                            continue;
+                        lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, output, track.color));
+                    }
+                } else {
+                    lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, 0, track.color));
                 }
-                lanes.push_back(makeMidiLane(AutomationId(nextId()), tl.control, output, track.color));
                 it = lanes.end() - 1;
             }
         }
@@ -315,6 +331,24 @@ AutomationEnvelope makeMidiLane(AutomationId id, MidiControl control, int output
         lane.drive = LaneDrive::Pressure;
     }
     return lane;
+}
+
+const AutomationEnvelope* midiLaneOf(const Song& song, const Track& track, MidiControl control) {
+    auto in = [&](const std::vector<AutomationEnvelope>& lanes) -> const AutomationEnvelope* {
+        auto it =
+            std::find_if(lanes.begin(), lanes.end(), [&](const AutomationEnvelope& l) { return l.midi == control; });
+        return it == lanes.end() ? nullptr : &*it;
+    };
+    if (const AutomationEnvelope* l = in(track.automation))
+        return l;
+    for (const Clip* c : clipsOf(song, track))
+        if (const AutomationEnvelope* l = in(c->automation))
+            return l;
+    return nullptr;
+}
+
+bool isSetupControl(MidiControl control) {
+    return control.kind == MidiControl::Kind::Cc && (control.cc == 0 || control.cc == 32 || control.cc >= 120);
 }
 
 int midiLaneOutput(const Song& song, const Track& track, MidiControl control,
@@ -518,6 +552,8 @@ CommandPtr recordIntoClip(const Song& song, ClipId clipId, const Take& take, con
                 out->add(std::make_unique<EditLane>("Record", owner, int(i), before, lanes[i]));
         }
     }
+    if (out->empty())
+        return nullptr;
     return out;
 }
 
@@ -557,13 +593,99 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
     arrange::Layout before = arrange::layoutOf(song);
     arrange::Layout after = before;
     after.push_back(placed);
-    // Overdub stacks the take over what was there, which stays as it was; Replace cuts it out.
+    // Stack keeps what was there as it was, under the take; Replace cuts it out.
     if (mode == ArrangerRecordMode::Replace)
         after = arrange::resolveOverlaps(after, {placed.clip.id}, song.clips, [&] { return ArrangementId(nextId()); });
 
     auto out = std::make_unique<CompoundCommand>(takeName(take));
     out->add(std::make_unique<AddClip>(std::move(clip)));
     out->add(arrange::replaceArrangement(song, "Record", before, after));
+    return out;
+}
+
+namespace {
+
+/// Where a timeline tick lands for Merge: the clip the top instance of the track plays there, its clip time, and
+/// how fast the instance plays it. None where no clip plays.
+struct MergeSpot {
+    ClipId clip;
+    double time;
+    double stretch;
+};
+
+std::optional<MergeSpot> mergeSpot(const Song& song, const Track& track, double tick) {
+    // Stacked instances: the one that starts last is on top, as the engine plays them.
+    const ArrangerClip* top = nullptr;
+    for (const ArrangerClip& a : track.arrangement)
+        if (tick >= double(a.position) && tick < double(instanceEnd(a)) && (!top || a.position >= top->position))
+            top = &a;
+    const Clip* clip = top ? song.findClip(top->clip) : nullptr;
+    if (!clip)
+        return std::nullopt;
+    ClipSpan span = clipSpan(*clip);
+    double stretch = stretchOf(*top);
+    double u = double(normalizeOffset(*clip, top->offset)) + (tick - double(top->position)) / stretch;
+    // A clip without a loop takes notes past its last one: they lengthen what it plays.
+    if (span.looping && span.length() > 0 && u >= double(span.end))
+        u = double(span.start) + std::fmod(u - double(span.end), double(span.length()));
+    return MergeSpot{clip->id, u, stretch};
+}
+
+} // namespace
+
+CommandPtr mergeIntoArrangement(const Song& song, TrackId trackId, const Take& take, const NextId& nextId, Take& rest,
+                                std::vector<std::pair<ClipId, edits::IdSet>>* noteIds) {
+    rest = Take();
+    const Track* track = song.findTrack(trackId);
+    if (!track) {
+        rest = take;
+        return nullptr;
+    }
+    std::map<uint64_t, Take> into; // by ClipId value
+    for (const TakeNote& tn : take.notes) {
+        std::optional<MergeSpot> spot = mergeSpot(song, *track, double(tn.start));
+        if (!spot) {
+            rest.notes.push_back(tn);
+            continue;
+        }
+        TakeNote n = tn;
+        n.start = Tick(std::llround(spot->time));
+        n.length = std::max<Tick>(1, Tick(std::llround(double(tn.length) / spot->stretch)));
+        into[spot->clip.value].notes.push_back(std::move(n));
+    }
+    for (const TakeLane& tl : take.lanes) {
+        std::map<uint64_t, TakeLane> parts;
+        TakeLane outside{tl.control, tl.source, {}};
+        for (const AutoPoint& p : tl.points) {
+            std::optional<MergeSpot> spot = mergeSpot(song, *track, double(p.t));
+            if (!spot) {
+                outside.points.push_back(p);
+                continue;
+            }
+            auto [it, added] = parts.try_emplace(spot->clip.value, TakeLane{tl.control, tl.source, {}});
+            AutoPoint q = p;
+            q.t = Tick(std::llround(spot->time));
+            it->second.points.push_back(q);
+        }
+        for (auto& [clip, part] : parts)
+            into[clip].lanes.push_back(std::move(part));
+        if (!outside.points.empty())
+            rest.lanes.push_back(std::move(outside));
+    }
+    if (into.empty())
+        return nullptr;
+    auto out = std::make_unique<CompoundCommand>(takeName(take));
+    for (const auto& [clip, part] : into) {
+        edits::IdSet ids;
+        CommandPtr command = recordIntoClip(song, ClipId(clip), part, nextId, &ids);
+        if (!command)
+            continue;
+        out->add(std::move(command));
+        if (noteIds && !ids.empty())
+            noteIds->push_back({ClipId(clip), std::move(ids)});
+    }
+    if (out->empty())
+        return nullptr;
     return out;
 }
 

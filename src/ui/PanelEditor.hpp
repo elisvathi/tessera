@@ -42,6 +42,10 @@ class PanelEditor : public rack::widget::OpaqueWidget, public EditorHost {
             e.consume(this);
             return;
         }
+        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && clickToast(e.pos)) {
+            e.consume(this);
+            return;
+        }
         OpaqueWidget::onButton(e);
     }
 

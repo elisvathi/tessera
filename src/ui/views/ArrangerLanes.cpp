@@ -1116,13 +1116,12 @@ void ArrangerLanes::drawRecording(NVGcontext* vg) {
 void ArrangerLanes::drawTakes(NVGcontext* vg, double now) {
     TesseraModule* m = ctx.module();
     const theme::Palette& c = theme::colors();
-    Tick bar = ticksPerBar(m->song().timeSig);
     double playTick = m->playTicks();
     for (const Recorder::Session& take : m->takes().sessions()) {
         if (take.target != Recorder::Target::Arranger)
             continue;
         int row = rowOf(take.track);
-        double start = std::floor(take.passFrom / double(bar)) * double(bar);
+        double start = take.passFrom; // where this pass began; the clip it makes starts there too
         if (row < 0 || now <= start)
             continue;
         float top = rowTop(row) + 1, h = rowHeight(row) - 2;

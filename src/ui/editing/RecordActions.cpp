@@ -55,12 +55,21 @@ void openMenu(EditorContext& ctx) {
             for (int b : {1, 2, 4, 8})
                 sub->addChild(settingItem(c, bars(b) + ", then loop", &RecordSettings::clipBars, b));
         }));
+    static const char* const kArrangerModes[] = {"Merge", "Stack", "Replace"};
     menu->addChild(rack::createSubmenuItem(
-        "Recording over arranger clips", s.arranger == ArrangerRecordMode::Overdub ? "Overdub" : "Replace",
-        [c](rack::ui::Menu* sub) {
-            sub->addChild(settingItem(c, "Overdub (keep what was there)", &RecordSettings::arranger,
-                                      ArrangerRecordMode::Overdub));
-            sub->addChild(settingItem(c, "Replace", &RecordSettings::arranger, ArrangerRecordMode::Replace));
+        "Recording over arranger clips", kArrangerModes[size_t(s.arranger)], [c](rack::ui::Menu* sub) {
+            sub->addChild(settingItem(c, "Merge (add to the clip that is there)", &RecordSettings::arranger,
+                                      ArrangerRecordMode::Merge));
+            sub->addChild(settingItem(c, "Stack (a new clip on top, the old one kept)", &RecordSettings::arranger,
+                                      ArrangerRecordMode::Stack));
+            sub->addChild(settingItem(c, "Replace (cut out what was there)", &RecordSettings::arranger,
+                                      ArrangerRecordMode::Replace));
+        }));
+    menu->addChild(rack::createSubmenuItem(
+        "MIDI controls with no lane", s.newControlLanes ? "Add a lane" : "Leave out", [c](rack::ui::Menu* sub) {
+            sub->addChild(settingItem(c, "Add a lane in the clip", &RecordSettings::newControlLanes, true));
+            sub->addChild(
+                settingItem(c, "Leave out (only lanes I added record)", &RecordSettings::newControlLanes, false));
         }));
     struct Grid {
         const char* name;

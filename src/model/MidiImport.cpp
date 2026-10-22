@@ -192,6 +192,12 @@ bool read(const std::vector<uint8_t>& bytes, Imported& out) {
             part.name = withNotes > 1 ? base + " (ch " + std::to_string(channel + 1) + ")" : base;
             part.notes = std::move(b.notes);
             for (const auto& [control, values] : b.controls) {
+                // A CC that holds one value all through is setup (volume, pan, reverb send), not a performance:
+                // no lane, so the AUTO channels go to what really moves. Bend and pressure take no channel.
+                bool moves = std::any_of(values.begin(), values.end(),
+                                         [&](const auto& v) { return v.second != values.front().second; });
+                if (isSetupControl(control) || (control.kind == MidiControl::Kind::Cc && !moves))
+                    continue;
                 TakeLane lane{control, std::nullopt, lanePoints(control, values)};
                 if (!lane.points.empty())
                     part.lanes.push_back(std::move(lane));

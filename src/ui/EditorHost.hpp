@@ -43,6 +43,10 @@ class EditorHost {
     void claimKeyboard(rack::widget::Widget* root, bool always);
     /// Call every frame. Keeps Space-to-pan from also toggling play.
     void trackHolds();
+    /// Call every frame. Shows what Tessera reported since the last frame, such as CCs a take could not record.
+    void showNotices();
+    /// A press at `pos` (surface coordinates) on the toast's button: runs it. Returns true when it was there.
+    bool clickToast(rack::math::Vec pos);
     /// Sets the OS cursor while `active` (hovered or dragging); restores it once when that ends.
     void updateCursor(bool active, std::optional<CursorShape> override = std::nullopt);
     /// The readout pill near the cursor, kept inside `bounds` (host-local coordinates).
@@ -58,6 +62,8 @@ class EditorHost {
   private:
     bool spaceUsed = false;
     bool cursorApplied = false;
+    uint64_t unlinkedSeen = 0; // the last UnlinkedControls serial shown
+    bool noticesSeen = false;  // showNotices() has run once
 };
 
 } // namespace tessera

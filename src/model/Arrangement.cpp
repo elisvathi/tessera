@@ -12,11 +12,11 @@ namespace {
 
 Tick roundTick(double t) { return Tick(std::llround(t)); }
 
+} // namespace
+
 double stretchOf(const ArrangerClip& a) {
     return std::clamp(double(a.stretch), double(kMinStretch), double(kMaxStretch));
 }
-
-} // namespace
 
 ClipSpan clipSpan(const Clip& clip) {
     if (clip.loopMode == LoopMode::Loop && clip.loopEnd > clip.loopStart)

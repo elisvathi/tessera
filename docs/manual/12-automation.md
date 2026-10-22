@@ -143,7 +143,7 @@ into the same take as the notes, as one undo step.
 What a lane records from (lane menu, **Records from**):
 
 - **A MIDI control**: pick it by name, or choose **Another: move it on your controller**. Moving a control while
-  recording also makes its lane for you (see [Recording](11-recording.md#expression-and-controls)).
+  recording also makes its lane in the clip for you (see [Recording](11-recording.md#expression-and-controls)).
 - **The mapped knob**: the lane's first mapped knob, turned by hand.
 - **AUTO REC input**: a channel of the **AUTO** input on the Tessera panel. **AUTO REC channel** picks which one
   (at first, the lane's own AUTO channel), so one mono cable is enough.

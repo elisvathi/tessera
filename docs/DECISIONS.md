@@ -1154,3 +1154,70 @@ Builds on §73. Mockup agreed 22 Oct.
 - **"Add automation lane" is one menu** (track header row, track menu, the lower pane's "Add clip lane"): Empty lane,
   Automate a knob (track lanes), MIDI control (pitch bend, pressure, common CCs by name, any CC by number). Records
   from offers the same list, so no controller is needed to set a lane up.
+
+## 76. A CC records only into a lane you added (22 Oct)
+
+Replaces "any CC moved during the take its own lane" in §73.
+
+- **Why:** a MIDI file's setup (bank select, volume, pan, reverb, chorus, each sent once) and stray CCs from a
+  keyboard took every AUTO channel, so the mod wheel had none left. Lanes you didn't ask for are clutter.
+- **A CC records only where the track has a lane for it** (track lane, or a lane on one of its clips), added with
+  Add automation lane → MIDI control. A take's new clip lane is a copy of that lane: its AUTO channel, range and
+  name (`midiLaneOf`). A CC with no lane doesn't play live either; it no longer borrows a free AUTO channel.
+- **Pitch bend and pressure still make their lanes by themselves.** They play into the voices, use no AUTO channel,
+  and are part of how the notes sound.
+- **After a take, a toast names the CCs moved with no lane, with an "Add lane" button** that adds track lanes for
+  them. Once per recording per control. Bank select and channel mode messages (CC 0, 32, 120-127) are never
+  reported and never get a lane (`isSetupControl`).
+- **MIDI import keeps only CCs that move.** A CC that holds one value through the part is setup, not a performance.
+  Bend and pressure are kept even with one value.
+- Still 8 AUTO channels per track. A bank on Auto Out for channels 9-16 waits until someone needs it.
+
+## 77. Timeline recording: Merge, Stack or Replace; Merge is the default (22 Oct)
+
+Changes §75's "Timeline Overdub records a new clip stacked over what was there".
+
+- **Why:** with stacking only, recording a mod wheel pass over notes you already have made a second clip holding
+  just the lane, on top of the first.
+- **Merge (default):** each note and lane value of a timeline take goes into the clip the top instance plays at
+  that tick, at the clip time it plays there (offset, loop and stretch followed; `mergeIntoArrangement`), like a
+  launcher loop overdub. What falls where no clip plays makes a new clip covering only that, on whole bars. A clip
+  placed more than once shares the edit (it is one clip). One undo step per take or loop pass; input quantize is one
+  more step across every clip it touched.
+- **Stack** is the old Overdub, renamed so the menu says what happens. Saved settings reading "overdub" load as
+  Stack. **Replace** is unchanged.
+- Knob and AUTO REC lanes still go to the track lanes in every mode (§74).
+
+## 78. MIDI controls go into the take's clip by themselves again (22 Oct)
+
+Changes §76's "a CC records only into a lane you added".
+
+- **A CC that moves during a take gets a lane in the clip the take goes into** (new launcher clip, overdubbed clip,
+  timeline clip it merges into, Capture's clip). The track gets no lane. It takes a free AUTO channel, or copies a
+  lane the track or another of its clips already has for that CC. While you play, it is heard on that free channel.
+- **The junk stays out:** bank select and channel mode messages never; a CC with one value through the take (a
+  sound change, fader positions sent on connect) makes no lane (`Recorder::filterControls`).
+- **Setting "MIDI controls with no lane":** Add a lane in the clip (default) or Leave out. Leave out is §76: only
+  lanes added by hand record, and the toast with "Add lane" names the rest.
+- With every AUTO channel in use the CC is left out and a toast says so.
+- Import keeps §76's rule (only moving CCs).
+
+## 79. A track lane for a MIDI control records that control (23 Oct)
+
+Refines §78.
+
+- **A CC (or bend, pressure) that a lane of the track itself records goes into that track lane,** at the song
+  position, in both Plays modes and for every kind of take, in the take's undo step (`Recorder::trackMidiLanes`).
+  Before, the track lane only lent its channel to a new clip lane.
+- **A lane in the clip being overdubbed comes first:** then the take goes there, as before.
+- Capture still puts every control into its new clip (it has no song position).
+
+## 80. Timeline takes cover exactly what was recorded (23 Oct)
+
+- **Stack and Replace make a clip from exactly punch-in to punch-out** (each loop pass its own stretch), no longer
+  rounded out to whole bars. Rounding made Replace cut notes in the same bars that nobody played over.
+- Merge's new clip for notes where no clip plays runs from the first of them to the end of the last.
+- Launcher clips still round to whole bars, since they loop.
+- **While a Replace take records, the armed track's timeline clips are silent** (notes and clip lanes; track lanes
+  still play), since the take replaces them (`Engine::replacing`). Merge and Stack keep playing them.
+- The red region of a timeline take starts at punch-in, where its clip will start.

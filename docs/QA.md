@@ -239,11 +239,23 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       slot (red "Recording" while it records) and keeps looping in time. Undo removes it in one step.
 - [ ] Fixed length 1 bar: the clip appears after one bar and the next passes overdub it (each pass undoes alone).
 - [ ] Record on a track playing a clip: new notes appear in red in the piano roll and merge at each loop end.
-- [ ] Arranger mode: a red region grows with the notes; on stop a clip on whole bars appears. Overdub keeps the old
-      notes under it; Replace removes them. With the loop on, each pass is its own undo step.
+- [ ] Arranger mode, Stack: a red region grows with the notes; on stop a clip from exactly punch-in to punch-out
+      appears over the old one, which keeps its notes. Replace cuts the old one only over that stretch: punch in
+      mid-bar and the notes earlier in that bar stay; while recording, the old clip is silent and the red region
+      starts exactly at punch-in. With the loop on, each pass is its own undo step.
+- [ ] Arranger mode, Merge (the default): record notes, then record again over them moving only the mod wheel (the
+      track has a Mod wheel lane): no new clip appears; the clip gets a mod wheel lane and keeps its notes. Notes
+      played past the clip's end make a new clip just there. One Ctrl+Z undoes the take.
 - [ ] Input quantize 1/16: the take lands on the grid; one Ctrl+Z brings back the played timing.
 - [ ] Play a few notes while stopped, press Capture (Ctrl+Shift+R): a clip with them appears on the selected track.
 - [ ] Stop while recording: no hanging notes; save and reload keeps the record settings and the MIDI device.
+- [ ] Record while moving the mod wheel: the take's clip gets a Mod wheel lane, the track gets none; you hear it on
+      a free AUTO channel while playing. Changing the keyboard's sound (bank select) adds no lane. Overdub and
+      timeline Merge add the lane to the clip they record into.
+- [ ] Record menu → MIDI controls with no lane → Leave out: the mod wheel is not recorded and a toast offers
+      **Add lane**; after clicking it the next take records the wheel.
+- [ ] Import a General MIDI file: each clip gets lanes only for controllers that move (no CC 0, 32, or one-value
+      volume, pan, reverb lanes).
 
 ## Automation
 - [ ] "A" on a track header shows its lanes; "+ Add automation lane" adds Auto 1, 2, … on free AUTO channels. Drag a

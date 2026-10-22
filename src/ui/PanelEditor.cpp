@@ -220,6 +220,7 @@ void PanelEditor::step() {
     }
     claimKeyboard(this, false);
     trackHolds();
+    showNotices();
     OpaqueWidget::step();
     std::optional<CursorShape> splitterCursor;
     if (!ctx.dragging && panes->splitterActive())

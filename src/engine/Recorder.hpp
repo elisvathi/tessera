@@ -22,6 +22,10 @@ class RecorderHost {
     virtual PlayMode playMode() = 0;
     /// The scene whose slot a new launcher clip goes into when that slot is empty.
     virtual int targetScene() = 0;
+    /// A take moved CCs it did not record: with no lane while new lanes are off (the editor offers to add them), or
+    /// with every AUTO channel of the track in use (`channelsFull`).
+    virtual void controlsNotRecorded(TrackId /*track*/, const std::vector<MidiControl>& /*controls*/,
+                                     bool /*channelsFull*/) {}
 };
 
 /// Turns the engine's record events into song edits on the UI thread (DESIGN.md §14). No Rack dependency.
@@ -70,6 +74,8 @@ class Recorder {
         // Controls moved and not yet committed, by controlKey(), in the order they first moved: their new lanes
         // take the free AUTO channels in that order, as they did while you heard them.
         std::vector<std::pair<int, Samples>> controls;
+        std::vector<std::pair<int, Samples>> songControls; // the same in song ticks, for the track's own lanes
+        std::vector<int> reported; // controlKey()s already reported as not recorded, once per recording
         // Knob and AUTO REC lanes recorded in this take: the lane read (as it was) and its pass.
         struct LaneRecording {
             AutomationEnvelope source;
@@ -116,6 +122,8 @@ class Recorder {
     void closeOpen(Session& s, double playTick);
     void commit(Session& s, double endPlay, double endSong, bool final);
     void quantize(ClipId clip, const edits::IdSet& ids);
+    /// The same for every clip a take went into, as one undo step.
+    void quantize(const std::vector<std::pair<ClipId, edits::IdSet>>& clips);
     void bufferNote(const RecordEvent& event);
     /// A note's pressure, timbre or pitch, or a control, moved while recording.
     void handleValue(const RecordEvent& event);
@@ -129,6 +137,13 @@ class Recorder {
     static TakeNote finish(const Open& open, int pitch, double playTick, float release);
     /// The controls moved in a session, as thinned lane points.
     static std::vector<TakeLane> takeLanes(const Session& s);
+    /// The controls moved in a session that a lane of the track itself records (and no lane of the clip being
+    /// overdubbed), as lanes for recordTrackLanes in song ticks. They leave `s.controls`, so no clip gets them.
+    std::vector<TakeLane> trackMidiLanes(Session& s);
+    /// Keeps the CCs of `lanes` a take records: those a lane records, and, with new lanes on, those that moved and
+    /// find a free AUTO channel. Setup messages never. Tells the host about the rest, except those already in
+    /// `reported`, which gains them.
+    void filterControls(TrackId track, std::vector<TakeLane>& lanes, std::vector<int>& reported);
 
     RecorderHost& host;
     bool punched = false;
