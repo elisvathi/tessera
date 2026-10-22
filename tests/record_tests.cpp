@@ -822,10 +822,7 @@ TEST_CASE("recorder: what a held key played becomes the note's curves") {
 }
 
 TEST_CASE("recorder: moved controls become lanes in the take's clip, in the same undo step") {
-    Song song = recordSong();
-    addTrackMidiLane(song, cc(1), 0);
-    addTrackMidiLane(song, cc(64), 1);
-    FakeHost host(song);
+    FakeHost host(recordSong());
     Recorder rec(host);
     const Track& t = host.song_.tracks[0];
     rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
@@ -1130,7 +1127,7 @@ TEST_CASE("stacked timeline clips: the clip on top plays the lanes it has, the o
 namespace {
 
 /// A song whose first track has a looping one-bar clip with one note, placed at bar 2 for two bars, starting half a
-/// bar into the clip, and a mod wheel lane on the track.
+/// bar into the clip.
 Song mergeSong(ClipId& clipId) {
     Song song = recordSong();
     Clip clip;
@@ -1151,7 +1148,6 @@ Song mergeSong(ClipId& clipId) {
     inst.length = 2 * kBar;
     inst.offset = kBar / 2;
     song.tracks[0].arrangement.push_back(inst);
-    song.tracks[0].automation.push_back(makeMidiLane(song.newId<AutomationId>(), cc(1), 0, 0));
     return song;
 }
 
@@ -1244,4 +1240,48 @@ TEST_CASE("record settings: \"overdub\" from older saves loads as Stack; no sett
     s.arranger = ArrangerRecordMode::Stack;
     json::Ref j(s.toJson());
     CHECK(RecordSettings::fromJson(j.get()).arranger == ArrangerRecordMode::Stack);
+}
+
+TEST_CASE("recorder: a control the track's own lane records goes into that lane, at the song position") {
+    Song song = recordSong();
+    addTrackMidiLane(song, cc(1), 2);
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 4 * kBar));
+    rec.handle(note(t, 60, true, 0, 4 * kBar));
+    for (int i = 0; i <= 2; i++) {
+        RecordEvent wheel = valueEvent(t, RecordEvent::Kind::ChannelValue, i * kPpq, i / 2.f);
+        wheel.songTick = 4 * kBar + i * kPpq;
+        wheel.control = cc(1);
+        rec.handle(wheel);
+    }
+    rec.handle(note(t, 60, false, kPpq, 4 * kBar + kPpq));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, 5 * kBar));
+    REQUIRE(host.steps.size() == 1); // the clip and the track lane in one undo step
+    const Clip* c = slotClip(host.song_, 0, 0);
+    REQUIRE(c);
+    CHECK(c->automation.empty());
+    const auto& pts = host.song_.tracks[0].automation[0].points;
+    REQUIRE(pts.size() >= 2);
+    CHECK(pts.front().t == 4 * kBar);
+    CHECK(pts.back().value == doctest::Approx(1));
+}
+
+TEST_CASE("recorder: a take of only a track lane's control makes no clip") {
+    Song song = recordSong();
+    addTrackMidiLane(song, cc(1), 0);
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    for (int i = 0; i <= 1; i++) {
+        RecordEvent wheel = valueEvent(t, RecordEvent::Kind::ChannelValue, i * kPpq, float(i));
+        wheel.songTick = i * kPpq;
+        wheel.control = cc(1);
+        rec.handle(wheel);
+    }
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    CHECK(!slotClip(host.song_, 0, 0));
+    CHECK(host.song_.tracks[0].automation[0].points.size() == 2);
 }

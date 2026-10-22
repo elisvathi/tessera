@@ -190,17 +190,65 @@ void Recorder::quantize(const std::vector<std::pair<ClipId, edits::IdSet>>& clip
         host.perform(std::move(out));
 }
 
+std::vector<TakeLane> Recorder::trackMidiLanes(Session& s) {
+    std::vector<TakeLane> out;
+    const Song& song = host.song();
+    const Track* track = song.findTrack(s.track);
+    const Clip* clip = s.target == Target::Overdub ? song.findClip(s.clip) : nullptr;
+    if (!track)
+        return out;
+    for (const auto& [key, samples] : s.songControls) {
+        MidiControl control = controlOfKey(key);
+        auto has = [&](const std::vector<AutomationEnvelope>& lanes) {
+            return std::find_if(lanes.begin(), lanes.end(),
+                                [&](const AutomationEnvelope& l) { return l.midi == control; });
+        };
+        auto lane = has(track->automation);
+        if (lane == track->automation.end() || (clip && has(clip->automation) != clip->automation.end()))
+            continue;
+        TakeLane tl;
+        tl.control = control;
+        tl.source = *lane;
+        tl.points = lanePoints(control, samples);
+        if (!tl.points.empty())
+            out.push_back(std::move(tl));
+        s.controls.erase(
+            std::remove_if(s.controls.begin(), s.controls.end(), [key = key](const auto& c) { return c.first == key; }),
+            s.controls.end());
+    }
+    return out;
+}
+
 void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) {
+    std::vector<TakeLane> onTrackLanes = trackMidiLanes(s);
     Take take(std::move(s.done));
     take.lanes = takeLanes(s);
     filterControls(s.track, take.lanes, s.reported);
     s.done.clear();
     s.controls.clear();
+    s.songControls.clear();
     for (Session::LaneRecording& r : s.lanes)
         r.take = AutomationTake(r.source.recordMode);
-    if (take.empty())
+    if (take.empty() && onTrackLanes.empty())
         return; // nothing finished: no empty clips or steps
     const Song& song = host.song();
+    // A launcher take's moves of a control the track's own lane records go there too, in the same undo step.
+    auto withTrackLanes = [&](CommandPtr command) -> CommandPtr {
+        CommandPtr lanes = recordTrackLanes(song, s.track, onTrackLanes);
+        if (!lanes)
+            return command;
+        if (!command)
+            return lanes;
+        auto out = std::make_unique<CompoundCommand>(command->name());
+        out->add(std::move(command));
+        out->add(std::move(lanes));
+        return out;
+    };
+    if (take.empty() && s.target != Target::Arranger) {
+        if (CommandPtr command = withTrackLanes(nullptr))
+            host.perform(std::move(command));
+        return;
+    }
     Tick bar = ticksPerBar(song.timeSig);
     NextId nextId = [this] { return host.nextId(); };
     ClipId clip;
@@ -217,7 +265,7 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
         CommandPtr command = recordNewClip(song, s.track, s.slot, length, take, nextId, &clip, &ids);
         if (!command)
             return;
-        host.perform(std::move(command));
+        host.perform(withTrackLanes(std::move(command)));
         quantize(clip, ids);
         if (playing)
             host.launchAt(s.track, s.slot, s.clipStart);
@@ -230,7 +278,7 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
         return;
     }
     case Target::Overdub: {
-        CommandPtr command = recordIntoClip(song, s.clip, take, nextId, &ids);
+        CommandPtr command = withTrackLanes(recordIntoClip(song, s.clip, take, nextId, &ids));
         if (!command)
             return;
         host.perform(std::move(command));
@@ -249,6 +297,7 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
         for (const TakeLane& l : take.lanes)
             if (onTrack(l))
                 trackLanes.push_back(l);
+        trackLanes.insert(trackLanes.end(), onTrackLanes.begin(), onTrackLanes.end());
         take.lanes.erase(std::remove_if(take.lanes.begin(), take.lanes.end(), onTrack), take.lanes.end());
         auto out = std::make_unique<CompoundCommand>(take.notes.empty() ? "Record"
                                                                         : "Record " + countNotes(take.notes.size()));
@@ -378,6 +427,11 @@ void Recorder::handleValue(const RecordEvent& e) {
     if (it == s->controls.end())
         it = s->controls.insert(s->controls.end(), {key, Samples{}});
     it->second.push_back({double(targetTick(*s, e)), e.value});
+    auto song =
+        std::find_if(s->songControls.begin(), s->songControls.end(), [key](const auto& c) { return c.first == key; });
+    if (song == s->songControls.end())
+        song = s->songControls.insert(s->songControls.end(), {key, Samples{}});
+    song->second.push_back({e.songTick, e.value});
 }
 
 const AutomationEnvelope* Recorder::findLane(const Track& track, AutomationId id) const {
@@ -436,6 +490,17 @@ std::vector<std::vector<AutoPoint>> Recorder::wrapRuns(const Session& s, const s
 std::vector<std::vector<AutoPoint>> Recorder::liveRuns(LaneOwner owner, const AutomationEnvelope& lane) const {
     std::vector<std::vector<AutoPoint>> out;
     for (const Session& s : active) {
+        if (owner.track == s.track && lane.midi.valid()) {
+            // A track lane recording a MIDI control: its moves in song ticks, as trackMidiLanes() will write them.
+            for (const auto& [key, samples] : s.songControls)
+                if (key == controlKey(lane.midi)) {
+                    std::vector<AutoPoint> run;
+                    for (const auto& [t, v] : samples)
+                        run.push_back({Tick(std::llround(t)), v, CurveType::Linear, 0});
+                    out.push_back(std::move(run));
+                }
+            continue;
+        }
         if (s.target == Target::Arranger && owner.track == s.track) {
             for (const Session::LaneRecording& r : s.lanes)
                 if (r.source.id == lane.id)

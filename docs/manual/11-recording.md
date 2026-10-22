@@ -107,6 +107,8 @@ nothing to set up.
 
 - Everything a take records goes into its clip: a new clip, the clip you overdub, or the timeline clip it merges
   into. The track gets no lane of its own.
+- The exception: a control the track already has its own lane for (one you added under the track) records into that
+  track lane, at the song position, unless the clip you overdub has a lane for it.
 - Only controls that really move get a lane. A value sent once (the sound change or fader positions some keyboards
   send) leaves nothing behind, and nor do bank select and messages like "all notes off".
 - A control that already has a lane on the track, or in another of its clips, keeps that lane's AUTO channel, range

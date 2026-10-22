@@ -1201,3 +1201,13 @@ Changes §76's "a CC records only into a lane you added".
   lanes added by hand record, and the toast with "Add lane" names the rest.
 - With every AUTO channel in use the CC is left out and a toast says so.
 - Import keeps §76's rule (only moving CCs).
+
+## 79. A track lane for a MIDI control records that control (23 Oct)
+
+Refines §78.
+
+- **A CC (or bend, pressure) that a lane of the track itself records goes into that track lane,** at the song
+  position, in both Plays modes and for every kind of take, in the take's undo step (`Recorder::trackMidiLanes`).
+  Before, the track lane only lent its channel to a new clip lane.
+- **A lane in the clip being overdubbed comes first:** then the take goes there, as before.
+- Capture still puts every control into its new clip (it has no song position).
