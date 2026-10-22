@@ -179,6 +179,11 @@ void EditorHost::showNotices() {
                            ? midiControlName(u.controls[0]) + " and " + midiControlName(u.controls[1])
                            : std::to_string(u.controls.size()) + " controls";
     bool one = u.controls.size() == 1;
+    if (u.channelsFull) {
+        ctx.toast(t->name + ": " + what + " not recorded, all " + std::to_string(kMaxAutomationLanes) +
+                  " AUTO channels are in use");
+        return;
+    }
     EditorContext* c = &ctx;
     ctx.toast(t->name + ": " + what + " not recorded, the track has no lane for " + (one ? "it" : "them"),
               one ? "Add lane" : "Add lanes", [c, track = u.track, controls = u.controls] {

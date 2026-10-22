@@ -1172,3 +1172,32 @@ Replaces "any CC moved during the take its own lane" in §73.
 - **MIDI import keeps only CCs that move.** A CC that holds one value through the part is setup, not a performance.
   Bend and pressure are kept even with one value.
 - Still 8 AUTO channels per track. A bank on Auto Out for channels 9-16 waits until someone needs it.
+
+## 77. Timeline recording: Merge, Stack or Replace; Merge is the default (22 Oct)
+
+Changes §75's "Timeline Overdub records a new clip stacked over what was there".
+
+- **Why:** with stacking only, recording a mod wheel pass over notes you already have made a second clip holding
+  just the lane, on top of the first.
+- **Merge (default):** each note and lane value of a timeline take goes into the clip the top instance plays at
+  that tick, at the clip time it plays there (offset, loop and stretch followed; `mergeIntoArrangement`), like a
+  launcher loop overdub. What falls where no clip plays makes a new clip covering only that, on whole bars. A clip
+  placed more than once shares the edit (it is one clip). One undo step per take or loop pass; input quantize is one
+  more step across every clip it touched.
+- **Stack** is the old Overdub, renamed so the menu says what happens. Saved settings reading "overdub" load as
+  Stack. **Replace** is unchanged.
+- Knob and AUTO REC lanes still go to the track lanes in every mode (§74).
+
+## 78. MIDI controls go into the take's clip by themselves again (22 Oct)
+
+Changes §76's "a CC records only into a lane you added".
+
+- **A CC that moves during a take gets a lane in the clip the take goes into** (new launcher clip, overdubbed clip,
+  timeline clip it merges into, Capture's clip). The track gets no lane. It takes a free AUTO channel, or copies a
+  lane the track or another of its clips already has for that CC. While you play, it is heard on that free channel.
+- **The junk stays out:** bank select and channel mode messages never; a CC with one value through the take (a
+  sound change, fader positions sent on connect) makes no lane (`Recorder::filterControls`).
+- **Setting "MIDI controls with no lane":** Add a lane in the clip (default) or Leave out. Leave out is §76: only
+  lanes added by hand record, and the toast with "Add lane" names the rest.
+- With every AUTO channel in use the CC is left out and a toast says so.
+- Import keeps §76's rule (only moving CCs).

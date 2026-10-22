@@ -149,6 +149,7 @@ void TesseraModule::setRecordSettings(const RecordSettings& settings) {
     recorder.settings = settings;
     countInBars.store(settings.countInBars);
     liveToKey.store(settings.toKey);
+    newControlLanes.store(settings.newControlLanes);
     mpeInput.store(settings.mpe);
 }
 
@@ -773,6 +774,7 @@ void TesseraModule::process(const ProcessArgs& args) {
     handleUiRequests();
     handleSceneControls();
     engine.setLiveToKey(liveToKey.load(std::memory_order_relaxed));
+    engine.setNewControlLanes(newControlLanes.load(std::memory_order_relaxed));
     bool fill = params[FILL_PARAM].getValue() > 0.5f || inputs[FILL_INPUT].getVoltage() > kGateHigh ||
                 editorFill.load(std::memory_order_relaxed);
     engine.setFill(fill);

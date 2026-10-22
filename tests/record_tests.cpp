@@ -88,8 +88,10 @@ struct FakeHost : RecorderHost {
     PlayMode playMode() override { return mode; }
     int targetScene() override { return scene; }
     std::vector<std::vector<MidiControl>> unlinked;
-    void controlsWithoutLane(TrackId, const std::vector<MidiControl>& controls) override {
+    bool channelsFull = false;
+    void controlsNotRecorded(TrackId, const std::vector<MidiControl>& controls, bool full) override {
         unlinked.push_back(controls);
+        channelsFull = full;
     }
 };
 
@@ -136,6 +138,7 @@ TEST_CASE("record settings survive a save and load") {
     s.quantize = kPpq / 4;
     s.strength = 0.5f;
     s.toKey = true;
+    s.newControlLanes = false;
     json::Ref j(s.toJson());
     CHECK(RecordSettings::fromJson(j.get()) == s);
     CHECK(RecordSettings::fromJson(nullptr) == RecordSettings());
@@ -377,7 +380,7 @@ TEST_CASE("arranger: a new clip over whole bars, stacked over what was there or 
     inst.length = 4 * kBar;
     song.tracks[0].arrangement.push_back(inst);
 
-    for (ArrangerRecordMode mode : {ArrangerRecordMode::Overdub, ArrangerRecordMode::Replace}) {
+    for (ArrangerRecordMode mode : {ArrangerRecordMode::Stack, ArrangerRecordMode::Replace}) {
         FakeHost host(song);
         host.mode = PlayMode::Arranger;
         Recorder rec(host);
@@ -389,8 +392,8 @@ TEST_CASE("arranger: a new clip over whole bars, stacked over what was there or 
         rec.handle(punch(RecordEvent::Kind::PunchOut, 30, kBar + kBar / 2 + 30));
 
         const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
-        // Overdub: the old clip stays whole, the take on top. Replace: the old clip split around the new one.
-        bool overdub = mode == ArrangerRecordMode::Overdub;
+        // Stack: the old clip stays whole, the take on top. Replace: the old clip split around the new one.
+        bool overdub = mode == ArrangerRecordMode::Stack;
         REQUIRE(arr.size() == (overdub ? 2u : 3u));
         const ArrangerClip* rec1 = nullptr;
         for (const ArrangerClip& a : arr)
@@ -414,6 +417,7 @@ TEST_CASE("arranger: each loop pass becomes its own undo step") {
     FakeHost host(song);
     host.mode = PlayMode::Arranger;
     Recorder rec(host);
+    rec.settings.arranger = ArrangerRecordMode::Stack;
     const Track& t = host.song_.tracks[0];
     rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
     rec.handle(note(t, 60, true, 10, 10));
@@ -424,7 +428,7 @@ TEST_CASE("arranger: each loop pass becomes its own undo step") {
     rec.handle(note(t, 64, false, 2 * kBar + 20, 20));
     rec.handle(punch(RecordEvent::Kind::PunchOut, 2 * kBar + 30, 30));
     CHECK(host.steps.size() == 2);
-    // Overdub: each pass is its own clip, the second stacked over the first.
+    // Stack: each pass is its own clip, the second stacked over the first.
     const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
     REQUIRE(arr.size() == 2);
     CHECK(arr[0].position == 0);
@@ -513,7 +517,7 @@ MidiControl cc(uint8_t n) { return {MidiControl::Kind::Cc, n}; }
 
 } // namespace
 
-TEST_CASE("record: a take writes a CC only where the track has a lane for it; bend always gets one") {
+TEST_CASE("record: a take's controls become clip lanes; a CC with a lane on the track keeps its channel") {
     Song song = recordSong();
     addTrackMidiLane(song, cc(64), 3);
     song.tracks[0].automation[0].rangeMax = 5;
@@ -532,15 +536,16 @@ TEST_CASE("record: a take writes a CC only where the track has a lane for it; be
     const Clip* made = song.findClip(clip);
     REQUIRE(made->notes.size() == 1);
     CHECK(made->notes[0].pressureExpr.size() == 2);
-    // The mod wheel has no lane on the track, so it is left out.
-    REQUIRE(made->automation.size() == 2);
+    REQUIRE(made->automation.size() == 3);
     CHECK(made->automation[0].drive == LaneDrive::Pitch);
     CHECK(made->automation[0].name == "Pitch bend");
-    CHECK(made->automation[1].name == "Sustain (CC 64)");
-    CHECK(made->automation[1].midi == cc(64));
-    CHECK(made->automation[1].outputIndex == 3);
-    CHECK(made->automation[1].rangeMax == 5);
-    CHECK(made->automation[1].id != song.tracks[0].automation[0].id);
+    CHECK(made->automation[1].name == "Mod wheel (CC 1)");
+    CHECK(made->automation[1].outputIndex == 0); // the first free channel
+    CHECK(made->automation[2].name == "Sustain (CC 64)");
+    CHECK(made->automation[2].midi == cc(64));
+    CHECK(made->automation[2].outputIndex == 3); // as the track's lane for it, with its range
+    CHECK(made->automation[2].rangeMax == 5);
+    CHECK(made->automation[2].id != song.tracks[0].automation[0].id);
     c->revert(song);
     CHECK(!song.findClip(clip));
 }
@@ -594,7 +599,7 @@ TEST_CASE("record: a lane marked don't-record keeps its points, and a CC reuses 
     song.findClip(a)->automation[0].noRecord = true;
     Take again;
     again.lanes.push_back(takeLane(cc(20), {{0, 0.9f}}));
-    recordIntoClip(song, a, again, [&next] { return next++; })->apply(song);
+    CHECK(!recordIntoClip(song, a, again, [&next] { return next++; })); // nothing changes: no empty undo step
     CHECK(song.findClip(a)->automation[0].points[0].value == doctest::Approx(0.3f));
 }
 
@@ -711,12 +716,22 @@ TEST_CASE("live expression: a CC plays on the AUTO channel of the lane that reco
     EngineRig rig(song);
     size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
     rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 1}, 0.5f));
-    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1)); // no lane: plays nowhere
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1)); // no lane yet: the first free channel
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 0}, 1)); // bank select: nowhere
     rig.run(1);
     REQUIRE(rig.frames[slot].autoChannels >= 3);
     CHECK(rig.frames[slot].automation[2] == doctest::Approx(5));
-    CHECK(rig.frames[slot].automation[0] == doctest::Approx(0));
+    CHECK(rig.frames[slot].automation[0] == doctest::Approx(10));
     CHECK(rig.frames[slot].automation[1] == doctest::Approx(0));
+}
+
+TEST_CASE("live expression: with new lanes off, a CC with no lane plays nowhere") {
+    EngineRig rig(recordSong());
+    rig.engine.setNewControlLanes(false);
+    size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1));
+    rig.run(1);
+    CHECK(rig.frames[slot].automation[0] == doctest::Approx(0));
 }
 
 TEST_CASE("live expression: armed tracks report values to the recorder while recording") {
@@ -840,9 +855,57 @@ TEST_CASE("recorder: moved controls become lanes in the take's clip, in the same
     CHECK(host.unlinked.empty());
 }
 
-TEST_CASE("recorder: a CC with no lane is not recorded and is reported once per recording") {
+TEST_CASE("recorder: a moved CC gets a clip lane; bank select and a CC sent once don't") {
     FakeHost host(recordSong());
     Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    auto move = [&](MidiControl control, double at, float value) {
+        RecordEvent e = valueEvent(t, RecordEvent::Kind::ChannelValue, at, value);
+        e.control = control;
+        rec.handle(e);
+    };
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    move(cc(1), kPpq, 0.2f);
+    move(cc(1), 2 * kPpq, 0.6f);
+    move(cc(0), kPpq, 1);    // bank select
+    move(cc(7), kPpq, 0.8f); // a volume sent once
+    rec.handle(note(t, 60, false, kPpq, kPpq));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    const Clip* c = slotClip(host.song_, 0, 0);
+    REQUIRE(c);
+    REQUIRE(c->automation.size() == 1);
+    CHECK(c->automation[0].midi == cc(1));
+    CHECK(host.song_.tracks[0].automation.empty()); // the track itself gets no lane
+    CHECK(host.unlinked.empty());
+}
+
+TEST_CASE("recorder: with every AUTO channel in use a new CC is left out and reported") {
+    Song song = recordSong();
+    for (int o = 0; o < kMaxAutomationLanes; o++)
+        song.tracks[0].automation.push_back(makeLane(song.newId<AutomationId>(), o, 0));
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    for (float v : {0.f, 1.f}) {
+        RecordEvent e = valueEvent(t, RecordEvent::Kind::ChannelValue, kPpq * (1 + v), v);
+        e.control = cc(1);
+        rec.handle(e);
+    }
+    rec.handle(note(t, 60, false, kPpq, kPpq));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    REQUIRE(slotClip(host.song_, 0, 0));
+    CHECK(slotClip(host.song_, 0, 0)->automation.empty());
+    REQUIRE(host.unlinked.size() == 1);
+    CHECK(host.channelsFull);
+}
+
+TEST_CASE("recorder: with new lanes off, a CC with no lane is not recorded and is reported once per recording") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    rec.settings.newControlLanes = false;
     const Track& t = host.song_.tracks[0];
     auto move = [&](MidiControl control, double at) {
         RecordEvent e = valueEvent(t, RecordEvent::Kind::ChannelValue, at, 0.5f);
@@ -864,6 +927,7 @@ TEST_CASE("recorder: a CC with no lane is not recorded and is reported once per 
     REQUIRE(host.unlinked.size() == 1);
     REQUIRE(host.unlinked[0].size() == 1);
     CHECK(host.unlinked[0][0] == cc(1));
+    CHECK(!host.channelsFull);
 }
 
 TEST_CASE("recorder: a take of only control moves still makes a clip") {
@@ -1061,4 +1125,123 @@ TEST_CASE("stacked timeline clips: the clip on top plays the lanes it has, the o
     rig.run(int(kBar * 1.5 * 32)); // into the take
     CHECK(rig.frames[slot].automation[0] == doctest::Approx(9));
     CHECK(rig.frames[slot].automation[1] == doctest::Approx(3)); // the clip below still plays AUTO 2
+}
+
+namespace {
+
+/// A song whose first track has a looping one-bar clip with one note, placed at bar 2 for two bars, starting half a
+/// bar into the clip, and a mod wheel lane on the track.
+Song mergeSong(ClipId& clipId) {
+    Song song = recordSong();
+    Clip clip;
+    clip.id = clipId = song.newId<ClipId>();
+    clip.length = clip.loopEnd = kBar;
+    clip.loopMode = LoopMode::Loop;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.start = 0;
+    n.length = kPpq;
+    n.pitch = 40;
+    clip.notes.push_back(n);
+    song.clips[clip.id] = clip;
+    ArrangerClip inst;
+    inst.id = song.newId<ArrangementId>();
+    inst.clip = clip.id;
+    inst.position = kBar;
+    inst.length = 2 * kBar;
+    inst.offset = kBar / 2;
+    song.tracks[0].arrangement.push_back(inst);
+    song.tracks[0].automation.push_back(makeMidiLane(song.newId<AutomationId>(), cc(1), 0, 0));
+    return song;
+}
+
+} // namespace
+
+TEST_CASE("arranger merge: a mod wheel pass goes into the clip that plays there, notes left alone") {
+    ClipId id;
+    FakeHost host(mergeSong(id));
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    CHECK(rec.settings.arranger == ArrangerRecordMode::Merge); // the default
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, kBar));
+    for (int i = 0; i <= 2; i++) {
+        RecordEvent wheel = valueEvent(t, RecordEvent::Kind::ChannelValue, 0, i / 2.f);
+        wheel.songTick = kBar + i * kPpq;
+        wheel.control = cc(1);
+        rec.handle(wheel);
+    }
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 3 * kPpq, kBar + 3 * kPpq));
+    REQUIRE(host.steps.size() == 1);
+    CHECK(host.song_.tracks[0].arrangement.size() == 1); // no new clip on the timeline
+    const Clip* c = host.song_.findClip(id);
+    CHECK(c->notes.size() == 1);
+    REQUIRE(c->automation.size() == 1);
+    CHECK(c->automation[0].midi == cc(1));
+    const auto& pts = c->automation[0].points;
+    REQUIRE(!pts.empty());
+    // The instance starts half a bar into the clip: the first value lands there, and the loop wraps the rest.
+    CHECK(pts.front().t <= kBar);
+    for (const AutoPoint& p : pts)
+        CHECK(p.t < kBar);
+}
+
+TEST_CASE("arranger merge: notes land in the clip at the time it plays; past the clip they make a new one") {
+    ClipId id;
+    FakeHost host(mergeSong(id));
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, kBar));
+    // Timeline bar 2 + 3/4 bar: half a bar in plus 3/4 is 1 1/4 bars into the clip, so 1/4 bar after the loop wraps.
+    rec.handle(note(t, 60, true, 3 * kPpq, kBar + 3 * kPpq));
+    rec.handle(note(t, 60, false, 3 * kPpq + 100, kBar + 3 * kPpq + 100));
+    rec.handle(note(t, 62, true, 2 * kBar + 10, 3 * kBar + 10)); // after the instance ends
+    rec.handle(note(t, 62, false, 2 * kBar + 20, 3 * kBar + 20));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 2 * kBar + 30, 3 * kBar + 30));
+    REQUIRE(host.steps.size() == 1); // one undo step for both
+    const Clip* c = host.song_.findClip(id);
+    REQUIRE(c->notes.size() == 2);
+    const Note& added = c->notes[0].pitch == 60 ? c->notes[0] : c->notes[1];
+    CHECK(added.pitch == 60);
+    CHECK(added.start == kPpq);
+    CHECK(added.length == 100);
+    const auto& arr = host.song_.tracks[0].arrangement;
+    REQUIRE(arr.size() == 2);
+    const ArrangerClip& made = arr[0].clip == id ? arr[1] : arr[0];
+    CHECK(made.position == 3 * kBar); // from the bar of its own first note, not from where recording began
+    REQUIRE(host.song_.findClip(made.clip)->notes.size() == 1);
+    CHECK(host.song_.findClip(made.clip)->notes[0].pitch == 62);
+}
+
+TEST_CASE("arranger merge: a second loop pass goes into the clip the first pass made") {
+    Song song = recordSong();
+    song.loopStart = 0;
+    song.loopEnd = 2 * kBar;
+    FakeHost host(song);
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 10, 10));
+    rec.handle(note(t, 60, false, 20, 20));
+    rec.handle(punch(RecordEvent::Kind::LoopWrap, 2 * kBar, 0));
+    rec.handle(note(t, 64, true, 2 * kBar + 10, 10));
+    rec.handle(note(t, 64, false, 2 * kBar + 20, 20));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 2 * kBar + 30, 30));
+    CHECK(host.steps.size() == 2);
+    const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
+    REQUIRE(arr.size() == 1);
+    CHECK(host.song_.findClip(arr[0].clip)->notes.size() == 2);
+}
+
+TEST_CASE("record settings: \"overdub\" from older saves loads as Stack; no setting means Merge") {
+    json::Ref old(json_pack("{s:s}", "arranger", "overdub"));
+    CHECK(RecordSettings::fromJson(old.get()).arranger == ArrangerRecordMode::Stack);
+    json::Ref none(json_object());
+    CHECK(RecordSettings::fromJson(none.get()).arranger == ArrangerRecordMode::Merge);
+    RecordSettings s;
+    s.arranger = ArrangerRecordMode::Stack;
+    json::Ref j(s.toJson());
+    CHECK(RecordSettings::fromJson(j.get()).arranger == ArrangerRecordMode::Stack);
 }

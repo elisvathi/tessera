@@ -61,17 +61,16 @@ timeline. **One take is one undo step** (input quantize stays a second one).
 The pitch curve's range grows from ±24 to ±48 semitones to fit MPE's default. MPE notes are recorded on one channel
 (channel 1), not one per finger, and a track's channel filter lets a whole MPE zone through.
 
-**Per take, in clip lanes** (normal mode, or the MPE master channel). Bend and pressure need no setup; a CC needs a
-lane on the track (DECISIONS §76):
+**Per take, in the take's clip lanes** (normal mode, or the MPE master channel), with **no setup** (DECISIONS §78):
 
 | Control | Lane | Output |
 |---|---|---|
 | Pitch bend | "Pitch bend", ±2 semitones | added to V/OCT on every voice; no AUTO channel |
 | Channel pressure | "Pressure" | **PRESS** on every voice: the larger of it and the note's own pressure |
-| A CC the track has a lane for | a copy of that lane, e.g. "Mod wheel (CC 1)", "Sustain (CC 64)" | that lane's AUTO channel |
+| Any CC that moves during the take | named by the control, e.g. "Mod wheel (CC 1)"; a copy of the track's lane for it if there is one | a free AUTO channel, or that lane's |
 
-- A CC with no lane is not recorded; after the take a message offers **Add lane**. Bank select and channel mode
-  messages (CC 0, 32, 120-127) are never reported. A later take writes into the lane that already has that control.
+- A CC sent once with one value, bank select and channel mode messages (CC 0, 32, 120-127) make no lane. A
+  "Leave out" setting records only lanes added by hand. A later take writes into the lane that already has that control.
 - A lane's menu has **Don't record this control** for the rare opt-out, and learn to point it at another control.
 - **Rest values:** when no clip lane plays them, bend, pressure and sustain go back to 0, so a track never stays
   detuned or held after a clip ends.

@@ -208,6 +208,8 @@ class Engine {
 
     /// Snap live pitches to the song key (monitoring and recording alike).
     void setLiveToKey(bool on) { liveToKey = on; }
+    /// Whether a CC with no lane plays on a free AUTO channel while you play, where its take's new lane will go.
+    void setNewControlLanes(bool on) { newControlLanes = on; }
     /// A note from the record inputs: armed tracks with a matching input play it (when monitoring) and it is
     /// reported to the recorder, once per armed track and once more for the capture buffer.
     void liveNote(const LiveNote& note);
@@ -277,6 +279,7 @@ class Engine {
             audition.fill(-1);
             slewAlpha.fill(1);
             autoHigh.fill(10); // a channel only modulators drive sends 0..10 V
+            liveCcOutput.fill(-1);
         }
 
         // Output frames: what changed since each bus buffer was last written (DESIGN.md §18).
@@ -340,6 +343,9 @@ class Engine {
         float liveChannelBend = 0, liveChannelPress = 0;
         std::array<float, kMaxAutomationLanes> liveAuto{};
         uint8_t liveAutoMask = 0;
+        // CCs with no lane yet, and the free AUTO channel each plays on until its take makes the lane.
+        std::array<int8_t, 128> liveCcOutput;
+        int liveCcCount = 0;
         std::array<size_t, kMaxDrumLanes> laneCursor{}; // per own-loop lane of the playing clip
         // The device chain: what the snapshot says, and the runtime (an index into `chains`, -1 for none).
         const ChainPlayback* chainInfo = nullptr;
@@ -561,6 +567,7 @@ class Engine {
     double countInPos = 0;
     double freeTick = 0;
     bool liveToKey = false;
+    bool newControlLanes = true;
     bool fill = false;
     // Live notes held now, by source, channel and incoming pitch: the bus slots they went to and the pitch
     // they play, so each note-off reaches the same tracks even if arming changed in between.

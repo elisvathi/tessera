@@ -25,6 +25,8 @@ struct TimedNote {
 };
 
 inline Tick instanceEnd(const ArrangerClip& a) { return a.position + a.length; }
+/// How fast an instance plays its clip, kept inside [kMinStretch, kMaxStretch].
+double stretchOf(const ArrangerClip& a);
 
 /// The part of the clip an instance plays on its first pass and on every repeat, in clip ticks.
 /// Non-looping clips play [0, contentEnd) once (up to their last note); looping clips repeat [loopStart, loopEnd).

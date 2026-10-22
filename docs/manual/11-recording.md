@@ -27,8 +27,7 @@ In the track menu (or the inspector's **Recording** chip):
 - **Monitor while armed** (on by default): an armed track plays what comes in through its own outputs and devices, so
   you hear yourself.
 
-Arming a track also records its automation lanes: MIDI controls that have a lane, knobs you turn, and CV on the AUTO
-input.
+Arming a track also records its automation lanes: MIDI controls you move, knobs you turn, and CV on the AUTO input.
 See [Recording automation](12-automation.md#recording-automation).
 
 To play a track from MIDI or CV all the time, without arming it, set its **Input** instead (see
@@ -54,9 +53,10 @@ Click the **▾** next to the record button.
 |---|---|
 | **Count-in** | **Off**, **1 bar** or **2 bars**. The record button blinks and the **CLICK** output clicks during the count-in. |
 | **New launcher clips** | **As long as played** (rounded up to whole bars when you stop), or a fixed **1, 2, 4 or 8 bars**. A fixed-length clip is finished when full; then it loops and the next passes are added to it. |
-| **Recording over arranger clips** | **Overdub** (the take is a new clip stacked over the old ones, which stay as they were) or **Replace** (the new take replaces what was there). |
+| **Recording over arranger clips** | **Merge** (the default: the take is added to the clip that is there), **Stack** (the take is a new clip on top, and the old one stays as it was) or **Replace** (the take replaces what was there). See below. |
 | **Input quantize** | **Off**, or a grid from 1/4 to 1/32, with a strength from 50% to 100%. |
 | **Snap incoming notes to the key** | Keeps played notes in the song's key, both what you hear and what is recorded. |
+| **MIDI controls with no lane** | **Add a lane in the clip** (the default) or **Leave out**. See [Expression and controls](#expression-and-controls). |
 | **MPE input** | For a controller that sends MPE (each note on its own channel, with its own bend, slide and pressure). See [Expression and controls](#expression-and-controls). A controller that announces MPE switches this on by itself. |
 | **Capture what I just played** | See [Capture](#capture-keep-what-you-just-played). |
 | **MIDI input** | The MIDI device. |
@@ -69,10 +69,17 @@ It depends on what the armed track is doing when your first note arrives:
   round, that pass is added (one undo step per pass). You hear the new notes on the next pass.
 - **Plays is set to Clips, and the track plays nothing:** a new clip is made in an empty slot (the selected scene's
   slot, or the next empty one). It starts at the bar where recording started, and keeps playing when you punch out.
-- **Plays is set to Timeline:** a new clip is made on the timeline from punch-in to punch-out, on whole bars. With
-  the song loop on, each pass makes its own clip and undo step. With **Overdub** (the default) each take is its own
-  clip, stacked over what was there: you can move, mute or delete a take on its own. Where stacked clips have a lane
-  on the same AUTO channel, the clip on top plays it. With **Replace**, old clips under the take are cut around it.
+- **Plays is set to Timeline:** it depends on **Recording over arranger clips**. With the song loop on, each pass is
+  its own undo step.
+  - **Merge** (the default): what you play goes into the clip that plays at that moment, as if you had drawn it in.
+    So you can record the notes first, then go back and record only the mod wheel over them. Nothing new appears
+    on the timeline. Where clips are stacked, it goes into the one on top. Where no clip plays, a new clip is made
+    for just that stretch, on whole bars. A clip that is placed more than once shares its notes, so the new notes
+    show in every copy.
+  - **Stack**: a new clip is made from punch-in to punch-out, on whole bars, stacked over what was there. You can
+    move, mute or delete each take on its own. Where stacked clips have a lane on the same AUTO channel, the clip on
+    top plays it.
+  - **Replace**: a new clip is made from punch-in to punch-out, and old clips under it are cut around it.
 
 If you played nothing, nothing is made.
 
@@ -90,20 +97,24 @@ nothing to set up.
 - **MPE**: each finger's bend, slide (CC 74) and pressure become the note's **Pitch**, **Timbre** and **Pressure**
   curves. Turn on **MPE input** in the record button's ▾ menu, unless your controller switches it on by itself.
 
-**For the whole track** (automation lanes in the take's clip):
+**For the whole track** (automation lanes in the clip the take goes into, made for you):
 
 | You move | Lane | Comes out of |
 |---|---|---|
-| The pitch bend wheel | **Pitch bend**, ±2 semitones, made for you | Added to **V/OCT** on every voice. No cable needed. |
-| Channel aftertouch (one pressure for all keys) | **Pressure**, made for you | **PRESS** on every voice. Where a note has its own pressure too, the higher one wins. |
-| Any other control: mod wheel, sustain pedal, a knob that sends a CC | Only if the track has a lane for it, like **Mod wheel (CC 1)** | That lane's **AUTO** channel |
+| The pitch bend wheel | **Pitch bend**, ±2 semitones | Added to **V/OCT** on every voice. No cable needed. |
+| Channel aftertouch (one pressure for all keys) | **Pressure** | **PRESS** on every voice. Where a note has its own pressure too, the higher one wins. |
+| Any other control: mod wheel, sustain pedal, a knob that sends a CC | Named after it, like **Mod wheel (CC 1)** | A free **AUTO** channel, the same one each time for that control |
 
-- Pitch bend and pressure always record. They play into the voices, so they use no AUTO channel.
-- A CC records only into a lane you added for it: **Add automation lane → MIDI control** on the track. So a knob you
-  bump, or the bank change your keyboard sends with a new sound, leaves nothing behind. Each take writes into the
-  clip's lane for that CC, on the track lane's AUTO channel, with its range and name.
-- If you move a CC that has no lane, a message says so after the take, for example *Lead: Mod wheel (CC 1) not
-  recorded, the track has no lane for it*. Click **Add lane** in the message to add it. The next take records it.
+- Everything a take records goes into its clip: a new clip, the clip you overdub, or the timeline clip it merges
+  into. The track gets no lane of its own.
+- Only controls that really move get a lane. A value sent once (the sound change or fader positions some keyboards
+  send) leaves nothing behind, and nor do bank select and messages like "all notes off".
+- A control that already has a lane on the track, or in another of its clips, keeps that lane's AUTO channel, range
+  and name.
+- If all 8 AUTO channels are in use, the control isn't recorded and a message says so.
+- **MIDI controls with no lane** in the record button's ▾ menu: **Add a lane in the clip** (the default) or **Leave
+  out**. With **Leave out**, only lanes you added (**Add automation lane → MIDI control**) record. A message after
+  the take names what was left out, with an **Add lane** button.
 - The pitch bend and pressure lanes go back to 0 when no clip plays them, so a track never stays bent.
 - The sustain pedal is recorded as a lane that steps on and off. It doesn't make notes longer. Patch its AUTO channel
   to whatever should hold.
@@ -121,8 +132,8 @@ record button's ▾ menu.
 
 - Tessera keeps the last 64 bars of notes played while not recording.
 - Capture turns your last phrase (back to a gap of 4 bars of silence) into a clip on the selected track.
-- It keeps what you played on the keys (aftertouch, MPE) and the controls you moved during the phrase (bend,
-  pressure, and the CCs the track has a lane for), as a recording does. Each control's lane starts where the control was when the phrase began.
+- It keeps what you played on the keys (aftertouch, MPE) and the controls you moved during the phrase (bend, mod
+  wheel, pedals, CCs), as a recording does. Each control's lane starts where the control was when the phrase began.
 - If you played along with the song, the notes keep their place in the bar. If you played while stopped, the clip
   starts on the beat of the first note.
 
