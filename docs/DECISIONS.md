@@ -1211,3 +1211,13 @@ Refines §78.
   Before, the track lane only lent its channel to a new clip lane.
 - **A lane in the clip being overdubbed comes first:** then the take goes there, as before.
 - Capture still puts every control into its new clip (it has no song position).
+
+## 80. Timeline takes cover exactly what was recorded (23 Oct)
+
+- **Stack and Replace make a clip from exactly punch-in to punch-out** (each loop pass its own stretch), no longer
+  rounded out to whole bars. Rounding made Replace cut notes in the same bars that nobody played over.
+- Merge's new clip for notes where no clip plays runs from the first of them to the end of the last.
+- Launcher clips still round to whole bars, since they loop.
+- **While a Replace take records, the armed track's timeline clips are silent** (notes and clip lanes; track lanes
+  still play), since the take replaces them (`Engine::replacing`). Merge and Stack keep playing them.
+- The red region of a timeline take starts at punch-in, where its clip will start.

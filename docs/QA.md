@@ -239,8 +239,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       slot (red "Recording" while it records) and keeps looping in time. Undo removes it in one step.
 - [ ] Fixed length 1 bar: the clip appears after one bar and the next passes overdub it (each pass undoes alone).
 - [ ] Record on a track playing a clip: new notes appear in red in the piano roll and merge at each loop end.
-- [ ] Arranger mode, Stack: a red region grows with the notes; on stop a clip on whole bars appears over the old
-      one, which keeps its notes. Replace cuts the old one around it. With the loop on, each pass is its own undo step.
+- [ ] Arranger mode, Stack: a red region grows with the notes; on stop a clip from exactly punch-in to punch-out
+      appears over the old one, which keeps its notes. Replace cuts the old one only over that stretch: punch in
+      mid-bar and the notes earlier in that bar stay; while recording, the old clip is silent and the red region
+      starts exactly at punch-in. With the loop on, each pass is its own undo step.
 - [ ] Arranger mode, Merge (the default): record notes, then record again over them moving only the mod wheel (the
       track has a Mod wheel lane): no new clip appears; the clip gets a mod wheel lane and keeps its notes. Notes
       played past the clip's end make a new clip just there. One Ctrl+Z undoes the take.

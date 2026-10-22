@@ -357,7 +357,7 @@ TEST_CASE("launcher: a track playing a clip overdubs it, wrapping into the loop"
     CHECK(host.launches.empty());
 }
 
-TEST_CASE("arranger: a new clip over whole bars, stacked over what was there or replacing it") {
+TEST_CASE("arranger: a new clip over exactly the recorded stretch, stacked over what was there or replacing it") {
     Song song = recordSong();
     Clip old;
     old.id = song.newId<ClipId>();
@@ -400,13 +400,22 @@ TEST_CASE("arranger: a new clip over whole bars, stacked over what was there or 
             if (a.clip != old.id)
                 rec1 = &a;
         REQUIRE(rec1);
-        CHECK(rec1->position == kBar);
-        CHECK(rec1->length == kBar);
+        CHECK(rec1->position == kBar + kBar / 2); // punch-in to punch-out, not rounded to bars
+        CHECK(rec1->length == 30);
         const Clip* made = host.song_.findClip(rec1->clip);
         REQUIRE(made);
         CHECK(made->notes.size() == 1); // only what was played
-        if (overdub)
+        if (overdub) {
             CHECK(arr[0].length == 4 * kBar);
+        } else {
+            // Only the recorded stretch is cut: the old note at bar 2 + 100 ticks, before punch-in, still plays.
+            const ArrangerClip* left = nullptr;
+            for (const ArrangerClip& a : arr)
+                if (a.clip == old.id && a.position == 0)
+                    left = &a;
+            REQUIRE(left);
+            CHECK(left->length == kBar + kBar / 2);
+        }
     }
 }
 
@@ -434,7 +443,7 @@ TEST_CASE("arranger: each loop pass becomes its own undo step") {
     CHECK(arr[0].position == 0);
     CHECK(arr[0].length == 2 * kBar);
     CHECK(arr[1].position == 0);
-    CHECK(arr[1].length == kBar);
+    CHECK(arr[1].length == 30); // the second pass stopped 30 ticks in
     CHECK(host.song_.findClip(arr[1].clip)->notes.size() == 1);
 }
 
@@ -1205,7 +1214,7 @@ TEST_CASE("arranger merge: notes land in the clip at the time it plays; past the
     const auto& arr = host.song_.tracks[0].arrangement;
     REQUIRE(arr.size() == 2);
     const ArrangerClip& made = arr[0].clip == id ? arr[1] : arr[0];
-    CHECK(made.position == 3 * kBar); // from the bar of its own first note, not from where recording began
+    CHECK(made.position == 3 * kBar + 10); // from its own first note, not from where recording began
     REQUIRE(host.song_.findClip(made.clip)->notes.size() == 1);
     CHECK(host.song_.findClip(made.clip)->notes[0].pitch == 62);
 }

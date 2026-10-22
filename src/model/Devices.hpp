@@ -105,10 +105,14 @@ class Chain {
     /// The time of the earliest waiting message; infinity when none.
     double nextDue() const;
     bool idle() const { return count == 0; }
-    /// Forgets the expression curves notes carry (they belong to a snapshot that is going away).
+    /// Forgets the expression curves notes carry (they belong to a snapshot that is going away): in waiting
+    /// messages and in the notes an arpeggiator holds, which it plays again on its next steps.
     void dropExtras() {
         for (int i = 0; i < count; i++)
             messages[size_t(i)].note.extras = nullptr;
+        for (DeviceState& state : states)
+            for (int i = 0; i < state.heldCount; i++)
+                state.held[size_t(i)].note.extras = nullptr;
     }
     /// A fresh ID for a note entering the chain (never 0, never with kLiveNote).
     uint32_t newId() {

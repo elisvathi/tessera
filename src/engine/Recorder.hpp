@@ -24,7 +24,8 @@ class RecorderHost {
     virtual int targetScene() = 0;
     /// A take moved CCs it did not record: with no lane while new lanes are off (the editor offers to add them), or
     /// with every AUTO channel of the track in use (`channelsFull`).
-    virtual void controlsNotRecorded(TrackId track, const std::vector<MidiControl>& controls, bool channelsFull) {}
+    virtual void controlsNotRecorded(TrackId /*track*/, const std::vector<MidiControl>& /*controls*/,
+                                     bool /*channelsFull*/) {}
 };
 
 /// Turns the engine's record events into song edits on the UI thread (DESIGN.md §14). No Rack dependency.

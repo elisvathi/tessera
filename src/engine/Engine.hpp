@@ -210,6 +210,8 @@ class Engine {
     void setLiveToKey(bool on) { liveToKey = on; }
     /// Whether a CC with no lane plays on a free AUTO channel while you play, where its take's new lane will go.
     void setNewControlLanes(bool on) { newControlLanes = on; }
+    /// Whether timeline takes replace what was there: while recording, an armed track's timeline clips are silent.
+    void setReplaceTakes(bool on) { replaceTakes = on; }
     /// A note from the record inputs: armed tracks with a matching input play it (when monitoring) and it is
     /// reported to the recorder, once per armed track and once more for the capture buffer.
     void liveNote(const LiveNote& note);
@@ -413,6 +415,8 @@ class Engine {
     void playArrangement(const TrackPlayback& track, TrackState& state, double from, double to);
     void fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom);
     bool followsArrangement(const TrackState& state) const { return mode == PlayMode::Arranger && !state.overridden; }
+    /// A Replace take is being recorded on this track: the clips it will cut out are not heard.
+    bool replacing(const TrackPlayback& track) const { return recordingOn && replaceTakes && track.armed; }
     void backToArrangement(const TrackPlayback& track, TrackState& state);
     /// The song tick at play tick `at` in or just after the current sample.
     double songTickAt(double at) const;
@@ -568,6 +572,7 @@ class Engine {
     double freeTick = 0;
     bool liveToKey = false;
     bool newControlLanes = true;
+    bool replaceTakes = false;
     bool fill = false;
     // Live notes held now, by source, channel and incoming pitch: the bus slots they went to and the pitch
     // they play, so each note-off reaches the same tracks even if arming changed in between.

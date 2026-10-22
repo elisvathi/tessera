@@ -1057,6 +1057,12 @@ void Engine::playArrangement(const TrackPlayback& track, TrackState& state, doub
 
 void Engine::fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom) {
     // Inside the song loop, a note never sounds past the loop end.
+    if (replacing(track)) {
+        while (state.arrangementCursor < track.arrangement.size() &&
+               track.arrangement[state.arrangementCursor].start < to)
+            state.arrangementCursor++;
+        return;
+    }
     bool looping = loopOn && snapshot->loopEnd > snapshot->loopStart;
     double cap = looping && from < double(snapshot->loopEnd) ? double(snapshot->loopEnd) : INFINITY;
     fireList(track, state, track.arrangement, state.arrangementCursor, from, to, playAtFrom, cap, -1,
@@ -1549,7 +1555,7 @@ int Engine::lanesClips(const TrackPlayback& tp, const TrackState& state, double 
         out[0] = {clip, t};
         return 1;
     }
-    if (!followsArrangement(state))
+    if (!followsArrangement(state) || replacing(tp))
         return 0;
     // Sorted by position: the clips under the playhead come bottom to top, so a later one (a newer take on top)
     // overrides the lanes it shares with the ones below.

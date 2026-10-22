@@ -74,12 +74,14 @@ It depends on what the armed track is doing when your first note arrives:
   - **Merge** (the default): what you play goes into the clip that plays at that moment, as if you had drawn it in.
     So you can record the notes first, then go back and record only the mod wheel over them. Nothing new appears
     on the timeline. Where clips are stacked, it goes into the one on top. Where no clip plays, a new clip is made
-    for just that stretch, on whole bars. A clip that is placed more than once shares its notes, so the new notes
+    for just those notes, from the first to the end of the last. A clip that is placed more than once shares its notes, so the new notes
     show in every copy.
-  - **Stack**: a new clip is made from punch-in to punch-out, on whole bars, stacked over what was there. You can
+  - **Stack**: a new clip is made from exactly punch-in to punch-out, stacked over what was there. You can
     move, mute or delete each take on its own. Where stacked clips have a lane on the same AUTO channel, the clip on
     top plays it.
-  - **Replace**: a new clip is made from punch-in to punch-out, and old clips under it are cut around it.
+  - **Replace**: a new clip is made from exactly punch-in to punch-out, and old clips are cut only there. Notes
+    outside that stretch stay, even in the same bar. While you record, the track's timeline clips are silent, so
+    you hear only what you play. With Merge and Stack you hear them as you play along.
 
 If you played nothing, nothing is made.
 

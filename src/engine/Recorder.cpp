@@ -13,9 +13,6 @@ double positiveMod(double x, double m) {
     return r < 0 ? r + m : r;
 }
 
-Tick floorTo(double tick, Tick step) { return Tick(std::floor(tick / double(step))) * step; }
-Tick ceilTo(double tick, Tick step) { return Tick(std::ceil(tick / double(step))) * step; }
-
 } // namespace
 
 TakeNote Recorder::finish(const Open& o, int pitch, double playTick, float release) {
@@ -249,7 +246,6 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
             host.perform(std::move(command));
         return;
     }
-    Tick bar = ticksPerBar(song.timeSig);
     NextId nextId = [this] { return host.nextId(); };
     ClipId clip;
     edits::IdSet ids;
@@ -316,15 +312,16 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
             double first = rest ? INFINITY : s.passFrom, last = rest ? -INFINITY : endSong;
             for (const TakeNote& n : take.notes) {
                 first = std::min(first, double(n.start));
-                last = std::max(last, double(n.start + 1));
+                last = std::max(last, double(n.start + std::max<Tick>(1, n.length)));
             }
             for (const TakeLane& l : take.lanes)
                 for (const AutoPoint& p : l.points) {
                     first = std::min(first, double(p.t));
                     last = std::max(last, double(p.t + 1));
                 }
-            Tick from = std::max<Tick>(0, floorTo(first, bar));
-            Tick to = std::max(from + bar, ceilTo(last, bar));
+            // Exactly what was recorded, not rounded out to bars: Replace must not cut notes nobody played over.
+            Tick from = std::max<Tick>(0, Tick(std::floor(first)));
+            Tick to = std::max(from + 1, Tick(std::ceil(last)));
             out->add(recordToArrangement(song, s.track, from, to, take, mode, nextId, &clip, &ids));
         }
         out->add(recordTrackLanes(song, s.track, trackLanes));

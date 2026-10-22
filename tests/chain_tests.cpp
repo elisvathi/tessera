@@ -998,6 +998,27 @@ TEST_CASE("engine: an arpeggiator plays steps on the song's grid") {
     CHECK(starts[2] == std::make_pair(int64_t(480 * kSamplesPerTick), 67));
 }
 
+TEST_CASE("engine: an arpeggiator's held notes let go of their curves when the snapshot is replaced") {
+    Song song = songWith({{0, 960, 60}, {0, 960, 64}}, 4 * kPpq, 2);
+    for (Note& n : song.clips.begin()->second.notes)
+        n.pressureExpr = {{0, 0.2f, 0}, {1, 0.9f, 0}};
+    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kGate, 50}});
+    Harness h(song);
+    h.runTo(100 * kSamplesPerTick);
+    // An edit while the arpeggiator holds the notes; the old snapshot is freed, as the module does.
+    h.republish();
+    h.old.reset();
+    // Its next steps must not read the freed curves (the address sanitizer catches it), and they still play.
+    int steps = 0;
+    bool was = h.anyGate();
+    while (h.sample < 900 * kSamplesPerTick) {
+        h.step();
+        steps += h.anyGate() && !was;
+        was = h.anyGate();
+    }
+    CHECK(steps >= 2);
+}
+
 TEST_CASE("automatic voices count what the devices add") {
     Song song = songWith({{0, 480, 60}}, 4 * kPpq, kAutoVoices);
     CHECK(song.voicesOf(song.tracks[0]) == 1);

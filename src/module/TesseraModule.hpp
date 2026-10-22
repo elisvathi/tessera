@@ -429,6 +429,7 @@ class TesseraModule : public rack::engine::Module {
     std::atomic<int> autoRecChannels{0};
     std::atomic<bool> liveToKey{false};
     std::atomic<bool> newControlLanes{true};
+    std::atomic<bool> replaceTakes{false};
     std::atomic<bool> mpeInput{false};
 
     // Audio thread -> UI
