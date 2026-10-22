@@ -20,7 +20,15 @@ A track and a clip can each have up to 8 lanes.
 ## Adding a track lane
 
 1. Click the lanes arrow (▸) in the track header, or choose **Show automation lanes** in the track menu.
-2. Click **+ Add automation lane** under the track. It takes the first free AUTO channel.
+2. Click **+ Add automation lane** under the track (or **Add automation lane** in the track menu) and choose:
+   - **Empty lane (draw it)**: takes the first free AUTO channel.
+   - **Automate a knob: touch it in the rack**: see [Turning knobs without cables](#turning-knobs-without-cables).
+   - **MIDI control**: **Pitch bend**, **Pressure**, **Mod wheel**, **Sustain** and other common controls by name,
+     or any CC by typing its number. The lane is named, records that control when the track records, and plays
+     where it belongs: pitch bend on **V/OCT**, pressure on **PRESS**, a CC on the next free AUTO channel. If the
+     lane is already there, it is shown instead.
+
+![Adding a lane for a MIDI control](images/add-lane-menu.png)
 
 ![A track automation lane called Cutoff, under the Chords track](images/automation-lane.png)
 
@@ -82,7 +90,7 @@ Right-click the lane header.
 
 ## Turning knobs without cables
 
-A track lane can turn up to four knobs anywhere in the rack. The quickest way: in the track menu, choose **Automate a
+A track lane can turn up to four knobs anywhere in the rack. The quickest way: **Add automation lane → Automate a
 knob: touch it in the rack**. It makes a lane, and the knob you touch is mapped to it, names it, and is what it
 records. To map a knob to a lane you already have:
 
@@ -100,7 +108,8 @@ Mappings are saved with the patch. They work even if no output module plays the 
 
 ## Clip automation
 
-To add a lane to a clip, open the piano roll's lower lane menu ("Velocity ▾") and choose **Add clip lane**. Pick a
+To add a lane to a clip, open the piano roll's lower lane menu ("Velocity ▾") and choose **Add clip lane**: an empty
+lane or a MIDI control, as for track lanes. Pick a
 clip lane from the same menu to show it.
 
 Clip lanes are edited the same way. They play while their clip plays, in the clips panel or on the timeline, and loop
@@ -115,6 +124,7 @@ When a clip lane and a track lane use the same AUTO channel, the lane menu decid
 
 - Track lanes follow the song position in both Plays modes. While the timeline plays, a track taken over by a
   launched clip pauses its track lanes until **Back to timeline**.
+- Stacked timeline clips: for each AUTO channel, the clip on top that has a lane there plays it.
 - A channel with nothing playing holds its last value. Pitch bend and pressure lanes go back to 0 instead, so a track
   never stays bent.
 - Muted lanes are left out.
@@ -132,8 +142,8 @@ into the same take as the notes, as one undo step.
 
 What a lane records from (lane menu, **Records from**):
 
-- **A MIDI control**: pitch bend, channel aftertouch or a CC. Moving a control while recording makes its lane for you
-  (see [Recording](11-recording.md#expression-and-controls)); **Learn** links a lane you already have.
+- **A MIDI control**: pick it by name, or choose **Another: move it on your controller**. Moving a control while
+  recording also makes its lane for you (see [Recording](11-recording.md#expression-and-controls)).
 - **The mapped knob**: the lane's first mapped knob, turned by hand.
 - **AUTO REC input**: a channel of the **AUTO** input on the Tessera panel. **AUTO REC channel** picks which one
   (at first, the lane's own AUTO channel), so one mono cable is enough.

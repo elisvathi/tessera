@@ -3,6 +3,7 @@
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/DeviceActions.hpp"
+#include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../interaction/Snap.hpp"
 #include "../widgets/Draw.hpp"
@@ -897,12 +898,21 @@ void AutomationEditor::appendRecordingItems(rack::ui::Menu* menu, EditorContext&
                            : !lane.targets.empty()         ? std::string("The mapped knob")
                                                            : std::string("Nothing (you draw it)");
         menu->addChild(rack::createSubmenuItem("Records from", from, [edit, lane, c, owner, id](rack::ui::Menu* sub) {
-            if (lane.midi.valid())
+            sub->addChild(rack::createMenuLabel("A MIDI control"));
+            for (MidiControl control : trackActions::commonMidiControls())
+                sub->addChild(rack::createCheckMenuItem(
+                    midiControlName(control), "", [l = lane, control] { return l.midi == control; },
+                    edit("Record " + midiControlName(control),
+                         [control](AutomationEnvelope& l) { l.midi = control; })));
+            if (lane.midi.valid() &&
+                std::find(trackActions::commonMidiControls().begin(), trackActions::commonMidiControls().end(),
+                          lane.midi) == trackActions::commonMidiControls().end())
                 sub->addChild(rack::createCheckMenuItem(midiControlName(lane.midi), "", [] { return true; }, [] {}));
-            sub->addChild(rack::createMenuItem("A MIDI control: move it", "", [c, owner, id] {
+            sub->addChild(rack::createMenuItem("Another: move it on your controller", "", [c, owner, id] {
                 if (TesseraModule* m = c->module())
                     m->startLearn(owner, id);
             }));
+            sub->addChild(new rack::ui::MenuSeparator);
             sub->addChild(rack::createCheckMenuItem(
                 "The mapped knob (turn it by hand)", "",
                 [l = lane] { return !l.midi.valid() && l.source == AutoSource::Knob && !l.targets.empty(); },

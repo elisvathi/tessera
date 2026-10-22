@@ -1538,24 +1538,30 @@ void Engine::seekAll() {
         seekTrack(*snapshot->tracks[i], tracks[i]);
 }
 
-const ClipPlayback* Engine::lanesClip(const TrackPlayback& tp, TrackState& state, double song, double play,
-                                      double& clipT) {
-    clipT = NAN;
+int Engine::lanesClips(const TrackPlayback& tp, const TrackState& state, double song, double play,
+                       LaneClips& out) const {
     if (const ClipPlayback* clip = tp.slot(state.playing)) {
-        clipT = clipTimeAt(tp, state, play);
-        return std::isfinite(clipT) ? clip : nullptr;
+        double t = clipTimeAt(tp, state, play);
+        if (!std::isfinite(t))
+            return 0;
+        out[0] = {clip, t};
+        return 1;
     }
-    if (!followsArrangement(state) || tp.arrangementLanes.empty())
-        return nullptr;
-    // Instances are sorted, so the one under the playhead is at or after the last one found.
-    size_t& c = state.instanceCursor;
-    if (c >= tp.arrangementLanes.size() || double(tp.arrangementLanes[c].position) > song)
-        c = 0;
-    while (c + 1 < tp.arrangementLanes.size() && double(tp.arrangementLanes[c].end) <= song)
-        c++;
-    const InstanceLanes& inst = tp.arrangementLanes[c];
-    clipT = inst.clipTime(song);
-    return std::isfinite(clipT) ? inst.clip.get() : nullptr;
+    if (!followsArrangement(state))
+        return 0;
+    // Sorted by position: the clips under the playhead come bottom to top, so a later one (a newer take on top)
+    // overrides the lanes it shares with the ones below.
+    int n = 0;
+    for (const InstanceLanes& inst : tp.arrangementLanes) {
+        if (double(inst.position) > song || n == int(out.size()))
+            break;
+        if (double(inst.end) <= song)
+            continue;
+        double t = inst.clipTime(song);
+        if (std::isfinite(t))
+            out[size_t(n++)] = {inst.clip.get(), t};
+    }
+    return n;
 }
 
 void Engine::advanceKnobLanes() {
@@ -1595,13 +1601,16 @@ void Engine::advanceKnobLanes() {
                 const KnobLanePlayback& lane = tp.knobLanes[k];
                 set(lane.target, evaluateAt(lane.points, song, state.trackKnobCursor[k], lane.rest), false);
             }
-        double clipT;
-        if (const ClipPlayback* clip = lanesClip(tp, state, song, playTick + ahead, clipT))
+        LaneClips clips;
+        int count = lanesClips(tp, state, song, playTick + ahead, clips);
+        for (int i = 0; i < count; i++) {
+            auto [clip, clipT] = clips[size_t(i)];
             for (size_t k = 0; k < clip->knobLanes.size() && k < size_t(kMaxKnobLanes); k++) {
                 const KnobLanePlayback& lane = clip->knobLanes[k];
                 set(lane.target, evaluateAt(lane.points, clipT, state.clipKnobCursor[k], lane.rest),
                     lane.combine == CombineMode::Modulate);
             }
+        }
         knobLanesOn |= state.knobSetCount > 0;
     }
 }
@@ -1618,8 +1627,8 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
         return;
     }
     bool trackLanes = mode == PlayMode::Launcher || followsArrangement(state);
-    double clipT;
-    const ClipPlayback* clipLanes = lanesClip(tp, state, songTick, playTick, clipT);
+    LaneClips clips;
+    int clipCount = lanesClips(tp, state, songTick, playTick, clips);
     std::array<float, kMaxPlayedLanes> target;
     std::array<bool, kMaxPlayedLanes> have{};
     auto take = [&](const LanePlayback& lane, float value) {
@@ -1638,13 +1647,17 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
     if (trackLanes)
         for (size_t k = 0; k < tp.lanes.size() && k < kMaxPlayedLanes; k++)
             take(tp.lanes[k], evaluateAt(tp.lanes[k].points, songTick, state.trackLaneCursor[k], tp.lanes[k].rest));
-    if (clipLanes) {
+    // Modulate moves around the track lane's value, whatever stacked clips below did.
+    std::array<float, kMaxPlayedLanes> trackTarget = target;
+    std::array<bool, kMaxPlayedLanes> haveTrack = have;
+    for (int i = 0; i < clipCount; i++) {
+        auto [clipLanes, clipT] = clips[size_t(i)];
         for (size_t k = 0; k < clipLanes->lanes.size() && k < kMaxPlayedLanes; k++) {
             const LanePlayback& lane = clipLanes->lanes[k];
             float v = evaluateAt(lane.points, clipT, state.clipLaneCursor[k], lane.rest);
             size_t o = size_t(lane.output);
-            if (have[o] && lane.combine == CombineMode::Modulate)
-                target[o] = std::clamp(target[o] + v - 0.5f, 0.f, 1.f); // around the track lane's value
+            if (haveTrack[o] && lane.combine == CombineMode::Modulate)
+                target[o] = std::clamp(trackTarget[o] + v - 0.5f, 0.f, 1.f);
             else
                 take(lane, v);
         }

@@ -313,7 +313,6 @@ class Engine {
         std::array<size_t, kMaxKnobLanes> trackKnobCursor{}, clipKnobCursor{};
         std::array<std::pair<int, float>, 2 * kMaxKnobLanes> knobSets{};
         int knobSetCount = 0;
-        size_t instanceCursor = 0;
 
         // Note operators: hits waiting for their time (delays, repeats), and what the last note of the pass did.
         struct PendingHit {
@@ -497,8 +496,10 @@ class Engine {
     void advanceModulation();
     /// What each track's knob lanes set this block (before modulation reads them).
     void advanceKnobLanes();
-    /// The clip whose lanes play on a track now, and its clip time; nullptr when none does.
-    const ClipPlayback* lanesClip(const TrackPlayback& tp, TrackState& state, double song, double play, double& clipT);
+    /// The clips whose lanes play now, each with its clip time: the launched clip, or the timeline clips under the
+    /// playhead from bottom to top (later ones override the lanes they share). Returns how many.
+    using LaneClips = std::array<std::pair<const ClipPlayback*, double>, 16>;
+    int lanesClips(const TrackPlayback& tp, const TrackState& state, double song, double play, LaneClips& out) const;
     static void endAudition(TrackState& state, int voice);
     void advanceAuditions(TrackState& state);
 

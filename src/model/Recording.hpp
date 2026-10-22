@@ -128,9 +128,8 @@ CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length,
 CommandPtr recordIntoClip(const Song& song, ClipId clip, const Take& take, const NextId& nextId,
                           edits::IdSet* noteIds = nullptr);
 
-/// A new clip on the timeline over [from, to) holding the take (timeline ticks). With Overdub, notes the track
-/// already plays in that range are merged into it; with Replace they are dropped. Either way the new clip
-/// replaces the old ones there (they are trimmed or split around it).
+/// A new clip on the timeline over [from, to) holding the take (timeline ticks). With Overdub it stacks over the
+/// clips already there, which stay as they were; with Replace they are trimmed or split around it.
 CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const Take& take,
                                ArrangerRecordMode mode, const NextId& nextId, ClipId* clipId = nullptr,
                                edits::IdSet* noteIds = nullptr);

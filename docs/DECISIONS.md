@@ -1141,3 +1141,16 @@ Builds on §73. Mockup agreed 22 Oct.
   (`Recorder`, `RecordEvent::Kind::LaneValue`).
 - **Starting from a knob:** the track menu's "Automate a knob: touch it in the rack" makes the lane, maps the knob and
   names the lane after it. Rack has no supported way to add items to other modules' knob menus, so not there.
+
+## 75. Overdub takes stack; lanes for MIDI controls by name (22 Oct)
+
+- **Timeline Overdub records a new clip stacked over what was there** (§32), which stays untouched: a take can be
+  moved, muted or deleted on its own. Before, the old notes were copied into the take and the old clips cut around
+  it. Replace still cuts. Launcher recording into a playing clip still adds to it pass by pass (a slot holds one
+  clip).
+- **Stacked clips' lanes: the clip on top wins, per AUTO channel** (replaces "the earlier one plays it" in §32).
+  The engine reads every clip under the playhead, bottom to top (`Engine::lanesClips`), so a take with only a mod
+  wheel lane doesn't silence the cutoff lane of the clip below. Modulate still moves around the track lane.
+- **"Add automation lane" is one menu** (track header row, track menu, the lower pane's "Add clip lane"): Empty lane,
+  Automate a knob (track lanes), MIDI control (pitch bend, pressure, common CCs by name, any CC by number). Records
+  from offers the same list, so no controller is needed to set a lane up.

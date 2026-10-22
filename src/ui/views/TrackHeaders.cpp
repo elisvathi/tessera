@@ -423,7 +423,7 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
     }
     const TrackRow& row = owner.rows[size_t(hit.row)];
     if (row.kind == TrackRow::Kind::AddLane) {
-        trackActions::addAutomationLane(ctx, row.track);
+        trackActions::appendAddLaneItems(rack::createMenu(), ctx, row.track, LaneOwner::ofTrack(row.track));
         return;
     }
     if (row.kind == TrackRow::Kind::Lane) {

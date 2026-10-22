@@ -533,26 +533,6 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
     clip.length = to - from;
     clip.loopEnd = clip.length;
 
-    if (mode == ArrangerRecordMode::Overdub) {
-        // What the track played there before, baked into the new clip (like glue).
-        std::vector<TimedNote> old;
-        const std::vector<DrumLane>* lanes = t->type == TrackType::Drum ? &t->drumLanes : nullptr;
-        for (const ArrangerClip& a : t->arrangement)
-            if (!a.muted && a.position < to && instanceEnd(a) > from)
-                if (const Clip* c = song.findClip(a.clip))
-                    renderInstance(*c, a, old, 0, 1, lanes);
-        for (const TimedNote& tn : old) {
-            if (tn.start < from || tn.start >= to)
-                continue;
-            Note n = *tn.source;
-            n.id = NoteId(nextId());
-            n.start = tn.start - from;
-            n.length = std::max<Tick>(1, std::min(tn.end, to) - tn.start);
-            n.pitch = tn.pitch;
-            n.velocity = tn.velocity;
-            clip.notes.push_back(std::move(n));
-        }
-    }
     for (const TakeNote& tn : take.notes) {
         if (tn.start < from || tn.start >= to)
             continue;
@@ -577,7 +557,9 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
     arrange::Layout before = arrange::layoutOf(song);
     arrange::Layout after = before;
     after.push_back(placed);
-    after = arrange::resolveOverlaps(after, {placed.clip.id}, song.clips, [&] { return ArrangementId(nextId()); });
+    // Overdub stacks the take over what was there, which stays as it was; Replace cuts it out.
+    if (mode == ArrangerRecordMode::Replace)
+        after = arrange::resolveOverlaps(after, {placed.clip.id}, song.clips, [&] { return ArrangementId(nextId()); });
 
     auto out = std::make_unique<CompoundCommand>(takeName(take));
     out->add(std::make_unique<AddClip>(std::move(clip)));

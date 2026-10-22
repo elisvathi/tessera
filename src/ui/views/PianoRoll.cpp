@@ -777,20 +777,10 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
             l.name, laneOutputLabel(l), [c, id] { return c->view().lowerLane == id; },
             [c, id] { c->view().lowerLane = id; }));
     }
-    auto* add = rack::createMenuItem("Add clip lane", "", [c, clipId] {
-        TesseraModule* m = c->module();
-        const Clip* cl = m ? m->song().findClip(clipId) : nullptr;
-        if (!cl)
-            return;
-        int output = freeOutput(cl->automation);
-        if (output < 0)
-            return;
-        AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
-        m->perform(addLane(m->song(), LaneOwner::ofClip(clipId), lane));
-        c->view().lowerLane = lane.id.value;
-    });
-    add->disabled = freeOutput(shown->automation) < 0;
-    menu->addChild(add);
+    TrackId trackId = source.track;
+    menu->addChild(rack::createSubmenuItem("Add clip lane", "", [c, trackId, clipId](rack::ui::Menu* sub) {
+        trackActions::appendAddLaneItems(sub, *c, trackId, LaneOwner::ofClip(clipId));
+    }));
 }
 
 // ---- Key and scale tools -----------------------------------------------------------------------------------

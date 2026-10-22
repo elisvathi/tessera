@@ -345,7 +345,7 @@ TEST_CASE("launcher: a track playing a clip overdubs it, wrapping into the loop"
     CHECK(host.launches.empty());
 }
 
-TEST_CASE("arranger: a new clip over whole bars, overdub merging what was there") {
+TEST_CASE("arranger: a new clip over whole bars, stacked over what was there or replacing it") {
     Song song = recordSong();
     Clip old;
     old.id = song.newId<ClipId>();
@@ -380,7 +380,9 @@ TEST_CASE("arranger: a new clip over whole bars, overdub merging what was there"
         rec.handle(punch(RecordEvent::Kind::PunchOut, 30, kBar + kBar / 2 + 30));
 
         const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
-        REQUIRE(arr.size() == 3); // the old clip split around the new one
+        // Overdub: the old clip stays whole, the take on top. Replace: the old clip split around the new one.
+        bool overdub = mode == ArrangerRecordMode::Overdub;
+        REQUIRE(arr.size() == (overdub ? 2u : 3u));
         const ArrangerClip* rec1 = nullptr;
         for (const ArrangerClip& a : arr)
             if (a.clip != old.id)
@@ -390,8 +392,9 @@ TEST_CASE("arranger: a new clip over whole bars, overdub merging what was there"
         CHECK(rec1->length == kBar);
         const Clip* made = host.song_.findClip(rec1->clip);
         REQUIRE(made);
-        size_t expected = mode == ArrangerRecordMode::Overdub ? 2 : 1;
-        CHECK(made->notes.size() == expected);
+        CHECK(made->notes.size() == 1); // only what was played
+        if (overdub)
+            CHECK(arr[0].length == 4 * kBar);
     }
 }
 
@@ -412,13 +415,14 @@ TEST_CASE("arranger: each loop pass becomes its own undo step") {
     rec.handle(note(t, 64, false, 2 * kBar + 20, 20));
     rec.handle(punch(RecordEvent::Kind::PunchOut, 2 * kBar + 30, 30));
     CHECK(host.steps.size() == 2);
-    // Overdub: the last pass (up to the punch-out bar) merged with the first; the rest of the first stays.
+    // Overdub: each pass is its own clip, the second stacked over the first.
     const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
     REQUIRE(arr.size() == 2);
     CHECK(arr[0].position == 0);
-    CHECK(arr[0].length == kBar);
-    CHECK(host.song_.findClip(arr[0].clip)->notes.size() == 2);
-    CHECK(arr[1].position == kBar);
+    CHECK(arr[0].length == 2 * kBar);
+    CHECK(arr[1].position == 0);
+    CHECK(arr[1].length == kBar);
+    CHECK(host.song_.findClip(arr[1].clip)->notes.size() == 1);
 }
 
 TEST_CASE("input quantize is a second undo step on the take's own notes") {
@@ -974,4 +978,38 @@ TEST_CASE("capture keeps what the keys played and the controls moved during the 
     CHECK(pts[0].value == doctest::Approx(0.7f));
     CHECK(pts[1].t == kPpq / 2);
     CHECK(pts[1].value == doctest::Approx(1));
+}
+
+TEST_CASE("stacked timeline clips: the clip on top plays the lanes it has, the ones below keep the rest") {
+    Song song = recordSong();
+    auto clipWith = [&](int output, float value) {
+        Clip c;
+        c.id = song.newId<ClipId>();
+        c.length = c.loopEnd = 2 * kBar;
+        AutomationEnvelope lane = makeLane(song.newId<AutomationId>(), output, 0);
+        lane.points.push_back({0, value, CurveType::Linear, 0});
+        c.automation.push_back(lane);
+        song.clips[c.id] = c;
+        return c.id;
+    };
+    auto place = [&](ClipId clip, Tick at, Tick length) {
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip;
+        a.position = at;
+        a.length = length;
+        song.tracks[1].arrangement.push_back(a);
+    };
+    ClipId below = clipWith(0, 0.2f);
+    song.clips[below].automation.push_back(makeLane(song.newId<AutomationId>(), 1, 0));
+    song.clips[below].automation.back().points.push_back({0, 0.3f, CurveType::Linear, 0});
+    place(below, 0, 4 * kBar);
+    place(clipWith(0, 0.9f), kBar, kBar); // a later take on AUTO 1 only
+    EngineRig rig(song);
+    rig.engine.setPlayMode(PlayMode::Arranger);
+    rig.engine.play();
+    size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[1].id));
+    rig.run(int(kBar * 1.5 * 32)); // into the take
+    CHECK(rig.frames[slot].automation[0] == doctest::Approx(9));
+    CHECK(rig.frames[slot].automation[1] == doctest::Approx(3)); // the clip below still plays AUTO 2
 }

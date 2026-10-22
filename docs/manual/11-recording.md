@@ -53,7 +53,7 @@ Click the **▾** next to the record button.
 |---|---|
 | **Count-in** | **Off**, **1 bar** or **2 bars**. The record button blinks and the **CLICK** output clicks during the count-in. |
 | **New launcher clips** | **As long as played** (rounded up to whole bars when you stop), or a fixed **1, 2, 4 or 8 bars**. A fixed-length clip is finished when full; then it loops and the next passes are added to it. |
-| **Recording over arranger clips** | **Overdub** (keep the old notes and add the new) or **Replace** (the new take replaces what was there). |
+| **Recording over arranger clips** | **Overdub** (the take is a new clip stacked over the old ones, which stay as they were) or **Replace** (the new take replaces what was there). |
 | **Input quantize** | **Off**, or a grid from 1/4 to 1/32, with a strength from 50% to 100%. |
 | **Snap incoming notes to the key** | Keeps played notes in the song's key, both what you hear and what is recorded. |
 | **MPE input** | For a controller that sends MPE (each note on its own channel, with its own bend, slide and pressure). See [Expression and controls](#expression-and-controls). A controller that announces MPE switches this on by itself. |
@@ -69,7 +69,9 @@ It depends on what the armed track is doing when your first note arrives:
 - **Plays is set to Clips, and the track plays nothing:** a new clip is made in an empty slot (the selected scene's
   slot, or the next empty one). It starts at the bar where recording started, and keeps playing when you punch out.
 - **Plays is set to Timeline:** a new clip is made on the timeline from punch-in to punch-out, on whole bars. With
-  the song loop on, each pass makes its own clip and undo step. Old clips under it are cut around it.
+  the song loop on, each pass makes its own clip and undo step. With **Overdub** (the default) each take is its own
+  clip, stacked over what was there: you can move, mute or delete a take on its own. Where stacked clips have a lane
+  on the same AUTO channel, the clip on top plays it. With **Replace**, old clips under the take are cut around it.
 
 If you played nothing, nothing is made.
 
