@@ -67,10 +67,7 @@ void ArrangerLanes::setVerticalScroll(double px) {
     ctx.view().trackScroll = owner.tracks.scroll();
 }
 
-void ArrangerLanes::zoomVertical(double y, double factor) {
-    owner.tracks.zoomAt(y, factor);
-    owner.writeHeights();
-}
+void ArrangerLanes::zoomVertical(double y, double factor) { owner.zoomTracksAt(y, factor); }
 
 void ArrangerLanes::showVerticalRange(double y0, double y1) {
     if (y1 - y0 < 1)

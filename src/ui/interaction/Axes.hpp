@@ -196,6 +196,9 @@ class TrackAxis {
     }
     /// Scales every track height, keeping the content under `y` in place.
     void zoomAt(double y, double factor);
+    /// Scrolls to `px` even past the last track, so a zoom can keep the spot under the mouse when the tracks fit
+    /// the view. That empty room stays reachable only until scrolling or zooming takes it back.
+    void anchorScroll(double px);
     /// Sizes all tracks equally so they fill the view (within the height limits).
     void fitAll();
 
@@ -205,6 +208,7 @@ class TrackAxis {
     double height = 400;
     double scrollPx = 0;
     double footer = 0;
+    double slack = 0; // how far past the last track anchorScroll() may leave the view
     std::vector<double> trackHeights;
 };
 

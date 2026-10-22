@@ -585,11 +585,10 @@ void TrackHeaders::onLeave(const LeaveEvent& e) {
 void TrackHeaders::wheel(Vec pos, Vec delta, Modifiers mods) {
     ctx.touchNavigation();
     if (mods.alt) {
-        owner.tracks.zoomAt(pos.y, wheelZoomFactor(delta.y));
-        owner.writeHeights();
-    } else {
-        owner.tracks.scrollByPx(-delta.y);
+        owner.zoomTracksAt(pos.y, wheelZoomFactor(delta.y));
+        return;
     }
+    owner.tracks.scrollByPx(-delta.y);
     ctx.view().trackScroll = owner.tracks.scroll();
 }
 

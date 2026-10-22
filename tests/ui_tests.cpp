@@ -477,3 +477,24 @@ TEST_CASE("a new song forgets the old one's selections and per-track views, and 
     CHECK(s.panelHp == 80);
     CHECK(s.overlay.headerWidth == 230);
 }
+
+TEST_CASE("TrackAxis: a zoom may leave room past the last track, which scrolling back gives up") {
+    TrackAxis axis;
+    axis.setViewHeight(400);
+    axis.setHeights({100, 100}); // fits: no scrolling
+    axis.scrollByPx(50);
+    CHECK(axis.scroll() == 0);
+    axis.anchorScroll(80);
+    CHECK(axis.scroll() == 80);
+    axis.setHeights({100, 100}); // a rebuild keeps it
+    CHECK(axis.scroll() == 80);
+    axis.scrollByPx(20); // no further down than the zoom left it
+    CHECK(axis.scroll() == 80);
+    axis.scrollByPx(-50);
+    CHECK(axis.scroll() == 30);
+    axis.scrollByPx(50); // given up: back to the normal end
+    CHECK(axis.scroll() == 30);
+    axis.scrollTo(0);
+    axis.scrollByPx(10);
+    CHECK(axis.scroll() == 0);
+}

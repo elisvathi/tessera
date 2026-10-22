@@ -263,6 +263,19 @@ void ArrangerView::writeHeights() {
     }
 }
 
+void ArrangerView::zoomTracksAt(double y, double factor) {
+    int row = tracks.trackAt(y);
+    double fraction = row >= 0 ? (y - tracks.trackTop(row)) / tracks.trackHeight(row) : 0;
+    tracks.zoomAt(y, factor);
+    writeHeights();
+    // Group and "add lane" rows keep their size and stacked tracks their minimum, so the rows are rebuilt from
+    // the saved heights before the spot is put back under the mouse.
+    syncFromState();
+    if (row >= 0 && row < int(tracks.heights().size()))
+        tracks.anchorScroll(tracks.scroll() + tracks.trackTop(row) + fraction * tracks.trackHeight(row) - y);
+    ctx.view().trackScroll = tracks.scroll();
+}
+
 void ArrangerView::saveToState() {
     ViewState& state = ctx.view();
     state.arranger = viewport.time.state();

@@ -78,7 +78,7 @@ These work in the piano roll, the drum editor, the timeline and automation lanes
 | Scroll up and down | Mouse wheel |
 | Scroll sideways | Shift + wheel |
 | Zoom in time | Ctrl + wheel. The spot under the mouse stays put. |
-| Make rows taller or shorter | Alt + wheel |
+| Make rows taller or shorter (the row under the mouse stays put) | Alt + wheel |
 | Pan (grab and move) | Middle-drag, or hold Space and drag. A short tap of Space still plays. |
 | Zoom with the ruler | Drag up or down in the ruler. Drag sideways at the same time to pan. |
 | Zoom to fit everything (or the selection) | **F** |

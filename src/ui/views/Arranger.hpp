@@ -1,12 +1,12 @@
 #pragma once
 
 #include "../interaction/TrackRows.hpp"
+#include "../widgets/EditTools.hpp"
 #include "EditorPane.hpp"
 #include "Ruler.hpp"
 #include "Sources.hpp"
 #include "TimelineView.hpp"
 #include "TrackHeaders.hpp"
-#include "../widgets/EditTools.hpp"
 
 namespace tessera {
 
@@ -38,6 +38,8 @@ class ArrangerView : public EditorPane {
 
     /// Stores the track rows' heights (after a vertical zoom) in the view state.
     void writeHeights();
+    /// Alt+wheel: scales the track and lane heights, keeping the spot under `y` (lanes' y) under the mouse.
+    void zoomTracksAt(double y, double factor);
     /// The heights rows were given this frame, to tell a user's resize from the growth stacked clips cause.
     std::vector<double> syncedHeights;
 
