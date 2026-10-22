@@ -89,6 +89,16 @@ void openMenu(EditorContext& ctx) {
                 m->setRecordSettings(s);
             }
         }));
+    menu->addChild(rack::createCheckMenuItem(
+        "MPE input (each note on its own channel)", "",
+        [c] { return c->module() && c->module()->recordSettings().mpe; },
+        [c] {
+            if (TesseraModule* m = c->module()) {
+                RecordSettings s = m->recordSettings();
+                s.mpe = !s.mpe;
+                m->setRecordSettings(s);
+            }
+        }));
 
     menu->addChild(new rack::ui::MenuSeparator);
     auto* captureItem =

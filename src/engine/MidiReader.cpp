@@ -115,6 +115,14 @@ int MidiReader::read(const uint8_t* bytes, int size, std::array<MidiEvent, kMaxE
     // In a zone, values for the whole zone come from its master channel; outside one, each channel is its own.
     int sharedChannel = zone < 0 ? channel : (zone == 0 ? kLowerMaster : kUpperMaster);
     ChannelState& state = channels[size_t(channel)];
+    int n = readMessage(status, channel, d1, d2, zone, member, sharedChannel, state, out);
+    for (int i = 0; i < n; i++)
+        out[size_t(i)].part = uint8_t(sharedChannel);
+    return n;
+}
+
+int MidiReader::readMessage(uint8_t status, int channel, uint8_t d1, uint8_t d2, int zone, bool member,
+                            int sharedChannel, ChannelState& state, std::array<MidiEvent, kMaxEvents>& out) {
 
     switch (status) {
     case 0x9:

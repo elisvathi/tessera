@@ -179,3 +179,11 @@ TEST_CASE("midi reader: short or unknown messages mean nothing") {
     CHECK(read(reader, {0xF8, 0}).empty());
     CHECK(read(reader, {0xC0, 5}).empty());
 }
+
+TEST_CASE("midi reader: MPE notes belong to their zone's master channel as a part") {
+    MidiReader reader;
+    reader.setMpe(true);
+    CHECK(read(reader, {0x95, 60, 100})[0].part == 0);
+    MidiReader normal;
+    CHECK(read(normal, {0x95, 60, 100})[0].part == 5);
+}

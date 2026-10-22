@@ -53,6 +53,7 @@ Click the **▾** next to the record button.
 | **Recording over arranger clips** | **Overdub** (keep the old notes and add the new) or **Replace** (the new take replaces what was there). |
 | **Input quantize** | **Off**, or a grid from 1/4 to 1/32, with a strength from 50% to 100%. |
 | **Snap incoming notes to the key** | Keeps played notes in the song's key, both what you hear and what is recorded. |
+| **MPE input** | For a controller that sends MPE (each note on its own channel, with its own bend, slide and pressure). See [Expression and controls](#expression-and-controls). A controller that announces MPE switches this on by itself. |
 | **Capture what I just played** | See [Capture](#capture-keep-what-you-just-played). |
 | **MIDI input** | The MIDI device. |
 
@@ -71,6 +72,31 @@ If you played nothing, nothing is made.
 
 While recording you see it happen: the target slot is red, a clip being added to has a red outline and its new notes
 show in red, and timeline takes grow as a red region.
+
+## Expression and controls
+
+Everything you play on a MIDI keyboard is recorded with the notes, in the same take and the same undo step. There is
+nothing to set up.
+
+**On each note** (shown in the piano roll's **Pitch**, **Timbre** and **Pressure** curves):
+
+- **Poly aftertouch**: how hard you press each key becomes that note's **Pressure** curve.
+- **MPE**: each finger's bend, slide (CC 74) and pressure become the note's **Pitch**, **Timbre** and **Pressure**
+  curves. Turn on **MPE input** in the record button's ▾ menu, unless your controller switches it on by itself.
+
+**For the whole track** (automation lanes in the take's clip, made for you):
+
+| You move | Lane | Comes out of |
+|---|---|---|
+| The pitch bend wheel | **Pitch bend**, ±2 semitones | Added to **V/OCT** on every voice. No cable needed. |
+| Channel aftertouch (one pressure for all keys) | **Pressure** | **PRESS** on every voice. Where a note has its own pressure too, the higher one wins. |
+| Any other control: mod wheel, sustain pedal, a knob that sends a CC | Named after it, like **Mod wheel (CC 1)** | The next free **AUTO** channel |
+
+- Only controls you move during the take get a lane. A later take writes into the same lane.
+- The pitch bend and pressure lanes go back to 0 when no clip plays them, so a track never stays bent.
+- The sustain pedal is recorded as a lane that steps on and off. It doesn't make notes longer. Patch its AUTO channel
+  to whatever should hold.
+- While a track is armed and monitoring, you hear all of this as you play, before and during recording.
 
 ## Input quantize and undo
 

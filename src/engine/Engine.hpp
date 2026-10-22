@@ -274,6 +274,7 @@ class Engine {
             audition.fill(-1);
             slewAlpha.fill(1);
             autoHigh.fill(10); // a channel only modulators drive sends 0..10 V
+            liveCcOutput.fill(-1);
         }
 
         // Output frames: what changed since each bus buffer was last written (DESIGN.md §18).
@@ -338,6 +339,9 @@ class Engine {
         float liveChannelBend = 0, liveChannelPress = 0;
         std::array<float, kMaxAutomationLanes> liveAuto{};
         uint8_t liveAutoMask = 0;
+        // CCs with no lane yet, and the free AUTO channel each plays on until its take makes the lane.
+        std::array<int8_t, 128> liveCcOutput;
+        int liveCcCount = 0;
         std::array<size_t, kMaxDrumLanes> laneCursor{}; // per own-loop lane of the playing clip
         // The device chain: what the snapshot says, and the runtime (an index into `chains`, -1 for none).
         const ChainPlayback* chainInfo = nullptr;
@@ -447,6 +451,8 @@ class Engine {
     void startRecording();
     void stopRecording();
     void pushRecord(RecordEvent e);
+    /// Reports a live event for one armed track, with the launcher clip it is playing (where an overdub lands).
+    void pushTrackRecord(const TrackPlayback& tp, const TrackState& state, RecordEvent e);
     static bool takesInput(const TrackPlayback& track, LiveSource source, int channel);
     void writeDrumFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const;
     void releaseAll(TrackState& state);

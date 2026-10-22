@@ -22,6 +22,7 @@ struct MidiEvent {
     };
     Kind kind = Kind::NoteOn;
     uint8_t channel = 0; // 0..15; for a ChannelValue in MPE mode, the zone's master channel
+    uint8_t part = 0;    // the channel the note belongs to as a part: an MPE zone's master channel, else `channel`
     int8_t pitch = 0;
     NoteCurve curve = NoteCurve::Pressure;
     ChannelControl control = ChannelControl::Cc;
@@ -68,6 +69,9 @@ class MidiReader {
     int zoneOf(int channel) const;
     /// Whether a channel is a zone's master channel.
     bool isMaster(int channel) const;
+    /// What one message means, once its channel's zone is known (read() fills in the part channel after).
+    int readMessage(uint8_t status, int channel, uint8_t d1, uint8_t d2, int zone, bool member, int sharedChannel,
+                    ChannelState& state, std::array<MidiEvent, kMaxEvents>& out);
     /// Handles CC 6 (data entry) for the RPN selected on a channel: bend range or MPE configuration.
     void dataEntry(int channel, int value);
     /// Sets a zone's member count from an MPE Configuration Message, shrinking the other zone to fit.

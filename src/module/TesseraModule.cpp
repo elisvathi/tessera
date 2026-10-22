@@ -149,6 +149,7 @@ void TesseraModule::setRecordSettings(const RecordSettings& settings) {
     recorder.settings = settings;
     countInBars.store(settings.countInBars);
     liveToKey.store(settings.toKey);
+    mpeInput.store(settings.mpe);
 }
 
 void TesseraModule::Host::launchAt(TrackId track, int slot, double playTick) {
@@ -188,21 +189,58 @@ void TesseraModule::readRecordInputs(const ProcessArgs& args) {
     }
     recGateHeld = anyHigh;
 
+    bool mpe = mpeInput.load(std::memory_order_relaxed);
+    if (mpe != midiReaderMpe) {
+        midiReader.setMpe(mpe);
+        midiReaderMpe = mpe;
+    }
     rack::midi::Message& msg = midiMessage;
+    std::array<MidiEvent, MidiReader::kMaxEvents> events;
     while (midiIn.tryPop(&msg, args.frame)) {
-        uint8_t status = msg.getStatus();
-        if (status != 0x9 && status != 0x8)
-            continue;
+        int n = midiReader.read(msg.bytes.data(), int(msg.bytes.size()), events);
+        for (int i = 0; i < n; i++)
+            playMidiEvent(events[size_t(i)]);
+    }
+}
+
+void TesseraModule::playMidiEvent(const MidiEvent& e) {
+    switch (e.kind) {
+    case MidiEvent::Kind::NoteOn:
+    case MidiEvent::Kind::NoteOff: {
         LiveNote n;
         n.source = LiveSource::Midi;
-        n.channel = uint8_t(msg.getChannel());
-        n.pitch = int8_t(msg.getNote() & 127);
-        n.velocity = float(msg.getValue()) / 127.f;
-        // A note-on with velocity 0 is a note-off (running status keyboards send these).
-        n.on = status == 0x9 && msg.getValue() > 0;
-        if (!n.on && status == 0x9)
-            n.velocity = 0.5f;
+        n.channel = e.channel;
+        n.partChannel = int8_t(e.part);
+        n.pitch = e.pitch;
+        n.velocity = e.value;
+        n.on = e.kind == MidiEvent::Kind::NoteOn;
         engine.liveNote(n);
+        return;
+    }
+    case MidiEvent::Kind::NoteValue:
+    case MidiEvent::Kind::ChannelValue: {
+        LiveValue v;
+        v.source = LiveSource::Midi;
+        v.channel = e.channel;
+        v.partChannel = int8_t(e.part);
+        v.perNote = e.kind == MidiEvent::Kind::NoteValue;
+        v.pitch = e.pitch;
+        v.curve = e.curve;
+        v.value = e.value;
+        switch (e.control) {
+        case ChannelControl::PitchBend:
+            v.control = {MidiControl::Kind::PitchBend, 0};
+            break;
+        case ChannelControl::Pressure:
+            v.control = {MidiControl::Kind::Pressure, 0};
+            break;
+        case ChannelControl::Cc:
+            v.control = {MidiControl::Kind::Cc, e.cc};
+            break;
+        }
+        engine.liveValue(v);
+        return;
+    }
     }
 }
 

@@ -25,10 +25,11 @@ struct RecordSettings {
     Tick quantize = 0; // input quantize grid; 0 = off
     float strength = 1;
     bool toKey = false; // incoming pitches snap to the key
+    bool mpe = false;   // MIDI input reads MPE: each note on its own channel (docs/design/EXPRESSION_INPUT.md)
 
     bool operator==(const RecordSettings& o) const {
         return countInBars == o.countInBars && clipBars == o.clipBars && arranger == o.arranger &&
-               quantize == o.quantize && strength == o.strength && toKey == o.toKey;
+               quantize == o.quantize && strength == o.strength && toKey == o.toKey && mpe == o.mpe;
     }
 
     json_t* toJson() const;

@@ -690,10 +690,11 @@ TEST_CASE("live expression: a CC plays on the AUTO channel of the lane that reco
     EngineRig rig(song);
     size_t slot = size_t(rig.slots.slotOf(rig.song.tracks[0].id));
     rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 1}, 0.5f));
-    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1)); // no lane: nowhere to play
+    rig.engine.liveValue(channelValue(0, {MidiControl::Kind::Cc, 2}, 1)); // no lane yet: the first free channel
     rig.run(1);
     REQUIRE(rig.frames[slot].autoChannels >= 3);
     CHECK(rig.frames[slot].automation[2] == doctest::Approx(5));
+    CHECK(rig.frames[slot].automation[0] == doctest::Approx(10));
 }
 
 TEST_CASE("live expression: armed tracks report values to the recorder while recording") {
@@ -737,4 +738,91 @@ TEST_CASE("live expression: a pitch bend lane plays on V/OCT and rests at 0 with
     rig.engine.launch({LaunchEvent::Kind::Slot, rig.song.tracks[1].id.value, 1, true, false}); // an empty slot
     rig.run(20000);
     CHECK(rig.frames[slot].voct[0] == doctest::Approx(pitchToVolts(60)));
+}
+
+namespace {
+
+/// A recorded value event for an armed track.
+RecordEvent valueEvent(const Track& t, RecordEvent::Kind kind, double play, float value) {
+    RecordEvent e = note(t, 60, true, play, play);
+    e.kind = kind;
+    e.value = value;
+    return e;
+}
+
+} // namespace
+
+TEST_CASE("recorder: what a held key played becomes the note's curves") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    for (int i = 1; i <= 10; i++) {
+        RecordEvent e = valueEvent(t, RecordEvent::Kind::NoteValue, i * kPpq / 10.0, i / 10.f);
+        e.curve = NoteCurve::Pressure;
+        rec.handle(e);
+    }
+    RecordEvent other = valueEvent(t, RecordEvent::Kind::NoteValue, kPpq / 2.0, 1);
+    other.pitch = 61; // no such note held: ignored
+    rec.handle(other);
+    rec.handle(note(t, 60, false, kPpq, kPpq));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    const Clip* c = slotClip(host.song_, 0, 0);
+    REQUIRE(c);
+    REQUIRE(c->notes.size() == 1);
+    const auto& curve = c->notes[0].pressureExpr;
+    // A straight rise from 0 at the start: two points are enough.
+    REQUIRE(curve.size() == 2);
+    CHECK(curve[0].pos == doctest::Approx(0));
+    CHECK(curve[0].value == doctest::Approx(0));
+    CHECK(curve[1].pos == doctest::Approx(1));
+    CHECK(curve[1].value == doctest::Approx(1));
+    CHECK(c->notes[0].pitchExpr.empty());
+}
+
+TEST_CASE("recorder: moved controls become lanes in the take's clip, in the same undo step") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    for (int i = 0; i <= 4; i++) {
+        RecordEvent wheel = valueEvent(t, RecordEvent::Kind::ChannelValue, i * kPpq / 4.0, i / 4.f);
+        wheel.control = {MidiControl::Kind::Cc, 1};
+        rec.handle(wheel);
+    }
+    double at = 0;
+    for (float v : {0.f, 1.f, 1.f, 0.f}) {
+        RecordEvent pedal = valueEvent(t, RecordEvent::Kind::ChannelValue, at += kPpq / 4.0, v);
+        pedal.control = {MidiControl::Kind::Cc, 64};
+        rec.handle(pedal);
+    }
+    rec.handle(note(t, 60, false, kPpq, kPpq));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    REQUIRE(host.steps.size() == 1);
+    const Clip* c = slotClip(host.song_, 0, 0);
+    REQUIRE(c);
+    REQUIRE(c->automation.size() == 2);
+    CHECK(c->automation[0].name == "Mod wheel (CC 1)");
+    CHECK(c->automation[0].points.size() == 2); // a straight ramp
+    CHECK(c->automation[1].name == "Sustain (CC 64)");
+    REQUIRE(c->automation[1].points.size() == 3); // off, on, off
+    CHECK(c->automation[1].points[1].curve == CurveType::Hold);
+}
+
+TEST_CASE("recorder: a take of only control moves still makes a clip") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    RecordEvent bend = valueEvent(t, RecordEvent::Kind::ChannelValue, kPpq, 0.8f);
+    bend.control = {MidiControl::Kind::PitchBend, 0};
+    rec.handle(bend);
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    const Clip* c = slotClip(host.song_, 0, 0);
+    REQUIRE(c);
+    CHECK(c->notes.empty());
+    REQUIRE(c->automation.size() == 1);
+    CHECK(c->automation[0].drive == LaneDrive::Pitch);
 }

@@ -21,6 +21,7 @@ json_t* RecordSettings::toJson() const {
     setInt(j, "quantize", quantize);
     setNumber(j, "strength", strength);
     setBool(j, "toKey", toKey);
+    setBool(j, "mpe", mpe);
     return j;
 }
 
@@ -35,6 +36,7 @@ RecordSettings RecordSettings::fromJson(const json_t* j) {
     s.quantize = std::clamp<Tick>(getInt(j, "quantize", s.quantize), 0, 4 * kPpq);
     s.strength = std::clamp(getFloat(j, "strength", s.strength), 0.f, 1.f);
     s.toKey = getBool(j, "toKey", s.toKey);
+    s.mpe = getBool(j, "mpe", s.mpe);
     return s;
 }
 

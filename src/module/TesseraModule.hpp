@@ -289,6 +289,8 @@ class TesseraModule : public rack::engine::Module {
     void restoreLauncher(const json_t* launcherJ);
     void publish(const ChangeSet& changes);
     void readRecordInputs(const ProcessArgs& args);
+    /// One thing a MIDI message meant, played into the engine: a note, or a value for a note or the channel.
+    void playMidiEvent(const MidiEvent& event);
     void syncMappings();
     void writeMappings();
     void learnTouchedParam();
@@ -386,6 +388,8 @@ class TesseraModule : public rack::engine::Module {
     rack::dsp::BooleanTrigger recButton;
     rack::midi::InputQueue midiIn;
     rack::midi::Message midiMessage; // reused: a Message holds a vector, so a new one per sample would allocate
+    MidiReader midiReader;           // audio thread
+    bool midiReaderMpe = false;      // the MPE setting the reader was last given
     std::array<rack::dsp::SchmittTrigger, kMaxVoices> recGates;
     std::array<int8_t, kMaxVoices> recPitches{};
     bool recGateHeld = false; // a REC GATE channel is high
@@ -405,6 +409,7 @@ class TesseraModule : public rack::engine::Module {
     std::array<std::atomic<float>, kMaxAutomationLanes> autoRecVolts{};
     std::atomic<int> autoRecChannels{0};
     std::atomic<bool> liveToKey{false};
+    std::atomic<bool> mpeInput{false};
 
     // Audio thread -> UI
     std::atomic<double> uiPlayhead{0};

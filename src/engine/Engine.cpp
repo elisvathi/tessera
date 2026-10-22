@@ -102,6 +102,10 @@ void Engine::setSnapshot(const Snapshot* s) {
                 endAudition(state, v);
         state.chainInfo = i < s->chains.size() ? &s->chains[i] : nullptr;
         state.autoChannels = std::max(tp.autoChannels, state.chainInfo ? state.chainInfo->autoChannels : 0);
+        // Lanes may have come or gone: live controls find their channels again when they next move.
+        state.liveAutoMask = 0;
+        state.liveCcOutput.fill(-1);
+        state.liveCcCount = 0;
         resolveSlots(tp, state);
         if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
             slotUsed[tp.busSlot] = true;
@@ -531,14 +535,8 @@ void Engine::liveNote(const LiveNote& note) {
         if (!recordingOn || !tp.armed)
             continue;
         RecordEvent r = e;
-        r.track = tp.id.value;
         r.pitch = tp.drum ? note.pitch : pitch;
-        if (tp.slot(state.playing)) {
-            r.slot = state.playing;
-            r.clipStart = state.launchTick;
-            r.clipTick = clipTimeAt(tp, state, playTick);
-        }
-        pushRecord(r);
+        pushTrackRecord(tp, state, r);
     }
     if (!note.on)
         routed = 0;
@@ -573,21 +571,26 @@ void Engine::liveValue(const LiveValue& lv) {
             case MidiControl::Kind::Pressure:
                 state.liveChannelPress = e.value * 10.f;
                 break;
-            case MidiControl::Kind::Cc:
-                if (const TrackPlayback::LiveControl& c = tp.ccLive[lv.control.cc & 127]; c.output >= 0) {
+            case MidiControl::Kind::Cc: {
+                size_t cc = lv.control.cc & 127;
+                TrackPlayback::LiveControl c = tp.ccLive[cc];
+                if (c.output < 0) {
+                    if (state.liveCcOutput[cc] < 0 && state.liveCcCount < tp.freeAutoCount)
+                        state.liveCcOutput[cc] = tp.freeAuto[size_t(state.liveCcCount++)];
+                    c.output = state.liveCcOutput[cc];
+                }
+                if (c.output >= 0) {
                     state.liveAuto[size_t(c.output)] = volts(c);
                     state.liveAutoMask |= uint8_t(1u << c.output);
                 }
                 break;
+            }
             case MidiControl::Kind::None:
                 break;
             }
             state.autoChanges++;
-            if (recordingOn && tp.armed) {
-                RecordEvent r = e;
-                r.track = tp.id.value;
-                pushRecord(r);
-            }
+            if (recordingOn && tp.armed)
+                pushTrackRecord(tp, state, e);
         }
         return;
     }
@@ -614,13 +617,20 @@ void Engine::liveValue(const LiveValue& lv) {
                 target[size_t(v)] = lv.value;
                 state.autoChanges++;
             }
-            if (recordingOn && tp.armed) {
-                RecordEvent r = e;
-                r.track = tp.id.value;
-                pushRecord(r);
-            }
+            if (recordingOn && tp.armed)
+                pushTrackRecord(tp, state, e);
         }
     }
+}
+
+void Engine::pushTrackRecord(const TrackPlayback& tp, const TrackState& state, RecordEvent e) {
+    e.track = tp.id.value;
+    if (tp.slot(state.playing)) {
+        e.slot = state.playing;
+        e.clipStart = state.launchTick;
+        e.clipTick = clipTimeAt(tp, state, playTick);
+    }
+    pushRecord(e);
 }
 
 void Engine::stop() {
