@@ -88,6 +88,9 @@ make -j4 test TEST_OBJ_DIR=build/tests/ubsan-obj TEST_BIN=build/tests/tessera_te
 GitHub builds Tessera for Linux, Windows, Intel Macs and Apple Silicon Macs, and runs the tests. Start it from the
 **Actions** tab: **Build → Run workflow**. Each build's `.vcvplugin` files are at the bottom of its run page.
 
+The tests also run on their own for every pull request and every push to `main`. A pull request shows a red
+cross if any test fails.
+
 Pushing a version tag also makes a GitHub Release with all four files. The tag must match the version in
 `plugin.json`, with a `v` in front:
 
