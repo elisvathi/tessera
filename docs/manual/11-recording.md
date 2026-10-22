@@ -113,6 +113,8 @@ record button's ▾ menu.
 
 - Tessera keeps the last 64 bars of notes played while not recording.
 - Capture turns your last phrase (back to a gap of 4 bars of silence) into a clip on the selected track.
+- It keeps what you played on the keys (aftertouch, MPE) and the controls you moved during the phrase (bend, mod
+  wheel, pedals, CCs), as a recording does. Each control's lane starts where the control was when the phrase began.
 - If you played along with the song, the notes keep their place in the bar. If you played while stopped, the clip
   starts on the beat of the first note.
 

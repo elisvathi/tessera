@@ -212,7 +212,7 @@ class Engine {
     /// reported to the recorder, once per armed track and once more for the capture buffer.
     void liveNote(const LiveNote& note);
     /// A value from the record inputs: the voices playing the key (or the tracks taking the channel) follow it
-    /// while monitoring, and armed tracks report it to the recorder.
+    /// while monitoring, and armed tracks report it to the recorder; one more copy goes to the capture buffer.
     void liveValue(const LiveValue& value);
 
     /// Launches or stops clips. While playing, the change waits for the next launch-quantize line of the

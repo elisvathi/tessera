@@ -105,6 +105,7 @@ class Recorder {
         int8_t pitch;
         float velocity, release;
         uint8_t channel = 1;
+        Samples pitchCurve, timbre, pressure; // what the key played, on the free clock
     };
 
     Session* find(TrackId track);
@@ -136,6 +137,18 @@ class Recorder {
 
     std::deque<Captured> buffer;
     std::map<int, Captured> bufferOpen;
+    /// A control moved while not recording, on the same clocks as the notes, for Capture to turn into lanes.
+    struct CapturedValue {
+        double freeTick, playTick;
+        bool playing;
+        int control; // controlKey()
+        float value;
+    };
+    std::deque<CapturedValue> bufferValues;
+    /// A held note's pressure, timbre or pitch, or a control, moved while not recording.
+    void bufferValue(const RecordEvent& event);
+    /// The controls moved between free ticks `from` and `to`, as lanes starting at clip tick `offset`.
+    std::vector<TakeLane> capturedLanes(double from, double to, double offset) const;
 };
 
 } // namespace tessera

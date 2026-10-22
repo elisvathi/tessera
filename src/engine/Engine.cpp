@@ -558,6 +558,7 @@ void Engine::liveValue(const LiveValue& lv) {
         bool bend = lv.control.kind == MidiControl::Kind::PitchBend;
         // Lanes keep 0..1; pitch bend comes in as -1..1 around the middle.
         e.value = bend ? (lv.value + 1) / 2 : lv.value;
+        pushRecord(e); // the capture buffer's copy
         for (size_t i = 0; i < trackCount; i++) {
             const TrackPlayback& tp = *snapshot->tracks[i];
             if (tp.busSlot < 0 || !takesInput(tp, lv.source, part))
@@ -604,6 +605,7 @@ void Engine::liveValue(const LiveValue& lv) {
             continue;
         uint32_t id = liveId(src, ch, in);
         e.pitch = livePitch[src][ch][in];
+        pushRecord(e); // the capture buffer's copy
         for (size_t i = 0; i < trackCount; i++) {
             const TrackPlayback& tp = *snapshot->tracks[i];
             if (tp.busSlot < 0 || !(routed >> tp.busSlot & 1) || tp.drum)

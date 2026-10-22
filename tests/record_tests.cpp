@@ -705,7 +705,10 @@ TEST_CASE("live expression: armed tracks report values to the recorder while rec
     rig.drain();
     rig.engine.liveValue(noteValue(0, 60, NoteCurve::Pressure, 0.7f));
     rig.engine.liveValue(channelValue(0, {MidiControl::Kind::PitchBend, 0}, 0));
-    auto events = rig.drain();
+    std::vector<RecordEvent> events;
+    for (const RecordEvent& e : rig.drain())
+        if (e.track != 0) // the capture buffer's copies aside
+            events.push_back(e);
     REQUIRE(events.size() == 2);
     CHECK(events[0].kind == RecordEvent::Kind::NoteValue);
     CHECK(events[0].pitch == 60);
@@ -933,4 +936,42 @@ TEST_CASE("lane record state: the track arm decides, then the lane's source") {
     CHECK(laneSourceLabel(cv) == "AUTO REC 2");
     CHECK(laneSourceLabel(wheel) == "CC 1");
     CHECK(laneOutputLabel(makeMidiLane(AutomationId(1), {MidiControl::Kind::PitchBend, 0}, 0, 0)) == "V/OCT");
+}
+
+TEST_CASE("capture keeps what the keys played and the controls moved during the phrase") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    auto free = [](RecordEvent e, double at) {
+        e.track = 0;
+        e.recording = e.playing = false;
+        e.freeTick = at;
+        return e;
+    };
+    const Track& t = host.song_.tracks[0];
+    RecordEvent wheel = valueEvent(t, RecordEvent::Kind::ChannelValue, 0, 0.7f);
+    wheel.control = {MidiControl::Kind::Cc, 1};
+    rec.handle(free(wheel, 0)); // where the wheel sat before the phrase
+    rec.handle(free(note(t, 60, true, 0, 0), kBar));
+    for (int i = 1; i <= 4; i++) {
+        RecordEvent press = valueEvent(t, RecordEvent::Kind::NoteValue, 0, i / 4.f);
+        press.curve = NoteCurve::Pressure;
+        rec.handle(free(press, kBar + i * kPpq / 4.0));
+    }
+    wheel.value = 1;
+    rec.handle(free(wheel, kBar + kPpq / 2.0));
+    rec.handle(free(note(t, 60, false, 0, 0), kBar + kPpq));
+    ClipId clip = rec.capture(t.id);
+    const Clip* c = host.song_.findClip(clip);
+    REQUIRE(c);
+    REQUIRE(c->notes.size() == 1);
+    REQUIRE(!c->notes[0].pressureExpr.empty());
+    CHECK(c->notes[0].pressureExpr.back().value == doctest::Approx(1));
+    REQUIRE(c->automation.size() == 1);
+    CHECK(c->automation[0].name == "Mod wheel (CC 1)");
+    const auto& pts = c->automation[0].points;
+    REQUIRE(pts.size() == 2);
+    CHECK(pts[0].t == 0); // the first note starts the clip on the beat
+    CHECK(pts[0].value == doctest::Approx(0.7f));
+    CHECK(pts[1].t == kPpq / 2);
+    CHECK(pts[1].value == doctest::Approx(1));
 }
