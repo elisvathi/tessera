@@ -145,6 +145,6 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Right-click | Menu (Draw tool in the piano roll: delete) |
 | Wheel / Shift+wheel | Scroll up and down / sideways |
 | Ctrl+wheel | Zoom in time |
-| Alt+wheel | Taller / shorter rows |
+| Alt+wheel | Taller / shorter rows, around the mouse |
 | Middle-drag or Space+drag | Pan |
 | Alt+Shift+click a ghost note | Open its clip |

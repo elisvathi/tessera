@@ -58,7 +58,9 @@ std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& la
         if (l.mute || l.paramTarget.valid())
             continue;
         LanePlayback p;
-        p.output = std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1);
+        p.output = l.drive == LaneDrive::Pitch      ? kPitchLaneSlot
+                   : l.drive == LaneDrive::Pressure ? kPressureLaneSlot
+                                                    : std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1);
         p.rangeMin = l.rangeMin;
         p.rangeMax = l.rangeMax;
         p.rest = restValue(l);
@@ -131,10 +133,49 @@ std::vector<KnobLanePlayback> flattenKnobLanes(const std::vector<AutomationEnvel
     return out;
 }
 
+/// Whether any of the lanes plays into the voices instead of an AUTO channel.
+bool playsIntoVoices(const std::vector<LanePlayback>& lanes) {
+    return std::any_of(lanes.begin(), lanes.end(),
+                       [](const LanePlayback& l) { return l.output >= kMaxAutomationLanes; });
+}
+
+/// Where live MIDI controls play while monitoring: the AUTO channel and range of the lanes that record them, on the
+/// track or any of its clips.
+void findLiveControls(const Song& song, const Track& track, TrackPlayback& tp) {
+    auto scan = [&](const std::vector<AutomationEnvelope>& lanes) {
+        for (const AutomationEnvelope& l : lanes) {
+            if (l.midi.kind == MidiControl::Kind::Cc && drivesOutput(l) && tp.ccLive[l.midi.cc].output < 0)
+                tp.ccLive[l.midi.cc] = {int8_t(std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1)), l.rangeMin,
+                                        l.rangeMax};
+            else if (l.midi.kind == MidiControl::Kind::PitchBend && l.drive == LaneDrive::Pitch)
+                tp.bendLive = {int8_t(kPitchLaneSlot), l.rangeMin, l.rangeMax};
+        }
+    };
+    std::array<bool, kMaxAutomationLanes> used{};
+    auto visit = [&](const std::vector<AutomationEnvelope>& lanes) {
+        scan(lanes);
+        for (const AutomationEnvelope& l : lanes)
+            if (drivesOutput(l))
+                used[size_t(std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1))] = true;
+    };
+    visit(track.automation);
+    for (const ClipSlot& slot : track.slots)
+        if (slot.clip)
+            if (const Clip* c = song.findClip(*slot.clip))
+                visit(c->automation);
+    for (const ArrangerClip& a : track.arrangement)
+        if (const Clip* c = song.findClip(a.clip))
+            visit(c->automation);
+    for (int o = 0; o < kMaxAutomationLanes; o++)
+        if (!used[size_t(o)])
+            tp.freeAuto[size_t(tp.freeAutoCount++)] = int8_t(o);
+}
+
 int channelsOf(const std::vector<LanePlayback>& lanes) {
     int n = 0;
     for (const LanePlayback& l : lanes)
-        n = std::max(n, l.output + 1);
+        if (l.output < kMaxAutomationLanes)
+            n = std::max(n, l.output + 1);
     return n;
 }
 
@@ -268,9 +309,14 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     tp->lanes = flattenLanes(track.automation);
     tp->knobLanes = flattenKnobLanes(track.automation);
     tp->autoChannels = channelsOf(tp->lanes);
+    tp->voiceLanes = playsIntoVoices(tp->lanes);
     for (const auto& slot : tp->slots)
-        if (slot)
+        if (slot) {
             tp->autoChannels = std::max(tp->autoChannels, channelsOf(slot->lanes));
+            tp->voiceLanes |= playsIntoVoices(slot->lanes);
+        }
+    if (tp->armed || tp->listen == ListenSource::External)
+        findLiveControls(song, track, *tp);
     for (const ArrangerClip& a : track.arrangement) {
         const Clip* clip = song.findClip(a.clip);
         if (!clip || a.muted || clip->automation.empty())
@@ -295,6 +341,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         inst.clip = playback;
         tp->arrangementLanes.push_back(inst);
         tp->autoChannels = std::max(tp->autoChannels, channelsOf(playback->lanes));
+        tp->voiceLanes |= playsIntoVoices(playback->lanes);
     }
 
     std::vector<TimedNote> timed;

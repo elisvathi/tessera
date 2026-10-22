@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace tessera {
 
@@ -16,6 +17,44 @@ Tick floorTo(double tick, Tick step) { return Tick(std::floor(tick / double(step
 Tick ceilTo(double tick, Tick step) { return Tick(std::ceil(tick / double(step))) * step; }
 
 } // namespace
+
+TakeNote Recorder::finish(const Open& o, int pitch, double playTick, float release) {
+    TakeNote n{o.start, openLength(o, playTick), int8_t(pitch), o.velocity, release, o.channel};
+    double length = double(n.length);
+    n.pitchExpr = noteCurve(NoteCurve::Pitch, o.pitch, o.playStart, length);
+    n.timbreExpr = noteCurve(NoteCurve::Timbre, o.timbre, o.playStart, length);
+    n.pressureExpr = noteCurve(NoteCurve::Pressure, o.pressure, o.playStart, length);
+    return n;
+}
+
+std::vector<TakeLane> Recorder::takeLanes(const Session& s) {
+    std::vector<TakeLane> out;
+    for (const Session::LaneRecording& r : s.lanes) {
+        for (const autoEdits::Points& run : r.take.written()) {
+            std::vector<double> x;
+            std::vector<float> y;
+            for (const AutoPoint& p : run) {
+                x.push_back(double(p.t));
+                y.push_back(p.value);
+            }
+            TakeLane lane;
+            lane.source = r.source;
+            for (size_t i : thinValues(x, y, AutomationTake::kThinTolerance, run.size()))
+                lane.points.push_back(run[i]);
+            out.push_back(std::move(lane));
+        }
+    }
+    for (const auto& [key, samples] : s.controls) {
+        TakeLane lane;
+        lane.control = controlOfKey(key);
+        lane.points = lanePoints(lane.control, samples);
+        if (!lane.points.empty())
+            out.push_back(std::move(lane));
+    }
+    return out;
+}
+
+namespace {} // namespace
 
 Recorder::Session* Recorder::find(TrackId track) {
     for (Session& s : active)
@@ -91,7 +130,7 @@ int64_t Recorder::passOf(const Session& s, double playTick) const {
 
 void Recorder::closeOpen(Session& s, double playTick) {
     for (const auto& [pitch, o] : s.open)
-        s.done.push_back(TakeNote{o.start, openLength(o, playTick), int8_t(pitch), o.velocity, 0.5f, o.channel});
+        s.done.push_back(finish(o, pitch, playTick, 0.5f));
     s.open.clear();
 }
 
@@ -101,7 +140,13 @@ void Recorder::quantize(ClipId clip, const edits::IdSet& ids) {
 }
 
 void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) {
-    if (s.done.empty())
+    Take take(std::move(s.done));
+    take.lanes = takeLanes(s);
+    s.done.clear();
+    s.controls.clear();
+    for (Session::LaneRecording& r : s.lanes)
+        r.take = AutomationTake(r.source.recordMode);
+    if (take.empty())
         return; // nothing finished: no empty clips or steps
     const Song& song = host.song();
     Tick bar = ticksPerBar(song.timeSig);
@@ -113,12 +158,11 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
         Tick length = s.fixedLength;
         if (length == 0) {
             Tick end = Tick(std::llround(endPlay - s.clipStart));
-            for (const TakeNote& n : s.done)
+            for (const TakeNote& n : take.notes)
                 end = std::max(end, n.start + 1);
             length = wholeBars(end, song.timeSig);
         }
-        CommandPtr command = recordNewClip(song, s.track, s.slot, length, s.done, nextId, &clip, &ids);
-        s.done.clear();
+        CommandPtr command = recordNewClip(song, s.track, s.slot, length, take, nextId, &clip, &ids);
         if (!command)
             return;
         host.perform(std::move(command));
@@ -134,8 +178,7 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
         return;
     }
     case Target::Overdub: {
-        CommandPtr command = recordIntoClip(song, s.clip, s.done, nextId, &ids);
-        s.done.clear();
+        CommandPtr command = recordIntoClip(song, s.clip, take, nextId, &ids);
         if (!command)
             return;
         host.perform(std::move(command));
@@ -143,20 +186,41 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
         return;
     }
     case Target::Arranger: {
-        double first = s.passFrom, last = endSong;
-        for (const TakeNote& n : s.done) {
-            first = std::min(first, double(n.start));
-            last = std::max(last, double(n.start + 1));
+        // Knob and AUTO REC moves on the timeline stay on the track's lanes: song-wide, like a mix.
+        std::vector<TakeLane> trackLanes;
+        const Track* track = song.findTrack(s.track);
+        auto onTrack = [&](const TakeLane& l) {
+            return l.source && track &&
+                   std::any_of(track->automation.begin(), track->automation.end(),
+                               [&](const AutomationEnvelope& a) { return a.id == l.source->id; });
+        };
+        for (const TakeLane& l : take.lanes)
+            if (onTrack(l))
+                trackLanes.push_back(l);
+        take.lanes.erase(std::remove_if(take.lanes.begin(), take.lanes.end(), onTrack), take.lanes.end());
+        auto out = std::make_unique<CompoundCommand>(take.notes.empty() ? "Record"
+                                                                        : "Record " + countNotes(take.notes.size()));
+        if (!take.empty()) {
+            double first = s.passFrom, last = endSong;
+            for (const TakeNote& n : take.notes) {
+                first = std::min(first, double(n.start));
+                last = std::max(last, double(n.start + 1));
+            }
+            for (const TakeLane& l : take.lanes)
+                for (const AutoPoint& p : l.points) {
+                    first = std::min(first, double(p.t));
+                    last = std::max(last, double(p.t + 1));
+                }
+            Tick from = std::max<Tick>(0, floorTo(first, bar));
+            Tick to = std::max(from + bar, ceilTo(last, bar));
+            out->add(recordToArrangement(song, s.track, from, to, take, settings.arranger, nextId, &clip, &ids));
         }
-        Tick from = std::max<Tick>(0, floorTo(first, bar));
-        Tick to = std::max(from + bar, ceilTo(last, bar));
-        CommandPtr command =
-            recordToArrangement(song, s.track, from, to, s.done, settings.arranger, nextId, &clip, &ids);
-        s.done.clear();
-        if (!command)
+        out->add(recordTrackLanes(song, s.track, trackLanes));
+        if (out->empty())
             return;
-        host.perform(std::move(command));
-        quantize(clip, ids);
+        host.perform(std::move(out));
+        if (clip.valid())
+            quantize(clip, ids);
         return;
     }
     }
@@ -188,6 +252,13 @@ void Recorder::handle(const RecordEvent& e) {
         }
         return;
     }
+    case RecordEvent::Kind::NoteValue:
+    case RecordEvent::Kind::ChannelValue:
+        handleValue(e);
+        return;
+    case RecordEvent::Kind::LaneValue:
+        handleLaneValue(e);
+        return;
     case RecordEvent::Kind::Note:
         break;
     }
@@ -214,9 +285,116 @@ void Recorder::handle(const RecordEvent& e) {
     auto it = s->open.find(e.pitch);
     if (it == s->open.end())
         return;
-    const Open& o = it->second;
-    s->done.push_back(TakeNote{o.start, openLength(o, e.playTick), e.pitch, o.velocity, e.velocity, o.channel});
+    s->done.push_back(finish(it->second, e.pitch, e.playTick, e.velocity));
     s->open.erase(it);
+}
+
+void Recorder::handleValue(const RecordEvent& e) {
+    if (e.track == 0) {
+        if (!e.recording)
+            bufferValue(e);
+        return;
+    }
+    if (!punched)
+        return;
+    Session* s = find(TrackId(e.track));
+    if (e.kind == RecordEvent::Kind::NoteValue) {
+        // Only a held note has curves to write into.
+        if (!s || !s->open.count(e.pitch))
+            return;
+        Open& o = s->open[e.pitch];
+        Samples& to = e.curve == NoteCurve::Pitch ? o.pitch : e.curve == NoteCurve::Timbre ? o.timbre : o.pressure;
+        to.push_back({e.playTick, e.value});
+        return;
+    }
+    if (!s && !(s = start(e)))
+        return;
+    int key = controlKey(e.control);
+    auto it = std::find_if(s->controls.begin(), s->controls.end(), [key](const auto& c) { return c.first == key; });
+    if (it == s->controls.end())
+        it = s->controls.insert(s->controls.end(), {key, Samples{}});
+    it->second.push_back({double(targetTick(*s, e)), e.value});
+}
+
+const AutomationEnvelope* Recorder::findLane(const Track& track, AutomationId id) const {
+    for (const AutomationEnvelope& l : track.automation)
+        if (l.id == id)
+            return &l;
+    for (const ClipSlot& slot : track.slots)
+        if (slot.clip)
+            if (const Clip* c = host.song().findClip(*slot.clip))
+                for (const AutomationEnvelope& l : c->automation)
+                    if (l.id == id)
+                        return &l;
+    return nullptr;
+}
+
+void Recorder::handleLaneValue(const RecordEvent& e) {
+    if (!punched || e.track == 0)
+        return;
+    const Track* track = host.song().findTrack(TrackId(e.track));
+    const AutomationEnvelope* source = track ? findLane(*track, AutomationId(e.lane)) : nullptr;
+    if (!source)
+        return;
+    Session* s = find(TrackId(e.track));
+    if (!s && !(s = start(e)))
+        return;
+    auto it = std::find_if(s->lanes.begin(), s->lanes.end(),
+                           [&](const Session::LaneRecording& r) { return r.source.id == source->id; });
+    if (it == s->lanes.end())
+        it = s->lanes.insert(s->lanes.end(), {*source, AutomationTake(source->recordMode)});
+    it->take.sample(targetTick(*s, e), e.value, e.seconds);
+}
+
+bool Recorder::laneWriting(AutomationId lane) const {
+    for (const Session& s : active)
+        for (const Session::LaneRecording& r : s.lanes)
+            if (r.source.id == lane && r.take.writing())
+                return true;
+    return false;
+}
+
+std::vector<std::vector<AutoPoint>> Recorder::wrapRuns(const Session& s, const std::vector<AutoPoint>& points) {
+    std::vector<std::vector<AutoPoint>> out(1);
+    Tick last = std::numeric_limits<Tick>::min();
+    Tick start = Tick(s.passFrom);
+    for (AutoPoint p : points) {
+        if (s.loopLength > 0)
+            p.t = start + ((p.t - start) % s.loopLength + s.loopLength) % s.loopLength;
+        if (p.t < last)
+            out.emplace_back();
+        out.back().push_back(p);
+        last = p.t;
+    }
+    return out;
+}
+
+std::vector<std::vector<AutoPoint>> Recorder::liveRuns(LaneOwner owner, const AutomationEnvelope& lane) const {
+    std::vector<std::vector<AutoPoint>> out;
+    for (const Session& s : active) {
+        if (s.target == Target::Arranger && owner.track == s.track) {
+            for (const Session::LaneRecording& r : s.lanes)
+                if (r.source.id == lane.id)
+                    for (const autoEdits::Points& run : r.take.written())
+                        out.push_back(run);
+        } else if (s.target == Target::Overdub && owner.clip == s.clip) {
+            for (const Session::LaneRecording& r : s.lanes)
+                if (!lane.midi.valid() && sameTarget(r.source, lane))
+                    for (const autoEdits::Points& run : r.take.written())
+                        for (auto& wrapped : wrapRuns(s, run))
+                            out.push_back(std::move(wrapped));
+            if (lane.midi.valid())
+                for (const auto& [key, samples] : s.controls)
+                    if (key == controlKey(lane.midi)) {
+                        std::vector<AutoPoint> run;
+                        for (const auto& [t, v] : samples)
+                            run.push_back({Tick(std::llround(t)), v, CurveType::Linear, 0});
+                        for (auto& wrapped : wrapRuns(s, run))
+                            out.push_back(std::move(wrapped));
+                    }
+        }
+    }
+    return out;
 }
 
 void Recorder::update(double playTick) {
@@ -256,6 +434,54 @@ void Recorder::bufferNote(const RecordEvent& e) {
         buffer.pop_front();
 }
 
+void Recorder::bufferValue(const RecordEvent& e) {
+    if (e.kind == RecordEvent::Kind::NoteValue) {
+        auto it = bufferOpen.find(e.pitch);
+        if (it == bufferOpen.end())
+            return;
+        Captured& c = it->second;
+        Samples& to = e.curve == NoteCurve::Pitch ? c.pitchCurve : e.curve == NoteCurve::Timbre ? c.timbre : c.pressure;
+        to.push_back({e.freeTick, e.value});
+        return;
+    }
+    bufferValues.push_back({e.freeTick, e.playTick, e.playing, controlKey(e.control), e.value});
+    // As long as the notes are kept; a control swept nonstop is capped so the buffer stays small.
+    constexpr size_t kMaxValues = 1 << 16;
+    double keep = double(kBufferBars * ticksPerBar(host.song().timeSig));
+    while (!bufferValues.empty() &&
+           (bufferValues.front().freeTick < e.freeTick - keep || bufferValues.size() > kMaxValues))
+        bufferValues.pop_front();
+}
+
+std::vector<TakeLane> Recorder::capturedLanes(double from, double to, double offset) const {
+    // Controls that moved during the phrase, each starting where it was when the phrase began.
+    std::vector<std::pair<int, Samples>> moved;
+    auto samplesOf = [&](int key) -> Samples& {
+        auto it = std::find_if(moved.begin(), moved.end(), [key](const auto& m) { return m.first == key; });
+        if (it == moved.end())
+            it = moved.insert(moved.end(), {key, Samples{}});
+        return it->second;
+    };
+    for (const CapturedValue& v : bufferValues)
+        if (v.freeTick >= from && v.freeTick <= to)
+            samplesOf(v.control).push_back({std::max(0.0, v.freeTick - from + offset), v.value});
+    std::vector<TakeLane> out;
+    for (auto& [key, samples] : moved) {
+        const CapturedValue* before = nullptr;
+        for (const CapturedValue& v : bufferValues)
+            if (v.control == key && v.freeTick < from)
+                before = &v;
+        if (before)
+            samples.insert(samples.begin(), {offset, before->value});
+        TakeLane lane;
+        lane.control = controlOfKey(key);
+        lane.points = lanePoints(lane.control, samples);
+        if (!lane.points.empty())
+            out.push_back(std::move(lane));
+    }
+    return out;
+}
+
 ClipId Recorder::capture(TrackId track) {
     const Song& song = host.song();
     const Track* t = song.findTrack(track);
@@ -291,25 +517,33 @@ ClipId Recorder::capture(TrackId track) {
         Tick beat = ticksPerBeat(song.timeSig);
         base = std::floor(notes[first].freeStart / double(beat)) * double(beat);
     }
-    std::vector<TakeNote> take;
+    Take take;
     Tick last = 1;
+    double phraseEnd = notes[first].freeStart;
     for (size_t i = first; i < notes.size(); i++) {
         const Captured& c = notes[i];
         Tick start = Tick(std::llround((onTimeline ? c.playStart : c.freeStart) - base));
-        take.push_back(TakeNote{std::max<Tick>(0, start), Tick(std::llround(c.length)), c.pitch, c.velocity, c.release,
-                                c.channel});
-        last = std::max(last, take.back().start + take.back().length);
+        TakeNote n{std::max<Tick>(0, start), Tick(std::llround(c.length)), c.pitch, c.velocity, c.release, c.channel};
+        n.pitchExpr = noteCurve(NoteCurve::Pitch, c.pitchCurve, c.freeStart, c.length);
+        n.timbreExpr = noteCurve(NoteCurve::Timbre, c.timbre, c.freeStart, c.length);
+        n.pressureExpr = noteCurve(NoteCurve::Pressure, c.pressure, c.freeStart, c.length);
+        take.notes.push_back(std::move(n));
+        last = std::max(last, take.notes.back().start + take.notes.back().length);
+        phraseEnd = std::max(phraseEnd, c.freeStart + c.length);
     }
+    // Controls are placed by the free clock from the first note, which runs with the song while it plays.
+    take.lanes = capturedLanes(notes[first].freeStart, phraseEnd, double(take.notes.front().start));
     ClipId clip;
     edits::IdSet ids;
     CommandPtr command = recordNewClip(
         song, track, slot, wholeBars(last, song.timeSig), take, [this] { return host.nextId(); }, &clip, &ids,
-        "Capture " + countNotes(take.size()));
+        "Capture " + countNotes(take.notes.size()));
     if (!command)
         return ClipId();
     host.perform(std::move(command));
     quantize(clip, ids);
     buffer.clear();
+    bufferValues.clear();
     return clip;
 }
 

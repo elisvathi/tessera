@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../model/AutomationTake.hpp"
 #include "../model/Recording.hpp"
 #include "Engine.hpp"
 
@@ -44,11 +45,14 @@ class Recorder {
     bool punchedIn() const { return punched; }
 
     enum class Target { NewClip, Overdub, Arranger };
+    /// Values over time: play ticks for a note's curves, the target's ticks for a control's lane.
+    using Samples = TimedValues;
     struct Open {
         double playStart = 0;
         Tick start = 0; // in the target's ticks
         float velocity = 0;
         uint8_t channel = 1;
+        Samples pitch, timbre, pressure; // what the key itself played while held
     };
     /// One armed track's take in progress.
     struct Session {
@@ -63,10 +67,27 @@ class Recorder {
         double passFrom = 0;        // Arranger: where this pass started on the timeline
         std::vector<TakeNote> done; // finished notes not yet committed, in the target's ticks
         std::map<int, Open> open;   // held notes by pitch
+        // Controls moved and not yet committed, by controlKey(), in the order they first moved: their new lanes
+        // take the free AUTO channels in that order, as they did while you heard them.
+        std::vector<std::pair<int, Samples>> controls;
+        // Knob and AUTO REC lanes recorded in this take: the lane read (as it was) and its pass.
+        struct LaneRecording {
+            AutomationEnvelope source;
+            AutomationTake take;
+        };
+        std::vector<LaneRecording> lanes;
     };
     const std::vector<Session>& sessions() const { return active; }
+    /// Whether a knob or AUTO REC lane is being written now (a mapped knob then follows the hand, not the lane).
+    bool laneWriting(AutomationId lane) const;
+    /// What the take in progress is writing into a lane, in that lane's ticks, for drawing it live: one list per
+    /// stretch of writing.
+    std::vector<std::vector<AutoPoint>> liveRuns(LaneOwner owner, const AutomationEnvelope& lane) const;
     /// Where a held note has got to, in its target's ticks, for drawing it live.
     static Tick openLength(const Open& open, double playTick) { return Tick(std::max(1.0, playTick - open.playStart)); }
+    /// A MIDI control as a map key, and back.
+    static int controlKey(MidiControl c) { return int(c.kind) * 128 + (c.kind == MidiControl::Kind::Cc ? c.cc : 0); }
+    static MidiControl controlOfKey(int key) { return {MidiControl::Kind(key / 128), uint8_t(key % 128)}; }
 
     // Capture: the last notes played while not recording.
 
@@ -84,6 +105,7 @@ class Recorder {
         int8_t pitch;
         float velocity, release;
         uint8_t channel = 1;
+        Samples pitchCurve, timbre, pressure; // what the key played, on the free clock
     };
 
     Session* find(TrackId track);
@@ -95,6 +117,18 @@ class Recorder {
     void commit(Session& s, double endPlay, double endSong, bool final);
     void quantize(ClipId clip, const edits::IdSet& ids);
     void bufferNote(const RecordEvent& event);
+    /// A note's pressure, timbre or pitch, or a control, moved while recording.
+    void handleValue(const RecordEvent& event);
+    /// A reading of a knob or AUTO REC lane's source while recording.
+    void handleLaneValue(const RecordEvent& event);
+    /// A lane of the track, or of one of its clips, by ID.
+    const AutomationEnvelope* findLane(const Track& track, AutomationId id) const;
+    /// Overdub ticks (not yet wrapped) wrapped into the clip's loop, split where they wrap.
+    static std::vector<std::vector<AutoPoint>> wrapRuns(const Session& s, const std::vector<AutoPoint>& points);
+    /// A held note finished at `playTick`, its curves made from what the key played.
+    static TakeNote finish(const Open& open, int pitch, double playTick, float release);
+    /// The controls moved in a session, as thinned lane points.
+    static std::vector<TakeLane> takeLanes(const Session& s);
 
     RecorderHost& host;
     bool punched = false;
@@ -103,6 +137,18 @@ class Recorder {
 
     std::deque<Captured> buffer;
     std::map<int, Captured> bufferOpen;
+    /// A control moved while not recording, on the same clocks as the notes, for Capture to turn into lanes.
+    struct CapturedValue {
+        double freeTick, playTick;
+        bool playing;
+        int control; // controlKey()
+        float value;
+    };
+    std::deque<CapturedValue> bufferValues;
+    /// A held note's pressure, timbre or pitch, or a control, moved while not recording.
+    void bufferValue(const RecordEvent& event);
+    /// The controls moved between free ticks `from` and `to`, as lanes starting at clip tick `offset`.
+    std::vector<TakeLane> capturedLanes(double from, double to, double offset) const;
 };
 
 } // namespace tessera

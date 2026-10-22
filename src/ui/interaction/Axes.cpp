@@ -292,6 +292,17 @@ void TrackAxis::fitAll() {
     clamp();
 }
 
-void TrackAxis::clamp() { scrollPx = std::clamp(scrollPx, 0.0, std::max(0.0, contentHeight() + footer - height)); }
+void TrackAxis::anchorScroll(double px) {
+    scrollPx = std::max(0.0, px);
+    slack = std::max(0.0, scrollPx - std::max(0.0, contentHeight() + footer - height));
+    clamp();
+}
+
+void TrackAxis::clamp() {
+    double end = std::max(0.0, contentHeight() + footer - height);
+    scrollPx = std::clamp(scrollPx, 0.0, end + slack);
+    // Room past the end is kept only as far as the view still uses it: scrolling back up gives it up.
+    slack = std::max(0.0, scrollPx - end);
+}
 
 } // namespace tessera

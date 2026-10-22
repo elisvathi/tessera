@@ -96,4 +96,8 @@ Give each Tessera its own **Instance name** (module menu). Output modules show t
 | Clip length | The clip chip at the left of the notes header |
 | Launch quantize | **Launch 1 bar ▾** above the track names |
 | Ripple, Stack, Automation follows clips | The ▾ next to Select and Draw in the song pane |
+| MPE input | The ▾ next to the record button |
+| Recording a lane (the old lane arm) | Arm the track; the lane menu's **Records from** picks the source |
+| Automating a rack knob | **Add automation lane → Automate a knob: touch it in the rack** |
+| A sustain, mod wheel or other CC lane | **Add automation lane → MIDI control** |
 | Every shortcut | Press **?** in the editor |

@@ -135,7 +135,8 @@ shown in the knob's own units.
 
 - Knob lanes play only while the transport runs. When stopped, the knob is free to turn and try out.
 - A knob held with the mouse wins while you hold it, then the lane takes over again.
-- Arm the lane and record to capture your knob moves (Touch, Latch, Write).
+- Arm the track and record to capture your knob moves (Touch, Latch, Write). A clip's knob lane records while that
+  clip plays.
 - Knob lanes don't use an AUTO channel. A track or clip can have 16 of them.
 - If the device is deleted, the lane says **Target missing** until you undo.
 

@@ -9,6 +9,7 @@
 #include "../editing/ClipGestures.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
+#include "../interaction/NoteBars.hpp"
 #include "../interaction/Snap.hpp"
 #include "../widgets/CachedLayer.hpp"
 #include "../widgets/Draw.hpp"
@@ -67,10 +68,7 @@ void ArrangerLanes::setVerticalScroll(double px) {
     ctx.view().trackScroll = owner.tracks.scroll();
 }
 
-void ArrangerLanes::zoomVertical(double y, double factor) {
-    owner.tracks.zoomAt(y, factor);
-    owner.writeHeights();
-}
+void ArrangerLanes::zoomVertical(double y, double factor) { owner.zoomTracksAt(y, factor); }
 
 void ArrangerLanes::showVerticalRange(double y0, double y1) {
     if (y1 - y0 < 1)
@@ -1033,13 +1031,19 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             float base = body.pos.y + pad + (body.size.y - 2 * pad - span) / 2;
             NVGcolor noteColor = nvgLerpRGBA(theme::track(color), c.text0, 0.35f);
             noteColor.a = alpha;
-            nvgBeginPath(vg);
+            // Notes on one pitch less than a pixel apart are drawn as one bar: thousands of tiny rectangles would
+            // make every zoom frame slow to repaint.
+            noteSpans.clear();
             for (const TimedNote& n : scratch) {
                 float nx0 = float(time().tickToX(double(n.start)));
                 float nx1 = float(time().tickToX(double(n.end)));
-                if (nx1 < 0 || nx0 > box.size.x)
-                    continue;
-                nvgRect(vg, nx0, base + float(hi - n.pitch) * rowH, std::max(1.f, nx1 - nx0 - 0.5f),
+                if (nx1 >= 0 && nx0 <= box.size.x)
+                    noteSpans.push_back({n.pitch, nx0, nx1});
+            }
+            mergeNoteBars(noteSpans, 1.5f, noteBars);
+            nvgBeginPath(vg);
+            for (const NoteBar& bar : noteBars) {
+                nvgRect(vg, bar.x0, base + float(hi - bar.pitch) * rowH, bar.x1 - bar.x0 - 0.5f,
                         std::max(1.f, rowH - 0.5f));
             }
             nvgFillColor(vg, noteColor);

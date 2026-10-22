@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../model/Recording.hpp"
 #include "../interaction/InteractiveView.hpp"
 #include "../interaction/TrackRows.hpp"
 #include "../widgets/HoverTooltip.hpp"
@@ -7,6 +8,10 @@
 namespace tessera {
 
 class ArrangerView;
+
+/// The mark beside a lane that says whether the next take records into it: a red dot, an amber "!" when its source
+/// is missing, a crossed circle when it is kept, nothing when it won't record.
+void drawLaneRecordMark(NVGcontext* vg, rack::math::Vec at, LaneRecordState state);
 
 /// The column of track headers beside the arranger (EDITOR_UX §6.2).
 ///
@@ -55,7 +60,7 @@ class TrackHeaders : public InteractiveView {
         AddRow,
         Empty,
         LaneMute,
-        LaneArm,
+        LaneState, // the mark that says whether the lane records: not a button
         AddLane
     };
     struct Hit {

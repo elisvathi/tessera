@@ -37,11 +37,27 @@ struct ParamTarget {
 /// How clip automation combines with track automation on the same output.
 enum class CombineMode : uint8_t { Override, Modulate };
 
-/// What an armed lane records from: its first mapped knob, or its channel of Tessera's AUTO REC input.
+/// What a lane records from when no MIDI control is linked: its first mapped knob, or a channel of Tessera's AUTO
+/// REC input.
 enum class AutoSource : uint8_t { Knob, Cv };
 /// Touch: writes while the source moves, then the old curve comes back. Latch: from the first move until
 /// recording stops. Write: the whole time.
 enum class AutoRecordMode : uint8_t { Touch, Latch, Write };
+
+/// Where a lane's value goes: an AUTO channel, or into every voice of the track (pitch bend added to V/OCT,
+/// pressure on PRESS where it is above the note's own).
+enum class LaneDrive : uint8_t { Auto, Pitch, Pressure };
+
+/// The MIDI control a lane records from (docs/design/EXPRESSION_INPUT.md).
+struct MidiControl {
+    enum class Kind : uint8_t { None, PitchBend, Pressure, Cc };
+    Kind kind = Kind::None;
+    uint8_t cc = 0; // 0..127, for Kind::Cc
+
+    bool valid() const { return kind != Kind::None; }
+    bool operator==(const MidiControl& o) const { return kind == o.kind && (kind != Kind::Cc || cc == o.cc); }
+    bool operator!=(const MidiControl& o) const { return !(*this == o); }
+};
 
 struct AutomationEnvelope {
     AutomationId id;
@@ -54,7 +70,6 @@ struct AutomationEnvelope {
     bool mute = false;
     float slewMs = 0; // 0..100
     CombineMode combine = CombineMode::Override;
-    bool armed = false; // records while the transport records
     AutoSource source = AutoSource::Knob;
     AutoRecordMode recordMode = AutoRecordMode::Touch;
     std::vector<ParamTarget> targets; // up to 4
@@ -62,22 +77,31 @@ struct AutomationEnvelope {
     /// A lane that turns a device knob or modulator setting (docs/DEVICES.md §1.3) instead of driving an AUTO
     /// channel. A target that no longer exists leaves the lane in place, showing "target missing".
     ParamRef paramTarget;
+    LaneDrive drive = LaneDrive::Auto;
+    MidiControl midi;      // the MIDI control a take records into this lane; set, it is the lane's source
+    int recInput = -1;     // the AUTO REC channel a CV lane records, 0..7; -1 = its own AUTO channel
+    bool noRecord = false; // "Don't record this lane": takes leave it as it is
 
     bool operator==(const AutomationEnvelope& o) const {
         return id == o.id && name == o.name && color == o.color && outputIndex == o.outputIndex &&
                rangeMin == o.rangeMin && rangeMax == o.rangeMax && bipolar == o.bipolar && mute == o.mute &&
-               slewMs == o.slewMs && combine == o.combine && armed == o.armed && source == o.source &&
-               recordMode == o.recordMode && targets == o.targets && points == o.points && paramTarget == o.paramTarget;
+               slewMs == o.slewMs && combine == o.combine && source == o.source && recInput == o.recInput &&
+               recordMode == o.recordMode && targets == o.targets && points == o.points &&
+               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && noRecord == o.noRecord;
     }
 };
 
-/// Whether a lane drives an AUTO channel; a knob lane (paramTarget) has none.
-inline bool drivesOutput(const AutomationEnvelope& lane) { return !lane.paramTarget.valid(); }
-/// Whether two lanes play the same thing: the same knob, or the same AUTO channel.
+/// Whether a lane drives an AUTO channel; a knob lane (paramTarget) and a pitch or pressure lane have none.
+inline bool drivesOutput(const AutomationEnvelope& lane) {
+    return !lane.paramTarget.valid() && lane.drive == LaneDrive::Auto;
+}
+/// Whether two lanes play the same thing: the same knob, the same AUTO channel, or both the pitch or pressure.
 inline bool sameTarget(const AutomationEnvelope& a, const AutomationEnvelope& b) {
     if (a.paramTarget.valid() || b.paramTarget.valid())
         return a.paramTarget == b.paramTarget;
-    return a.outputIndex == b.outputIndex;
+    if (a.drive != b.drive)
+        return false;
+    return a.drive != LaneDrive::Auto || a.outputIndex == b.outputIndex;
 }
 
 /// The value a lane rests at with no points: the middle for bipolar lanes, the bottom otherwise.

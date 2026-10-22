@@ -27,7 +27,7 @@ constexpr float kBendRadius = 2.5f;
 constexpr float kMinBendSpan = 14; // px: narrower segments hide their bend handle
 constexpr float kSampleStep = 3;   // px between curve samples
 constexpr float kTensionPerPx = 1.f / 60;
-const float kPitchWindows[] = {2, 7, 12, 24};
+const float kPitchWindows[] = {2, 7, 12, 24, 48};
 
 /// Adds, moves or bends one point of one note's curve. One undo step on release.
 class CurveGesture : public DragGesture {

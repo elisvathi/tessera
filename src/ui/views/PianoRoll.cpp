@@ -19,6 +19,7 @@
 #include "NoteValueLane.hpp"
 #include "PianoKeyboard.hpp"
 #include "TimelineDraw.hpp"
+#include "TrackHeaders.hpp"
 
 #include <cmath>
 
@@ -535,6 +536,16 @@ void PianoRollView::draw(const DrawArgs& args) {
     drawHeader(vg);
 
     EditorPane::draw(args);
+    // Whether the next take records into the clip lane shown below, as the track header marks its lanes.
+    TesseraModule* m = ctx.module();
+    const Clip* shown = clip();
+    if (m && shown && clipLane->visible && lowerButton->visible)
+        if (const AutomationEnvelope* lane = findLane(m->song(), LaneOwner::ofClip(shown->id), clipLane->lane)) {
+            LaneRecordState state =
+                laneRecordState(m->song(), LaneOwner::ofClip(shown->id), *lane, m->autoRecInputs(), nullptr);
+            const rack::math::Rect& b = lowerButton->box;
+            drawLaneRecordMark(vg, rack::math::Vec(b.getRight() - 7, b.pos.y + 7), state);
+        }
 }
 
 void PianoRollView::drawHeader(NVGcontext* vg) {
@@ -763,23 +774,13 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
     for (const AutomationEnvelope& l : shown->automation) {
         uint64_t id = l.id.value;
         menu->addChild(rack::createCheckMenuItem(
-            l.name, drivesOutput(l) ? "AUTO " + std::to_string(l.outputIndex + 1) : std::string("knob"),
-            [c, id] { return c->view().lowerLane == id; }, [c, id] { c->view().lowerLane = id; }));
+            l.name, laneOutputLabel(l), [c, id] { return c->view().lowerLane == id; },
+            [c, id] { c->view().lowerLane = id; }));
     }
-    auto* add = rack::createMenuItem("Add clip lane", "", [c, clipId] {
-        TesseraModule* m = c->module();
-        const Clip* cl = m ? m->song().findClip(clipId) : nullptr;
-        if (!cl)
-            return;
-        int output = freeOutput(cl->automation);
-        if (output < 0)
-            return;
-        AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
-        m->perform(addLane(m->song(), LaneOwner::ofClip(clipId), lane));
-        c->view().lowerLane = lane.id.value;
-    });
-    add->disabled = freeOutput(shown->automation) < 0;
-    menu->addChild(add);
+    TrackId trackId = source.track;
+    menu->addChild(rack::createSubmenuItem("Add clip lane", "", [c, trackId, clipId](rack::ui::Menu* sub) {
+        trackActions::appendAddLaneItems(sub, *c, trackId, LaneOwner::ofClip(clipId));
+    }));
 }
 
 // ---- Key and scale tools -----------------------------------------------------------------------------------

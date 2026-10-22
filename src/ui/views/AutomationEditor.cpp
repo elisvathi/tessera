@@ -3,6 +3,7 @@
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/DeviceActions.hpp"
+#include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../interaction/Snap.hpp"
 #include "../widgets/Draw.hpp"
@@ -872,6 +873,94 @@ bool AutomationEditor::handleAction(Action action, Tick grid, double pasteAt) {
 
 // ---- Lane menu ----------------------------------------------------------------------------------------------
 
+void AutomationEditor::appendRecordingItems(rack::ui::Menu* menu, EditorContext& ctx, LaneOwner owner,
+                                            const AutomationEnvelope& lane, const LaneEdit& edit) {
+    EditorContext* c = &ctx;
+    AutomationId id = lane.id;
+    auto learnItem = [&](const char* text) {
+        auto* item = rack::createMenuItem(text, "", [c, owner, id] {
+            if (TesseraModule* m = c->module())
+                m->startLearn(owner, id);
+        });
+        menu->addChild(item);
+    };
+    if (lane.paramTarget.valid()) {
+        menu->addChild(rack::createMenuLabel("Records the device knob as you turn it"));
+    } else if (owner.clip.valid()) {
+        // Knobs and AUTO REC are set on the track's lane; a clip lane can be linked to a MIDI control.
+        menu->addChild(rack::createMenuLabel(lane.midi.valid() ? "Records " + midiControlName(lane.midi)
+                                                               : "Records what the track's lane on " +
+                                                                     laneOutputLabel(lane) + " records"));
+        learnItem("Learn: move a MIDI control");
+    } else {
+        std::string from = lane.midi.valid()               ? midiControlName(lane.midi)
+                           : lane.source == AutoSource::Cv ? std::string("AUTO REC input")
+                           : !lane.targets.empty()         ? std::string("The mapped knob")
+                                                           : std::string("Nothing (you draw it)");
+        menu->addChild(rack::createSubmenuItem("Records from", from, [edit, lane, c, owner, id](rack::ui::Menu* sub) {
+            sub->addChild(rack::createMenuLabel("A MIDI control"));
+            for (MidiControl control : trackActions::commonMidiControls())
+                sub->addChild(rack::createCheckMenuItem(
+                    midiControlName(control), "", [l = lane, control] { return l.midi == control; },
+                    edit("Record " + midiControlName(control),
+                         [control](AutomationEnvelope& l) { l.midi = control; })));
+            if (lane.midi.valid() &&
+                std::find(trackActions::commonMidiControls().begin(), trackActions::commonMidiControls().end(),
+                          lane.midi) == trackActions::commonMidiControls().end())
+                sub->addChild(rack::createCheckMenuItem(midiControlName(lane.midi), "", [] { return true; }, [] {}));
+            sub->addChild(rack::createMenuItem("Another: move it on your controller", "", [c, owner, id] {
+                if (TesseraModule* m = c->module())
+                    m->startLearn(owner, id);
+            }));
+            sub->addChild(new rack::ui::MenuSeparator);
+            sub->addChild(rack::createCheckMenuItem(
+                "The mapped knob (turn it by hand)", "",
+                [l = lane] { return !l.midi.valid() && l.source == AutoSource::Knob && !l.targets.empty(); },
+                edit("Record from the knob", [](AutomationEnvelope& l) {
+                    l.midi = MidiControl();
+                    l.source = AutoSource::Knob;
+                })));
+            sub->addChild(rack::createCheckMenuItem(
+                "AUTO REC input", "", [l = lane] { return !l.midi.valid() && l.source == AutoSource::Cv; },
+                edit("Record from AUTO REC", [](AutomationEnvelope& l) {
+                    l.midi = MidiControl();
+                    // A CV moves on its own: Touch would miss it while it holds still.
+                    if (l.source != AutoSource::Cv)
+                        l.recordMode = AutoRecordMode::Write;
+                    l.source = AutoSource::Cv;
+                })));
+        }));
+        learnItem("Learn: move a MIDI control or touch a knob");
+        if (!lane.midi.valid() && lane.source == AutoSource::Cv) {
+            int channel = lane.recInput >= 0 ? lane.recInput : lane.outputIndex;
+            menu->addChild(rack::createSubmenuItem(
+                "AUTO REC channel", std::to_string(channel + 1), [edit, channel](rack::ui::Menu* sub) {
+                    for (int k = 0; k < kMaxAutomationLanes; k++)
+                        sub->addChild(rack::createCheckMenuItem(
+                            "Channel " + std::to_string(k + 1), "", [k, channel] { return k == channel; },
+                            edit("Set AUTO REC channel", [k](AutomationEnvelope& l) { l.recInput = k; })));
+                }));
+        }
+    }
+    if (!lane.midi.valid() && (lane.paramTarget.valid() || owner.track.valid())) {
+        static const char* const modes[] = {"Touch (while it moves)", "Latch (from the first move)",
+                                            "Write (all the time)"};
+        static const char* const modeNames[] = {"Touch", "Latch", "Write"};
+        menu->addChild(
+            rack::createSubmenuItem("Record mode", modeNames[int(lane.recordMode)], [edit, lane](rack::ui::Menu* sub) {
+                for (int i = 0; i < 3; i++) {
+                    AutoRecordMode mode = AutoRecordMode(i);
+                    sub->addChild(rack::createCheckMenuItem(
+                        modes[i], "", [cur = lane.recordMode, mode] { return cur == mode; },
+                        edit("Set record mode", [mode](AutomationEnvelope& l) { l.recordMode = mode; })));
+                }
+            }));
+    }
+    menu->addChild(rack::createCheckMenuItem(
+        "Don't record this lane (keep what's there)", "", [k = lane.noRecord] { return k; },
+        edit("Toggle don't record", [](AutomationEnvelope& l) { l.noRecord = !l.noRecord; })));
+}
+
 void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, LaneOwner owner, AutomationId id) {
     TesseraModule* m = ctx.module();
     const AutomationEnvelope* lane = m ? findLane(m->song(), owner, id) : nullptr;
@@ -879,8 +968,8 @@ void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, 
         return;
     EditorContext* c = &ctx;
     // Changes a copy of the lane and records it.
-    auto edit = [c, owner, id](const std::string& name, std::function<void(AutomationEnvelope&)> change) {
-        return [c, owner, id, name, change] {
+    LaneEdit edit = [c, owner, id](const std::string& name, std::function<void(AutomationEnvelope&)> change) {
+        return std::function<void()>([c, owner, id, name, change] {
             TesseraModule* m = c->module();
             const AutomationEnvelope* l = m ? findLane(m->song(), owner, id) : nullptr;
             if (!l)
@@ -888,7 +977,7 @@ void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, 
             AutomationEnvelope next = *l;
             change(next);
             m->perform(replaceLane(m->song(), owner, next, name));
-        };
+        });
     };
     // Functions act on the selected points of this lane, or on all of them.
     auto targets = [c, owner, id](const AutomationEnvelope& l) {
@@ -962,38 +1051,9 @@ void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, 
     menu->addChild(rack::createCheckMenuItem(
         "Mute", "", [mute = lane->mute] { return mute; },
         edit("Toggle lane mute", [](AutomationEnvelope& l) { l.mute = !l.mute; })));
-    if (owner.track.valid()) {
-        menu->addChild(new rack::ui::MenuSeparator);
-        menu->addChild(rack::createMenuLabel("Recording (while the transport records)"));
-        menu->addChild(rack::createCheckMenuItem(
-            "Armed", "", [armed = lane->armed] { return armed; },
-            edit("Toggle lane arm", [](AutomationEnvelope& l) { l.armed = !l.armed; })));
-        std::string cv = "AUTO REC input, channel " + std::to_string(lane->outputIndex + 1);
-        if (!knob)
-            menu->addChild(rack::createSubmenuItem(
-                "Record from", lane->source == AutoSource::Knob ? "Mapped knob" : "AUTO REC input",
-                [edit, lane, cv](rack::ui::Menu* sub) {
-                    sub->addChild(rack::createCheckMenuItem(
-                        "The first mapped knob (turn it by hand)", "",
-                        [s = lane->source] { return s == AutoSource::Knob; },
-                        edit("Record from the knob", [](AutomationEnvelope& l) { l.source = AutoSource::Knob; })));
-                    sub->addChild(rack::createCheckMenuItem(
-                        cv, "", [s = lane->source] { return s == AutoSource::Cv; },
-                        edit("Record from AUTO REC", [](AutomationEnvelope& l) { l.source = AutoSource::Cv; })));
-                }));
-        static const char* const modes[] = {"Touch (while it moves)", "Latch (from the first move)",
-                                            "Write (all the time)"};
-        static const char* const modeNames[] = {"Touch", "Latch", "Write"};
-        menu->addChild(
-            rack::createSubmenuItem("Record mode", modeNames[int(lane->recordMode)], [edit, lane](rack::ui::Menu* sub) {
-                for (int i = 0; i < 3; i++) {
-                    AutoRecordMode mode = AutoRecordMode(i);
-                    sub->addChild(rack::createCheckMenuItem(
-                        modes[i], "", [cur = lane->recordMode, mode] { return cur == mode; },
-                        edit("Set record mode", [mode](AutomationEnvelope& l) { l.recordMode = mode; })));
-                }
-            }));
-    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Recording (when the track records)"));
+    appendRecordingItems(menu, ctx, owner, *lane, edit);
 
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Points (the selected ones, or all)"));
@@ -1021,7 +1081,7 @@ void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, 
     menu->addChild(new rack::ui::MenuSeparator);
     if (owner.track.valid() && !knob) {
         menu->addChild(rack::createMenuLabel("Knobs this lane turns (no cable needed)"));
-        auto* learn = rack::createMenuItem("Map a knob: touch it in the rack", "", [c, owner, id] {
+        auto* learn = rack::createMenuItem("Map another knob: touch it in the rack", "", [c, owner, id] {
             if (TesseraModule* m = c->module())
                 m->startLearn(owner.track, id);
         });
@@ -1144,8 +1204,8 @@ void AutomationEditor::draw(NVGcontext* vg, const LaneFrame& f) {
     }
     // What is being recorded into this lane right now, in red, over the old curve.
     if (TesseraModule* m = ctx.module())
-        if (const AutomationTake* take = m->automationTake(f.lane)) {
-            for (const Points& run : take->written()) {
+        if (const AutomationEnvelope* recorded = findLane(m->song(), f.owner, f.lane)) {
+            for (const Points& run : m->takes().liveRuns(f.owner, *recorded)) {
                 nvgBeginPath(vg);
                 for (size_t i = 0; i < run.size(); i++) {
                     float x = xOf(f, double(run[i].t)), y = yOf(f, run[i].value);

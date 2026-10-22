@@ -102,6 +102,10 @@ void Engine::setSnapshot(const Snapshot* s) {
                 endAudition(state, v);
         state.chainInfo = i < s->chains.size() ? &s->chains[i] : nullptr;
         state.autoChannels = std::max(tp.autoChannels, state.chainInfo ? state.chainInfo->autoChannels : 0);
+        // Lanes may have come or gone: live controls find their channels again when they next move.
+        state.liveAutoMask = 0;
+        state.liveCcOutput.fill(-1);
+        state.liveCcCount = 0;
         resolveSlots(tp, state);
         if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
             slotUsed[tp.busSlot] = true;
@@ -381,7 +385,9 @@ void Engine::audition(const AuditionEvent& event) {
             return;
         }
         if (event.on) {
-            int v = state.voices.noteOn(event.pitch, event.velocity, 0.5f, std::numeric_limits<double>::infinity());
+            int v = state.voices.noteOn(event.pitch, event.velocity, 0.5f, std::numeric_limits<double>::infinity(),
+                                        event.id);
+            clearLiveVoice(state, v);
             if (state.audition[size_t(v)] < 0)
                 state.auditions++;
             state.audition[size_t(v)] = event.seconds > 0 ? std::max(1, int(event.seconds * sampleRate)) : 0;
@@ -473,21 +479,22 @@ void Engine::liveNote(const LiveNote& note) {
     size_t src = size_t(note.source);
     size_t ch = note.channel & 15;
     size_t in = size_t(note.pitch) & 127;
+    int part = note.partChannel >= 0 ? note.partChannel & 15 : int(ch);
     uint64_t& routed = liveTracks[src][ch][in];
     if (note.on) {
         if (routed != 0) // the same key again without a release: end the old note first
-            liveNote(LiveNote{note.source, note.channel, note.pitch, 0, false});
+            liveNote(LiveNote{note.source, note.channel, note.pitch, 0, false, note.partChannel});
         livePitch[src][ch][in] = int8_t(liveToKey ? snapshot->key.snap(note.pitch) : note.pitch);
         for (size_t i = 0; i < trackCount; i++) {
             const TrackPlayback& tp = *snapshot->tracks[i];
-            if (tp.busSlot >= 0 && takesInput(tp, note.source, int(ch)))
+            if (tp.busSlot >= 0 && takesInput(tp, note.source, part))
                 routed |= uint64_t(1) << tp.busSlot;
         }
     }
     int8_t pitch = livePitch[src][ch][in];
 
     // The channel a recorded or forwarded note keeps: MIDI's own; CV's poly channels are voices, not parts.
-    uint8_t noteChannel = note.source == LiveSource::Midi ? uint8_t(std::clamp(int(note.channel) + 1, 1, 16)) : 1;
+    uint8_t noteChannel = note.source == LiveSource::Midi ? uint8_t(std::clamp(part + 1, 1, 16)) : 1;
     RecordEvent e;
     e.pitch = pitch;
     e.velocity = note.velocity;
@@ -501,9 +508,9 @@ void Engine::liveNote(const LiveNote& note) {
         TrackState& state = tracks[i];
         // Drum tracks play the incoming note as is: it picks the lane.
         int8_t played = tp.drum ? note.pitch : pitch;
-        uint32_t id = chain::kLiveNote | uint32_t(src << 11 | ch << 7 | in);
+        uint32_t id = liveId(src, ch, in);
         // Armed, monitoring decides; a track that listens without being armed always plays what comes in.
-        bool hear = tp.audible && (tp.armed ? tp.monitor : true);
+        bool hear = hearsInput(tp);
         bool listened = tp.busSlot >= 0 && tp.busSlot < kMaxTracks && hasListeners(tp);
         if (hear) {
             if (note.on && (chainActive(state) || listened)) {
@@ -515,7 +522,7 @@ void Engine::liveNote(const LiveNote& note) {
                 n.id = id;
                 deliver(tp, state, n);
             } else if (note.on) {
-                audition({tp.id.value, played, note.velocity, 0, true});
+                audition({tp.id.value, played, note.velocity, 0, true, id});
             } else {
                 // Whichever way the key went in (the chain may have come or gone since), it ends both ways.
                 if (state.chainInfo)
@@ -528,17 +535,104 @@ void Engine::liveNote(const LiveNote& note) {
         if (!recordingOn || !tp.armed)
             continue;
         RecordEvent r = e;
-        r.track = tp.id.value;
         r.pitch = tp.drum ? note.pitch : pitch;
-        if (tp.slot(state.playing)) {
-            r.slot = state.playing;
-            r.clipStart = state.launchTick;
-            r.clipTick = clipTimeAt(tp, state, playTick);
-        }
-        pushRecord(r);
+        pushTrackRecord(tp, state, r);
     }
     if (!note.on)
         routed = 0;
+}
+
+void Engine::liveValue(const LiveValue& lv) {
+    wakeAll();
+    if (!snapshot)
+        return;
+    size_t src = size_t(lv.source);
+    size_t ch = lv.channel & 15;
+    int part = lv.partChannel >= 0 ? lv.partChannel & 15 : int(ch);
+    RecordEvent e;
+    e.channel = uint8_t(part + 1);
+    e.value = lv.value;
+    if (!lv.perNote) {
+        e.kind = RecordEvent::Kind::ChannelValue;
+        e.control = lv.control;
+        bool bend = lv.control.kind == MidiControl::Kind::PitchBend;
+        // Lanes keep 0..1; pitch bend comes in as -1..1 around the middle.
+        e.value = bend ? (lv.value + 1) / 2 : lv.value;
+        pushRecord(e); // the capture buffer's copy
+        for (size_t i = 0; i < trackCount; i++) {
+            const TrackPlayback& tp = *snapshot->tracks[i];
+            if (tp.busSlot < 0 || !takesInput(tp, lv.source, part))
+                continue;
+            TrackState& state = tracks[i];
+            auto volts = [&](const TrackPlayback::LiveControl& c) { return c.low + e.value * (c.high - c.low); };
+            switch (lv.control.kind) {
+            case MidiControl::Kind::PitchBend:
+                state.liveChannelBend = volts(tp.bendLive);
+                break;
+            case MidiControl::Kind::Pressure:
+                state.liveChannelPress = e.value * 10.f;
+                break;
+            case MidiControl::Kind::Cc: {
+                size_t cc = lv.control.cc & 127;
+                TrackPlayback::LiveControl c = tp.ccLive[cc];
+                if (c.output < 0) {
+                    if (state.liveCcOutput[cc] < 0 && state.liveCcCount < tp.freeAutoCount)
+                        state.liveCcOutput[cc] = tp.freeAuto[size_t(state.liveCcCount++)];
+                    c.output = state.liveCcOutput[cc];
+                }
+                if (c.output >= 0) {
+                    state.liveAuto[size_t(c.output)] = volts(c);
+                    state.liveAutoMask |= uint8_t(1u << c.output);
+                }
+                break;
+            }
+            case MidiControl::Kind::None:
+                break;
+            }
+            state.autoChanges++;
+            if (recordingOn && tp.armed)
+                pushTrackRecord(tp, state, e);
+        }
+        return;
+    }
+    e.kind = RecordEvent::Kind::NoteValue;
+    e.curve = lv.curve;
+    size_t first = lv.pitch < 0 ? 0 : size_t(lv.pitch & 127);
+    size_t last = lv.pitch < 0 ? 127 : first;
+    for (size_t in = first; in <= last; in++) {
+        uint64_t routed = liveTracks[src][ch][in];
+        if (routed == 0)
+            continue;
+        uint32_t id = liveId(src, ch, in);
+        e.pitch = livePitch[src][ch][in];
+        pushRecord(e); // the capture buffer's copy
+        for (size_t i = 0; i < trackCount; i++) {
+            const TrackPlayback& tp = *snapshot->tracks[i];
+            if (tp.busSlot < 0 || !(routed >> tp.busSlot & 1) || tp.drum)
+                continue;
+            TrackState& state = tracks[i];
+            int v = state.voices.find(id);
+            if (v >= 0) {
+                std::array<float, kMaxVoices>& target = lv.curve == NoteCurve::Pitch    ? state.liveBend
+                                                        : lv.curve == NoteCurve::Timbre ? state.liveTimbre
+                                                                                        : state.livePress;
+                target[size_t(v)] = lv.value;
+                state.autoChanges++;
+            }
+            if (recordingOn && tp.armed)
+                pushTrackRecord(tp, state, e);
+        }
+    }
+}
+
+void Engine::pushTrackRecord(const TrackPlayback& tp, const TrackState& state, RecordEvent e) {
+    e.track = tp.id.value;
+    if (tp.slot(state.playing)) {
+        e.slot = state.playing;
+        e.clipStart = state.launchTick;
+        e.clipTick = clipTimeAt(tp, state, playTick);
+    }
+    pushRecord(e);
 }
 
 void Engine::stop() {
@@ -1205,6 +1299,7 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
         return;
     }
     int v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id);
+    clearLiveVoice(state, v);
     if (n.id & chain::kLiveNote) {
         // Held until its key is released, like an audition: clip events leave it alone.
         if (state.audition[size_t(v)] < 0)
@@ -1443,24 +1538,30 @@ void Engine::seekAll() {
         seekTrack(*snapshot->tracks[i], tracks[i]);
 }
 
-const ClipPlayback* Engine::lanesClip(const TrackPlayback& tp, TrackState& state, double song, double play,
-                                      double& clipT) {
-    clipT = NAN;
+int Engine::lanesClips(const TrackPlayback& tp, const TrackState& state, double song, double play,
+                       LaneClips& out) const {
     if (const ClipPlayback* clip = tp.slot(state.playing)) {
-        clipT = clipTimeAt(tp, state, play);
-        return std::isfinite(clipT) ? clip : nullptr;
+        double t = clipTimeAt(tp, state, play);
+        if (!std::isfinite(t))
+            return 0;
+        out[0] = {clip, t};
+        return 1;
     }
-    if (!followsArrangement(state) || tp.arrangementLanes.empty())
-        return nullptr;
-    // Instances are sorted, so the one under the playhead is at or after the last one found.
-    size_t& c = state.instanceCursor;
-    if (c >= tp.arrangementLanes.size() || double(tp.arrangementLanes[c].position) > song)
-        c = 0;
-    while (c + 1 < tp.arrangementLanes.size() && double(tp.arrangementLanes[c].end) <= song)
-        c++;
-    const InstanceLanes& inst = tp.arrangementLanes[c];
-    clipT = inst.clipTime(song);
-    return std::isfinite(clipT) ? inst.clip.get() : nullptr;
+    if (!followsArrangement(state))
+        return 0;
+    // Sorted by position: the clips under the playhead come bottom to top, so a later one (a newer take on top)
+    // overrides the lanes it shares with the ones below.
+    int n = 0;
+    for (const InstanceLanes& inst : tp.arrangementLanes) {
+        if (double(inst.position) > song || n == int(out.size()))
+            break;
+        if (double(inst.end) <= song)
+            continue;
+        double t = inst.clipTime(song);
+        if (std::isfinite(t))
+            out[size_t(n++)] = {inst.clip.get(), t};
+    }
+    return n;
 }
 
 void Engine::advanceKnobLanes() {
@@ -1500,13 +1601,16 @@ void Engine::advanceKnobLanes() {
                 const KnobLanePlayback& lane = tp.knobLanes[k];
                 set(lane.target, evaluateAt(lane.points, song, state.trackKnobCursor[k], lane.rest), false);
             }
-        double clipT;
-        if (const ClipPlayback* clip = lanesClip(tp, state, song, playTick + ahead, clipT))
+        LaneClips clips;
+        int count = lanesClips(tp, state, song, playTick + ahead, clips);
+        for (int i = 0; i < count; i++) {
+            auto [clip, clipT] = clips[size_t(i)];
             for (size_t k = 0; k < clip->knobLanes.size() && k < size_t(kMaxKnobLanes); k++) {
                 const KnobLanePlayback& lane = clip->knobLanes[k];
                 set(lane.target, evaluateAt(lane.points, clipT, state.clipKnobCursor[k], lane.rest),
                     lane.combine == CombineMode::Modulate);
             }
+        }
         knobLanesOn |= state.knobSetCount > 0;
     }
 }
@@ -1514,13 +1618,19 @@ void Engine::advanceKnobLanes() {
 void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
     // Track lanes run along the song in Launcher mode too; in Arranger mode they stop only while the launcher has
     // taken the track over.
-    if (state.autoChannels == 0)
+    if (state.autoChannels == 0 && !tp.voiceLanes) {
+        for (int o : {kPitchLaneSlot, kPressureLaneSlot})
+            if (state.autoVolts[size_t(o)] != 0) {
+                state.autoVolts[size_t(o)] = 0;
+                state.autoChanges++;
+            }
         return;
+    }
     bool trackLanes = mode == PlayMode::Launcher || followsArrangement(state);
-    double clipT;
-    const ClipPlayback* clipLanes = lanesClip(tp, state, songTick, playTick, clipT);
-    std::array<float, kMaxAutomationLanes> target;
-    std::array<bool, kMaxAutomationLanes> have{};
+    LaneClips clips;
+    int clipCount = lanesClips(tp, state, songTick, playTick, clips);
+    std::array<float, kMaxPlayedLanes> target;
+    std::array<bool, kMaxPlayedLanes> have{};
     auto take = [&](const LanePlayback& lane, float value) {
         size_t o = size_t(lane.output);
         have[o] = true;
@@ -1535,15 +1645,19 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
         }
     };
     if (trackLanes)
-        for (size_t k = 0; k < tp.lanes.size() && k < kMaxAutomationLanes; k++)
+        for (size_t k = 0; k < tp.lanes.size() && k < kMaxPlayedLanes; k++)
             take(tp.lanes[k], evaluateAt(tp.lanes[k].points, songTick, state.trackLaneCursor[k], tp.lanes[k].rest));
-    if (clipLanes) {
-        for (size_t k = 0; k < clipLanes->lanes.size() && k < kMaxAutomationLanes; k++) {
+    // Modulate moves around the track lane's value, whatever stacked clips below did.
+    std::array<float, kMaxPlayedLanes> trackTarget = target;
+    std::array<bool, kMaxPlayedLanes> haveTrack = have;
+    for (int i = 0; i < clipCount; i++) {
+        auto [clipLanes, clipT] = clips[size_t(i)];
+        for (size_t k = 0; k < clipLanes->lanes.size() && k < kMaxPlayedLanes; k++) {
             const LanePlayback& lane = clipLanes->lanes[k];
             float v = evaluateAt(lane.points, clipT, state.clipLaneCursor[k], lane.rest);
             size_t o = size_t(lane.output);
-            if (have[o] && lane.combine == CombineMode::Modulate)
-                target[o] = std::clamp(target[o] + v - 0.5f, 0.f, 1.f); // around the track lane's value
+            if (haveTrack[o] && lane.combine == CombineMode::Modulate)
+                target[o] = std::clamp(trackTarget[o] + v - 0.5f, 0.f, 1.f);
             else
                 take(lane, v);
         }
@@ -1569,12 +1683,34 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
             state.autoChanges++;
         state.autoVolts[o] = volts;
     }
+    // Pitch bend and pressure lanes rest at 0 V when nothing plays them, so a clip that ends leaves no bend behind.
+    for (size_t o : {size_t(kPitchLaneSlot), size_t(kPressureLaneSlot)}) {
+        float volts = 0;
+        if (have[o]) {
+            state.autoValue[o] += (target[o] - state.autoValue[o]) * state.slewAlpha[o];
+            volts = state.autoLow[o] + state.autoValue[o] * (state.autoHigh[o] - state.autoLow[o]);
+        }
+        if (volts != state.autoVolts[o])
+            state.autoChanges++;
+        state.autoVolts[o] = volts;
+    }
 }
 
 void Engine::writeAutomation(const TrackPlayback& tp, const TrackState& state, TrackFrame& frame) {
     frame.autoChannels = uint8_t(state.autoChannels);
     for (int o = 0; o < state.autoChannels; o++)
         frame.automation[o] = state.autoVolts[size_t(o)];
+    // A control moving on an armed track plays over its lane, so you hear what you play.
+    if (!playsLiveValues(tp) || state.liveAutoMask == 0)
+        return;
+    for (int o = 0; o < kMaxAutomationLanes; o++) {
+        if (!(state.liveAutoMask >> o & 1))
+            continue;
+        for (int k = frame.autoChannels; k < o; k++)
+            frame.automation[k] = 0;
+        frame.autoChannels = uint8_t(std::max<int>(frame.autoChannels, o + 1));
+        frame.automation[o] = state.liveAuto[size_t(o)];
+    }
 }
 
 void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const {
@@ -1586,6 +1722,7 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
     frame.trackId = track.id.value;
     frame.channels = uint8_t(voices.polyphony());
     writeAutomation(track, state, frame);
+    bool live = playsLiveValues(track);
     for (int v = 0; v < voices.polyphony(); v++) {
         const VoiceAllocator::Voice& voice = voices.voice(v);
         frame.voct[v] = pitchToVolts(voice.pitch);
@@ -1601,6 +1738,18 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
             frame.voct[v] += expressionAt(ex->note.pitchExpr, pos, 0) / 12.f;
             frame.timbre[v] = expressionAt(ex->note.timbreExpr, pos, 0) * 10.f;
             frame.press[v] = expressionAt(ex->note.pressureExpr, pos, 0) * 10.f;
+        }
+        // Lanes played into the voices: pitch bend adds on; pressure shows where it is above the note's own.
+        frame.voct[v] += state.autoVolts[size_t(kPitchLaneSlot)];
+        frame.press[v] = std::max(frame.press[v], state.autoVolts[size_t(kPressureLaneSlot)]);
+        if (live && (voice.id & chain::kLiveNote)) {
+            frame.voct[v] += state.liveBend[size_t(v)] / 12.f;
+            frame.timbre[v] = state.liveTimbre[size_t(v)] * 10.f;
+            frame.press[v] = std::max(frame.press[v], state.livePress[size_t(v)] * 10.f);
+        }
+        if (live) {
+            frame.voct[v] += state.liveChannelBend;
+            frame.press[v] = std::max(frame.press[v], state.liveChannelPress);
         }
     }
 }

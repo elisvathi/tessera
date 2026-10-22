@@ -5,6 +5,7 @@
 
 #include "../src/model/Json.hpp"
 #include "../src/ui/EditorState.hpp"
+#include "../src/ui/interaction/NoteBars.hpp"
 #include "../src/ui/interaction/Shortcuts.hpp"
 
 #include <GLFW/glfw3.h>
@@ -476,4 +477,44 @@ TEST_CASE("a new song forgets the old one's selections and per-track views, and 
     CHECK(s.scaleSnap);
     CHECK(s.panelHp == 80);
     CHECK(s.overlay.headerWidth == 230);
+}
+
+TEST_CASE("TrackAxis: a zoom may leave room past the last track, which scrolling back gives up") {
+    TrackAxis axis;
+    axis.setViewHeight(400);
+    axis.setHeights({100, 100}); // fits: no scrolling
+    axis.scrollByPx(50);
+    CHECK(axis.scroll() == 0);
+    axis.anchorScroll(80);
+    CHECK(axis.scroll() == 80);
+    axis.setHeights({100, 100}); // a rebuild keeps it
+    CHECK(axis.scroll() == 80);
+    axis.scrollByPx(20); // no further down than the zoom left it
+    CHECK(axis.scroll() == 80);
+    axis.scrollByPx(-50);
+    CHECK(axis.scroll() == 30);
+    axis.scrollByPx(50); // given up: back to the normal end
+    CHECK(axis.scroll() == 30);
+    axis.scrollTo(0);
+    axis.scrollByPx(10);
+    CHECK(axis.scroll() == 0);
+}
+
+TEST_CASE("note bars: notes less than a pixel apart on one pitch become one bar") {
+    std::vector<NoteBar> notes = {{60, 0, 0.3f},    {62, 0.2f, 0.4f}, {60, 0.5f, 0.8f},
+                                  {60, 1.0f, 1.2f}, {60, 10, 20},     {62, 30, 31}};
+    std::vector<NoteBar> bars;
+    mergeNoteBars(notes, 1.5f, bars);
+    // Pitch 60: the first three touch (each at least 1.5 px wide); the note at 10 px stands apart.
+    REQUIRE(bars.size() == 4);
+    CHECK(bars[0].pitch == 60);
+    CHECK(bars[0].x0 == doctest::Approx(0));
+    CHECK(bars[0].x1 == doctest::Approx(2.5f));
+    CHECK(bars[1].pitch == 62);
+    CHECK(bars[2].x0 == doctest::Approx(10));
+    CHECK(bars[2].x1 == doctest::Approx(20));
+    CHECK(bars[3].pitch == 62);
+    // Zoomed in, a visible gap keeps notes apart.
+    mergeNoteBars({{60, 0, 10}, {60, 12, 20}}, 1.5f, bars);
+    CHECK(bars.size() == 2);
 }

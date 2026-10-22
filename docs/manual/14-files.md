@@ -97,8 +97,11 @@ There are three ways in. Each is one undo step.
 | **Tessera ▾ → Import MIDI file as tracks…** | A new track for each part, with its clip on the timeline at bar 1 and in its first slot. The file's time signature and tempo are used too. |
 
 - Each MIDI track's channels are its parts. A file with several parts asks which one to import, or all of them as one
-  clip.
+  clip. An MPE part (each note on its own channel) is one part.
 - Channel 10 becomes a drum track, with a lane for each drum sound used (General MIDI names where known, up to 16
   lanes).
 - Notes keep their timing, velocity and release velocity. Clips are whole bars long and loop.
+- Poly aftertouch and MPE come in as each note's **Pressure**, **Timbre** and **Pitch** curves. Pitch bend, channel
+  aftertouch and controllers become clip lanes, as when you record them (see
+  [Expression and controls](11-recording.md#expression-and-controls)).
 - Files timed in SMPTE frames can't be imported.
