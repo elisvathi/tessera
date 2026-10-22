@@ -1106,3 +1106,21 @@ The review sorted every control by how often a producer uses it (artifact "Tesse
 - **Export:** MIDI and DAWproject export gain **Use note channels** (off by default: notes go out on the track's
   channel as before). With MPE on, MPE picks the channels.
 - Saved only when not 1 (`"ch"` in the note's extras), so older patches load unchanged.
+
+## 73. Expression from MIDI input, and one switch to record (22 Oct)
+
+Plan: `docs/design/EXPRESSION_INPUT.md`. Replaces the per-lane arm and the knob/CV "track lanes only" rule of §26.
+
+- **MIDI input reads everything a keyboard sends** (`MidiReader`): poly aftertouch and MPE member channels go to the
+  note's pressure, timbre and pitch curves; pitch bend, channel pressure and CCs are per-channel values. A
+  controller that sends the MPE Configuration Message switches the input to MPE by itself.
+- **Arming the track is the only switch.** Notes, expression, moved CCs and the track's knob and CV lanes all record
+  into one take, where the notes land (launcher clip or timeline), as one undo step. Lanes lose their own arm.
+- **No setup for controls:** bend becomes a "Pitch bend" clip lane added to V/OCT (±2 semitones); channel pressure
+  a "Pressure" lane played on PRESS; any CC moved during the take its own lane on the next free AUTO channel.
+  Untouched controls make no lane.
+- **PRESS plays the larger** of the note's pressure and the channel pressure, so a keyboard that sends both is not
+  doubled. Both stay stored apart.
+- **Rest values:** bend, pressure and sustain return to 0 when no clip lane plays them.
+- **Sustain is only a lane;** it does not lengthen notes.
+- The note pitch curve grows to ±48 semitones (MPE's default). MPE notes record on channel 1.
