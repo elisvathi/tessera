@@ -8,7 +8,7 @@ and its own output module. A song has 1 to 64 tracks.
 - **Instrument tracks** play notes with pitch. Each plays through a **Track Out**. A track can play up to 16 notes
   at once.
 - **Drum tracks** play drum sounds. Each sound is a "lane" with its own trigger output. They play through a
-  **Drum Out**. Drum tracks open in the step grid. See [Drums](09-drums.md).
+  **Drum Out**. Drum tracks open in the drum editor. See [Drums](09-drums.md).
 
 A new song has three instrument tracks and one drum track.
 

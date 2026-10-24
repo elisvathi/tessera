@@ -24,7 +24,7 @@ class Inspector : public InteractiveView {
   public:
     explicit Inspector(EditorContext& ctx) : InteractiveView(ctx) {}
 
-    /// The editor whose selection the inspector edits: the piano roll or the drum step grid, whichever shows.
+    /// The editor whose selection the inspector edits: the piano roll (also the drum editor).
     std::function<NoteTarget*()> target;
 
     void step() override;

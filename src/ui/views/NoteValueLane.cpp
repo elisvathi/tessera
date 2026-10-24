@@ -202,7 +202,17 @@ float NoteValueLane::baseY() const {
 
 IdSet NoteValueLane::editable() {
     IdSet selected = owner.selectedIds();
-    return selected.empty() ? edits::idsOf(owner.committedNotes()) : selected;
+    if (!selected.empty())
+        return selected;
+    // A drum track's hits line up across lanes, so the lane shows the lane last clicked; the others are faded.
+    if (owner.drumMode() && owner.laneOf(owner.focusPitch)) {
+        IdSet lane;
+        for (const Note& n : owner.committedNotes())
+            if (n.pitch == owner.focusPitch)
+                lane.insert(n.id);
+        return lane;
+    }
+    return edits::idsOf(owner.committedNotes());
 }
 
 NoteId NoteValueLane::stemAt(Vec pos) {
@@ -269,6 +279,7 @@ void NoteValueLane::drawView(const DrawArgs& args) {
     const Track* track = owner.track();
     uint32_t base = track ? track->color : 0x9AA1AB;
     IdSet selected = owner.selectedIds();
+    IdSet allowed = editable();
     const NoteList& notes = owner.notes();
     auto stems = stemPositions(notes);
     float bottom = baseY();
@@ -283,7 +294,7 @@ void NoteValueLane::drawView(const DrawArgs& args) {
         if (x < -kHandle || x > box.size.x + kHandle)
             continue;
         const Note& n = notes[i];
-        bool editableNote = selected.empty() || selected.count(n.id);
+        bool editableNote = allowed.count(n.id) > 0;
         NVGcolor full = theme::track(channelColor(base, n.channel));
         NVGcolor color = editableNote ? full : nvgTransRGBAf(full, 0.3f);
         if (selected.count(n.id))

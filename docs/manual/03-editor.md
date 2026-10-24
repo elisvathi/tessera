@@ -31,8 +31,8 @@ There is also a smaller editor inside the panel itself. See [The editor inside t
    [Automation](12-automation.md).
 8. **Notes header.** The clip's name and length, the **Devices** button, the tool switch, **Snap**, the key, the
    **Notes ▾** and **View ▾** menus, the speaker (hear notes while editing) and the maximize button.
-9. **Piano roll.** The notes of the selected clip. Drum tracks show the step grid here instead. See
-   [The piano roll](07-piano-roll.md) and [Drums](09-drums.md).
+9. **Piano roll.** The notes of the selected clip. On a drum track it is the drum editor, with lanes instead of
+   keys. See [The piano roll](07-piano-roll.md) and [Drums](09-drums.md).
 10. **Lower lane.** Velocity by default. Click its name ("Velocity ▾") to show another value or curve.
 11. **Inspector.** Settings of the selected notes, track and clip. Press **I** to show or hide it.
 

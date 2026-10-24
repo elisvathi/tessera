@@ -1,7 +1,7 @@
 # Tessera user manual
 
 Tessera is a sequencer for [VCV Rack 2](https://vcvrack.com). It brings the tools of a music program (a "DAW",
-a "digital audio workstation") into your rack: a piano roll, a drum step editor, clips you can launch, a
+a "digital audio workstation") into your rack: a piano roll, a drum editor, clips you can launch, a
 timeline, automation and note effects. It plays your music as voltages (CV and gates) that drive any module in the
 patch.
 
@@ -17,7 +17,7 @@ patch.
 6. [The timeline](06-timeline.md): arranging clips into a song.
 7. [The piano roll](07-piano-roll.md): drawing and editing notes.
 8. [Shaping notes](08-shaping-notes.md): the inspector, chance and repeats, bends, transforms, MIDI channels.
-9. [Drums](09-drums.md): the step grid, drum lanes, kits and the Drum Out module.
+9. [Drums](09-drums.md): the drum editor, drum lanes, kits and the Drum Out module.
 10. [Keys, scales and chords](10-scales-and-chords.md): keeping notes in a key and drawing chords.
 11. [Recording](11-recording.md): playing notes in from MIDI, CV or your computer keyboard.
 12. [Automation](12-automation.md): curves that move voltages and knobs over time.

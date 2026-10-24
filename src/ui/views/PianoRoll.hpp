@@ -19,13 +19,15 @@ namespace tessera {
 
 class NoteGrid;
 class PianoKeyboard;
+class DrumLaneHeaders;
 class NoteValueLane;
 class ExpressionLane;
 class ClipLaneView;
 class ToolButton;
 class LaneTabs;
 
-/// The detail pane: the piano roll for the selected track's clip (EDITOR_UX §4).
+/// The detail pane: the piano roll for the selected track's clip (EDITOR_UX §4). On a drum track it is the drum
+/// editor (EDITOR_UX §5): lane headers stand in for the keys, one row per lane in the lanes' order.
 ///
 /// It owns what the grid, keyboard and velocity lane share: the axes, the live preview of a running gesture,
 /// and the editing API that gestures and keyboard commands use (selection, commit, audition, snap).
@@ -54,6 +56,9 @@ class PianoRollView : public EditorPane, public NoteTarget {
     /// The last press was in the lower curve lane, so Delete acts on points picked there.
     bool curveLaneFocus = false;
     std::vector<expr::PointRef> curvePoints;
+    /// Drum tracks: the lane (by its note) last clicked, whose hits the velocity lane edits. -1 for every lane.
+    /// Session only.
+    int focusPitch = -1;
     bool pointPicked(NoteId note, expr::Curve curve, const ExprPoint& p) const;
 
     EditorContext& context() { return ctx; }
@@ -62,6 +67,10 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// The track whose clip is shown (the selected track), or nullptr.
     const Track* track();
+    /// The selected track is a drum track: lane rows, lane headers and hits drawn as steps.
+    bool drumMode();
+    /// The selected drum track's lane that plays `pitchValue`, or nullptr.
+    const DrumLane* laneOf(int pitchValue);
     /// The clip being edited, or nullptr when the track has none.
     const Clip* clip() override;
     ClipId clipId() const { return source.clip; }
@@ -88,6 +97,9 @@ class PianoRollView : public EditorPane, public NoteTarget {
                 std::optional<edits::IdSet> selectAfter = std::nullopt) override;
     /// The grid step for snapping at the current zoom (0 when snapping is off).
     Tick snapStep();
+    /// The step a hit drawn on the row of `pitchValue` snaps to: with adaptive snap on a drum track, the lane's own
+    /// step (a lane in 1/8 triplets draws triplets at any zoom); otherwise snapStep().
+    Tick drawStep(int pitchValue);
     NoteId newNoteId();
     /// The channel new notes get: the selected notes' channel when they share one (so after setting a selection
     /// to channel 2, drawing goes on in channel 2), else the channel of the last note touched.
@@ -137,10 +149,10 @@ class PianoRollView : public EditorPane, public NoteTarget {
     /// What the lower lane shows; `withNoteLanes` false lists only the clip's automation lanes (the last tab).
     void openLowerMenu(bool withNoteLanes = true);
     void openAutomationMenu() { openLowerMenu(false); }
-    /// Folds the pitch axis to the key's rows (or a drum track's lanes) when fold is on.
+    /// Folds the pitch axis to the key's rows when fold is on; a drum track always shows its lanes.
     void updateRows();
     void drawHeader(NVGcontext* vg);
-    /// The View menu's items: ghost notes, note badges, hearing notes, follow (and fold for drum tracks).
+    /// The View menu's items: ghost notes, note badges, hearing notes, follow.
     void appendViewItems(rack::ui::Menu* menu);
     /// Places the header's chips and buttons. Returns true when it had to use the short forms.
     bool layoutToolbar(float header);
@@ -153,6 +165,7 @@ class PianoRollView : public EditorPane, public NoteTarget {
     void cycleSelection(Action action);
 
     PianoKeyboard* keys;
+    DrumLaneHeaders* lanes; // shown instead of the keys on drum tracks
     Ruler* ruler;
     NoteGrid* grid;
     NoteValueLane* values;
@@ -162,12 +175,12 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ToolButton* clipChip;    // "BASS · Verse · 8 bars ▾": the clip's menu (rename, length, loop, files)
     ToolSwitch tools;
     ToolButton* snapButton;
-    ToolButton* keyButton; // the key, with its highlight, snap and fold switches under the picker
-    std::pair<ToolButton*, ToolButton*> drumSwitch; // drum tracks: steps / piano roll
-    ToolButton* notesButton;                        // the transforms menu
-    ToolButton* viewButton;                         // ghost notes, note badges, hearing notes, follow
-    ToolButton* overflowButton;                     // a narrow header: Notes and View in one "⋯"
-    ToolButton* hearButton;                         // hear notes while editing: on screen, since it is switched often
+    ToolButton* keyButton;      // the key, with its highlight, snap and fold switches under the picker
+    ToolButton* kitButton;      // drum tracks, where the key button is: kit presets and lanes
+    ToolButton* notesButton;    // the transforms menu
+    ToolButton* viewButton;     // ghost notes, note badges, hearing notes, follow
+    ToolButton* overflowButton; // a narrow header: Notes and View in one "⋯"
+    ToolButton* hearButton;     // hear notes while editing: on screen, since it is switched often
     ToolButton* maximizeButton;
     ToolButton* devicesToggle;
     float toolbarLeft = 0;
@@ -180,10 +193,12 @@ class PianoRollView : public EditorPane, public NoteTarget {
     std::optional<edits::NoteList> preview;
     bool restored = false;
     ClipId shownClip;
+    bool shownDrum = false;
     double lastStep = 0;
 
     friend class NoteGrid;
     friend class NoteValueLane;
+    friend class DrumLaneHeaders;
 };
 
 /// "C4", "F#2": MIDI note names with C4 = 60.

@@ -8,7 +8,7 @@
 #include <vector>
 
 /// Drum tracks (DESIGN.md §9): lane presets, where a lane's pattern lives in a clip, and the pattern tools of
-/// the step grid. Pure, so it is unit tested.
+/// the drum editor. Pure, so it is unit tested.
 namespace tessera {
 
 constexpr int kMaxChokeGroups = 8;

@@ -51,7 +51,7 @@ visible, so folding never hides a note. **Ctrl+Shift+F** turns it on and off.
 
 ![Fold on: only the rows of A minor are shown](images/scale-fold.png)
 
-On a drum track's piano roll, Fold shows one named row per drum lane.
+A drum track has no key. Its editor always shows one named row per lane (see [Drums](09-drums.md)).
 
 ## Fixing notes outside the key
 

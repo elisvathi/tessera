@@ -512,7 +512,6 @@ void showLane(EditorContext& ctx, LaneOwner owner, AutomationId lane) {
     if (track.valid())
         ctx.state().selectedTrack = track;
     ctx.state().selectedClip = owner.clip;
-    ctx.view().drumSteps = false; // clip lanes show under the piano roll
     ctx.view().lowerLane = lane.value;
 }
 

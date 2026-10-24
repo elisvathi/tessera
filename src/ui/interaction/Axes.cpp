@@ -139,20 +139,42 @@ void PitchAxis::setShownPitches(const std::vector<int>& pitches) {
     for (int p = kRows - 1; p >= 0; p--)
         if (on[size_t(p)])
             rows.push_back(p);
+    setRows(rows);
+}
+
+void PitchAxis::setRows(const std::vector<int>& topToBottom) {
+    std::vector<int> rows;
+    std::vector<bool> seen(kRows, false);
+    for (int p : topToBottom)
+        if (p >= 0 && p < kRows && !seen[size_t(p)]) {
+            seen[size_t(p)] = true;
+            rows.push_back(p);
+        }
+    if (rows.empty())
+        for (int p = kRows - 1; p >= 0; p--)
+            rows.push_back(p);
     if (rows == rowPitch)
         return;
 
     int centre = rowPitch.empty() ? -1 : yToPitch(height / 2);
     double centreOffset = rowPitch.empty() ? 0 : topRow + height / 2 / row - rowOf(centre);
     rowPitch = std::move(rows);
+    std::vector<int> rowOfShown(kRows, -1);
+    for (size_t r = 0; r < rowPitch.size(); r++)
+        rowOfShown[size_t(rowPitch[r])] = int(r);
     rowForPitch.assign(kRows, 0);
-    // Each pitch takes the row of the nearest shown pitch at or below it, or the bottom row's above it.
-    int r = int(rowPitch.size()) - 1;
+    // Each pitch takes the row of the nearest shown pitch at or below it, or the lowest shown pitch's above it.
+    int below = -1;
     for (int p = 0; p < kRows; p++) {
-        while (r > 0 && rowPitch[size_t(r - 1)] <= p)
-            r--;
-        rowForPitch[size_t(p)] = r;
+        if (rowOfShown[size_t(p)] >= 0)
+            below = p;
+        rowForPitch[size_t(p)] = below >= 0 ? rowOfShown[size_t(below)] : -1;
     }
+    int lowest = 0;
+    while (rowOfShown[size_t(lowest)] < 0)
+        lowest++;
+    for (int p = 0; p < lowest; p++)
+        rowForPitch[size_t(p)] = rowOfShown[size_t(lowest)];
     if (centre >= 0)
         topRow = rowOf(centre) + centreOffset - height / 2 / row;
     clamp();
@@ -223,6 +245,15 @@ void PitchAxis::showPitches(int low, int high, double minRow) {
     clamp();
 }
 
+void PitchAxis::showRowsFromTop(int first, int last, double minRow) {
+    if (last < first)
+        std::swap(first, last);
+    double count = last - first + 1;
+    row = std::clamp(height / (count + footer), std::clamp(minRow, kMinRow, kMaxRow), kMaxRow);
+    topRow = first;
+    clamp();
+}
+
 void PitchAxis::restore(State s) {
     if (s.rowHeight > 0)
         row = s.rowHeight;
@@ -232,7 +263,7 @@ void PitchAxis::restore(State s) {
 
 void PitchAxis::clamp() {
     row = std::clamp(row, kMinRow, kMaxRow);
-    double maxTop = std::max(0.0, rowCount() - height / row);
+    double maxTop = std::max(0.0, rowCount() + footer - height / row);
     topRow = std::clamp(topRow, 0.0, maxTop);
 }
 

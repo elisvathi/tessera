@@ -288,16 +288,19 @@ Menu: `Notes` in the toolbar's `⋯`, and the right-click menu on selected notes
 
 ## 5. Drum editor specifics
 
-Uses everything above, with lane rows instead of pitch rows (DESIGN.md §9). Additions:
+The drum editor is the piano roll of a drum track (docs/DECISIONS.md §81): everything above applies, with lane rows
+instead of pitch rows (DESIGN.md §9). Differences:
 
-- Step-grid view and free-grid view toggle (`G`).
-- Tools in the step grid: Pointer, Draw, Erase, Mute, Velocity (Paint and Slice act as Draw). Pointer: click an
-  empty step to turn it on, click a step to select it, drag from empty space to select a box, drag selected steps
-  to move them by steps and lanes (Ctrl/Cmd copies). The inspector and the step menu edit the selection, operators
-  included (docs/DECISIONS.md §37).
-- Lane header: name, color, mute, solo, audition (click), per-lane step count / rate, per-lane swing, choke group.
-- Velocity is shown as step fill height; Alt+drag vertically on a step changes it. A velocity lane under the grid shows the steps of the lane last clicked; drag across it to set them.
-- Repeats on a step draw as subdivided cells; the repeat count can be scrolled with the mouse wheel while hovering a step (Alt+wheel).
+- Lane headers replace the keys: color, name, output, mute, solo, then "+ Add lane". Click a name to audition the
+  lane (and show its hits in the velocity lane), Ctrl/Cmd+click to select its hits, double-click to rename,
+  right-click for the lane menu. Rows keep the lanes' order; notes on no lane get a "(no lane)" row below.
+- Draw (and Paint): click an empty step to add a hit one lane step long, click a hit to remove it, drag to paint or
+  remove along the path. Alt+drag a hit sets its velocity. With adaptive snap, hits use the lane's own rate.
+- A hit is drawn as a step cell filled to its velocity. Muted and solo-silenced lanes are dimmed.
+- Lanes with their own loop (polymeter) show a line where it ends, then faded repeats until the clip loop ends.
+- The velocity lane edits the lane last clicked when nothing is selected; the others are faded.
+- The header has Kit where the key chip is. The note menu adds the hit operators (velocity, chance, repeats,
+  occurrence, recurrence).
 - Lane operations in the header's menu: rotate, reverse, Euclidean, randomize (density, velocity range, seed), clear, copy/paste lane.
 
 ---

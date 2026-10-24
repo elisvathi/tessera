@@ -27,6 +27,9 @@ std::unique_ptr<DragGesture> resize(PianoRollView& view, rack::math::Vec press, 
 std::unique_ptr<DragGesture> draw(PianoRollView& view, rack::math::Vec press);
 /// Paint tool: one note per grid step along the path, following the mouse pitch (Shift: keep the pitch).
 std::unique_ptr<DragGesture> paint(PianoRollView& view, rack::math::Vec press);
+/// Draw (and Paint) on a drum track: a hit, one step of the lane long, on every step the pointer passes on a
+/// lane's row (Alt: off the grid). Steps that have a hit keep it.
+std::unique_ptr<DragGesture> hits(PianoRollView& view, rack::math::Vec press);
 /// Erase tool (and right-drag with Draw): deletes every note the pointer passes over.
 std::unique_ptr<DragGesture> erase(PianoRollView& view, rack::math::Vec press);
 /// Mute tool: toggles mute on every note the pointer passes over.
