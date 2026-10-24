@@ -296,7 +296,8 @@ instead of pitch rows (DESIGN.md §9). Differences:
   right-click for the lane menu. Rows keep the lanes' order; notes on no lane get a "(no lane)" row below.
 - Draw (and Paint): click an empty step to add a hit one lane step long, click a hit to remove it, drag to paint or
   remove along the path. Alt+drag a hit sets its velocity. With adaptive snap, hits use the lane's own rate.
-- A hit is drawn as a step cell filled to its velocity. Muted and solo-silenced lanes are dimmed.
+- Every step of a lane is drawn as a cell at the lane's rate, beats shaded in turn, bar lines in the gaps (beat bands
+  when cells would be under 5 px). A hit fills its cell to its velocity. Muted and solo-silenced lanes are dimmed.
 - Lanes with their own loop (polymeter) show a line where it ends, then faded repeats until the clip loop ends.
 - The velocity lane edits the lane last clicked when nothing is selected; the others are faded.
 - The header has Kit where the key chip is. The note menu adds the hit operators (velocity, chance, repeats,

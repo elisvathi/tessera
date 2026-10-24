@@ -8,8 +8,10 @@ lanes on the left instead of the keys.
 
 ## The drum editor
 
-- Each row is a lane, in the lanes' own order. Each hit is a note on that lane.
-- A hit is filled from the bottom: the higher the fill, the louder the velocity.
+- Each row is a lane, in the lanes' own order. Each cell is a step of the lane, 16 to a bar by default. Beats are
+  shaded light and dark in turn, so you can count them at a glance.
+- A hit sits in its step, filled from the bottom: the higher the fill, the louder the velocity.
+- Zoomed far out, the steps are too small for cells and the beats show as bands.
 - The lane header shows the lane's name, its output ("→1"), and **M** (mute) and **S** (solo). Muted lanes are dimmed.
 - **Click a lane's name** to hear it. **Ctrl+click** it to select all its hits.
 - Under the grid, the velocity lane shows the hits of the lane you clicked last. The other lanes' hits are faded.

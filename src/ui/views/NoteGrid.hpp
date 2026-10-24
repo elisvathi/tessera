@@ -76,6 +76,8 @@ class NoteGrid : public TimelineView {
     void openSliceMenu(NoteId id);
 
     void paintGrid(NVGcontext* vg, rack::math::Vec size);
+    /// A drum track's grid: every step of each lane as a cell, beats shaded in turn, bar lines in the gaps.
+    void paintDrumSteps(NVGcontext* vg, rack::math::Vec size);
     void drawNotes(NVGcontext* vg);
     /// Ghost notes: one other note, drawn as an outline, with where it lives.
     struct Ghost {

@@ -1229,6 +1229,8 @@ Refines §78.
   lanes' order. It zooms and scrolls like the piano roll, past the end of the clip.
 - **Drawing past the end grows the clip** to the end of that bar (the rule of §70), so a pattern gets longer by
   drawing into it.
+- **It still looks like a step sequencer:** every step of each lane is a cell, beats shaded in turn, with a gap around
+  each cell, as the step grid had (zoomed far out, beat bands).
 - **Draw keeps the step feel:** a click toggles a hit, a drag paints hits along the path, a press on a hit removes
   the hits passed. Hits are one lane step long. With adaptive snap they land on the lane's own rate; a fixed snap
   draws finer.
