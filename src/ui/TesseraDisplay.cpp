@@ -85,7 +85,7 @@ void TesseraDisplay::refresh() {
                 if (!clip || dashes > kMaxNoteDashes)
                     continue;
                 played.clear();
-                renderInstance(*clip, a, played);
+                renderInstance(*clip, a, played, 0, 1, t.type == TrackType::Drum ? &t.drumLanes : nullptr);
                 for (const TimedNote& n : played) {
                     lane.notes.push_back({n.start, n.end, n.pitch});
                     lane.low = std::min(lane.low, int(n.pitch));
@@ -127,22 +127,47 @@ void TesseraDisplay::refresh() {
         }
         return;
     }
-    if (roll.clip == clip->id)
+    // A lane cycle shows a clip length of it at a time, the page the playhead is on, as the editor shows its bars.
+    const std::vector<DrumLane>* drumLanes = track->type == TrackType::Drum ? &track->drumLanes : nullptr;
+    ClipSpan span = clipSpan(*clip, drumLanes);
+    int64_t page = 0;
+    if (span.cycles()) {
+        double now = roll.clip == clip->id ? clipPlayhead() : NAN;
+        if (std::isfinite(now))
+            page = int64_t(std::floor((now - double(span.start)) / double(span.pattern)));
+    }
+    if (roll.clip == clip->id && roll.page == page)
         return;
     roll = Roll();
     roll.clip = clip->id;
     roll.track = track->id;
     roll.color = track->color;
     roll.title = track->name + " · " + clip->name;
-    roll.start = clip->playStart();
-    roll.end = std::max(clip->playEnd(), roll.start + ticksPerBar(s.timeSig));
+    roll.page = page;
     int low = 127, high = 0;
-    for (const Note& n : clip->notes) {
-        if (n.muted)
-            continue;
-        roll.notes.push_back({n.start, n.end(), n.pitch});
-        low = std::min(low, int(n.pitch));
-        high = std::max(high, int(n.pitch));
+    auto add = [&](Tick start, Tick end, int pitch) {
+        roll.notes.push_back({start, end, pitch});
+        low = std::min(low, pitch);
+        high = std::max(high, pitch);
+    };
+    if (span.cycles()) {
+        roll.start = span.start + Tick(page) * span.pattern;
+        roll.end = roll.start + span.pattern;
+        // The page as the clip plays it: one timeline pass over just that stretch of the cycle.
+        ArrangerClip window;
+        window.position = roll.start;
+        window.offset = roll.start;
+        window.length = span.pattern;
+        std::vector<TimedNote> played;
+        renderInstance(*clip, window, played, 0, 1, drumLanes);
+        for (const TimedNote& n : played)
+            add(n.start, n.end, n.pitch);
+    } else {
+        roll.start = clip->playStart();
+        roll.end = std::max(clip->playEnd(), roll.start + ticksPerBar(s.timeSig));
+        for (const Note& n : clip->notes)
+            if (!n.muted)
+                add(n.start, n.end(), n.pitch);
     }
     if (low > high)
         low = high = 60;
@@ -167,7 +192,8 @@ double TesseraDisplay::clipPlayhead() const {
     const Clip* clip = a && a->clip == roll.clip ? s.findClip(a->clip) : nullptr;
     if (!clip)
         return NAN;
-    std::optional<double> t = clipTimeAt(*clip, *a, module->playheadTicks());
+    std::optional<double> t =
+        clipTimeAt(*clip, *a, module->playheadTicks(), track->type == TrackType::Drum ? &track->drumLanes : nullptr);
     return t ? *t : NAN;
 }
 

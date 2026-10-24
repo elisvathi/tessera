@@ -97,7 +97,8 @@ class NoteGrid : public TimelineView {
     /// Opened from a timeline clip: the loop's repeats, faded, up to where that clip stops, and a line there.
     void drawTimelineRepeats(NVGcontext* vg);
     /// Drum lanes with a loop of their own (polymeter): where it ends on the lane's row, and its repeats, faded,
-    /// until the clip ends (its loop end when it loops).
+    /// until the clip ends (the end of its lane cycle when it loops). In a lane cycle the other rows repeat the
+    /// clip's own loop the same way.
     void drawLaneLoops(NVGcontext* vg);
     /// Rows of muted lanes (or lanes left out by a solo) are dimmed, as their headers are.
     void dimSilentLanes(NVGcontext* vg);

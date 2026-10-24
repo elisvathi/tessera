@@ -997,7 +997,7 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
     Rect body(r.pos.x, r.pos.y + strip, r.size.x, r.size.y - strip);
     if (clip) {
         // Loop seams: a notch and a faint line where the content starts over.
-        for (Tick seam : loopSeams(*clip, a)) {
+        for (Tick seam : loopSeams(*clip, a, track.type == TrackType::Drum ? &track.drumLanes : nullptr)) {
             float x = float(time().tickToX(double(seam)));
             nvgBeginPath(vg);
             nvgMoveTo(vg, x - kSeamNotch, body.pos.y);

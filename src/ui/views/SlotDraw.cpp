@@ -1,5 +1,7 @@
 #include "SlotDraw.hpp"
 
+#include "../../model/Arrangement.hpp"
+#include "../../model/DrumKit.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
@@ -55,9 +57,11 @@ void drawRing(NVGcontext* vg, Vec c, float radius, float progress, NVGcolor colo
     nvgStroke(vg);
 }
 
-/// The clip's notes in miniature, behind its name.
-void drawNotePreview(NVGcontext* vg, const Clip& clip, Rect r, NVGcolor color) {
-    Tick length = clip.playEnd();
+/// The clip's notes in miniature, behind its name. With a drum track's `lanes` a looping clip shows its whole lane
+/// cycle, each lane repeating as it plays.
+void drawNotePreview(NVGcontext* vg, const Clip& clip, const std::vector<DrumLane>* lanes, Rect r, NVGcolor color) {
+    ClipSpan span = clipSpan(clip, lanes);
+    Tick length = span.cycles() ? span.end : clip.playEnd();
     if (clip.notes.empty() || length <= 0)
         return;
     int lo = 127, hi = 0;
@@ -67,16 +71,37 @@ void drawNotePreview(NVGcontext* vg, const Clip& clip, Rect r, NVGcolor color) {
         hi = std::max<int>(hi, clip.notes[i].pitch);
     }
     float rowH = std::min(3.f, r.size.y / float(hi - lo + 1));
-    float span = rowH * float(hi - lo + 1);
-    float top = r.pos.y + (r.size.y - span) / 2;
+    float height = rowH * float(hi - lo + 1);
+    float top = r.pos.y + (r.size.y - height) / 2;
+    float perTick = r.size.x / float(length);
+    auto bar = [&](int pitch, Tick from, Tick to) {
+        float x0 = r.pos.x + perTick * float(from);
+        float x1 = r.pos.x + perTick * float(std::min(to, length));
+        nvgRect(vg, x0, top + float(hi - pitch) * rowH, std::max(1.f, x1 - x0), std::max(1.f, rowH - 0.5f));
+    };
     nvgBeginPath(vg);
     for (size_t i = 0; i < clip.notes.size(); i += stride) {
         const Note& n = clip.notes[i];
         if (n.start >= length)
             continue;
-        float x0 = r.pos.x + r.size.x * float(n.start) / float(length);
-        float x1 = r.pos.x + r.size.x * float(std::min(n.start + n.length, length)) / float(length);
-        nvgRect(vg, x0, top + float(hi - n.pitch) * rowH, std::max(1.f, x1 - x0), std::max(1.f, rowH - 0.5f));
+        if (!span.cycles()) {
+            bar(n.pitch, n.start, n.start + n.length);
+            continue;
+        }
+        int lane = laneOfPitch(*lanes, n.pitch);
+        LaneRegion region = lane >= 0 && hasOwnLoop((*lanes)[size_t(lane)], clip)
+                                ? laneRegion((*lanes)[size_t(lane)], clip)
+                                : LaneRegion{span.start, span.pattern};
+        if (n.start < region.start || n.start >= region.start + region.length)
+            continue;
+        Tick end = std::min(n.end(), region.start + region.length);
+        // Repeats closer than a couple of pixels read as one band, so a long cycle draws no more than fits.
+        if (perTick * float(region.length) < 2) {
+            bar(n.pitch, n.start, length);
+            continue;
+        }
+        for (Tick shift = 0; n.start + shift < length; shift += region.length)
+            bar(n.pitch, n.start + shift, end + shift);
     }
     nvgFillColor(vg, color);
     nvgFill(vg);
@@ -146,7 +171,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     // The notes in miniature, in the room the name leaves.
     float previewLeft = body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
     if (body.getRight() - previewLeft >= kMinPreviewWidth)
-        drawNotePreview(vg, *clip,
+        drawNotePreview(vg, *clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr,
                         Rect(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6),
                         nvgTransRGBAf(c.onTile, kPreviewAlpha));
     nvgRestore(vg);
@@ -160,8 +185,9 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
         triangle = c.play;
     drawTriangle(vg, center, 7, triangle);
     if (playing && std::isfinite(status->position)) {
-        Tick start = clip->playStart();
-        Tick end = clip->playEnd();
+        ClipSpan span = clipSpan(*clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr);
+        Tick start = span.looping ? span.start : clip->playStart();
+        Tick end = span.looping ? span.end : clip->playEnd();
         float progress = end > start ? float((status->position - double(start)) / double(end - start)) : 0;
         NVGcolor ring = stopQueued ? (blinkOn() ? c.queue : c.play) : c.play;
         drawRing(vg, center, launch.size.y * 0.5f - 2.5f, progress, ring);

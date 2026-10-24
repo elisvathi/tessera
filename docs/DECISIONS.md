@@ -1253,3 +1253,22 @@ Refines §78.
 - **Across the clip's loop the lane keeps counting** (unchanged): it drifts against the bar and comes back in line,
   with no seam.
 
+
+## 83. A looping clip loops its whole lane cycle (24 Oct)
+
+- **The loop is the lane cycle.** When a looping clip's drum track has a lane with its own length, the clip loops
+  for the least common multiple of its loop and every such lane's length: the shortest stretch after which all the
+  lanes start together again. A 1-bar clip with a 3-step lane loops 3 bars. So every pass plays the same, and the
+  editor, the clip previews and the playhead show exactly what plays. Before, the lanes kept counting across a
+  1-bar loop, so each pass sounded different from the one bar the editor showed.
+- **The clip's length stays what was set.** Inside the cycle, the lanes that follow the clip and notes on no lane
+  repeat on it, and so does the clip's automation. The clip chip and its length menu still show and set it.
+- **The cycle is worked out, never saved.** The clip keeps its own loop; the cycle comes from it and the lane
+  lengths each time. Undo needs nothing new, old patches play as they did, and setting every lane back to "Follow
+  the clip" brings the old loop back.
+- **The loop can't be moved or resized while it is a cycle.** The ruler draws it as an outline with a tooltip,
+  and dragging it or "Loop to selection" does nothing. Turning the loop off still works.
+- **No limit and no warning on long cycles, and nothing is stretched to fit.** The editor keeps its zoom; the
+  repeats and the loop end are there when you scroll or play to them. Lanes of 3, 5 and 7 steps in a 1-bar clip
+  loop 105 bars. Playback and drawing only visit the part that plays or shows, so a long cycle costs nothing extra.
+  The panel's mini piano roll shows one clip length of the cycle at a time, the page the playhead is on.

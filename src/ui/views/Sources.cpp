@@ -101,6 +101,11 @@ void ArrangerSource::addMarker(Tick position) {
 
 const Clip* ClipSource::current() { return ctx.module()->song().findClip(clip); }
 
+const std::vector<DrumLane>* ClipSource::lanes() {
+    const Track* t = ctx.module()->song().findTrack(track);
+    return t && t->type == TrackType::Drum ? &t->drumLanes : nullptr;
+}
+
 TimeSig ClipSource::timeSig() { return ctx.module()->song().timeSig; }
 
 double ClipSource::contentEnd() {
@@ -108,7 +113,7 @@ double ClipSource::contentEnd() {
     Tick bar = ticksPerBar(timeSig());
     if (!c)
         return double(4 * bar);
-    Tick end = std::max(c->length, c->loopEnd);
+    Tick end = std::max(c->length, loopEnd());
     for (const Note& n : c->notes)
         end = std::max(end, n.end());
     // Opened from a timeline clip: far enough to see where it stops.
@@ -125,7 +130,9 @@ Tick ClipSource::loopStart() {
 
 Tick ClipSource::loopEnd() {
     const Clip* c = current();
-    return c ? c->loopEnd : ticksPerBar(timeSig());
+    if (!c)
+        return ticksPerBar(timeSig());
+    return loopLocked() ? clipSpan(*c, lanes()).end : c->loopEnd;
 }
 
 bool ClipSource::loopOn() {
@@ -133,10 +140,15 @@ bool ClipSource::loopOn() {
     return c && c->loopMode == LoopMode::Loop;
 }
 
+bool ClipSource::loopLocked() {
+    const Clip* c = current();
+    return c && clipSpan(*c, lanes()).cycles();
+}
+
 void ClipSource::setLoop(Tick start, Tick end) {
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
-    if (!current())
+    if (!current() || loopLocked())
         return;
     m->perform(setLoopCommand(setClipField(song, clip, &Clip::loopStart, start, "Set clip loop start"),
                               setClipField(song, clip, &Clip::loopEnd, end, "Set clip loop end"), "Set clip loop"));
@@ -164,7 +176,7 @@ double ClipSource::playhead() {
     if (m->playMode() == PlayMode::Arranger && !status.overridden) {
         double song = m->playheadTicks();
         if (const ArrangerClip* a = instanceAt(*t, Tick(song)); a && a->clip == clip)
-            if (std::optional<double> u = clipTimeAt(*current(), *a, song))
+            if (std::optional<double> u = clipTimeAt(*current(), *a, song, lanes()))
                 return *u;
     }
     return NAN;
@@ -218,13 +230,15 @@ void ClipSource::seek(double tick, bool play) {
         e.index = slot;
         e.immediate = true;
         e.start = play;
-        e.clipTime =
-            std::clamp(tick, double(c->playStart()), std::max(double(c->playStart()), double(c->playEnd()) - 1));
+        ClipSpan span = clipSpan(*c, lanes());
+        Tick start = span.looping ? span.start : 0;
+        Tick end = span.looping ? span.end : c->playEnd();
+        e.clipTime = std::clamp(tick, double(start), std::max(double(start), double(end) - 1));
         m->launch(e);
         return;
     }
     if (const ArrangerClip* a = seekInstance())
-        if (std::optional<double> song = songTickAt(*c, *a, tick, m->playheadTicks())) {
+        if (std::optional<double> song = songTickAt(*c, *a, tick, m->playheadTicks(), lanes())) {
             m->requestSeek(*song);
             if (play)
                 m->requestTransport(kRequestPlay);

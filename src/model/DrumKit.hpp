@@ -35,6 +35,10 @@ bool hasOwnLoop(const DrumLane& lane, const Clip& clip);
 /// Where a clip that doesn't loop ends for its lanes with their own loop: its length, or its last note when that is
 /// later. They repeat until there, so a short pattern fills the whole clip.
 Tick laneLoopsEnd(const Clip& clip);
+/// How long a looping clip plays before all its lanes line up again: the least common multiple of its loop and the
+/// length of each lane with its own loop. That is the loop it plays, so every pass sounds the same. Just the loop
+/// when no lane has its own length, and 0 when the clip doesn't loop.
+Tick laneCycle(const Clip& clip, const std::vector<DrumLane>& lanes);
 
 /// Euclidean rhythm: `hits` spread as evenly as possible over `steps`, turned right by `rotation`.
 std::vector<bool> euclid(int hits, int steps, int rotation = 0);

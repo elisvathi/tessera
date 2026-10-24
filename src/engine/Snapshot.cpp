@@ -223,6 +223,15 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, uint
         swingEvent(out.notes.back(), swing, out.loopEnd);
         attachExtras(out.notes.back(), note, out.extras, clip.id.value, out.loopStart, out.loopLength(), out.looping);
     }
+    // With lanes of their own length the clip loops their whole cycle, so every pass plays the same; its other notes
+    // keep repeating its own loop inside it.
+    if (out.looping && track.type == TrackType::Drum) {
+        Tick cycle = laneCycle(clip, track.drumLanes);
+        if (cycle > out.loopLength()) {
+            out.pattern = out.loopLength();
+            out.loopEnd = out.loopStart + cycle;
+        }
+    }
     // Clip notes are already sorted by start; stable keeps chords in pitch order.
     sortEvents(out.notes);
     for (NoteEvent& e : out.notes)

@@ -952,7 +952,7 @@ bool PianoRollView::handleAction(Action action) {
     case Action::LoopToSelection: {
         // The clip's loop covers the selected notes, out to the grid, and the clip loops.
         IdSet ids = selectedIds();
-        if (!clip() || ids.empty())
+        if (!clip() || ids.empty() || source.loopLocked())
             return false;
         Tick from = std::numeric_limits<Tick>::max(), to = 0;
         for (const Note& n : committedNotes())

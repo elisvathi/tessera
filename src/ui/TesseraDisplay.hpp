@@ -42,7 +42,8 @@ class TesseraDisplay : public rack::widget::Widget {
         TrackId track;
         uint32_t color = 0;
         std::string title;
-        Tick start = 0, end = 0; // the part that plays
+        Tick start = 0, end = 0; // the part that plays: in a lane cycle, the page of it the playhead is on
+        int64_t page = 0;        // which clip-length page of a lane cycle is shown
         int low = 60, high = 72;
         std::vector<MiniNote> notes;
     };

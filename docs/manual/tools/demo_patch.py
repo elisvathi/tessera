@@ -3,7 +3,8 @@
 
 Run it with an output folder: `demo_patch.py build/manual-rack`. It writes demo.vcv (a small song with its output
 modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the modules zoomed in), first.vcv
-(Tessera, a Track Out and a simple voice from Fundamental, to patch by hand) and fresh.vcv (a new Tessera alone).
+(Tessera, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Tessera alone) and
+polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own).
 """
 
 import json
@@ -134,12 +135,12 @@ def make_song():
             "tracks": tracks, "groups": [], "scenes": scenes, "clips": clips, "markers": markers}, lead
 
 
-def tessera_module(song, selected_clip, panel_hp, plays_timeline):
+def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track="Lead"):
     """The Tessera module with the song; params are play, reset, loop, tap, BPM, scene buttons, Plays, rec, fill."""
     params = [0.0] * 12
     params[4] = 112.0
     params[9] = 1.0 if plays_timeline else 0.0
-    ui = {"selectedTrack": TRACK_IDS["Lead"], "selectedClip": selected_clip["id"], "panelHp": panel_hp,
+    ui = {"selectedTrack": TRACK_IDS[selected_track], "selectedClip": selected_clip["id"], "panelHp": panel_hp,
           "overlay": {"openAutomation": [TRACK_IDS["Chords"]]}}
     return {"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera", "version": "2.0.0",
             "params": [{"value": v, "id": i} for i, v in enumerate(params)], "pos": [0, 0],
@@ -172,6 +173,19 @@ def outputs(start):
             output_module(2005, "TesseraAutoOut", "Chords", start + 28)]
 
 
+def polymeter_song():
+    """The demo song with the verse beat's closed hat on a 3-step loop of its own, one hit long: the clip loops the
+    3 bars the hat needs to line up with the bar again. Returns the song and the verse beat."""
+    song, _ = make_song()
+    drums = next(t for t in song["tracks"] if t["name"] == "Drums")
+    hat = next(l for l in drums["drumLanes"] if l["pitch"] == 42)
+    hat["loop"] = 3 * BEAT // 4
+    verse = next(c for c in song["clips"] if c["name"] == "Verse beat")
+    verse["notes"] = sorted([n for n in verse["notes"] if n[2] != 42] + [note(0, BEAT // 4, 42, 0.7)],
+                            key=lambda n: (n[0], n[2]))
+    return song, verse
+
+
 def main():
     """Writes the patches into the folder given on the command line."""
     out = Path(sys.argv[1])
@@ -183,6 +197,9 @@ def main():
     first = [tessera_module(song, lead, 24, False), output_module(2001, "TesseraTrackOut", "Bass", 24),
              fundamental(3001, "VCO", 31), fundamental(3002, "ADSR", 42), fundamental(3003, "VCA-1", 52)]
     (out / "first.vcv").write_text(json.dumps(patch(first, 1.3)))
+    poly, verse = polymeter_song()
+    (out / "polymeter.vcv").write_text(json.dumps(patch([tessera_module(poly, verse, 24, False, "Drums")] +
+                                                        outputs(24))))
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
 

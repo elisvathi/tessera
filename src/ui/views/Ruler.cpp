@@ -307,6 +307,8 @@ std::unique_ptr<DragGesture> Ruler::startGesture(rack::math::Vec pos, int button
     case Zone::Loop: {
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return std::make_unique<InstanceEndGesture>(*this);
+        if (source.loopLocked())
+            return nullptr;
         float x0 = float(t.tickToX(double(source.loopStart())));
         float x1 = float(t.tickToX(double(source.loopEnd())));
         LoopGesture::Mode mode = LoopGesture::Mode::Create;
@@ -373,12 +375,26 @@ void Ruler::doubleClick(rack::math::Vec pos, Modifiers mods) {
 CursorShape Ruler::hoverCursor(rack::math::Vec pos, Modifiers mods) {
     const float edge = theme::metrics::kEdgeHit;
     TimeAxis& t = viewport.time;
+    bool onLockedLoop = zoneAt(pos.y) == Zone::Loop && source.loopLocked() &&
+                        pos.x >= float(t.tickToX(double(source.loopStart()))) &&
+                        pos.x <= float(t.tickToX(double(source.loopEnd())));
+    if (onLockedLoop != tipOn) {
+        tipOn = onLockedLoop;
+        tip.leave();
+        if (tipOn) {
+            tip.setText("Loop " + lengthText(source.loopEnd() - source.loopStart(), source.timeSig()) +
+                        ": set by the lane lengths. It runs until every lane lines up again");
+            tip.enter();
+        }
+    }
     switch (zoneAt(pos.y)) {
     case Zone::Markers:
         return markerAt(source.markers(), pos.x) >= 0 ? CursorShape::Hand : CursorShape::Arrow;
     case Zone::Loop: {
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return CursorShape::ResizeH;
+        if (source.loopLocked())
+            return CursorShape::Arrow;
         float x0 = float(t.tickToX(double(source.loopStart())));
         float x1 = float(t.tickToX(double(source.loopEnd())));
         if (std::fabs(pos.x - x0) <= edge || std::fabs(pos.x - x1) <= edge)
@@ -395,6 +411,17 @@ CursorShape Ruler::hoverCursor(rack::math::Vec pos, Modifiers mods) {
     }
     }
     return CursorShape::Arrow;
+}
+
+void Ruler::step() {
+    InteractiveView::step();
+    tip.step();
+}
+
+void Ruler::onLeave(const LeaveEvent& e) {
+    tipOn = false;
+    tip.leave();
+    InteractiveView::onLeave(e);
 }
 
 void Ruler::wheel(rack::math::Vec pos, rack::math::Vec delta, Modifiers mods) {
@@ -483,7 +510,14 @@ void Ruler::drawLoop(NVGcontext* vg) {
     // handle at its end to drag (Trello, 13 Oct). The loop bar gives it room.
     bool instance = std::isfinite(source.instanceEnd());
     float loopHeight = instance ? h - 7 : h - 4;
-    draw::roundedRect(vg, rack::math::Rect(x0, top + 2, std::max(1.f, x1 - x0), loopHeight), 2, color);
+    rack::math::Rect bar(x0, top + 2, std::max(1.f, x1 - x0), loopHeight);
+    // A locked loop is an outline: it shows where the loop is, but has nothing to grab.
+    if (source.loopLocked() && source.loopOn()) {
+        draw::roundedRect(vg, bar, 2, nvgTransRGBAf(c.accent, 0.2f));
+        draw::roundedRectStroke(vg, bar, 2, color, 1);
+    } else {
+        draw::roundedRect(vg, bar, 2, color);
+    }
     if (instance) {
         float s0 = float(viewport.time.tickToX(source.instanceStart()));
         float s1 = float(viewport.time.tickToX(source.instanceEnd()));
