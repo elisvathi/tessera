@@ -73,6 +73,32 @@ TEST_CASE("a lane's region: the clip loop, or its own loop length") {
     CHECK(hasOwnLoop(lane, c));
 }
 
+TEST_CASE("a lane's own length counts in a clip that doesn't loop too") {
+    Clip c = barClip();
+    c.loopMode = LoopMode::Off;
+    DrumLane lane;
+    CHECK_FALSE(hasOwnLoop(lane, c));
+    CHECK(laneLoopsEnd(c) == 4 * kPpq); // the clip's length, though it has no notes
+    lane.loopLength = 3 * kPpq / 4;
+    CHECK(laneRegion(lane, c).start == 0);
+    CHECK(hasOwnLoop(lane, c));
+    lane.loopLength = 4 * kPpq; // as long as the clip: it just follows it
+    CHECK_FALSE(hasOwnLoop(lane, c));
+}
+
+TEST_CASE("a loop pattern clears the lane from its start and writes the pattern once") {
+    Ids ids;
+    Tick s = kPpq / 4;
+    edits::NoteList notes = drums::applyPattern({}, 42, {0, 4 * kPpq}, s, euclid(16, 16), 1, ids.source());
+    notes = drums::applyPattern(notes, 36, {0, 4 * kPpq}, s, euclid(4, 16), 1, ids.source());
+    edits::NoteList out = drums::setLoopPattern(notes, 42, 0, s, euclid(3, 8), 0.5f, ids.source());
+    CHECK(laneSteps(out, 42, {0, 8 * s}, s) == "x..x..x.");
+    CHECK(drums::laneNotes(out, 42, {0, 4 * kPpq}).size() == 3); // the old hats after step 8 are gone too
+    CHECK(drums::laneNotes(out, 36, {0, 4 * kPpq}).size() == 4); // other lanes stay
+    for (const Note& n : drums::laneNotes(out, 42, {0, 4 * kPpq}))
+        CHECK(n.velocity == doctest::Approx(0.5f));
+}
+
 TEST_CASE("pattern tools touch only their lane and region") {
     Ids ids;
     Clip c = barClip();
@@ -151,3 +177,26 @@ TEST_CASE("a lane with its own loop repeats on it across the arrangement (polyme
     for (size_t i = 1; i < out.size(); i++)
         CHECK(out[i - 1].start <= out[i].start);
 }
+
+TEST_CASE("a lane with its own loop fills a clip that doesn't loop, and stops at its end") {
+    Ids ids;
+    Clip c = barClip(); // 16 sixteenths
+    c.loopMode = LoopMode::Off;
+    Tick s = kPpq / 4;
+    DrumLane hat;
+    hat.pitch = 42;
+    hat.loopLength = 3 * s;
+    std::vector<DrumLane> lanes{hat};
+    c.notes = drums::setLoopPattern({}, 42, 0, s, {true, false, false}, 1, ids.source());
+
+    ArrangerClip a;
+    a.clip = c.id;
+    a.length = 2 * 4 * kPpq; // longer than the clip: it plays once
+    std::vector<TimedNote> out;
+    renderInstance(c, a, out, 0, 1, &lanes);
+    std::vector<Tick> hats;
+    for (const TimedNote& n : out)
+        hats.push_back(n.start);
+    CHECK(hats == std::vector<Tick>{0, 3 * s, 6 * s, 9 * s, 12 * s, 15 * s});
+}
+

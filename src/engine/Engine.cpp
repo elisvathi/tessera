@@ -1105,9 +1105,16 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
     double b = to - state.launchTick;
 
     if (!clip.looping) {
-        if (a < length)
+        if (a < length) {
             fireList(track, state, clip.notes, state.cursor, clip.loopStart + a, clip.loopStart + std::min(b, length),
                      from, INFINITY, 0, &clip.extras);
+            // Lanes with their own loop repeat until the clip ends, looping or not.
+            for (size_t k = 0; k < clip.laneLoops.size() && k < state.laneCursor.size(); k++) {
+                const LaneLoop& lane = clip.laneLoops[k];
+                playLoop(track, state, lane.notes, state.laneCursor[k], lane.start, lane.length, a, std::min(b, length),
+                         from, &clip.extras);
+            }
+        }
         if (b >= length) // a one-shot clip stops when it ends; its last notes end by themselves
             state.playing = kNoSlot;
         return;

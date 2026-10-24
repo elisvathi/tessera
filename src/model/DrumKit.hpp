@@ -30,8 +30,11 @@ struct LaneRegion {
     Tick steps(Tick stepLength) const { return stepLength > 0 ? std::max<Tick>(1, length / stepLength) : 1; }
 };
 LaneRegion laneRegion(const DrumLane& lane, const Clip& clip);
-/// True when the lane loops on its own length, apart from the clip (polymeter).
+/// True when the lane loops on its own length, apart from the clip (polymeter), whether or not the clip loops.
 bool hasOwnLoop(const DrumLane& lane, const Clip& clip);
+/// Where a clip that doesn't loop ends for its lanes with their own loop: its length, or its last note when that is
+/// later. They repeat until there, so a short pattern fills the whole clip.
+Tick laneLoopsEnd(const Clip& clip);
 
 /// Euclidean rhythm: `hits` spread as evenly as possible over `steps`, turned right by `rotation`.
 std::vector<bool> euclid(int hits, int steps, int rotation = 0);
@@ -48,6 +51,10 @@ NoteList laneNotes(const NoteList& notes, int pitch, LaneRegion region);
 /// Clears the step starting at `stepStart`; with `velocity`, puts a step-long note there.
 NoteList setStep(const NoteList& notes, int pitch, Tick stepStart, Tick stepLength, const float* velocity,
                  const IdSource& newId);
+/// Gives the lane a loop of exactly `pattern` (one entry per step) from `start`: every hit of the lane from `start`
+/// on is cleared first, since the lane's loop repeats the pattern from there (Fill every, Euclidean).
+NoteList setLoopPattern(const NoteList& notes, int pitch, Tick start, Tick stepLength, const std::vector<bool>& pattern,
+                        float velocity, const IdSource& newId);
 /// Replaces the lane with `pattern` (one entry per step).
 NoteList applyPattern(const NoteList& notes, int pitch, LaneRegion region, Tick stepLength,
                       const std::vector<bool>& pattern, float velocity, const IdSource& newId);

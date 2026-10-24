@@ -1240,3 +1240,14 @@ Refines §78.
   timing and long notes. It is a per-surface view setting (older patches' "drumSteps" choice carries over).
 - Fold no longer applies to drum tracks: Lanes shows the lanes, and notes on no lane keep a row of their own.
 
+## 82. Lane patterns repeat with no seam (24 Oct)
+
+- **Euclidean and Fill every set the lane's length** to the pattern's (Euclid: steps, then hits; Fill every n: n
+  steps, one hit) and clear the lane's old hits, from its loop start on, in one undo step. Writing such a pattern
+  into a 16-step lane left a seam where it wrapped (every 3 over 16 hits step 16 and step 1 back to back).
+- **A lane's own length counts whether or not the clip loops.** In a clip that doesn't loop, the lane repeats until
+  the clip's length (or its last note when later), on the timeline and from the clips panel; that clip then lasts
+  its length, not only to its last note.
+- **Across the clip's loop the lane keeps counting** (unchanged): it drifts against the bar and comes back in line,
+  with no seam.
+

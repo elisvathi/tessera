@@ -24,6 +24,11 @@ void setLanes(EditorContext& ctx, TrackId track, std::vector<DrumLane> lanes, co
 using PatternEdit = std::function<edits::NoteList(const edits::NoteList& notes, int pitch, LaneRegion region, Tick step,
                                                   const edits::IdSource& newId)>;
 void editPattern(EditorContext& ctx, TrackId track, int lane, const PatternEdit& edit, const std::string& name);
+/// Makes the lane loop on exactly `pattern` (one entry per step, at the lane's rate): its length becomes the
+/// pattern's, and its old hits are cleared, so the pattern repeats with no seam (Fill every, Euclidean). One undo
+/// step.
+void setLanePattern(EditorContext& ctx, TrackId track, int lane, const std::vector<bool>& pattern,
+                    const std::string& name);
 
 /// Plays the lane once on the track's outputs.
 void audition(EditorContext& ctx, TrackId track, int lane);

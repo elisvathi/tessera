@@ -1452,10 +1452,13 @@ void NoteGrid::drawLaneLoops(NVGcontext* vg) {
             continue;
         LaneRegion region = laneRegion(l, *clip);
         Tick regionEnd = region.start + region.length;
+        // The lane repeats until the clip's loop ends, or the clip's end when it doesn't loop.
+        Tick clipEnd =
+            clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart ? clip->loopEnd : laneLoopsEnd(*clip);
         NVGcolor color = theme::track(l.color ? l.color : track->color);
-        // Past its own loop the lane plays its loop again until the clip's loop ends: dimmed, with the repeats
+        // Past its own loop the lane plays its loop again until the clip ends: dimmed, with the repeats
         // drawn like ghosts, since they are the same hits.
-        float x0 = float(t.tickToX(double(regionEnd))), x1 = float(t.tickToX(double(clip->loopEnd)));
+        float x0 = float(t.tickToX(double(regionEnd))), x1 = float(t.tickToX(double(clipEnd)));
         if (x1 > x0 && x1 > 0 && x0 < box.size.x) {
             nvgBeginPath(vg);
             nvgRect(vg, std::max(0.f, x0), y, std::min(box.size.x, x1) - std::max(0.f, x0), row);
@@ -1463,16 +1466,16 @@ void NoteGrid::drawLaneLoops(NVGcontext* vg) {
             nvgFill(vg);
         }
         NVGcolor ghost = nvgTransRGBAf(color, 0.3f);
-        for (Tick shift = region.length; region.start + shift < clip->loopEnd; shift += region.length) {
+        for (Tick shift = region.length; region.start + shift < clipEnd; shift += region.length) {
             if (t.tickToX(double(region.start + shift)) > box.size.x)
                 break;
             for (const Note& n : owner.notes()) {
                 if (n.pitch != l.pitch || n.start < region.start || n.start >= regionEnd)
                     continue;
                 Tick start = n.start + shift;
-                if (start >= clip->loopEnd)
+                if (start >= clipEnd)
                     continue;
-                Tick stop = std::min(std::min(n.end(), regionEnd) + shift, clip->loopEnd);
+                Tick stop = std::min(std::min(n.end(), regionEnd) + shift, clipEnd);
                 float a = float(t.tickToX(double(start))), b = float(t.tickToX(double(stop)));
                 if (b < 0 || a > box.size.x)
                     continue;
