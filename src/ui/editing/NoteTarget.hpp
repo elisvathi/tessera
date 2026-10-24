@@ -8,8 +8,8 @@
 
 namespace tessera {
 
-/// An editor of one clip's notes: the piano roll or the drum step grid. The inspector works through this, so it
-/// edits the selection of whichever editor is showing.
+/// An editor of one clip's notes: the piano roll, which is also the drum editor. The inspector and the drum hit menu
+/// work through this, so they edit the selection of the editor that is showing.
 class NoteTarget {
   public:
     virtual ~NoteTarget() = default;

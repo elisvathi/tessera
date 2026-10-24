@@ -134,7 +134,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Delete / Ctrl/Cmd+D on a clicked clip; after clicking a header they act on tracks.
 - [ ] Click a clip in the clips panel: it opens in the notes pane. A drag still moves or places it.
 - [ ] Rename a clip three ways: the clips panel menu, the arranger clip menu, and Rename… in the clip chip that
-      starts the notes pane header (the same chip in the piano roll and the drum steps). Every place shows the
+      starts the notes pane header (the same chip on instrument and drum tracks). Every place shows the
       new name, a linked clip renames all its uses, and one Ctrl/Cmd+Z restores the old name.
 - [ ] Fold a group: one column; its triangle launches the group's clips in that scene.
 - [ ] Every edit is one undo step; undo after a move puts the clip back and it keeps playing.
@@ -176,21 +176,27 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] All of the above in the panel editor (Arranger strip button).
 
 ## Drum tracks
-- [ ] Select a drum track: the step grid opens (G or "Piano roll" switches; "Steps" in the piano roll comes back).
-- [ ] Drum step grid zoom: Ctrl/Cmd+wheel zooms time around the mouse (up to 16x), = and - zoom, F fits the clip.
-- [ ] Draw tool: click a step, drag across steps (fast drags fill every step), drag from an on step to clear,
-      right-drag clears. One undo each. Paint and Slice (chosen in the piano roll) act as Draw and light it.
-- [ ] Pointer tool: click an empty step turns it on and selects it; click a step selects it (Shift adds,
-      Ctrl/Cmd toggles); drag from empty space draws a box that selects; drag selected steps moves them by steps
-      and lanes, Ctrl/Cmd+drag copies; a step they land on gives way. Esc / Ctrl+Shift+A clear, Ctrl+A selects
-      all, Delete removes. Selected steps have the blue outline; the selection stays when G switches views.
-- [ ] Erase and Mute tools: click or drag across steps. Muted steps are dim with an outline.
-- [ ] Velocity tool or Alt+drag a step: velocity readout; the fill height follows, for the whole selection when
-      the step is in it.
-- [ ] With steps selected, the inspector shows them (fields, chart, operators). Right-click a step: the menu acts
-      on the selection (a step outside it becomes the selection): velocity, chance, repeats, occurrence,
-      recurrence, mute, delete. Repeats split the cell; chance, occurrence and recurrence show a corner dot.
-- [ ] In-panel editor: the tools fit the header (they give way last); the step menu fits.
+- [ ] Select a drum track: the drum editor opens (the piano roll with lane headers, lanes in their own order,
+      Kit where the key chip is).
+- [ ] Lanes | Keys (and G): Keys shows the same notes on the keys as plain notes (lane names on their keys); zoom
+      and selection carry over; the choice comes back after save and reload.
+- [ ] Every lane step is a cell (beats shaded in turn, bar lines between cells); a lane at 1/8T shows triplet
+      cells; zoomed far out the cells become beat bands.
+- [ ] Zoom and scroll as in the piano roll: Ctrl/Cmd+wheel, = and -, F fits all lanes from the top. Zoom out past
+      the clip's end and scroll on.
+- [ ] Draw tool: click an empty step adds a hit (one lane step long, last velocity), click a hit removes it, drag
+      paints (fast drags fill every step), drag from a hit removes along the path, right-drag removes. One undo
+      each. Alt+drag a hit sets velocity. Double-click with Draw adds nothing extra.
+- [ ] Draw past the clip's end (a looping 1-bar clip): it grows to the bar that holds the hit, in the same undo.
+- [ ] Snap Adaptive: hits land on the lane's rate at any zoom (set a lane to 1/8T and draw). Snap 1/32 draws finer.
+- [ ] Select tool: hits select, move across lanes and in time, copy with Ctrl/Cmd, resize by their edges.
+- [ ] Right-click a hit: the note menu has Velocity, Chance, Repeats, Only when…, Every … passes, and "Select all
+      hits of this lane". With hits selected, the inspector shows them.
+- [ ] Velocity lane: with nothing selected it edits the lane last clicked (header or grid); the others are faded.
+- [ ] A note on a pitch no lane plays gets a "(no lane)" row under the lanes.
+- [ ] Mute or solo a lane: its row dims. A lane with its own steps (12 against 16): a line at its loop end,
+      dimmed row and faded repeats after it.
+- [ ] In-panel editor: rows shrink to 16 px and the lanes clip inside the pane; the header fits.
 - [ ] Lane header: click the name to hear it, M / S work, double-click renames, right-click menu.
 - [ ] Lane menu: note, output, steps (12 against 16: faded repeats; it drifts against the bar while playing),
       rate, choke group, output length; Euclidean, rotate, reverse, fill, randomize, clear, copy / paste lane;
@@ -216,7 +222,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Snap: Draw, Paint and double-click land on the key; dragging notes and Up/Down move by key steps; Alt
       drags chromatically. Transform box pitch handles stay in key.
 - [ ] Fold (button or Ctrl+Shift+F): only key rows plus rows with notes; the view stays centred; dragging moves
-      by rows. On a drum track in the piano roll, Fold shows one named row per lane.
+      by rows. A drum track shows its lanes whatever Fold says.
 - [ ] Custom scales: new scale from this key, rename, toggle keys (grid updates at once, each toggle undoes),
       delete (key falls back to no key; undo restores it). Saved with the patch.
 - [ ] Chord stamp: triad / 7th / 9th in key change quality with the degree; fixed shapes, inversions, Open and

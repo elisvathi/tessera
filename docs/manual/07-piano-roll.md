@@ -17,6 +17,7 @@ From left to right:
 - **Snap ▾**: the grid notes snap to.
 - **The key chip** ("A Minor ▾"): the key, and the highlight, snap and fold switches. See
   [Keys, scales and chords](10-scales-and-chords.md).
+  A drum track shows **Kit** here instead (see [Drums](09-drums.md)).
 - **Notes ▾**: transforms such as quantize, humanize and arpeggiate. See [Shaping notes](08-shaping-notes.md#transforms).
 - **View ▾**: ghost notes, badges on notes, note names with flats, and how the view follows the playhead.
 - **The speaker**: hear notes while you draw, move and click them (Alt+A).

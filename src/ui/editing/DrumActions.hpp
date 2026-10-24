@@ -9,7 +9,7 @@
 #include <functional>
 #include <string>
 
-/// Drum lane operations shared by the step grid's clicks, menus and keys (DESIGN.md §9), so each exists once.
+/// Drum lane operations shared by the drum editor's clicks, menus and keys (DESIGN.md §9), so each exists once.
 /// Lanes are addressed by track and lane index; patterns act on the clip the editor shows for the track.
 namespace tessera::drumActions {
 
@@ -32,9 +32,9 @@ void addLane(EditorContext& ctx, TrackId track);
 
 void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int lane,
                     std::function<void()> startRename);
-/// The selected steps' menu: velocity, the note operators (chance, repeats, occurrence, recurrence), mute and
-/// delete. It is the way to the operators where the inspector is hidden (the in-panel editor).
-void appendStepMenu(rack::ui::Menu* menu, NoteTarget& steps);
+/// The selected hits' velocity and note operators (chance, repeats, occurrence, recurrence), for a drum track's
+/// note menu. It is the way to the operators where the inspector is hidden (the in-panel editor).
+void appendHitOperators(rack::ui::Menu* menu, NoteTarget& hits);
 /// Kit presets and adding lanes.
 void appendKitMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track);
 

@@ -87,7 +87,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Shift+Tab | Maximize the pane, or restore both |
 | F2 | Widen / narrow the clips beside the timeline |
 | F3 | Device strip above the notes |
-| G | Drum steps / piano roll (*notes pane*) |
+| G | Drum lanes / keys (*notes pane*) |
 
 ## Tracks
 

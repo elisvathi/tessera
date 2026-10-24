@@ -54,7 +54,7 @@ struct DrumLane {
     float gateLengthMs = 0;     // 0 = trigger, > 0 = gate
     int chokeGroup = 0;         // 0 = none
     Tick loopLength = 0;        // polymeter: 0 = follow the clip loop
-    Tick stepLength = kPpq / 4; // the step grid's rate for this lane
+    Tick stepLength = kPpq / 4; // how long a step of this lane is
     uint32_t color = 0;         // 0 = the track's colour
 
     bool operator==(const DrumLane& o) const {

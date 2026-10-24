@@ -112,6 +112,13 @@ constexpr float kOverviewPanel = 4;
 constexpr float kSplitter = 6; // hit area; the drawn line is 1 px
 constexpr float kEdgeHit = 6;  // resize hot zone at item edges
 constexpr float kKeyboardWidth = 56;
+// A drum track's lane headers stand in for the keys: name, output, mute and solo need the room.
+constexpr float kDrumHeaderWidth = 168;
+constexpr float kDrumHeaderWidthPanel = 124;
+constexpr float kDrumMinRow = 22; // lanes open at least this tall, so the names stay readable
+constexpr float kDrumMinRowPanel = 16;
+constexpr float kDrumCellInset = 1.5f; // the gap around each step cell, so steps read one by one
+constexpr float kDrumMinCell = 5;      // narrower steps draw as beat bands instead of cells
 constexpr float kInspectorWidth = 240;
 constexpr float kPaneHeader = 26;
 constexpr float kReadoutOffset = 16; // readout pill distance from the cursor

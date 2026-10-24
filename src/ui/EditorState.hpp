@@ -70,8 +70,8 @@ struct ViewState {
     bool inspectorOpen = true;
     Pane focus = Pane::Detail;
     std::optional<Pane> maximized;
-    bool drumSteps = true;          // drum tracks open in the step grid (G switches to the piano roll)
     bool deviceStrip = true;        // the selected track's devices show above its notes (docs/DEVICES.md §1.1)
+    bool drumLanes = true;          // drum tracks show lanes and step cells (G switches to the keys)
     float launcherPanelWidth = 233; // px: the clips beside the timeline, three scenes by default
     bool clipsWide = false;         // performing: the clips take the width, the timeline folds to a strip (F2)
 
@@ -157,7 +157,7 @@ struct EditorState {
     // Scale tools (DESIGN.md §13). They do nothing while the key is chromatic.
     bool scaleHighlight = true;                 // tint scale rows, mark the root, flag notes outside the key
     bool scaleSnap = false;                     // new and moved notes land on the key; Up/Down step through it
-    bool scaleFold = false;                     // only rows of the key (or a drum track's lanes) are shown
+    bool scaleFold = false;                     // only rows of the key are shown
     bool keyMovesNotes = true;                  // a key change moves notes to the new key, same degrees
     KeyPreview keyPreview;                      // session only
     ChordStamp chord;                           // Draw places this chord

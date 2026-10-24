@@ -170,19 +170,19 @@ float fitToolbar(const std::vector<ToolbarItem>& items, float right, float limit
 
 std::pair<ToolButton*, ToolButton*> makeDrumViewSwitch(EditorContext& ctx) {
     EditorContext* c = &ctx;
-    ToolButton::Options steps;
-    steps.text = "Steps";
-    steps.tooltip = withShortcut("Drum step grid", Action::ToggleDrumView);
-    steps.action = [c] { c->view().drumSteps = true; };
-    steps.active = [c] { return c->module() && c->view().drumSteps; };
-    steps.filled = true;
-    ToolButton::Options roll;
-    roll.text = "Piano roll";
-    roll.tooltip = withShortcut("Edit this drum clip in the piano roll", Action::ToggleDrumView);
-    roll.action = [c] { c->view().drumSteps = false; };
-    roll.active = [c] { return c->module() && !c->view().drumSteps; };
-    roll.filled = true;
-    return {new ToolButton(steps), new ToolButton(roll)};
+    ToolButton::Options lanes;
+    lanes.text = "Lanes";
+    lanes.tooltip = withShortcut("Drum lanes: one row per lane, every step a cell", Action::ToggleDrumView);
+    lanes.action = [c] { c->view().drumLanes = true; };
+    lanes.active = [c] { return c->module() && c->view().drumLanes; };
+    lanes.filled = true;
+    ToolButton::Options keys;
+    keys.text = "Keys";
+    keys.tooltip = withShortcut("The piano keys: every note, drawn as a plain note", Action::ToggleDrumView);
+    keys.action = [c] { c->view().drumLanes = false; };
+    keys.active = [c] { return c->module() && !c->view().drumLanes; };
+    keys.filled = true;
+    return {new ToolButton(lanes), new ToolButton(keys)};
 }
 
 void placeDrumViewSwitch(std::pair<ToolButton*, ToolButton*> buttons, rack::math::Rect r) {

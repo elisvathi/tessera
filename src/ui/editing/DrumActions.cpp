@@ -289,21 +289,18 @@ void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
     }));
 }
 
-void appendStepMenu(rack::ui::Menu* menu, NoteTarget& steps) {
-    edits::IdSet ids = steps.selectedIds();
+void appendHitOperators(rack::ui::Menu* menu, NoteTarget& hits) {
+    edits::IdSet ids = hits.selectedIds();
     std::vector<Note> chosen;
-    for (const Note& n : steps.committedNotes())
+    for (const Note& n : hits.committedNotes())
         if (ids.count(n.id))
             chosen.push_back(n);
     if (chosen.empty())
         return;
-    NoteTarget* target = &steps;
-    std::string what = chosen.size() == 1 ? "step" : std::to_string(chosen.size()) + " steps";
-    menu->addChild(rack::createMenuLabel(
-        chosen.size() == 1 ? "Step  " + std::to_string(int(std::lround(chosen[0].velocity * 100))) + "%"
-                           : std::to_string(chosen.size()) + " steps"));
+    NoteTarget* target = &hits;
+    std::string what = chosen.size() == 1 ? "hit" : std::to_string(chosen.size()) + " hits";
 
-    // One undo step that changes every selected step.
+    // One undo step that changes every selected hit.
     auto edit = [target, what](const std::string& verb, std::function<void(Note&)> change) {
         return [target, what, verb, change] {
             edits::IdSet sel = target->selectedIds();
@@ -314,7 +311,7 @@ void appendStepMenu(rack::ui::Menu* menu, NoteTarget& steps) {
             target->commit(verb + " of " + what, before, after);
         };
     };
-    // Checked when every selected step has it.
+    // Checked when every selected hit has it.
     auto all = [chosen](std::function<bool(const Note&)> has) {
         return [chosen, has] { return std::all_of(chosen.begin(), chosen.end(), has); };
     };
@@ -351,13 +348,13 @@ void appendStepMenu(rack::ui::Menu* menu, NoteTarget& steps) {
             auto o = Occurrence(i);
             sub->addChild(
                 rack::createCheckMenuItem(kNames[i], "", all([o](const Note& n) { return n.ops.occurrence == o; }),
-                                          edit("Set when the step plays", [o](Note& n) { n.ops.occurrence = o; })));
+                                          edit("Set when the hit plays", [o](Note& n) { n.ops.occurrence = o; })));
         }
     }));
     menu->addChild(rack::createSubmenuItem("Every … passes", "", [=](rack::ui::Menu* sub) {
         sub->addChild(rack::createCheckMenuItem("Every pass", "",
                                                 all([](const Note& n) { return n.ops.recurrenceLength <= 1; }),
-                                                edit("Set the passes the step plays on", [](Note& n) {
+                                                edit("Set the passes the hit plays on", [](Note& n) {
                                                     n.ops.recurrenceLength = 1;
                                                     n.ops.recurrenceMask = NoteOperators().recurrenceMask;
                                                 })));
@@ -370,25 +367,12 @@ void appendStepMenu(rack::ui::Menu* menu, NoteTarget& steps) {
                                                   return n.ops.recurrenceLength == length &&
                                                          (n.ops.recurrenceMask & ((1u << length) - 1)) == mask;
                                               }),
-                                              edit("Set the passes the step plays on", [length, mask](Note& n) {
+                                              edit("Set the passes the hit plays on", [length, mask](Note& n) {
                                                   n.ops.recurrenceLength = uint8_t(length);
                                                   n.ops.recurrenceMask = mask;
                                               })));
             }
         }
-    }));
-
-    bool anyPlaying = std::any_of(chosen.begin(), chosen.end(), [](const Note& n) { return !n.muted; });
-    menu->addChild(
-        rack::createMenuItem(anyPlaying ? "Mute" : "Unmute", "",
-                             edit(anyPlaying ? "Mute" : "Unmute", [anyPlaying](Note& n) { n.muted = anyPlaying; })));
-    menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [target, what] {
-        edits::IdSet sel = target->selectedIds();
-        edits::NoteList before = target->committedNotes(), after;
-        for (const Note& n : before)
-            if (!sel.count(n.id))
-                after.push_back(n);
-        target->commit("Delete " + what, before, after, edits::IdSet{});
     }));
 }
 

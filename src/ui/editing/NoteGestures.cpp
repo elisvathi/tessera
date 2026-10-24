@@ -1,5 +1,6 @@
 #include "NoteGestures.hpp"
 
+#include "../../model/DrumKit.hpp"
 #include "../../model/NoteOperators.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -12,6 +13,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <set>
 
 namespace tessera::noteGestures {
 
@@ -438,6 +440,80 @@ class SweepGesture : public NoteGesture {
     bool muting;
     bool targetMuted = true;
     IdSet touched;
+    Vec last;
+    bool hasLast = false;
+};
+
+// ---- Drum hits ----------------------------------------------------------------------------------------------
+
+/// Draw on a drum track: every step the pointer passes on a lane's row gets a hit, one step long, at the last
+/// velocity. Steps that already have a hit keep it.
+class HitsGesture : public NoteGesture {
+  public:
+    HitsGesture(PianoRollView& view, Vec press) : NoteGesture(view, press), pool(view) {}
+
+    void update(Vec pos, Modifiers mods) override {
+        Vec from = hasLast ? last : pressPos();
+        int samples = std::max(1, int(pos.minus(from).norm() / 3));
+        for (int i = 0; i <= samples; i++)
+            visit(from.plus(pos.minus(from).mult(float(i) / float(samples))), mods.alt);
+        last = pos;
+        hasLast = true;
+
+        pool.restart();
+        NoteList after = before;
+        ids.clear();
+        float velocity = state().lastVelocity;
+        for (const auto& [cell, length] : cells) {
+            NoteId id = pool.take();
+            after = drums::setStep(after, cell.first, cell.second, length, &velocity, [id] { return id; });
+            ids.insert(id);
+        }
+        result = after;
+        view.setPreview(result);
+    }
+
+    void commit() override {
+        view.clearPreview();
+        if (!ids.empty())
+            view.commit(ids.size() == 1 ? "Add hit" : "Add " + std::to_string(ids.size()) + " hits", before, result,
+                        ids);
+    }
+    std::string readout() const override {
+        return ids.size() == 1 ? "1 hit" : ids.empty() ? "" : std::to_string(ids.size()) + " hits";
+    }
+    CursorShape cursor() const override { return CursorShape::Crosshair; }
+
+  private:
+    void visit(Vec p, bool free) {
+        int pitch = pitchAt(p.y);
+        const DrumLane* lane = view.laneOf(pitch);
+        if (!lane)
+            return;
+        Tick step = free ? 0 : view.drawStep(pitch);
+        Tick length = step > 0 ? step : std::max<Tick>(1, lane->stepLength);
+        double tick = tickAt(p);
+        if (tick < 0)
+            return;
+        Tick start = step > 0 ? Tick(std::floor(tick / double(step))) * step : Tick(tick);
+        std::pair<int, Tick> cell{pitch, start};
+        if (cells.count(cell) || taken(pitch, start, length))
+            return;
+        cells[cell] = length;
+        view.audition(pitch, state().lastVelocity);
+    }
+    /// A hit of the lane already starts in this step.
+    bool taken(int pitch, Tick start, Tick length) const {
+        for (const Note& n : before)
+            if (n.pitch == pitch && n.start >= start && n.start < start + length)
+                return true;
+        return false;
+    }
+
+    IdPool pool;
+    std::map<std::pair<int, Tick>, Tick> cells; // (pitch, start) -> length
+    IdSet ids;
+    NoteList result;
     Vec last;
     bool hasLast = false;
 };
@@ -1089,6 +1165,7 @@ std::unique_ptr<DragGesture> draw(PianoRollView& view, Vec press) { return std::
 std::unique_ptr<DragGesture> paint(PianoRollView& view, Vec press) {
     return std::make_unique<PaintGesture>(view, press);
 }
+std::unique_ptr<DragGesture> hits(PianoRollView& view, Vec press) { return std::make_unique<HitsGesture>(view, press); }
 std::unique_ptr<DragGesture> erase(PianoRollView& view, Vec press) {
     return std::make_unique<SweepGesture>(view, press, false);
 }

@@ -1,12 +1,14 @@
 #include "NoteGrid.hpp"
 
 #include "../../model/Arrangement.hpp"
+#include "../../model/DrumKit.hpp"
 #include "../../model/NoteFields.hpp"
 #include "../../model/NoteOperators.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
+#include "../editing/DrumActions.hpp"
 #include "../editing/TransformMenu.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../widgets/CachedLayer.hpp"
@@ -113,6 +115,13 @@ void NoteGrid::zoomToFit() {
     TimeAxis fit = time();
     fit.showRange(start, end);
     viewport.jump(fit.state());
+    if (owner.drumMode()) {
+        // Every lane from the top, as tall as fits, but never so thin that the names can't be read.
+        float minRow = ctx.surface == Surface::Panel ? theme::metrics::kDrumMinRowPanel : theme::metrics::kDrumMinRow;
+        if (const Track* t = owner.track(); t && !t->drumLanes.empty())
+            owner.pitch.showRowsFromTop(0, int(t->drumLanes.size()) - 1, minRow);
+        return;
+    }
     // Rows stay tall enough to carry note names: in a short pane (the in-panel editor) an octave would squeeze
     // them into thin lines. When the notes don't fit at that height, the view centres on their median pitch, where
     // most of them are, and the rest is a scroll away.
@@ -146,6 +155,10 @@ void NoteGrid::step() {
         if (owner.pitch.folded())
             for (int r = 0; r < owner.pitch.rowCount(); r++)
                 key = hashMix(key, double(owner.pitch.pitchAtRow(r)));
+        key = hashMix(key, owner.drumMode() ? 1 : 0);
+        if (const Track* t = owner.track(); t && owner.drumMode())
+            for (const DrumLane& l : t->drumLanes)
+                key = hashMix(key, double(l.stepLength));
     }
     layer->setKey(key);
     TimelineView::step();
@@ -429,6 +442,17 @@ std::unique_ptr<DragGesture> NoteGrid::startGesture(Vec pos, int button, Modifie
                    ? noteGestures::draw(owner, pos)
                    : noteGestures::pickPoints(owner, pos, expr::Curve::Pitch, pitchCurveY(), nullptr, true, mods);
     }
+    if (owner.drumMode()) {
+        int row = owner.pitch.yToRow(pos.y);
+        if (row >= 0 && row < owner.pitch.rowCount())
+            owner.focusPitch = owner.pitch.pitchAtRow(row);
+        // Drum hits are steps: Draw (and Paint) turn steps on along the drag, and a press on a hit removes the hits
+        // it passes over, so a click toggles. Alt+drag on a hit still sets its velocity.
+        if (tool == Tool::Paint || (tool == Tool::Draw && !hit.any()))
+            return noteGestures::hits(owner, pos);
+        if (tool == Tool::Draw)
+            return mods.alt ? noteGestures::velocity(owner, pos, hit.id) : noteGestures::erase(owner, pos);
+    }
     switch (tool) {
     case Tool::Pointer:
     case Tool::Draw: {
@@ -558,8 +582,12 @@ void NoteGrid::doubleClick(Vec pos, Modifiers mods) {
     }
     if (hitAt(pos).any())
         return;
-    // Double-clicking empty space creates a note with any tool (EDITOR_UX §4.2).
-    auto gesture = noteGestures::draw(owner, pos);
+    // Double-clicking empty space creates a note with any tool (EDITOR_UX §4.2). On a drum track Draw's own clicks
+    // already toggle hits, so its double-click would add a hit twice.
+    Tool tool = ctx.state().tool;
+    if (owner.drumMode() && (tool == Tool::Draw || tool == Tool::Paint))
+        return;
+    auto gesture = owner.drumMode() ? noteGestures::hits(owner, pos) : noteGestures::draw(owner, pos);
     gesture->update(pos, mods);
     gesture->commit();
 }
@@ -605,6 +633,11 @@ CursorShape NoteGrid::hoverCursor(Vec pos, Modifiers mods) {
         BendHit bend = selectedBendAt(pos);
         if (bend.point >= 0)
             return bend.segment ? CursorShape::ResizeV : CursorShape::Move;
+    }
+    if (owner.drumMode() && (tool == Tool::Draw || tool == Tool::Paint)) {
+        if (!hit.any() || tool == Tool::Paint)
+            return CursorShape::Crosshair;
+        return mods.alt ? CursorShape::ResizeV : CursorShape::NotAllowed;
     }
     switch (tool) {
     case Tool::Pointer:
@@ -685,9 +718,15 @@ void NoteGrid::openNoteMenu(NoteId id) {
             NoteList after = edits::resolveOverlaps(edits::fitToScale(before, ids, view->scale()), ids);
             view->commit("Fit " + countNotes(ids.size()) + " to key", before, after);
         }));
+    if (owner.drumMode()) {
+        menu->addChild(new rack::ui::MenuSeparator);
+        drumActions::appendHitOperators(menu, owner);
+        menu->addChild(new rack::ui::MenuSeparator);
+    }
     menu->addChild(
         rack::createSubmenuItem("Transform", "", [view](rack::ui::Menu* sub) { transformMenu::addItems(sub, *view); }));
-    menu->addChild(rack::createMenuItem("Select all notes of this pitch", "", [view, id] {
+    const char* samePitch = owner.drumMode() ? "Select all hits of this lane" : "Select all notes of this pitch";
+    menu->addChild(rack::createMenuItem(samePitch, "", [view, id] {
         const Note* n = view->clip() ? view->clip()->findNote(id) : nullptr;
         if (!n)
             return;
@@ -756,11 +795,19 @@ void NoteGrid::paintGrid(NVGcontext* vg, Vec size) {
     NVGcolor light = c.bg0;
     int first = std::max(0, pitch.yToRow(0));
     int last = std::min(pitch.rowCount() - 1, pitch.yToRow(size.y));
+    const Track* track = owner.track();
+    bool drum = owner.drumMode() && track;
     for (int r = first; r <= last; r++) {
         int p = pitch.pitchAtRow(r);
         float y = float(pitch.pitchToY(p));
         NVGcolor fill = isBlackKey(p) ? theme::recessed(c, c.bg0, 0.14f) : light;
         bool octave = p % 12 == 0;
+        if (drum) {
+            // The steps draw the lanes' structure (paintDrumSteps); a row of notes on no lane is sunk, since they
+            // don't play.
+            fill = laneOfPitch(track->drumLanes, p) < 0 ? theme::recessed(c, c.bg0, 0.3f) : light;
+            octave = false;
+        }
         if (highlight) {
             fill = key.inScale(p) ? light : theme::recessed(c, c.bg0, 0.22f);
             if (key.isRoot(p))
@@ -776,7 +823,10 @@ void NoteGrid::paintGrid(NVGcontext* vg, Vec size) {
         nvgFillColor(vg, octave ? c.line1 : nvgTransRGBAf(c.line0, 0.6f));
         nvgFill(vg);
     }
-    timeline::drawGrid(vg, time(), owner.timeSig(), size.y, owner.snapStep());
+    if (drum)
+        paintDrumSteps(vg, size);
+    else
+        timeline::drawGrid(vg, time(), owner.timeSig(), size.y, owner.snapStep());
 
     // Content outside the clip loop is dimmed. Without a loop every note plays, so nothing is.
     if (!owner.source.loopOn())
@@ -792,6 +842,46 @@ void NoteGrid::paintGrid(NVGcontext* vg, Vec size) {
     nvgFill(vg);
 }
 
+void NoteGrid::paintDrumSteps(NVGcontext* vg, Vec size) {
+    const theme::Palette& c = theme::colors();
+    const Track* track = owner.track();
+    PitchAxis& pitch = owner.pitch;
+    TimeAxis& t = time();
+    float row = float(pitch.rowHeight());
+    float inset = theme::metrics::kDrumCellInset;
+    TimeSig ts = owner.timeSig();
+    Tick beat = std::max<Tick>(1, ticksPerBeat(ts)), bar = std::max<Tick>(1, ticksPerBar(ts));
+    double left = std::max(0.0, t.left()), right = t.right();
+    // Every step of a lane is a cell, as on a step sequencer; beats alternate light and dark so the count reads at
+    // a glance. Zoomed out too far for cells, the beats still alternate as bands.
+    NVGcolor light = nvgLerpRGBA(c.bg1, c.bg2, 1.f), dark = nvgLerpRGBA(c.bg1, c.bg2, 0.45f);
+    for (const DrumLane& l : track->drumLanes) {
+        float y = float(pitch.pitchToY(l.pitch));
+        if (!pitch.shown(l.pitch) || y + row < 0 || y > size.y)
+            continue;
+        Tick step = std::max<Tick>(1, l.stepLength);
+        float cellW = float(double(step) * t.pxPerTick());
+        bool cells = cellW >= theme::metrics::kDrumMinCell && row >= 2 * inset + 2;
+        Tick unit = cells ? step : beat;
+        for (Tick k = Tick(left / double(unit)); double(k * unit) < right; k++) {
+            Tick start = k * unit;
+            float x0 = float(t.tickToX(double(start))), x1 = float(t.tickToX(double(start + unit)));
+            NVGcolor fill = (start / beat) % 2 == 0 ? light : dark;
+            if (cells)
+                draw::roundedRect(vg, Rect(x0 + inset, y + inset, std::max(1.f, x1 - x0 - 2 * inset), row - 2 * inset),
+                                  std::min(theme::metrics::kRadiusItem, row / 4), fill);
+            else
+                draw::roundedRect(vg, Rect(x0, y + inset, x1 - x0, row - 2 * inset), 0, fill);
+        }
+    }
+    // Bar lines run through the gaps between the cells, so the bars stay countable.
+    nvgBeginPath(vg);
+    for (Tick b = Tick(left / double(bar)) * bar; double(b) < right; b += bar)
+        nvgRect(vg, std::round(float(t.tickToX(double(b)))) - 0.5f, 0, 1, size.y);
+    nvgFillColor(vg, c.line1);
+    nvgFill(vg);
+}
+
 void NoteGrid::drawForeground(const DrawArgs& args) {
     NVGcontext* vg = args.vg;
     nvgSave(vg);
@@ -801,7 +891,9 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         collectGhosts();
         drawGhosts(vg);
         drawTimelineRepeats(vg);
+        drawLaneLoops(vg);
         drawNotes(vg);
+        dimSilentLanes(vg);
         drawBends(vg);
         drawStrips(vg);
         drawTakeNotes(vg);
@@ -864,6 +956,7 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
                           NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     double right = t.right();
     IdSet selected = owner.selectedIds();
+    bool drum = owner.drumMode();
     bool flagOffKey = owner.highlightKey();
     Scale key = owner.scale();
     bool badges = ctx.state().noteBadges;
@@ -885,6 +978,10 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
         float x0 = float(t.tickToX(double(n.start)));
         float x1 = float(t.tickToX(double(n.end())));
         Rect r(x0, y + 0.5f, std::max(2.f, x1 - x0 - 1), row - 1);
+        if (drum) {
+            float inset = theme::metrics::kDrumCellInset;
+            r = Rect(x0 + inset, y + inset, std::max(2.f, x1 - x0 - 2 * inset), std::max(2.f, row - 2 * inset));
+        }
         bool isSelected = selected.count(n.id) > 0;
 
         // Brightness follows velocity (40-100%); selected notes are a little brighter, hovered ones too.
@@ -908,7 +1005,19 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
                               nvgTransRGBAf(full, 0.45f * glow));
             fill = nvgLerpRGBA(fill, c.text0, 0.3f * glow);
         }
-        draw::roundedRect(vg, r, radius, fill);
+        if (drum) {
+            // A hit reads like a step: a faint cell, filled from the bottom as high as its velocity.
+            NVGcolor back = nvgTransRGBAf(full, (n.muted ? 0.12f : 0.3f) * (isSelected ? 1.3f : 1.f));
+            draw::roundedRect(vg, r, radius, back);
+            float h = std::max(3.f, r.size.y * n.velocity);
+            NVGcolor front = n.muted ? nvgTransRGBAf(full, 0.35f) : full;
+            if (glow > 0)
+                front = nvgLerpRGBA(front, c.text0, 0.3f * glow);
+            draw::roundedRect(vg, Rect(r.pos.x, r.getBottom() - h, r.size.x, h), radius, front);
+            fill = nvgLerpRGBA(c.bg0, full, 0.6f);
+        } else {
+            draw::roundedRect(vg, r, radius, fill);
+        }
         if (n.muted && r.size.x > 4) {
             // Muted: hatched as well as faded, so it reads as "off" in any colour.
             nvgSave(vg);
@@ -947,7 +1056,7 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
             labelX += m / 2;
         }
         float labelRight = labelX;
-        if (r.size.x >= kMinLabelWidth && row >= kMinLabelRow) {
+        if (!drum && r.size.x >= kMinLabelWidth && row >= kMinLabelRow) {
             draw::text(vg, label, labelX, y + row / 2, pitchName(n.pitch));
             labelRight = labelX + draw::textWidth(vg, label, pitchName(n.pitch));
         }
@@ -1325,6 +1434,76 @@ void NoteGrid::collectGhosts() {
     default:
         break;
     }
+}
+
+void NoteGrid::drawLaneLoops(NVGcontext* vg) {
+    const Clip* clip = owner.clip();
+    const Track* track = owner.track();
+    if (!clip || !track || !owner.drumMode())
+        return;
+    TimeAxis& t = time();
+    float row = float(owner.pitch.rowHeight());
+    float radius = std::min(theme::metrics::kRadiusItem, row / 3);
+    for (const DrumLane& l : track->drumLanes) {
+        if (!hasOwnLoop(l, *clip) || !owner.pitch.shown(l.pitch))
+            continue;
+        float y = float(owner.pitch.pitchToY(l.pitch));
+        if (y + row < 0 || y > box.size.y)
+            continue;
+        LaneRegion region = laneRegion(l, *clip);
+        Tick regionEnd = region.start + region.length;
+        NVGcolor color = theme::track(l.color ? l.color : track->color);
+        // Past its own loop the lane plays its loop again until the clip's loop ends: dimmed, with the repeats
+        // drawn like ghosts, since they are the same hits.
+        float x0 = float(t.tickToX(double(regionEnd))), x1 = float(t.tickToX(double(clip->loopEnd)));
+        if (x1 > x0 && x1 > 0 && x0 < box.size.x) {
+            nvgBeginPath(vg);
+            nvgRect(vg, std::max(0.f, x0), y, std::min(box.size.x, x1) - std::max(0.f, x0), row);
+            nvgFillColor(vg, nvgTransRGBAf(theme::colors().bg0, 0.55f));
+            nvgFill(vg);
+        }
+        NVGcolor ghost = nvgTransRGBAf(color, 0.3f);
+        for (Tick shift = region.length; region.start + shift < clip->loopEnd; shift += region.length) {
+            if (t.tickToX(double(region.start + shift)) > box.size.x)
+                break;
+            for (const Note& n : owner.notes()) {
+                if (n.pitch != l.pitch || n.start < region.start || n.start >= regionEnd)
+                    continue;
+                Tick start = n.start + shift;
+                if (start >= clip->loopEnd)
+                    continue;
+                Tick stop = std::min(std::min(n.end(), regionEnd) + shift, clip->loopEnd);
+                float a = float(t.tickToX(double(start))), b = float(t.tickToX(double(stop)));
+                if (b < 0 || a > box.size.x)
+                    continue;
+                draw::roundedRect(vg, Rect(a, y + 0.5f, std::max(2.f, b - a - 1), row - 1), radius, ghost);
+            }
+        }
+        if (x0 >= -1 && x0 <= box.size.x + 1) {
+            nvgBeginPath(vg);
+            nvgRect(vg, x0 - 1, y, 2, row);
+            nvgFillColor(vg, color);
+            nvgFill(vg);
+        }
+    }
+}
+
+void NoteGrid::dimSilentLanes(NVGcontext* vg) {
+    const Track* track = owner.track();
+    if (!track || !owner.drumMode())
+        return;
+    bool anySolo =
+        std::any_of(track->drumLanes.begin(), track->drumLanes.end(), [](const DrumLane& d) { return d.solo; });
+    float row = float(owner.pitch.rowHeight());
+    nvgBeginPath(vg);
+    for (const DrumLane& l : track->drumLanes) {
+        bool audible = anySolo ? l.solo : !l.mute;
+        float y = float(owner.pitch.pitchToY(l.pitch));
+        if (!audible && owner.pitch.shown(l.pitch) && y + row >= 0 && y <= box.size.y)
+            nvgRect(vg, 0, y, box.size.x, row);
+    }
+    nvgFillColor(vg, nvgTransRGBAf(theme::colors().bg0, 0.55f));
+    nvgFill(vg);
 }
 
 void NoteGrid::drawTimelineRepeats(NVGcontext* vg) {

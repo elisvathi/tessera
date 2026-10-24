@@ -33,10 +33,10 @@ json_t* viewToJson(const ViewState& v) {
     setNumber(j, "topFraction", v.topFraction);
     setNumber(j, "headerWidth", v.headerWidth);
     setBool(j, "inspector", v.inspectorOpen);
+    setBool(j, "drumLanes", v.drumLanes);
     setString(j, "focus", kPaneNames[int(v.focus)]);
     if (v.maximized)
         setString(j, "maximized", kPaneNames[int(*v.maximized)]);
-    setBool(j, "drumSteps", v.drumSteps);
     set(j, "launcherScroll", pair(v.launcherScrollX, v.launcherScrollY));
     set(j, "arranger", pair(v.arranger.left, v.arranger.pxPerTick));
     set(j, "detail", pair(v.detail.left, v.detail.pxPerTick));
@@ -72,10 +72,11 @@ ViewState viewFromJson(const json_t* j, ViewState v = ViewState()) {
     v.topFraction = std::clamp(getFloat(j, "topFraction", v.topFraction), 0.f, 1.f);
     v.headerWidth = std::clamp(getFloat(j, "headerWidth", v.headerWidth), 100.f, 400.f);
     v.inspectorOpen = getBool(j, "inspector", v.inspectorOpen);
+    // Patches from before the drum editor became the piano roll saved the same choice as "drumSteps".
+    v.drumLanes = getBool(j, "drumLanes", getBool(j, "drumSteps", v.drumLanes));
     v.focus = fromName(get(j, "focus"), kPaneNames, v.focus);
     if (json_is_string(get(j, "maximized")))
         v.maximized = fromName(get(j, "maximized"), kPaneNames, Pane::Detail);
-    v.drumSteps = getBool(j, "drumSteps", v.drumSteps);
     v.clipsWide = getBool(j, "clipsWide", v.clipsWide);
     v.deviceStrip = getBool(j, "deviceStrip", v.deviceStrip);
     v.launcherPanelWidth = std::clamp(getFloat(j, "launcherPanelWidth", v.launcherPanelWidth), 40.f, 4000.f);

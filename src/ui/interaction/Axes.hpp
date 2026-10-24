@@ -111,6 +111,9 @@ class PitchAxis {
     /// Shows only these pitches (any order, 0..127). Empty shows all 128. The pitch at the middle of the view
     /// stays where it is.
     void setShownPitches(const std::vector<int>& pitches);
+    /// Shows these pitches as rows in the order given, top to bottom (a drum track's lanes). Repeats are dropped.
+    /// A hidden pitch shares the row of the nearest shown pitch below it in value, else the lowest above it.
+    void setRows(const std::vector<int>& topToBottom);
     bool folded() const { return int(rowPitch.size()) < kRows; }
     int rowCount() const { return int(rowPitch.size()); }
     /// The pitch of a row; rows past either end give the first or last row's pitch.
@@ -142,6 +145,14 @@ class PitchAxis {
     /// Centers the view on [low, high], zooming in or out as far as needed to show it, but keeping rows at least
     /// `minRow` tall: past that the range overflows the view, centred, and the rest is a scroll away.
     void showPitches(int low, int high, double minRow = kMinRow);
+    /// Shows rows `first` to `last` from the top of the view, as tall as fits but at least `minRow`; rows that
+    /// don't fit are a scroll away.
+    void showRowsFromTop(int first, int last, double minRow);
+    /// Empty rows that scrolling can still reach below the last row (the drum lanes' "+ Add lane" row).
+    void setFooterRows(double rows) {
+        footer = rows;
+        clamp();
+    }
 
     struct State {
         double top;
@@ -157,6 +168,7 @@ class PitchAxis {
     double height = 400;
     double row = 12;
     double topRow = 40;
+    double footer = 0;
     std::vector<int> rowPitch;    // top to bottom
     std::vector<int> rowForPitch; // 128 entries
 };

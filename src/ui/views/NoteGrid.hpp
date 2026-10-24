@@ -76,6 +76,8 @@ class NoteGrid : public TimelineView {
     void openSliceMenu(NoteId id);
 
     void paintGrid(NVGcontext* vg, rack::math::Vec size);
+    /// A drum track's grid: every step of each lane as a cell, beats shaded in turn, bar lines in the gaps.
+    void paintDrumSteps(NVGcontext* vg, rack::math::Vec size);
     void drawNotes(NVGcontext* vg);
     /// Ghost notes: one other note, drawn as an outline, with where it lives.
     struct Ghost {
@@ -94,6 +96,11 @@ class NoteGrid : public TimelineView {
     void drawGhosts(NVGcontext* vg);
     /// Opened from a timeline clip: the loop's repeats, faded, up to where that clip stops, and a line there.
     void drawTimelineRepeats(NVGcontext* vg);
+    /// Drum lanes with a loop of their own (polymeter): where it ends on the lane's row, and its repeats, faded,
+    /// until the clip's loop ends.
+    void drawLaneLoops(NVGcontext* vg);
+    /// Rows of muted lanes (or lanes left out by a solo) are dimmed, as their headers are.
+    void dimSilentLanes(NVGcontext* vg);
     const Ghost* ghostAt(rack::math::Vec pos);
     /// The step input cursor, and a banner while step input or keyboard play is on.
     void drawLivePlay(NVGcontext* vg);

@@ -187,6 +187,32 @@ TEST_CASE("PitchAxis: folded rows show only some pitches and keep the view centr
     CHECK(axis.stepRows(60, -1) == 61);
 }
 
+TEST_CASE("PitchAxis: rows in a given order keep it, as drum lanes do") {
+    PitchAxis axis;
+    axis.setViewHeight(100);
+    axis.setRows({36, 38, 42, 46, 38}); // kick, snare, closed hat, open hat; the repeat is dropped
+    CHECK(axis.rowCount() == 4);
+    CHECK(axis.pitchAtRow(0) == 36);
+    CHECK(axis.pitchAtRow(3) == 46);
+    CHECK(axis.rowOf(42) == 2);
+    CHECK(axis.stepRows(36, 1) == 38); // one row down is the next lane, not the next lower pitch
+    CHECK(axis.stepRows(46, -1) == 42);
+    CHECK(axis.rowOf(40) == axis.rowOf(38)); // a hidden pitch shares the row of the shown pitch below it
+    CHECK(axis.rowOf(10) == axis.rowOf(36)); // below every lane: the lowest lane's row
+
+    // Fitted from the top, with a footer row: four rows and the footer share the height.
+    axis.setFooterRows(1);
+    axis.showRowsFromTop(0, 3, 12);
+    CHECK(axis.top() == 0);
+    CHECK(axis.rowHeight() == doctest::Approx(20));
+    // A short view keeps the minimum row height and scrolls as far as the footer.
+    axis.setViewHeight(40);
+    axis.showRowsFromTop(0, 3, 16);
+    CHECK(axis.rowHeight() == 16);
+    axis.restore({100, 16});
+    CHECK(axis.top() == doctest::Approx(5 - 40.0 / 16));
+}
+
 TEST_CASE("TrackAxis: variable heights, hit testing, anchored zoom") {
     TrackAxis axis;
     axis.setViewHeight(100);

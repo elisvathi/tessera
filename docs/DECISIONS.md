@@ -1221,3 +1221,22 @@ Refines §78.
 - **While a Replace take records, the armed track's timeline clips are silent** (notes and clip lanes; track lanes
   still play), since the take replaces them (`Engine::replacing`). Merge and Stack keep playing them.
 - The red region of a timeline take starts at punch-in, where its clip will start.
+
+## 81. The drum editor is the piano roll (24 Oct)
+
+- **One editor for drum tracks.** The step grid, with its fixed width, is gone. A drum track's piano roll is the drum
+  editor: lane headers in place of the keys, one row per lane in the
+  lanes' order. It zooms and scrolls like the piano roll, past the end of the clip.
+- **Drawing past the end grows the clip** to the end of that bar (the rule of §70), so a pattern gets longer by
+  drawing into it.
+- **It still looks like a step sequencer:** every step of each lane is a cell, beats shaded in turn, with a gap around
+  each cell, as the step grid had (zoomed far out, beat bands).
+- **Draw keeps the step feel:** a click toggles a hit, a drag paints hits along the path, a press on a hit removes
+  the hits passed. Hits are one lane step long. With adaptive snap they land on the lane's own rate; a fixed snap
+  draws finer.
+- **Polymeter lanes** show where their own loop ends on their row and fade their repeats. The velocity lane edits
+  the lane last clicked when nothing is selected, since hits of different lanes line up in time.
+- **Lanes | Keys (G) stays:** the same piano roll shows a drum track's notes on the keys as plain notes, for free
+  timing and long notes. It is a per-surface view setting (older patches' "drumSteps" choice carries over).
+- Fold no longer applies to drum tracks: Lanes shows the lanes, and notes on no lane keep a row of their own.
+
