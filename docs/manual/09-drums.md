@@ -120,8 +120,20 @@ coming back in line every few bars. The lane's pattern is the first steps of the
 the lane's colour marks where its own loop ends. After it, the row is dimmed and its repeats are faded. It plays the
 same way from the clips panel and from the timeline.
 
-The lane keeps counting when the clip loops, so there is no seam where the clip starts again. It also repeats in a
-clip that doesn't loop:
+In a clip that loops, the loop grows to fit the lanes: it lasts until every lane starts together again. A 1-bar clip
+with a 3-step lane loops 3 bars; add a 5-step lane and it loops 15 bars. So every time round sounds the same, and
+what you see is what plays:
+
+- The lanes that follow the clip, and notes on no lane, repeat on the clip's length inside the loop. The clip chip
+  still shows and sets that length.
+- The editor keeps its zoom. Scroll or play along to see the repeats and where the loop ends.
+- The loop in the ruler is an outline: it can't be dragged while the lanes set it. Rest the pointer on it to see
+  how long it is. You can still turn the loop off.
+- Set every lane back to **Steps → Clip** and the loop you had before comes back.
+
+![A 1-bar beat with a 3-step closed hat: the loop runs 3 bars, and the repeats are faded](images/drum-polymeter.png)
+
+A lane with its own length also repeats in a clip that doesn't loop:
 
 - **On the timeline**, it repeats for the whole timeline clip, however far you stretch it. The other lanes play once.
 - **In the clips panel**, it repeats until the clip's length. The clip chip shows that length and lets you pick 1 to

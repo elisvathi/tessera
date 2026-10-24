@@ -48,14 +48,16 @@ CommandPtr recordArrangement(const Song& song, const std::vector<CapturedSegment
         const Clip* clip = song.findClip(s.clip);
         Tick start = Tick(std::llround(s.start));
         Tick end = Tick(std::llround(s.end));
-        if (!clip || !song.findTrack(s.track) || end <= start)
+        const Track* track = song.findTrack(s.track);
+        if (!clip || !track || end <= start)
             continue;
         Placed p{s.track, ArrangerClip{}};
         p.clip.id = newId();
         p.clip.clip = s.clip;
         p.clip.position = start;
         p.clip.length = end - start;
-        p.clip.offset = normalizeOffset(*clip, Tick(std::llround(s.clipTick)));
+        p.clip.offset = normalizeOffset(*clip, Tick(std::llround(s.clipTick)),
+                                        track->type == TrackType::Drum ? &track->drumLanes : nullptr);
         // Segments go in the order they were recorded, so a later pass over the same time (the song loop came
         // round) wins over an earlier one.
         after.push_back(p);

@@ -50,8 +50,10 @@ class ClipSource : public TimelineSource {
     TimeSig timeSig() override;
     double contentEnd() override;
     Tick loopStart() override;
+    /// The clip's loop end, or the end of its lane cycle on a drum track.
     Tick loopEnd() override;
     bool loopOn() override;
+    bool loopLocked() override;
     void setLoop(Tick start, Tick end) override;
     void toggleLoop() override;
     double playhead() override;
@@ -69,6 +71,8 @@ class ClipSource : public TimelineSource {
 
   private:
     const Clip* current();
+    /// The track's drum lanes, which can make the clip loop their whole cycle; nullptr on other tracks.
+    const std::vector<DrumLane>* lanes();
     /// The slot to restart for a seek: the playing one when it holds this clip, else the first that does; -1 when
     /// the clips play and none does, or when the timeline plays and no launched clip has the track.
     int seekSlot();

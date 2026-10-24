@@ -829,6 +829,22 @@ TEST_CASE("drum lanes with their own loop length run against the clip (polymeter
     CHECK(edges[6] == 18 * kStepSamples);
 }
 
+TEST_CASE("a looping clip with a lane of its own length loops their whole cycle, and its other lanes repeat inside") {
+    // Hats every 3 steps against a 16-step clip line up again after 48 steps: the clip's loop is 3 bars, the kick
+    // still plays every bar, and the clip position runs on past the first bar.
+    Harness h(
+        drumSong({{0, kStep, 42}, {0, kStep, 36}}, [](std::vector<DrumLane>& l) { l[3].loopLength = 3 * kStep; }));
+    std::vector<int64_t> kicks = h.risingEdges(0, 50 * kStepSamples);
+    REQUIRE(kicks.size() == 4);
+    CHECK(kicks[1] == 16 * kStepSamples);
+    CHECK(kicks[3] == 48 * kStepSamples);
+    const ClipPlayback* clip = h.snapshot->tracks[0]->slot(0);
+    REQUIRE(clip);
+    CHECK(clip->loopLength() == 48 * kStep);
+    CHECK(clip->patternLength() == 16 * kStep);
+    CHECK(clip->patternTime(20.0 * kStep) == doctest::Approx(4.0 * kStep));
+}
+
 TEST_CASE("a lane with its own loop repeats in a clip that doesn't loop, until the clip's length") {
     // Hats every 3 steps in a one-shot bar: steps 0, 3, ..., 15, though the clip's last note ends at step 1.
     Song song =

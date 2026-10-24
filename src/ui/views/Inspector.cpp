@@ -1,5 +1,6 @@
 #include "Inspector.hpp"
 
+#include "../../model/Arrangement.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -804,10 +805,12 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     }
     y = row(vg, y, "Name", clip->name.empty() ? "Untitled" : clip->name);
     y = row(vg, y, "Length", bars(clipActions::shownLength(song, *clip), song.timeSig));
+    ClipSpan span = clipSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
     y = row(vg, y, "Loop",
-            clip->loopMode == LoopMode::Loop ? timeline::positionText(double(clip->loopStart), song.timeSig) + " – " +
-                                                   timeline::positionText(double(clip->loopEnd), song.timeSig)
-                                             : "Off");
+            !span.looping
+                ? "Off"
+                : timeline::positionText(double(span.start), song.timeSig) + " – " +
+                      timeline::positionText(double(span.end), song.timeSig) + (span.cycles() ? " (lanes)" : ""));
     if (t->type == TrackType::Instrument)
         y = row(vg, y, "Key",
                 clip->scaleOverride ? keyActions::keyLabel(song, *clip->scaleOverride)

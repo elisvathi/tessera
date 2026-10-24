@@ -1378,7 +1378,7 @@ void NoteGrid::collectGhosts() {
             if (!c || a.id == except || a.muted || a.position >= to || instanceEnd(a) <= from)
                 continue;
             played.clear();
-            renderInstance(*c, a, played, t.transpose);
+            renderInstance(*c, a, played, t.transpose, 1, t.type == TrackType::Drum ? &t.drumLanes : nullptr);
             for (const TimedNote& tn : played) {
                 if (tn.end <= from || tn.start >= to || !tn.source)
                     continue;
@@ -1439,29 +1439,27 @@ void NoteGrid::collectGhosts() {
 void NoteGrid::drawLaneLoops(NVGcontext* vg) {
     const Clip* clip = owner.clip();
     const Track* track = owner.track();
-    if (!clip || !track || !owner.drumMode())
+    if (!clip || !track || track->type != TrackType::Drum)
         return;
     TimeAxis& t = time();
     float row = float(owner.pitch.rowHeight());
     float radius = std::min(theme::metrics::kRadiusItem, row / 3);
-    for (const DrumLane& l : track->drumLanes) {
-        if (!hasOwnLoop(l, *clip) || !owner.pitch.shown(l.pitch))
-            continue;
-        float y = float(owner.pitch.pitchToY(l.pitch));
-        if (y + row < 0 || y > box.size.y)
-            continue;
-        LaneRegion region = laneRegion(l, *clip);
+    ClipSpan span = clipSpan(*clip, &track->drumLanes);
+    // The lanes repeat until the clip's loop (its whole lane cycle) ends. Without a loop they repeat for as long as
+    // the clip plays: the timeline clip it was opened from, else the clip's length. A looping clip opened from the
+    // timeline keeps going to where that clip stops, as the timeline plays it.
+    double instanceEnd = owner.source.instanceEnd();
+    Tick clipEnd = span.looping ? span.end : std::isfinite(instanceEnd) ? Tick(0) : laneLoopsEnd(*clip);
+    if (std::isfinite(instanceEnd) && (span.cycles() || !span.looping))
+        clipEnd = std::max(clipEnd, Tick(std::ceil(instanceEnd)));
+
+    // Past its own loop a row plays that loop again until the clip ends: dimmed, with the repeats drawn like ghosts,
+    // since they are the same hits. Only the repeats on screen are visited, so a long cycle costs nothing extra.
+    auto repeatRow = [&](int pitch, LaneRegion region, NVGcolor color, bool marker) {
+        float y = float(owner.pitch.pitchToY(pitch));
+        if (!owner.pitch.shown(pitch) || y + row < 0 || y > box.size.y || region.length <= 0)
+            return;
         Tick regionEnd = region.start + region.length;
-        // The lane repeats until the clip's loop ends. Without a loop it repeats for as long as the clip plays: the
-        // timeline clip it was opened from, else the clip's length.
-        bool looping = clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart;
-        double instanceEnd = owner.source.instanceEnd();
-        Tick clipEnd = looping                      ? clip->loopEnd
-                       : std::isfinite(instanceEnd) ? Tick(std::ceil(instanceEnd))
-                                                    : laneLoopsEnd(*clip);
-        NVGcolor color = theme::track(l.color ? l.color : track->color);
-        // Past its own loop the lane plays its loop again until the clip ends: dimmed, with the repeats
-        // drawn like ghosts, since they are the same hits.
         float x0 = float(t.tickToX(double(regionEnd))), x1 = float(t.tickToX(double(clipEnd)));
         if (x1 > x0 && x1 > 0 && x0 < box.size.x) {
             nvgBeginPath(vg);
@@ -1470,11 +1468,13 @@ void NoteGrid::drawLaneLoops(NVGcontext* vg) {
             nvgFill(vg);
         }
         NVGcolor ghost = nvgTransRGBAf(color, 0.3f);
-        for (Tick shift = region.length; region.start + shift < clipEnd; shift += region.length) {
+        double left = t.left();
+        Tick first = std::max<Tick>(1, Tick(std::floor((left - double(regionEnd)) / double(region.length))));
+        for (Tick shift = first * region.length; region.start + shift < clipEnd; shift += region.length) {
             if (t.tickToX(double(region.start + shift)) > box.size.x)
                 break;
             for (const Note& n : owner.notes()) {
-                if (n.pitch != l.pitch || n.start < region.start || n.start >= regionEnd)
+                if (n.pitch != pitch || n.start < region.start || n.start >= regionEnd)
                     continue;
                 Tick start = n.start + shift;
                 if (start >= clipEnd)
@@ -1486,12 +1486,37 @@ void NoteGrid::drawLaneLoops(NVGcontext* vg) {
                 draw::roundedRect(vg, Rect(a, y + 0.5f, std::max(2.f, b - a - 1), row - 1), radius, ghost);
             }
         }
-        if (x0 >= -1 && x0 <= box.size.x + 1) {
+        if (marker && x0 >= -1 && x0 <= box.size.x + 1) {
             nvgBeginPath(vg);
             nvgRect(vg, x0 - 1, y, 2, row);
             nvgFillColor(vg, color);
             nvgFill(vg);
         }
+    };
+    std::vector<int> ownPitches;
+    for (const DrumLane& l : track->drumLanes)
+        if (hasOwnLoop(l, *clip)) {
+            repeatRow(l.pitch, laneRegion(l, *clip), theme::track(l.color ? l.color : track->color), true);
+            ownPitches.push_back(l.pitch);
+        }
+    if (!span.cycles())
+        return;
+    // In a lane cycle every other row repeats the clip's own loop: the lanes that follow it, and notes on no lane.
+    std::vector<int> others;
+    auto other = [&](int pitch) {
+        if (std::find(ownPitches.begin(), ownPitches.end(), pitch) == ownPitches.end() &&
+            std::find(others.begin(), others.end(), pitch) == others.end())
+            others.push_back(pitch);
+    };
+    for (const DrumLane& l : track->drumLanes)
+        other(l.pitch);
+    for (const Note& n : owner.notes())
+        other(n.pitch);
+    for (int pitch : others) {
+        int lane = laneOfPitch(track->drumLanes, pitch);
+        uint32_t color =
+            lane >= 0 && track->drumLanes[size_t(lane)].color ? track->drumLanes[size_t(lane)].color : track->color;
+        repeatRow(pitch, LaneRegion{span.start, span.pattern}, theme::track(color), false);
     }
 }
 
@@ -1520,7 +1545,9 @@ void NoteGrid::drawTimelineRepeats(NVGcontext* vg) {
     if (!std::isfinite(end) || !clip || !track)
         return;
     TimeAxis& t = time();
-    if (clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart) {
+    // A lane cycle's repeats are drawn row by row with the lanes (drawLaneLoops).
+    bool cycles = track->type == TrackType::Drum && clipSpan(*clip, &track->drumLanes).cycles();
+    if (!cycles && clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart) {
         Tick length = clip->loopEnd - clip->loopStart;
         float row = float(owner.pitch.rowHeight());
         float radius = std::min(theme::metrics::kRadiusItem, row / 3);

@@ -1119,7 +1119,7 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
             state.playing = kNoSlot;
         return;
     }
-    playLoop(track, state, clip.notes, state.cursor, clip.loopStart, clip.loopLength(), a, b, from, &clip.extras);
+    playLoop(track, state, clip.notes, state.cursor, clip.loopStart, clip.patternLength(), a, b, from, &clip.extras);
     for (size_t k = 0; k < clip.laneLoops.size() && k < state.laneCursor.size(); k++) {
         const LaneLoop& lane = clip.laneLoops[k];
         playLoop(track, state, lane.notes, state.laneCursor[k], lane.start, lane.length, a, b, from, &clip.extras);
@@ -1538,7 +1538,8 @@ void Engine::seekTrack(const TrackPlayback& track, TrackState& state) {
                                    [](const NoteEvent& n, double t) { return n.start < t; });
         return size_t(it - notes.begin());
     };
-    state.cursor = indexOf(clip.notes, clip.loopStart + (clip.looping ? positiveMod(a, length) : a));
+    state.cursor =
+        indexOf(clip.notes, clip.loopStart + (clip.looping ? positiveMod(a, double(clip.patternLength())) : a));
     for (size_t k = 0; k < clip.laneLoops.size() && k < state.laneCursor.size(); k++) {
         const LaneLoop& lane = clip.laneLoops[k];
         if (lane.length > 0)
@@ -1559,7 +1560,7 @@ int Engine::lanesClips(const TrackPlayback& tp, const TrackState& state, double 
         double t = clipTimeAt(tp, state, play);
         if (!std::isfinite(t))
             return 0;
-        out[0] = {clip, t};
+        out[0] = {clip, clip->patternTime(t)};
         return 1;
     }
     if (!followsArrangement(state) || replacing(tp))

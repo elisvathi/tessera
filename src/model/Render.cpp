@@ -359,7 +359,7 @@ Song soloSong(const Song& song, const Track& t, const Clip& clip) {
     a.id = ArrangementId(1);
     a.clip = clip.id;
     a.position = 0;
-    a.length = std::max<Tick>(1, clipSpan(clip).end);
+    a.length = std::max<Tick>(1, clipSpan(clip, t.type == TrackType::Drum ? &t.drumLanes : nullptr).end);
     one.arrangement = {a};
     one.automation.clear();
     one.mute = false;

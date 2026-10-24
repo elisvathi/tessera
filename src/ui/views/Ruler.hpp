@@ -2,6 +2,7 @@
 
 #include "../../model/Song.hpp"
 #include "../Theme.hpp"
+#include "../widgets/HoverTooltip.hpp"
 #include "TimelineView.hpp"
 #include <cmath>
 
@@ -25,6 +26,8 @@ class TimelineSource {
     virtual Tick loopStart() = 0;
     virtual Tick loopEnd() = 0;
     virtual bool loopOn() = 0;
+    /// True when something else sets the loop (a drum clip's lane cycle): it shows, but can't be dragged or set.
+    virtual bool loopLocked() { return false; }
     /// Records one undo step.
     virtual void setLoop(Tick start, Tick end) = 0;
     virtual void toggleLoop() = 0;
@@ -77,6 +80,8 @@ class Ruler : public InteractiveView {
     void wheel(rack::math::Vec pos, rack::math::Vec delta, Modifiers mods) override;
     /// Dragging the loop past either edge scrolls the view, so a loop can grow beyond what is on screen.
     void autoScroll(double dx, double dy) override;
+    void step() override;
+    void onLeave(const LeaveEvent& e) override;
 
   private:
     enum class Zone { Markers, Loop, Time, Overview };
@@ -105,6 +110,9 @@ class Ruler : public InteractiveView {
     // Live previews while a gesture runs; the source is only changed on release.
     std::optional<std::pair<Tick, Tick>> loopPreview;
     std::optional<std::vector<Marker>> markersPreview;
+    // Explains a locked loop while the pointer rests on it.
+    HoverTooltip tip{""};
+    bool tipOn = false;
 
     friend class LoopGesture;
     friend class InstanceEndGesture;

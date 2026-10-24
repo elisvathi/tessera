@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <numeric>
 
 namespace tessera {
 
@@ -62,6 +63,21 @@ LaneRegion laneRegion(const DrumLane& lane, const Clip& clip) {
 
 bool hasOwnLoop(const DrumLane& lane, const Clip& clip) {
     return lane.loopLength > 0 && lane.loopLength != followLength(clip);
+}
+
+Tick laneCycle(const Clip& clip, const std::vector<DrumLane>& lanes) {
+    if (clip.loopMode != LoopMode::Loop || clip.loopEnd <= clip.loopStart)
+        return 0;
+    // Engine time is a double, so the cycle stays where it counts ticks exactly. Real lane lengths never get near.
+    constexpr Tick kMaxCycle = Tick(1) << 52;
+    Tick cycle = clip.loopEnd - clip.loopStart;
+    for (const DrumLane& l : lanes) {
+        if (!hasOwnLoop(l, clip))
+            continue;
+        Tick step = l.loopLength / std::gcd(cycle, l.loopLength);
+        cycle = step > kMaxCycle / cycle ? kMaxCycle : cycle * step;
+    }
+    return cycle;
 }
 
 std::vector<bool> euclid(int hits, int steps, int rotation) {

@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/model/Arrangement.hpp"
 #include "../src/model/DrumKit.hpp"
 #include "../src/model/Serialize.hpp"
 
@@ -86,6 +87,47 @@ TEST_CASE("a lane's own length counts in a clip that doesn't loop too") {
     CHECK_FALSE(hasOwnLoop(lane, c));
 }
 
+TEST_CASE("a looping clip's lane cycle: the least common multiple of its loop and the lanes' own lengths") {
+    Clip c = barClip(); // 16 sixteenths
+    Tick s = kPpq / 4;
+    DrumLane kick, hat, tom;
+    hat.loopLength = 3 * s;
+    tom.loopLength = 5 * s;
+    CHECK(laneCycle(c, {kick}) == 16 * s); // no lane of its own: just the loop
+    CHECK(laneCycle(c, {kick, hat}) == 48 * s);
+    CHECK(laneCycle(c, {kick, hat, tom}) == 240 * s);
+    tom.loopLength = 8 * s; // divides the loop: it lines up every bar
+    CHECK(laneCycle(c, {tom}) == 16 * s);
+    hat.loopLength = 3 * kPpq / 3; // three triplet eighths: a quarter note
+    CHECK(laneCycle(c, {hat}) == 16 * s);
+    c.loopMode = LoopMode::Off;
+    CHECK(laneCycle(c, {hat, tom}) == 0);
+
+    std::vector<DrumLane> lanes{kick, DrumLane{}};
+    lanes[1].loopLength = 3 * s;
+    c.loopMode = LoopMode::Loop;
+    ClipSpan span = clipSpan(c, &lanes);
+    CHECK(span.length() == 48 * s);
+    CHECK(span.pattern == 16 * s);
+    CHECK(span.cycles());
+    CHECK(span.patternTime(double(20 * s)) == doctest::Approx(double(4 * s)));
+    CHECK_FALSE(clipSpan(c).cycles()); // without the lanes it is the plain loop
+}
+
+TEST_CASE("the lane cycle stays a number the engine counts exactly, however the lengths add up") {
+    Clip c = barClip();
+    std::vector<DrumLane> lanes;
+    for (Tick steps : {7, 11, 13, 17, 19, 23, 29, 31}) // primes: no two line up early
+        for (Tick rate : {kPpq / 3, kPpq / 4, kPpq / 6, kPpq / 8}) {
+            DrumLane l;
+            l.loopLength = steps * rate;
+            lanes.push_back(l);
+        }
+    Tick cycle = laneCycle(c, lanes);
+    CHECK(cycle > 0);
+    CHECK(cycle <= Tick(1) << 52);
+}
+
 TEST_CASE("a loop pattern clears the lane from its start and writes the pattern once") {
     Ids ids;
     Tick s = kPpq / 4;
@@ -148,8 +190,6 @@ TEST_CASE("randomize repeats for the same seed and follows the density") {
     }
 }
 
-#include "../src/model/Arrangement.hpp"
-
 TEST_CASE("a lane with its own loop repeats on it across the arrangement (polymeter)") {
     Ids ids;
     Clip c = barClip(); // 16 sixteenths
@@ -176,6 +216,37 @@ TEST_CASE("a lane with its own loop repeats on it across the arrangement (polyme
     CHECK(hats[6] == 18 * s); // keeps going across the bar line instead of restarting there
     for (size_t i = 1; i < out.size(); i++)
         CHECK(out[i - 1].start <= out[i].start);
+}
+
+TEST_CASE("on the timeline a lane cycle plays from any offset as the clip launcher does") {
+    Ids ids;
+    Clip c = barClip(); // 16 sixteenths, looping
+    Tick s = kPpq / 4;
+    DrumLane kick, hat;
+    kick.pitch = 36;
+    hat.pitch = 42;
+    hat.loopLength = 3 * s;
+    std::vector<DrumLane> lanes{kick, hat};
+    c.notes = drums::applyPattern({}, 36, {0, 4 * kPpq}, s, euclid(1, 16), 1, ids.source());
+    c.notes = drums::applyPattern(c.notes, 42, {0, 3 * s}, s, euclid(1, 3), 1, ids.source());
+
+    // Starting 20 steps in (bar 2, step 5): the kick is on the next bar line, the hat on step 21.
+    ArrangerClip a;
+    a.clip = c.id;
+    a.offset = 20 * s;
+    a.length = 16 * s;
+    std::vector<TimedNote> out;
+    renderInstance(c, a, out, 0, 1, &lanes);
+    std::vector<Tick> hats, kicks;
+    for (const TimedNote& n : out)
+        (n.pitch == 42 ? hats : kicks).push_back(n.start);
+    CHECK(kicks == std::vector<Tick>{12 * s});
+    REQUIRE_FALSE(hats.empty());
+    CHECK(hats[0] == 1 * s);
+    CHECK(normalizeOffset(c, 50 * s, &lanes) == 2 * s); // wraps on the 48-step cycle
+    CHECK(loopSeams(c, a, &lanes).empty());             // the cycle doesn't end inside this bar
+    REQUIRE(clipTimeAt(c, a, double(2 * s), &lanes));
+    CHECK(*clipTimeAt(c, a, double(2 * s), &lanes) == doctest::Approx(double(22 * s)));
 }
 
 TEST_CASE("on the timeline a lane with its own loop repeats for the whole clip, even one that doesn't loop") {

@@ -7,6 +7,7 @@
 #include "../model/Song.hpp"
 
 #include <array>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -76,8 +77,20 @@ struct ClipPlayback {
     std::vector<LanePlayback> lanes; // clip automation, clip time
     std::vector<KnobLanePlayback> knobLanes;
     std::vector<NoteExtras> extras; // for notes and lane-loop notes with extras
+    // In a lane cycle the loop is the whole cycle, and `notes` and the automation repeat the clip's own loop,
+    // this long, inside it. 0: they repeat on the loop.
+    Tick pattern = 0;
 
     Tick loopLength() const { return loopEnd - loopStart; }
+    Tick patternLength() const { return pattern > 0 ? pattern : loopLength(); }
+    /// Clip time `t` inside the loop brought into the pattern, for what repeats on it (the automation).
+    double patternTime(double t) const {
+        Tick p = patternLength();
+        if (!looping || p <= 0 || p >= loopLength())
+            return t;
+        double r = std::fmod(t - double(loopStart), double(p));
+        return double(loopStart) + (r < 0 ? r + double(p) : r);
+    }
 };
 
 /// An arranger instance whose clip has automation: what's needed to find clip time from song time.
