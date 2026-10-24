@@ -1452,9 +1452,13 @@ void NoteGrid::drawLaneLoops(NVGcontext* vg) {
             continue;
         LaneRegion region = laneRegion(l, *clip);
         Tick regionEnd = region.start + region.length;
-        // The lane repeats until the clip's loop ends, or the clip's end when it doesn't loop.
-        Tick clipEnd =
-            clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart ? clip->loopEnd : laneLoopsEnd(*clip);
+        // The lane repeats until the clip's loop ends. Without a loop it repeats for as long as the clip plays: the
+        // timeline clip it was opened from, else the clip's length.
+        bool looping = clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart;
+        double instanceEnd = owner.source.instanceEnd();
+        Tick clipEnd = looping                      ? clip->loopEnd
+                       : std::isfinite(instanceEnd) ? Tick(std::ceil(instanceEnd))
+                                                    : laneLoopsEnd(*clip);
         NVGcolor color = theme::track(l.color ? l.color : track->color);
         // Past its own loop the lane plays its loop again until the clip ends: dimmed, with the repeats
         // drawn like ghosts, since they are the same hits.

@@ -178,7 +178,7 @@ TEST_CASE("a lane with its own loop repeats on it across the arrangement (polyme
         CHECK(out[i - 1].start <= out[i].start);
 }
 
-TEST_CASE("a lane with its own loop fills a clip that doesn't loop, and stops at its end") {
+TEST_CASE("on the timeline a lane with its own loop repeats for the whole clip, even one that doesn't loop") {
     Ids ids;
     Clip c = barClip(); // 16 sixteenths
     c.loopMode = LoopMode::Off;
@@ -191,12 +191,13 @@ TEST_CASE("a lane with its own loop fills a clip that doesn't loop, and stops at
 
     ArrangerClip a;
     a.clip = c.id;
-    a.length = 2 * 4 * kPpq; // longer than the clip: it plays once
+    a.length = 2 * 4 * kPpq; // two bars, longer than the clip
     std::vector<TimedNote> out;
     renderInstance(c, a, out, 0, 1, &lanes);
     std::vector<Tick> hats;
     for (const TimedNote& n : out)
         hats.push_back(n.start);
-    CHECK(hats == std::vector<Tick>{0, 3 * s, 6 * s, 9 * s, 12 * s, 15 * s});
+    REQUIRE(hats.size() == 11); // every 3 steps over 32: 0, 3, ..., 30
+    CHECK(hats[5] == 15 * s);
+    CHECK(hats[10] == 30 * s);
 }
-

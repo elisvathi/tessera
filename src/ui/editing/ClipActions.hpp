@@ -41,6 +41,9 @@ void insertScene(EditorContext& ctx, int index);
 
 /// "Length: 2 bars" for a clip's loop (or the clip, when it doesn't loop).
 std::string lengthLabel(const Song& song, const Clip& clip);
+/// The clip's length as the chip and the inspector show it: its loop, or without one its last note, or its own
+/// length when drum lanes with their own steps repeat in it.
+Tick shownLength(const Song& song, const Clip& clip);
 /// Loop length choices for a clip: whole bars, double (copying the notes) and halve.
 void openLengthMenu(EditorContext& ctx, ClipId clip);
 /// The length menu's items (loop lengths, Double, Halve), for a menu of its own or the notes header's clip chip.

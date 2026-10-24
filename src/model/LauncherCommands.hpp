@@ -112,9 +112,12 @@ CommandPtr copySlotClip(const Song& song, TrackId fromTrack, int fromSlot, Track
 CommandPtr duplicateSlotClip(const Song& song, TrackId track, int slot, const NextId& nextId);
 /// Empties a slot; its clip leaves the pool when nothing else uses it.
 CommandPtr deleteSlotClip(const Song& song, TrackId track, int slot);
-/// Sets the clip's loop (or, when it doesn't loop, the clip) to `length` ticks from the loop start. The clip
-/// grows to hold the loop; notes stay where they are. Null when nothing changes.
+/// Sets the clip's loop to `length` ticks from the loop start. The clip grows to hold the loop; notes stay where
+/// they are. Null when nothing changes or the clip doesn't loop.
 CommandPtr setLoopLength(const Song& song, ClipId clip, Tick length);
+/// Sets the length of a clip that doesn't loop: its drum lanes with their own steps repeat until there in the clips
+/// panel. Its notes still end where they end. Null when nothing changes or the clip loops.
+CommandPtr setClipLength(const Song& song, ClipId clip, Tick length);
 /// Doubles the loop and copies its notes into the new half.
 CommandPtr doubleLoop(const Song& song, ClipId clip, const NextId& nextId);
 

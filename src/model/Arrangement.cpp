@@ -98,9 +98,9 @@ void renderInstance(const Clip& clip, const ArrangerClip& a, std::vector<TimedNo
         u = double(span.start);
     }
 
-    // Each own-loop lane repeats its region from where the instance starts in the clip: for as long as the instance
-    // plays a looping clip, else until the clip ends.
-    double limit = span.looping ? total : std::min(total, (double(laneLoopsEnd(clip)) - offset) * stretch);
+    // Each own-loop lane repeats its region from where the instance starts in the clip, for the whole instance,
+    // whether or not the clip loops.
+    double limit = total;
     for (const DrumLane* lane : ownLoops) {
         LaneRegion region = laneRegion(*lane, clip);
         double L = double(region.length);

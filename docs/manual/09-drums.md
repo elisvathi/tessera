@@ -120,8 +120,12 @@ coming back in line every few bars. The lane's pattern is the first steps of the
 the lane's colour marks where its own loop ends. After it, the row is dimmed and its repeats are faded. It plays the
 same way from the clips panel and from the timeline.
 
-The lane keeps counting when the clip loops, so there is no seam where the clip starts again. In a clip that doesn't
-loop, the lane repeats until the clip's end (its length), even when its own notes stop earlier.
+The lane keeps counting when the clip loops, so there is no seam where the clip starts again. It also repeats in a
+clip that doesn't loop:
+
+- **On the timeline**, it repeats for the whole timeline clip, however far you stretch it. The other lanes play once.
+- **In the clips panel**, it repeats until the clip's length. The clip chip shows that length and lets you pick 1 to
+  16 bars, as it does for a loop.
 
 Choose **Steps → Clip** to follow the clip's loop again.
 
