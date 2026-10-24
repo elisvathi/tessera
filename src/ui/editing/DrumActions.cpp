@@ -68,6 +68,27 @@ void editPattern(EditorContext& ctx, TrackId track, int lane, const PatternEdit&
     m->perform(replaceNotes(name, clip->id, clip->notes, after));
 }
 
+void setLanePattern(EditorContext& ctx, TrackId track, int lane, const std::vector<bool>& pattern,
+                    const std::string& name) {
+    TesseraModule* m = ctx.module();
+    const Track* t = findTrack(ctx, track);
+    if (!m || !t || lane < 0 || lane >= int(t->drumLanes.size()) || pattern.empty())
+        return;
+    const Clip* clip = shownClip(ctx, *t);
+    if (!clip)
+        return;
+    std::vector<DrumLane> lanes = t->drumLanes;
+    DrumLane& l = lanes[size_t(lane)];
+    l.loopLength = Tick(pattern.size()) * l.stepLength;
+    Tick start = laneRegion(l, *clip).start;
+    edits::NoteList after = drums::setLoopPattern(clip->notes, l.pitch, start, l.stepLength, pattern,
+                                                  ctx.state().lastVelocity, [m] { return m->newId<NoteId>(); });
+    auto command = std::make_unique<CompoundCommand>(name);
+    command->add(setTrackField(m->song(), track, &Track::drumLanes, std::move(lanes), name));
+    command->add(replaceNotes(name, clip->id, clip->notes, after));
+    m->perform(std::move(command));
+}
+
 void audition(EditorContext& ctx, TrackId track, int lane) {
     const Track* t = findTrack(ctx, track);
     if (t && lane >= 0 && lane < int(t->drumLanes.size()))
@@ -205,17 +226,19 @@ void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         return [c, track, lane, name, edit] { editPattern(*c, track, lane, edit, name); };
     };
     Tick steps = clip ? laneRegion(l, *clip).steps(l.stepLength) : 16;
-    float velocity = ctx.state().lastVelocity;
-    menu->addChild(rack::createSubmenuItem("Euclidean", "", [pattern, steps, velocity](rack::ui::Menu* sub) {
-        sub->addChild(rack::createMenuLabel("Hits spread evenly over " + std::to_string(steps) + " steps"));
-        for (int hits = 1; hits <= int(steps); hits++)
-            sub->addChild(rack::createMenuItem(
-                std::to_string(hits) + (hits == 1 ? " hit" : " hits"), "",
-                pattern("Euclidean " + std::to_string(hits) + "/" + std::to_string(steps),
-                        [hits, velocity](const edits::NoteList& n, int pitch, LaneRegion r, Tick s,
-                                         const edits::IdSource& id) {
-                            return drums::applyPattern(n, pitch, r, s, euclid(hits, int(r.steps(s))), velocity, id);
-                        })));
+    // Euclidean and Fill every make the lane as long as their pattern, so it repeats with no seam.
+    menu->addChild(rack::createSubmenuItem("Euclidean", "", [c, track, lane, steps](rack::ui::Menu* sub) {
+        sub->addChild(rack::createMenuLabel("Hits spread evenly over the lane's steps"));
+        for (int n : kStepCounts)
+            sub->addChild(rack::createSubmenuItem(
+                std::to_string(n) + " steps", n == int(steps) ? "now" : "", [c, track, lane, n](rack::ui::Menu* hits) {
+                    for (int k = 1; k <= n; k++)
+                        hits->addChild(rack::createMenuItem(
+                            std::to_string(k) + (k == 1 ? " hit" : " hits"), "", [c, track, lane, n, k] {
+                                setLanePattern(*c, track, lane, euclid(k, n),
+                                               "Euclidean " + std::to_string(k) + "/" + std::to_string(n));
+                            }));
+                }));
     }));
     menu->addChild(rack::createMenuItem(
         "Rotate left", "",
@@ -232,17 +255,13 @@ void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         pattern("Reverse lane", [](const edits::NoteList& n, int pitch, LaneRegion r, Tick s, const edits::IdSource&) {
             return drums::reverse(n, pitch, r, s);
         })));
-    menu->addChild(rack::createSubmenuItem("Fill every", "", [pattern, velocity](rack::ui::Menu* sub) {
-        for (int every : {2, 3, 4, 8})
-            sub->addChild(rack::createMenuItem(
-                std::to_string(every) + " steps", "",
-                pattern("Fill lane", [every, velocity](const edits::NoteList& n, int pitch, LaneRegion r, Tick s,
-                                                       const edits::IdSource& id) {
-                    std::vector<bool> p(size_t(r.steps(s)));
-                    for (size_t i = 0; i < p.size(); i++)
-                        p[i] = i % size_t(every) == 0;
-                    return drums::applyPattern(n, pitch, r, s, p, velocity, id);
-                })));
+    menu->addChild(rack::createSubmenuItem("Fill every", "", [c, track, lane](rack::ui::Menu* sub) {
+        for (int every : {2, 3, 4, 5, 6, 8})
+            sub->addChild(rack::createMenuItem(std::to_string(every) + " steps", "", [c, track, lane, every] {
+                std::vector<bool> p(size_t(every), false);
+                p[0] = true;
+                setLanePattern(*c, track, lane, p, "Fill every " + std::to_string(every) + " steps");
+            }));
     }));
     menu->addChild(rack::createSubmenuItem("Randomize", "", [pattern](rack::ui::Menu* sub) {
         for (int pct : {25, 50, 75})

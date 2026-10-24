@@ -98,12 +98,14 @@ void renderInstance(const Clip& clip, const ArrangerClip& a, std::vector<TimedNo
         u = double(span.start);
     }
 
-    // Each own-loop lane repeats its region from where the instance starts in the clip.
+    // Each own-loop lane repeats its region from where the instance starts in the clip, for the whole instance,
+    // whether or not the clip loops.
+    double limit = total;
     for (const DrumLane* lane : ownLoops) {
         LaneRegion region = laneRegion(*lane, clip);
         double L = double(region.length);
         double elapsed = std::max(0.0, offset - double(span.start)); // clip time since the loop start
-        for (double k = std::floor(elapsed / L); (k * L - elapsed) * stretch < total; k++) {
+        for (double k = std::floor(elapsed / L); (k * L - elapsed) * stretch < limit; k++) {
             for (const Note& n : clip.notes) {
                 if (n.muted || n.pitch != lane->pitch || n.start < region.start ||
                     n.start >= region.start + region.length)
@@ -112,10 +114,10 @@ void renderInstance(const Clip& clip, const ArrangerClip& a, std::vector<TimedNo
                 if (q < elapsed)
                     continue;
                 double on = (q - elapsed) * stretch;
-                if (on >= total)
+                if (on >= limit)
                     continue;
                 double len = std::min(double(n.length) * double(gateScale), L - double(n.start - region.start));
-                out.push_back(timed(a, n, on, std::min(on + len * stretch, total), transpose));
+                out.push_back(timed(a, n, on, std::min(on + len * stretch, limit), transpose));
                 out.back().pass = int(k);
             }
         }

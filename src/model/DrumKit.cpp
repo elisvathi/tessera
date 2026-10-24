@@ -1,6 +1,7 @@
 #include "DrumKit.hpp"
 
 #include <algorithm>
+#include <limits>
 
 namespace tessera {
 
@@ -41,18 +42,26 @@ int laneOfPitch(const std::vector<DrumLane>& lanes, int pitch) {
     return -1;
 }
 
+Tick laneLoopsEnd(const Clip& clip) { return std::max<Tick>(1, std::max(clip.length, clip.contentEnd())); }
+
+namespace {
+
+/// The length a lane that follows the clip has: the clip's loop, or the whole clip without one.
+Tick followLength(const Clip& clip) {
+    bool looping = clip.loopMode == LoopMode::Loop && clip.loopEnd > clip.loopStart;
+    return looping ? clip.loopEnd - clip.loopStart : laneLoopsEnd(clip);
+}
+
+} // namespace
+
 LaneRegion laneRegion(const DrumLane& lane, const Clip& clip) {
     bool looping = clip.loopMode == LoopMode::Loop && clip.loopEnd > clip.loopStart;
     Tick start = looping ? clip.loopStart : 0;
-    Tick length = looping ? clip.loopEnd - clip.loopStart : std::max<Tick>(1, std::max(clip.length, clip.contentEnd()));
-    if (lane.loopLength > 0)
-        length = lane.loopLength;
-    return {start, length};
+    return {start, lane.loopLength > 0 ? lane.loopLength : followLength(clip)};
 }
 
 bool hasOwnLoop(const DrumLane& lane, const Clip& clip) {
-    return clip.loopMode == LoopMode::Loop && clip.loopEnd > clip.loopStart && lane.loopLength > 0 &&
-           lane.loopLength != clip.loopEnd - clip.loopStart;
+    return lane.loopLength > 0 && lane.loopLength != followLength(clip);
 }
 
 std::vector<bool> euclid(int hits, int steps, int rotation) {
@@ -125,6 +134,15 @@ NoteList setStep(const NoteList& notes, int pitch, Tick stepStart, Tick stepLeng
     NoteList out = without(notes, pitch, {stepStart, stepLength});
     if (velocity)
         out.push_back(stepNote(pitch, stepStart, stepLength, *velocity, newId));
+    return sorted(std::move(out));
+}
+
+NoteList setLoopPattern(const NoteList& notes, int pitch, Tick start, Tick stepLength, const std::vector<bool>& pattern,
+                        float velocity, const IdSource& newId) {
+    NoteList out = without(notes, pitch, {start, std::numeric_limits<Tick>::max() - start});
+    for (size_t i = 0; i < pattern.size(); i++)
+        if (pattern[i])
+            out.push_back(stepNote(pitch, start + Tick(i) * stepLength, stepLength, velocity, newId));
     return sorted(std::move(out));
 }
 

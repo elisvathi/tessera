@@ -223,6 +223,13 @@ CommandPtr setLoopLength(const Song& song, ClipId id, Tick length) {
     return out->empty() ? nullptr : std::move(out);
 }
 
+CommandPtr setClipLength(const Song& song, ClipId id, Tick length) {
+    const Clip* c = song.findClip(id);
+    if (!c || length < 1 || c->loopMode == LoopMode::Loop || c->length == length)
+        return nullptr;
+    return setClipField(song, id, &Clip::length, length, "Clip length " + lengthName(length, song.timeSig));
+}
+
 CommandPtr doubleLoop(const Song& song, ClipId id, const NextId& nextId) {
     const Clip* c = song.findClip(id);
     if (!c)

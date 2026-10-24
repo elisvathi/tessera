@@ -88,14 +88,17 @@ Right-click a lane's name for its menu.
 
 ### Pattern tools
 
-Also in the lane menu. Each one is a single undo step.
+Also in the lane menu. Each one is a single undo step. **Euclidean** and **Fill every** clear the lane's old hits
+and set its length (its **Steps**) to the pattern's, so the pattern repeats with no seam for the whole clip: Fill
+every 3 in a bar of 16 steps hits steps 1, 4, 7, 10, 13 and 16, then keeps counting in threes into the next bar,
+instead of hitting step 1 again right after step 16. The other tools work on the lane's steps as they are.
 
 | Tool | What it does |
 |---|---|
-| **Euclidean** | Spreads a number of hits as evenly as possible over the lane's steps. The first step always hits. Great for quick rhythms: 3 hits over 8 steps, 5 over 16… |
+| **Euclidean** | Pick a number of steps, then a number of hits: the hits are spread as evenly as possible over those steps, and the lane becomes that many steps long. The first step always hits. Great for quick rhythms: 3 hits over 8 steps, 5 over 16… "now" marks the lane's current length. |
 | **Rotate left / right** | Shifts the pattern one step. |
 | **Reverse** | Plays the pattern backwards. |
-| **Fill every** | Turns on every 2nd, 3rd, 4th… step. |
+| **Fill every** | A hit every 2nd, 3rd, 4th… step: the lane becomes 2, 3, 4… steps long with one hit. |
 | **Randomize** | Random steps: 25%, 50% or 75% of them. |
 | **Clear** | Clears the lane. |
 | **Copy lane / Paste lane** | Copies a lane's steps to another lane. |
@@ -116,6 +119,13 @@ A lane can loop on its own length. Set its **Steps** to 12 while the others use 
 coming back in line every few bars. The lane's pattern is the first steps of the clip. On the lane's row, a line in
 the lane's colour marks where its own loop ends. After it, the row is dimmed and its repeats are faded. It plays the
 same way from the clips panel and from the timeline.
+
+The lane keeps counting when the clip loops, so there is no seam where the clip starts again. It also repeats in a
+clip that doesn't loop:
+
+- **On the timeline**, it repeats for the whole timeline clip, however far you stretch it. The other lanes play once.
+- **In the clips panel**, it repeats until the clip's length. The clip chip shows that length and lets you pick 1 to
+  16 bars, as it does for a loop.
 
 Choose **Steps → Clip** to follow the clip's loop again.
 

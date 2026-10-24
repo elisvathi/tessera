@@ -803,7 +803,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
         return;
     }
     y = row(vg, y, "Name", clip->name.empty() ? "Untitled" : clip->name);
-    y = row(vg, y, "Length", bars(clip->playEnd() - clip->playStart(), song.timeSig));
+    y = row(vg, y, "Length", bars(clipActions::shownLength(song, *clip), song.timeSig));
     y = row(vg, y, "Loop",
             clip->loopMode == LoopMode::Loop ? timeline::positionText(double(clip->loopStart), song.timeSig) + " – " +
                                                    timeline::positionText(double(clip->loopEnd), song.timeSig)

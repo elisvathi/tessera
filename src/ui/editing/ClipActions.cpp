@@ -6,6 +6,7 @@
 
 #include "../../model/Arrangement.hpp"
 #include "../../model/ArrangementEdits.hpp"
+#include "../../model/DrumKit.hpp"
 #include "../../model/LauncherCommands.hpp"
 #include "../../model/Serialize.hpp"
 #include "../../model/TrackColors.hpp"
@@ -281,10 +282,25 @@ namespace {
 
 Tick playedLength(const Clip& clip) { return clip.playEnd() - clip.playStart(); }
 
+/// A clip that doesn't loop, on a drum track with a lane that has its own steps: the lane repeats until the clip's
+/// length, so the clip has a length to show and set, not only its last note.
+bool lanesRepeat(const Song& song, const Clip& clip) {
+    if (clip.loopMode == LoopMode::Loop)
+        return false;
+    const Track* t = song.findTrack(trackOf(song, clip.id));
+    return t && t->type == TrackType::Drum &&
+           std::any_of(t->drumLanes.begin(), t->drumLanes.end(),
+                       [&](const DrumLane& l) { return hasOwnLoop(l, clip); });
+}
+
 } // namespace
 
+Tick shownLength(const Song& song, const Clip& clip) {
+    return lanesRepeat(song, clip) ? laneLoopsEnd(clip) : playedLength(clip);
+}
+
 std::string lengthLabel(const Song& song, const Clip& clip) {
-    Tick length = playedLength(clip);
+    Tick length = shownLength(song, clip);
     Tick bar = ticksPerBar(song.timeSig), beat = ticksPerBeat(song.timeSig);
     char text[32];
     if (length % bar == 0)
@@ -306,18 +322,22 @@ void appendLengthItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) 
         return;
     EditorContext* c = &ctx;
     Tick bar = ticksPerBar(m->song().timeSig);
-    Tick current = playedLength(*clip);
+    Tick current = shownLength(m->song(), *clip);
     bool looping = clip->loopMode == LoopMode::Loop;
-    menu->addChild(rack::createMenuLabel(looping ? "Loop length" : "Clip length: up to its last note"));
+    bool repeats = lanesRepeat(m->song(), *clip);
+    menu->addChild(rack::createMenuLabel(looping   ? "Loop length"
+                                         : repeats ? "Clip length: lanes with their own steps repeat to here"
+                                                   : "Clip length: up to its last note"));
     for (int bars : {1, 2, 4, 8, 16}) {
-        if (!looping)
+        if (!looping && !repeats)
             break; // without a loop the notes set the length
         Tick length = bars * bar;
         menu->addChild(rack::createCheckMenuItem(
             std::to_string(bars) + (bars == 1 ? " bar" : " bars"), "", [current, length] { return current == length; },
-            [c, clipId, length] {
+            [c, clipId, length, looping] {
                 if (TesseraModule* m = c->module())
-                    m->perform(setLoopLength(m->song(), clipId, length));
+                    m->perform(looping ? setLoopLength(m->song(), clipId, length)
+                                       : setClipLength(m->song(), clipId, length));
             }));
     }
     menu->addChild(new rack::ui::MenuSeparator);

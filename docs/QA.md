@@ -201,6 +201,12 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Lane menu: note, output, steps (12 against 16: faded repeats; it drifts against the bar while playing),
       rate, choke group, output length; Euclidean, rotate, reverse, fill, randomize, clear, copy / paste lane;
       add / delete lane. Kit button: load presets.
+- [ ] Euclidean → 5 steps → 3 hits: the lane becomes 5 steps (header "5"), its old hits are gone, one undo step
+      brings both back. Fill every 3: 3 steps, one hit. Both play with no seam across the clip's loop.
+- [ ] A lane at 3 steps in a clip that doesn't loop: on the timeline it repeats for the whole timeline clip
+      (stretch it to 8 bars); from the clips panel it repeats to the clip's length. The clip chip shows that length
+      and offers 1-16 bars (one undo each); the inspector shows the same length. Faded repeats are drawn to there
+      (to the timeline clip's end when opened from the timeline).
 - [ ] Drum Out: binds to the first drum track without an output; jacks 1-8 trigger (1 ms) with lights; TRIGS
       and VEL poly carry all outputs; a gate length lane holds its gate; closed hat chokes open hat.
 - [ ] Drum Out V1-V8: each holds its lane's last velocity (0-10 V). A patch saved before these jacks existed

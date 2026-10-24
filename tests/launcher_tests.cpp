@@ -197,3 +197,24 @@ TEST_CASE("a clip's loop can be set longer or shorter, and doubled with its note
     song.nextId = before.nextId;
     CHECK(song == before);
 }
+
+TEST_CASE("a clip that doesn't loop gets a length of its own, which undoes") {
+    Song song;
+    Clip c;
+    c.id = song.newId<ClipId>();
+    c.length = 4 * kPpq;
+    c.loopEnd = 4 * kPpq;
+    song.clips[c.id] = c;
+    CHECK(setClipLength(song, c.id, 16 * kPpq) == nullptr); // it loops: that is the loop length's job
+    song.clips[c.id].loopMode = LoopMode::Off;
+    Song before = song;
+    CommandPtr longer = setClipLength(song, c.id, 16 * kPpq);
+    REQUIRE(longer);
+    CHECK(longer->name() == "Clip length 4 bars");
+    longer->apply(song);
+    CHECK(song.findClip(c.id)->length == 16 * kPpq);
+    CHECK(song.findClip(c.id)->loopEnd == 4 * kPpq); // the loop it gets when turned on again stays
+    longer->revert(song);
+    CHECK(song == before);
+    CHECK(setClipLength(song, c.id, 4 * kPpq) == nullptr);
+}

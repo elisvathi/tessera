@@ -208,6 +208,10 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, uint
         }
     }
 
+    // A clip that doesn't loop lasts its whole length when lanes repeat in it, not only up to its last note.
+    if (!out.looping && !out.laneLoops.empty())
+        out.loopEnd = std::max(out.loopEnd, laneLoopsEnd(clip));
+
     out.lanes = flattenLanes(clip.automation);
     out.knobLanes = flattenKnobLanes(clip.automation);
     for (const Note& note : clip.notes) {
