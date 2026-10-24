@@ -168,6 +168,29 @@ float fitToolbar(const std::vector<ToolbarItem>& items, float right, float limit
     return left;
 }
 
+std::pair<ToolButton*, ToolButton*> makeDrumViewSwitch(EditorContext& ctx) {
+    EditorContext* c = &ctx;
+    ToolButton::Options lanes;
+    lanes.text = "Lanes";
+    lanes.tooltip = withShortcut("Drum lanes: one row per lane, every step a cell", Action::ToggleDrumView);
+    lanes.action = [c] { c->view().drumLanes = true; };
+    lanes.active = [c] { return c->module() && c->view().drumLanes; };
+    lanes.filled = true;
+    ToolButton::Options keys;
+    keys.text = "Keys";
+    keys.tooltip = withShortcut("The piano keys: every note, drawn as a plain note", Action::ToggleDrumView);
+    keys.action = [c] { c->view().drumLanes = false; };
+    keys.active = [c] { return c->module() && !c->view().drumLanes; };
+    keys.filled = true;
+    return {new ToolButton(lanes), new ToolButton(keys)};
+}
+
+void placeDrumViewSwitch(std::pair<ToolButton*, ToolButton*> buttons, rack::math::Rect r) {
+    float half = (r.size.x - 2) / 2;
+    buttons.first->box = rack::math::Rect(r.pos, rack::math::Vec(half, r.size.y));
+    buttons.second->box = rack::math::Rect(r.pos.x + half + 2, r.pos.y, half, r.size.y);
+}
+
 std::vector<ToolButton*> makeTransportButtons(EditorContext& ctx) {
     EditorContext* c = &ctx;
     auto options = [](Icon icon, const std::string& tooltip, std::function<void()> action) {

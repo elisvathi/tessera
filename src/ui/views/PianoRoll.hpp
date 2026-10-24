@@ -67,7 +67,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// The track whose clip is shown (the selected track), or nullptr.
     const Track* track();
-    /// The selected track is a drum track: lane rows, lane headers and hits drawn as steps.
+    /// The selected track is a drum track shown as lanes (not on the keys): lane rows, lane headers and hits drawn
+    /// as steps.
     bool drumMode();
     /// The selected drum track's lane that plays `pitchValue`, or nullptr.
     const DrumLane* laneOf(int pitchValue);
@@ -175,12 +176,13 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ToolButton* clipChip;    // "BASS · Verse · 8 bars ▾": the clip's menu (rename, length, loop, files)
     ToolSwitch tools;
     ToolButton* snapButton;
-    ToolButton* keyButton;      // the key, with its highlight, snap and fold switches under the picker
-    ToolButton* kitButton;      // drum tracks, where the key button is: kit presets and lanes
-    ToolButton* notesButton;    // the transforms menu
-    ToolButton* viewButton;     // ghost notes, note badges, hearing notes, follow
-    ToolButton* overflowButton; // a narrow header: Notes and View in one "⋯"
-    ToolButton* hearButton;     // hear notes while editing: on screen, since it is switched often
+    ToolButton* keyButton; // the key, with its highlight, snap and fold switches under the picker
+    ToolButton* kitButton; // drum tracks, where the key button is: kit presets and lanes
+    std::pair<ToolButton*, ToolButton*> drumSwitch; // drum tracks: lanes / keys
+    ToolButton* notesButton;                        // the transforms menu
+    ToolButton* viewButton;                         // ghost notes, note badges, hearing notes, follow
+    ToolButton* overflowButton;                     // a narrow header: Notes and View in one "⋯"
+    ToolButton* hearButton;                         // hear notes while editing: on screen, since it is switched often
     ToolButton* maximizeButton;
     ToolButton* devicesToggle;
     float toolbarLeft = 0;

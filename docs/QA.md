@@ -177,7 +177,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 
 ## Drum tracks
 - [ ] Select a drum track: the drum editor opens (the piano roll with lane headers, lanes in their own order,
-      Kit where the key chip is). No "Steps | Piano roll" switch; G does nothing here.
+      Kit where the key chip is).
+- [ ] Lanes | Keys (and G): Keys shows the same notes on the keys as plain notes (lane names on their keys); zoom
+      and selection carry over; the choice comes back after save and reload.
 - [ ] Every lane step is a cell (beats shaded in turn, bar lines between cells); a lane at 1/8T shows triplet
       cells; zoomed far out the cells become beat bands.
 - [ ] Zoom and scroll as in the piano roll: Ctrl/Cmd+wheel, = and -, F fits all lanes from the top. Zoom out past

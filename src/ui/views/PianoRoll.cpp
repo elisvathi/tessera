@@ -327,6 +327,10 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     kitButton = new ToolButton(kit);
     addChild(kitButton);
 
+    drumSwitch = makeDrumViewSwitch(ctx);
+    addChild(drumSwitch.first);
+    addChild(drumSwitch.second);
+
     maximizeButton = makeMaximizeButton(ctx, Pane::Detail);
     addChild(maximizeButton);
 }
@@ -360,7 +364,9 @@ bool PianoRollView::layoutToolbar(float header) {
         items.push_back({snapButton, narrow ? kSnapButtonShort : kSnapButton, 8, 7});
         items.push_back({tools.more, caret, 1, 9});
         items.push_back({tools.draw, kToolButton, 1, 10});
-        items.push_back({tools.select, kToolButton, 0, 10});
+        items.push_back({tools.select, kToolButton, drum ? 6.f : 0.f, 10});
+        if (drum)
+            items.push_back({drumSwitch.first, kDrumSwitchWidth, 0, 4});
         return items;
     };
     float wide = 0;
@@ -371,6 +377,7 @@ bool PianoRollView::layoutToolbar(float header) {
     viewButton->visible = notesButton->visible = !narrow;
     keyButton->visible = !drum;
     kitButton->visible = drum;
+    drumSwitch.first->visible = drumSwitch.second->visible = false;
     snapButton->setText(narrow ? snapLabel(ctx.state().snap) : "Snap " + snapLabel(ctx.state().snap));
     if (ctx.module()) {
         const Song& song = ctx.module()->song();
@@ -378,8 +385,15 @@ bool PianoRollView::layoutToolbar(float header) {
         std::string keyText = keyActions::keyLabel(song, shown ? clipKeyRef(song, *shown) : song.scale);
         keyButton->setText(narrow ? keyActions::shortKeyLabel(keyText) : keyText);
     }
-    toolbarLeft = fitToolbar(build(narrow), right, limit, y, kToolButton,
-                             [](rack::widget::Widget* w, rack::math::Rect r) { w->box = r; });
+    toolbarLeft =
+        fitToolbar(build(narrow), right, limit, y, kToolButton, [this](rack::widget::Widget* w, rack::math::Rect r) {
+            if (w == drumSwitch.first) {
+                drumSwitch.second->visible = true;
+                placeDrumViewSwitch(drumSwitch, r);
+            } else {
+                w->box = r;
+            }
+        });
     return narrow;
 }
 
@@ -666,12 +680,12 @@ const Track* PianoRollView::track() {
 
 bool PianoRollView::drumMode() {
     const Track* t = track();
-    return t && t->type == TrackType::Drum;
+    return t && t->type == TrackType::Drum && ctx.view().drumLanes;
 }
 
 const DrumLane* PianoRollView::laneOf(int pitchValue) {
     const Track* t = track();
-    if (!t || t->type != TrackType::Drum)
+    if (!t || !drumMode())
         return nullptr;
     int lane = laneOfPitch(t->drumLanes, pitchValue);
     return lane >= 0 ? &t->drumLanes[size_t(lane)] : nullptr;
@@ -886,7 +900,7 @@ std::vector<int> PianoRollView::stampPitches(int root) {
 void PianoRollView::updateRows() {
     std::vector<int> shown;
     const Track* t = track();
-    if (t && t->type == TrackType::Drum) {
+    if (drumMode()) {
         // The lanes in their own order, then a row for each note on no lane, so nothing is hidden.
         for (const DrumLane& lane : t->drumLanes)
             shown.push_back(lane.pitch);
@@ -922,6 +936,13 @@ bool PianoRollView::handleAction(Action action) {
     if (automationFocus && clipLane->visible && clipLane->handleAction(action))
         return true;
     switch (action) {
+    case Action::ToggleDrumView: {
+        const Track* t = track();
+        if (!t || t->type != TrackType::Drum)
+            return false;
+        ctx.view().drumLanes = !ctx.view().drumLanes;
+        return true;
+    }
     case Action::GoToStart:
         viewport.time.scrollTo(double(source.loopStart()));
         return true;

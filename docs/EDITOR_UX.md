@@ -300,6 +300,7 @@ instead of pitch rows (DESIGN.md §9). Differences:
   when cells would be under 5 px). A hit fills its cell to its velocity. Muted and solo-silenced lanes are dimmed.
 - Lanes with their own loop (polymeter) show a line where it ends, then faded repeats until the clip loop ends.
 - The velocity lane edits the lane last clicked when nothing is selected; the others are faded.
+- "Lanes | Keys" (G) switches to the plain piano roll of the same notes, on the keys, and back.
 - The header has Kit where the key chip is. The note menu adds the hit operators (velocity, chance, repeats,
   occurrence, recurrence).
 - Lane operations in the header's menu: rotate, reverse, Euclidean, randomize (density, velocity range, seed), clear, copy/paste lane.

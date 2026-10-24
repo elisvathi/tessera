@@ -71,6 +71,7 @@ struct ViewState {
     Pane focus = Pane::Detail;
     std::optional<Pane> maximized;
     bool deviceStrip = true;        // the selected track's devices show above its notes (docs/DEVICES.md §1.1)
+    bool drumLanes = true;          // drum tracks show lanes and step cells (G switches to the keys)
     float launcherPanelWidth = 233; // px: the clips beside the timeline, three scenes by default
     bool clipsWide = false;         // performing: the clips take the width, the timeline folds to a strip (F2)
 

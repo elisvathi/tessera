@@ -46,6 +46,13 @@ struct ToolbarItem {
 float fitToolbar(const std::vector<ToolbarItem>& items, float right, float limit, float y, float height,
                  const std::function<void(rack::widget::Widget*, rack::math::Rect)>& place = nullptr);
 
+/// The drum view switch: "Lanes" and "Keys" side by side, the one showing lit. Lanes shows a drum track's notes as
+/// lanes of step cells; Keys shows them on the piano keys as plain notes.
+std::pair<ToolButton*, ToolButton*> makeDrumViewSwitch(EditorContext& ctx);
+constexpr float kDrumSwitchWidth = 104;
+/// Places the pair in `r` (Lanes on the left).
+void placeDrumViewSwitch(std::pair<ToolButton*, ToolButton*> buttons, rack::math::Rect r);
+
 /// "Devices 3": opens and closes the device strip above the notes (F3). Lit while open. Both note editors show it
 /// right after the track arrows. updateDevicesToggle() keeps the count current.
 /// Play, stop, record and loop, as the full editor's transport bar and the in-panel editor's corner show them.

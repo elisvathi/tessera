@@ -1224,8 +1224,8 @@ Refines §78.
 
 ## 81. The drum editor is the piano roll (24 Oct)
 
-- **One editor for drum tracks.** The step grid, with its fixed width and "Steps | Piano roll" switch (and **G**), is
-  gone. A drum track's piano roll is the drum editor: lane headers in place of the keys, one row per lane in the
+- **One editor for drum tracks.** The step grid, with its fixed width, is gone. A drum track's piano roll is the drum
+  editor: lane headers in place of the keys, one row per lane in the
   lanes' order. It zooms and scrolls like the piano roll, past the end of the clip.
 - **Drawing past the end grows the clip** to the end of that bar (the rule of §70), so a pattern gets longer by
   drawing into it.
@@ -1236,5 +1236,7 @@ Refines §78.
   draws finer.
 - **Polymeter lanes** show where their own loop ends on their row and fade their repeats. The velocity lane edits
   the lane last clicked when nothing is selected, since hits of different lanes line up in time.
-- Fold no longer applies to drum tracks: they always show their lanes, and notes on no lane keep a row of their own.
+- **Lanes | Keys (G) stays:** the same piano roll shows a drum track's notes on the keys as plain notes, for free
+  timing and long notes. It is a per-surface view setting (older patches' "drumSteps" choice carries over).
+- Fold no longer applies to drum tracks: Lanes shows the lanes, and notes on no lane keep a row of their own.
 

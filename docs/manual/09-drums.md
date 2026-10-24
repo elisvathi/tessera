@@ -23,6 +23,16 @@ fits the clip. You can zoom out past the end of the clip and keep drawing there.
 A note on a pitch that no lane plays gets a row of its own under the lanes, marked "(no lane)". It doesn't play.
 Move it onto a lane, or delete it.
 
+### Lanes or keys
+
+**Lanes | Keys** in the header switches how the same notes are shown. **G** does the same.
+
+- **Lanes** (the default) is the drum editor described here.
+- **Keys** shows them on the piano keys as plain notes, like any piano roll, with all 128 notes. The keys of the
+  lanes carry the lanes' names. Use it for free timing, long notes, or notes on no lane.
+
+Zoom, selection and tools carry over when you switch. Tessera remembers your choice.
+
 ## Making a beat
 
 With the **Draw** tool (D):
