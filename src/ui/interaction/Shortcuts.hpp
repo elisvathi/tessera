@@ -104,6 +104,7 @@ enum class Action {
     PreviousTrack,
     MuteTracks,
     SoloTracks,
+    MutePlayhead,
     AddMarker,
     // General
     Help,

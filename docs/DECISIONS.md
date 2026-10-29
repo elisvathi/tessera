@@ -1490,4 +1490,10 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   ▶ ◀ handles. Any setting can have a curve (its own length, repeating), opened from the knob's label in the lower
   pane. Pitch moved into the playhead (octave, key steps, lowest/highest notes, invert, velocity), reversing §4.3 of
   the design: bass and melody from one piano roll.
-
+- **On/off and the branch look** (30 Oct, board K): the dot on a playhead's chip is its on/off switch (hollow when
+  off; Alt-click solos), and Shift+M toggles the shown playhead (plain M already mutes tracks). The coloured band
+  behind a playhead's own devices is gone: each of those cards gets a 3 px cap in the playhead's colour and its dot
+  in the title, so every card sits the same way in the strip.
+- **Vsync** (30 Oct): Rack opens its window with vsync off and never sets it again, so a module-menu switch can turn
+  it on with glfwSwapInterval(1) from the UI thread. It is a plugin-wide setting (it changes the whole window), off
+  by default, kept in the plugin settings next to the colour scheme.

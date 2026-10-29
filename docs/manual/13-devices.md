@@ -91,7 +91,9 @@ canon at once. Each playhead shows as a line in its colour over the notes (the o
 clip's own playhead stays as a faint grey line.
 
 **The card.** The chips beside its name are the playheads: click one to show it (the card takes its colour), **+** adds
-one (up to 16). Right-click a chip to rename it, mute or solo it, duplicate or delete it. Under the chips, one row of
+one (up to 16). The dot at a chip's left end turns that playhead off and on without losing its settings: it is hollow
+while the playhead is off. Alt-click the dot to solo it, or press **Shift+M** to turn the shown playhead off and on.
+Right-click a chip to rename it, mute or solo it, duplicate or delete it. Under the chips, one row of
 settings for the shown playhead. A setting still at its default draws faint, so the ones you changed stand out:
 
 | Setting | What it does |
@@ -156,10 +158,10 @@ applies.
 
 ### Devices for one playhead
 
-Right after the Playheads card, the shown playhead's own devices sit on a band in its colour: devices only that
-playhead's notes go through, before the rest of the chain. Click the **+** on the band to add one (up to 4 per
-playhead). Give the slow reversed playhead an Echo, or move the fast one up an octave with Transpose, while the devices
-after the band still shape every playhead. Click another chip to see its branch. Branch devices count toward the
+Right after the Playheads card come the shown playhead's own devices: devices only that playhead's notes go through,
+before the rest of the chain. Each has a thin bar in the playhead's colour along its top and its dot in the title.
+Click the **+** right after the Playheads card to add one (up to 4 per playhead). Give the slow reversed playhead an
+Echo, or move the fast one up an octave with Transpose, while the devices after them still shape every playhead. Click another chip to see its branch. Branch devices count toward the
 track's 16 devices; their cards stay in their branch (they can't be dragged out).
 
 ### A sound for each playhead

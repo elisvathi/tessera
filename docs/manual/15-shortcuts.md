@@ -99,6 +99,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Ctrl+Down / Ctrl+Up | Select the next / previous track |
 | M | Mute the selected tracks |
 | Alt+S | Solo the selected tracks |
+| Shift+M | Turn the shown playhead off or on (*piano roll*) |
 | Ctrl+M | Add a marker |
 
 ## General

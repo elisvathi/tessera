@@ -118,6 +118,7 @@ std::vector<ActionInfo> buildTable() {
         {Ac::PreviousTrack, "Tracks", "Select previous track", {K(GLFW_KEY_UP, Ctl)}},
         {Ac::MuteTracks, "Tracks", "Mute selected tracks", {C("m")}},
         {Ac::SoloTracks, "Tracks", "Solo selected tracks", {C("s", A)}},
+        {Ac::MutePlayhead, "Tracks", "Turn the shown playhead off or on", {C("m", S)}, Sc::DetailPane},
         {Ac::AddMarker, "Tracks", "Add marker", {C("m", Ctl)}},
 
         {Ac::Help, "General", "Shortcut help", {C("/", S)}},

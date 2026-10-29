@@ -244,6 +244,17 @@ const Playhead* shownPlayhead(EditorContext& ctx) {
     return &d->playheads.front();
 }
 
+void togglePlayheadMute(EditorContext& ctx, bool solo) {
+    TesseraModule* m = ctx.module();
+    const Playhead* p = shownPlayhead(ctx);
+    if (!m || !p)
+        return;
+    if (solo)
+        m->perform(setPlayheadSolo(m->song(), p->id, !p->solo));
+    else
+        m->perform(setPlayheadMute(m->song(), p->id, !p->mute));
+}
+
 namespace {
 
 /// A playhead setting's shown value (a choice's index, a number in its units).

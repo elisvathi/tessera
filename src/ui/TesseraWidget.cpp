@@ -7,6 +7,7 @@
 #include "PanelEditor.hpp"
 #include "TesseraDisplay.hpp"
 #include "Theme.hpp"
+#include "Vsync.hpp"
 #include "editing/ProjectFile.hpp"
 #include "widgets/Draw.hpp"
 #include "widgets/Lights.hpp"
@@ -216,6 +217,7 @@ struct TesseraWidget : rack::app::ModuleWidget {
     }
 
     void step() override {
+        vsync::apply();
         if (auto* m = static_cast<TesseraModule*>(module)) {
             m->uiStep();
             // Undo, redo and patch loads change the saved width; follow it.
@@ -283,6 +285,9 @@ struct TesseraWidget : rack::app::ModuleWidget {
             [this, m](size_t i) { resizeTesseraPanel(this, kPanelSizes[i], m->editor().panelHp, true); }));
         menu->addChild(
             rack::createSubmenuItem("Colour scheme", "", [](rack::ui::Menu* sub) { theme::appendSchemeMenu(sub); }));
+        // Rack draws without waiting for the screen, so moving lines can tear. This affects the whole Rack window.
+        menu->addChild(rack::createBoolMenuItem("Vsync (smooth moving lines)", "", [] { return vsync::wanted(); },
+                                                [](bool on) { vsync::setWanted(on); }));
         std::vector<std::string> scales;
         for (float s : kEditorScales)
             scales.push_back(s == 0 ? "Auto" : std::to_string(int(s * 100)) + "%");
