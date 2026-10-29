@@ -1,6 +1,7 @@
 #include "SlotDraw.hpp"
 
 #include "../../model/Arrangement.hpp"
+#include "../../model/DeviceLookup.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -107,6 +108,24 @@ void drawNotePreview(NVGcontext* vg, const Clip& clip, const std::vector<DrumLan
     nvgFill(vg);
 }
 
+void drawPlayheadMark(NVGcontext* vg, const Track& track, Vec topRight, float maxHeight) {
+    const Device* device = activePlayheads(track);
+    if (!device)
+        return;
+    const float w = theme::metrics::kPlayheadMarkWidth, h = theme::metrics::kPlayheadMarkHeight, gap = 2;
+    int fits = std::max(1, int((maxHeight + gap) / (h + gap)));
+    int shown = std::min(int(device->playheads.size()), fits);
+    for (int i = 0; i < shown; i++) {
+        const Playhead& p = device->playheads[size_t(i)];
+        Rect stripe(topRight.x - w, topRight.y + float(i) * (h + gap), w, h);
+        NVGcolor color = theme::playheadColor(p.color);
+        if (p.mute)
+            draw::roundedRectStroke(vg, stripe, 1, color, 1);
+        else
+            draw::roundedRect(vg, stripe, 1, color);
+    }
+}
+
 void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, int scene, const LauncherStatus& st,
               bool hovered, bool hotLaunch) {
     const LauncherStatus* status = &st;
@@ -177,6 +196,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                         Rect(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6),
                         nvgTransRGBAf(c.onTile, kPreviewAlpha));
     nvgRestore(vg);
+    drawPlayheadMark(vg, *track, Vec(body.getRight() - 4, body.pos.y + 4), body.size.y - 8);
 
     // The launch button: a darker square with the triangle, a ring while playing.
     draw::roundedRect(vg, launch, theme::metrics::kRadiusItem, nvgTransRGBAf(c.onTile, hotLaunch ? 0.55f : 0.4f));

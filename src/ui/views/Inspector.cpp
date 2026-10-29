@@ -1,9 +1,8 @@
 #include "Inspector.hpp"
 
-#include "../../model/DeviceLookup.hpp"
-
 #include "../../model/Arrangement.hpp"
 #include "../../model/DeviceCommands.hpp"
+#include "../../model/DeviceLookup.hpp"
 #include "../../model/DeviceTypes.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/Registry.hpp"

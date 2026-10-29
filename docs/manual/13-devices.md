@@ -118,7 +118,9 @@ and over, starting at its left end. A thin line drops from each grip through the
 reads. Drag a grip to resize the segment, the bar to move it. For a playhead, the piano roll is a canvas: a segment can
 sit anywhere on it, past the clip's end too, and plays the notes written there (where nothing is written, it is
 silent). So with playheads on, the clip's loop doesn't decide what plays: the loop bar is hidden, the inspector's
-**Loop** reads **Playheads decide**, and the loop only sets where a new segment starts out. For a round, move the second playhead's segment a
+**Loop** reads **Playheads decide**, and the loop only sets where a new segment starts out. A clip played by
+playheads shows it: its launcher slot and timeline clips carry one small stripe per playhead in its colour (hollow when
+muted), and the piano roll's title adds "read by 3 playheads". For a round, move the second playhead's segment a
 beat later. The other playheads' segments show as thin lines in their colours.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a knob's name and a curve for it

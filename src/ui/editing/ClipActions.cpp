@@ -6,6 +6,7 @@
 
 #include "../../model/Arrangement.hpp"
 #include "../../model/ArrangementEdits.hpp"
+#include "../../model/DeviceLookup.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../model/LauncherCommands.hpp"
 #include "../../model/Serialize.hpp"
@@ -393,6 +394,10 @@ std::string chipText(EditorContext& ctx, ClipId clip, bool shortText) {
     if (const Clip* cl = m ? m->song().findClip(clip) : nullptr) {
         text += "  ·  " + (cl->name.empty() ? std::string("Clip") : cl->name);
         text += "  ·  " + lengthLabel(m->song(), *cl);
+        if (const Device* d = t ? activePlayheads(*t) : nullptr) {
+            size_t n = d->playheads.size();
+            text += "  ·  read by " + std::to_string(n) + (n == 1 ? " playhead" : " playheads");
+        }
     }
     return text;
 }
