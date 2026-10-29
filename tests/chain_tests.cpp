@@ -1391,3 +1391,30 @@ TEST_CASE("engine: playheads read the clip each from its own start") {
         CHECK(sounding() == std::multiset<int>{60});
     }
 }
+
+TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.position = 4 * kPpq;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.params[playheads::knob::kDirection] =
+        devices::normalize(devices::playheadInfo().params[playheads::knob::kDirection], 1); // reverse
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+
+    h.runTo(4 * kPpq * kSamplesPerTick - 2);
+    CHECK_FALSE(h.anyGate()); // nothing before the timeline clip
+    // Going backward from the clip's start it wraps to the end; the 64 ends 2 beats and 3/4 before it.
+    h.runTo((4 * kPpq + 4 * kPpq - 1200) * kSamplesPerTick + 2);
+    CHECK(h.gate());
+    CHECK(h.pitch() == 64);
+}

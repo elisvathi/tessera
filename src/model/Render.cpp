@@ -3,8 +3,11 @@
 #include "Arrangement.hpp"
 #include "Automation.hpp"
 #include "ChainRender.hpp"
+#include "DeviceLookup.hpp"
+#include "DeviceTypes.hpp"
 #include "Json.hpp"
 #include "NoteOperators.hpp"
+#include "Playheads.hpp"
 #include "Scale.hpp"
 #include "Swing.hpp"
 
@@ -149,6 +152,94 @@ std::vector<Played> playedNotes(const Song& song, const Track& t, const Options&
     }
     std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
     return out;
+}
+
+/// What the track's playheads play from its timeline clips (docs/design/PLAYHEADS.md), with the code the engine
+/// uses: each timeline clip read from where it begins the clip, slower when stretched.
+std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device& device, const Options& o,
+                                  std::vector<Scale>& keys) {
+    struct Readable {
+        double start, end;
+        const Note* source;
+        int pitch;
+    };
+    std::map<ClipId, uint8_t> keyOf;
+    bool once = std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
+                                             device.params[playheads::knob::kSameNote])) == 1;
+    bool solo = std::any_of(device.playheads.begin(), device.playheads.end(),
+                            [](const Playhead& p) { return p.solo && !p.mute; });
+    std::vector<Played> out;
+    for (const ArrangerClip& a : t.arrangement) {
+        if (a.muted && !o.includeMuted)
+            continue;
+        const Clip* clip = song.findClip(a.clip);
+        if (!clip)
+            continue;
+        uint8_t key = 0;
+        if (clip->scaleOverride && keys.size() < 255) {
+            auto it = keyOf.find(clip->id);
+            if (it == keyOf.end()) {
+                keys.push_back(resolveScale(*clip->scaleOverride, song.customScales));
+                it = keyOf.emplace(clip->id, uint8_t(keys.size())).first;
+            }
+            key = it->second;
+        }
+        double playStart = double(clip->playStart()), playEnd = double(clip->playEnd());
+        int transpose = t.type == TrackType::Drum ? 0 : t.transpose + a.transpose;
+        std::vector<Readable> notes;
+        for (const Note& n : clip->notes)
+            if (!n.muted && n.start >= playStart && n.start < playEnd)
+                notes.push_back({double(n.start),
+                                 std::min(double(n.start) + std::max(1.0, double(n.length) * t.gateLengthScale), playEnd),
+                                 &n, std::clamp(n.pitch + transpose, 0, 127)});
+        std::vector<uint32_t> byEnd = playheads::orderByEnd(notes);
+
+        double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
+        double begin = double(normalizeOffset(*clip, a.offset)) - double(clipSpan(*clip).start);
+        double length = double(instanceEnd(a) - a.position) / stretch;
+        for (const Playhead& p : device.playheads) {
+            if (p.mute || (solo && !p.solo))
+                continue;
+            playheads::Motion m =
+                playheads::motionFrom(p.params.data(), device.params.data(), playStart, playEnd - playStart, song.timeSig);
+            // Small steps, so no window needs more sweeps than one call gives.
+            constexpr double kStep = double(kPpq) / 8;
+            for (double e = begin; e < begin + length; e += kStep) {
+                double to = std::min(begin + length, e + kStep);
+                playheads::Sweep sweeps[playheads::kMaxSweeps];
+                int count = playheads::sweeps(m, e, to, sweeps);
+                for (int i = 0; i < count; i++)
+                    playheads::crossed(sweeps[i], notes, byEnd, [&](const Readable& n, double pos) {
+                        double at = double(a.position) + (playheads::timeAt(m, sweeps[i], pos) - begin) * stretch;
+                        double len = playheads::noteLength(p.params.data(), m, n.end - n.start, song.timeSig) * stretch;
+                        uint8_t channel = p.channel > 0 ? p.channel : n.source->channel;
+                        out.push_back({at, at + len, n.pitch, n.source->velocity, n.source->releaseVelocity, n.source,
+                                       0, n.start, key, channel});
+                    });
+            }
+        }
+    }
+    std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
+    if (once) {
+        // Two playheads on one note at the same moment play it once, as in the engine.
+        std::vector<Played> kept;
+        for (const Played& n : out)
+            if (std::none_of(kept.begin(), kept.end(), [&](const Played& k) {
+                    return k.pitch == n.pitch && k.channel == n.channel && std::abs(k.start - n.start) < 1e-6;
+                }))
+                kept.push_back(n);
+        out = std::move(kept);
+    }
+    return out;
+}
+
+/// The notes a track plays before its device chain: its clips as written, or what its playheads read from them when
+/// devices are applied.
+std::vector<Played> sourceNotes(const Song& song, const Track& t, const Options& o, std::vector<Scale>& keys) {
+    if (o.devices == DeviceMode::Applied)
+        if (const Device* device = activePlayheads(t))
+            return playheadNotes(song, t, *device, o, keys);
+    return playedNotes(song, t, o, keys);
 }
 
 /// The notes a track's device chain plays from `notes` (docs/DEVICES.md §6), with the same code as playback.
@@ -436,7 +527,7 @@ smf::File renderSong(const Song& song, const Options& o, const Context& ctx, con
         smf::Track out;
         out.events.push_back(smf::trackName(0, t.name));
         std::vector<Scale> keys;
-        std::vector<Played> played = playedNotes(song, t, o, keys);
+        std::vector<Played> played = sourceNotes(song, t, o, keys);
         if (o.devices == DeviceMode::Applied)
             played = throughChain(song, t, played, double(to), ctx.tempo, keys);
         emitNotes(out, played, ch, from, to, o);
@@ -470,7 +561,7 @@ std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Option
     if (!t)
         return out;
     std::vector<Scale> keys;
-    std::vector<Played> played = playedNotes(song, *t, o, keys);
+    std::vector<Played> played = sourceNotes(song, *t, o, keys);
     if (o.devices == DeviceMode::Applied)
         played = throughChain(song, *t, played, double(songEnd(song)), ctx.tempo, keys);
     for (const Played& p : played)

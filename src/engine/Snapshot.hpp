@@ -151,6 +151,8 @@ struct TrackPlayback {
     std::vector<LanePlayback> lanes;
     std::vector<KnobLanePlayback> knobLanes;
     std::vector<InstanceLanes> arrangementLanes;
+    /// Every timeline clip that plays, sorted by position, for playheads to read (docs/design/PLAYHEADS.md).
+    std::vector<InstanceLanes> instances;
     std::vector<NoteExtras> arrangementExtras;
     int autoChannels = 0;
     bool voiceLanes = false; // some lane plays into the voices (pitch bend or pressure)

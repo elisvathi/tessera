@@ -435,10 +435,14 @@ class Engine {
     void advanceSong(double dt, TransportEvents& events);
     void scheduleTrackNow(const TrackPlayback& track, TrackState& state, double prevPlay, double curPlay);
     void playClip(const TrackPlayback& track, TrackState& state, double from, double to);
-    /// The playing clip read by the track's playheads instead of its own playhead (docs/design/PLAYHEADS.md):
-    /// `a` and `b` are ticks since the clip started, `from` the play tick `a` falls on.
+    /// A clip read by the track's playheads instead of its own playhead (docs/design/PLAYHEADS.md): `a` and `b`
+    /// are clip ticks since the clip started, `from` the play tick `a` falls on, and each clip tick lasts
+    /// `stretch` play ticks.
     void playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
-                       double from);
+                       double from, double stretch = 1);
+    /// The timeline clips under song ticks [from, to), read by the track's playheads.
+    void playInstancesByPlayheads(const TrackPlayback& track, TrackState& state, double from, double to,
+                                  double playAtFrom);
     /// Whether the track's clips are read by playheads.
     static bool readByPlayheads(const TrackState& state) {
         return state.chainInfo && state.chainInfo->playheadKnobs >= 0;

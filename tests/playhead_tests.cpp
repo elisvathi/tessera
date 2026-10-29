@@ -301,3 +301,47 @@ TEST_CASE("a new playhead reads as 1x forward from the clip's start") {
     CHECK(m.regionLength == 3840);
     CHECK(m.repeatSize == 0);
 }
+
+// ---- MIDI export -------------------------------------------------------------------------------------------------
+
+#include "../src/model/Render.hpp"
+
+TEST_CASE("MIDI export with devices applied plays what the playheads read") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    for (auto [start, pitch] : {std::pair<Tick, int>{0, 60}, {960, 62}, {1920, 64}, {2880, 65}}) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = start;
+        n.length = 480;
+        n.pitch = int8_t(pitch);
+        clip.notes.push_back(n);
+    }
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.position = 4 * kPpq;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    PlayheadId second = firstDevice(song).playheads[1].id;
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, second.value, uint16_t(playheads::knob::kDirection)},
+                                 devices::normalize(devices::playheadInfo().params[playheads::knob::kDirection], 1)));
+
+    render::Options o;
+    std::vector<std::pair<double, int>> got;
+    for (const render::ExportNote& n : render::trackNotes(song, song.tracks[0].id, o, {}))
+        got.push_back({n.start - 4 * kPpq, n.pitch * 100 + n.channel});
+    // Playhead 1 forward from the start (channel 1); playhead 2 backward from beat 2 (channel 2): the note ending
+    // at beat 2 (60, ends 480) is 480 ticks back, then 65 (ends 3360) after wrapping, and so on.
+    std::vector<std::pair<double, int>> want = {{0, 6001},    {480, 6002},  {960, 6201},  {1920, 6401},
+                                                {1440, 6502}, {2400, 6402}, {2880, 6501}, {3360, 6202}};
+    std::sort(want.begin(), want.end());
+    CHECK(got == want);
+
+    o.devices = render::DeviceMode::Bypassed;
+    CHECK(render::trackNotes(song, song.tracks[0].id, o, {}).size() == 4);
+}

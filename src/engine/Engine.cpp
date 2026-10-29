@@ -1058,6 +1058,8 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
     if (state.queued != kNothingQueued)
         wake = std::min(wake, state.queuedAt);
     if (followsArrangement(state)) {
+        if (runs(track) && readByPlayheads(state) && !track.instances.empty())
+            return -INFINITY; // playheads read the timeline's clips: every sample
         // The arrangement is flat and in song ticks, which keep pace with play ticks until the song loop wraps.
         if (runs(track) && state.arrangementCursor < track.arrangement.size())
             wake = std::min(wake, now + (track.arrangement[state.arrangementCursor].start - songTick));
@@ -1130,16 +1132,35 @@ void Engine::playArrangement(const TrackPlayback& track, TrackState& state, doub
 
 void Engine::fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom) {
     // Inside the song loop, a note never sounds past the loop end.
-    if (replacing(track)) {
+    if (replacing(track) || readByPlayheads(state)) {
         while (state.arrangementCursor < track.arrangement.size() &&
                track.arrangement[state.arrangementCursor].start < to)
             state.arrangementCursor++;
+        if (!replacing(track))
+            playInstancesByPlayheads(track, state, from, to, playAtFrom);
         return;
     }
     bool looping = loopOn && snapshot->loopEnd > snapshot->loopStart;
     double cap = looping && from < double(snapshot->loopEnd) ? double(snapshot->loopEnd) : INFINITY;
     fireList(track, state, track.arrangement, state.arrangementCursor, from, to, playAtFrom, cap, -1,
              &track.arrangementExtras);
+}
+
+void Engine::playInstancesByPlayheads(const TrackPlayback& track, TrackState& state, double from, double to,
+                                      double playAtFrom) {
+    for (const InstanceLanes& inst : track.instances) {
+        if (double(inst.position) >= to)
+            break;
+        double a = std::max(from, double(inst.position));
+        double b = std::min(to, double(inst.end));
+        if (b <= a)
+            continue;
+        // The clip starts where the timeline clip begins it (its offset), and plays slower when stretched.
+        double begin = inst.offset - double(inst.spanStart);
+        double ea = begin + (a - double(inst.position)) / inst.stretch;
+        double eb = begin + (b - double(inst.position)) / inst.stretch;
+        playPlayheads(track, state, *inst.clip, ea, eb, playAtFrom + (a - from), inst.stretch);
+    }
 }
 
 size_t Engine::arrangementIndex(const TrackPlayback& track, double songPos) {
@@ -1207,7 +1228,7 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
 }
 
 void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a,
-                           double b, double from) {
+                           double b, double from, double stretch) {
     const ChainPlayback& chain = *state.chainInfo;
     TimeSig ts = snapshot->timeSig;
     const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
@@ -1232,7 +1253,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
         int count = playheads::sweeps(m, a, b, sweeps);
         for (int i = 0; i < count; i++) {
             playheads::crossed(sweeps[i], clip.notes, clip.notesByEnd, [&](const NoteEvent& e, double pos) {
-                double onPlay = std::max(from, state.launchTick + playheads::timeAt(m, sweeps[i], pos));
+                double onPlay = std::max(from, from + (playheads::timeAt(m, sweeps[i], pos) - a) * stretch);
                 NoteEvent n = e;
                 if (p.channel > 0)
                     n.channel = p.channel;
@@ -1244,7 +1265,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                     if (startedCount < int(started.size()))
                         started[size_t(startedCount++)] = {onPlay, n.pitch, n.channel};
                 }
-                double length = playheads::noteLength(knobs, m, double(e.end - e.start), ts);
+                double length = playheads::noteLength(knobs, m, double(e.end - e.start), ts) * stretch;
                 startNote(track, state, n, onPlay, onPlay + length, 0);
             });
         }
