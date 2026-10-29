@@ -973,17 +973,6 @@ void NoteGrid::drawSegmentEdges(NVGcontext* vg) {
         nvgRect(vg, x1 - 1, 0, 1, box.size.y);
         nvgFillColor(vg, nvgTransRGBAf(color, 0.75f));
         nvgFill(vg);
-        if (sg.startTick > sg.start) {
-            float xs = std::round(float(time().tickToX(sg.startTick))) + 0.5f;
-            nvgBeginPath(vg);
-            for (float y = 0; y < box.size.y; y += 6) {
-                nvgMoveTo(vg, xs, y);
-                nvgLineTo(vg, xs, y + 3);
-            }
-            nvgStrokeColor(vg, nvgTransRGBAf(theme::colors().text0, 0.5f));
-            nvgStrokeWidth(vg, 1);
-            nvgStroke(vg);
-        }
     }
 }
 

@@ -313,14 +313,13 @@ void ClipSource::setInstanceEnd(double end) {
 
 namespace {
 
-/// Where a playhead's region starts in the clip and how long it is, from its knobs, as the engine reads them.
+/// Where on the piano roll a playhead's region starts and how long it is, from its knobs, as the engine reads them.
 std::pair<double, double> regionOf(const Playhead& p, const ClipSpan& span) {
     const devices::TypeInfo& info = devices::playheadInfo();
-    auto [start, length] = playheads::regionFrom(
+    return playheads::regionFrom(
         devices::display(info.params[playheads::knob::kRegionStart], p.params[playheads::knob::kRegionStart]),
         devices::display(info.params[playheads::knob::kRegionLength], p.params[playheads::knob::kRegionLength]),
-        double(span.length()));
-    return {double(span.start) + start, length};
+        double(span.start), double(span.length()));
 }
 
 } // namespace
@@ -335,15 +334,12 @@ std::vector<TimelineSource::PlayheadSegment> ClipSource::playheadSegments() {
     const Playhead* shown = deviceActions::shownPlayhead(ctx);
     ClipSpan span = clipSpan(*c, lanes());
     std::vector<PlayheadSegment> segments;
-    const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
     for (const Playhead& p : device->playheads) {
         auto [regionStart, regionLength] = regionOf(p, span);
         if (regionLength <= 0)
             continue;
-        double offset = double(devices::display(start, p.params[playheads::knob::kStart])) * double(kPpq) / 4;
-        segments.push_back({p.id.value, regionStart, regionStart + regionLength,
-                            regionStart + std::fmod(offset, regionLength), p.color, shown && shown->id == p.id, p.name,
-                            double(span.start)});
+        segments.push_back(
+            {p.id.value, regionStart, regionStart + regionLength, p.color, shown && shown->id == p.id, p.name});
     }
     return segments;
 }
@@ -357,11 +353,11 @@ void ClipSource::setPlayheadSegment(uint64_t id, double start, double end) {
     double step = double(kPpq) / 4;
     using namespace playheads::knob;
     const devices::TypeInfo& info = devices::playheadInfo();
-    int from = std::clamp(int(std::lround((start - double(span.start)) / step)), 0, playheads::kMaxRegionSteps);
+    int from = std::clamp(int(std::lround(start / step)), 0, playheads::kMaxRegionSteps);
     int length = std::clamp(int(std::lround((end - start) / step)), 1, playheads::kMaxRegionSteps);
-    // Covering exactly the whole clip is stored as "whole clip", so it follows the clip when its loop changes.
-    if (from == 0 && std::abs(double(length) * step - double(span.length())) < 1)
-        length = 0;
+    // Covering exactly the clip's loop is stored as "follow the clip", so it moves with the loop.
+    if (std::abs(start - double(span.start)) < 1 && std::abs(end - double(span.end)) < 1)
+        from = length = 0;
     Song work = m->song();
     auto both = std::make_unique<CompoundCommand>("Move playhead segment");
     for (auto [k, v] : {std::pair<int, int>{kRegionStart, from}, {kRegionLength, length}}) {
@@ -373,20 +369,6 @@ void ClipSource::setPlayheadSegment(uint64_t id, double start, double end) {
     }
     if (!both->empty())
         m->perform(std::move(both));
-}
-
-void ClipSource::setPlayheadStart(uint64_t id, double tick) {
-    TesseraModule* m = ctx.module();
-    const Playhead* p = m ? findPlayhead(m->song(), PlayheadId(id)) : nullptr;
-    const Clip* c = current();
-    if (!p || !c)
-        return;
-    auto [regionStart, regionLength] = regionOf(*p, clipSpan(*c, lanes()));
-    double step = double(kPpq) / 4;
-    int steps = int(std::lround(std::fmod(std::max(0.0, tick - regionStart), std::max(step, regionLength)) / step));
-    const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
-    m->perform(setParam(m->song(), {ParamRef::Kind::Playhead, id, uint16_t(playheads::knob::kStart)},
-                        devices::normalize(start, float(steps))));
 }
 
 } // namespace tessera

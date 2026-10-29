@@ -1446,6 +1446,10 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **The piano roll is a canvas for playheads** (29 Oct). A segment is a place on the piano roll, counted from its
+  start, not from the clip's loop: it can sit past the clip's end and reads the notes written there; empty space is
+  silent. The clip's loop only gives a new segment its first place. **Start and Offset are no longer read**: a
+  playhead begins at its segment's start, and a round is two segments a beat apart.
 - **New playheads start where their segment starts.** They first started a beat apart for an instant canon, but a
   playhead starting later than its segment read as a fault: the segment alone says where a new playhead reads.
 - **Channels, not outputs per playhead.** Each playhead tags its notes with a channel; each voice remembers its note's

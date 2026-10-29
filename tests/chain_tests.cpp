@@ -1357,13 +1357,17 @@ TEST_CASE("engine: song swing plays on the timeline too, and an off-beat 1/8 swi
     CHECK(startOf(480, kPpq / 2, false) == doctest::Approx(720).epsilon(0.01)); // it does on 1/8s
 }
 
-TEST_CASE("engine: playheads read the clip each from its own start") {
+TEST_CASE("engine: playheads read the clip each from its own segment") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    const auto& info = devices::playheadInfo();
     for (int i = 0; i < 2; i++) {
         Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
-        p.params[playheads::knob::kStart] =
-            devices::normalize(devices::playheadInfo().params[playheads::knob::kStart], float(4 * i));
+        if (i == 1) { // a bar long, from beat 2
+            p.params[playheads::knob::kRegionStart] = devices::normalize(info.params[playheads::knob::kRegionStart], 4);
+            p.params[playheads::knob::kRegionLength] =
+                devices::normalize(info.params[playheads::knob::kRegionLength], 16);
+        }
         d.playheads.push_back(p);
     }
     song.tracks[0].devices.push_back(d);
@@ -1392,13 +1396,13 @@ TEST_CASE("engine: playheads read the clip each from its own start") {
     }
 }
 
-TEST_CASE("engine: a segment running past the clip's end reads the clip as it repeats") {
-    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+TEST_CASE("engine: a segment past the clip's end reads the notes written there, the piano roll is a canvas") {
+    // A one-bar loop, and notes written in bar 2, outside it.
+    Song song = songWith({{0, 240, 60}, {3840, 240, 67}, {4800, 240, 69}}, 4 * kPpq, kAutoVoices);
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
     Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
     const auto& info = devices::playheadInfo();
-    // From beat 3 of the one-bar clip, a bar long: beats 3 and 4, then beats 1 and 2 of the clip's next time round.
-    p.params[playheads::knob::kRegionStart] = devices::normalize(info.params[playheads::knob::kRegionStart], 8);
+    p.params[playheads::knob::kRegionStart] = devices::normalize(info.params[playheads::knob::kRegionStart], 16);
     p.params[playheads::knob::kRegionLength] = devices::normalize(info.params[playheads::knob::kRegionLength], 16);
     d.playheads.push_back(p);
     song.tracks[0].devices.push_back(d);
@@ -1412,13 +1416,11 @@ TEST_CASE("engine: a segment running past the clip's end reads the clip as it re
     };
 
     h.step();
-    CHECK(sounding() == std::multiset<int>{64});
+    CHECK(sounding() == std::multiset<int>{67});
     h.runTo(960 * kSamplesPerTick + 1);
-    CHECK(sounding() == std::multiset<int>{65});
+    CHECK(sounding() == std::multiset<int>{69});
     h.runTo(2 * 960 * kSamplesPerTick + 1);
-    CHECK(sounding() == std::multiset<int>{60});
-    h.runTo(3 * 960 * kSamplesPerTick + 1);
-    CHECK(sounding() == std::multiset<int>{62});
+    CHECK(sounding().empty()); // nothing written there: silence, not the clip again
 }
 
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {

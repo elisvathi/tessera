@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <map>
 
 namespace tessera {
@@ -217,13 +218,17 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
 
     out.lanes = flattenLanes(clip.automation);
     out.knobLanes = flattenKnobLanes(clip.automation);
+    // Playheads read the piano roll as a canvas: every note where it is written, the loop's edges don't cut it.
+    // The clip plays through the playheads then, so its own loop never reads this list.
+    bool canvas = activePlayheads(track) != nullptr;
+    Tick readEnd = canvas ? std::numeric_limits<Tick>::max() / 4 : out.loopEnd;
     for (const Note& note : clip.notes) {
-        if (note.muted || note.start < out.loopStart || note.start >= out.loopEnd)
+        if (note.muted || (!canvas && (note.start < out.loopStart || note.start >= out.loopEnd)))
             continue;
         if (std::find(ownLoopPitches.begin(), ownLoopPitches.end(), note.pitch) != ownLoopPitches.end())
             continue;
-        out.notes.push_back(noteEvent(note, track, out.loopEnd));
-        swingEvent(out.notes.back(), swing, swingStep, out.loopEnd);
+        out.notes.push_back(noteEvent(note, track, readEnd));
+        swingEvent(out.notes.back(), swing, swingStep, readEnd);
         attachExtras(out.notes.back(), note, out.extras, clip.id.value, out.loopStart, out.loopLength(), out.looping);
     }
     // With lanes of their own length the clip loops their whole cycle, so every pass plays the same; its other notes
@@ -564,9 +569,8 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                     snap.modulated.push_back({});
                     it = snap.modulated.end() - 1;
                     it->knob = knob;
-                    const Device* owner = r.target.kind == ParamRef::Kind::Device
-                                              ? findDevice(song, DeviceId(r.target.owner))
-                                              : nullptr;
+                    const Device* owner =
+                        r.target.kind == ParamRef::Kind::Device ? findDevice(song, DeviceId(r.target.owner)) : nullptr;
                     it->motion = owner && owner->type == DeviceType::Motion;
                 }
                 if (it->count < kMaxModulationsPerKnob)
