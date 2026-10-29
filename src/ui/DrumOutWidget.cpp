@@ -86,7 +86,7 @@ struct DrumOutWidget : rack::app::ModuleWidget {
         setModule(module);
         PanelBuilder panel(this, kHp, "DRUM OUT");
 
-        auto* display = new TrackOutDisplay(module);
+        auto* display = new TrackOutDisplay(module, true);
         display->box = Rect(rack::mm2px(kDisplay.pos), rack::mm2px(kDisplay.size));
         addChild(display);
 
@@ -140,6 +140,8 @@ struct DrumOutWidget : rack::app::ModuleWidget {
                                                [m](rack::ui::Menu* sub) { appendSourceMenu(sub, m, "Drum Out"); }));
         menu->addChild(rack::createSubmenuItem(
             "Track", "", [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Drum Out"); }, m->source() == nullptr));
+        menu->addChild(rack::createSubmenuItem("Channel", m->part() == 0 ? "All" : std::to_string(m->part()),
+                                               [m](rack::ui::Menu* sub) { appendChannelMenu(sub, m); }));
     }
 
   private:
