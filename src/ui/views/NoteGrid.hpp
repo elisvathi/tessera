@@ -6,6 +6,7 @@
 #include "../editing/NoteHitTest.hpp"
 #include "TimelineView.hpp"
 
+#include <set>
 #include <tuple>
 
 namespace tessera {
@@ -116,6 +117,9 @@ class NoteGrid : public TimelineView {
     /// Where the shown playhead moves notes to (its octave, steps, invert, and the modulators on them): each moved
     /// note drawn again at the pitch it plays, in the playhead's colour, with a dashed outline on the written note.
     void drawMovedNotes(NVGcontext* vg);
+    /// Works out `moved` again when the song, clip or shown playhead changed; the shown playhead when it moves notes
+    /// (a pitched track whose Playheads device is on), else nullptr.
+    const Playhead* updateMoved();
     /// Operator marks on a note: repeat ticks, chance and occurrence text, recurrence dots (EDITOR_UX §4.5).
     void drawBadges(NVGcontext* vg, const Note& note, rack::math::Rect r, float labelRight);
     /// The note's expression curve, small, inside its body (EDITOR_UX §4.6).
@@ -145,6 +149,7 @@ class NoteGrid : public TimelineView {
     // The pitches the shown playhead plays the clip's notes at (render::heardPitches), and what they were worked
     // out for: the song revision, clip and playhead.
     std::vector<int> moved;
+    std::set<uint64_t> movedIds; // notes it plays at another pitch: drawn see-through where they are written
     std::tuple<uint64_t, uint64_t, uint64_t> movedFor{~uint64_t(0), 0, 0};
     std::vector<CurveStrip> strips; // from the last stripAt, which points into it
     std::vector<std::pair<rack::math::Rect, ClipId>> layerChips;
