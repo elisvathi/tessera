@@ -387,17 +387,6 @@ double timeAt(const Motion& m, const Sweep& s, double pos) {
     return s.restartBase + unbent(m, travel) / m.rate;
 }
 
-void curvedKnobs(const float* knobs, int count, const std::vector<PlayheadCurve>& curves, double elapsed, float* out) {
-    std::copy(knobs, knobs + count, out);
-    for (const PlayheadCurve& c : curves) {
-        if (c.param >= count || c.points.empty() || c.length <= 0)
-            continue;
-        size_t cursor = 0;
-        double t = elapsed - std::floor(elapsed / double(c.length)) * double(c.length);
-        out[c.param] = std::clamp(evaluateAt(c.points, t, cursor, out[c.param]), 0.f, 1.f);
-    }
-}
-
 NoteShape noteShapeFrom(const float* knobs) {
     auto shown = [&](int k) { return devices::display(devices::playheadInfo().params[size_t(k)], knobs[k]); };
     NoteShape s;

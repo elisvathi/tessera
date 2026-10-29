@@ -27,8 +27,8 @@ enum class DeviceType : uint8_t {
 };
 constexpr int kDeviceTypeCount = 12;
 
-enum class ModulatorType : uint8_t { Lfo, Envelope, Steps, Random, Ramp, Macro, Note };
-constexpr int kModulatorTypeCount = 7;
+enum class ModulatorType : uint8_t { Lfo, Envelope, Steps, Random, Ramp, Macro, Note, Curve };
+constexpr int kModulatorTypeCount = 8;
 
 /// Where a modulator lives, which decides what it may reach (docs/DEVICES.md §1.2).
 enum class ModLevel : uint8_t { Song, Track, Device };
@@ -66,28 +66,20 @@ struct Modulator {
     std::vector<float> params; // normalized, the type's list
     std::vector<float> steps;  // Steps: the drawn values, 0..1
     std::vector<Modulation> routes;
+    /// Curve: the drawn shape, points over one cycle of `length` ticks (0.5 = no change, it moves its targets both
+    /// ways). Synced, a cycle lasts `length`; free, the Rate knob sets how fast it goes round.
+    Tick length = 0;
+    std::vector<AutoPoint> points;
 
     bool operator==(const Modulator& o) const {
         return id == o.id && type == o.type && name == o.name && params == o.params && steps == o.steps &&
-               routes == o.routes;
+               routes == o.routes && length == o.length && points == o.points;
     }
 };
 
 struct Device;
 
 constexpr int kMaxBranchDevices = 4; // per playhead
-
-/// A curve that moves one playhead setting while it plays (docs/design/PLAYHEADS.md §12): points over `length`
-/// ticks of time since the clip started, repeating; it sets the setting's value (normalized) while it plays.
-struct PlayheadCurve {
-    uint16_t param = 0;
-    Tick length = 0;
-    std::vector<AutoPoint> points;
-
-    bool operator==(const PlayheadCurve& o) const {
-        return param == o.param && length == o.length && points == o.points;
-    }
-};
 
 /// One reader of the clip inside a Playheads device (docs/design/PLAYHEADS.md).
 struct Playhead {
@@ -104,7 +96,6 @@ struct Playhead {
     /// A drawn path (docs/design/PLAYHEADS.md §4.2), used when its Path knob says Drawn: points at the playhead's
     /// own time within its path cycle (ticks), each giving a place in its region (0 = start, 1 = end).
     std::vector<AutoPoint> path;
-    std::vector<PlayheadCurve> curves; // at most one per setting
 
     bool operator==(const Playhead& o) const;
 };
@@ -127,7 +118,7 @@ struct Device {
 
 inline bool Playhead::operator==(const Playhead& o) const {
     return id == o.id && name == o.name && color == o.color && params == o.params && channel == o.channel &&
-           mute == o.mute && solo == o.solo && branch == o.branch && path == o.path && curves == o.curves;
+           mute == o.mute && solo == o.solo && branch == o.branch && path == o.path;
 }
 
 } // namespace tessera

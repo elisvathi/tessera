@@ -183,8 +183,9 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
         clock.songTick = t;
         for (Running& r : running) {
             const Modulator& m = *r.modulator;
+            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
             mods::evaluate(m.type, m.id.value, knobs[{int(ParamRef::Kind::Modulator), m.id.value}].value.data(),
-                           r.state, clock, m.steps.data(), int(m.steps.size()));
+                           r.state, clock, m.steps.data(), int(m.steps.size()), &drawn);
         }
         sink.now = t + kBlock;
         c->run(t + kBlock, context, sink);

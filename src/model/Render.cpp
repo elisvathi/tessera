@@ -86,6 +86,45 @@ struct Moved {
     float velocity = 0;
 };
 
+/// A playhead's settings at `songTick` as the engine plays them: its knobs plus the modulators that reach them and
+/// move with the song alone (synced waves and curves, steps, random, ramps, macros). Free-running ones and those that
+/// follow notes are left out: a file has no wall clock or live notes to follow.
+void playheadKnobsAt(const Song& song, const Track& track, const Device& device, const Playhead& p, double songTick,
+                     float* out) {
+    std::copy(p.params.begin(), p.params.end(), out);
+    mods::Clock clock;
+    clock.songTick = songTick;
+    clock.timeSig = song.timeSig;
+    clock.seed = song.seed;
+    auto add = [&](const std::vector<Modulator>& list) {
+        for (const Modulator& m : list) {
+            const float* k = m.params.data();
+            auto shown = [&](int i) { return devices::display(devices::modulatorInfo(m.type).params[size_t(i)], k[i]); };
+            bool songOnly = (m.type == ModulatorType::Curve && shown(mods::knob::kCurveSync) > 0.5f &&
+                             shown(mods::knob::kCurveRestart) < 1.5f) ||
+                            (m.type == ModulatorType::Lfo && shown(mods::knob::kSync) > 0.5f &&
+                             shown(mods::knob::kRestart) < 1.5f) ||
+                            ((m.type == ModulatorType::Steps || m.type == ModulatorType::Ramp) &&
+                             !mods::perPass(m.type, k)) ||
+                            m.type == ModulatorType::Random || m.type == ModulatorType::Macro;
+            if (!songOnly)
+                continue;
+            mods::State state;
+            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            float v = mods::evaluate(m.type, m.id.value, k, state, clock, m.steps.data(), int(m.steps.size()), &drawn);
+            for (const Modulation& r : m.routes)
+                if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Playhead &&
+                    r.target.owner == p.id.value && r.target.param < p.params.size())
+                    out[r.target.param] += r.amount * v;
+        }
+    };
+    add(song.modulators);
+    add(track.modulators);
+    add(device.modulators);
+    for (size_t i = 0; i < p.params.size(); i++)
+        out[i] = std::clamp(out[i], 0.f, 1.f);
+}
+
 Moved motionOf(const Song& song, const Track* track, const Clip& clip, const Note& note, int pitch, int64_t pass) {
     Moved out{pitch};
     const MotionGroup* group = clip.findMotion(note.motion);
@@ -301,12 +340,12 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             const Playhead& p = device.playheads[index];
             if (p.mute || (solo && !p.solo))
                 continue;
-            // Small steps, so no window needs more sweeps than one call gives; each step reads the curves anew.
+            // Small steps, so no window needs more sweeps than one call gives; each step reads the modulators anew.
             constexpr double kStep = double(kPpq) / 8;
             std::vector<float> knobs(p.params.size());
             for (double e = begin; e < begin + length; e += kStep) {
                 double to = std::min(begin + length, e + kStep);
-                playheads::curvedKnobs(p.params.data(), int(p.params.size()), p.curves, e, knobs.data());
+                playheadKnobsAt(song, t, device, p, double(a.position) + (e - begin) * stretch, knobs.data());
                 playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), playStart,
                                                             playEnd - playStart, song.timeSig);
                 if (playheads::wantsDrawnPath(knobs.data()))
@@ -604,6 +643,52 @@ smf::Track conductor(const Song& song, const Context& ctx, Tick from, Tick to) {
 }
 
 } // namespace
+
+std::vector<int> heardPitches(const Song& song, const Track& track, const Device& device, const Playhead& p,
+                              const Clip& clip) {
+    struct Readable {
+        double start, end;
+        int pitch;
+        uint8_t role = 0;
+        size_t index;
+    };
+    std::vector<int> heard(clip.notes.size(), -1);
+    double playStart = double(clip.playStart()), playEnd = double(clip.playEnd());
+    if (playEnd <= playStart)
+        return heard;
+    std::vector<Readable> notes;
+    int lowest = 127, highest = 0;
+    for (size_t i = 0; i < clip.notes.size(); i++) {
+        const Note& n = clip.notes[i];
+        if (n.muted || double(n.start) < playStart || double(n.start) >= playEnd)
+            continue;
+        notes.push_back({double(n.start), std::min(double(n.start + n.length), playEnd), n.pitch, 0, i});
+        lowest = std::min<int>(lowest, n.pitch);
+        highest = std::max<int>(highest, n.pitch);
+    }
+    std::vector<uint32_t> byEnd = playheads::orderByEnd(notes);
+    playheads::markChordRoles(notes, [](Readable& n) -> uint8_t& { return n.role; });
+    Scale scale = clip.scaleOverride ? resolveScale(*clip.scaleOverride, song.customScales)
+                                     : resolveScale(song.scale, song.customScales);
+    constexpr double kStep = double(kPpq) / 8;
+    std::vector<float> knobs(p.params.size());
+    for (double e = 0; e < playEnd - playStart; e += kStep) {
+        playheadKnobsAt(song, track, device, p, e, knobs.data());
+        playheads::Motion m =
+            playheads::motionFrom(knobs.data(), device.params.data(), playStart, playEnd - playStart, song.timeSig);
+        if (playheads::wantsDrawnPath(knobs.data()))
+            m.path = &p.path;
+        playheads::NoteShape shape = playheads::noteShapeFrom(knobs.data());
+        playheads::Sweep sweeps[playheads::kMaxSweeps];
+        int count = playheads::sweeps(m, e, e + kStep, sweeps);
+        for (int i = 0; i < count; i++)
+            playheads::crossed(sweeps[i], notes, byEnd, [&](const Readable& n, double) {
+                if (heard[n.index] < 0 && playheads::picked(shape.pick, n.role))
+                    heard[n.index] = playheads::shapedPitch(shape, n.pitch, lowest, highest, scale);
+            });
+    }
+    return heard;
+}
 
 std::pair<Tick, Tick> rangeOf(const Song& song, const Options& o) {
     switch (o.range) {

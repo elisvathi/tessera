@@ -459,7 +459,6 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                     pp.channel = p.channel;
                     pp.audible = !p.mute && (!solo || p.solo);
                     pp.path = p.path;
-                    pp.curves = p.curves;
                     pp.knobCount = std::min<int>(int(p.params.size()), playheads::kMaxPlayheadParams);
                     if (d.on)
                         chain.playheads.push_back(pp);
@@ -522,10 +521,24 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         mp.track = place.level == ModLevel::Song ? -1 : song.trackIndex(place.track);
         mp.stepCount = int(std::min<size_t>(m.steps.size(), kMaxSteps));
         std::copy(m.steps.begin(), m.steps.begin() + mp.stepCount, mp.steps.begin());
+        mp.length = m.length;
+        mp.points = m.points;
         snap.modulators.push_back(mp);
         if (mp.track >= 0)
             snap.chains[size_t(mp.track)].modulatorSlots.push_back(slot);
     });
+    // Curve modulators on playhead settings: the playheads read them where they read the clip.
+    for (size_t mi = 0; mi < snap.modulators.size(); mi++) {
+        const Modulator* m = findModulator(song, ModulatorId(snap.modulators[mi].id));
+        if (!m || m->type != ModulatorType::Curve)
+            continue;
+        for (const Modulation& r : m->routes)
+            if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Playhead)
+                for (ChainPlayback& chain : snap.chains)
+                    for (PlayheadPlayback& pp : chain.playheads)
+                        if (pp.id == r.target.owner && r.target.param < pp.knobCount)
+                            pp.exact.push_back({int(mi), r.target.param, r.amount});
+    }
     assert(snap.knobs.size() <= size_t(kMaxKnobs));
     std::sort(snap.owners.begin(), snap.owners.end(),
               [](const KnobOwner& a, const KnobOwner& b) { return a.kind != b.kind ? a.kind < b.kind : a.id < b.id; });

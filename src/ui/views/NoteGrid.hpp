@@ -6,6 +6,8 @@
 #include "../editing/NoteHitTest.hpp"
 #include "TimelineView.hpp"
 
+#include <tuple>
+
 namespace tessera {
 
 class PianoRollView;
@@ -111,6 +113,9 @@ class NoteGrid : public TimelineView {
     bool drawPlayheadLines(NVGcontext* vg);
     /// A small corner in its group's colour on every note in a motion group (docs/design/PLAYHEADS.md §6.2).
     void drawMotionMarks(NVGcontext* vg);
+    /// Where the shown playhead moves notes to (its octave, steps, invert, and the modulators on them): each moved
+    /// note drawn again at the pitch it plays, in the playhead's colour, with a dashed outline on the written note.
+    void drawMovedNotes(NVGcontext* vg);
     /// Operator marks on a note: repeat ticks, chance and occurrence text, recurrence dots (EDITOR_UX §4.5).
     void drawBadges(NVGcontext* vg, const Note& note, rack::math::Rect r, float labelRight);
     /// The note's expression curve, small, inside its body (EDITOR_UX §4.6).
@@ -137,6 +142,10 @@ class NoteGrid : public TimelineView {
     PianoRollView& owner;
     CachedLayer* layer;
     std::vector<Ghost> ghosts;
+    // The pitches the shown playhead plays the clip's notes at (render::heardPitches), and what they were worked
+    // out for: the song revision, clip and playhead.
+    std::vector<int> moved;
+    std::tuple<uint64_t, uint64_t, uint64_t> movedFor{~uint64_t(0), 0, 0};
     std::vector<CurveStrip> strips; // from the last stripAt, which points into it
     std::vector<std::pair<rack::math::Rect, ClipId>> layerChips;
     rack::math::Rect layerClose;

@@ -588,37 +588,6 @@ CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoin
     });
 }
 
-CommandPtr setPlayheadCurve(const Song& song, PlayheadId id, int param, Tick length, std::vector<AutoPoint> points) {
-    std::stable_sort(points.begin(), points.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
-    length = std::max<Tick>(kPpq / 4, length);
-    for (AutoPoint& p : points) {
-        p.value = std::clamp(p.value, 0.f, 1.f);
-        p.t = std::clamp<Tick>(p.t, 0, length);
-    }
-    const devices::ParamInfo* info = devices::playheadParamInfo(param);
-    if (!info)
-        return nullptr;
-    return playheadEdit(song, id, std::string(points.empty() ? "Stop animating " : "Animate ") + info->name,
-                        [&](Device&, Playhead& p) {
-                            auto it = std::find_if(p.curves.begin(), p.curves.end(),
-                                                   [&](const PlayheadCurve& c) { return c.param == param; });
-                            if (points.empty()) {
-                                if (it == p.curves.end())
-                                    return false;
-                                p.curves.erase(it);
-                                return true;
-                            }
-                            PlayheadCurve curve{uint16_t(param), length, points};
-                            if (it == p.curves.end())
-                                p.curves.push_back(curve);
-                            else if (*it == curve)
-                                return false;
-                            else
-                                *it = curve;
-                            return true;
-                        });
-}
-
 CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo) {
     return playheadEdit(song, id, (solo ? "Solo " : "Unsolo ") + playheadName(song, id), [&](Device&, Playhead& p) {
         p.solo = solo;
@@ -678,6 +647,73 @@ CommandPtr setSteps(const Song& song, ModulatorId id, std::vector<float> steps) 
         if (!m)
             return false;
         m->steps = steps;
+        return true;
+    });
+}
+
+namespace {
+
+/// Sorted, inside 0..length, values 0..1: what a Curve modulator may hold.
+void tidyCurve(Tick& length, std::vector<AutoPoint>& points) {
+    length = std::max<Tick>(kPpq / 4, length);
+    std::stable_sort(points.begin(), points.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+    for (AutoPoint& p : points) {
+        p.value = std::clamp(p.value, 0.f, 1.f);
+        p.t = std::clamp<Tick>(p.t, 0, length);
+    }
+}
+
+} // namespace
+
+CommandPtr setCurve(const Song& song, ModulatorId id, Tick length, std::vector<AutoPoint> points) {
+    tidyCurve(length, points);
+    return chainEdit(song, "Draw " + modulatorName(song, id), [&](Song& work) {
+        Modulator* m = findModulator(work, id);
+        if (!m || m->type != ModulatorType::Curve || (m->length == length && m->points == points))
+            return false;
+        m->length = length;
+        m->points = points;
+        return true;
+    });
+}
+
+float curveAmount(const devices::ParamInfo& info) {
+    using K = devices::ParamInfo::Kind;
+    float span = info.kind == K::Integer   ? info.max - info.min
+                 : info.kind == K::Choice ? float(info.choices.size()) - 1
+                                          : 0;
+    return span > 7 ? 7 / span : 1;
+}
+
+CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& target, const std::string& name,
+                            Tick length, std::vector<AutoPoint> points, const NextId& nextId, ModulatorId* added,
+                            float amount) {
+    tidyCurve(length, points);
+    const Track* t = song.findTrack(track);
+    if (!t || t->modulators.size() >= size_t(kMaxTrackModulators))
+        return nullptr;
+    ModulatorId id(nextId());
+    Modulation route;
+    route.kind = Modulation::Kind::Param;
+    route.target = target;
+    route.amount = std::clamp(amount, -1.f, 1.f);
+    ModulatorPlace place;
+    place.level = ModLevel::Track;
+    place.track = track;
+    if (!reachable(song, place, id, route))
+        return nullptr;
+    if (added)
+        *added = id;
+    return chainEdit(song, "Animate " + name, [&](Song& work) {
+        Track* wt = work.findTrack(track);
+        if (!wt)
+            return false;
+        Modulator m = devices::makeModulator(ModulatorType::Curve, id);
+        m.name = freeName(wt->modulators, name);
+        m.length = length;
+        m.points = points;
+        m.routes.push_back(route);
+        wt->modulators.push_back(m);
         return true;
     });
 }

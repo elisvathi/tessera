@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DeviceLookup.hpp"
+#include "DeviceTypes.hpp"
 #include "TrackCommands.hpp"
 
 #include <map>
@@ -82,9 +83,6 @@ CommandPtr renamePlayhead(const Song& song, PlayheadId id, const std::string& na
 CommandPtr setPlayheadChannel(const Song& song, PlayheadId id, int channel);
 CommandPtr setPlayheadMute(const Song& song, PlayheadId id, bool mute);
 CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo);
-/// Sets the curve that moves one of a playhead's settings (repeating every `length` ticks), or with no points
-/// removes it. One undo step.
-CommandPtr setPlayheadCurve(const Song& song, PlayheadId id, int param, Tick length, std::vector<AutoPoint> points);
 /// Replaces a playhead's drawn path (sorted, values kept in 0..1), as one undo step named `name`.
 CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoint> path,
                            const std::string& name = "Draw path");
@@ -132,6 +130,17 @@ CommandPtr removeModulator(const Song& song, ModulatorId id);
 CommandPtr renameModulator(const Song& song, ModulatorId id, const std::string& name);
 /// The drawn values of a Steps modulator (at most kMaxSteps, each clamped to 0..1).
 CommandPtr setSteps(const Song& song, ModulatorId id, std::vector<float> steps);
+/// A Curve modulator's shape: its points (sorted, clamped into the cycle) and its cycle length (at least a 1/16).
+CommandPtr setCurve(const Song& song, ModulatorId id, Tick length, std::vector<AutoPoint> points);
+/// Starts moving `target` with a drawn shape, in one undo step: a new Curve modulator on `track` (named after the
+/// setting), turning the target by `amount` (curveAmount() for a new one), with `points` over `length`. Null when the
+/// track has no room for another modulator.
+CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& target, const std::string& name,
+                            Tick length, std::vector<AutoPoint> points, const NextId& nextId,
+                            ModulatorId* added = nullptr, float amount = 1);
+/// How far a new curve turns a setting: all the way, except that a setting with many steps (a playhead's Steps,
+/// Transpose) moves at most 7 of them either way, so its rows stay big enough to draw on.
+float curveAmount(const devices::ParamInfo& info);
 
 /// Adds a route. Null when the target is out of reach, the modulator has kMaxRoutes routes, the knob already
 /// takes kMaxModulationsPerKnob modulations, or the modulator already reaches that target.

@@ -219,7 +219,13 @@ struct PlayheadPlayback {
     uint8_t channel = 1; // 0 = each note keeps its own
     bool audible = true; // mute and solo already applied
     std::vector<AutoPoint> path; // its drawn path, when its Path knob says Drawn
-    std::vector<PlayheadCurve> curves;
+    /// Curve modulators on its settings, which it reads at the moment it reads (Engine::playPlayheads).
+    struct Exact {
+        int modulator = 0; // index into Snapshot::modulators
+        uint16_t param = 0;
+        float amount = 0;
+    };
+    std::vector<Exact> exact;
     int knobCount = 0;
 };
 
@@ -253,6 +259,8 @@ struct ModulatorPlayback {
     int track = -1; // display index of its track; -1 for song modulators
     std::array<float, kMaxSteps> steps{};
     int stepCount = 0;
+    Tick length = 0;               // Curve: one cycle
+    std::vector<AutoPoint> points; // Curve: its shape
 };
 
 /// A knob with modulation on it.

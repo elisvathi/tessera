@@ -115,11 +115,19 @@ start and a ◀ at its end: the part of the clip that playhead plays, over and o
 move it. A white tick inside shows where the playhead starts; drag it to start it later. The other playheads' segments
 show as thin lines in their colours.
 
-**Curves.** Any setting can move by itself. Click a knob's name and its curve opens in the piano roll's lower pane:
-click to add a point, drag points, double-click to delete one, right-click for ready shapes or to stop. The bar on top
-of the curve, with ▶ ◀ ends, sets how long the curve lasts before it repeats, so how fast the setting moves; drag its
-◀. A knob with a curve has a dotted ring and its name underlined. The lower pane's menu lists the shown playhead's
-curves.
+**Curves.** Any setting can move by itself. Click a knob's name and a curve for it opens in the piano roll's lower
+pane. Click to add a point: that makes a **Curve** modulator on the track (see [Modulators](#modulators)), named after
+the playhead and the setting, such as "Bass Steps". Up and down are in the setting's own units. For Steps or Octave,
+each row is one value and points snap to the rows; hold **Alt** to place them between rows. The dashed line in the
+middle is the setting as you set it on the knob. A setting with many values, such as Steps, moves at most 7 either
+way. The knob's ring shows the amount; change it there or in the modulator's settings. Drag points, double-click to
+delete one, right-click for ready shapes, sync, restart, or to delete the curve. The bar on top, with ▶ ◀ ends, sets
+how long a cycle lasts before it repeats; drag its ◀. A knob with a curve has a dotted ring and its name underlined.
+
+**Moved notes.** When the shown playhead plays notes at another pitch (its Octave, Steps or Invert, or a curve on
+them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's
+colour, with the change in semitones ("+2 st"). A dashed outline marks the written note it came from. This is the
+first pass from the clip's start; the notes you edit stay where they are written.
 
 On a drum clip whose lanes have their own length, the segment is the whole lane cycle, and each lane repeats on its own
 length under every playhead. Note operators (chance, repeats…) and note curves work as usual; each playhead makes its
@@ -135,7 +143,9 @@ speeds the playhead up or slows it down from where it is.
 Playheads read launched clips and timeline clips alike. On the timeline, each clip starts its playheads again, from
 where that clip begins (a clip that starts partway in starts the playheads partway in), and a stretched clip slows them
 down. MIDI export with **Devices: Applied** writes what the playheads play, each playhead on its channel; **Bypassed**
-writes the clips as written.
+writes the clips as written. Modulators on playhead settings go into the file when they follow the song alone: synced
+curves and LFOs, Steps, Random, Ramp and Macro. A free-running curve or LFO, an Envelope or a Note modulator plays live
+only.
 
 ### The time map
 
@@ -203,6 +213,13 @@ top chooses where it lives:
 | **Ramp** | Rises or falls over several bars: builds and fades. | Length (bars), Direction, Then (Hold or Loop), Curve. |
 | **Macro** | One knob you turn (or automate) that moves many knobs at once. | Value. |
 | **Note** | Follows the last note. | Follows (Velocity, Pitch, Release, Timbre, Pressure), Smooth. |
+| **Curve** | A shape you draw that repeats, like an LFO you draw yourself. | Sync, Rate, Restart (Free, Each bar, Each note). |
+
+**Curve** opens its shape in the piano roll's lower pane, under the notes it moves: click its row, or pick it in the
+lower pane's menu under **Curves**. Synced, one cycle lasts as long as the bar on top of the curve, and you set that by
+dragging the bar's ◀. With Sync off, **Rate** sets how many cycles play each second. The curve's middle line means "no
+change": above it moves its knobs up, below it moves them down, by the amount on each knob. Up and down are labelled
+in the units of the first knob it moves.
 
 Each row in the list shows the modulator's colour, its name, where it lives, a small live graph, and a **↗** arrow.
 Click a row to open its settings:

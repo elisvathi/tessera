@@ -84,4 +84,10 @@ std::vector<ExportNote> clipNotes(const Song& song, TrackId track, ClipId clip, 
 std::vector<std::pair<Tick, float>> laneSamples(const Song& song, TrackId track, int output, const Options& o,
                                                 Tick from, Tick to);
 
+/// The pitch playhead `p` first plays each of `clip`'s notes at, over one pass of the clip from its start (as if
+/// launched at the song's start, so synced modulators line up), by note index; -1 for notes it doesn't reach. For
+/// the piano roll to show where a playhead moves notes to.
+std::vector<int> heardPitches(const Song& song, const Track& track, const Device& device, const Playhead& p,
+                              const Clip& clip);
+
 } // namespace tessera::render

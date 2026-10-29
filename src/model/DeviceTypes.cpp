@@ -148,6 +148,9 @@ std::vector<TypeInfo> buildModulators() {
     t[size_t(ModulatorType::Note)] = {"Note",
                                       {choice("Follows", {"Velocity", "Pitch", "Release", "Timbre", "Pressure"}, 0),
                                        exponential("Smooth", 1, 2000, 1, "ms")}};
+    t[size_t(ModulatorType::Curve)] = {"Curve",
+                                       {toggle("Sync", true), exponential("Rate", 0.01f, 20, 0.5f, "Hz"),
+                                        choice("Restart", {"Free", "Each bar", "Each note"}, 0)}};
     auto about = [&t](ModulatorType type, const char* group, const char* description, const char* keywords) {
         TypeInfo& info = t[size_t(type)];
         info.group = group;
@@ -156,6 +159,7 @@ std::vector<TypeInfo> buildModulators() {
     };
     about(ModulatorType::Lfo, "Motion", "a wave that keeps moving: sine, saw, square…", "oscillator wobble sweep");
     about(ModulatorType::Steps, "Motion", "a pattern of values you draw", "sequence step pattern");
+    about(ModulatorType::Curve, "Motion", "a shape you draw that repeats, like an LFO", "draw shape curve lfo");
     about(ModulatorType::Random, "Motion", "a new random value at a steady rate", "noise sample hold chaos");
     about(ModulatorType::Ramp, "Motion", "rises or falls over several bars: builds, fades", "build riser fade");
     about(ModulatorType::Envelope, "Notes", "rises and falls with each note", "adsr attack decay");
@@ -344,6 +348,15 @@ Modulator makeModulator(ModulatorType type, ModulatorId id) {
         m.params.push_back(defaultNormalized(p));
     if (type == ModulatorType::Steps)
         m.steps = {1, 0.25f, 0.75f, 0.5f, 1, 0, 0.6f, 0.3f};
+    if (type == ModulatorType::Curve) {
+        // One bar, up and down around "no change".
+        Tick bar = 4 * kPpq;
+        m.length = bar;
+        m.points = {{0, 0.5f, CurveType::Linear, 0},
+                    {bar / 4, 1, CurveType::Linear, 0},
+                    {bar * 3 / 4, 0, CurveType::Linear, 0},
+                    {bar, 0.5f, CurveType::Linear, 0}};
+    }
     return m;
 }
 

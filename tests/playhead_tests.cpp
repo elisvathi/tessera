@@ -552,3 +552,138 @@ TEST_CASE("the playhead settings fit their limit") {
     CHECK(devices::playheadInfo().params.size() <= size_t(playheads::kMaxPlayheadParams));
     CHECK(devices::motionInfo().params.size() <= size_t(kMaxDeviceParams));
 }
+
+// ---- Curve modulators ------------------------------------------------------------------------------------------
+
+#include "../src/model/Modulators.hpp"
+
+TEST_CASE("a synced Curve modulator plays its drawn shape every cycle, around no change") {
+    Modulator m = devices::makeModulator(ModulatorType::Curve, ModulatorId(1));
+    m.length = 2 * kPpq;
+    m.points = {{0, 0.5f, CurveType::Linear, 0}, {kPpq, 1, CurveType::Hold, 0}, {2 * kPpq, 0, CurveType::Hold, 0}};
+    mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+    auto at = [&](double tick) {
+        mods::State state;
+        mods::Clock clock;
+        clock.songTick = tick;
+        return mods::evaluate(m.type, m.id.value, m.params.data(), state, clock, nullptr, 0, &drawn);
+    };
+    CHECK(mods::bipolar(m.type, m.params.data()));
+    CHECK(at(0) == doctest::Approx(0));         // 0.5 drawn: no change
+    CHECK(at(kPpq / 2) == doctest::Approx(0.5)); // halfway up the ramp to 1
+    CHECK(at(kPpq) == doctest::Approx(1));
+    CHECK(at(1.5 * kPpq) == doctest::Approx(1)); // held
+    CHECK(at(2 * kPpq) == doctest::Approx(0));   // the next cycle starts over
+}
+
+TEST_CASE("Curve modulators are drawn and added with undo, and survive saving") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    PlayheadId id = firstDevice(song).playheads[0].id;
+    ParamRef octave{ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)};
+    ModulatorId added;
+    applyUndoable(song, animateWithCurve(song, song.tracks[0].id, octave, "1 Octave", 4 * kPpq,
+                                         {{0, 0.5f, CurveType::Hold, 0}}, idsOf(song), &added));
+    REQUIRE(song.tracks[0].modulators.size() == 1);
+    const Modulator& m = song.tracks[0].modulators[0];
+    CHECK(m.id == added);
+    CHECK(m.type == ModulatorType::Curve);
+    REQUIRE(m.routes.size() == 1);
+    CHECK(m.routes[0].target == octave);
+    CHECK(m.routes[0].amount == 1);
+    // Points come back sorted and inside the cycle.
+    applyUndoable(song, setCurve(song, added, 2 * kPpq,
+                                 {{3 * kPpq, 2, CurveType::Linear, 0}, {0, 0.25f, CurveType::Linear, 0}}));
+    CHECK(song.tracks[0].modulators[0].points ==
+          std::vector<AutoPoint>{{0, 0.25f, CurveType::Linear, 0}, {2 * kPpq, 1, CurveType::Linear, 0}});
+    CHECK(savedAndLoaded(song) == song);
+}
+
+TEST_CASE("a playhead curve saved before curves were modulators loads as a Curve modulator") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    const Playhead& p = firstDevice(song).playheads[0];
+    json::Ref j(songToJson(song));
+    // The old form: [setting, length, points], the points setting the value itself (Octave 0 is 0.5, +1 is 0.625).
+    json_t* track = json_array_get(json_object_get(j.get(), "tracks"), 0);
+    json_t* head = json_array_get(json_object_get(json_array_get(json_object_get(track, "devices"), 0), "playheads"), 0);
+    json_object_set_new(head, "curves", json_pack("[[iI[[Ifif],[Ifif]]]]", playheads::knob::kOctave,
+                                                  static_cast<json_int_t>(8 * kPpq), json_int_t(0), 0.5, 1, 0.0,
+                                                  static_cast<json_int_t>(4 * kPpq), 0.625, 1, 0.0));
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    REQUIRE(loaded.tracks[0].modulators.size() == 1);
+    const Modulator& m = loaded.tracks[0].modulators[0];
+    CHECK(m.type == ModulatorType::Curve);
+    CHECK(m.name == p.name + " Octave");
+    CHECK(m.length == 8 * kPpq);
+    REQUIRE(m.points.size() == 2);
+    // Base 0.5, turning all the way: 0.5 stays at the middle, 0.625 is a sixteenth above it.
+    CHECK(m.points[0].value == doctest::Approx(0.5));
+    CHECK(m.points[1].value == doctest::Approx(0.5625));
+    REQUIRE(m.routes.size() == 1);
+    CHECK(m.routes[0].target ==
+          ParamRef{ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOctave)});
+    CHECK(m.routes[0].amount == 1);
+}
+
+TEST_CASE("MIDI export plays a synced Curve modulator on a playhead setting") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.length = 480;
+    n.pitch = 60;
+    clip.notes.push_back(n);
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 12 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId id = firstDevice(song).playheads[0].id;
+    // Bar 1 as set, bar 2 an octave up, repeating every two bars.
+    applyUndoable(song, animateWithCurve(song, song.tracks[0].id,
+                                         {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)},
+                                         "Octave", 8 * kPpq,
+                                         {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, 0.5625f, CurveType::Hold, 0}},
+                                         idsOf(song)));
+    std::vector<int> pitches;
+    for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+        pitches.push_back(e.pitch);
+    CHECK(pitches == std::vector<int>{60, 72, 60});
+}
+
+TEST_CASE("the piano roll learns which pitch a playhead plays each note at") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    // A chord on beat 1 (C E G), a single D on beat 3.
+    for (auto [start, pitch] : {std::pair<Tick, int>{0, 60}, {0, 64}, {0, 67}, {1920, 62}}) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = start;
+        n.length = 480;
+        n.pitch = int8_t(pitch);
+        clip.notes.push_back(n);
+    }
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    PlayheadId id = firstDevice(song).playheads[0].id;
+    auto set = [&](int k, float value) {
+        applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, id.value, uint16_t(k)},
+                                     devices::normalize(devices::playheadInfo().params[size_t(k)], value)));
+    };
+    auto heard = [&] {
+        const Device& d = firstDevice(song);
+        return render::heardPitches(song, song.tracks[0], d, d.playheads[0], clip);
+    };
+    CHECK(heard() == std::vector<int>{60, 64, 67, 62});
+    set(playheads::knob::kOctave, -1);
+    CHECK(heard() == std::vector<int>{48, 52, 55, 50});
+    set(playheads::knob::kNotes, 1); // the lowest of each chord only
+    CHECK(heard() == std::vector<int>{48, -1, -1, 50});
+}

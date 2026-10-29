@@ -1223,9 +1223,29 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
         PlayheadClock& clock = clocks[index];
         const float* knobs = clock.knobs.data();
         if (clock.motionBlock != controlBlock || clock.motionClip != &clip) {
-            // Its settings as its curves have them now; the region is the whole loop (a drum clip's whole lane
+            // Its settings as modulators have them now; the region is the whole loop (a drum clip's whole lane
             // cycle): the pattern and each lane with its own length repeat inside it, as they do without playheads.
-            playheads::curvedKnobs(&knobValues[size_t(p.knobs)], p.knobCount, p.curves, a, clock.knobs.data());
+            std::copy_n(&knobValues[size_t(p.knobs)], p.knobCount, clock.knobs.data());
+            // The knob table moves a block at a time, a block behind; playheads read a block ahead. A synced curve
+            // is a function of the song position, so it is read where the playhead reads: a step drawn on a bar
+            // reaches the note on that bar.
+            for (const PlayheadPlayback::Exact& x : p.exact) {
+                const ModulatorPlayback& mp = snapshot->modulators[size_t(x.modulator)];
+                mods::State st = (*modStates)[size_t(mp.slot)];
+                const float* mk = &knobValues[size_t(mp.knobs)];
+                if (st.owner != mp.id || devices::display(devices::modulatorInfo(mp.type).params[mods::knob::kCurveSync],
+                                                          mk[mods::knob::kCurveSync]) < 0.5f)
+                    continue;
+                mods::Clock at;
+                at.songTick = songTick + (from - playTick);
+                at.timeSig = ts;
+                at.seed = snapshot->seed;
+                mods::Drawn drawn{mp.points.data(), int(mp.points.size()), mp.length};
+                float applied = st.applied;
+                float v = mods::evaluate(mp.type, mp.id, mk, st, at, nullptr, 0, &drawn);
+                float& k = clock.knobs[x.param];
+                k = std::clamp(k + x.amount * (v - applied), 0.f, 1.f);
+            }
             clock.motion =
                 playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
             if (playheads::wantsDrawnPath(knobs))
@@ -1772,7 +1792,10 @@ void Engine::advanceModulation() {
             st = mods::State();
             st.owner = m.id;
         }
-        float out = mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, m.steps.data(), m.stepCount);
+        mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+        st.applied = st.out;
+        float out = mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, m.steps.data(), m.stepCount,
+                                   &drawn);
         liveModulators[size_t(m.slot)].store(out, std::memory_order_relaxed);
     }
 }

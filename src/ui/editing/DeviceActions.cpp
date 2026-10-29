@@ -220,6 +220,8 @@ void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) 
         mod->perform(std::move(command));
         c->openModulator = added.value;
         setStripOpen(*c, true);
+        if (type == ModulatorType::Curve)
+            showCurve(*c, added);
     };
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
 }
@@ -382,9 +384,30 @@ void openChannelMenu(EditorContext& ctx, PlayheadId id) {
     }));
 }
 
-void showPlayheadCurve(EditorContext& ctx, int param) {
-    ctx.playheadCurve = param;
-    ctx.view().lowerLane = kPlayheadCurveLane;
+void showCurve(EditorContext& ctx, ModulatorId id) {
+    ctx.curveModulator = id.value;
+    ctx.curveTarget = ParamRef();
+    ctx.view().lowerLane = kCurveLane;
+}
+
+ModulatorId curveOn(const Song& song, const ParamRef& target) {
+    ModulatorId found;
+    forEachModulator(song, [&](const Modulator& m, const ModulatorPlace&) {
+        if (found.valid() || m.type != ModulatorType::Curve)
+            return;
+        for (const Modulation& r : m.routes)
+            if (r.kind == Modulation::Kind::Param && r.target == target)
+                found = m.id;
+    });
+    return found;
+}
+
+void showCurveFor(EditorContext& ctx, const ParamRef& target) {
+    TesseraModule* m = moduleOf(ctx);
+    ModulatorId id = m ? curveOn(m->song(), target) : ModulatorId();
+    showCurve(ctx, id);
+    if (!id.valid())
+        ctx.curveTarget = target;
 }
 
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
