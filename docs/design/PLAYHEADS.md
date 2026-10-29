@@ -474,3 +474,26 @@ Each step builds, passes tests and can be used before the next.
 7. **Note motion:** motion groups (model, commands, inspector, marks and ghosts in the piano roll), the "Per
    pass" rate for Steps and Ramp, "Drift per pass…", per-playhead passes.
 8. **Finish:** shortcuts, help overlay, tooltips, manual page and screenshots, QA steps, a DECISIONS.md entry.
+
+## 12. Redesign after trying it (30 Oct, proposed, not built)
+
+Mockups: canvas boards "G · Redesign: the playhead rack" and "H · Redesign: first use, presets, looping and one-shot
+clips". Feedback that led here: setting it up wasn't clear, and one row of mixed knobs was messy. The goal is to jam:
+hear something good in one click, then shape it by ear.
+
+- **A rack of strips, not a device card.** A **Playheads** button in the clip header opens a rack under the notes,
+  one vertical strip per playhead. The device strip keeps only effects. (The model can stay a Playheads device first
+  in the chain; only where it shows changes.)
+- **One control per idea, in the order you think,** each a control made for it: SPEED (a stepper), DIRECTION (four
+  icons: forward, backward, ping-pong, freeze) with an **Order** (in order, outside in: first, last, second,
+  second-last…, inside out, odd then even, shuffle) and its step size, STARTS AT, PITCH (octave, steps in key,
+  which notes: All / Lowest / Highest, invert), LOUDNESS, then OUT (channel and who plays it) and FX (its own
+  effects, the branch). Rarer settings sit behind **More ⋯** (repeat, bend, note length, drawn path).
+- **Pitch moves into the playhead** (this reverses §4.3): bass and melody come out of one piano roll.
+- **Every setting can be animated:** a ∿ button on each control picks a curve shape, a speed and how far it moves.
+  Behind it is an ordinary modulator mapped to the setting, made for you.
+- **The segment each playhead plays** is a band on the notes: drag it to move it, drag its edges to resize it.
+- **Presets** when turning Playheads on: Canon, Bass and melody, Mirror, Double and half, Stutter, Just one.
+- **A clip that plays once:** each playhead goes through its segment once and stops; the clip ends when the slowest
+  one is done. A looping clip keeps them going round.
+- **Strips | Paths** switches the rack to the time map. In the in-panel editor the strips fold into one row each.
