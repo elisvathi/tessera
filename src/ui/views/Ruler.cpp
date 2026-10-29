@@ -77,15 +77,17 @@ class PlayheadSegmentGesture : public DragGesture {
         double delta = std::round((tick - press) / step) * step;
         now = original;
         switch (grab) {
+        // The stored segment is cut at the clip's ends, so the drag stops there too instead of snapping back on
+        // release.
         case Ruler::SegmentGrab::Start:
-            now.start = std::clamp(original.start + delta, 0.0, original.end - step);
+            now.start = std::clamp(original.start + delta, original.clipStart, original.end - step);
             now.startTick = std::max(now.startTick, now.start);
             break;
         case Ruler::SegmentGrab::End:
-            now.end = std::max(original.start + step, original.end + delta);
+            now.end = std::clamp(original.end + delta, original.start + step, original.clipEnd);
             break;
         case Ruler::SegmentGrab::Move:
-            delta = std::max(delta, -original.start);
+            delta = std::clamp(delta, original.clipStart - original.start, original.clipEnd - original.end);
             now.start += delta;
             now.end += delta;
             now.startTick += delta;
@@ -644,9 +646,11 @@ Ruler::SegmentGrab Ruler::segmentGrabAt(float x, TimelineSource::PlayheadSegment
         float xs = float(viewport.time.tickToX(sg.startTick));
         if (segment)
             *segment = sg;
-        if (std::fabs(x - x0) <= 7)
+        // Each grip reaches a little way into the bar, but never past its middle, so a short segment keeps both.
+        float inside = std::min(theme::metrics::kSegmentGrip + 6, (x1 - x0) / 2);
+        if (x >= x0 - 7 && x <= x0 + inside)
             return SegmentGrab::Start;
-        if (std::fabs(x - x1) <= 7)
+        if (x >= x1 - inside && x <= x1 + 7)
             return SegmentGrab::End;
         if (sg.startTick > sg.start && std::fabs(x - xs) <= 4)
             return SegmentGrab::StartTick;

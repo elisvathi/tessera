@@ -62,6 +62,7 @@ class TimelineSource {
         int color;
         bool selected;
         std::string name;
+        double clipStart = 0, clipEnd = 0; // a segment stays inside these
     };
     virtual std::vector<PlayheadSegment> playheadSegments() { return {}; }
     /// Moves a playhead's segment to [start, end) (already snapped), as one undo step.
