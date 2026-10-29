@@ -71,7 +71,8 @@ class ClipSource : public TimelineSource {
     /// The timeline clip the piano roll was opened from: the one selected in the arranger, when it plays this clip.
     const ArrangerClip* instance();
 
-    std::vector<PlayheadMark> playheadMarks() override;
+    std::vector<PlayheadSegment> playheadSegments() override;
+    void setPlayheadSegment(uint64_t id, double start, double end) override;
     void setPlayheadStart(uint64_t id, double tick) override;
 
   private:

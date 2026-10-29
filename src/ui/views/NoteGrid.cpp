@@ -12,6 +12,7 @@
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
+#include "../editing/DeviceActions.hpp"
 #include "../editing/DrumActions.hpp"
 #include "../editing/TransformMenu.hpp"
 #include "../interaction/ClickOrDrag.hpp"
@@ -1001,8 +1002,11 @@ bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
         float x = float(time().tickToX(playheads::positionAt(motion, elapsed)));
         if (x < -2 || x > box.size.x + 2)
             continue;
+        // The playhead the editor shows is drawn bolder.
+        bool shown = deviceActions::shownPlayhead(ctx) == &p;
+        float w = shown ? 3 : 2;
         nvgBeginPath(vg);
-        nvgRect(vg, x - 1, 0, 2, box.size.y);
+        nvgRect(vg, x - w / 2, 0, w, box.size.y);
         nvgFillColor(vg, theme::playheadColor(p.color));
         nvgFill(vg);
     }

@@ -7,6 +7,7 @@
 #include "../../model/Playheads.hpp"
 
 #include "../../module/TesseraModule.hpp"
+#include "../editing/DeviceActions.hpp"
 
 #include <cmath>
 
@@ -328,24 +329,53 @@ std::pair<double, double> regionOf(const Playhead& p, const ClipSpan& span) {
 
 } // namespace
 
-std::vector<TimelineSource::PlayheadMark> ClipSource::playheadMarks() {
+std::vector<TimelineSource::PlayheadSegment> ClipSource::playheadSegments() {
     TesseraModule* m = ctx.module();
     const Track* t = m ? m->song().findTrack(track) : nullptr;
     const Clip* c = current();
     const Device* device = t && c ? activePlayheads(*t) : nullptr;
     if (!device)
         return {};
+    const Playhead* shown = deviceActions::shownPlayhead(ctx);
     ClipSpan span = clipSpan(*c, lanes());
-    std::vector<PlayheadMark> marks;
+    std::vector<PlayheadSegment> segments;
     const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
     for (const Playhead& p : device->playheads) {
         auto [regionStart, regionLength] = regionOf(p, span);
-        if (regionLength <= 0 || (playheads::wantsDrawnPath(p.params.data()) && !p.path.empty()))
-            continue; // a drawn path decides where it starts
+        if (regionLength <= 0)
+            continue;
         double offset = double(devices::display(start, p.params[playheads::knob::kStart])) * double(kPpq) / 4;
-        marks.push_back({p.id.value, regionStart + std::fmod(offset, regionLength), p.color});
+        segments.push_back({p.id.value, regionStart, regionStart + regionLength,
+                            regionStart + std::fmod(offset, regionLength), p.color, shown && shown->id == p.id});
     }
-    return marks;
+    return segments;
+}
+
+void ClipSource::setPlayheadSegment(uint64_t id, double start, double end) {
+    TesseraModule* m = ctx.module();
+    const Clip* c = current();
+    if (!m || !c)
+        return;
+    ClipSpan span = clipSpan(*c, lanes());
+    double step = double(kPpq) / 4;
+    using namespace playheads::knob;
+    const devices::TypeInfo& info = devices::playheadInfo();
+    int from = std::max(0, int(std::lround((start - double(span.start)) / step)));
+    int length = std::max(1, int(std::lround((end - start) / step)));
+    // Covering the whole clip is stored as "whole clip", so it follows the clip when its loop changes.
+    if (from == 0 && double(length) * step >= double(span.length()))
+        length = 0;
+    Song work = m->song();
+    auto both = std::make_unique<CompoundCommand>("Move playhead segment");
+    for (auto [k, v] : {std::pair<int, int>{kRegionStart, from}, {kRegionLength, length}}) {
+        CommandPtr command = setParam(work, {ParamRef::Kind::Playhead, id, uint16_t(k)},
+                                      devices::normalize(info.params[size_t(k)], float(v)));
+        if (command)
+            command->apply(work);
+        both->add(std::move(command));
+    }
+    if (!both->empty())
+        m->perform(std::move(both));
 }
 
 void ClipSource::setPlayheadStart(uint64_t id, double tick) {

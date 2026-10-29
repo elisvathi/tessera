@@ -65,28 +65,60 @@ class InstanceEndGesture : public DragGesture {
     double end;
 };
 
-/// Dragging a playhead's start mark: snapped to the grid, one undo step on release.
-class PlayheadMarkGesture : public DragGesture {
+/// Dragging the selected playhead's segment: an end to resize it, the bar to move it, the white tick to move where it
+/// starts. Snapped to the grid (at most 1/16 steps); one undo step on release.
+class PlayheadSegmentGesture : public DragGesture {
   public:
-    PlayheadMarkGesture(Ruler& ruler, uint64_t id) : ruler(ruler), id(id) {}
+    PlayheadSegmentGesture(Ruler& ruler, TimelineSource::PlayheadSegment segment, Ruler::SegmentGrab grab,
+                           double press)
+        : ruler(ruler), original(segment), now(segment), grab(grab), press(press) {}
     void update(rack::math::Vec pos, Modifiers mods) override {
-        Tick step = std::min<Tick>(ruler.snapStep(), kPpq / 4);
-        tick = std::max(0.0, snapped(ruler.viewport.time.xToTick(pos.x), step, mods.alt));
-        ruler.markPreview = std::make_pair(id, tick);
+        double step = double(std::min<Tick>(std::max<Tick>(1, ruler.snapStep()), kPpq / 4));
+        double tick = ruler.viewport.time.xToTick(pos.x);
+        double delta = std::round((tick - press) / step) * step;
+        now = original;
+        switch (grab) {
+        case Ruler::SegmentGrab::Start:
+            now.start = std::clamp(original.start + delta, 0.0, original.end - step);
+            now.startTick = std::max(now.startTick, now.start);
+            break;
+        case Ruler::SegmentGrab::End:
+            now.end = std::max(original.start + step, original.end + delta);
+            break;
+        case Ruler::SegmentGrab::Move:
+            delta = std::max(delta, -original.start);
+            now.start += delta;
+            now.end += delta;
+            now.startTick += delta;
+            break;
+        case Ruler::SegmentGrab::StartTick:
+            now.startTick = std::clamp(original.startTick + delta, original.start, original.end - step);
+            break;
+        default:
+            break;
+        }
+        ruler.segmentPreview = now;
     }
     void commit() override {
-        ruler.markPreview.reset();
-        if (tick >= 0)
-            ruler.source.setPlayheadStart(id, tick);
+        ruler.segmentPreview.reset();
+        if (grab == Ruler::SegmentGrab::StartTick)
+            ruler.source.setPlayheadStart(now.id, now.startTick);
+        else if (now.start != original.start || now.end != original.end)
+            ruler.source.setPlayheadSegment(now.id, now.start, now.end);
     }
-    void cancel() override { ruler.markPreview.reset(); }
-    std::string readout() const override { return "Playhead start"; }
-    CursorShape cursor() const override { return CursorShape::ResizeH; }
+    void cancel() override { ruler.segmentPreview.reset(); }
+    std::string readout() const override {
+        return grab == Ruler::SegmentGrab::StartTick ? "Where it starts" : "Where it plays";
+    }
+    CursorShape cursor() const override {
+        return grab == Ruler::SegmentGrab::Move ? CursorShape::Move : CursorShape::ResizeH;
+    }
 
   private:
     Ruler& ruler;
-    uint64_t id;
-    double tick = -1;
+    TimelineSource::PlayheadSegment original, now;
+    Ruler::SegmentGrab grab;
+    double press;
 };
 
 class LoopGesture : public DragGesture {
@@ -281,12 +313,15 @@ Ruler::Strips Ruler::stripsFor(Surface surface) {
 
 float Ruler::heightFor(TimelineSource& source, Surface surface) {
     Strips s = stripsFor(surface);
-    return (source.hasMarkers() ? s.markers : 0) + s.loop + s.time + s.overview;
+    float segments = source.playheadSegments().empty() ? 0 : theme::metrics::kSegmentRow;
+    return segments + (source.hasMarkers() ? s.markers : 0) + s.loop + s.time + s.overview;
 }
 
 Tick Ruler::snapStep() { return gridSpacing(viewport.time.pxPerTick(), source.timeSig()).line; }
 
 Ruler::Zone Ruler::zoneAt(float y) {
+    if (y < segmentsBottom())
+        return Zone::Segments;
     if (y < markersBottom())
         return Zone::Markers;
     if (y < loopBottom())
@@ -332,9 +367,13 @@ std::unique_ptr<DragGesture> Ruler::startGesture(rack::math::Vec pos, int button
             return std::make_unique<MarkerGesture>(*this, std::move(m), i, pos);
         return nullptr;
     }
+    case Zone::Segments: {
+        TimelineSource::PlayheadSegment segment{};
+        if (SegmentGrab grab = segmentGrabAt(pos.x, &segment); grab != SegmentGrab::None)
+            return std::make_unique<PlayheadSegmentGesture>(*this, segment, grab, t.xToTick(pos.x));
+        return nullptr;
+    }
     case Zone::Loop: {
-        if (std::optional<TimelineSource::PlayheadMark> mark = playheadMarkAt(pos.x))
-            return std::make_unique<PlayheadMarkGesture>(*this, mark->id);
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return std::make_unique<InstanceEndGesture>(*this);
         if (source.loopLocked())
@@ -432,6 +471,8 @@ void Ruler::openMarkerMenu(MarkerId id) {
 void Ruler::doubleClick(rack::math::Vec pos, Modifiers mods) {
     TimeAxis& t = viewport.time;
     switch (zoneAt(pos.y)) {
+    case Zone::Segments:
+        return;
     case Zone::Markers: {
         std::vector<Marker> m = source.markers();
         if (int i = markerAt(m, pos.x); i >= 0) {
@@ -482,9 +523,13 @@ CursorShape Ruler::hoverCursor(rack::math::Vec pos, Modifiers mods) {
     switch (zoneAt(pos.y)) {
     case Zone::Markers:
         return markerAt(source.markers(), pos.x) >= 0 ? CursorShape::Hand : CursorShape::Arrow;
+    case Zone::Segments: {
+        SegmentGrab grab = segmentGrabAt(pos.x, nullptr);
+        return grab == SegmentGrab::None ? CursorShape::Arrow
+               : grab == SegmentGrab::Move ? CursorShape::Move
+                                           : CursorShape::ResizeH;
+    }
     case Zone::Loop: {
-        if (playheadMarkAt(pos.x))
-            return CursorShape::ResizeH;
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return CursorShape::ResizeH;
         if (source.loopLocked())
@@ -537,10 +582,14 @@ void Ruler::drawView(const DrawArgs& args) {
 
     nvgSave(vg);
     nvgScissor(vg, 0, 0, box.size.x, box.size.y);
-    if (source.hasMarkers())
+    if (source.hasMarkers()) {
+        nvgSave(vg);
+        nvgTranslate(vg, 0, segmentsBottom());
         drawMarkers(vg);
+        nvgRestore(vg);
+    }
     drawLoop(vg);
-    drawPlayheadMarks(vg);
+    drawPlayheadSegments(vg);
     drawTimeLabels(vg);
     drawOverview(vg);
 
@@ -597,25 +646,68 @@ void Ruler::drawMarkers(NVGcontext* vg) {
     }
 }
 
-std::optional<TimelineSource::PlayheadMark> Ruler::playheadMarkAt(float x) {
-    for (const TimelineSource::PlayheadMark& m : source.playheadMarks())
-        if (std::fabs(float(viewport.time.tickToX(m.tick)) - x) <= 6)
-            return m;
-    return std::nullopt;
+Ruler::SegmentGrab Ruler::segmentGrabAt(float x, TimelineSource::PlayheadSegment* segment) {
+    for (const TimelineSource::PlayheadSegment& sg : source.playheadSegments()) {
+        if (!sg.selected)
+            continue;
+        float x0 = float(viewport.time.tickToX(sg.start)), x1 = float(viewport.time.tickToX(sg.end));
+        float xs = float(viewport.time.tickToX(sg.startTick));
+        if (segment)
+            *segment = sg;
+        if (std::fabs(x - x0) <= 7)
+            return SegmentGrab::Start;
+        if (std::fabs(x - x1) <= 7)
+            return SegmentGrab::End;
+        if (sg.startTick > sg.start && std::fabs(x - xs) <= 4)
+            return SegmentGrab::StartTick;
+        if (x > x0 && x < x1)
+            return SegmentGrab::Move;
+    }
+    return SegmentGrab::None;
 }
 
-void Ruler::drawPlayheadMarks(NVGcontext* vg) {
-    float top = markersBottom();
-    for (const TimelineSource::PlayheadMark& m : source.playheadMarks()) {
-        double tick = markPreview && markPreview->first == m.id ? markPreview->second : m.tick;
-        float x = float(viewport.time.tickToX(tick));
+void Ruler::drawPlayheadSegments(NVGcontext* vg) {
+    float top = 0;
+    float h = segmentsBottom();
+    if (h <= 0)
+        return;
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, box.size.x, h);
+    nvgFillColor(vg, theme::colors().bg0);
+    nvgFill(vg);
+    for (TimelineSource::PlayheadSegment sg : source.playheadSegments()) {
+        if (segmentPreview && segmentPreview->id == sg.id)
+            sg = *segmentPreview;
+        NVGcolor color = theme::playheadColor(sg.color);
+        float x0 = float(viewport.time.tickToX(sg.start)), x1 = float(viewport.time.tickToX(sg.end));
+        if (!sg.selected) {
+            nvgBeginPath(vg);
+            nvgRect(vg, x0, top + h - 3, std::max(1.f, x1 - x0), 2);
+            nvgFillColor(vg, nvgTransRGBAf(color, 0.7f));
+            nvgFill(vg);
+            continue;
+        }
+        float y = top + 2, bh = h - 4;
+        draw::roundedRect(vg, rack::math::Rect(x0, y, std::max(2.f, x1 - x0), bh), 2, nvgTransRGBAf(color, 0.25f));
+        // ▶ at the start, ◀ at the end: the handles.
         nvgBeginPath(vg);
-        nvgMoveTo(vg, x - 5, top + 1);
-        nvgLineTo(vg, x + 5, top + 1);
-        nvgLineTo(vg, x, top + 8);
+        nvgMoveTo(vg, x0, y);
+        nvgLineTo(vg, x0 + bh * 0.6f, y + bh / 2);
+        nvgLineTo(vg, x0, y + bh);
         nvgClosePath(vg);
-        nvgFillColor(vg, theme::playheadColor(m.color));
+        nvgMoveTo(vg, x1, y);
+        nvgLineTo(vg, x1 - bh * 0.6f, y + bh / 2);
+        nvgLineTo(vg, x1, y + bh);
+        nvgClosePath(vg);
+        nvgFillColor(vg, color);
         nvgFill(vg);
+        if (sg.startTick > sg.start) {
+            float xs = float(viewport.time.tickToX(sg.startTick));
+            nvgBeginPath(vg);
+            nvgRect(vg, xs - 1, y - 1, 2, bh + 2);
+            nvgFillColor(vg, theme::colors().text0);
+            nvgFill(vg);
+        }
     }
 }
 

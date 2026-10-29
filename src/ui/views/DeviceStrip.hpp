@@ -55,7 +55,12 @@ class DeviceStrip : public InteractiveView {
             AddTile,
             PlayheadChip, // one playhead of a Playheads device: click to show its settings
             AddPlayhead,
-            BranchBand // behind the shown playhead's branch; `id` is the playhead
+            BranchBand,        // behind the shown playhead's branch; `id` is the playhead
+            PlayheadDirection, // the shown playhead's direction and order, one dropdown
+            PlayheadRepeat,    // its repeat (size and times), one dropdown
+            PlayheadChannel,   // its channel
+            PlayheadMore,      // its rarer settings
+            CurveLabel         // a playhead knob's label: shows its curve in the lower pane
         };
         Kind kind;
         rack::math::Rect rect;
@@ -63,6 +68,7 @@ class DeviceStrip : public InteractiveView {
         int param = -1;  // knob index; PlayheadChip: the playhead's index
         uint64_t id = 0; // device, modulator or (playhead knobs and chips) playhead ID
         ParamRef::Kind refKind = ParamRef::Kind::Device; // what a knob's `id` is
+        bool dial = false; // a choice drawn as a knob (a playhead's rate)
     };
 
     // What running gestures show before they are committed.
@@ -96,6 +102,9 @@ class DeviceStrip : public InteractiveView {
     /// The playhead whose settings a Playheads card shows: the one last clicked, else its first.
     const Playhead* shownPlayhead(const Device& d) const;
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
+    /// A dropdown in a knob's place (a playhead's direction, repeat, channel), with its label under it.
+    void drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value, bool dim,
+                      bool hot);
     /// While mapping: whether the mapped modulator may reach this knob.
     bool reachableNow(const ParamRef& ref);
     void drawClosed(NVGcontext* vg);
@@ -115,7 +124,6 @@ class DeviceStrip : public InteractiveView {
     std::map<uint64_t, std::array<float, 40>> scopes;
     int scopeHead = 0;
     TrackId shownTrack;
-    PlayheadId selectedPlayhead;
 };
 
 } // namespace tessera

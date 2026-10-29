@@ -76,6 +76,8 @@ class EditorContext {
     uint64_t openModulator = 0;    // ModulatorId whose settings popover is open
     uint64_t selectedDevice = 0;   // DeviceId of the selected card (Delete removes it)
     uint64_t stripOpenedFor = 0;   // TrackId whose empty device strip was opened by hand
+    uint64_t selectedPlayhead = 0; // PlayheadId shown on the Playheads card, the ruler and the lower pane
+    int playheadCurve = -1;        // the playhead setting whose curve the lower pane shows; -1 = none
     bool clipsOpenNarrow = false;  // a narrow song pane shows the clips although the timeline plays
     double toastUntil = 0;
     static constexpr double kToastSeconds = 4;

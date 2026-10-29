@@ -48,6 +48,22 @@ void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce);
 void openModulatorMenu(EditorContext& ctx, ModulatorId id);
 /// A playhead's menu: rename, channel, mute, solo, duplicate, delete.
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
+/// The merged Direction dropdown (direction, or a step order with its step size), the Repeat dropdown (piece size and
+/// times) and the channel list, as one undo step each.
+void openDirectionMenu(EditorContext& ctx, PlayheadId id);
+void openRepeatMenu(EditorContext& ctx, PlayheadId id);
+void openChannelMenu(EditorContext& ctx, PlayheadId id);
+/// What the Direction and Repeat dropdowns show for a playhead ("Forward", "Outside in", "Off", "1/4 ×2").
+std::string directionText(const Playhead& p);
+std::string repeatText(const Playhead& p);
+/// Shows the curve of one of the shown playhead's settings in the piano roll's lower pane.
+void showPlayheadCurve(EditorContext& ctx, int param);
+
+/// The selected track's Playheads device when it has one (on or off), else nullptr.
+const Device* playheadsDevice(EditorContext& ctx);
+/// The playhead the editor shows (the Playheads card, the ruler's segment, the lower pane's curves): the one last
+/// picked on the selected track, else its first. nullptr when the track has no playheads.
+const Playhead* shownPlayhead(EditorContext& ctx);
 /// A choice knob's choices, the current one ticked.
 void openChoiceMenu(EditorContext& ctx, const ParamRef& ref);
 /// Type a value in the knob's units ("75", "1/16" for choices by name).
