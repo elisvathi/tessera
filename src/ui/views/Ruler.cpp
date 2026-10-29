@@ -308,7 +308,11 @@ Ruler::Strips Ruler::stripsFor(Surface surface) {
 float Ruler::heightFor(TimelineSource& source, Surface surface) {
     Strips s = stripsFor(surface);
     float segments = source.playheadSegments().empty() ? 0 : theme::metrics::kSegmentRow;
-    return segments + (source.hasMarkers() ? s.markers : 0) + s.loop + s.time + s.overview;
+    return segments + (source.hasMarkers() ? s.markers : 0) + loopRow(source, s) + s.time + s.overview;
+}
+
+float Ruler::loopRow(TimelineSource& source, const Strips& s) {
+    return source.playheadSegments().empty() || std::isfinite(source.instanceEnd()) ? s.loop : 0;
 }
 
 Tick Ruler::snapStep() { return gridSpacing(viewport.time.pxPerTick(), source.timeSig()).line; }
@@ -370,7 +374,7 @@ std::unique_ptr<DragGesture> Ruler::startGesture(rack::math::Vec pos, int button
     case Zone::Loop: {
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return std::make_unique<InstanceEndGesture>(*this);
-        if (source.loopLocked())
+        if (source.loopLocked() || loopByPlayheads())
             return nullptr;
         float x0 = float(t.tickToX(double(source.loopStart())));
         float x1 = float(t.tickToX(double(source.loopEnd())));
@@ -483,7 +487,8 @@ void Ruler::doubleClick(rack::math::Vec pos, Modifiers mods) {
         break;
     }
     case Zone::Loop:
-        source.toggleLoop();
+        if (!loopByPlayheads())
+            source.toggleLoop();
         break;
     case Zone::Time:
         if (source.canSeek())
@@ -526,7 +531,7 @@ CursorShape Ruler::hoverCursor(rack::math::Vec pos, Modifiers mods) {
     case Zone::Loop: {
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return CursorShape::ResizeH;
-        if (source.loopLocked())
+        if (source.loopLocked() || loopByPlayheads())
             return CursorShape::Arrow;
         float x0 = float(t.tickToX(double(source.loopStart())));
         float x1 = float(t.tickToX(double(source.loopEnd())));
@@ -699,7 +704,9 @@ void Ruler::drawPlayheadSegments(NVGcontext* vg) {
 void Ruler::drawLoop(NVGcontext* vg) {
     const theme::Palette& c = theme::colors();
     float top = markersBottom();
-    float h = strips().loop;
+    float h = loopRow(source, strips());
+    if (h <= 0)
+        return;
     nvgBeginPath(vg);
     nvgRect(vg, 0, top, box.size.x, h);
     nvgFillColor(vg, c.bg0);
@@ -714,12 +721,15 @@ void Ruler::drawLoop(NVGcontext* vg) {
     bool instance = std::isfinite(source.instanceEnd());
     float loopHeight = instance ? h - 7 : h - 4;
     rack::math::Rect bar(x0, top + 2, std::max(1.f, x1 - x0), loopHeight);
-    // A locked loop is an outline: it shows where the loop is, but has nothing to grab.
-    if (source.loopLocked() && source.loopOn()) {
-        draw::roundedRect(vg, bar, 2, nvgTransRGBAf(c.accent, 0.2f));
-        draw::roundedRectStroke(vg, bar, 2, color, 1);
-    } else {
-        draw::roundedRect(vg, bar, 2, color);
+    // A locked loop is an outline: it shows where the loop is, but has nothing to grab. With playheads there is
+    // no loop to show, only the timeline clip's end.
+    if (!loopByPlayheads()) {
+        if (source.loopLocked() && source.loopOn()) {
+            draw::roundedRect(vg, bar, 2, nvgTransRGBAf(c.accent, 0.2f));
+            draw::roundedRectStroke(vg, bar, 2, color, 1);
+        } else {
+            draw::roundedRect(vg, bar, 2, color);
+        }
     }
     if (instance) {
         float s0 = float(viewport.time.tickToX(source.instanceStart()));
@@ -774,12 +784,14 @@ void Ruler::drawOverview(NVGcontext* vg) {
     nvgFillColor(vg, c.bg0);
     nvgFill(vg);
 
-    float lx0 = float(double(source.loopStart()) / end) * box.size.x;
-    float lx1 = float(double(source.loopEnd()) / end) * box.size.x;
-    nvgBeginPath(vg);
-    nvgRect(vg, lx0, top + h - 2, std::max(1.f, lx1 - lx0), 2);
-    nvgFillColor(vg, source.loopOn() ? nvgTransRGBAf(c.accent, 0.6f) : c.line1);
-    nvgFill(vg);
+    if (!loopByPlayheads()) {
+        float lx0 = float(double(source.loopStart()) / end) * box.size.x;
+        float lx1 = float(double(source.loopEnd()) / end) * box.size.x;
+        nvgBeginPath(vg);
+        nvgRect(vg, lx0, top + h - 2, std::max(1.f, lx1 - lx0), 2);
+        nvgFillColor(vg, source.loopOn() ? nvgTransRGBAf(c.accent, 0.6f) : c.line1);
+        nvgFill(vg);
+    }
 
     // Neutral, so it never reads as a second loop bar (the loop is the only accent-coloured bar here).
     rack::math::Rect w = overviewWindow();
