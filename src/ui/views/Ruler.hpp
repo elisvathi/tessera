@@ -109,7 +109,11 @@ class Ruler : public InteractiveView {
     /// The playhead segments' row sits on top, when there are segments to show.
     float segmentsBottom() { return source.playheadSegments().empty() ? 0 : theme::metrics::kSegmentRow; }
     float markersBottom() { return segmentsBottom() + (source.hasMarkers() ? strips().markers : 0); }
-    float loopBottom() { return markersBottom() + strips().loop; }
+    /// With playheads, they decide what plays and the clip's loop doesn't: its bar isn't drawn or dragged.
+    bool loopByPlayheads() { return !source.playheadSegments().empty(); }
+    float loopBottom() { return markersBottom() + loopRow(source, strips()); }
+    /// The loop strip's height: none with playheads, unless it holds a timeline clip's end.
+    static float loopRow(TimelineSource& source, const Strips& s);
     float timeBottom() { return loopBottom() + strips().time; }
 
     /// The marker whose flag is under x, or -1.

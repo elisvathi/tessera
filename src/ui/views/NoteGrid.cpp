@@ -4,11 +4,11 @@
 
 #include "../../model/Arrangement.hpp"
 #include "../../model/DeviceLookup.hpp"
-#include "../../model/Playheads.hpp"
-#include "../../model/Render.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../model/NoteFields.hpp"
 #include "../../model/NoteOperators.hpp"
+#include "../../model/Playheads.hpp"
+#include "../../model/Render.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -152,6 +152,7 @@ void NoteGrid::step() {
     key = hashMix(key, double(owner.source.loopStart()));
     key = hashMix(key, double(owner.source.loopEnd()));
     key = hashMix(key, owner.source.loopOn() ? 1 : 0);
+    key = hashMix(key, owner.source.playheadSegments().empty() ? 0 : 1);
     key = hashMix(key, double(owner.clipId().value));
     if (ctx.module()) {
         key = hashMix(key, double(owner.snapStep()));
@@ -752,9 +753,10 @@ void NoteGrid::openNoteMenu(NoteId id) {
             current = DeviceId();
         const Device* d = current.valid() && ctx.module() ? findDevice(ctx.module()->song(), current) : nullptr;
         EditorContext* c = &ctx;
-        menu->addChild(rack::createSubmenuItem("Motion", d ? d->name : "", [c, clipId, notes, current](rack::ui::Menu* sub) {
-            deviceActions::appendMotionItems(sub, *c, clipId, notes, current);
-        }));
+        menu->addChild(
+            rack::createSubmenuItem("Motion", d ? d->name : "", [c, clipId, notes, current](rack::ui::Menu* sub) {
+                deviceActions::appendMotionItems(sub, *c, clipId, notes, current);
+            }));
     }
     const char* samePitch = owner.drumMode() ? "Select all hits of this lane" : "Select all notes of this pitch";
     menu->addChild(rack::createMenuItem(samePitch, "", [view, id] {
@@ -861,8 +863,9 @@ void NoteGrid::paintGrid(NVGcontext* vg, Vec size) {
         timeline::drawGrid(vg, time(), owner.timeSig(), size.y, owner.snapStep(), feel.amount, feel.step);
     }
 
-    // Content outside the clip loop is dimmed. Without a loop every note plays, so nothing is.
-    if (!owner.source.loopOn())
+    // Content outside the clip loop is dimmed. Without a loop every note plays, so nothing is; with playheads, they
+    // read the whole piano roll.
+    if (!owner.source.loopOn() || !owner.source.playheadSegments().empty())
         return;
     float loopX0 = float(time().tickToX(double(owner.source.loopStart())));
     float loopX1 = float(time().tickToX(double(owner.source.loopEnd())));
@@ -941,8 +944,10 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
     drawEmptyState(vg);
 
     double p = playhead();
+    // Playheads keep going after a clip that plays once has run out its own notes, so they are drawn even when the
+    // clip has no position any more.
+    bool faint = ctx.module() && ctx.module()->playing() && drawPlayheadLines(vg);
     if (std::isfinite(p) && ctx.module() && ctx.module()->playing()) {
-        bool faint = drawPlayheadLines(vg);
         float x = float(time().tickToX(p));
         if (x < 0)
             timeline::drawOffscreenArrow(vg, false, box.size.x, box.size.y / 2);
@@ -1076,8 +1081,7 @@ void NoteGrid::drawMovedNotes(NVGcontext* vg) {
         draw::roundedRect(vg, r, 2, nvgTransRGBAf(color, 0.85f));
         if (row >= 10 && w > 24) {
             int steps = moved[i] - n.pitch;
-            draw::text(vg, label, x0 + 4, played + row / 2,
-                       (steps > 0 ? "+" : "") + std::to_string(steps) + " st");
+            draw::text(vg, label, x0 + 4, played + row / 2, (steps > 0 ? "+" : "") + std::to_string(steps) + " st");
         }
     }
 }

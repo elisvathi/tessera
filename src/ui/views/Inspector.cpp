@@ -1,12 +1,14 @@
 #include "Inspector.hpp"
 
+#include "../../model/DeviceLookup.hpp"
+
 #include "../../model/Arrangement.hpp"
+#include "../../model/DeviceCommands.hpp"
+#include "../../model/DeviceTypes.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
-#include "../../model/DeviceCommands.hpp"
-#include "../../model/DeviceTypes.hpp"
 #include "../editing/ClipActions.hpp"
 #include "../editing/DeviceActions.hpp"
 #include "../editing/KeyActions.hpp"
@@ -330,9 +332,7 @@ void Inspector::step() {
 
 // ---- Input --------------------------------------------------------------------------------------------------
 
-namespace {
-
-} // namespace
+namespace {} // namespace
 
 std::unique_ptr<DragGesture> Inspector::startGesture(Vec pos, int button, Modifiers mods) {
     const Region* r = regionAt(pos);
@@ -899,7 +899,8 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     y = row(vg, y, "Length", bars(clipActions::shownLength(song, *clip), song.timeSig));
     ClipSpan span = clipSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
     y = row(vg, y, "Loop",
-            !span.looping
+            activePlayheads(*t) ? "Playheads decide"
+            : !span.looping
                 ? "Off"
                 : timeline::positionText(double(span.start), song.timeSig) + " – " +
                       timeline::positionText(double(span.end), song.timeSig) + (span.cycles() ? " (lanes)" : ""));
