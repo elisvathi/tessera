@@ -301,15 +301,17 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             const Playhead& p = device.playheads[index];
             if (p.mute || (solo && !p.solo))
                 continue;
-            playheads::Motion m = playheads::motionFrom(p.params.data(), device.params.data(), playStart,
-                                                        playEnd - playStart, song.timeSig);
-            if (playheads::wantsDrawnPath(p.params.data()))
-                m.path = &p.path;
-            playheads::NoteShape shape = playheads::noteShapeFrom(p.params.data());
-            // Small steps, so no window needs more sweeps than one call gives.
+            // Small steps, so no window needs more sweeps than one call gives; each step reads the curves anew.
             constexpr double kStep = double(kPpq) / 8;
+            std::vector<float> knobs(p.params.size());
             for (double e = begin; e < begin + length; e += kStep) {
                 double to = std::min(begin + length, e + kStep);
+                playheads::curvedKnobs(p.params.data(), int(p.params.size()), p.curves, e, knobs.data());
+                playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), playStart,
+                                                            playEnd - playStart, song.timeSig);
+                if (playheads::wantsDrawnPath(knobs.data()))
+                    m.path = &p.path;
+                playheads::NoteShape shape = playheads::noteShapeFrom(knobs.data());
                 playheads::Sweep sweeps[playheads::kMaxSweeps];
                 int count = playheads::sweeps(m, e, to, sweeps);
                 for (int i = 0; i < count; i++)
@@ -322,7 +324,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                 double elapsed = playheads::timeAt(m, sweeps[i], pos);
                                 double at = double(a.position) + (elapsed - begin) * stretch;
                                 double len =
-                                    playheads::noteLength(p.params.data(), m, n.end - n.start, song.timeSig) * stretch;
+                                    playheads::noteLength(knobs.data(), m, n.end - n.start, song.timeSig) * stretch;
                                 // The pass as the engine counts it: the playhead's own time over its region, its place
                                 // mixed in.
                                 double own =

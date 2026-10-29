@@ -576,6 +576,7 @@ class Engine {
         // Its settings in ticks, worked out once per control block (knobs only change there) for this clip.
         playheads::Motion motion;
         playheads::NoteShape shape;
+        std::array<float, playheads::kMaxPlayheadParams> knobs{}; // its settings with its curves applied
         uint64_t motionBlock = ~uint64_t(0);
         const ClipPlayback* motionClip = nullptr;
     };

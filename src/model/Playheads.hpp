@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Automation.hpp"
+#include "Device.hpp"
 #include "Scale.hpp"
 #include "Types.hpp"
 
@@ -205,6 +206,10 @@ bool wantsDrawnPath(const float* knobs);
 /// The places a playhead's settings take it to over one path cycle, as points every `step` ticks, with a pair of points
 /// at each jump: what "Draw this path" starts from.
 std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double step);
+
+/// A playhead's settings with its curves applied at `elapsed` ticks since the clip started: `out` gets
+/// `count` normalized values (a curve sets its setting's value while it plays).
+void curvedKnobs(const float* knobs, int count, const std::vector<PlayheadCurve>& curves, double elapsed, float* out);
 
 /// What a playhead does to the notes it plays (its NOTE settings).
 struct NoteShape {

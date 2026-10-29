@@ -588,6 +588,37 @@ CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoin
     });
 }
 
+CommandPtr setPlayheadCurve(const Song& song, PlayheadId id, int param, Tick length, std::vector<AutoPoint> points) {
+    std::stable_sort(points.begin(), points.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+    length = std::max<Tick>(kPpq / 4, length);
+    for (AutoPoint& p : points) {
+        p.value = std::clamp(p.value, 0.f, 1.f);
+        p.t = std::clamp<Tick>(p.t, 0, length);
+    }
+    const devices::ParamInfo* info = devices::playheadParamInfo(param);
+    if (!info)
+        return nullptr;
+    return playheadEdit(song, id, std::string(points.empty() ? "Stop animating " : "Animate ") + info->name,
+                        [&](Device&, Playhead& p) {
+                            auto it = std::find_if(p.curves.begin(), p.curves.end(),
+                                                   [&](const PlayheadCurve& c) { return c.param == param; });
+                            if (points.empty()) {
+                                if (it == p.curves.end())
+                                    return false;
+                                p.curves.erase(it);
+                                return true;
+                            }
+                            PlayheadCurve curve{uint16_t(param), length, points};
+                            if (it == p.curves.end())
+                                p.curves.push_back(curve);
+                            else if (*it == curve)
+                                return false;
+                            else
+                                *it = curve;
+                            return true;
+                        });
+}
+
 CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo) {
     return playheadEdit(song, id, (solo ? "Solo " : "Unsolo ") + playheadName(song, id), [&](Device&, Playhead& p) {
         p.solo = solo;

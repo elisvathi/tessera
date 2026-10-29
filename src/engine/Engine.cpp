@@ -1249,11 +1249,12 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
     auto& clocks = (*playheadClocks)[size_t(&state - tracks.data())];
     for (size_t index = 0; index < chain.playheads.size() && index < clocks.size(); index++) {
         const PlayheadPlayback& p = chain.playheads[index];
-        const float* knobs = &knobValues[size_t(p.knobs)];
         PlayheadClock& clock = clocks[index];
+        const float* knobs = clock.knobs.data();
         if (clock.motionBlock != controlBlock || clock.motionClip != &clip) {
-            // The region is the whole loop (a drum clip's whole lane cycle): the pattern and each lane with its own
-            // length repeat inside it, as they do without playheads.
+            // Its settings as its curves have them now; the region is the whole loop (a drum clip's whole lane
+            // cycle): the pattern and each lane with its own length repeat inside it, as they do without playheads.
+            playheads::curvedKnobs(&knobValues[size_t(p.knobs)], p.knobCount, p.curves, a, clock.knobs.data());
             clock.motion =
                 playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
             if (playheads::wantsDrawnPath(knobs))
