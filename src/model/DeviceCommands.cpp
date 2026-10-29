@@ -179,18 +179,15 @@ void insertDevice(Track& track, int at, Device device) {
     track.devices.insert(track.devices.begin() + at, std::move(device));
 }
 
-/// The playhead the device gets next: named and coloured by its place, on the lowest channel nobody uses,
-/// starting a beat after the one before so a canon is heard at once.
+/// The playhead the device gets next: named and coloured by its place, on the lowest channel nobody uses. It starts
+/// where its segment starts, so where it reads is set by the segment alone.
 Playhead nextPlayhead(const Device& device, PlayheadId id) {
-    int index = int(device.playheads.size());
-    Playhead p = devices::makePlayhead(id, index);
+    Playhead p = devices::makePlayhead(id, int(device.playheads.size()));
     int channel = 1;
     while (channel < 16 && std::any_of(device.playheads.begin(), device.playheads.end(),
                                        [&](const Playhead& o) { return o.channel == channel; }))
         channel++;
     p.channel = uint8_t(channel);
-    const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
-    p.params[playheads::knob::kStart] = devices::normalize(start, float(4 * index));
     return p;
 }
 
