@@ -27,8 +27,8 @@ bool hasCurves(const NoteExtras* ex) {
 } // namespace
 
 Engine::Engine()
-    : chains(std::make_unique<std::array<ChainRuntime, kMaxTracks>>()),
-      playheadClocks(std::make_unique<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>>()),
+    : playheadClocks(std::make_unique<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>>()),
+      chains(std::make_unique<std::array<ChainRuntime, kMaxTracks>>()),
       knobValues(std::make_unique<float[]>(size_t(kMaxKnobs))),
       modStates(std::make_unique<std::array<mods::State, kMaxModulatorSlots>>()),
       liveKnobs(new std::atomic<float>[size_t(kMaxKnobs)]()), liveBases(new std::atomic<float>[size_t(kMaxKnobs)]()),
@@ -100,13 +100,7 @@ void Engine::setSnapshot(const Snapshot* s) {
         // Extras live in the old snapshot, which is about to be freed: drop them, then find sounding notes' curves
         // again in the new one.
         std::array<uint64_t, kMaxVoices> clips = state.voiceClip, notes = state.voiceNote;
-        // Notes the playheads read ahead without extras point at nothing in the snapshot: they keep their time.
-        int kept = 0;
-        for (int k = 0; k < state.pendingCount; k++)
-            if (!state.pending[size_t(k)].extras)
-                state.pending[size_t(kept++)] = state.pending[size_t(k)];
         clearPending(state);
-        state.pendingCount = kept;
         state.voiceClip = clips;
         state.voiceNote = notes;
         reattachCurves(tp, state);
@@ -707,6 +701,7 @@ void Engine::releaseClipVoices(TrackState& state) {
     // Live notes in the chain lose what the devices held for them; their key release still ends them.
     if (state.chain >= 0)
         (*chains)[size_t(state.chain)].chain.clear();
+    rewindPlayheads(state);
     state.pendingCount = 0;
     state.drums.releaseAll();
     for (int v = 0; v < state.voices.polyphony(); v++)
@@ -1290,7 +1285,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         if (e.extras != kNoExtras && e.extras < clip.extras.size()) {
                             startWithOperators(track, state, n, clip.extras[e.extras], onPlay, onPlay + length, pass,
                                                lane);
-                        } else if (onPlay > playTick && state.pendingCount < kMaxPendingHits) {
+                        } else if (onPlay >= playTick && state.pendingCount < kMaxPendingHits) {
                             // Read ahead: it starts on its own sample, from the pending list.
                             TrackState::PendingHit hit{onPlay,     onPlay + length, n.pitch, n.velocity,
                                                        n.releaseVelocity, nullptr, double(n.start), pass,
@@ -1492,7 +1487,29 @@ void Engine::reattachCurves(const TrackPlayback& tp, TrackState& state) {
     }
 }
 
+void Engine::rewindPlayheads(TrackState& state) {
+    TrackState::PlayheadLook& look = state.playheadLook;
+    if (!std::isfinite(look.until))
+        return;
+    // A hair past now: a note that started on this very sample has already been played.
+    double now = playTick - state.launchTick + 1e-6;
+    if (look.until <= now)
+        return;
+    look.until = now;
+    look.last = std::min(look.last, now);
+    size_t index = size_t(&state - tracks.data());
+    if (index >= tracks.size())
+        return;
+    for (PlayheadClock& clock : (*playheadClocks)[index])
+        if (std::isfinite(clock.until) && clock.until > now) {
+            clock.own -= clock.motion.rate * (clock.until - now);
+            clock.until = now;
+        }
+}
+
 void Engine::clearPending(TrackState& state) {
+    // Queued notes the playheads read ahead go too: they read again from now.
+    rewindPlayheads(state);
     state.pendingCount = 0;
     state.voiceExtras.fill(nullptr);
     state.voiceClip.fill(0);
