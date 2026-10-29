@@ -86,7 +86,7 @@ Right-click a track header for its menu.
 | **Add instrument track / Add drum track** | Adds a track after this one. |
 | **Duplicate / Delete / Rename** | As above. |
 | **Colour** | One of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
-| **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3. Or pick a fixed number from 1 to 16. |
+| **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and each playhead adds its own (more for one faster than 1x). Or pick a fixed number from 1 to 16. |
 | **Show automation lanes / Add automation lane** | See [Automation](12-automation.md). |
 | **Input** | What the track plays besides its clips. See below. |
 | **Armed for recording, Record from, MIDI channel, Monitor while armed** | See [Recording](11-recording.md). |
