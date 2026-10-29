@@ -126,8 +126,8 @@ how long a cycle lasts before it repeats; drag its ◀. A knob with a curve has 
 
 **Moved notes.** When the shown playhead plays notes at another pitch (its Octave, Steps or Invert, or a curve on
 them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's
-colour, with the change in semitones ("+2 st"). A dashed outline marks the written note it came from. This is the
-first pass from the clip's start; the notes you edit stay where they are written.
+colour, with the change in semitones ("+2 st"). The written note it came from turns see-through with a dashed outline.
+This is the first pass from the clip's start; the notes you edit stay where they are written.
 
 On a drum clip whose lanes have their own length, the segment is the whole lane cycle, and each lane repeats on its own
 length under every playhead. Note operators (chance, repeats…) and note curves work as usual; each playhead makes its

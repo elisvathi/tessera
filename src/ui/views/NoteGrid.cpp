@@ -966,21 +966,35 @@ void NoteGrid::drawMotionMarks(NVGcontext* vg) {
     }
 }
 
-void NoteGrid::drawMovedNotes(NVGcontext* vg) {
+const Playhead* NoteGrid::updateMoved() {
     TesseraModule* m = ctx.module();
     const Clip* clip = owner.clip();
     const Track* track = owner.track();
-    if (!m || !clip || !track || track->type == TrackType::Drum)
-        return;
-    const Device* device = activePlayheads(*track);
-    const Playhead* p = deviceActions::shownPlayhead(ctx);
-    if (!device || !p || p->mute)
-        return;
+    const Device* device = m && clip && track && track->type != TrackType::Drum ? activePlayheads(*track) : nullptr;
+    const Playhead* p = device ? deviceActions::shownPlayhead(ctx) : nullptr;
+    if (!p || p->mute) {
+        moved.clear();
+        movedIds.clear();
+        movedFor = {~uint64_t(0), 0, 0};
+        return nullptr;
+    }
     std::tuple<uint64_t, uint64_t, uint64_t> key{m->songRevision(), clip->id.value, p->id.value};
     if (key != movedFor) {
         moved = render::heardPitches(m->song(), *track, *device, *p, *clip);
+        movedIds.clear();
+        for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++)
+            if (moved[i] >= 0 && moved[i] != clip->notes[i].pitch)
+                movedIds.insert(clip->notes[i].id.value);
         movedFor = key;
     }
+    return p;
+}
+
+void NoteGrid::drawMovedNotes(NVGcontext* vg) {
+    const Clip* clip = owner.clip();
+    const Playhead* p = updateMoved();
+    if (!clip || !p)
+        return;
     TimeAxis& t = time();
     PitchAxis& pitch = owner.pitch;
     float row = float(pitch.rowHeight());
@@ -994,15 +1008,22 @@ void NoteGrid::drawMovedNotes(NVGcontext* vg) {
         float x0 = float(t.tickToX(double(n.start))), x1 = float(t.tickToX(double(n.end())));
         float written = float(pitch.pitchToY(n.pitch)), played = float(pitch.pitchToY(moved[i]));
         float w = std::max(3.f, x1 - x0 - 1);
-        // The written note: a dashed outline in the playhead's colour, "moved from here".
+        // The written note, see-through (drawNotes): a dashed outline in the playhead's colour, "moved from here".
+        float top = written + 0.75f, bottom = written + row - 1.25f, right = x0 + w;
         nvgBeginPath(vg);
-        for (float x = x0; x < x0 + w; x += 6) {
-            nvgMoveTo(vg, x, written + 0.75f);
-            nvgLineTo(vg, std::min(x + 3, x0 + w), written + 0.75f);
-            nvgMoveTo(vg, x, written + row - 1.75f);
-            nvgLineTo(vg, std::min(x + 3, x0 + w), written + row - 1.75f);
+        for (float x = x0; x < right; x += 6) {
+            nvgMoveTo(vg, x, top);
+            nvgLineTo(vg, std::min(x + 3, right), top);
+            nvgMoveTo(vg, x, bottom);
+            nvgLineTo(vg, std::min(x + 3, right), bottom);
         }
-        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.8f));
+        for (float y = top; y < bottom; y += 6) {
+            nvgMoveTo(vg, x0, y);
+            nvgLineTo(vg, x0, std::min(y + 3, bottom));
+            nvgMoveTo(vg, right, y);
+            nvgLineTo(vg, right, std::min(y + 3, bottom));
+        }
+        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.85f));
         nvgStrokeWidth(vg, 1.2f);
         nvgStroke(vg);
         // A thin line to where it plays, and the note there.
@@ -1124,6 +1145,9 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
     double playing = m && m->playing() ? playhead() : NAN;
     double glowTicks = m ? std::max(1.0, 0.15 * m->tempo() / 60.0 * double(kPpq)) : 1;
 
+    // Notes the shown playhead plays at another pitch show see-through here; drawMovedNotes draws where they go.
+    updateMoved();
+
     // Notes are sorted by start, so stop at the first one past the right edge.
     for (const Note& n : owner.notes()) {
         if (double(n.start) > right)
@@ -1152,6 +1176,9 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
             fill = nvgLerpRGBA(fill, c.text0, 0.06f);
         if (n.muted)
             fill = nvgTransRGBAf(fill, 0.35f);
+        bool ghost = !drum && movedIds.count(n.id.value) > 0;
+        if (ghost)
+            fill = nvgTransRGBAf(fill, 0.15f);
         float radius = std::min(theme::metrics::kRadiusItem, row / 3);
         float glow = 0;
         if (std::isfinite(playing) && double(n.start) <= playing && playing < double(n.end()) && !n.muted) {
@@ -1201,7 +1228,7 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
         }
         if (isSelected)
             draw::roundedRectStroke(vg, r, radius, c.select, 1.5f);
-        else
+        else if (!ghost) // a moved note's outline is dashed, in drawMovedNotes
             draw::roundedRectStroke(vg, r, radius, nvgLerpRGBA(fill, c.onTile, 0.4f), 1);
 
         float labelX = x0 + 4;
