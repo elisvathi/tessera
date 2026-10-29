@@ -1512,3 +1512,18 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   note's first hit over one pass from the clip's start (modulators taken at song tick = clip time), cached by song
   revision. Moved notes are drawn again at their played pitch in the playhead's colour; the written note keeps its
   place (it is what you edit) and gets a dashed outline.
+- **Motion becomes a device** (30 Oct, board L): a clip's motion groups became the Motion device type (Pitch, Time,
+  Length, Velocity, In key; a colour). A note points at its Motion device by ID (Note::motion is a DeviceId), so notes
+  of any clip on the track can share one. Old groups load as Motion devices with the group's ID, after the Playheads
+  device, where they used to act; routes to "motion" knobs read as device knobs. The inspector keeps one line (which
+  Motion the notes move with); the knobs live on the card. In the chain it is a device like Humanize (ChainNote carries
+  the note's motion ID); "Per pass" modulators reach its knobs per note through Context::passKnob.
+- **Before Playheads** (30 Oct): Motion is the only device allowed before Playheads, and a new one goes there. Its
+  notes leave the playheads' main list for a list of their own (ClipPlayback::motions; export does the same), which
+  the playheads cross shifted by the device's Time for the clip's pass: a whole group shifts together, so the list
+  stays sorted and nothing is rebuilt while playing. Pitch, length and velocity apply as the note is read; chord roles
+  (Lowest/Highest) stay as written. Such a Motion device is not in the chain.
+- **Per pass curves** (30 Oct): a Curve gets a "Per pass" knob (appended): one value per pass of a note (per bar
+  without one), kPassTicks of drawing per pass; the editor then lays passes across the pane instead of following the
+  piano roll's time, and draws steps.
+- **Knob names open curves on every device card**, not only on the Playheads card.
