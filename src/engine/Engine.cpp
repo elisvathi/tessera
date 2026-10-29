@@ -1,5 +1,6 @@
 #include "Engine.hpp"
 
+#include "../model/DeviceTypes.hpp"
 #include "../model/Recording.hpp"
 
 #include <algorithm>
@@ -1066,8 +1067,8 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
     }
     const ClipPlayback* clip = track.slot(state.playing);
     if (clip && runs(track)) {
-        if (!clip->laneLoops.empty())
-            return -INFINITY; // drum lanes with their own loops: every sample
+        if (!clip->laneLoops.empty() || readByPlayheads(state))
+            return -INFINITY; // drum lanes with their own loops, or playheads: every sample
         double length = double(clip->loopLength());
         double a = now - state.launchTick;
         if (!clip->looping) {
@@ -1176,6 +1177,13 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
     double a = from - state.launchTick;
     double b = to - state.launchTick;
 
+    if (readByPlayheads(state)) {
+        playPlayheads(track, state, clip, a, clip.looping ? b : std::min(b, length), from);
+        if (!clip.looping && b >= length)
+            state.playing = kNoSlot;
+        return;
+    }
+
     if (!clip.looping) {
         if (a < length) {
             fireList(track, state, clip.notes, state.cursor, clip.loopStart + a, clip.loopStart + std::min(b, length),
@@ -1195,6 +1203,51 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
     for (size_t k = 0; k < clip.laneLoops.size() && k < state.laneCursor.size(); k++) {
         const LaneLoop& lane = clip.laneLoops[k];
         playLoop(track, state, lane.notes, state.laneCursor[k], lane.start, lane.length, a, b, from, &clip.extras);
+    }
+}
+
+void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a,
+                           double b, double from) {
+    const ChainPlayback& chain = *state.chainInfo;
+    TimeSig ts = snapshot->timeSig;
+    const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
+    bool once = std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
+                                             deviceKnobs[playheads::knob::kSameNote])) == 1;
+    // Notes started in this window, so two playheads landing on the same note at once play it once.
+    struct Started {
+        double at;
+        int8_t pitch;
+        uint8_t channel;
+    };
+    std::array<Started, 32> started;
+    int startedCount = 0;
+
+    for (const PlayheadPlayback& p : chain.playheads) {
+        if (!p.audible)
+            continue;
+        const float* knobs = &knobValues[size_t(p.knobs)];
+        playheads::Motion m =
+            playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.patternLength()), ts);
+        playheads::Sweep sweeps[playheads::kMaxSweeps];
+        int count = playheads::sweeps(m, a, b, sweeps);
+        for (int i = 0; i < count; i++) {
+            playheads::crossed(sweeps[i], clip.notes, clip.notesByEnd, [&](const NoteEvent& e, double pos) {
+                double onPlay = std::max(from, state.launchTick + playheads::timeAt(m, sweeps[i], pos));
+                NoteEvent n = e;
+                if (p.channel > 0)
+                    n.channel = p.channel;
+                if (once) {
+                    for (int k = 0; k < startedCount; k++)
+                        if (started[size_t(k)].pitch == n.pitch && started[size_t(k)].channel == n.channel &&
+                            std::abs(started[size_t(k)].at - onPlay) < 1e-6)
+                            return;
+                    if (startedCount < int(started.size()))
+                        started[size_t(startedCount++)] = {onPlay, n.pitch, n.channel};
+                }
+                double length = playheads::noteLength(knobs, m, double(e.end - e.start), ts);
+                startNote(track, state, n, onPlay, onPlay + length, 0);
+            });
+        }
     }
 }
 

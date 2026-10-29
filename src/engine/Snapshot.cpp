@@ -235,6 +235,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
     }
     // Clip notes are already sorted by start; stable keeps chords in pitch order.
     sortEvents(out.notes);
+    out.notesByEnd = playheads::orderByEnd(out.notes);
     for (NoteEvent& e : out.notes)
         e.key = key;
     for (LaneLoop& loop : out.laneLoops)
@@ -423,6 +424,23 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         const Track& track = song.tracks[i];
         ChainPlayback& chain = snap.chains[i];
         for (const Device& d : track.devices) {
+            if (d.type == DeviceType::Playheads) {
+                int knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
+                bool solo = std::any_of(d.playheads.begin(), d.playheads.end(),
+                                        [](const Playhead& p) { return p.solo && !p.mute; });
+                for (const Playhead& p : d.playheads) {
+                    PlayheadPlayback pp;
+                    pp.id = p.id.value;
+                    pp.knobs = addOwner(ParamRef::Kind::Playhead, p.id.value, p.params);
+                    pp.channel = p.channel;
+                    pp.audible = !p.mute && (!solo || p.solo);
+                    if (d.on)
+                        chain.playheads.push_back(pp);
+                }
+                if (d.on)
+                    chain.playheadKnobs = knobs;
+                continue;
+            }
             DevicePlayback dp;
             dp.type = d.type;
             dp.on = d.on;
