@@ -1330,23 +1330,19 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                     };
                     auto onHit = [&](const NoteEvent& e, double pos) { playHit(e, pos, nullptr); };
                     double start = double(clip.loopStart);
-                    // Each Motion device before the playheads: its notes shifted later by its Time on this pass of
-                    // the clip, wrapping at the loop's end, and moved in pitch, length and velocity.
+                    // Each Motion device before the playheads: its notes shifted later on the canvas by its Time on
+                    // this pass of the clip, and moved in pitch, length and velocity.
                     for (const ChainPlayback::ReadMotion& rm : chain.readMotions)
                         for (const ClipPlayback::MotionNotes& group : clip.motions) {
                             if (group.motion != rm.id || clip.loopLength() <= 0)
                                 continue;
                             int64_t clipPass = int64_t(std::floor(segA / double(clip.loopLength())));
                             MovedBy moved = movedBy(rm.knobs, clipPass);
-                            playheads::crossedRepeating(
-                                sweep, start, start - moved.delay, double(clip.loopLength()), group.notes,
-                                group.notesByEnd, [&](const NoteEvent& e, double pos) { playHit(e, pos, &moved); });
+                            playheads::crossedShifted(sweep, moved.delay, group.notes, group.notesByEnd,
+                                                      [&](const NoteEvent& e, double pos) { playHit(e, pos, &moved); });
                         }
                     if (clip.pattern > 0 && clip.pattern < clip.loopLength())
                         playheads::crossedRepeating(sweep, start, start, double(clip.pattern), clip.notes,
-                                                    clip.notesByEnd, onHit);
-                    else if (clip.loopLength() > 0) // a segment past the clip's end reads it as it repeats
-                        playheads::crossedRepeating(sweep, start, start, double(clip.loopLength()), clip.notes,
                                                     clip.notesByEnd, onHit);
                     else
                         playheads::crossed(sweep, clip.notes, clip.notesByEnd, onHit);

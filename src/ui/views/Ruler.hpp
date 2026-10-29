@@ -57,18 +57,15 @@ class TimelineSource {
     /// A playhead's segment (docs/design/PLAYHEADS.md §12): the part of the clip it plays, where in it it starts, and
     /// its colour. The selected playhead's shows as a bar with handles and its name; the others as thin lines.
     struct PlayheadSegment {
-        uint64_t id; // PlayheadId value
-        double start, end, startTick;
+        uint64_t id;       // PlayheadId value
+        double start, end; // on the piano roll, which is a canvas: anywhere from its start, past the clip's end too
         int color;
         bool selected;
         std::string name;
-        double clipStart = 0; // a segment starts at or after the clip's start; past its end, it reads the clip again
     };
     virtual std::vector<PlayheadSegment> playheadSegments() { return {}; }
     /// Moves a playhead's segment to [start, end) (already snapped), as one undo step.
     virtual void setPlayheadSegment(uint64_t id, double start, double end) {}
-    /// Moves where a playhead starts inside its segment (already snapped), as one undo step.
-    virtual void setPlayheadStart(uint64_t id, double tick) {}
 };
 
 /// The strip above a timeline: markers row, loop strip, time labels and the overview minimap (EDITOR_UX §3).
@@ -132,7 +129,7 @@ class Ruler : public InteractiveView {
     void drawLoop(NVGcontext* vg);
     void drawPlayheadSegments(NVGcontext* vg);
     /// What a press at x on the loop strip grabs of the selected playhead's segment.
-    enum class SegmentGrab { None, Start, End, Move, StartTick };
+    enum class SegmentGrab { None, Start, End, Move };
     SegmentGrab segmentGrabAt(float x, TimelineSource::PlayheadSegment* segment);
     /// The handle at the end of the timeline clip this view was opened from (its right edge is the end).
     rack::math::Rect instanceTag();

@@ -78,24 +78,18 @@ class PlayheadSegmentGesture : public DragGesture {
         double most = playheads::kMaxRegionSteps * double(kPpq) / 4;
         now = original;
         switch (grab) {
-        // The drag stops where the stored segment would: at the clip's start, and at the most its settings hold
-        // (so nothing snaps back on release).
+        // The drag stops where the stored segment would: at the piano roll's start, and at the most its settings
+        // hold (so nothing snaps back on release).
         case Ruler::SegmentGrab::Start:
-            now.start = std::clamp(original.start + delta, std::max(original.clipStart, original.end - most),
-                                   original.end - step);
-            now.startTick = std::max(now.startTick, now.start);
+            now.start = std::clamp(original.start + delta, std::max(0.0, original.end - most), original.end - step);
             break;
         case Ruler::SegmentGrab::End:
             now.end = std::clamp(original.end + delta, original.start + step, original.start + most);
             break;
         case Ruler::SegmentGrab::Move:
-            delta = std::clamp(delta, original.clipStart - original.start, original.clipStart + most - original.start);
+            delta = std::clamp(delta, -original.start, most - original.start);
             now.start += delta;
             now.end += delta;
-            now.startTick += delta;
-            break;
-        case Ruler::SegmentGrab::StartTick:
-            now.startTick = std::clamp(original.startTick + delta, original.start, original.end - step);
             break;
         default:
             break;
@@ -104,15 +98,11 @@ class PlayheadSegmentGesture : public DragGesture {
     }
     void commit() override {
         ruler.segmentPreview.reset();
-        if (grab == Ruler::SegmentGrab::StartTick)
-            ruler.source.setPlayheadStart(now.id, now.startTick);
-        else if (now.start != original.start || now.end != original.end)
+        if (now.start != original.start || now.end != original.end)
             ruler.source.setPlayheadSegment(now.id, now.start, now.end);
     }
     void cancel() override { ruler.segmentPreview.reset(); }
-    std::string readout() const override {
-        return grab == Ruler::SegmentGrab::StartTick ? "Where it starts" : "Where it plays";
-    }
+    std::string readout() const override { return "Where it plays"; }
     CursorShape cursor() const override {
         return grab == Ruler::SegmentGrab::Move ? CursorShape::Move : CursorShape::ResizeH;
     }
@@ -645,7 +635,6 @@ Ruler::SegmentGrab Ruler::segmentGrabAt(float x, TimelineSource::PlayheadSegment
         if (!sg.selected)
             continue;
         float x0 = float(viewport.time.tickToX(sg.start)), x1 = float(viewport.time.tickToX(sg.end));
-        float xs = float(viewport.time.tickToX(sg.startTick));
         if (segment)
             *segment = sg;
         // Each grip reaches a little way into the bar, but never past its middle, so a short segment keeps both.
@@ -654,8 +643,6 @@ Ruler::SegmentGrab Ruler::segmentGrabAt(float x, TimelineSource::PlayheadSegment
             return SegmentGrab::Start;
         if (x >= x1 - inside && x <= x1 + 7)
             return SegmentGrab::End;
-        if (sg.startTick > sg.start && std::fabs(x - xs) <= 4)
-            return SegmentGrab::StartTick;
         if (x > x0 && x < x1)
             return SegmentGrab::Move;
     }
@@ -696,18 +683,6 @@ void Ruler::drawPlayheadSegments(NVGcontext* vg) {
         float nameX = x0 + grip + 3;
         if (!sg.name.empty() && nameX + draw::textWidth(vg, label, sg.name) < x1 - grip - 3)
             draw::text(vg, label, nameX, y + bh / 2, sg.name);
-        if (sg.startTick > sg.start) {
-            // The start: a tick across the bar with a small ▼ over it.
-            float xs = float(viewport.time.tickToX(sg.startTick));
-            nvgBeginPath(vg);
-            nvgRect(vg, xs - 1, y, 3, bh);
-            nvgMoveTo(vg, xs - 3, top);
-            nvgLineTo(vg, xs + 4, top);
-            nvgLineTo(vg, xs + 0.5f, y);
-            nvgClosePath(vg);
-            nvgFillColor(vg, theme::colors().text0);
-            nvgFill(vg);
-        }
     }
 }
 

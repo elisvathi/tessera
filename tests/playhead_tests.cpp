@@ -361,17 +361,15 @@ TEST_CASE("MIDI export with devices applied plays what the playheads read") {
     PlayheadId second = firstDevice(song).playheads[1].id;
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, second.value, uint16_t(playheads::knob::kDirection)},
                                  devices::normalize(devices::playheadInfo().params[playheads::knob::kDirection], 1)));
-    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, second.value, uint16_t(playheads::knob::kStart)},
-                                 devices::normalize(devices::playheadInfo().params[playheads::knob::kStart], 4)));
 
     render::Options o;
     std::vector<std::pair<double, int>> got;
     for (const render::ExportNote& n : render::trackNotes(song, song.tracks[0].id, o, {}))
         got.push_back({n.start - 4 * kPpq, n.pitch * 100 + n.channel});
-    // Playhead 1 forward from the start (channel 1); playhead 2 backward from beat 2 (channel 2): the note ending
-    // at beat 2 (60, ends 480) is 480 ticks back, then 65 (ends 3360) after wrapping, and so on.
-    std::vector<std::pair<double, int>> want = {{0, 6001},    {480, 6002},  {960, 6201},  {1920, 6401},
-                                                {1440, 6502}, {2400, 6402}, {2880, 6501}, {3360, 6202}};
+    // Playhead 1 forward from the start (channel 1); playhead 2 backward from the clip's end (channel 2), meeting
+    // each note at its end: 65 (ends 3360) after 480 ticks, then 64, 62 and 60.
+    std::vector<std::pair<double, int>> want = {{0, 6001},    {480, 6502},  {960, 6201},  {1440, 6402},
+                                                {1920, 6401}, {2400, 6202}, {2880, 6501}, {3360, 6002}};
     std::sort(want.begin(), want.end());
     CHECK(got == want);
 

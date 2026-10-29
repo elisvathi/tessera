@@ -447,27 +447,26 @@ std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double st
     return corners;
 }
 
-std::pair<double, double> regionFrom(double startSteps, double lengthSteps, double clipLength) {
+std::pair<double, double> regionFrom(double startSteps, double lengthSteps, double clipStart, double clipLength) {
     double step = double(kPpq) / 4;
-    double start = std::max(0.0, startSteps * step), length = lengthSteps * step;
-    if (length <= 0)
-        length = start < clipLength ? clipLength - start : clipLength;
-    return {start, std::max(0.0, length)};
+    if (lengthSteps <= 0)
+        return {clipStart, std::max(0.0, clipLength)};
+    return {std::max(0.0, startSteps * step), lengthSteps * step};
 }
 
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts) {
     auto shown = [&](int k) { return devices::display(devices::playheadInfo().params[size_t(k)], knobs[k]); };
     auto index = [&](int k) { return int(std::lround(shown(k))); };
-    double step = double(kPpq) / 4;
     double bar = double(ticksPerBar(ts));
 
     Motion m;
     m.rate = playheadRate(index(knob::kRate));
     m.direction = Direction(index(knob::kDirection));
-    auto [regionStart, regionLength] = regionFrom(shown(knob::kRegionStart), shown(knob::kRegionLength), clipLength);
-    m.regionStart = clipStart + regionStart;
+    auto [regionStart, regionLength] =
+        regionFrom(shown(knob::kRegionStart), shown(knob::kRegionLength), clipStart, clipLength);
+    m.regionStart = regionStart;
     m.regionLength = regionLength;
-    m.start = (shown(knob::kStart) + shown(knob::kOffset)) * step;
+    // Start and Offset are no longer read: a playhead begins where its segment begins, and the segment says where.
     m.repeatSize = repeatTicks(index(knob::kRepeatSize), ts);
     m.repeatTimes = index(knob::kRepeatTimes);
     m.bend = Bend(index(knob::kBendShape));

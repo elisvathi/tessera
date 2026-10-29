@@ -173,6 +173,16 @@ void crossedRepeating(const Sweep& s, double origin, double base, double period,
     }
 }
 
+/// Like `crossed`, for notes moved `shift` ticks later: the sweep meets a note at its written place plus `shift`.
+template <typename Note, typename Hit>
+void crossedShifted(const Sweep& s, double shift, const std::vector<Note>& notes, const std::vector<uint32_t>& byEnd,
+                    Hit&& hit) {
+    Sweep moved = s;
+    moved.from -= shift;
+    moved.to -= shift;
+    crossed(moved, notes, byEnd, [&](const Note& n, double p) { hit(n, p + shift); });
+}
+
 /// The note order `crossed` needs for going backwards.
 template <typename Note>
 std::vector<uint32_t> orderByEnd(const std::vector<Note>& notes) {
@@ -249,11 +259,11 @@ void markChordRoles(std::vector<Note>& notes, Role&& role) {
     }
 }
 
+/// A playhead's region from its Region start and Region length (in steps): where on the piano roll it starts and how
+/// long it is. The piano roll is a canvas, so a region may sit anywhere on it, past the clip's end too. Length 0
+/// follows the clip: its loop, from `clipStart`, `clipLength` long.
+std::pair<double, double> regionFrom(double startSteps, double lengthSteps, double clipStart, double clipLength);
 /// A playhead's settings, from its normalized knobs and the clip's play range [clipStart, clipStart + clipLength).
-/// A playhead's region from its Region start and Region length (in steps) in a clip `clipLength` long: where it starts
-/// after the clip's start and how long it is. It may run past the clip's end, where the clip reads as it repeats.
-/// Length 0 means up to the clip's end (the whole clip from its start).
-std::pair<double, double> regionFrom(double startSteps, double lengthSteps, double clipLength);
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts);
 
 /// How long a note the playhead plays lasts, in song ticks: as written, stretched by the playhead's speed, or fixed.
