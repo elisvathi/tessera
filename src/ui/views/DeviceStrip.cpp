@@ -279,7 +279,7 @@ void DeviceStrip::layoutParts() {
                     x += kConnector;
                 }
                 parts.insert(parts.begin() + long(band),
-                             {Kind::BranchBand, Rect(left, kPad - 4, x - left, h - 2 * kPad + 8), -1, -1, p->id.value});
+                             {Kind::BranchBand, Rect(left, kPad, x - left, h - 2 * kPad), -1, -1, p->id.value});
             }
             parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), int(i) + 1});
             x += kConnector;
@@ -758,14 +758,9 @@ void DeviceStrip::drawView(const DrawArgs& args) {
         case Kind::BranchBand: {
             const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
             NVGcolor color = theme::playheadColor(ph ? ph->color : 0);
-            draw::roundedRect(vg, p.rect, 8, nvgTransRGBAf(color, 0.08f));
-            draw::roundedRectStroke(vg, p.rect, 8, nvgTransRGBAf(color, 0.45f), 1);
-            draw::TextStyle only{theme::fonts::ui(), 9.5f, color, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
-            if (ph && ph->branch.empty())
-                draw::text(vg, only, p.rect.pos.x + 4, p.rect.pos.y + 3, "only");
-            else if (ph)
-                draw::text(vg, only, p.rect.pos.x + 4, p.rect.getBottom() - 13,
-                           draw::ellipsize(vg, only, "only " + ph->name, p.rect.size.x - 8));
+            // Level with the cards; its colour says whose devices these are.
+            draw::roundedRect(vg, p.rect, 6, nvgTransRGBAf(color, 0.08f));
+            draw::roundedRectStroke(vg, p.rect, 6, nvgTransRGBAf(color, 0.45f), 1);
             break;
         }
         case Kind::Insert: {
