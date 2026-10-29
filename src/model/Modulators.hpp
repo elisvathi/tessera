@@ -14,9 +14,9 @@ namespace knob {
 enum Lfo { kShape, kSync, kRate, kSyncedRate, kPhase, kBipolar, kRestart };
 enum Macro { kValue };
 enum Envelope { kAttack, kDecay, kSustain, kRelease };
-enum Steps { kStepCount, kStepRate, kStepSmooth, kStepBipolar };
+enum Steps { kStepCount, kStepRate, kStepSmooth, kStepBipolar, kStepPerPass };
 enum Random { kRandomRate, kRandomSmooth, kRandomBipolar };
-enum Ramp { kBars, kDirection, kThen, kCurve };
+enum Ramp { kBars, kDirection, kThen, kCurve, kRampPerPass };
 enum NoteFollow { kFollows, kSmooth };
 } // namespace knob
 
@@ -50,12 +50,20 @@ struct Clock {
     TimeSig timeSig;
     uint32_t seed = 1;
     double ticksPerSecond = 1920; // the tempo, for envelopes timing a note's length
+    /// The pass a note is on, for Steps and Ramp set to "Per pass" (one step per pass); -1 when there is no note,
+    /// and they step once a bar instead.
+    int64_t pass = -1;
 };
 
 /// The modulator's output: -1..1 when bipolar, else 0..1. `steps` are a Steps modulator's drawn values.
 float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state, const Clock& clock,
                const float* steps = nullptr, int stepCount = 0);
 bool bipolar(ModulatorType type, const float* knobs);
+/// Whether a Steps or Ramp modulator counts passes instead of time.
+bool perPass(ModulatorType type, const float* knobs);
+/// A "Per pass" modulator's value on pass `pass` of a note (pure: no state, no time), for drifting notes.
+float passValue(ModulatorType type, uint64_t id, const float* knobs, int64_t pass, TimeSig ts, const float* steps,
+                int stepCount);
 /// A note started on the modulator's track, lasting `lengthTicks` (infinite while a key is held).
 void trigger(State& state, double songTick, double lengthTicks, const NoteValues& values, const Clock& clock);
 /// A held key was let go: an envelope still holding starts its release now.

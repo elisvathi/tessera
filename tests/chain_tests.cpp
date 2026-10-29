@@ -1478,3 +1478,27 @@ TEST_CASE("engine: note operators still apply to the notes playheads play") {
     }
     CHECK(starts == 2);
 }
+
+TEST_CASE("engine: a note in a motion group drifts pass by pass with a Per pass Steps modulator") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Clip& clip = song.clips.begin()->second;
+    MotionGroup group = devices::makeMotion(song.newId<MotionId>(), 0);
+    group.params[4] = 0; // not in key: steps are semitones
+    clip.motions.push_back(group);
+    clip.notes[0].motion = group.id;
+    Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+    steps.params = knobsOf(ModulatorType::Steps, {{mods::knob::kStepCount, 2}, {mods::knob::kStepPerPass, 1}});
+    steps.steps = {0, 1};
+    Modulation route;
+    route.target = {ParamRef::Kind::Motion, group.id.value, 0};
+    route.amount = 1.f / 48; // one step at full
+    steps.routes.push_back(route);
+    song.tracks[0].modulators.push_back(steps);
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int pass = 0; pass < 3; pass++) {
+        h.runTo(int64_t(pass) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    CHECK(pitches == std::vector<int>{60, 61, 60}); // up a semitone on the second pass, back on the third
+}

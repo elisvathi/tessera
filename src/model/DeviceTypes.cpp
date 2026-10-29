@@ -136,12 +136,14 @@ std::vector<TypeInfo> buildModulators() {
          number("Sustain", 0, 100, 60, "%"), exponential("Release", 1, 10000, 300, "ms")}};
     t[size_t(ModulatorType::Steps)] = {"Steps",
                                        {integer("Steps", 1, kMaxSteps, 8), choice("Rate", rates(), kRateSixteenth),
-                                        number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false)}};
+                                        number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false),
+                                        toggle("Per pass", false)}};
     t[size_t(ModulatorType::Random)] = {
         "Random", {choice("Rate", rates(), kRateQuarter), number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false)}};
     t[size_t(ModulatorType::Ramp)] = {"Ramp",
                                       {integer("Length", 1, 64, 8, "bars"), choice("Direction", {"Rise", "Fall"}, 0),
-                                       choice("Then", {"Hold", "Loop"}, 0), number("Curve", -100, 100, 0, "%")}};
+                                       choice("Then", {"Hold", "Loop"}, 0), number("Curve", -100, 100, 0, "%"),
+                                       toggle("Per pass", false)}};
     t[size_t(ModulatorType::Macro)] = {"Macro", {number("Value", 0, 100, 0, "%")}};
     t[size_t(ModulatorType::Note)] = {"Note",
                                       {choice("Follows", {"Velocity", "Pitch", "Release", "Timbre", "Pressure"}, 0),
@@ -160,6 +162,12 @@ std::vector<TypeInfo> buildModulators() {
     about(ModulatorType::Note, "Notes", "follows the last note's velocity, pitch…", "key track velocity follow");
     about(ModulatorType::Macro, "Hand", "one knob that turns many", "control knob master");
     return t;
+}
+
+TypeInfo buildMotion() {
+    return {"Motion",
+            {integer("Pitch", -24, 24, 0, "steps"), integer("Time", 0, 16, 0, "steps"),
+             number("Length", -90, 400, 0, "%"), number("Velocity", -100, 100, 0, "%"), toggle("In key", true)}};
 }
 
 TypeInfo buildPlayhead() {
@@ -200,6 +208,16 @@ const TypeInfo& modulatorInfo(ModulatorType type) {
 const TypeInfo& playheadInfo() {
     static const TypeInfo info = buildPlayhead();
     return info;
+}
+
+const TypeInfo& motionInfo() {
+    static const TypeInfo info = buildMotion();
+    return info;
+}
+
+const ParamInfo* motionParamInfo(int param) {
+    const TypeInfo& t = motionInfo();
+    return param >= 0 && param < int(t.params.size()) ? &t.params[size_t(param)] : nullptr;
 }
 
 const ParamInfo* playheadParamInfo(int param) {
@@ -290,6 +308,16 @@ Device makeDevice(DeviceType type, DeviceId id) {
     for (const ParamInfo& p : deviceInfo(type).params)
         d.params.push_back(defaultNormalized(p));
     return d;
+}
+
+MotionGroup makeMotion(MotionId id, int index) {
+    MotionGroup m;
+    m.id = id;
+    m.name = std::string("Motion ") + char('A' + index % 26);
+    m.color = uint8_t(index % 16);
+    for (const ParamInfo& info : motionInfo().params)
+        m.params.push_back(defaultNormalized(info));
+    return m;
 }
 
 Playhead makePlayhead(PlayheadId id, int index) {

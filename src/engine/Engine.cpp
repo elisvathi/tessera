@@ -1332,6 +1332,26 @@ void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, c
     double delay = std::max(0.0, ex.early + operators::timingOffset(note, ctx));
     float spread = operators::velocity(note, ctx) - note.velocity;
     double length = endPlay - onPlay;
+    // A note in a motion group moves by its knobs, worked out for this note's pass (a playhead's own pass).
+    int pitch = n.pitch;
+    if (note.motion.valid())
+        if (const ChainPlayback* chain = state.chainInfo)
+            for (const ChainPlayback::MotionKnobs& mk : chain->motions)
+                if (mk.id == note.motion.value) {
+                    int64_t motionPass = lane > 0 ? pass / 16 : pass;
+                    auto value = [&](int k) {
+                        const devices::ParamInfo& info = devices::motionInfo().params[size_t(k)];
+                        return devices::display(info, motionKnob(mk.knobs + k, motionPass));
+                    };
+                    int steps = int(std::lround(value(0)));
+                    bool inKey = value(4) > 0.5f;
+                    const Scale& key = n.key > 0 && n.key <= track.keys.size() ? track.keys[size_t(n.key) - 1] : snapshot->key;
+                    pitch = std::clamp(inKey ? key.stepBy(pitch, steps) : pitch + steps, 0, 127);
+                    delay += double(value(1)) * double(kPpq) / 4;
+                    length = std::max(1.0, length * (1 + double(value(2)) / 100));
+                    spread += value(3) / 100;
+                    break;
+                }
     int count = operators::hitCount(note, ticksPerBeat(snapshot->timeSig));
     // Hits are laid out over the note as written, then fitted to the event (gate scale, loop cuts).
     double scale = note.length > 0 ? length / double(note.length) : 1;
@@ -1340,7 +1360,7 @@ void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, c
         TrackState::PendingHit hit;
         hit.start = onPlay + delay + h.start * scale;
         hit.end = hit.start + (count > 1 ? h.length * scale : length);
-        hit.pitch = n.pitch;
+        hit.pitch = int8_t(pitch);
         float shape = note.velocity > 0 ? h.velocity / note.velocity : 1;
         hit.velocity = std::clamp(n.velocity * shape + spread, 0.f, 1.f);
         hit.release = n.releaseVelocity;
@@ -1608,6 +1628,30 @@ void Engine::triggerModulators(const TrackState& state, const chain::ChainNote& 
         mods::trigger((*modStates)[size_t(slot)], at, note.end - note.start, values, clock);
 }
 
+bool Engine::perPassSlot(int slot) const {
+    for (const ModulatorPlayback& m : snapshot->modulators)
+        if (m.slot == slot)
+            return mods::perPass(m.type, &knobValues[size_t(m.knobs)]);
+    return false;
+}
+
+float Engine::motionKnob(int knob, int64_t pass) const {
+    float v = knobValues[size_t(knob)];
+    // "Per pass" modulators step with the note's pass here; the knob table left them out of motion knobs.
+    for (const KnobModulation& km : snapshot->modulated) {
+        if (km.knob != knob)
+            continue;
+        for (int j = 0; j < km.count; j++) {
+            const ModSource& src = km.sources[size_t(j)];
+            for (const ModulatorPlayback& m : snapshot->modulators)
+                if (m.slot == src.slot && mods::perPass(m.type, &knobValues[size_t(m.knobs)]))
+                    v += src.amount * mods::passValue(m.type, m.id, &knobValues[size_t(m.knobs)], pass,
+                                                      snapshot->timeSig, m.steps.data(), m.stepCount);
+        }
+    }
+    return std::clamp(v, 0.f, 1.f);
+}
+
 void Engine::advanceModulation() {
     if (!snapshot)
         return;
@@ -1638,7 +1682,8 @@ void Engine::advanceModulation() {
         for (const KnobModulation& km : s.modulated) {
             float v = knobValues[size_t(km.knob)];
             for (int j = 0; j < km.count; j++)
-                v += km.sources[size_t(j)].amount * (*modStates)[size_t(km.sources[size_t(j)].slot)].out;
+                if (!km.motion || !perPassSlot(km.sources[size_t(j)].slot))
+                    v += km.sources[size_t(j)].amount * (*modStates)[size_t(km.sources[size_t(j)].slot)].out;
             v = std::clamp(v, 0.f, 1.f);
             knobValues[size_t(km.knob)] = v;
             liveKnobs[size_t(km.knob)].store(v, std::memory_order_relaxed);

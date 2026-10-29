@@ -42,7 +42,7 @@ const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4
 const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord",    "arpeggiator",
                                     "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads"};
 const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note"};
-const char* const kParamOwners[] = {"device", "modulator", "playhead"};
+const char* const kParamOwners[] = {"device", "modulator", "playhead", "motion"};
 const char* const kModulationKinds[] = {"param", "auto", "knob"};
 
 constexpr int kNoteMuted = 1;
@@ -278,6 +278,8 @@ json_t* noteToJson(const Note& n) {
         set(extras, "timbre", exprToJson(n.timbreExpr));
     if (!n.pressureExpr.empty())
         set(extras, "pressure", exprToJson(n.pressureExpr));
+    if (n.motion.valid())
+        set(extras, "motion", idJson(n.motion));
     if (json_object_size(extras) > 0)
         json_array_append_new(arr, extras);
     else
@@ -307,6 +309,7 @@ bool noteFromJson(const json_t* arr, Note& n) {
         n.pitchExpr = exprFromJson(get(extras, "pitch"));
         n.timbreExpr = exprFromJson(get(extras, "timbre"));
         n.pressureExpr = exprFromJson(get(extras, "pressure"));
+        n.motion = readId<MotionId>(get(extras, "motion"));
     }
     return true;
 }
@@ -657,6 +660,18 @@ json_t* clipToJson(const Clip& c) {
         set(j, "scale", scaleToJson(*c.scaleOverride));
     if (c.launchQuantize)
         setString(j, "launchQuantize", enumName(*c.launchQuantize, kLaunchQuantize));
+    if (!c.motions.empty()) {
+        json_t* motions = json_array();
+        for (const MotionGroup& m : c.motions) {
+            json_t* mj = json_object();
+            set(mj, "id", idJson(m.id));
+            setString(mj, "name", m.name);
+            setInt(mj, "color", m.color);
+            set(mj, "params", floatsToJson(m.params));
+            json_array_append_new(motions, mj);
+        }
+        set(j, "motions", motions);
+    }
     return j;
 }
 
@@ -681,6 +696,14 @@ Clip clipFromJson(const json_t* j) {
         c.scaleOverride = scaleFromJson(get(j, "scale"));
     if (json_is_string(get(j, "launchQuantize")))
         c.launchQuantize = enumFromName(get(j, "launchQuantize"), kLaunchQuantize, LaunchQuantize::Bar);
+    forEach(get(j, "motions"), [&](const json_t* mj) {
+        MotionGroup m;
+        m.id = readId<MotionId>(get(mj, "id"));
+        m.name = getString(mj, "name", m.name);
+        m.color = saturate<uint8_t>(getInt(mj, "color", m.color));
+        m.params = floatsFromJson(get(mj, "params"));
+        c.motions.push_back(m);
+    });
     return c;
 }
 

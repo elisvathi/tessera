@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Clip.hpp"
 #include "Device.hpp"
 
 #include <string>
@@ -38,6 +39,9 @@ const TypeInfo& modulatorInfo(ModulatorType type);
 /// The settings every playhead in a Playheads device has (docs/design/PLAYHEADS.md §4).
 const TypeInfo& playheadInfo();
 const ParamInfo* playheadParamInfo(int param);
+/// The knobs every motion group has (docs/design/PLAYHEADS.md §6).
+const TypeInfo& motionInfo();
+const ParamInfo* motionParamInfo(int param);
 /// The parameter list a reference points into, or nullptr when the type is unknown.
 const ParamInfo* paramInfo(DeviceType type, int param);
 const ParamInfo* paramInfo(ModulatorType type, int param);
@@ -54,6 +58,8 @@ Device makeDevice(DeviceType type, DeviceId id);
 Modulator makeModulator(ModulatorType type, ModulatorId id);
 /// The `index`-th playhead of a device (from 0): named "Playhead 1"…, on channel 1…, every setting at its default.
 Playhead makePlayhead(PlayheadId id, int index);
+/// The `index`-th motion group of a clip (from 0): "Motion A"…, every knob at its default (nothing moves).
+MotionGroup makeMotion(MotionId id, int index);
 
 /// Rates and lengths offered by synced knobs, from 8 bars down to 1/64, with triplets and dotted values.
 const std::vector<std::string>& rateNames();
