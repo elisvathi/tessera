@@ -1451,5 +1451,8 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   channel (`TrackFrame::part`); a Track Out plays All or one channel. A filtered Track Out keeps the track's voice
   count and holds a voice's last values while another channel uses it, so voices never move between cables (the
   design's voice groups per channel can come later).
-- **Not yet:** timeline playback, MIDI export, drum lanes with their own length, note operators and curves, branches,
+- **Timeline and export** (added the same day): each timeline clip restarts the playheads from where it begins the
+  clip, slower when stretched. MIDI export with devices applied reads the clips with the same code, from the knobs'
+  saved values (no modulation or knob lanes on playhead settings in the file yet).
+- **Not yet:** drum lanes with their own length, note operators and curves, branches,
   the time map, drawn paths, note motion, a Drum Out picker, and changing Rate smoothly while it plays.

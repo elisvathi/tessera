@@ -946,7 +946,17 @@ bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
     LauncherStatus status = m->launcherStatus(track->id);
     bool launched = status.playing >= 0 && status.playing < int(track->slots.size()) &&
                     track->slots[size_t(status.playing)].clip == clip->id;
-    if (!launched || !std::isfinite(status.elapsed))
+    double elapsed = launched ? status.elapsed : NAN;
+    if (!launched && m->playMode() == PlayMode::Arranger && !status.overridden) {
+        // A timeline clip: the playheads start where it begins the clip, and run slower when it is stretched.
+        double song = m->playheadTicks();
+        if (const ArrangerClip* a = instanceAt(*track, Tick(song)); a && a->clip == clip->id) {
+            double stretch = a->stretch > 0 ? double(a->stretch) : 1.0;
+            elapsed = double(normalizeOffset(*clip, a->offset) - clipSpan(*clip).start) +
+                      (song - double(a->position)) / stretch;
+        }
+    }
+    if (!std::isfinite(elapsed))
         return false;
     bool solo = std::any_of(device->playheads.begin(), device->playheads.end(),
                             [](const Playhead& p) { return p.solo && !p.mute; });
@@ -956,7 +966,7 @@ bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
             continue;
         playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), start,
                                                          double(clip->playEnd()) - start, owner.timeSig());
-        float x = float(time().tickToX(playheads::positionAt(motion, status.elapsed)));
+        float x = float(time().tickToX(playheads::positionAt(motion, elapsed)));
         if (x < -2 || x > box.size.x + 2)
             continue;
         nvgBeginPath(vg);

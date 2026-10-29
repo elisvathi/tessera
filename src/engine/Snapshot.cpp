@@ -342,7 +342,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     arrange::Stacking stack = arrange::stackOf(mine, track.id);
     for (const ArrangerClip& a : track.arrangement) {
         const Clip* clip = song.findClip(a.clip);
-        if (!clip || a.muted || clip->automation.empty())
+        if (!clip || a.muted)
             continue;
         auto it = built.find(a.clip);
         std::shared_ptr<const ClipPlayback> playback =
@@ -351,8 +351,6 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
                 : std::make_shared<ClipPlayback>(
                       flattenClip(*clip, track, songSwingFor(song, track), song.swingStep, keyIndex(*clip)));
         built[a.clip] = playback;
-        if (playback->lanes.empty() && playback->knobLanes.empty())
-            continue;
         ClipSpan span = clipSpan(*clip);
         InstanceLanes inst;
         inst.position = a.position;
@@ -364,6 +362,10 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         inst.spanEnd = span.end;
         inst.clip = playback;
         inst.row = stack.row.count(a.id) ? stack.row.at(a.id) : 0;
+        if (playback->loopLength() > 0)
+            tp->instances.push_back(inst);
+        if (clip->automation.empty() || (playback->lanes.empty() && playback->knobLanes.empty()))
+            continue;
         tp->arrangementLanes.push_back(inst);
         tp->autoChannels = std::max(tp->autoChannels, channelsOf(playback->lanes));
         tp->voiceLanes |= playsIntoVoices(playback->lanes);

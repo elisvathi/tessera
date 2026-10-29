@@ -120,6 +120,11 @@ playhead that jumps (a repeat, a restart) into the middle of a note doesn't star
 
 Every setting is a knob: modulators can move it, and it can be automated, as on any device.
 
+Playheads read launched clips and timeline clips alike. On the timeline, each clip starts its playheads again, from
+where that clip begins (a clip that starts partway in starts the playheads partway in), and a stretched clip slows them
+down. MIDI export with **Devices: Applied** writes what the playheads play, each playhead on its channel; **Bypassed**
+writes the clips as written.
+
 ### A sound for each playhead
 
 Each playhead puts its **channel** on the notes it plays: Playhead 1 on channel 1, Playhead 2 on channel 2, and so on.
@@ -131,9 +136,6 @@ same track, click its screen and pick **Channel 2**, and patch it to another voi
 
 This is a first version, to try the idea:
 
-- Playheads read clips launched from the clips panel (or a clip launched over the timeline). Clips playing from the
-  timeline play as usual.
-- MIDI export writes the clips as written, without the playheads.
 - Drum lanes with their own length, note operators (chance, repeats…) and note curves are not read by playheads yet.
 - Turning **Rate** while it plays moves the playhead to where the new speed would have it, instead of changing speed
   smoothly.
