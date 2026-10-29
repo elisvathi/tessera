@@ -112,10 +112,11 @@ settings for the shown playhead. A setting still at its default draws faint, so 
 The card's **⋯** menu holds the settings every playhead shares: **Restart** (when the clip starts, or also every so
 many bars) and **Same note** (two playheads on the same note at the same moment play it once, or each).
 
-**The segment.** On top of the piano roll's ruler, the shown playhead's segment is a bar in its colour with a ▶ at its
-start and a ◀ at its end: the part of the clip that playhead plays, over and over. Drag an end to resize it, the bar to
-move it. A white tick inside shows where the playhead starts; drag it to start it later. The other playheads' segments
-show as thin lines in their colours.
+**The segment.** On top of the piano roll's ruler, the shown playhead's segment is a bar in its colour, drawn like the
+clip's loop bar, with its name inside and a solid grip at each end: the part of the clip that playhead plays, over and
+over. A thin line drops from each grip through the notes, so you can see which notes it reads. Drag a grip to resize
+the segment, the bar to move it. A white tick with a small ▼ over it shows where the playhead starts, with a dashed line
+down through the notes; drag it to start it later. The other playheads' segments show as thin lines in their colours.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a knob's name and a curve for it
 opens in the piano roll's lower pane. Click to add a point: that makes a **Curve** modulator on the track (see [Modulators](#modulators)), named after

@@ -112,6 +112,8 @@ class NoteGrid : public TimelineView {
     /// The track's playheads as lines in their colours, while they read this clip (docs/design/PLAYHEADS.md §3.2).
     /// True when it drew them: the clip's own playhead then shows faint, for reference.
     bool drawPlayheadLines(NVGcontext* vg);
+    /// The selected playhead's segment through the notes: a line at each end, and a dashed one where it starts.
+    void drawSegmentEdges(NVGcontext* vg);
     /// A small corner in its Motion device's colour on every note that moves with one (docs/design/PLAYHEADS.md §6.2).
     void drawMotionMarks(NVGcontext* vg);
     /// Where the shown playhead moves notes to (its octave, steps, invert, and the modulators on them): each moved

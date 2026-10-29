@@ -346,7 +346,7 @@ std::vector<TimelineSource::PlayheadSegment> ClipSource::playheadSegments() {
             continue;
         double offset = double(devices::display(start, p.params[playheads::knob::kStart])) * double(kPpq) / 4;
         segments.push_back({p.id.value, regionStart, regionStart + regionLength,
-                            regionStart + std::fmod(offset, regionLength), p.color, shown && shown->id == p.id});
+                            regionStart + std::fmod(offset, regionLength), p.color, shown && shown->id == p.id, p.name});
     }
     return segments;
 }

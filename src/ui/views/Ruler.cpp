@@ -687,24 +687,28 @@ void Ruler::drawPlayheadSegments(NVGcontext* vg) {
             nvgFill(vg);
             continue;
         }
-        float y = top + 2, bh = h - 4;
-        draw::roundedRect(vg, rack::math::Rect(x0, y, std::max(2.f, x1 - x0), bh), 2, nvgTransRGBAf(color, 0.25f));
-        // ▶ at the start, ◀ at the end: the handles.
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, x0, y);
-        nvgLineTo(vg, x0 + bh * 0.6f, y + bh / 2);
-        nvgLineTo(vg, x0, y + bh);
-        nvgClosePath(vg);
-        nvgMoveTo(vg, x1, y);
-        nvgLineTo(vg, x1 - bh * 0.6f, y + bh / 2);
-        nvgLineTo(vg, x1, y + bh);
-        nvgClosePath(vg);
-        nvgFillColor(vg, color);
-        nvgFill(vg);
+        // Drawn like the clip loop bar, in the playhead's colour, with solid grips standing out at its ends.
+        float y = top + 3, bh = h - 6;
+        rack::math::Rect bar(x0, y, std::max(2.f, x1 - x0), bh);
+        draw::roundedRect(vg, bar, 2, nvgTransRGBAf(color, 0.35f));
+        draw::roundedRectStroke(vg, bar, 2, color, 1);
+        float grip = theme::metrics::kSegmentGrip;
+        draw::roundedRect(vg, rack::math::Rect(x0 - 2, top + 1, grip, h - 2), 1.5f, color);
+        draw::roundedRect(vg, rack::math::Rect(x1 - grip + 2, top + 1, grip, h - 2), 1.5f, color);
+        draw::TextStyle label{theme::fonts::uiStrong(), theme::metrics::kTextRuler, theme::colors().text0,
+                              NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        float nameX = x0 + grip + 3;
+        if (!sg.name.empty() && nameX + draw::textWidth(vg, label, sg.name) < x1 - grip - 3)
+            draw::text(vg, label, nameX, y + bh / 2, sg.name);
         if (sg.startTick > sg.start) {
+            // The start: a tick across the bar with a small ▼ over it.
             float xs = float(viewport.time.tickToX(sg.startTick));
             nvgBeginPath(vg);
-            nvgRect(vg, xs - 1, y - 1, 2, bh + 2);
+            nvgRect(vg, xs - 1, y, 3, bh);
+            nvgMoveTo(vg, xs - 3, top);
+            nvgLineTo(vg, xs + 4, top);
+            nvgLineTo(vg, xs + 0.5f, y);
+            nvgClosePath(vg);
             nvgFillColor(vg, theme::colors().text0);
             nvgFill(vg);
         }

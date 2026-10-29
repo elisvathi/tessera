@@ -928,6 +928,7 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         drawNotes(vg);
         drawMovedNotes(vg);
         drawMotionMarks(vg);
+        drawSegmentEdges(vg);
         dimSilentLanes(vg);
         if (!owner.drumMode())
             drawBends(vg);
@@ -957,6 +958,33 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         }
     }
     nvgRestore(vg);
+}
+
+void NoteGrid::drawSegmentEdges(NVGcontext* vg) {
+    for (TimelineSource::PlayheadSegment sg : owner.source.playheadSegments()) {
+        if (!sg.selected)
+            continue;
+        if (owner.ruler && owner.ruler->draggedSegment() && owner.ruler->draggedSegment()->id == sg.id)
+            sg = *owner.ruler->draggedSegment();
+        NVGcolor color = theme::playheadColor(sg.color);
+        float x0 = std::round(float(time().tickToX(sg.start))), x1 = std::round(float(time().tickToX(sg.end)));
+        nvgBeginPath(vg);
+        nvgRect(vg, x0, 0, 1, box.size.y);
+        nvgRect(vg, x1 - 1, 0, 1, box.size.y);
+        nvgFillColor(vg, nvgTransRGBAf(color, 0.75f));
+        nvgFill(vg);
+        if (sg.startTick > sg.start) {
+            float xs = std::round(float(time().tickToX(sg.startTick))) + 0.5f;
+            nvgBeginPath(vg);
+            for (float y = 0; y < box.size.y; y += 6) {
+                nvgMoveTo(vg, xs, y);
+                nvgLineTo(vg, xs, y + 3);
+            }
+            nvgStrokeColor(vg, nvgTransRGBAf(theme::colors().text0, 0.5f));
+            nvgStrokeWidth(vg, 1);
+            nvgStroke(vg);
+        }
+    }
 }
 
 void NoteGrid::drawMotionMarks(NVGcontext* vg) {
