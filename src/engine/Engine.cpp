@@ -1251,6 +1251,8 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
         // length repeat inside it, as they do without playheads.
         playheads::Motion m =
             playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
+        if (playheads::wantsDrawnPath(knobs))
+            m.path = &p.path;
         double rate = m.rate;
         double restartEvery = m.restartEvery;
         // The engine counts the playhead's own time itself (rate 1 below), restarting where the song time says.

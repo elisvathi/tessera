@@ -89,6 +89,9 @@ struct Playhead {
     /// Devices only this playhead's notes go through, before the track's chain (never a Playheads device). They
     /// count toward the track's kMaxDevices.
     std::vector<Device> branch;
+    /// A drawn path (docs/design/PLAYHEADS.md §4.2), used when its Path knob says Drawn: points at the playhead's
+    /// own time within its path cycle (ticks), each giving a place in its region (0 = start, 1 = end).
+    std::vector<AutoPoint> path;
 
     bool operator==(const Playhead& o) const;
 };
@@ -111,7 +114,7 @@ struct Device {
 
 inline bool Playhead::operator==(const Playhead& o) const {
     return id == o.id && name == o.name && color == o.color && params == o.params && channel == o.channel &&
-           mute == o.mute && solo == o.solo && branch == o.branch;
+           mute == o.mute && solo == o.solo && branch == o.branch && path == o.path;
 }
 
 } // namespace tessera

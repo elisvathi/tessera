@@ -444,6 +444,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                     pp.knobs = addOwner(ParamRef::Kind::Playhead, p.id.value, p.params);
                     pp.channel = p.channel;
                     pp.audible = !p.mute && (!solo || p.solo);
+                    pp.path = p.path;
                     if (d.on)
                         chain.playheads.push_back(pp);
                     // Branch devices run first in the chain; each only touches its own playhead's notes.

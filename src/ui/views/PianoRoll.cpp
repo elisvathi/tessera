@@ -14,6 +14,7 @@
 #include "../widgets/IconButton.hpp"
 #include "../widgets/ToolButton.hpp"
 #include "ClipLaneView.hpp"
+#include "TimeMapView.hpp"
 #include "DrumLaneHeaders.hpp"
 #include "ExpressionLane.hpp"
 #include "LaneTabs.hpp"
@@ -241,6 +242,8 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     expression->visible = false;
     clipLane = new ClipLaneView(ctx, *this);
     clipLane->visible = false;
+    timeMap = new TimeMapView(ctx, *this);
+    timeMap->visible = false;
     addChild(grid);
     addChild(keys);
     addChild(lanes);
@@ -248,6 +251,7 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     addChild(values);
     addChild(expression);
     addChild(clipLane);
+    addChild(timeMap);
 
     EditorContext* c = &ctx;
     ToolButton::Options lower;
@@ -462,7 +466,7 @@ void PianoRollView::layout() {
         lane = tabs = 0;
     lowerButton->visible = lowerRoom;
     if (!lowerRoom)
-        values->visible = expression->visible = clipLane->visible = false;
+        values->visible = expression->visible = clipLane->visible = timeMap->visible = false;
     float body = header + rulerHeight;
     float gridHeight = std::max(0.f, rest - lane - tabs);
     bool drum = drumMode();
@@ -477,6 +481,7 @@ void PianoRollView::layout() {
     grid->box = rack::math::Rect(side, body, box.size.x - side, gridHeight);
     values->box = rack::math::Rect(side, body + gridHeight + tabs, box.size.x - side, lane);
     clipLane->box = values->box;
+    timeMap->box = values->box;
     expression->box = values->box;
     // The label stays inside the lane, however short the lane gets (the in-panel editor).
     lowerButton->box =
@@ -535,6 +540,7 @@ void PianoRollView::step() {
             shown ? findLane(song, LaneOwner::ofClip(shown->id), AutomationId(ctx.view().lowerLane)) : nullptr;
         clipLane->lane = lowerLane ? lowerLane->id : AutomationId();
         clipLane->visible = lowerLane != nullptr;
+        bool mapShown = ctx.view().lowerLane == kTimeMapLane && timeMap->device();
         if (source.clip != pointsClip || state.tool != pointsTool) {
             curvePoints.clear();
             pointsClip = source.clip;
@@ -547,12 +553,13 @@ void PianoRollView::step() {
         bool focused = curveFocus().valid();
         if (!focused && state.curveFocusNote.valid())
             focusCurve(NoteId()); // the hit, its clip or the lane went away
-        expression->visible = !clipLane->visible && curve && (!drumValues || focused);
-        values->visible = !clipLane->visible && (!curve || (drumValues && !focused));
+        expression->visible = !clipLane->visible && !mapShown && curve && (!drumValues || focused);
+        values->visible = !clipLane->visible && !mapShown && (!curve || (drumValues && !focused));
+        timeMap->visible = mapShown;
         if (curve)
             expression->curve = *curve;
         values->field = drumValues ? *drumValues : fieldOf(noteLane);
-        lowerButton->setText(lowerLane ? lowerLane->name : noteLaneName(noteLane));
+        lowerButton->setText(mapShown ? "Time map" : lowerLane ? lowerLane->name : noteLaneName(noteLane));
 
         bool stepOn = state.stepInput && shown;
         if (stepOn && !stepWasOn)
@@ -868,6 +875,13 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
     }
     if (!shown)
         return;
+    if (timeMap->device()) {
+        if (withNoteLanes)
+            menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createCheckMenuItem(
+            "Time map (playheads)", "", [c] { return c->view().lowerLane == kTimeMapLane; },
+            [c] { c->view().lowerLane = kTimeMapLane; }));
+    }
     ClipId clipId = shown->id;
     if (withNoteLanes)
         menu->addChild(new rack::ui::MenuSeparator);

@@ -62,6 +62,71 @@ double positionOf(const Motion& m, double wrap, double q) {
     return backward ? m.regionStart + m.regionLength - q : m.regionStart + q;
 }
 
+// ---- Drawn paths ----
+
+/// The path's place (0..1) at `c` ticks into its cycle, inside the segment that starts at point `i` (-1: before the
+/// first point). At a point's own time the segment before it is meant, so a hold's jump comes after it.
+double pathValue(const std::vector<AutoPoint>& path, int i, double c) {
+    if (i < 0)
+        return path.front().value;
+    if (i + 1 >= int(path.size()))
+        return path.back().value;
+    const AutoPoint& a = path[size_t(i)];
+    const AutoPoint& b = path[size_t(i) + 1];
+    if (b.t <= a.t)
+        return b.value;
+    double x = std::clamp((c - double(a.t)) / double(b.t - a.t), 0.0, 1.0);
+    return double(a.value) + (double(b.value) - double(a.value)) * curveShape(a.curve, a.tension, x);
+}
+
+/// The segment `c` falls in: the last point at or before it, or -1 before the first.
+int pathSegment(const std::vector<AutoPoint>& path, double c) {
+    auto it = std::upper_bound(path.begin(), path.end(), c, [](double v, const AutoPoint& p) { return v < double(p.t); });
+    return int(it - path.begin()) - 1;
+}
+
+double drawnPosition(const Motion& m, double value) {
+    return m.regionStart + std::clamp(value, 0.0, 1.0) * m.regionLength;
+}
+
+/// Sweeps of a drawn path over the playhead's own time [oa, ob): one per stretch between points, cycle ends and
+/// jumps.
+int sweepDrawn(const Motion& m, double oa, double ob, double restartBase, Sweep* out, int max) {
+    const std::vector<AutoPoint>& path = *m.path;
+    int count = 0;
+    double o = oa;
+    double lastTo = NAN, lastDir = 0;
+    while (o < ob && count < max) {
+        double k = std::floor(o / m.pathCycle);
+        double c = o - k * m.pathCycle;
+        int i = pathSegment(path, c);
+        double next = i + 1 < int(path.size()) ? double(path[size_t(i) + 1].t) : m.pathCycle;
+        next = std::min(next, m.pathCycle);
+        if (next <= c)
+            next = m.pathCycle;
+        double end = std::min(ob, k * m.pathCycle + next);
+        double v0 = pathValue(path, i, c);
+        double v1 = pathValue(path, i, end - k * m.pathCycle);
+        double from = drawnPosition(m, v0), to = drawnPosition(m, v1);
+        if (to != from) {
+            Sweep& s = out[count++];
+            s.from = from;
+            s.to = to;
+            double dir = to > from ? 1 : -1;
+            // Turning back where the last stretch ended: the note there was just played.
+            s.includeFrom = !(from == lastTo && dir != lastDir);
+            s.travelFrom = 0;
+            s.restartBase = restartBase;
+            s.ownFrom = o;
+            s.ownTo = end;
+            lastDir = dir;
+        }
+        lastTo = to;
+        o = end;
+    }
+    return count;
+}
+
 int sweepTravel(const Motion& m, double da, double db, double restartBase, Sweep* out, int max) {
     int count = 0;
     double d = da;
@@ -113,6 +178,8 @@ const Length kRepeats[] = {{"Off", 0},       {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8
                            {"1/4", 1.0 / 4}, {"1/2", 1.0 / 2},   {"1 bar", 1, true}};
 const Length kCycles[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8}, {"1/4", 1.0 / 4},  {"1/2", 1.0 / 2},
                           {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}};
+const Length kPathCycles[] = {{"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}, {"8 bars", 8, true},
+                              {"16 bars", 16, true}};
 const Length kFixedLengths[] = {{"1/64", 1.0 / 64}, {"1/32", 1.0 / 32}, {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},
                                 {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},   {"1 bar", 1, true}};
 
@@ -159,6 +226,12 @@ const std::vector<std::string>& fixedLengthNames() {
 }
 double fixedLengthTicks(int index, TimeSig ts) { return ticksAt(kFixedLengths, index, ts); }
 
+const std::vector<std::string>& pathCycleNames() {
+    static const std::vector<std::string> names = namesOf(kPathCycles);
+    return names;
+}
+double pathCycleTicks(int index, TimeSig ts) { return ticksAt(kPathCycles, index, ts); }
+
 double warp(Bend shape, double amount, double f) {
     f = std::clamp(f, 0.0, 1.0);
     amount = std::clamp(amount, 0.0, 1.0);
@@ -187,6 +260,11 @@ double warp(Bend shape, double amount, double f) {
 double positionAt(const Motion& m, double elapsed) {
     if (m.regionLength <= 0)
         return m.regionStart;
+    if (m.drawn()) {
+        double local = m.restartEvery > 0 ? floorMod(elapsed, m.restartEvery) : elapsed;
+        double c = floorMod(m.rate * std::max(0.0, local), m.pathCycle);
+        return drawnPosition(m, pathValue(*m.path, pathSegment(*m.path, c), c));
+    }
     if (m.direction == Direction::Freeze)
         return m.regionStart + floorMod(m.start, m.regionLength);
     double local = m.restartEvery > 0 ? floorMod(elapsed, m.restartEvery) : elapsed;
@@ -203,6 +281,11 @@ int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
     while (e < b && count < max) {
         double base = m.restartEvery > 0 ? std::floor(e / m.restartEvery) * m.restartEvery : 0;
         double pieceEnd = m.restartEvery > 0 ? std::min(b, base + m.restartEvery) : b;
+        if (m.drawn()) {
+            count += sweepDrawn(m, m.rate * (e - base), m.rate * (pieceEnd - base), base, out + count, max - count);
+            e = pieceEnd;
+            continue;
+        }
         double da = bent(m, m.rate * (e - base));
         double db = bent(m, m.rate * (pieceEnd - base));
         count += sweepTravel(m, da, db, base, out + count, max - count);
@@ -212,8 +295,62 @@ int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
 }
 
 double timeAt(const Motion& m, const Sweep& s, double pos) {
+    if (m.drawn()) {
+        // Within one stretch the place moves one way only, so halving finds when it reaches `pos`.
+        double k = std::floor(s.ownFrom / m.pathCycle);
+        int i = pathSegment(*m.path, s.ownFrom - k * m.pathCycle);
+        double lo = s.ownFrom, hi = s.ownTo;
+        bool rising = s.to > s.from;
+        for (int n = 0; n < 48; n++) {
+            double mid = (lo + hi) / 2;
+            double p = drawnPosition(m, pathValue(*m.path, i, mid - k * m.pathCycle));
+            ((rising ? p < pos : p > pos) ? lo : hi) = mid;
+        }
+        return s.restartBase + (lo + hi) / 2 / m.rate;
+    }
     double travel = s.travelFrom + std::abs(pos - s.from);
     return s.restartBase + unbent(m, travel) / m.rate;
+}
+
+bool wantsDrawnPath(const float* knobs) {
+    return std::lround(devices::display(devices::playheadInfo().params[knob::kPath], knobs[knob::kPath])) == 1;
+}
+
+std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double step) {
+    std::vector<AutoPoint> points;
+    if (m.regionLength <= 0 || step <= 0)
+        return points;
+    auto valueAt = [&](double own) { return float((positionAt(m, own / m.rate) - m.regionStart) / m.regionLength); };
+    float last = valueAt(0), slope = 0;
+    points.push_back({0, last, CurveType::Linear, 0});
+    for (double t = step; t < cycle; t += step) {
+        float v = valueAt(t);
+        if (std::abs(v - last) > 0.5f) {
+            // A wrap: carry on to just before the jump at the same speed, hold there, then jump.
+            AutoPoint before{Tick(t) - 1, std::clamp(last + slope * float((step - 1) / step), 0.f, 1.f),
+                             CurveType::Hold, 0};
+            if (before.t > points.back().t)
+                points.push_back(before);
+        } else {
+            slope = v - last;
+        }
+        points.push_back({Tick(t), v, CurveType::Linear, 0});
+        last = v;
+    }
+    // Points on a straight line between their neighbours add nothing to edit: keep only the corners.
+    std::vector<AutoPoint> corners;
+    for (size_t i = 0; i < points.size(); i++) {
+        if (i > 0 && i + 1 < points.size() && points[i - 1].curve == CurveType::Linear &&
+            points[i].curve == CurveType::Linear && !corners.empty()) {
+            const AutoPoint& a = corners.back();
+            const AutoPoint& b = points[i + 1];
+            double x = double(points[i].t - a.t) / double(b.t - a.t);
+            if (std::abs(a.value + (b.value - a.value) * x - points[i].value) < 1e-4)
+                continue;
+        }
+        corners.push_back(points[i]);
+    }
+    return corners;
 }
 
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts) {
@@ -237,6 +374,7 @@ Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart
     m.bend = Bend(index(knob::kBendShape));
     m.bendAmount = shown(knob::kBendAmount) / 100;
     m.bendCycle = cycleTicks(index(knob::kBendCycle), ts);
+    m.pathCycle = pathCycleTicks(index(knob::kPathCycle), ts);
     if (deviceKnobs) {
         const devices::TypeInfo& info = devices::deviceInfo(DeviceType::Playheads);
         auto device = [&](int k) { return devices::display(info.params[size_t(k)], deviceKnobs[k]); };

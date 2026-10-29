@@ -239,6 +239,8 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 continue;
             playheads::Motion m = playheads::motionFrom(p.params.data(), device.params.data(), playStart,
                                                         playEnd - playStart, song.timeSig);
+            if (playheads::wantsDrawnPath(p.params.data()))
+                m.path = &p.path;
             // Small steps, so no window needs more sweeps than one call gives.
             constexpr double kStep = double(kPpq) / 8;
             for (double e = begin; e < begin + length; e += kStep) {

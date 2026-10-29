@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Automation.hpp"
 #include "Types.hpp"
 
 #include <algorithm>
@@ -33,7 +34,9 @@ enum Playhead {
     kBendCycle,
     kOffset,
     kLength,
-    kFixedLength
+    kFixedLength,
+    kPath,     // From settings, or Drawn (the playhead's path points)
+    kPathCycle // how long a drawn path lasts before it repeats
 };
 /// The Playheads device's own knobs.
 enum Device { kRestart, kRestartBars, kSameNote };
@@ -60,6 +63,12 @@ struct Motion {
     double bendAmount = 0;   // 0..1
     double bendCycle = 0;    // the playhead's own ticks (elapsed times rate); 0 = no bend
     double restartEvery = 0; // elapsed ticks; 0 = only when the clip starts
+    /// A drawn path, when the Path knob says Drawn and the playhead has points (set by the caller, which owns them):
+    /// over each cycle of the playhead's own time it goes where the points say; rate still applies, the other
+    /// movement settings don't.
+    const std::vector<AutoPoint>* path = nullptr;
+    double pathCycle = 0;
+    bool drawn() const { return path && !path->empty() && pathCycle > 0; }
 };
 
 /// One stretch of continuous movement: the playhead goes from `from` to `to` (clip ticks) without a jump.
@@ -71,6 +80,8 @@ struct Sweep {
     // For finding when a position is reached: travel at `from`, and the elapsed time the travel is counted from.
     double travelFrom = 0;
     double restartBase = 0;
+    // A drawn path's sweep: the playhead's own time it covers, for finding when it reaches a place.
+    double ownFrom = 0, ownTo = 0;
 };
 
 /// Where the playhead is after `elapsed` ticks, for drawing.
@@ -163,10 +174,18 @@ double repeatTicks(int index, TimeSig ts);
 const std::vector<std::string>& cycleNames();
 double cycleTicks(int index, TimeSig ts);
 const std::vector<std::string>& fixedLengthNames();
+const std::vector<std::string>& pathCycleNames();
+double pathCycleTicks(int index, TimeSig ts);
 double fixedLengthTicks(int index, TimeSig ts);
 
 /// The bend shape: maps 0..1 of a cycle onto 0..1, always rising, with both ends fixed.
 double warp(Bend shape, double amount, double f);
+
+/// Whether a playhead's Path knob says Drawn.
+bool wantsDrawnPath(const float* knobs);
+/// The places a playhead's settings take it to over one path cycle, as points every `step` ticks, with a pair of points
+/// at each jump: what "Draw this path" starts from.
+std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double step);
 
 /// A playhead's settings, from its normalized knobs and the clip's play range [clipStart, clipStart + clipLength).
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts);

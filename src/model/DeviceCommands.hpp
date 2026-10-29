@@ -82,6 +82,9 @@ CommandPtr renamePlayhead(const Song& song, PlayheadId id, const std::string& na
 CommandPtr setPlayheadChannel(const Song& song, PlayheadId id, int channel);
 CommandPtr setPlayheadMute(const Song& song, PlayheadId id, bool mute);
 CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo);
+/// Replaces a playhead's drawn path (sorted, values kept in 0..1), as one undo step named `name`.
+CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoint> path,
+                           const std::string& name = "Draw path");
 
 // ---- Modulators ---------------------------------------------------------------------------------------------
 
