@@ -5,6 +5,7 @@
 #include "../../model/Arrangement.hpp"
 #include "../../model/DeviceLookup.hpp"
 #include "../../model/Playheads.hpp"
+#include "../../model/Render.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../model/NoteFields.hpp"
 #include "../../model/NoteOperators.hpp"
@@ -904,6 +905,7 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         drawTimelineRepeats(vg);
         drawLaneLoops(vg);
         drawNotes(vg);
+        drawMovedNotes(vg);
         drawMotionMarks(vg);
         dimSilentLanes(vg);
         if (!owner.drumMode())
@@ -961,6 +963,63 @@ void NoteGrid::drawMotionMarks(NVGcontext* vg) {
         nvgClosePath(vg);
         nvgFillColor(vg, theme::playheadColor(group->color));
         nvgFill(vg);
+    }
+}
+
+void NoteGrid::drawMovedNotes(NVGcontext* vg) {
+    TesseraModule* m = ctx.module();
+    const Clip* clip = owner.clip();
+    const Track* track = owner.track();
+    if (!m || !clip || !track || track->type == TrackType::Drum)
+        return;
+    const Device* device = activePlayheads(*track);
+    const Playhead* p = deviceActions::shownPlayhead(ctx);
+    if (!device || !p || p->mute)
+        return;
+    std::tuple<uint64_t, uint64_t, uint64_t> key{m->songRevision(), clip->id.value, p->id.value};
+    if (key != movedFor) {
+        moved = render::heardPitches(m->song(), *track, *device, *p, *clip);
+        movedFor = key;
+    }
+    TimeAxis& t = time();
+    PitchAxis& pitch = owner.pitch;
+    float row = float(pitch.rowHeight());
+    NVGcolor color = theme::playheadColor(p->color);
+    draw::TextStyle label{theme::fonts::ui(), std::min(10.f, row - 3), theme::colors().bg0,
+                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++) {
+        const Note& n = clip->notes[i];
+        if (moved[i] < 0 || moved[i] == n.pitch || double(n.end()) < t.left() || double(n.start) > t.right())
+            continue;
+        float x0 = float(t.tickToX(double(n.start))), x1 = float(t.tickToX(double(n.end())));
+        float written = float(pitch.pitchToY(n.pitch)), played = float(pitch.pitchToY(moved[i]));
+        float w = std::max(3.f, x1 - x0 - 1);
+        // The written note: a dashed outline in the playhead's colour, "moved from here".
+        nvgBeginPath(vg);
+        for (float x = x0; x < x0 + w; x += 6) {
+            nvgMoveTo(vg, x, written + 0.75f);
+            nvgLineTo(vg, std::min(x + 3, x0 + w), written + 0.75f);
+            nvgMoveTo(vg, x, written + row - 1.75f);
+            nvgLineTo(vg, std::min(x + 3, x0 + w), written + row - 1.75f);
+        }
+        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.8f));
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+        // A thin line to where it plays, and the note there.
+        float lineX = x0 + std::min(5.f, w / 2);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, lineX, played < written ? played + row - 1 : played + 1);
+        nvgLineTo(vg, lineX, played < written ? written + 1 : written + row - 1);
+        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.5f));
+        nvgStrokeWidth(vg, 1);
+        nvgStroke(vg);
+        Rect r(x0, played + 1, w, std::max(2.f, row - 2));
+        draw::roundedRect(vg, r, 2, nvgTransRGBAf(color, 0.85f));
+        if (row >= 10 && w > 24) {
+            int steps = moved[i] - n.pitch;
+            draw::text(vg, label, x0 + 4, played + row / 2,
+                       (steps > 0 ? "+" : "") + std::to_string(steps) + " st");
+        }
     }
 }
 

@@ -56,8 +56,13 @@ void openChannelMenu(EditorContext& ctx, PlayheadId id);
 /// What the Direction and Repeat dropdowns show for a playhead ("Forward", "Outside in", "Off", "1/4 ×2").
 std::string directionText(const Playhead& p);
 std::string repeatText(const Playhead& p);
-/// Shows the curve of one of the shown playhead's settings in the piano roll's lower pane.
-void showPlayheadCurve(EditorContext& ctx, int param);
+/// Shows a Curve modulator's shape in the piano roll's lower pane.
+void showCurve(EditorContext& ctx, ModulatorId id);
+/// Shows the Curve modulator moving `target` in the lower pane; with none yet, an empty curve for it: the first point
+/// drawn adds the modulator.
+void showCurveFor(EditorContext& ctx, const ParamRef& target);
+/// The first Curve modulator turning `target`, or an invalid ID.
+ModulatorId curveOn(const Song& song, const ParamRef& target);
 
 /// The selected track's Playheads device when it has one (on or off), else nullptr.
 const Device* playheadsDevice(EditorContext& ctx);

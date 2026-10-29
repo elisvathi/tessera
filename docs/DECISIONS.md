@@ -1497,3 +1497,18 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
 - **Vsync** (30 Oct): Rack opens its window with vsync off and never sets it again, so a module-menu switch can turn
   it on with glfwSwapInterval(1) from the UI thread. It is a plugin-wide setting (it changes the whole window), off
   by default, kept in the plugin settings next to the colour scheme.
+- **Curves are modulators** (30 Oct, board K): the per-setting playhead curves became a Curve modulator type, an
+  editable LFO: points over one cycle of `length` ticks (kept on the modulator, not a knob, so the cycle bar can set
+  any length), Sync / Rate / Restart knobs with the LFO's timing, bipolar around 0.5 ("no change"). Clicking a
+  playhead knob's label opens a pending curve; the first point adds a track Curve modulator routed to that setting
+  (animateWithCurve, one undo step). A setting with more than 7 steps gets amount 7/span so its rows stay drawable.
+  Old songs' playhead curves load as Curve modulators with amount 1 (values remapped, so they play the same). The
+  playheads read synced Curve modulators at the time they read the clip (Snapshot PlayheadPlayback::exact): the knob
+  table runs a block behind and the playheads a block ahead, so a step drawn on a bar line would miss that bar's
+  first note otherwise. MIDI export applies modulators on playhead settings that depend on the song position only.
+  "Bend while a note sounds" is not built: playhead settings apply when a note starts. An automation lane used as a
+  modulator ("Lane…") is left for later.
+- **Moved notes in the piano roll** (30 Oct): for the shown playhead, render::heardPitches works out the pitch of each
+  note's first hit over one pass from the clip's start (modulators taken at song tick = clip time), cached by song
+  revision. Moved notes are drawn again at their played pitch in the playhead's colour; the written note keeps its
+  place (it is what you edit) and gets a dashed outline.

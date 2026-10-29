@@ -614,6 +614,10 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     case Kind::Dot:
         ctx.openModulator = ctx.openModulator == hit->id ? 0 : hit->id;
         ctx.mappingModulator = 0;
+        // A Curve's shape is drawn in the lower pane, under the notes it moves.
+        if (const Modulator* mod = findModulator(m->song(), ModulatorId(hit->id)))
+            if (mod->type == ModulatorType::Curve)
+                deviceActions::showCurve(ctx, mod->id);
         break;
     case Kind::ModulatorMap:
         ctx.mappingModulator = ctx.mappingModulator == hit->id ? 0 : hit->id;
@@ -668,7 +672,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
         break;
     case Kind::CurveLabel:
-        deviceActions::showPlayheadCurve(ctx, hit->param);
+        deviceActions::showCurveFor(ctx, knobRef(*hit));
         break;
     case Kind::AddPlayhead: {
         PlayheadId added;
@@ -1208,8 +1212,7 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
         if (const Playhead* ph = findPlayhead(song, PlayheadId(ref.owner))) {
             if (!automated)
                 valueColor = theme::playheadColor(ph->color);
-            curved = std::any_of(ph->curves.begin(), ph->curves.end(),
-                                 [&](const PlayheadCurve& k) { return k.param == ref.param; });
+            curved = deviceActions::curveOn(song, ref).valid();
             quiet = !curved && std::fabs(base - devices::defaultNormalized(*info)) < 1e-4f;
         }
     bool mapping = ctx.mappingModulator != 0;

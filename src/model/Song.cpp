@@ -276,6 +276,19 @@ void normalizeModulators(std::vector<Modulator>& mods, size_t limit, IdRepair& i
             m.steps.resize(kMaxSteps);
         for (float& v : m.steps)
             v = std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f;
+        if (m.type == ModulatorType::Curve) {
+            m.length = m.length > 0 ? std::max<Tick>(kPpq / 4, m.length) : 4 * kPpq;
+            for (AutoPoint& pt : m.points) {
+                pt.value = std::isfinite(pt.value) ? std::clamp(pt.value, 0.f, 1.f) : 0.5f;
+                clampValue(pt.tension, -1.f, 1.f);
+                pt.t = std::clamp<Tick>(pt.t, 0, m.length);
+            }
+            std::stable_sort(m.points.begin(), m.points.end(),
+                             [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+        } else {
+            m.length = 0;
+            m.points.clear();
+        }
         if (m.routes.size() > size_t(kMaxRoutes))
             m.routes.resize(kMaxRoutes);
         for (Modulation& r : m.routes)
@@ -313,23 +326,6 @@ void normalizePlayheads(Device& d, IdRepair& ids, int& room) {
             pt.t = std::max<Tick>(0, pt.t);
         }
         std::stable_sort(p.path.begin(), p.path.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
-        // One curve per setting, on a setting that exists, at least a 1/16 long.
-        std::vector<PlayheadCurve> curves;
-        for (PlayheadCurve& c : p.curves) {
-            if (c.param >= devices::playheadInfo().params.size() ||
-                std::any_of(curves.begin(), curves.end(), [&](const PlayheadCurve& k) { return k.param == c.param; }))
-                continue;
-            c.length = std::max<Tick>(kPpq / 4, c.length);
-            for (AutoPoint& pt : c.points) {
-                clampValue(pt.value, 0.f, 1.f);
-                clampValue(pt.tension, -1.f, 1.f);
-                pt.t = std::clamp<Tick>(pt.t, 0, c.length);
-            }
-            std::stable_sort(c.points.begin(), c.points.end(),
-                             [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
-            curves.push_back(c);
-        }
-        p.curves = curves;
         p.branch.erase(std::remove_if(p.branch.begin(), p.branch.end(),
                                       [](const Device& b) { return b.type == DeviceType::Playheads; }),
                        p.branch.end());

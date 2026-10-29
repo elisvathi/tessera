@@ -1523,17 +1523,24 @@ TEST_CASE("engine: one piano roll, two parts: the bass playhead takes the lowest
     CHECK(sounding == std::multiset<int>{36, 67});
 }
 
-TEST_CASE("engine: a curve moves a playhead setting while it plays") {
+TEST_CASE("engine: a Curve modulator moves a playhead setting while it plays") {
     Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
     Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
     const devices::ParamInfo& octave = devices::playheadInfo().params[playheads::knob::kOctave];
-    // Two bars: the first at the octave as set, the second an octave up.
-    p.curves.push_back({uint16_t(playheads::knob::kOctave), 8 * kPpq,
-                        {{0, devices::normalize(octave, 0), CurveType::Hold, 0},
-                         {4 * kPpq, devices::normalize(octave, 1), CurveType::Hold, 0}}});
     d.playheads.push_back(p);
     song.tracks[0].devices.push_back(d);
+    // Two bars: the first at the octave as set, the second an octave up. Drawn around the middle (no change), turning
+    // the setting all the way: one octave is an eighth of the knob, so a sixteenth above the middle.
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.length = 8 * kPpq;
+    float up = 0.5f + (devices::normalize(octave, 1) - devices::normalize(octave, 0)) / 2;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}};
+    Modulation route;
+    route.target = {ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOctave)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
     Harness h(song);
     std::vector<int> pitches;
     for (int bar = 0; bar < 3; bar++) {

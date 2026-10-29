@@ -207,10 +207,6 @@ bool wantsDrawnPath(const float* knobs);
 /// at each jump: what "Draw this path" starts from.
 std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double step);
 
-/// A playhead's settings with its curves applied at `elapsed` ticks since the clip started: `out` gets
-/// `count` normalized values (a curve sets its setting's value while it plays).
-void curvedKnobs(const float* knobs, int count, const std::vector<PlayheadCurve>& curves, double elapsed, float* out);
-
 /// What a playhead does to the notes it plays (its NOTE settings).
 struct NoteShape {
     int octave = 0;

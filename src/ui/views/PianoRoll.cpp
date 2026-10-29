@@ -16,7 +16,7 @@
 #include "ClipLaneView.hpp"
 #include "../editing/DeviceActions.hpp"
 #include "../../model/DeviceTypes.hpp"
-#include "PlayheadCurveView.hpp"
+#include "CurveView.hpp"
 #include "TimeMapView.hpp"
 #include "DrumLaneHeaders.hpp"
 #include "ExpressionLane.hpp"
@@ -51,6 +51,9 @@ constexpr float kNotesButton = 64;
 constexpr float kViewButton = 56;
 constexpr float kLaneHeightOverlay = 72;
 constexpr float kLaneHeightPanel = 44;
+// A curve shows its setting's steps as rows, so it gets more room.
+constexpr float kCurveLaneHeightOverlay = 180;
+constexpr float kCurveLaneHeightPanel = 96;
 
 /// The snap grid's choices, for the Snap chip's menu or the narrow header's "⋯".
 void appendSnapItems(rack::ui::Menu* menu, EditorContext* c) {
@@ -247,7 +250,7 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     clipLane->visible = false;
     timeMap = new TimeMapView(ctx, *this);
     timeMap->visible = false;
-    curveView = new PlayheadCurveView(ctx, *this);
+    curveView = new CurveView(ctx, *this);
     curveView->visible = false;
     addChild(grid);
     addChild(keys);
@@ -463,6 +466,8 @@ void PianoRollView::layout() {
     float rulerHeight = std::min(Ruler::heightFor(source, ctx.surface), rest);
     rest -= rulerHeight;
     float lane = ctx.surface == Surface::Panel ? kLaneHeightPanel : kLaneHeightOverlay;
+    if (ctx.view().lowerLane == kCurveLane && curveView->hasCurve())
+        lane = ctx.surface == Surface::Panel ? kCurveLaneHeightPanel : kCurveLaneHeightOverlay;
     float tabs = 0; // the lane's own label picks what it shows; no row of tabs
     constexpr float kMinGrid = 48, kMinLane = 28;
     if (rest - lane - tabs < kMinGrid)
@@ -547,7 +552,7 @@ void PianoRollView::step() {
             shown ? findLane(song, LaneOwner::ofClip(shown->id), AutomationId(ctx.view().lowerLane)) : nullptr;
         clipLane->lane = lowerLane ? lowerLane->id : AutomationId();
         clipLane->visible = lowerLane != nullptr;
-        bool curveShown = ctx.view().lowerLane == kPlayheadCurveLane && curveView->hasCurve();
+        bool curveShown = ctx.view().lowerLane == kCurveLane && curveView->hasCurve();
         bool mapShown = curveShown || (ctx.view().lowerLane == kTimeMapLane && timeMap->device());
         if (source.clip != pointsClip || state.tool != pointsTool) {
             curvePoints.clear();
@@ -893,17 +898,23 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
         menu->addChild(rack::createCheckMenuItem(
             "Time map (playheads)", "", [c] { return c->view().lowerLane == kTimeMapLane; },
             [c] { c->view().lowerLane = kTimeMapLane; }));
-        // The shown playhead's curves; any other setting's curve opens from its knob's label.
-        if (const Playhead* ph = deviceActions::shownPlayhead(ctx))
-            for (const PlayheadCurve& k : ph->curves)
-                if (const devices::ParamInfo* info = devices::playheadParamInfo(k.param)) {
-                    int param = k.param;
-                    menu->addChild(rack::createCheckMenuItem(
-                        ph->name + " · " + info->name + " curve", "",
-                        [c, param] { return c->view().lowerLane == kPlayheadCurveLane && c->playheadCurve == param; },
-                        [c, param] { deviceActions::showPlayheadCurve(*c, param); }));
-                }
     }
+    // Curve modulators this track hears (its own, its devices', the song's); a new one starts from a knob's label or
+    // the modulator list.
+    bool curveHeading = false;
+    forEachModulator(ctx.module()->song(), [&](const Modulator& mod, const ModulatorPlace& place) {
+        if (mod.type != ModulatorType::Curve || (place.level != ModLevel::Song && place.track != source.track))
+            return;
+        if (!curveHeading) {
+            menu->addChild(new rack::ui::MenuSeparator);
+            menu->addChild(rack::createMenuLabel("Curves (modulators you draw)"));
+            curveHeading = true;
+        }
+        uint64_t id = mod.id.value;
+        menu->addChild(rack::createCheckMenuItem(
+            mod.name, "", [c, id] { return c->view().lowerLane == kCurveLane && c->curveModulator == id; },
+            [c, id] { deviceActions::showCurve(*c, ModulatorId(id)); }));
+    });
     ClipId clipId = shown->id;
     if (withNoteLanes)
         menu->addChild(new rack::ui::MenuSeparator);

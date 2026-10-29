@@ -1,5 +1,6 @@
 #include "Serialize.hpp"
 
+#include "DeviceTypes.hpp"
 #include "Devices.hpp"
 #include "Json.hpp"
 
@@ -41,7 +42,7 @@ const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
 const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord",    "arpeggiator",
                                     "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads"};
-const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note"};
+const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note", "curve"};
 const char* const kParamOwners[] = {"device", "modulator", "playhead", "motion"};
 const char* const kModulationKinds[] = {"param", "auto", "knob"};
 
@@ -430,6 +431,63 @@ Modulation modulationFromJson(const json_t* j) {
     return m;
 }
 
+/// Points as [t, value, curve, tension] arrays, as playhead paths store them.
+json_t* drawnPointsToJson(const std::vector<AutoPoint>& points) {
+    json_t* arr = json_array();
+    for (const AutoPoint& pt : points)
+        json_array_append_new(arr, json_pack("[Ifif]", static_cast<json_int_t>(pt.t), double(pt.value), int(pt.curve),
+                                             double(pt.tension)));
+    return arr;
+}
+
+std::vector<AutoPoint> drawnPointsFromJson(const json_t* arr) {
+    std::vector<AutoPoint> out;
+    forEach(arr, [&](const json_t* pj) {
+        if (json_array_size(pj) < 2)
+            return;
+        AutoPoint ap;
+        ap.t = intAt(pj, 0, 0);
+        ap.value = float(numberAt(pj, 1, 0));
+        int64_t curve = intAt(pj, 2, int64_t(ap.curve));
+        ap.curve = curve >= 0 && curve <= int64_t(CurveType::SCurve) ? CurveType(curve) : CurveType::Linear;
+        ap.tension = float(numberAt(pj, 3, 0));
+        out.push_back(ap);
+    });
+    return out;
+}
+
+/// Playheads saved before curves became modulators (30 Oct 2026) kept a curve per setting that set its value. Each
+/// becomes a Curve modulator on the track turning that setting all the way (amount 1), drawn so it gives the same
+/// values. New IDs are given when the song is normalized; past the track's modulator limit they are dropped.
+void curvesToModulators(const json_t* devices, Track& t) {
+    forEach(devices, [&](const json_t* dj) {
+        forEach(get(dj, "playheads"), [&](const json_t* pj) {
+            uint64_t playhead = readId<PlayheadId>(get(pj, "id")).value;
+            std::string name = getString(pj, "name", "Playhead");
+            std::vector<float> params = floatsFromJson(get(pj, "params"));
+            forEach(get(pj, "curves"), [&](const json_t* cj) {
+                int param = int(intAt(cj, 0, 0));
+                const devices::ParamInfo* info = devices::playheadParamInfo(param);
+                if (!info)
+                    return;
+                float base = size_t(param) < params.size() ? params[size_t(param)] : devices::defaultNormalized(*info);
+                Modulator m = devices::makeModulator(ModulatorType::Curve, ModulatorId());
+                m.name = name + " " + info->name;
+                m.length = intAt(cj, 1, 4 * kPpq);
+                m.points = drawnPointsFromJson(json_array_get(cj, 2));
+                for (AutoPoint& pt : m.points)
+                    pt.value = std::clamp((pt.value - base + 1) / 2, 0.f, 1.f);
+                Modulation route;
+                route.kind = Modulation::Kind::Param;
+                route.target = {ParamRef::Kind::Playhead, playhead, uint16_t(param)};
+                route.amount = 1;
+                m.routes.push_back(route);
+                t.modulators.push_back(m);
+            });
+        });
+    });
+}
+
 json_t* modulatorToJson(const Modulator& m) {
     json_t* j = json_object();
     set(j, "id", idJson(m.id));
@@ -438,6 +496,10 @@ json_t* modulatorToJson(const Modulator& m) {
     set(j, "params", floatsToJson(m.params));
     if (!m.steps.empty())
         set(j, "steps", floatsToJson(m.steps));
+    if (m.type == ModulatorType::Curve) {
+        set(j, "length", json_integer(static_cast<json_int_t>(m.length)));
+        set(j, "points", drawnPointsToJson(m.points));
+    }
     json_t* routes = json_array();
     for (const Modulation& r : m.routes)
         json_array_append_new(routes, modulationToJson(r));
@@ -452,6 +514,8 @@ Modulator modulatorFromJson(const json_t* j) {
     m.name = getString(j, "name", m.name);
     m.params = floatsFromJson(get(j, "params"));
     m.steps = floatsFromJson(get(j, "steps"));
+    m.length = getInt(j, "length", 0);
+    m.points = drawnPointsFromJson(get(j, "points"));
     forEach(get(j, "routes"), [&](const json_t* r) { m.routes.push_back(modulationFromJson(r)); });
     return m;
 }
@@ -490,17 +554,6 @@ json_t* playheadToJson(const Playhead& p) {
                                                   int(pt.curve), double(pt.tension)));
         set(j, "path", path);
     }
-    if (!p.curves.empty()) {
-        json_t* curves = json_array();
-        for (const PlayheadCurve& c : p.curves) {
-            json_t* points = json_array();
-            for (const AutoPoint& pt : c.points)
-                json_array_append_new(points, json_pack("[Ifif]", static_cast<json_int_t>(pt.t), double(pt.value),
-                                                        int(pt.curve), double(pt.tension)));
-            json_array_append_new(curves, json_pack("[iIo]", int(c.param), static_cast<json_int_t>(c.length), points));
-        }
-        set(j, "curves", curves);
-    }
     if (!p.branch.empty()) {
         json_t* branch = json_array();
         for (const Device& d : p.branch)
@@ -520,23 +573,6 @@ Playhead playheadFromJson(const json_t* j) {
     p.mute = getBool(j, "mute", p.mute);
     p.solo = getBool(j, "solo", p.solo);
     forEach(get(j, "branch"), [&](const json_t* dj) { p.branch.push_back(deviceFromJson(dj)); });
-    forEach(get(j, "curves"), [&](const json_t* cj) {
-        PlayheadCurve c;
-        c.param = saturate<uint16_t>(intAt(cj, 0, 0));
-        c.length = intAt(cj, 1, 0);
-        forEach(json_array_get(cj, 2), [&](const json_t* pj) {
-            if (json_array_size(pj) < 2)
-                return;
-            AutoPoint ap;
-            ap.t = intAt(pj, 0, 0);
-            ap.value = float(numberAt(pj, 1, 0));
-            int64_t curve = intAt(pj, 2, int64_t(ap.curve));
-            ap.curve = curve >= 0 && curve <= int64_t(CurveType::SCurve) ? CurveType(curve) : CurveType::Linear;
-            ap.tension = float(numberAt(pj, 3, 0));
-            c.points.push_back(ap);
-        });
-        p.curves.push_back(c);
-    });
     forEach(get(j, "path"), [&](const json_t* pj) {
         if (json_array_size(pj) < 2)
             return;
@@ -662,6 +698,7 @@ Track trackFromJson(const json_t* j) {
     t.automation = automationListFromJson(get(j, "automation"));
     forEach(get(j, "devices"), [&](const json_t* d) { t.devices.push_back(deviceFromJson(d)); });
     t.modulators = modulatorListFromJson(get(j, "modulators"));
+    curvesToModulators(get(j, "devices"), t);
     return t;
 }
 

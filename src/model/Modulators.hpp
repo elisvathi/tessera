@@ -18,6 +18,7 @@ enum Steps { kStepCount, kStepRate, kStepSmooth, kStepBipolar, kStepPerPass };
 enum Random { kRandomRate, kRandomSmooth, kRandomBipolar };
 enum Ramp { kBars, kDirection, kThen, kCurve, kRampPerPass };
 enum NoteFollow { kFollows, kSmooth };
+enum Curve { kCurveSync, kCurveRate, kCurveRestart };
 } // namespace knob
 
 enum class Shape : uint8_t { Sine, Triangle, SawUp, SawDown, Square, SampleHold, SmoothRandom };
@@ -36,6 +37,7 @@ struct State {
     bool noteNow = false; // a note started since the last block
     int64_t bar = INT64_MIN;
     float out = 0;
+    float applied = 0; // the output the knob table holds now: the one before this block's
     // Envelope: seconds since the note started, how long it is held (infinite while a key is down), the level when
     // it was let go.
     double envTime = 1e9, envHold = 0;
@@ -55,9 +57,19 @@ struct Clock {
     int64_t pass = -1;
 };
 
-/// The modulator's output: -1..1 when bipolar, else 0..1. `steps` are a Steps modulator's drawn values.
+/// A Curve modulator's drawn shape: points over one cycle of `length` ticks.
+struct Drawn {
+    const AutoPoint* points = nullptr;
+    int count = 0;
+    Tick length = 0;
+};
+
+/// The modulator's output: -1..1 when bipolar, else 0..1. `steps` are a Steps modulator's drawn values, `drawn` a
+/// Curve modulator's shape.
 float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state, const Clock& clock,
-               const float* steps = nullptr, int stepCount = 0);
+               const float* steps = nullptr, int stepCount = 0, const Drawn* drawn = nullptr);
+/// A Curve's value (0..1) at `t` ticks into its cycle.
+float drawnAt(const Drawn& drawn, double t);
 bool bipolar(ModulatorType type, const float* knobs);
 /// Whether a Steps or Ramp modulator counts passes instead of time.
 bool perPass(ModulatorType type, const float* knobs);
