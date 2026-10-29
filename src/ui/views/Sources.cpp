@@ -320,8 +320,8 @@ std::vector<TimelineSource::PlayheadMark> ClipSource::playheadMarks() {
     const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
     for (const Playhead& p : device->playheads) {
         auto [regionStart, regionLength] = regionOf(p, span);
-        if (regionLength <= 0)
-            continue;
+        if (regionLength <= 0 || (playheads::wantsDrawnPath(p.params.data()) && !p.path.empty()))
+            continue; // a drawn path decides where it starts
         double offset = double(devices::display(start, p.params[playheads::knob::kStart])) * double(kPpq) / 4;
         marks.push_back({p.id.value, regionStart + std::fmod(offset, regionLength), p.color});
     }

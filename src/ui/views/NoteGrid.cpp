@@ -967,6 +967,8 @@ bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
             continue;
         playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), double(span.start),
                                                          double(span.length()), owner.timeSig());
+        if (playheads::wantsDrawnPath(p.params.data()))
+            motion.path = &p.path;
         float x = float(time().tickToX(playheads::positionAt(motion, elapsed)));
         if (x < -2 || x > box.size.x + 2)
             continue;

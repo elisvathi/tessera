@@ -1471,4 +1471,11 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   An output shows "nothing" for a channel only when its track has playheads and none plays there.
 - **Start marks on the ruler** (added the same day): each playhead's start is a triangle in its colour on the piano
   roll's loop strip, dragged to set its Start knob in one undo step. Region edges aren't dragged there yet.
-- **Not yet:** the time map, drawn paths and note motion.
+- **Time map and drawn paths** (added the same day): a lower-pane choice (lowerLane = kTimeMapLane) with one row per
+  playhead; across is time since the clip started, so rate shows as slope. A drawn path is a list of AutoPoints in
+  the playhead's own time over its Path cycle (two knobs appended to the table); between points the place moves
+  one way, so sweeps stay exact, and a hit's time is found by halving. "Draw this path" samples the settings every
+  1/16, keeps only the corners and picks the shortest cycle covering the clip. Offset, start, repeat, bend and
+  direction don't apply to a drawn path. Path points are their own small editor here, not the automation editor
+  (its lane menus are about AUTO outputs and recording, which a path doesn't have).
+- **Not yet:** note motion.

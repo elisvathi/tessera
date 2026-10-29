@@ -403,3 +403,46 @@ TEST_CASE("each playhead has a branch of its own devices, sharing the track's li
     CHECK(dup->branch[0].id != firstDevice(song).playheads[1].branch[0].id);
     CHECK(savedAndLoaded(song) == song);
 }
+
+TEST_CASE("a drawn path takes the playhead where its points say, and repeats every cycle") {
+    // Over a 2-beat cycle: up through the first half of the bar, then straight back down.
+    std::vector<AutoPoint> path = {{0, 0, CurveType::Linear, 0}, {960, 0.5f, CurveType::Linear, 0},
+                                   {1920, 0, CurveType::Linear, 0}};
+    Motion m = oneBar();
+    m.path = &path;
+    m.pathCycle = 2 * kBeat;
+    CHECK(positionAt(m, 480) == doctest::Approx(960));
+    CHECK(positionAt(m, 960) == doctest::Approx(1920));
+    CHECK(positionAt(m, 1440) == doctest::Approx(960));
+    CHECK(positionAt(m, 1920 + 480) == doctest::Approx(960));
+    // Up: 60 at 0, 62 (starts 960) at 480. Back down: 62 ends at 1440, reached at 1200; 60 ends 480, reached 1680.
+    std::vector<Hit> hits = play(m, fourBeats(), 2 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 60}, {480, 62}, {1200, 62}, {1680, 60}});
+
+    SUBCASE("drawing from the settings gives the same path") {
+        Motion settings = oneBar();
+        std::vector<AutoPoint> drawn = pathFromSettings(settings, 4 * kBeat, kBeat / 4);
+        Motion d = oneBar();
+        d.path = &drawn;
+        d.pathCycle = 4 * kBeat;
+        CHECK(play(d, fourBeats(), 4 * kBeat) == play(settings, fourBeats(), 4 * kBeat));
+    }
+}
+
+TEST_CASE("drawing a straight path keeps only its corners") {
+    Motion settings = oneBar();
+    settings.start = 2 * kBeat;
+    std::vector<AutoPoint> drawn = pathFromSettings(settings, 4 * kBeat, kBeat / 4);
+    // From the middle up to the end, a hold and a jump back to the start, then up to the middle again.
+    CHECK(drawn.size() <= 5);
+    Motion d = oneBar();
+    d.path = &drawn;
+    d.pathCycle = 4 * kBeat;
+    // The same notes, within a tick: a drawn path keeps its places as floats.
+    std::vector<Hit> x = play(d, fourBeats(), 4 * kBeat), y = play(settings, fourBeats(), 4 * kBeat);
+    REQUIRE(x.size() == y.size());
+    for (size_t k = 0; k < x.size(); k++) {
+        CHECK(x[k].pitch == y[k].pitch);
+        CHECK(std::abs(x[k].time - y[k].time) <= 1.0);
+    }
+}

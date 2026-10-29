@@ -295,6 +295,12 @@ void normalizePlayheads(Device& d, IdRepair& ids, int& room) {
         normalizeParams(p.params, devices::playheadInfo().params);
         clampValue<uint8_t>(p.channel, 0, 16);
         p.color %= 16;
+        for (AutoPoint& pt : p.path) {
+            clampValue(pt.value, 0.f, 1.f);
+            clampValue(pt.tension, -1.f, 1.f);
+            pt.t = std::max<Tick>(0, pt.t);
+        }
+        std::stable_sort(p.path.begin(), p.path.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
         p.branch.erase(std::remove_if(p.branch.begin(), p.branch.end(),
                                       [](const Device& b) { return b.type == DeviceType::Playheads; }),
                        p.branch.end());

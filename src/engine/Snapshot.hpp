@@ -212,6 +212,7 @@ struct PlayheadPlayback {
     int knobs = 0;
     uint8_t channel = 1; // 0 = each note keeps its own
     bool audible = true; // mute and solo already applied
+    std::vector<AutoPoint> path; // its drawn path, when its Path knob says Drawn
 };
 
 /// A track's device chain.

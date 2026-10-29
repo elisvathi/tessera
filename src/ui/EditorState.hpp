@@ -64,6 +64,9 @@ struct ArrangerRange {
 
 /// Layout and view settings of one editor surface. The overlay and the panel each keep their own, so zooming
 /// one never moves the other.
+/// EditorState's lowerLane value for the playheads' time map (docs/design/PLAYHEADS.md §3.3); no lane ID is this.
+constexpr uint64_t kTimeMapLane = ~uint64_t(0);
+
 struct ViewState {
     float topFraction = 0.45f; // share of the height above the splitter
     float headerWidth = 190;   // track header column, px at 100% scale

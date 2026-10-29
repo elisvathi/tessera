@@ -107,6 +107,7 @@ A playhead's settings:
 | **Bend**, **Bend amount**, **Bend cycle** | Speeds up and slows down inside each cycle, without moving the cycle's ends: Ease in, Ease out, Ease in-out, Swing, Stairs. The cycle is counted in the playhead's own time: at 2x a 1/4 cycle passes in an eighth. |
 | **Offset** | Moves the playhead forward or back, in 1/16 steps. Good to automate. |
 | **Length**, **Fixed length** | How long its notes last: As written, Follows playhead (half speed, twice as long), or a Fixed length. |
+| **Path**, **Path cycle** | From settings (all of the above), or **Drawn**: the playhead follows a path you draw in the time map, repeating every cycle. Rate still applies; the other movement settings don't. |
 
 The device's own knobs, after a small gap:
 
@@ -130,6 +131,24 @@ Playheads read launched clips and timeline clips alike. On the timeline, each cl
 where that clip begins (a clip that starts partway in starts the playheads partway in), and a stretched clip slows them
 down. MIDI export with **Devices: Applied** writes what the playheads play, each playhead on its channel; **Bypassed**
 writes the clips as written.
+
+### The time map
+
+In the piano roll's lower pane, pick **Time map (playheads)** from the pane's menu. Each playhead gets a row: across is
+time since the clip started, lined up with the bars above; up is where in its region the playhead reads. A rising line
+is a normal playhead, a steeper one is faster, a falling one goes backwards, a flat one is frozen, a staircase repeats,
+and a jump is a wrap.
+
+To draw a path, right-click a playhead's row and pick **Draw this path**: it starts from where the settings take the
+playhead, and its cycle becomes as long as the clip.
+
+- **Click** in the row to add a point, and **drag** a point to move it (it snaps to the grid; hold Alt to place it
+  freely).
+- **Double-click** a point to delete it.
+- **Right-click** the row for **Back to settings**, **Clear points** and **Path cycle**.
+
+Between two points the playhead moves straight from one place to the other, and plays the notes it crosses on the way,
+in either direction. A drawn playhead has no start marker on the ruler: its path says where it starts.
 
 ### Devices for one playhead
 

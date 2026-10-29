@@ -483,6 +483,20 @@ CommandPtr setPlayheadMute(const Song& song, PlayheadId id, bool mute) {
     });
 }
 
+CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoint> path, const std::string& name) {
+    std::stable_sort(path.begin(), path.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+    for (AutoPoint& p : path) {
+        p.value = std::clamp(p.value, 0.f, 1.f);
+        p.t = std::max<Tick>(0, p.t);
+    }
+    return playheadEdit(song, id, name, [&](Device&, Playhead& p) {
+        if (p.path == path)
+            return false;
+        p.path = path;
+        return true;
+    });
+}
+
 CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo) {
     return playheadEdit(song, id, (solo ? "Solo " : "Unsolo ") + playheadName(song, id), [&](Device&, Playhead& p) {
         p.solo = solo;

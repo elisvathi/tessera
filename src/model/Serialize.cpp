@@ -480,6 +480,13 @@ json_t* playheadToJson(const Playhead& p) {
         setBool(j, "mute", true);
     if (p.solo)
         setBool(j, "solo", true);
+    if (!p.path.empty()) {
+        json_t* path = json_array();
+        for (const AutoPoint& pt : p.path)
+            json_array_append_new(path, json_pack("[Ifif]", static_cast<json_int_t>(pt.t), double(pt.value),
+                                                  int(pt.curve), double(pt.tension)));
+        set(j, "path", path);
+    }
     if (!p.branch.empty()) {
         json_t* branch = json_array();
         for (const Device& d : p.branch)
@@ -499,6 +506,17 @@ Playhead playheadFromJson(const json_t* j) {
     p.mute = getBool(j, "mute", p.mute);
     p.solo = getBool(j, "solo", p.solo);
     forEach(get(j, "branch"), [&](const json_t* dj) { p.branch.push_back(deviceFromJson(dj)); });
+    forEach(get(j, "path"), [&](const json_t* pj) {
+        if (json_array_size(pj) < 2)
+            return;
+        AutoPoint ap;
+        ap.t = intAt(pj, 0, 0);
+        ap.value = float(numberAt(pj, 1, 0));
+        int64_t curve = intAt(pj, 2, int64_t(ap.curve));
+        ap.curve = curve >= 0 && curve <= int64_t(CurveType::SCurve) ? CurveType(curve) : CurveType::Linear;
+        ap.tension = float(numberAt(pj, 3, 0));
+        p.path.push_back(ap);
+    });
     return p;
 }
 
