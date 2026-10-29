@@ -1235,7 +1235,15 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         playheads::Motion timed = m;
                         timed.rate = rate;
                         double length = playheads::noteLength(knobs, timed, double(e.end - e.start), ts) * stretch;
-                        startNote(track, state, n, onPlay, onPlay + length, 0, uint8_t(index + 1));
+                        // Each playhead counts its own passes (its region's length of its own time), and the
+                        // playhead's place is mixed in, so two playheads make their own chance and spread choices.
+                        int64_t pass = int64_t(std::floor(ownA / std::max(1.0, m.regionLength))) * 16 + int64_t(index);
+                        uint8_t lane = uint8_t(index + 1);
+                        if (e.extras != kNoExtras && e.extras < clip.extras.size())
+                            startWithOperators(track, state, n, clip.extras[e.extras], onPlay, onPlay + length, pass,
+                                               lane);
+                        else
+                            startNote(track, state, n, onPlay, onPlay + length, pass, lane);
                     });
                 }
             }
@@ -1292,7 +1300,7 @@ void Engine::fireList(const TrackPlayback& track, TrackState& state, const std::
 }
 
 void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, const NoteEvent& n, const NoteExtras& ex,
-                                double onPlay, double endPlay, int64_t pass) {
+                                double onPlay, double endPlay, int64_t pass, uint8_t lane) {
     operators::PassContext ctx;
     ctx.seed = snapshot->seed;
     ctx.clip = ex.clip;
@@ -1326,6 +1334,7 @@ void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, c
         hit.pass = pass;
         hit.key = n.key;
         hit.channel = n.channel;
+        hit.lane = lane;
         if (hit.start < playTick)
             startHit(track, state, hit);
         else if (state.pendingCount < kMaxPendingHits)
@@ -1343,6 +1352,7 @@ void Engine::startHit(const TrackPlayback& track, TrackState& state, const Track
     n.release = hit.release;
     n.key = hit.key;
     n.channel = hit.channel;
+    n.lane = hit.lane;
     n.extras = hit.extras;
     n.origin = hit.origin;
     n.pass = hit.pass;
