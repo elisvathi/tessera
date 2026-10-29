@@ -55,12 +55,13 @@ class TimelineSource {
     virtual void setInstanceEnd(double end) {}
 
     /// A playhead's segment (docs/design/PLAYHEADS.md §12): the part of the clip it plays, where in it it starts, and
-    /// its colour. The selected playhead's shows as a bar with handles; the others as thin lines.
+    /// its colour. The selected playhead's shows as a bar with handles and its name; the others as thin lines.
     struct PlayheadSegment {
         uint64_t id; // PlayheadId value
         double start, end, startTick;
         int color;
         bool selected;
+        std::string name;
     };
     virtual std::vector<PlayheadSegment> playheadSegments() { return {}; }
     /// Moves a playhead's segment to [start, end) (already snapped), as one undo step.
@@ -98,6 +99,10 @@ class Ruler : public InteractiveView {
     void autoScroll(double dx, double dy) override;
     void step() override;
     void onLeave(const LeaveEvent& e) override;
+
+  public:
+    /// The playhead segment being dragged, if any, so the notes below can follow it.
+    const std::optional<TimelineSource::PlayheadSegment>& draggedSegment() const { return segmentPreview; }
 
   private:
     enum class Zone { Segments, Markers, Loop, Time, Overview };
