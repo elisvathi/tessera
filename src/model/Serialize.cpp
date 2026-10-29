@@ -39,10 +39,10 @@ const char* const kLoopModes[] = {"off", "loop"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
-const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord", "arpeggiator",
-                                    "echo",      "random", "noteFilter", "humanize",   "groove"};
+const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord",    "arpeggiator",
+                                    "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads"};
 const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note"};
-const char* const kParamOwners[] = {"device", "modulator"};
+const char* const kParamOwners[] = {"device", "modulator", "playhead"};
 const char* const kModulationKinds[] = {"param", "auto", "knob"};
 
 constexpr int kNoteMuted = 1;
@@ -466,6 +466,32 @@ std::vector<Modulator> modulatorListFromJson(const json_t* arr) {
     return out;
 }
 
+json_t* playheadToJson(const Playhead& p) {
+    json_t* j = json_object();
+    set(j, "id", idJson(p.id));
+    setString(j, "name", p.name);
+    setInt(j, "color", p.color);
+    set(j, "params", floatsToJson(p.params));
+    setInt(j, "channel", p.channel);
+    if (p.mute)
+        setBool(j, "mute", true);
+    if (p.solo)
+        setBool(j, "solo", true);
+    return j;
+}
+
+Playhead playheadFromJson(const json_t* j) {
+    Playhead p;
+    p.id = readId<PlayheadId>(get(j, "id"));
+    p.name = getString(j, "name", p.name);
+    p.color = saturate<uint8_t>(getInt(j, "color", p.color));
+    p.params = floatsFromJson(get(j, "params"));
+    p.channel = saturate<uint8_t>(getInt(j, "channel", p.channel));
+    p.mute = getBool(j, "mute", p.mute);
+    p.solo = getBool(j, "solo", p.solo);
+    return p;
+}
+
 json_t* deviceToJson(const Device& d) {
     json_t* j = json_object();
     set(j, "id", idJson(d.id));
@@ -477,6 +503,12 @@ json_t* deviceToJson(const Device& d) {
     set(j, "params", floatsToJson(d.params));
     if (!d.modulators.empty())
         set(j, "modulators", modulatorListToJson(d.modulators));
+    if (!d.playheads.empty()) {
+        json_t* list = json_array();
+        for (const Playhead& p : d.playheads)
+            json_array_append_new(list, playheadToJson(p));
+        set(j, "playheads", list);
+    }
     return j;
 }
 
@@ -489,6 +521,7 @@ Device deviceFromJson(const json_t* j) {
     d.affectDrumLanes = getBool(j, "drumLanes", d.affectDrumLanes);
     d.params = floatsFromJson(get(j, "params"));
     d.modulators = modulatorListFromJson(get(j, "modulators"));
+    forEach(get(j, "playheads"), [&](const json_t* pj) { d.playheads.push_back(playheadFromJson(pj)); });
     return d;
 }
 
@@ -745,7 +778,8 @@ bool migrateSong(json_t* songJ, int fromVersion) {
         json_array_foreach(tracks, i, t) json_object_set_new(t, "monitor", json_true());
     }
     // Version 5 added device chains and modulators. Older songs have none, and every new field loads as empty,
-    // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob; songFromJson rescales it.
+    // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob (songFromJson rescales it), and
+    // version 7 added the Playheads device.
     return fromVersion <= Song::kSchemaVersion;
 }
 

@@ -44,7 +44,36 @@ ModT* findModulatorIn(SongT& song, ModulatorId id, ModulatorPlace* place) {
     return nullptr;
 }
 
+template <typename SongT, typename PlayheadT>
+PlayheadT* findPlayheadIn(SongT& song, PlayheadId id, TrackId* track, DeviceId* device) {
+    for (auto& t : song.tracks)
+        for (auto& d : t.devices)
+            for (auto& p : d.playheads)
+                if (p.id == id) {
+                    if (track)
+                        *track = t.id;
+                    if (device)
+                        *device = d.id;
+                    return &p;
+                }
+    return nullptr;
+}
+
 } // namespace
+
+Playhead* findPlayhead(Song& song, PlayheadId id, TrackId* track, DeviceId* device) {
+    return findPlayheadIn<Song, Playhead>(song, id, track, device);
+}
+const Playhead* findPlayhead(const Song& song, PlayheadId id, TrackId* track, DeviceId* device) {
+    return findPlayheadIn<const Song, const Playhead>(song, id, track, device);
+}
+
+const Device* activePlayheads(const Track& track) {
+    for (const Device& d : track.devices)
+        if (d.type == DeviceType::Playheads)
+            return d.on ? &d : nullptr;
+    return nullptr;
+}
 
 Device* findDevice(Song& song, DeviceId id, TrackId* track) { return findDeviceIn<Song, Device>(song, id, track); }
 const Device* findDevice(const Song& song, DeviceId id, TrackId* track) {
@@ -66,6 +95,9 @@ const float* findParam(const Song& song, const ParamRef& ref) {
     if (ref.kind == ParamRef::Kind::Device) {
         if (const Device* d = findDevice(song, DeviceId(ref.owner)))
             params = &d->params;
+    } else if (ref.kind == ParamRef::Kind::Playhead) {
+        if (const Playhead* p = findPlayhead(song, PlayheadId(ref.owner)))
+            params = &p->params;
     } else if (const Modulator* m = findModulator(song, ModulatorId(ref.owner))) {
         params = &m->params;
     }
@@ -78,6 +110,10 @@ TrackId trackOf(const Song& song, const ParamRef& ref) {
     TrackId track;
     if (ref.kind == ParamRef::Kind::Device) {
         findDevice(song, DeviceId(ref.owner), &track);
+        return track;
+    }
+    if (ref.kind == ParamRef::Kind::Playhead) {
+        findPlayhead(song, PlayheadId(ref.owner), &track);
         return track;
     }
     ModulatorPlace place;
@@ -110,6 +146,11 @@ bool reachable(const Song& song, const ModulatorPlace& place, ModulatorId self, 
     case ModLevel::Device: {
         if (m.target.kind == ParamRef::Kind::Device)
             return m.target.owner == place.device.value;
+        if (m.target.kind == ParamRef::Kind::Playhead) {
+            DeviceId device;
+            findPlayhead(song, PlayheadId(m.target.owner), nullptr, &device);
+            return device == place.device;
+        }
         ModulatorPlace target;
         findModulator(song, ModulatorId(m.target.owner), &target);
         return target.level == ModLevel::Device && target.device == place.device;

@@ -47,7 +47,8 @@ class ReplaceChains : public Command {
 
 // ---- Devices ------------------------------------------------------------------------------------------------
 
-/// A new device at `index` in the track's chain (clamped; -1 = the end). Null at kMaxDevices.
+/// A new device at `index` in the track's chain (clamped; -1 = the end). Null at kMaxDevices. A Playheads device
+/// goes first with two playheads, and only when the track has none; other devices never go before it.
 CommandPtr addDevice(const Song& song, TrackId track, DeviceType type, int index, const NextId& nextId);
 /// Removes a device with its modulators, and every route that pointed at them.
 CommandPtr removeDevice(const Song& song, DeviceId id);
@@ -65,6 +66,19 @@ CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name);
 
 /// Sets a device knob or modulator setting (normalized 0..1). One command per drag.
 CommandPtr setParam(const Song& song, const ParamRef& ref, float value);
+
+// ---- Playheads (docs/design/PLAYHEADS.md) ------------------------------------------------------------------
+
+/// A new playhead at the end of a Playheads device. Null when it already has playheads::kMaxPlayheads.
+CommandPtr addPlayhead(const Song& song, DeviceId device, const NextId& nextId, PlayheadId* added = nullptr);
+CommandPtr removePlayhead(const Song& song, PlayheadId id);
+/// A copy right after the original, with a new ID and every setting the same.
+CommandPtr duplicatePlayhead(const Song& song, PlayheadId id, const NextId& nextId, PlayheadId* added = nullptr);
+CommandPtr renamePlayhead(const Song& song, PlayheadId id, const std::string& name);
+/// The channel put on the playhead's notes: 1..16, or 0 to keep each note's own.
+CommandPtr setPlayheadChannel(const Song& song, PlayheadId id, int channel);
+CommandPtr setPlayheadMute(const Song& song, PlayheadId id, bool mute);
+CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo);
 
 // ---- Modulators ---------------------------------------------------------------------------------------------
 
