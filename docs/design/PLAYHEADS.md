@@ -11,6 +11,7 @@ plays goes through its own short chain of devices (an Echo on one, a Transpose o
 meet in the track's usual chain. Each playhead plays on a **channel**, and the track's Track Out has a **channel
 picker**: All, or one channel. So one Track Out can play everything, or only the playheads on its channel. A short
 phrase becomes a canon, a cloud, or a slowly shifting texture, without copying a single note.
+Notes can also **drift**: a group of notes moves in pitch, time, length or velocity, pass by pass (§6).
 
 ---
 
@@ -127,8 +128,8 @@ each entry says which Track Outs play it ("Ch 2 · Track Out 2").
 
 ### 3.2 In the piano roll and drum editor
 
-- Each playhead is drawn as a line in its colour, moving through the notes. The clip's own playhead is hidden
-  while a Playheads device is on.
+- Each playhead is drawn as a line in its colour, moving through the notes. The clip's own playhead stays as a
+  faint grey line, for reference: it shows where the clip would be without playheads.
 - **Start markers** sit on the ruler: a small triangle per playhead in its colour. Drag one to change that
   playhead's start (one undo step, snapped to the grid). The selected playhead's **region** shows as a faint band
   on the ruler and in the notes; drag its edges to change it.
@@ -143,7 +144,7 @@ playhead. Across: song time. Up: where in the clip the playhead reads.
 
 - A playhead's path is drawn from its settings: a rising line is normal; steeper is faster; falling is reverse;
   flat is freeze; a staircase is a repeat; a curve is bend. Changing a setting redraws the path at once.
-- **Draw:** right-click a lane → "Draw this path". The playhead switches to **Drawn** motion (§4.2) and its
+- **Draw:** right-click a lane → "Draw this path". The playhead switches to a **drawn path** (§4.2) and its
   path becomes points you move, add and delete, with curves between them, using the automation lane editor.
   "Back to settings" in the same menu returns to the knobs (the drawn path is kept until you clear it).
 - A vertical line shows "now".
@@ -154,7 +155,7 @@ playhead. Across: song time. Up: where in the clip the playhead reads.
   list them: "Add playhead", "Next / previous playhead", "Mute playhead", "Show the time map". Keys are picked
   when building, from the free ones in the table.
 - The manual gets a "Playheads" page: what they are, a 3-voice canon in five steps, the settings, the time map,
-  and giving a playhead its own sound. QA gets the manual test steps (§8).
+  and giving a playhead its own sound. QA gets the manual test steps (§9).
 
 ---
 
@@ -162,7 +163,7 @@ playhead. Across: song time. Up: where in the clip the playhead reads.
 
 All settings are knobs or choices in the playhead parameter table: append-only, normalized, like a device's.
 
-### 4.1 Motion: Settings (default)
+### 4.1 Path: from settings (default)
 
 | Setting | Range | Default | What it does |
 |---|---|---|---|
@@ -177,7 +178,7 @@ All settings are knobs or choices in the playhead parameter table: append-only, 
 | Bend cycle | 1/16 … 4 bars | 1 beat | the length of one bend cycle |
 | Offset | ± 1 bar | 0 | moves the playhead's position; made to be automated |
 
-### 4.2 Motion: Drawn
+### 4.2 Path: drawn
 
 The path drawn in the time map (§3.3): points over a **cycle** (1–16 bars of song time), each giving a position in
 the clip, with curves between them. The path repeats every cycle. Offset still applies; rate, direction, repeat
@@ -286,11 +287,70 @@ from, so they come out of the same Track Out.
 
 ---
 
-## 6. Model (`src/model`)
+## 6. Note motion (notes that drift)
+
+### 6.1 What it does
+
+Notes can move while the clip plays. A few notes rise one scale step each pass and fall back. A note slides later
+and later in the bar. Velocities swell over eight bars. The written notes never change: the motion is played on
+top of them, the same way on every play and every export. It works with or without playheads.
+
+### 6.2 Motion groups
+
+- Select notes, then right-click → **Add motion** (or **Motion +** in the inspector). This makes a **motion group**
+  in the clip with a name ("Motion A"), a colour and four knobs:
+
+  | Knob | Range | What it moves |
+  |---|---|---|
+  | Pitch | ± 24 scale steps (± 24 semitones with "In key" off) | the notes' pitch, in the clip's key |
+  | Time | ± 1 bar | where the notes sit in the clip |
+  | Length | −90 % … +400 % | how long they last |
+  | Velocity | ± 100 % | how hard they play |
+
+  All knobs start at 0, so adding motion changes nothing until you turn one.
+- A note belongs to at most one group. A clip has up to 8 groups.
+- Notes in a group show a small mark in the group's colour. While the clip plays, a moved note also shows a faint
+  copy where it sounds right now, so you can see the drift.
+- The inspector shows the selected notes' group with its knobs, plus **Select group** and **Remove from motion**.
+- On drum tracks, Pitch is off (a pitch is a lane there), as for pitch devices; Time, Length and Velocity work.
+
+### 6.3 Making them drift
+
+A knob on its own is a fixed offset. It drifts when something turns it, using tools Tessera already has:
+
+- **Pass by pass:** the Steps and Ramp modulators get one more rate, **Per pass**: one step per pass of the clip.
+  A Steps modulator with the steps 0, 1, 2, 3, 2, 1 mapped onto Pitch raises the notes a step each pass, then
+  brings them back. The knob's right-click menu has a shortcut, **Drift per pass…**, that makes such a modulator
+  already mapped (asks: amount per pass, how many passes, then Wrap, Bounce or Hold).
+- **Over time:** any modulator (an LFO on Time makes notes swing back and forth) or a clip automation lane (a rise on
+  Velocity over 8 bars).
+
+The value a note plays is: the knob's value + automation + modulation, clamped to the knob's range.
+
+**With playheads, each playhead has its own pass.** A playhead's pass counts how often it went round its region.
+A "Per pass" modulator is a simple lookup (step = pass mod steps), so it is worked out for each note from the
+pass of the playhead reading it. A slow playhead hears the early steps while a fast one is already further on.
+That is where the phasing, shifting textures come from.
+
+### 6.4 Rules
+
+- A note takes its motion values when a playhead crosses it (§5.2). A sounding note doesn't change pitch halfway.
+- **Time** moves where the playhead finds the note. A note moved past the region's edge wraps around inside the
+  region, so it is never lost. A note plays at most once per pass per playhead, however it moves.
+- **Pitch** counts scale steps in the clip's key. A note that is out of key moves by steps from the nearest note
+  in the key.
+- Note operators (chance, repeats…) still run on the moved note.
+- MIDI export plays the motion, pass by pass, with the same code. **Bake** (later) writes the moved notes into a
+  new clip.
+- Every edit is one undo step: adding or removing a group, moving notes in or out of it, turning a knob.
+
+---
+
+## 7. Model (`src/model`)
 
 ```cpp
 enum class DeviceType : uint8_t { /* existing… */ Playheads };   // appended
-enum class PlayheadMotion : uint8_t { Settings, Drawn };
+enum class PlayheadPath : uint8_t { FromSettings, Drawn };
 
 /// One reader of the clip inside a Playheads device (docs/design/PLAYHEADS.md).
 struct Playhead {
@@ -298,14 +358,27 @@ struct Playhead {
     std::string name;
     uint8_t color = 0;              // index into the playhead colours in Theme
     std::vector<float> params;      // normalized, the playhead parameter table (§4)
-    std::vector<AutoPoint> path;      // Drawn motion: points over the cycle
+    std::vector<AutoPoint> path;      // a drawn path: points over the cycle
     std::vector<Device> branch;     // up to 4; never a Playheads device
     uint8_t channel = 1;            // 1..16, or 0 = as written
     bool mute = false, solo = false;
 };
 
 // Device: + std::vector<Playhead> playheads;   (Playheads devices only)
-// ParamRef::Kind: + Playhead                    (owner = PlayheadId; modulators and lanes turn its settings)
+// ParamRef::Kind: + Playhead, Motion            (owner = PlayheadId or MotionId)
+
+/// A group of notes in a clip that move together while the clip plays (§6).
+struct MotionGroup {
+    MotionId id;
+    std::string name;
+    uint8_t color = 0;
+    bool inKey = true;          // Pitch counts scale steps, not semitones
+    std::vector<float> params;  // normalized: pitch, time, length, velocity (append-only table)
+};
+
+// Clip: + std::vector<MotionGroup> motions;   (up to 8)
+// Note: + MotionId motion;                     (0 = none)
+// Steps and Ramp modulators: + rate choice "Per pass" (appended to their tables)
 ```
 
 Track Out and Drum Out save one more field next to their track: the **channel** they play (0 = All, the default
@@ -318,14 +391,17 @@ is a number, not a playhead's ID, no edit in the song can leave it pointing at s
 - Device lookup (`DeviceLookup`) learns to find devices inside branches, so knobs, routes and lanes on branch
   devices work like any other.
 - Commands, each with apply/revert tests: add, remove, duplicate, reorder playhead; set setting (one undo per drag);
-  set channel; mute/solo; set the drawn path (one undo per drag); switch motion; add, remove and move a device
-  in a branch (including to and from the shared chain).
+  set channel; mute/solo; set the drawn path (one undo per drag); switch between settings and a drawn path; add,
+  remove and move a device in a branch (including to and from the shared chain).
 - Schema 6: `migrate` adds nothing (no Playheads devices yet); `normalize` drops a second Playheads device, moves it
   first, and drops a Playheads device found inside a branch.
+- Motion commands: add / remove a group (removing it keeps the notes, without motion), add or remove notes from
+  a group, set a knob, "Drift per pass…" (adds the modulator and its route in one undo step). Copying notes to
+  another clip copies their group too (with a new ID) unless that clip already has a group of the same name.
 - Duplicating a track or device gives every playhead and branch device new IDs, and fixes routes and lanes
   inside the copy to point at the copy.
 
-## 7. Engine (`src/engine`)
+## 8. Engine (`src/engine`)
 
 ```
              ┌▶ playhead 1 (ch 1) ─▶ branch 1 ─┐                      ┌ ch 1 voices ┐─▶ Track Out · Ch 1
@@ -347,20 +423,24 @@ clip notes ──┼▶ playhead 2 (ch 2) ─▶ branch 2 ─┼─▶ shared ch
 - Quiet tracks still sleep: a track's next wake-up is the soonest note any playhead reaches.
 - Budget: 16 playheads × 64 tracks is the worst case; each playhead does a little maths per sample and a cursor
   step per note. Measured against DESIGN.md §18 in step 2.
+- **Motion:** each motion group's notes sit in their own sorted list with their own cursor, so a group's Time
+  offset only shifts that list's reading window. Pitch, Length and Velocity are added when the note is fired.
+  "Per pass" modulator values are looked up from the reading playhead's pass at that moment.
 - MIDI export with devices applied runs the same code through `ChainRender`, with one MIDI channel per playhead
   when that option is on (§2.4).
 
-## 8. Manual tests (QA.md, added when built)
+## 9. Manual tests (QA.md, added when built)
 
 Canon in three playheads; reverse at ½× with Follows playhead; repeat 1 beat × 3; ping-pong at the region's edges;
 freeze then stop (no hanging gate); two Track Outs on Ch 1 and Ch 2, each to its own voice; change a playhead's
 channel while it plays (no hanging gate); a channel no Track Out plays (crossed-out chip); an old patch's Track Out
 plays All; a clip with two parts on two channels, no playheads; add playheads until the voices run out; LFO on
-rate, then seek; drum
-clip with a 3-step lane under a reverse playhead; drawn path; export with devices applied and compare by ear;
-in-panel editor with the divider moved.
+rate, then seek; drum clip with a 3-step lane under a reverse playhead; drawn path; motion group drifting a step
+per pass, Bounce, with two playheads at different rates (each hears its own pass); Time motion pushing a note past
+the region's edge (it wraps, plays once per pass); export with devices applied and compare by ear; in-panel editor
+with the divider moved.
 
-## 9. What we decided, and what is still open
+## 10. What we decided, and what is still open
 
 Decided in this design (can be revisited before building):
 - Reverse plays a note when the playhead enters it from its end (§5.2).
@@ -369,22 +449,20 @@ Decided in this design (can be revisited before building):
 - Bend uses eight built-in shapes; the free-form option is the drawn path (§4.2).
 - No per-playhead transpose, velocity or chance: those are branch devices (§4.3).
 
-Still open:
-1. **Per-note motion** (notes whose pitch, time or velocity drift each pass, as notes can in the app this was
-   inspired by). It changes what plays from pass to pass, which you earlier found had little value for random
-   variation. If wanted, it would be a separate design: note operators that move a note by a set amount each pass
-   (not at random), shown in the inspector.
-2. Should the clip's own playhead show as a faint line while playheads play, for reference?
-3. Should "Add a Track Out for channel 2" exist as a one-click action (Tessera places the module, already set),
-   or is adding it from the module browser enough?
+Decided after review (29 Oct):
+- Notes that drift are in (§6), as motion groups turned by the existing modulators and lanes.
+- The clip's own playhead stays as a faint grey line while playheads play (§3.2).
+- No one-click "Add a Track Out" action: adding one from the module browser is enough.
 
-## 10. Build order
+Nothing is open right now.
+
+## 11. Build order
 
 Each step builds, passes tests and can be used before the next.
 
 1. **Model:** Playheads device type, playhead table, commands with undo, save/load (schema 6), normalize rules;
    the pure position and crossing functions. Tests.
-2. **Engine:** playheads on this track with Settings motion (rate, direction, start, region, repeat), the three
+2. **Engine:** playheads on this track with paths from settings (rate, direction, start, region, repeat), the three
    length modes, Restart, Same note; no hanging notes; MIDI export. Tests, including the performance budget.
 3. **UI 1:** Playheads card with rows and popover, playhead lines and ruler markers in the piano roll and drum
    editor, the browser's Source group. Agreed mockup first.
@@ -392,5 +470,7 @@ Each step builds, passes tests and can be used before the next.
    clips with several parts even before playheads ship), the channel chip; then devices inside branches (lookup,
    strip layout, drag between branches).
 5. **Bend, offset, modulation and automation** of playhead settings, including the summed-rate rule.
-6. **Time map** lower pane and Drawn motion.
-7. **Finish:** shortcuts, help overlay, tooltips, manual page and screenshots, QA steps, a DECISIONS.md entry.
+6. **Time map** lower pane and drawn paths.
+7. **Note motion:** motion groups (model, commands, inspector, marks and ghosts in the piano roll), the "Per
+   pass" rate for Steps and Ramp, "Drift per pass…", per-playhead passes.
+8. **Finish:** shortcuts, help overlay, tooltips, manual page and screenshots, QA steps, a DECISIONS.md entry.
