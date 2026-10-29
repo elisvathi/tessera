@@ -1208,6 +1208,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
             if (playheads::wantsDrawnPath(knobs))
                 clock.motion.path = &p.path;
+            clock.shape = playheads::noteShapeFrom(knobs);
             clock.motionBlock = controlBlock;
             clock.motionClip = &clip;
         }
@@ -1233,11 +1234,17 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 for (int i = 0; i < count; i++) {
                     const playheads::Sweep& sweep = sweeps[i];
                     auto onHit = [&](const NoteEvent& e, double pos) {
+                        if (!playheads::picked(clock.shape.pick, e.role))
+                            return;
                         double t = segA + (playheads::timeAt(m, sweep, pos) - ownA) / rate;
                         double onPlay = std::max(from, from + (t - a) * stretch);
                         NoteEvent n = e;
                         if (p.channel > 0)
                             n.channel = p.channel;
+                        const Scale& key =
+                            n.key > 0 && n.key <= track.keys.size() ? track.keys[size_t(n.key) - 1] : snapshot->key;
+                        n.pitch = int8_t(playheads::shapedPitch(clock.shape, n.pitch, clip.lowest, clip.highest, key));
+                        n.velocity = std::clamp(n.velocity + clock.shape.velocity, 0.f, 1.f);
                         if (once) {
                             for (int k = 0; k < startedCount; k++)
                                 if (started[size_t(k)].pitch == n.pitch && started[size_t(k)].channel == n.channel &&

@@ -29,6 +29,7 @@ struct NoteEvent {
     int32_t pass = -1;           // arrangement notes: which time through their clip; -1 = worked out live
     uint8_t key = 0;             // the key it was written in: 0 = the song's, k = TrackPlayback::keys[k - 1]
     uint8_t channel = 1;         // the note's channel, 1..16
+    uint8_t role = 3;            // lowest and/or highest of the notes starting with it (playheads::kLowestNote...)
 };
 
 /// What a note with operators, micro-timing or expression curves needs at playback (EDITOR_UX §4.5-4.6).
@@ -76,6 +77,7 @@ struct ClipPlayback {
     Tick launchQuantize = -1;     // this clip's own launch grid in ticks; -1 = the song's
     std::vector<NoteEvent> notes; // sorted by start, all inside [loopStart, loopEnd)
     std::vector<uint32_t> notesByEnd; // indices into `notes` sorted by end, for playheads going backwards
+    int8_t lowest = 0, highest = 127; // the clip's pitch range, which playheads invert inside
     std::vector<LaneLoop> laneLoops;
     std::vector<LanePlayback> lanes; // clip automation, clip time
     std::vector<KnobLanePlayback> knobLanes;
@@ -186,8 +188,8 @@ constexpr int kMaxMotionKnobs = 16384;
 /// Upper bounds the engine sizes its tables by, so it never allocates.
 constexpr int kMaxModulatorSlots =
     kMaxSongModulators + kMaxTracks * (kMaxTrackModulators + kMaxDevices * kMaxDeviceModulators);
-constexpr int kMaxKnobs = (kMaxTracks * (kMaxDevices + playheads::kMaxPlayheads) + kMaxModulatorSlots) * kMaxDeviceParams +
-                          kMaxMotionKnobs;
+constexpr int kMaxKnobs = (kMaxTracks * kMaxDevices + kMaxModulatorSlots) * kMaxDeviceParams +
+                          kMaxTracks * playheads::kMaxPlayheads * playheads::kMaxPlayheadParams + kMaxMotionKnobs;
 
 /// A device as the engine runs it. Its knob values start at `knobs` in the knob table.
 struct DevicePlayback {
