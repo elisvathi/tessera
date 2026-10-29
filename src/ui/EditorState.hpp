@@ -66,6 +66,8 @@ struct ArrangerRange {
 /// one never moves the other.
 /// EditorState's lowerLane value for the playheads' time map (docs/design/PLAYHEADS.md §3.3); no lane ID is this.
 constexpr uint64_t kTimeMapLane = ~uint64_t(0);
+/// EditorState's lowerLane value for the curve of one playhead setting (EditorContext::playheadCurve).
+constexpr uint64_t kPlayheadCurveLane = ~uint64_t(0) - 1;
 
 struct ViewState {
     float topFraction = 0.45f; // share of the height above the splitter

@@ -331,7 +331,7 @@ const Device* DeviceStrip::cardDevice(int index) {
 
 const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
     for (const Playhead& p : d.playheads)
-        if (p.id == selectedPlayhead)
+        if (p.id.value == ctx.selectedPlayhead)
             return &p;
     return d.playheads.empty() ? nullptr : &d.playheads.front();
 }
@@ -339,43 +339,65 @@ const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
 float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float knobTop) {
     float h = box.size.y;
     const Playhead* shown = shownPlayhead(d);
-    int own = int(devices::playheadInfo().params.size());
-    int deviceKnobs = int(devices::deviceInfo(d.type).params.size());
-    float chips = float(d.playheads.size() + 1) * (kChip + 4);
-    float knobs = float(shown ? own : 0) * kCell + kKnobGroupGap + float(deviceKnobs) * kCell;
-    Rect card(x, kPad, 2 * kCardPad + std::max(chips, knobs), h - 2 * kPad);
+    using namespace playheads::knob;
+    // One row, the settings reached for every few seconds; the rest is behind the playhead's menu.
+    enum class Control { Knob, Direction, Repeat, Channel, More };
+    struct Item {
+        Control control;
+        int param;
+        bool dial;
+    };
+    const Item items[] = {{Control::Knob, kRate, true},       {Control::Direction, -1, false},
+                          {Control::Repeat, -1, false},       {Control::Knob, kOctave, false},
+                          {Control::Knob, kKeySteps, false},  {Control::Knob, kNotes, false},
+                          {Control::Knob, kVelocity, false},  {Control::Channel, -1, false},
+                          {Control::More, -1, false}};
+    float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
+    float controls = float(std::size(items)) * kCell;
+    Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);
     parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
     Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
     parts.push_back({Kind::Menu, menu, index, -1, d.id.value});
-    for (size_t k = 0; k < d.modulators.size(); k++)
-        parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, kPad + 7, 10, 10), index, int(k),
-                         d.modulators[k].id.value});
-    parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
 
-    float chipY = kPad + kCardHeader + 4;
-    float cx = card.pos.x + kCardPad;
+    // The playheads, as chips beside the card's name.
+    float cx = card.pos.x + 96;
     for (size_t k = 0; k < d.playheads.size(); k++) {
-        parts.push_back({Kind::PlayheadChip, Rect(cx, chipY, kChip, kChipHeight), index, int(k),
+        parts.push_back({Kind::PlayheadChip, Rect(cx, kPad + 3, kChip, kChipHeight), index, int(k),
                          d.playheads[k].id.value});
         cx += kChip + 4;
     }
     if (int(d.playheads.size()) < playheads::kMaxPlayheads)
-        parts.push_back({Kind::AddPlayhead, Rect(cx, chipY, kChipHeight + 8, kChipHeight), index, -1, d.id.value});
+        parts.push_back({Kind::AddPlayhead, Rect(cx, kPad + 3, kChipHeight + 8, kChipHeight), index, -1, d.id.value});
+    parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
 
-    // Under the chips there is less room than on other cards, so the knobs sit lower.
-    float top = std::max(knobTop, chipY + kChipHeight + 2);
     float kx = card.pos.x + kCardPad;
-    auto addKnob = [&](int k, uint64_t owner, ParamRef::Kind kind) {
-        parts.push_back({Kind::KnobValue, Rect(kx, top + 52, kCell, 13), index, k, owner, kind});
-        parts.push_back({Kind::Knob, Rect(kx, top - 2, kCell, 54), index, k, owner, kind});
-        kx += kCell;
-    };
     if (shown)
-        for (int k = 0; k < own; k++)
-            addKnob(k, shown->id.value, ParamRef::Kind::Playhead);
-    kx += kKnobGroupGap;
-    for (int k = 0; k < deviceKnobs; k++)
-        addKnob(k, d.id.value, ParamRef::Kind::Device);
+        for (const Item& it : items) {
+            uint64_t id = shown->id.value;
+            Rect cell(kx, knobTop - 2, kCell, 54);
+            switch (it.control) {
+            case Control::Knob:
+                parts.push_back({Kind::CurveLabel, Rect(kx, knobTop + 40, kCell, 12), index, it.param, id,
+                                 ParamRef::Kind::Playhead});
+                parts.push_back({Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, it.param, id,
+                                 ParamRef::Kind::Playhead});
+                parts.push_back({Kind::Knob, cell, index, it.param, id, ParamRef::Kind::Playhead, it.dial});
+                break;
+            case Control::Direction:
+                parts.push_back({Kind::PlayheadDirection, cell, index, -1, id});
+                break;
+            case Control::Repeat:
+                parts.push_back({Kind::PlayheadRepeat, cell, index, -1, id});
+                break;
+            case Control::Channel:
+                parts.push_back({Kind::PlayheadChannel, cell, index, -1, id});
+                break;
+            case Control::More:
+                parts.push_back({Kind::PlayheadMore, Rect(kx + kCell / 2 - 13, knobTop + 6, 26, 26), index, -1, id});
+                break;
+            }
+            kx += kCell;
+        }
     parts.push_back({Kind::Card, card, index, -1, d.id.value});
     return card.getRight();
 }
@@ -559,8 +581,11 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             deviceActions::openModulatorMenu(ctx, ModulatorId(hit->id));
             break;
         case Kind::PlayheadChip:
-            selectedPlayhead = PlayheadId(hit->id);
+            ctx.selectedPlayhead = hit->id;
             deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
+            break;
+        case Kind::CurveLabel:
+            deviceActions::openKnobMenu(ctx, knobRef(*hit));
             break;
         default:
             break;
@@ -624,13 +649,28 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         deviceActions::openDeviceBrowser(ctx, t->id, -1);
         break;
     case Kind::PlayheadChip:
-        selectedPlayhead = PlayheadId(hit->id);
+        ctx.selectedPlayhead = hit->id;
+        break;
+    case Kind::PlayheadDirection:
+        deviceActions::openDirectionMenu(ctx, PlayheadId(hit->id));
+        break;
+    case Kind::PlayheadRepeat:
+        deviceActions::openRepeatMenu(ctx, PlayheadId(hit->id));
+        break;
+    case Kind::PlayheadChannel:
+        deviceActions::openChannelMenu(ctx, PlayheadId(hit->id));
+        break;
+    case Kind::PlayheadMore:
+        deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
+        break;
+    case Kind::CurveLabel:
+        deviceActions::showPlayheadCurve(ctx, hit->param);
         break;
     case Kind::AddPlayhead: {
         PlayheadId added;
         if (CommandPtr add = addPlayhead(m->song(), DeviceId(hit->id), m->ids(), &added)) {
             m->perform(std::move(add));
-            selectedPlayhead = added;
+            ctx.selectedPlayhead = added.value;
         }
         break;
     }
@@ -939,6 +979,10 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
     Rect r = card->rect;
     bool selected = ctx.selectedDevice == d.id.value;
     NVGcolor border = selected ? c.select : c.line0;
+    // The Playheads card takes the colour of the playhead it shows.
+    if (d.type == DeviceType::Playheads)
+        if (const Playhead* ph = shownPlayhead(d))
+            border = theme::playheadColor(ph->color);
     // A device modulator being mapped outlines its own device: the only one it may reach.
     if (ctx.mappingModulator) {
         ModulatorPlace place;
@@ -997,6 +1041,44 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
         case Kind::PlayheadChip:
             drawPlayheadChip(vg, d, p, hot);
             break;
+        case Kind::PlayheadDirection:
+        case Kind::PlayheadRepeat:
+        case Kind::PlayheadChannel: {
+            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
+            if (!ph)
+                break;
+            std::string label, value;
+            bool dim = false;
+            if (p.kind == Kind::PlayheadDirection) {
+                label = "Direction";
+                value = deviceActions::directionText(*ph);
+                dim = value == "Forward";
+            } else if (p.kind == Kind::PlayheadRepeat) {
+                label = "Repeat";
+                value = deviceActions::repeatText(*ph);
+                dim = value == "Off";
+            } else {
+                label = "Channel";
+                value = ph->channel == 0 ? "Own" : std::to_string(ph->channel);
+            }
+            drawDropdown(vg, p, label, value, dim, hot);
+            break;
+        }
+        case Kind::PlayheadMore: {
+            Vec m = p.rect.getCenter();
+            nvgBeginPath(vg);
+            nvgCircle(vg, m.x, m.y, 13);
+            nvgFillColor(vg, hot ? c.line0 : c.bg2);
+            nvgFill(vg);
+            nvgBeginPath(vg);
+            for (int k = -1; k <= 1; k++)
+                nvgCircle(vg, m.x + float(k) * 4.5f, m.y, 1.4f);
+            nvgFillColor(vg, c.text1);
+            nvgFill(vg);
+            draw::TextStyle more{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, more, m.x, p.rect.getBottom() + 14, "More");
+            break;
+        }
         case Kind::AddPlayhead: {
             draw::roundedRect(vg, p.rect, kChipHeight / 2, hot ? c.bg2 : nvgRGBAf(0, 0, 0, 0));
             draw::roundedRectStroke(vg, p.rect, kChipHeight / 2, hot ? c.line2 : c.line1, 1);
@@ -1023,6 +1105,31 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
     for (const Part& p : parts)
         if (p.kind == Kind::Knob && p.device == index)
             drawKnob(vg, p);
+    nvgRestore(vg);
+}
+
+void DeviceStrip::drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value,
+                               bool dim, bool hot) {
+    const theme::Palette& c = theme::colors();
+    nvgSave(vg);
+    if (dim)
+        nvgGlobalAlpha(vg, 0.5f);
+    float cx = part.rect.getCenter().x;
+    float top = part.rect.pos.y + 2;
+    Rect box(cx - 28, top + 9, 56, 20);
+    draw::roundedRect(vg, box, 4, hot ? c.line0 : c.bg2);
+    draw::TextStyle text{theme::fonts::ui(), 10.5f, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, text, cx - 3, box.getCenter().y, draw::ellipsize(vg, text, value, box.size.x - 16));
+    float ax = box.getRight() - 7, ay = box.getCenter().y;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, ax - 3, ay - 1.5f);
+    nvgLineTo(vg, ax, ay + 1.5f);
+    nvgLineTo(vg, ax + 3, ay - 1.5f);
+    nvgStrokeColor(vg, c.text1);
+    nvgStrokeWidth(vg, 1.2f);
+    nvgStroke(vg);
+    draw::TextStyle name{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, name, cx, top + 46, label);
     nvgRestore(vg);
 }
 
@@ -1073,11 +1180,23 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
         if (!lanes.empty())
             valueColor = deviceActions::laneColor(song, lanes.front());
     }
+    // A playhead's knobs take its colour; one left at its default draws quiet; one with a curve shows it.
+    bool curved = false, quiet = false;
+    if (ref.kind == ParamRef::Kind::Playhead)
+        if (const Playhead* ph = findPlayhead(song, PlayheadId(ref.owner))) {
+            if (!automated)
+                valueColor = theme::playheadColor(ph->color);
+            curved = std::any_of(ph->curves.begin(), ph->curves.end(),
+                                 [&](const PlayheadCurve& k) { return k.param == ref.param; });
+            quiet = !curved && std::fabs(base - devices::defaultNormalized(*info)) < 1e-4f;
+        }
     bool mapping = ctx.mappingModulator != 0;
     bool lit = mapping && reachableNow(ref);
     nvgSave(vg);
     if (mapping && !lit)
         nvgGlobalAlpha(vg, 0.3f);
+    else if (quiet)
+        nvgGlobalAlpha(vg, 0.5f);
 
     float cx = part.rect.getCenter().x;
     float top = part.rect.pos.y + 2;
@@ -1107,7 +1226,8 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
     if (amountPreview && amountPreview->first == ref && !mappedHere)
         rings.push_back({deviceActions::colorOf(ModulatorId(ctx.mappingModulator)), amountPreview->second});
 
-    switch (info->kind) {
+    devices::ParamInfo::Kind kind = part.dial ? devices::ParamInfo::Kind::Number : info->kind;
+    switch (kind) {
     case devices::ParamInfo::Kind::Choice: {
         Rect box(cx - 27, center.y - 10, 54, 20);
         bool hot = hovered >= 0 && &parts[size_t(hovered)] == &part;
@@ -1180,7 +1300,28 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
         draw::text(vg, a, badge.getCenter().x, badge.getCenter().y + 0.5f, "A");
         value.color = valueColor;
     }
-    draw::text(vg, label, cx, top + 46, draw::ellipsize(vg, label, info->name, kCell - 4));
+    if (curved) {
+        // A dotted ring: a curve moves this setting.
+        for (int k = 0; k < 24; k += 2) {
+            float a0 = float(k) / 24 * 2 * kPi;
+            nvgBeginPath(vg);
+            nvgArc(vg, center.x, center.y, kKnobRadius + 4, a0, a0 + kPi / 24, NVG_CW);
+            nvgStrokeColor(vg, valueColor);
+            nvgStrokeWidth(vg, 1.2f);
+            nvgStroke(vg);
+        }
+        label.color = valueColor;
+    }
+    std::string name = draw::ellipsize(vg, label, info->name, kCell - 4);
+    draw::text(vg, label, cx, top + 46, name);
+    if (curved || ref.kind == ParamRef::Kind::Playhead) {
+        // The label opens its curve: underlined when it has one, faintly when it could.
+        float w = draw::textWidth(vg, label, name);
+        nvgBeginPath(vg);
+        nvgRect(vg, cx - w / 2, top + 52, w, 1);
+        nvgFillColor(vg, curved ? valueColor : nvgTransRGBAf(c.text2, 0.4f));
+        nvgFill(vg);
+    }
     if (!shown.empty())
         draw::text(vg, value, cx, top + 58, shown);
     nvgRestore(vg);

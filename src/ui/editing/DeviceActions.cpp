@@ -1,6 +1,7 @@
 #include "DeviceActions.hpp"
 
 #include "../../model/Modulators.hpp"
+#include "../../model/Playheads.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../widgets/MenuTextField.hpp"
@@ -223,6 +224,158 @@ void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) 
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
 }
 
+const Device* playheadsDevice(EditorContext& ctx) {
+    const Track* t = track(ctx);
+    if (!t)
+        return nullptr;
+    for (const Device& d : t->devices)
+        if (d.type == DeviceType::Playheads)
+            return &d;
+    return nullptr;
+}
+
+const Playhead* shownPlayhead(EditorContext& ctx) {
+    const Device* d = playheadsDevice(ctx);
+    if (!d || d->playheads.empty())
+        return nullptr;
+    for (const Playhead& p : d->playheads)
+        if (p.id.value == ctx.selectedPlayhead)
+            return &p;
+    return &d->playheads.front();
+}
+
+namespace {
+
+/// A playhead setting's shown value (a choice's index, a number in its units).
+float playheadValue(const Playhead& p, int k) {
+    return devices::display(devices::playheadInfo().params[size_t(k)], p.params[size_t(k)]);
+}
+
+/// Sets several of a playhead's settings (in their display units) as one undo step. Each change is made on the song as
+/// the ones before left it: setting commands replace the whole chain.
+void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std::pair<int, float>>& values,
+                       const std::string& name) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    Song work = m->song();
+    auto all = std::make_unique<CompoundCommand>(name);
+    for (auto [k, v] : values) {
+        CommandPtr command = setParam(work, {ParamRef::Kind::Playhead, id.value, uint16_t(k)},
+                                      devices::normalize(devices::playheadInfo().params[size_t(k)], v));
+        if (command)
+            command->apply(work);
+        all->add(std::move(command));
+    }
+    if (!all->empty())
+        m->perform(std::move(all));
+}
+
+const char* const kDirections[] = {"Forward", "Backward", "Ping-pong", "Freeze"};
+const char* const kOrders[] = {"In order", "Outside in", "Inside out", "Odd then even", "Shuffle"};
+
+} // namespace
+
+std::string directionText(const Playhead& p) {
+    using namespace playheads::knob;
+    int order = int(playheadValue(p, kOrder));
+    if (order > 0)
+        return kOrders[std::clamp(order, 0, 4)];
+    return kDirections[std::clamp(int(playheadValue(p, kDirection)), 0, 3)];
+}
+
+std::string repeatText(const Playhead& p) {
+    using namespace playheads::knob;
+    int size = int(playheadValue(p, kRepeatSize));
+    if (size == 0)
+        return "Off";
+    return playheads::repeatNames()[size_t(size)] + " ×" + std::to_string(int(playheadValue(p, kRepeatTimes)));
+}
+
+void openDirectionMenu(EditorContext& ctx, PlayheadId id) {
+    TesseraModule* m = moduleOf(ctx);
+    const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
+    if (!p)
+        return;
+    using namespace playheads::knob;
+    int direction = int(playheadValue(*p, kDirection)), order = int(playheadValue(*p, kOrder));
+    int step = int(playheadValue(*p, kOrderStep));
+    EditorContext* c = &ctx;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Direction"));
+    for (int d = 0; d < 4; d++)
+        menu->addChild(rack::createCheckMenuItem(
+            kDirections[d], "", [=] { return order == 0 && direction == d; },
+            [c, id, d] { setPlayheadValues(*c, id, {{kDirection, float(d)}, {kOrder, 0}}, "Set direction"); }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Steps in another order"));
+    const std::vector<std::string>& steps = playheads::orderStepNames();
+    for (int o = 1; o < 5; o++)
+        menu->addChild(rack::createSubmenuItem(
+            kOrders[o], order == o ? steps[size_t(step)] + " ✓" : "", [=, &steps](rack::ui::Menu* sub) {
+                sub->addChild(rack::createMenuLabel("Step size"));
+                for (int s = 0; s < int(steps.size()); s++)
+                    sub->addChild(rack::createCheckMenuItem(
+                        steps[size_t(s)], "", [=] { return order == o && step == s; }, [c, id, o, s] {
+                            setPlayheadValues(*c, id, {{kOrder, float(o)}, {kOrderStep, float(s)}}, "Set order");
+                        }));
+            }));
+}
+
+void openRepeatMenu(EditorContext& ctx, PlayheadId id) {
+    TesseraModule* m = moduleOf(ctx);
+    const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
+    if (!p)
+        return;
+    using namespace playheads::knob;
+    int size = int(playheadValue(*p, kRepeatSize)), times = int(playheadValue(*p, kRepeatTimes));
+    EditorContext* c = &ctx;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Repeat each piece"));
+    menu->addChild(rack::createCheckMenuItem("Off", "", [size] { return size == 0; },
+                                             [c, id] { setPlayheadValues(*c, id, {{kRepeatSize, 0}}, "Stop repeating"); }));
+    const std::vector<std::string>& sizes = playheads::repeatNames();
+    for (int s = 1; s < int(sizes.size()); s++)
+        menu->addChild(rack::createSubmenuItem(sizes[size_t(s)], size == s ? "×" + std::to_string(times) : "",
+                                               [=](rack::ui::Menu* sub) {
+                                                   for (int t = 2; t <= 8; t++)
+                                                       sub->addChild(rack::createCheckMenuItem(
+                                                           "×" + std::to_string(t), "",
+                                                           [=] { return size == s && times == t; }, [c, id, s, t] {
+                                                               setPlayheadValues(*c, id,
+                                                                                 {{kRepeatSize, float(s)},
+                                                                                  {kRepeatTimes, float(t)}},
+                                                                                 "Set repeat");
+                                                           }));
+                                               }));
+}
+
+void openChannelMenu(EditorContext& ctx, PlayheadId id) {
+    TesseraModule* m = moduleOf(ctx);
+    const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
+    if (!p)
+        return;
+    EditorContext* c = &ctx;
+    int channel = p->channel;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Channel (pick it on a Track Out)"));
+    for (int ch = 1; ch <= 16; ch++)
+        menu->addChild(rack::createCheckMenuItem(
+            std::to_string(ch), "", [channel, ch] { return channel == ch; }, [c, id, ch] {
+                if (TesseraModule* mod = c->module())
+                    mod->perform(setPlayheadChannel(mod->song(), id, ch));
+            }));
+    menu->addChild(rack::createCheckMenuItem("Each note's own", "", [channel] { return channel == 0; }, [c, id] {
+        if (TesseraModule* mod = c->module())
+            mod->perform(setPlayheadChannel(mod->song(), id, 0));
+    }));
+}
+
+void showPlayheadCurve(EditorContext& ctx, int param) {
+    ctx.playheadCurve = param;
+    ctx.view().lowerLane = kPlayheadCurveLane;
+}
+
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
     TesseraModule* m = moduleOf(ctx);
     const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
@@ -254,6 +407,25 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
     menu->addChild(rack::createCheckMenuItem(
         "Solo", "", [solo] { return solo; },
         [run, id, solo] { run([&](const Song& s, TesseraModule*) { return setPlayheadSolo(s, id, !solo); }); }));
+    // The rarer settings, each its own choice list.
+    menu->addChild(new rack::ui::MenuSeparator);
+    using namespace playheads::knob;
+    for (int k : {kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
+        const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
+        float now = playheadValue(*p, k);
+        std::vector<std::string> choices =
+            info.kind == devices::ParamInfo::Kind::Toggle ? std::vector<std::string>{"Off", "On"} : info.choices;
+        menu->addChild(rack::createSubmenuItem(
+            info.name, choices[size_t(std::clamp(int(now), 0, int(choices.size()) - 1))], [=](rack::ui::Menu* sub) {
+                for (int i = 0; i < int(choices.size()); i++)
+                    sub->addChild(rack::createCheckMenuItem(
+                        choices[size_t(i)], "", [now, i] { return int(now) == i; },
+                        [c, id, k, i, name = std::string(info.name)] {
+                            setPlayheadValues(*c, id, {{k, float(i)}}, "Set " + name);
+                        }));
+            }));
+    }
+    menu->addChild(rack::createMenuItem("Draw its path in the time map", "", [c] { c->view().lowerLane = kTimeMapLane; }));
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Duplicate", "", [run, id] {
         run([&](const Song& s, TesseraModule* mod) { return duplicatePlayhead(s, id, mod->ids()); });

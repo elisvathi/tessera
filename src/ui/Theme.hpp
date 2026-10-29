@@ -120,6 +120,7 @@ constexpr float kTextRuler = 10;
 constexpr float kTransportHeight = 40;
 constexpr float kMarkerRow = 14;
 constexpr float kLoopStrip = 12;
+constexpr float kSegmentRow = 16; // the piano roll ruler's row of playhead segments, when the track has playheads
 constexpr float kTimeRuler = 20;
 constexpr float kOverview = 8;
 // The in-panel editor's thinner ruler strips: a module is only 380 px tall.
