@@ -204,6 +204,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
                     attachExtras(loop.notes.back(), note, out.extras, clip.id.value, region.start, region.length, true);
                 }
             sortEvents(loop.notes);
+            loop.notesByEnd = playheads::orderByEnd(loop.notes);
             out.laneLoops.push_back(std::move(loop));
             ownLoopPitches.push_back(lane.pitch);
         }

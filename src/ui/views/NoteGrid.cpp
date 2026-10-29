@@ -960,12 +960,13 @@ bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
         return false;
     bool solo = std::any_of(device->playheads.begin(), device->playheads.end(),
                             [](const Playhead& p) { return p.solo && !p.mute; });
-    double start = double(clip->playStart());
+    // The region is the whole span: a drum clip's lane cycle, as the engine reads it.
+    ClipSpan span = clipSpan(*clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr);
     for (const Playhead& p : device->playheads) {
         if (p.mute || (solo && !p.solo))
             continue;
-        playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), start,
-                                                         double(clip->playEnd()) - start, owner.timeSig());
+        playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), double(span.start),
+                                                         double(span.length()), owner.timeSig());
         float x = float(time().tickToX(playheads::positionAt(motion, elapsed)));
         if (x < -2 || x > box.size.x + 2)
             continue;

@@ -114,6 +114,10 @@ The device's own knobs, after a small gap:
 | **Restart**, **Restart bars** | Every playhead goes back to its start when the clip starts, or also every so many bars. |
 | **Same note** | When two playheads play the same note at the same moment: play it once, or play each. |
 
+On a drum clip whose lanes have their own length, the region is the whole lane cycle, and each lane repeats on its own
+length under every playhead. Note operators (chance, repeats…) and note curves work as usual; each playhead makes its
+own chance choices.
+
 **When a note plays.** Going forward, a playhead plays a note when it reaches the note's start. Going backward, it plays
 it when it reaches the note's end, so the order of the notes is reversed but each note still sounds normally. A
 playhead that jumps (a repeat, a restart) into the middle of a note doesn't start it.
@@ -140,12 +144,6 @@ Each playhead puts its **channel** on the notes it plays: Playhead 1 on channel 
 A Track Out plays **All channels** unless you pick one. To give Playhead 2 its own sound, add a second Track Out for the
 same track, click its screen and pick **Channel 2**, and patch it to another voice. See
 [Track Out](02-modules.md#track-out).
-
-### Not yet
-
-This is a first version, to try the idea:
-
-- Drum lanes with their own length, note operators (chance, repeats…) and note curves are not read by playheads yet.
 
 ## Modulators
 

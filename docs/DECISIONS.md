@@ -1462,5 +1462,8 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   is counted in the playhead's time, and the engine adds up rate × time sample by sample, so a modulated or
   automated Rate changes speed from where the playhead is. A jump (launch, seek, restart, a new timeline clip)
   starts the count again from the pure formula. Lines in the editor and MIDI export use the pure formula.
-- **Not yet:** drum lanes with their own length, note operators and curves, the time map, drawn paths, note motion,
-  and a Drum Out picker.
+- **Drum lane cycles, operators and curves** (added the same day): the region is the clip's whole span (its lane
+  cycle); the pattern and each lane with its own length are folded onto their own period, so polymeter survives
+  every playhead. Notes playheads play run through note operators; a playhead's pass is its own time over its
+  region, with its place mixed in, so two playheads make their own chance choices.
+- **Not yet:** the time map, drawn paths, note motion, and a Drum Out picker.

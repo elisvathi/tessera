@@ -47,6 +47,7 @@ struct LaneLoop {
     Tick start = 0; // clip ticks
     Tick length = 0;
     std::vector<NoteEvent> notes; // sorted by start, all inside [start, start + length)
+    std::vector<uint32_t> notesByEnd; // for playheads going backwards
 };
 
 /// One automation lane as the engine plays it (muted lanes are left out).
