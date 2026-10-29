@@ -155,9 +155,11 @@ std::vector<TypeInfo> buildModulators() {
                                       {choice("Follows", {"Velocity", "Pitch", "Release", "Timbre", "Pressure"}, 0),
                                        exponential("Smooth", 1, 2000, 1, "ms")}};
     t[size_t(ModulatorType::Curve)] = {"Curve",
+                                       // Sync, Rate and Restart are kept so saved knobs keep their places, but a
+                                       // curve always runs with the song; only Counts in is read.
                                        {toggle("Sync", true), exponential("Rate", 0.01f, 20, 0.5f, "Hz"),
                                         choice("Restart", {"Free", "Each bar", "Each note"}, 0),
-                                        toggle("Per pass", false)}};
+                                        choice("Counts in", {"Time", "Passes"}, 0)}};
     auto about = [&t](ModulatorType type, const char* group, const char* description, const char* keywords) {
         TypeInfo& info = t[size_t(type)];
         info.group = group;

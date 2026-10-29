@@ -96,8 +96,7 @@ void playheadKnobsAt(const Song& song, const Track& track, const Device& device,
                 return devices::display(devices::modulatorInfo(m.type).params[size_t(i)], k[i]);
             };
             bool songOnly =
-                (m.type == ModulatorType::Curve && shown(mods::knob::kCurveSync) > 0.5f &&
-                 shown(mods::knob::kCurveRestart) < 1.5f) ||
+                m.type == ModulatorType::Curve ||
                 (m.type == ModulatorType::Lfo && shown(mods::knob::kSync) > 0.5f &&
                  shown(mods::knob::kRestart) < 1.5f) ||
                 ((m.type == ModulatorType::Steps || m.type == ModulatorType::Ramp) && !mods::perPass(m.type, k)) ||

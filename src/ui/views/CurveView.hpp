@@ -15,8 +15,9 @@ class TesseraModule;
 /// The piano roll's lower pane as a Curve modulator's shape: a drawn line that repeats, under the notes it moves.
 /// Up and down are in the units of the setting it moves (its first route): a setting with steps, such as Octave or
 /// a playhead's Steps, shows one row per value and points snap to them; the middle line is the setting as set.
-/// Synced, a bar at the top with ▶ ◀ ends sets how long a cycle lasts; points are added with a click, dragged, and
-/// deleted with a double-click. With no modulator yet (EditorContext::curveTarget), the first point adds one.
+/// A header row holds Counts in (Time or Passes), ready shapes and Remove; under it, a bar drawn like a playhead's
+/// segment sets how long a cycle lasts (drag its right grip). Points are added with a click, dragged, and deleted
+/// with a double-click. With no modulator yet (EditorContext::curveTarget), the first point or shape adds one.
 class CurveView : public InteractiveView {
   public:
     CurveView(EditorContext& ctx, PianoRollView& owner) : InteractiveView(ctx), owner(owner) {}
@@ -31,7 +32,8 @@ class CurveView : public InteractiveView {
     // What a running drag shows before it is committed: the points and the length.
     std::optional<std::pair<std::vector<AutoPoint>, Tick>> preview;
 
-    static constexpr float kBar = 18;      // the length bar at the top
+    static constexpr float kHead = 24;      // the header row: Counts in, shapes, Remove
+    static constexpr float kBar = 18;       // the length bar, under the header
     static constexpr float kPassWidth = 72; // one pass across, per pass
     static constexpr float kPassLeft = 46;  // where pass 1 starts, per pass (room for the row labels)
 
@@ -49,8 +51,6 @@ class CurveView : public InteractiveView {
     ParamRef target();
     /// What that setting is, its value as set (normalized) and how far the curve turns it (-1..1).
     const devices::ParamInfo* targetInfo(float* base = nullptr, float* amount = nullptr);
-    /// Whether the cycle follows the song (Sync on, or Per pass): only then does the bar set its length.
-    bool synced();
     /// Whether the curve steps once a pass (Per pass): across are passes, not the piano roll's time.
     bool perPass();
     /// The points and length shown: the dragged ones, the modulator's, or none over a bar.
@@ -68,8 +68,22 @@ class CurveView : public InteractiveView {
     Tick snap();
     /// What the setting reads when the curve is at `v` (0..1), as its knob shows it.
     std::string format(float v);
+    /// How long a cycle of `length` is, in the curve's own count: "2 bars", "3 beats", "4 passes".
+    std::string lengthLabel(Tick length);
 
   private:
+    /// One clickable part of the header row, rebuilt when needed.
+    struct HeaderPart {
+        enum class Kind { Time, Passes, Shape, Remove } kind;
+        rack::math::Rect rect;
+        int shape = -1;
+    };
+    std::vector<HeaderPart> headerParts();
+    /// Counts the cycle in passes or in time, keeping the drawing's look over the new cycle. One undo step.
+    void setCounting(bool passes);
+    /// Replaces the drawing with ready shape `index` over the cycle (making the curve if there is none yet).
+    void applyShape(int index);
+    void drawHeader(NVGcontext* vg, NVGcolor color);
     void openMenu();
     PianoRollView& owner;
 };

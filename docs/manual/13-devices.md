@@ -129,8 +129,10 @@ the playhead and the setting, such as "Bass Steps". Up and down are in the setti
 each row is one value and points snap to the rows; hold **Alt** to place them between rows. The dashed line in the
 middle is the setting as you set it on the knob. A setting with many values, such as Steps, moves at most 7 either
 way. The knob's ring shows the amount; change it there or in the modulator's settings. Drag points, double-click to
-delete one, right-click for ready shapes, sync, restart, or to delete the curve. The bar on top, with ▶ ◀ ends, sets
-how long a cycle lasts before it repeats; drag its ◀. A knob with a curve has a dotted ring and its name underlined.
+delete one. The row on top holds **Counts in** (**Time** or **Passes**), ready **Shapes** and **Remove curve**. Under
+it, a bar drawn like a playhead's segment says how long a cycle lasts, such as "repeats every 2 bars"; drag its right
+grip to change it (it snaps to the grid). A curve always runs with the song, from its start. A knob with a curve has a
+dotted ring and its name underlined.
 
 **Moved notes.** When the shown playhead plays notes at another pitch (its Octave, Steps or Invert, or a curve on
 them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's
@@ -203,7 +205,7 @@ on the track can join the same Motion device.
 
 **Its knobs.** **Pitch** (steps, in the key unless **In key** is off), **Time** (a delay in 1/16 steps), **Length**
 and **Velocity**. To make them change, click a knob's name: its curve opens in the lower pane (see
-[Modulators](#modulators)). A curve with **Timing: Per pass** takes one value each pass of the clip, so "up one step a
+[Modulators](#modulators)). A curve that **Counts in: Passes** takes one value each pass of the clip, so "up one step a
 pass for four passes, then back" is four points. Right-click a knob for **Drift per pass**, a ready-made version of
 that. Any modulator or automation lane can move these knobs too.
 
@@ -239,13 +241,13 @@ top chooses where it lives:
 | **Ramp** | Rises or falls over several bars: builds and fades. | Length (bars), Direction, Then (Hold or Loop), Curve. |
 | **Macro** | One knob you turn (or automate) that moves many knobs at once. | Value. |
 | **Note** | Follows the last note. | Follows (Velocity, Pitch, Release, Timbre, Pressure), Smooth. |
-| **Curve** | A shape you draw that repeats, like an LFO you draw yourself. | Sync, Rate, Restart (Free, Each bar, Each note). |
+| **Curve** | A shape you draw that repeats, like an LFO you draw yourself. | Counts in (Time or Passes). |
 
 **Curve** opens its shape in the piano roll's lower pane, under the notes it moves: click its row, or pick it in the
-lower pane's menu under **Curves**. Right-click the curve for its **Timing**: **Synced**, one cycle lasts as long as
-the bar on top of the curve, and you set that by dragging the bar's ◀; **Free**, **Rate** sets how many cycles play
-each second; **Per pass**, the curve takes one value each pass of the clip, drawn as one step a pass across the pane,
-and the bar's ◀ sets how many passes before it starts again. The curve's middle line means "no
+lower pane's menu under **Curves**. It always runs with the song, from its start. **Counts in: Time**: one cycle
+lasts as long as the bar over the curve, on the grid; drag the bar's right grip. **Counts in: Passes**: the curve takes
+one value each pass of the clip, drawn as one step a pass across the pane, and the bar says how many passes before it
+starts again. For a wave that runs at its own speed in Hz, use an **LFO**. The curve's middle line means "no
 change": above it moves its knobs up, below it moves them down, by the amount on each knob. Up and down are labelled
 in the units of the first knob it moves.
 

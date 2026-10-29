@@ -123,8 +123,11 @@ class StepsDrag : public DragGesture {
     Rect area;
 };
 
-/// An LFO shows the one rate that applies: the synced length while Sync is on, else hertz.
+/// An LFO shows the one rate that applies: the synced length while Sync is on, else hertz. A Curve shows only Counts
+/// in: its length is the bar over its drawing, and it always runs with the song.
 bool settingShown(const Modulator& m, int index) {
+    if (m.type == ModulatorType::Curve)
+        return index == mods::knob::kCurvePerPass;
     if (m.type != ModulatorType::Lfo || m.params.size() <= size_t(mods::knob::kSyncedRate))
         return true;
     bool synced = m.params[size_t(mods::knob::kSync)] >= 0.5f;

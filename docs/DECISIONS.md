@@ -1446,6 +1446,9 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **A Curve runs with the song** (30 Oct). Its timing was Sync, Rate (Hz), Restart and Per pass, which overlapped and
+  confused. Now one bar sets its length on the grid and one switch says what it counts in: Time or Passes. The old
+  knobs stay stored (the list only grows) but are not read; free-running speed in Hz is the LFO's job.
 - **The piano roll is a canvas for playheads** (29 Oct). A segment is a place on the piano roll, counted from its
   start, not from the clip's loop: it can sit past the clip's end and reads the notes written there; empty space is
   silent. The clip's loop only gives a new segment its first place. **Start and Offset are no longer read**: a
