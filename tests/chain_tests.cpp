@@ -1439,3 +1439,20 @@ TEST_CASE("engine: a playhead's branch changes only that playhead's notes") {
             sounding.insert(h.pitch(v));
     CHECK(sounding == std::multiset<int>{67, 79}); // both playheads on the 60: one up a fifth, one up an octave too
 }
+
+TEST_CASE("engine: changing a playhead's rate while it plays changes its speed, without a jump") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(1000 * kSamplesPerTick);
+    CHECK(h.pitch() == 62);
+    // Twice as fast from tick 1000: the 64 (at 1920) comes 460 ticks later; 2x from the start would play the 65 by then.
+    float twice = devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10); // "2x"
+    h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kRate] = twice;
+    h.republish();
+    h.runTo(1480 * kSamplesPerTick);
+    CHECK(h.gate());
+    CHECK(h.pitch() == 64);
+}

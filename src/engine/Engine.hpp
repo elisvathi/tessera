@@ -349,6 +349,14 @@ class Engine {
         std::array<const NoteExtras*, kMaxVoices> voiceExtras{};
         std::array<double, kMaxVoices> voiceStart{}, voiceLength{};
         std::array<uint8_t, kMaxVoices> voicePart{}; // the channel of each voice's note
+        /// Each playhead's own time (elapsed times its rate, added up as the rate moves), and the clip time and
+        /// restart it was counted to, so a moving Rate changes speed instead of making the playhead jump.
+        struct PlayheadClock {
+            double own = 0;
+            double until = NAN;
+            double restart = 0;
+        };
+        std::array<PlayheadClock, playheads::kMaxPlayheads> playheadClocks{};
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
         std::array<uint64_t, kMaxVoices> voiceClip{}, voiceNote{};

@@ -13,7 +13,8 @@
 ///
 /// Three kinds of time meet here:
 /// - elapsed: song ticks since the clip started (what the caller has);
-/// - travel: how far the playhead has moved, in clip ticks (elapsed bent by the bend shape, times the rate);
+/// - travel: how far the playhead has moved, in clip ticks (elapsed times the rate, then bent by the bend shape,
+///   whose cycle is counted in the playhead's own time);
 /// - position: where in the clip it is, after region wraps, repeats, ping-pong turns and the start.
 namespace tessera::playheads {
 
@@ -57,7 +58,7 @@ struct Motion {
     int repeatTimes = 1;
     Bend bend = Bend::Straight;
     double bendAmount = 0; // 0..1
-    double bendCycle = 0;  // elapsed ticks; 0 = no bend
+    double bendCycle = 0;  // the playhead's own ticks (elapsed times rate); 0 = no bend
     double restartEvery = 0; // elapsed ticks; 0 = only when the clip starts
 };
 

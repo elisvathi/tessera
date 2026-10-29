@@ -1458,5 +1458,9 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   its playhead's place (a "lane"); a note carries the lane of the playhead that read it and skips other lanes'
   stages. So one chain and one message queue per track still serve every branch. The strip shows only the selected
   playhead's branch, on a band in its colour; branch cards can't be dragged and have no modulators of their own yet.
-- **Not yet:** drum lanes with their own length, note operators and curves,
-  the time map, drawn paths, note motion, a Drum Out picker, and changing Rate smoothly while it plays.
+- **Rate is applied before bend, and the engine counts each playhead's own time** (added the same day): a bend cycle
+  is counted in the playhead's time, and the engine adds up rate × time sample by sample, so a modulated or
+  automated Rate changes speed from where the playhead is. A jump (launch, seek, restart, a new timeline clip)
+  starts the count again from the pure formula. Lines in the editor and MIDI export use the pure formula.
+- **Not yet:** drum lanes with their own length, note operators and curves, the time map, drawn paths, note motion,
+  and a Drum Out picker.
