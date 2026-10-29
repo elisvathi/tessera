@@ -43,6 +43,7 @@ A track holds up to 16 devices.
 | **Random** | Changes pitches and drops notes, differently on each pass. | Pitch (steps), In key, Drop (chance to skip a note). |
 | **Groove** | Swings this track its own way, in place of the song's swing: a straight bass under swung drums, or extra-swung hats. Turn its Swing with an LFO or a lane to ride it. A new Groove starts on the grid most of the track's off-beat notes sit on. | Swing (50% straight to 75%), Grid (1/16 or 1/8). |
 | **Note Filter** | Lets only some notes through. | Lowest, Highest, Min velocity, Max velocity, Every (play every Nth note), Offset, Channel (Any or 1 to 16). |
+| **Motion** | Moves the notes that joined it, a little differently on each pass. See [Notes that drift](#notes-that-drift). | Pitch (steps), Time (a delay in 1/16 steps), Length, Velocity, In key. |
 
 **Playheads** is different from the others: it doesn't change notes, it reads the clip. See
 [Playheads](#playheads) below.
@@ -82,7 +83,8 @@ The **Playheads** device reads the playing clip with several playheads at once. 
 its own way: slower, faster, backwards, in another order, an octave down, only the lowest notes… One melody becomes a
 canon, a bass and a melody, or a texture that keeps shifting.
 
-It is the first entry in the device browser, and it always sits first in the chain. A track holds one. While it is on,
+It is the first entry in the device browser, and it sits first in the chain: only Motion devices may come before it
+(see [Notes that drift](#notes-that-drift)). A track holds one. While it is on,
 it replaces the clip's own playhead; turn it off with its power button and the clip plays as usual. The playheads
 belong to the track: launch another clip and the same playheads read it.
 
@@ -115,8 +117,8 @@ start and a ◀ at its end: the part of the clip that playhead plays, over and o
 move it. A white tick inside shows where the playhead starts; drag it to start it later. The other playheads' segments
 show as thin lines in their colours.
 
-**Curves.** Any setting can move by itself. Click a knob's name and a curve for it opens in the piano roll's lower
-pane. Click to add a point: that makes a **Curve** modulator on the track (see [Modulators](#modulators)), named after
+**Curves.** Any setting can move by itself, on this card or any device card. Click a knob's name and a curve for it
+opens in the piano roll's lower pane. Click to add a point: that makes a **Curve** modulator on the track (see [Modulators](#modulators)), named after
 the playhead and the setting, such as "Bass Steps". Up and down are in the setting's own units. For Steps or Octave,
 each row is one value and points snap to the rows; hold **Alt** to place them between rows. The dashed line in the
 middle is the setting as you set it on the knob. A setting with many values, such as Steps, moves at most 7 either
@@ -184,14 +186,33 @@ voice and the straight ones to another.
 
 ### Notes that drift
 
-Select notes and click **+ Add motion** in the inspector's **MOTION** section. The notes join a motion group (a small
-corner in the group's colour marks them) with five knobs: **Pitch** (steps), **Time** (a delay in 1/16 steps),
-**Length**, **Velocity** and **In key**. The written notes never change; the motion plays on top of them.
+A **Motion** device moves some of your notes while the clip plays: a few notes rise one step each pass and fall back,
+a note slides later and later, velocities swell. The written notes never change; the motion plays on top of them.
 
-Right-click a knob for **Drift per pass**: it adds a Steps modulator, set to **Per pass**, that moves the knob a
-little more on each pass of the clip, then back down or from the start again. Any modulator or automation lane can
-move these knobs too. With playheads, each playhead counts its own passes. MIDI export with devices applied plays the
-drift.
+**Which notes.** Select notes in the piano roll, right-click one and choose **Motion › New motion**. That adds a Motion
+device, named "Motion 1" in a colour of its own, and the notes join it. A small corner in that colour marks them. To
+add more notes later, select them and click **+ Selected** on the card, or use **Motion ›** again. The chip beside it
+(**6 notes**) selects the card's notes in the piano roll. **Motion › Leave motion** takes notes out. The inspector's
+**MOTION** line says which Motion device the selected notes move with, and opens the same choices. Notes from any clip
+on the track can join the same Motion device.
+
+**Its knobs.** **Pitch** (steps, in the key unless **In key** is off), **Time** (a delay in 1/16 steps), **Length**
+and **Velocity**. To make them change, click a knob's name: its curve opens in the lower pane (see
+[Modulators](#modulators)). A curve with **Timing: Per pass** takes one value each pass of the clip, so "up one step a
+pass for four passes, then back" is four points. Right-click a knob for **Drift per pass**, a ready-made version of
+that. Any modulator or automation lane can move these knobs too.
+
+**Where it sits.** A new Motion device goes before the Playheads device, the only place in front of it:
+
+- **Before Playheads:** the notes move inside the clip, and every playhead reads them where they moved to. A note
+  pushed later is reached later by a playhead going forward, earlier by one going backward, sooner by a fast one.
+  Passes are the clip's, so every playhead hears the same drift.
+- **After Playheads** (drag the card there): each note moves as a playhead plays it, and each playhead counts its own
+  passes, so the melody and the bass drift apart.
+- **In one playhead's own devices:** only that playhead's notes move.
+
+Without playheads, a Motion device moves its notes wherever it sits in the chain. MIDI export with devices applied
+plays the motion.
 
 ## Modulators
 
@@ -216,8 +237,10 @@ top chooses where it lives:
 | **Curve** | A shape you draw that repeats, like an LFO you draw yourself. | Sync, Rate, Restart (Free, Each bar, Each note). |
 
 **Curve** opens its shape in the piano roll's lower pane, under the notes it moves: click its row, or pick it in the
-lower pane's menu under **Curves**. Synced, one cycle lasts as long as the bar on top of the curve, and you set that by
-dragging the bar's ◀. With Sync off, **Rate** sets how many cycles play each second. The curve's middle line means "no
+lower pane's menu under **Curves**. Right-click the curve for its **Timing**: **Synced**, one cycle lasts as long as
+the bar on top of the curve, and you set that by dragging the bar's ◀; **Free**, **Rate** sets how many cycles play
+each second; **Per pass**, the curve takes one value each pass of the clip, drawn as one step a pass across the pane,
+and the bar's ◀ sets how many passes before it starts again. The curve's middle line means "no
 change": above it moves its knobs up, below it moves them down, by the amount on each knob. Up and down are labelled
 in the units of the first knob it moves.
 
