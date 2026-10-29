@@ -88,8 +88,8 @@ It is the first entry in the device browser, and it sits first in the chain: onl
 it replaces the clip's own playhead; turn it off with its power button and the clip plays as usual. The playheads
 belong to the track: launch another clip and the same playheads read it.
 
-It starts with two playheads: **Playhead 1** plays the clip as before, **Playhead 2** starts a beat later, so you hear a
-canon at once. Each playhead shows as a line in its colour over the notes (the one the card shows is bolder); the
+It starts with two playheads, both reading the whole clip from its start. Change one's **Rate**, segment or start to
+hear them part. Each playhead shows as a line in its colour over the notes (the one the card shows is bolder); the
 clip's own playhead stays as a faint grey line.
 
 **The card.** The chips beside its name are the playheads: click one to show it (the card takes its colour), **+** adds

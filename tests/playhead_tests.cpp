@@ -247,7 +247,7 @@ TEST_CASE("a new Playheads device comes first with two playheads, a beat apart, 
     CHECK(d.playheads[1].channel == 2);
     const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
     CHECK(devices::display(start, d.playheads[0].params[playheads::knob::kStart]) == 0);
-    CHECK(devices::display(start, d.playheads[1].params[playheads::knob::kStart]) == 4);
+    CHECK(devices::display(start, d.playheads[1].params[playheads::knob::kStart]) == 0);
     CHECK(d.playheads[0].id != d.playheads[1].id);
 
     SUBCASE("a track takes only one") {
@@ -361,6 +361,8 @@ TEST_CASE("MIDI export with devices applied plays what the playheads read") {
     PlayheadId second = firstDevice(song).playheads[1].id;
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, second.value, uint16_t(playheads::knob::kDirection)},
                                  devices::normalize(devices::playheadInfo().params[playheads::knob::kDirection], 1)));
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, second.value, uint16_t(playheads::knob::kStart)},
+                                 devices::normalize(devices::playheadInfo().params[playheads::knob::kStart], 4)));
 
     render::Options o;
     std::vector<std::pair<double, int>> got;
