@@ -97,6 +97,21 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
         slots.push_back({d.type, d.on, d.affectDrumLanes, d.id.value,
                          knobs[{int(ParamRef::Kind::Device), d.id.value}].value.data()});
 
+    // Motion devices' knobs take "Per pass" modulators per note, at its pass (passKnob), not as time runs.
+    std::vector<uint64_t> motions;
+    for (const chain::DeviceSlot& s : slots)
+        if (s.type == DeviceType::Motion)
+            motions.push_back(s.id);
+    auto perPassOnMotion = [&](const Modulator& m, const Modulation& r) {
+        return r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
+               std::find(motions.begin(), motions.end(), r.target.owner) != motions.end() &&
+               mods::perPass(m.type, m.params.data());
+    };
+    struct PassKnobs {
+        const Song* song;
+        const std::vector<Running>* running;
+    } passKnobs{&song, &running};
+
     Scale songKey = resolveScale(song.scale, song.customScales);
     chain::Context context;
     context.devices = slots.data();
@@ -107,6 +122,23 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
     context.timeSig = song.timeSig;
     context.seed = song.seed;
     context.songOffset = 0; // the chain runs in song ticks here
+    context.passUser = &passKnobs;
+    context.passKnob = [](const void* user, const chain::DeviceSlot& d, int k, int64_t pass) {
+        const PassKnobs& p = *static_cast<const PassKnobs*>(user);
+        float v = d.knobs[k];
+        for (const Running& r : *p.running) {
+            const Modulator& m = *r.modulator;
+            if (!mods::perPass(m.type, m.params.data()))
+                continue;
+            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            for (const Modulation& route : m.routes)
+                if (route.kind == Modulation::Kind::Param && route.target.kind == ParamRef::Kind::Device &&
+                    route.target.owner == d.id && route.target.param == k)
+                    v += route.amount * mods::passValue(m.type, m.id.value, m.params.data(), pass, p.song->timeSig,
+                                                        m.steps.data(), int(m.steps.size()), &drawn);
+        }
+        return std::clamp(v, 0.f, 1.f);
+    };
 
     mods::Clock clock;
     clock.timeSig = song.timeSig;
@@ -146,7 +178,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
                             laneSets(lane, evaluate(lane, *ct), lane.combine == CombineMode::Modulate);
         for (const Running& r : running)
             for (const Modulation& route : r.modulator->routes) {
-                if (route.kind != Modulation::Kind::Param)
+                if (route.kind != Modulation::Kind::Param || perPassOnMotion(*r.modulator, route))
                     continue;
                 auto it = knobs.find({int(route.target.kind), route.target.owner});
                 if (it != knobs.end() && route.target.param < it->second.value.size())
@@ -169,6 +201,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             cn.channel = n.channel;
             cn.lane = n.lane;
             cn.extras = n.source;
+            cn.motion = n.source ? n.source->motion.value : 0;
             cn.origin = n.origin;
             cn.pass = n.pass;
             mods::NoteValues values;

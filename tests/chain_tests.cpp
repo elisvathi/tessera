@@ -1479,18 +1479,16 @@ TEST_CASE("engine: note operators still apply to the notes playheads play") {
     CHECK(starts == 2);
 }
 
-TEST_CASE("engine: a note in a motion group drifts pass by pass with a Per pass Steps modulator") {
+TEST_CASE("engine: a note in a Motion device drifts pass by pass with a Per pass Steps modulator") {
     Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
     Clip& clip = song.clips.begin()->second;
-    MotionGroup group = devices::makeMotion(song.newId<MotionId>(), 0);
-    group.params[4] = 0; // not in key: steps are semitones
-    clip.motions.push_back(group);
+    Device& group = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
     clip.notes[0].motion = group.id;
     Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
     steps.params = knobsOf(ModulatorType::Steps, {{mods::knob::kStepCount, 2}, {mods::knob::kStepPerPass, 1}});
     steps.steps = {0, 1};
     Modulation route;
-    route.target = {ParamRef::Kind::Motion, group.id.value, 0};
+    route.target = {ParamRef::Kind::Device, group.id.value, 0};
     route.amount = 1.f / 48; // one step at full
     steps.routes.push_back(route);
     song.tracks[0].modulators.push_back(steps);

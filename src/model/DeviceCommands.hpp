@@ -49,8 +49,11 @@ class ReplaceChains : public Command {
 // ---- Devices ------------------------------------------------------------------------------------------------
 
 /// A new device at `index` in the track's chain (clamped; -1 = the end). Null at kMaxDevices. A Playheads device
-/// goes first with two playheads, and only when the track has none; other devices never go before it.
-CommandPtr addDevice(const Song& song, TrackId track, DeviceType type, int index, const NextId& nextId);
+/// goes first with two playheads (only Motion devices may come before it), and only when the track has none; other
+/// devices never go before it. A Motion device goes anywhere; by default (-1) before the Playheads device, named
+/// "Motion N" in a colour of its own.
+CommandPtr addDevice(const Song& song, TrackId track, DeviceType type, int index, const NextId& nextId,
+                     DeviceId* added = nullptr);
 /// Removes a device with its modulators, and every route that pointed at them.
 CommandPtr removeDevice(const Song& song, DeviceId id);
 /// Moves a device to `index` in a track's chain (the same track or another). Its own modulators move along;
@@ -89,36 +92,8 @@ CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoin
 
 // ---- Note motion (docs/design/PLAYHEADS.md §6) --------------------------------------------------------------
 
-/// Swaps a clip's motion groups and notes between two states: every motion edit is expressed this way.
-class ReplaceClipMotions : public Command {
-  public:
-    struct Parts {
-        std::vector<MotionGroup> motions;
-        std::vector<Note> notes;
-    };
-    ReplaceClipMotions(std::string name, ClipId clip, Parts before, Parts after)
-        : label(std::move(name)), clip(clip), before(std::move(before)), after(std::move(after)) {}
-
-    void apply(Song& song) override { set(song, after); }
-    void revert(Song& song) override { set(song, before); }
-    std::string name() const override { return label; }
-    ChangeSet changes() const override { return ChangeSet::clip(clip); }
-
-  private:
-    void set(Song& song, const Parts& parts) const;
-    std::string label;
-    ClipId clip;
-    Parts before, after;
-};
-
-/// A new motion group in a clip, with the given notes moved into it (out of any other). Null at kMaxMotionGroups
-/// or without notes.
-CommandPtr addMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, const NextId& nextId,
-                     MotionId* added = nullptr);
-/// Removes a motion group; its notes stay, without motion.
-CommandPtr removeMotion(const Song& song, MotionId id);
-/// Moves notes into a motion group, or (an invalid `motion`) out of their group.
-CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, MotionId motion);
+/// Moves notes of a clip with a Motion device, or (an invalid `motion`) stops them moving. One undo step.
+CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, DeviceId motion);
 
 // ---- Modulators ---------------------------------------------------------------------------------------------
 

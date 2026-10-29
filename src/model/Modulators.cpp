@@ -176,12 +176,12 @@ bool perPass(ModulatorType type, const float* knobs) {
 }
 
 float passValue(ModulatorType type, uint64_t id, const float* knobs, int64_t pass, TimeSig ts, const float* steps,
-                int stepCount) {
+                int stepCount, const Drawn* drawn) {
     State state;
     Clock clock;
     clock.timeSig = ts;
     clock.pass = std::max<int64_t>(0, pass);
-    return evaluate(type, id, knobs, state, clock, steps, stepCount);
+    return evaluate(type, id, knobs, state, clock, steps, stepCount, drawn);
 }
 
 float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state, const Clock& clock,

@@ -84,8 +84,6 @@ const devices::ParamInfo* infoOf(const Song& song, const ParamRef& ref) {
     }
     if (ref.kind == ParamRef::Kind::Playhead)
         return findPlayhead(song, PlayheadId(ref.owner)) ? devices::playheadParamInfo(ref.param) : nullptr;
-    if (ref.kind == ParamRef::Kind::Motion)
-        return findMotion(song, MotionId(ref.owner)) ? devices::motionParamInfo(ref.param) : nullptr;
     const Modulator* m = findModulator(song, ModulatorId(ref.owner));
     return m ? devices::paramInfo(m->type, ref.param) : nullptr;
 }
@@ -99,9 +97,6 @@ std::string paramName(const Song& song, const ParamRef& ref) {
     } else if (ref.kind == ParamRef::Kind::Playhead) {
         if (const Playhead* p = findPlayhead(song, PlayheadId(ref.owner)))
             owner = p->name;
-    } else if (ref.kind == ParamRef::Kind::Motion) {
-        if (const MotionGroup* g = findMotion(song, MotionId(ref.owner)))
-            owner = g->name;
     } else if (const Modulator* m = findModulator(song, ModulatorId(ref.owner))) {
         owner = m->name;
     }
@@ -581,6 +576,61 @@ void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce) {
     m->perform(std::move(all));
 }
 
+void newMotion(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes) {
+    TesseraModule* m = moduleOf(ctx);
+    const Track* t = track(ctx);
+    if (!m || !t || notes.empty())
+        return;
+    // Made on the song as the step before left it: the notes can only join a device that exists.
+    Song work = m->song();
+    DeviceId added;
+    CommandPtr add = addDevice(work, t->id, DeviceType::Motion, -1, m->ids(), &added);
+    if (!add) {
+        ctx.toast("This track has no room for another device");
+        return;
+    }
+    add->apply(work);
+    std::string name = findDevice(work, added)->name;
+    auto all = std::make_unique<CompoundCommand>("New " + name);
+    all->add(std::move(add));
+    all->add(setNotesMotion(work, clip, notes, added));
+    m->perform(std::move(all));
+    ctx.selectedDevice = added.value;
+    setStripOpen(ctx, true);
+}
+
+void appendMotionItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes,
+                       DeviceId current) {
+    const Track* t = track(ctx);
+    if (!t || notes.empty())
+        return;
+    EditorContext* c = &ctx;
+    for (const Device& d : t->devices) {
+        if (d.type != DeviceType::Motion)
+            continue;
+        DeviceId id = d.id;
+        menu->addChild(rack::createCheckMenuItem(
+            "Move with " + d.name, "", [current, id] { return current == id; }, [c, clip, notes, id] {
+                if (TesseraModule* mod = c->module())
+                    mod->perform(setNotesMotion(mod->song(), clip, notes, id));
+            }));
+    }
+    menu->addChild(rack::createMenuItem("New motion", "", [c, clip, notes] { newMotion(*c, clip, notes); }));
+    if (current.valid())
+        menu->addChild(rack::createMenuItem("Leave motion", "", [c, clip, notes] {
+            if (TesseraModule* mod = c->module())
+                mod->perform(setNotesMotion(mod->song(), clip, notes, DeviceId()));
+        }));
+}
+
+void openMotionMenu(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes, DeviceId current) {
+    if (!moduleOf(ctx) || notes.empty())
+        return;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(notes.size() == 1 ? "1 note" : std::to_string(notes.size()) + " notes"));
+    appendMotionItems(menu, ctx, clip, notes, current);
+}
+
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
     TesseraModule* m = moduleOf(ctx);
     if (!m)
@@ -596,7 +646,8 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
     float def = devices::defaultNormalized(*p);
     menu->addChild(rack::createMenuItem("Reset to " + devices::format(*p, def), "double-click",
                                         [c, ref, def] { setKnob(*c, ref, def); }));
-    if (ref.kind == ParamRef::Kind::Motion && p->kind != devices::ParamInfo::Kind::Toggle)
+    const Device* owner = ref.kind == ParamRef::Kind::Device ? findDevice(song, DeviceId(ref.owner)) : nullptr;
+    if (owner && owner->type == DeviceType::Motion && p->kind != devices::ParamInfo::Kind::Toggle)
         menu->addChild(rack::createSubmenuItem("Drift per pass", "", [c, ref](rack::ui::Menu* sub) {
             sub->addChild(rack::createMenuItem("Up a little each pass, 4 passes, then back down", "",
                                                [c, ref] { addDrift(*c, ref, true); }));

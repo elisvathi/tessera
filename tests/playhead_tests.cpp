@@ -193,6 +193,7 @@ TEST_CASE("notes repeating with their own length inside the region are read at t
 // ---- The Playheads device in a song ---------------------------------------------------------------------------
 
 #include "../src/model/DeviceCommands.hpp"
+#include "../src/model/Devices.hpp"
 #include "../src/model/DeviceTypes.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
@@ -451,7 +452,7 @@ TEST_CASE("drawing a straight path keeps only its corners") {
 
 // ---- Note motion ---------------------------------------------------------------------------------------------------
 
-TEST_CASE("notes move into a motion group whose knobs are set with undo, and it survives saving") {
+TEST_CASE("notes join a Motion device whose knobs are set with undo, and it survives saving") {
     Song song = songWithTrack();
     Clip clip;
     clip.id = song.newId<ClipId>();
@@ -466,25 +467,32 @@ TEST_CASE("notes move into a motion group whose knobs are set with undo, and it 
     song.tracks[0].slots[0].clip = clip.id;
     std::vector<NoteId> two = {clip.notes[0].id, clip.notes[2].id};
 
-    MotionId group;
-    applyUndoable(song, addMotion(song, clip.id, two, idsOf(song), &group));
+    // A new Motion device goes before the Playheads device, named and coloured.
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    DeviceId group;
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Motion, -1, idsOf(song), &group));
+    REQUIRE(song.tracks[0].devices.size() == 2);
+    CHECK(song.tracks[0].devices[0].id == group);
+    CHECK(song.tracks[0].devices[0].name == "Motion 1");
+    CHECK(song.tracks[0].devices[1].type == DeviceType::Playheads);
+
+    applyUndoable(song, setNotesMotion(song, clip.id, two, group));
     const Clip& c = song.clips.at(clip.id);
-    REQUIRE(c.motions.size() == 1);
-    CHECK(c.motions[0].name == "Motion A");
     CHECK(c.notes[0].motion == group);
     CHECK_FALSE(c.notes[1].motion.valid());
 
-    ParamRef pitch{ParamRef::Kind::Motion, group.value, 0};
+    ParamRef pitch{ParamRef::Kind::Device, group.value, 0};
     applyUndoable(song, setParam(song, pitch, 0.75f));
     CHECK(*findParam(song, pitch) == 0.75f);
     CHECK(trackOf(song, pitch) == song.tracks[0].id);
     CHECK(savedAndLoaded(song) == song);
 
-    applyUndoable(song, setNotesMotion(song, clip.id, {clip.notes[0].id}, MotionId()));
+    applyUndoable(song, setNotesMotion(song, clip.id, {clip.notes[0].id}, DeviceId()));
     CHECK_FALSE(song.clips.at(clip.id).notes[0].motion.valid());
-    applyUndoable(song, removeMotion(song, group));
-    CHECK(song.clips.at(clip.id).motions.empty());
-    CHECK_FALSE(song.clips.at(clip.id).notes[2].motion.valid());
+    // Removing the device stops its notes moving.
+    applyUndoable(song, removeDevice(song, group));
+    Song loaded = savedAndLoaded(song);
+    CHECK_FALSE(loaded.clips.at(clip.id).notes[2].motion.valid());
 }
 
 TEST_CASE("MIDI export plays the drift too") {
@@ -496,9 +504,9 @@ TEST_CASE("MIDI export plays the drift too") {
     n.id = song.newId<NoteId>();
     n.length = 240;
     clip.notes.push_back(n);
-    MotionGroup group = devices::makeMotion(song.newId<MotionId>(), 0);
-    group.params[4] = 0; // semitones
-    clip.motions.push_back(group);
+    Device group = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+    group.params[chain::knob::kMotionInKey] = 0; // semitones
+    song.tracks[0].devices.push_back(group);
     clip.notes[0].motion = group.id;
     song.clips.emplace(clip.id, clip);
     ArrangerClip a;
@@ -511,7 +519,7 @@ TEST_CASE("MIDI export plays the drift too") {
     steps.params[mods::knob::kStepPerPass] = 1;
     steps.steps = {0, 1};
     Modulation route;
-    route.target = {ParamRef::Kind::Motion, group.id.value, 0};
+    route.target = {ParamRef::Kind::Device, group.id.value, 0};
     route.amount = 1.f / 48;
     steps.routes.push_back(route);
     song.tracks[0].modulators.push_back(steps);
@@ -686,4 +694,38 @@ TEST_CASE("the piano roll learns which pitch a playhead plays each note at") {
     CHECK(heard() == std::vector<int>{48, 52, 55, 50});
     set(playheads::knob::kNotes, 1); // the lowest of each chord only
     CHECK(heard() == std::vector<int>{48, -1, -1, 50});
+}
+
+TEST_CASE("a clip's motion group saved before Motion devices loads as a Motion device after Playheads") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    Note n;
+    n.id = song.newId<NoteId>();
+    clip.notes.push_back(n);
+    song.clips.emplace(clip.id, clip);
+    song.tracks[0].slots[0].clip = clip.id;
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    json::Ref j(songToJson(song));
+    // The old form: the clip holds the group, the note points at it, a route turns its Pitch as a "motion" knob.
+    uint64_t group = song.nextId + 100;
+    json_t* clipJson = json_array_get(json_object_get(j.get(), "clips"), 0);
+    json_object_set_new(clipJson, "motions",
+                        json_pack("[{s:I,s:s,s:i,s:[fffff]}]", "id", static_cast<json_int_t>(group), "name",
+                                  "Motion A", "color", 3, "params", 0.75, 0.0, 0.0, 0.5, 1.0));
+    Song plain = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK(plain.tracks[0].devices.size() == 2);
+    Device* motion = nullptr;
+    for (Device& d : plain.tracks[0].devices)
+        if (d.type == DeviceType::Motion)
+            motion = &d;
+    REQUIRE(motion != nullptr);
+    CHECK(motion->id.value == group);
+    CHECK(motion->name == "Motion A");
+    CHECK(motion->color == 3);
+    CHECK(motion->params[0] == doctest::Approx(0.75));
+    // Where the group acted: on each note as a playhead played it.
+    CHECK(plain.tracks[0].devices[0].type == DeviceType::Playheads);
+    CHECK(plain.tracks[0].devices[1].type == DeviceType::Motion);
 }

@@ -181,6 +181,9 @@ void Chain::dispatch(const Message& m, const Context& c, Output& out) {
     case DeviceType::NoteFilter:
         noteFilter(m, d, c, out);
         break;
+    case DeviceType::Motion:
+        motion(m, d, c, out);
+        break;
     default:
         forward(m, out);
         break;
@@ -659,6 +662,34 @@ void Chain::groove(const Message& m, const DeviceSlot& d, const Context& /*c*/, 
     double end = swung(n.origin + length, swing, step) - (n.origin + length);
     n.start += start;
     n.end = std::max(n.start + 1, n.end + end);
+    post(m.stage + 1, Kind::On, n, n.start, out);
+}
+
+// ---- Motion -----------------------------------------------------------------------------------------------------
+
+void Chain::motion(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
+    if (m.kind != Kind::On || m.note.motion != d.id) {
+        forward(m, out);
+        return;
+    }
+    ChainNote n = m.note;
+    int64_t pass = n.lane > 0 ? n.pass / 16 : n.pass;
+    auto value = [&](int k) {
+        float v = c.passKnob ? c.passKnob(c.passUser, d, k, pass) : d.knobs[k];
+        return devices::display(devices::deviceInfo(DeviceType::Motion).params[size_t(k)], v);
+    };
+    int steps = int(std::lround(value(knob::kMotionPitch)));
+    if (steps != 0) {
+        int pitch = value(knob::kMotionInKey) > 0.5f ? c.keyOf(n.key).stepBy(n.pitch, steps) : n.pitch + steps;
+        n.pitch = int8_t(std::clamp(pitch, 0, 127));
+    }
+    n.velocity = std::clamp(n.velocity + value(knob::kMotionVelocity) / 100, 0.f, 1.f);
+    // Held keys keep their own start and end: their end is the release.
+    if (!n.open()) {
+        double length = std::max(1.0, (n.end - n.start) * (1 + double(value(knob::kMotionLength)) / 100));
+        n.start += double(value(knob::kMotionTime)) * double(kPpq / 4);
+        n.end = n.start + length;
+    }
     post(m.stage + 1, Kind::On, n, n.start, out);
 }
 

@@ -265,78 +265,43 @@ void Inspector::layoutRegions() {
         y += 4;
     }
 
-    // Motion (docs/design/PLAYHEADS.md §6): the selected notes' group and its knobs, or a way to make one.
+    // Motion (docs/design/PLAYHEADS.md §6): which Motion device the notes move with; its knobs are on its card.
     titles.push_back({y, "MOTION"});
     y += kRowHeight;
-    Rect chip(kPad, y, w - 2 * kPad, kChipHeight);
-    if (sharedMotion()) {
-        regions.push_back({Region::Kind::MotionHeader, Field::Count, 0, chip});
-        y += kChipHeight + 4;
-        for (int k = 0; k < int(devices::motionInfo().params.size()); k++) {
-            regions.push_back({Region::Kind::MotionKnob, Field::Count, k,
-                               Rect(kPad, y + (kFieldHeight - kSlider) / 2, w - 2 * kPad, kSlider)});
-            y += kFieldHeight;
-        }
-    } else {
-        regions.push_back({Region::Kind::MotionAdd, Field::Count, 0, chip});
-        y += kChipHeight + 4;
-    }
+    regions.push_back({Region::Kind::Motion, Field::Count, 0, Rect(kPad, y, w - 2 * kPad, kChipHeight)});
+    y += kChipHeight + 4;
     notesBottom = y;
 }
 
-const MotionGroup* Inspector::sharedMotion() {
-    const Clip* clip = editor ? editor->clip() : nullptr;
-    if (!clip)
-        return nullptr;
+DeviceId Inspector::sharedMotion(bool* mixed) {
+    if (mixed)
+        *mixed = false;
+    if (!editor)
+        return DeviceId();
     edits::IdSet ids = editor->selectedIds();
-    MotionId shared;
+    DeviceId shared;
     bool first = true;
     for (const Note& n : editor->notes())
         if (ids.count(n.id)) {
-            if (first)
-                shared = n.motion;
-            else if (n.motion != shared)
-                return nullptr;
+            if (!first && n.motion != shared) {
+                if (mixed)
+                    *mixed = true;
+                return DeviceId();
+            }
+            shared = n.motion;
             first = false;
         }
-    return shared.valid() ? clip->findMotion(shared) : nullptr;
+    return shared;
 }
 
 void Inspector::openMotionMenu() {
-    TesseraModule* m = ctx.module();
     const Clip* clip = editor ? editor->clip() : nullptr;
-    if (!m || !clip)
+    if (!clip)
         return;
-    ClipId clipId = clip->id;
     std::vector<NoteId> notes;
     for (NoteId id : editor->selectedIds())
         notes.push_back(id);
-    EditorContext* c = &ctx;
-    rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Motion"));
-    if (const MotionGroup* group = sharedMotion()) {
-        MotionId id = group->id;
-        menu->addChild(rack::createMenuItem("Stop these notes moving", "", [c, clipId, notes] {
-            if (TesseraModule* mod = c->module())
-                mod->perform(setNotesMotion(mod->song(), clipId, notes, MotionId()));
-        }));
-        menu->addChild(rack::createMenuItem("Delete " + group->name, "", [c, id] {
-            if (TesseraModule* mod = c->module())
-                mod->perform(removeMotion(mod->song(), id));
-        }));
-        return;
-    }
-    menu->addChild(rack::createMenuItem("New motion group", "", [c, clipId, notes] {
-        if (TesseraModule* mod = c->module())
-            mod->perform(addMotion(mod->song(), clipId, notes, mod->ids()));
-    }));
-    for (const MotionGroup& g : clip->motions) {
-        MotionId id = g.id;
-        menu->addChild(rack::createMenuItem("Move into " + g.name, "", [c, clipId, notes, id] {
-            if (TesseraModule* mod = c->module())
-                mod->perform(setNotesMotion(mod->song(), clipId, notes, id));
-        }));
-    }
+    deviceActions::openMotionMenu(ctx, clip->id, notes, sharedMotion());
 }
 
 const Inspector::Region* Inspector::regionAt(Vec pos) const {
@@ -367,55 +332,12 @@ void Inspector::step() {
 
 namespace {
 
-/// Dragging a motion knob along its bar: heard at once, one undo step on release.
-class MotionKnobDrag : public DragGesture {
-  public:
-    MotionKnobDrag(Inspector& inspector, EditorContext& ctx, ParamRef ref, Rect bar)
-        : inspector(inspector), ctx(ctx), ref(ref), bar(bar) {}
-    void update(Vec pos, Modifiers mods) override {
-        value = std::clamp((pos.x - bar.pos.x) / std::max(1.f, bar.size.x), 0.f, 1.f);
-        inspector.motionPreview = std::make_pair(ref, value);
-        if (TesseraModule* m = ctx.module())
-            m->holdKnob(ref, value);
-    }
-    void commit() override {
-        finish();
-        if (value >= 0)
-            deviceActions::setKnob(ctx, ref, value);
-    }
-    void cancel() override { finish(); }
-    CursorShape cursor() const override { return CursorShape::ResizeH; }
-
-  private:
-    void finish() {
-        inspector.motionPreview.reset();
-        if (TesseraModule* m = ctx.module())
-            m->releaseKnob();
-    }
-    Inspector& inspector;
-    EditorContext& ctx;
-    ParamRef ref;
-    Rect bar;
-    float value = -1;
-};
-
 } // namespace
 
 std::unique_ptr<DragGesture> Inspector::startGesture(Vec pos, int button, Modifiers mods) {
     const Region* r = regionAt(pos);
     if (button != GLFW_MOUSE_BUTTON_LEFT || !r || !editor)
         return nullptr;
-    if (r->kind == Region::Kind::MotionKnob) {
-        const MotionGroup* group = sharedMotion();
-        const devices::ParamInfo* info = devices::motionParamInfo(r->index);
-        if (!group || !info || info->kind == devices::ParamInfo::Kind::Toggle)
-            return nullptr; // a switch flips on a click
-        Rect bar = r->rect;
-        bar.pos.y -= scroll;
-        return std::make_unique<MotionKnobDrag>(*this, ctx, ParamRef{ParamRef::Kind::Motion, group->id.value,
-                                                                     uint16_t(r->index)},
-                                                bar);
-    }
     Field field = r->field;
     bool multi = editor->selectedIds().size() > 1;
     switch (r->kind) {
@@ -467,29 +389,9 @@ void Inspector::click(Vec pos, int button, Modifiers mods) {
     bool left = button == GLFW_MOUSE_BUTTON_LEFT;
     std::string notes = countNotes(ids.size());
     switch (r.kind) {
-    case Region::Kind::MotionAdd:
-        if (left && ctx.module()) {
-            std::vector<NoteId> notes(ids.begin(), ids.end());
-            ctx.module()->perform(addMotion(ctx.module()->song(), editor->clip()->id, notes, ctx.module()->ids()));
-        } else {
-            openMotionMenu();
-        }
-        break;
-    case Region::Kind::MotionHeader:
+    case Region::Kind::Motion:
         openMotionMenu();
         break;
-    case Region::Kind::MotionKnob: {
-        const MotionGroup* group = sharedMotion();
-        const devices::ParamInfo* info = devices::motionParamInfo(r.index);
-        if (!group || !info)
-            return;
-        ParamRef ref{ParamRef::Kind::Motion, group->id.value, uint16_t(r.index)};
-        if (!left)
-            deviceActions::openKnobMenu(ctx, ref);
-        else if (info->kind == devices::ParamInfo::Kind::Toggle)
-            deviceActions::setKnob(ctx, ref, group->params[size_t(r.index)] >= 0.5f ? 0.f : 1.f);
-        break;
-    }
     case Region::Kind::Chip: {
         if (!left)
             return;
@@ -779,42 +681,26 @@ void Inspector::drawRegion(NVGcontext* vg, const Region& r, bool hot) {
                    draw::ellipsize(vg, centered, text, rect.size.x - 6));
         break;
     }
-    case Region::Kind::MotionAdd: {
+    case Region::Kind::Motion: {
+        // "Motion 1 ⌄" in its colour when the notes move with one, else a quiet "Not moving ⌄".
+        bool mixed = false;
+        DeviceId id = sharedMotion(&mixed);
+        const Device* d = id.valid() && ctx.module() ? findDevice(ctx.module()->song(), id) : nullptr;
         draw::roundedRect(vg, rect, theme::metrics::kRadiusControl, hot ? c.line0 : c.bg2);
-        centered.color = hot ? c.text0 : c.text1;
-        draw::text(vg, centered, rect.getCenter().x, rect.getCenter().y, "+ Add motion");
-        break;
-    }
-    case Region::Kind::MotionHeader: {
-        const MotionGroup* group = sharedMotion();
-        if (!group)
-            break;
-        NVGcolor color = theme::playheadColor(group->color);
-        draw::roundedRect(vg, rect, theme::metrics::kRadiusControl, hot ? c.line0 : c.bg2);
-        draw::roundedRectStroke(vg, rect, theme::metrics::kRadiusControl, color, 1);
-        centered.color = c.text0;
-        draw::text(vg, centered, rect.getCenter().x, rect.getCenter().y, group->name);
-        break;
-    }
-    case Region::Kind::MotionKnob: {
-        const MotionGroup* group = sharedMotion();
-        const devices::ParamInfo* info = devices::motionParamInfo(r.index);
-        if (!group || !info)
-            break;
-        ParamRef ref{ParamRef::Kind::Motion, group->id.value, uint16_t(r.index)};
-        float v = motionPreview && motionPreview->first == ref ? motionPreview->second : group->params[size_t(r.index)];
-        draw::roundedRect(vg, rect, radius, hot ? c.line0 : c.bg2);
-        if (info->kind == devices::ParamInfo::Kind::Toggle) {
-            if (v >= 0.5f)
-                draw::roundedRect(vg, rect, radius, nvgTransRGBAf(c.accent, 0.35f));
-        } else {
-            float zero = info->bipolar() ? devices::normalize(*info, 0) : 0.f;
-            float a = rect.pos.x + std::min(zero, v) * rect.size.x, b = rect.pos.x + std::max(zero, v) * rect.size.x;
-            draw::roundedRect(vg, Rect(a, rect.pos.y, std::max(2.f, b - a), rect.size.y), radius,
-                              nvgTransRGBAf(c.accent, 0.35f));
-        }
-        draw::text(vg, label, rect.pos.x + 6, rect.getCenter().y, info->name);
-        draw::text(vg, value, rect.getRight() - 6, rect.getCenter().y, devices::format(*info, v));
+        if (d)
+            draw::roundedRectStroke(vg, rect, theme::metrics::kRadiusControl, theme::playheadColor(d->color), 1);
+        centered.color = d ? c.text0 : c.text1;
+        std::string text = d ? d->name : mixed ? "Several" : "Not moving";
+        draw::text(vg, centered, rect.getCenter().x, rect.getCenter().y, text);
+        // A small arrow at the right end: it opens a list.
+        float ax = rect.getRight() - 10, ay = rect.getCenter().y;
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, ax - 3, ay - 1.5f);
+        nvgLineTo(vg, ax, ay + 1.5f);
+        nvgLineTo(vg, ax + 3, ay - 1.5f);
+        nvgStrokeColor(vg, c.text1);
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
         break;
     }
     case Region::Kind::Chip: {

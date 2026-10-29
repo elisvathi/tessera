@@ -735,6 +735,27 @@ void NoteGrid::openNoteMenu(NoteId id) {
     }
     menu->addChild(
         rack::createSubmenuItem("Transform", "", [view](rack::ui::Menu* sub) { transformMenu::addItems(sub, *view); }));
+    if (!owner.drumMode() && owner.clip()) {
+        // Which Motion device the selected notes move with.
+        ClipId clipId = owner.clip()->id;
+        std::vector<NoteId> notes;
+        DeviceId current;
+        bool first = true, mixed = false;
+        for (const Note& n : owner.committedNotes())
+            if (owner.selectedIds().count(n.id)) {
+                notes.push_back(n.id);
+                mixed |= !first && n.motion != current;
+                current = n.motion;
+                first = false;
+            }
+        if (mixed)
+            current = DeviceId();
+        const Device* d = current.valid() && ctx.module() ? findDevice(ctx.module()->song(), current) : nullptr;
+        EditorContext* c = &ctx;
+        menu->addChild(rack::createSubmenuItem("Motion", d ? d->name : "", [c, clipId, notes, current](rack::ui::Menu* sub) {
+            deviceActions::appendMotionItems(sub, *c, clipId, notes, current);
+        }));
+    }
     const char* samePitch = owner.drumMode() ? "Select all hits of this lane" : "Select all notes of this pitch";
     menu->addChild(rack::createMenuItem(samePitch, "", [view, id] {
         const Note* n = view->clip() ? view->clip()->findNote(id) : nullptr;
@@ -939,8 +960,8 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
 }
 
 void NoteGrid::drawMotionMarks(NVGcontext* vg) {
-    const Clip* clip = owner.clip();
-    if (!clip || clip->motions.empty())
+    TesseraModule* m = ctx.module();
+    if (!m || !owner.clip())
         return;
     TimeAxis& t = time();
     PitchAxis& pitch = owner.pitch;
@@ -949,13 +970,13 @@ void NoteGrid::drawMotionMarks(NVGcontext* vg) {
     for (const Note& n : owner.notes()) {
         if (double(n.start) > right)
             break;
-        const MotionGroup* group = n.motion.valid() ? clip->findMotion(n.motion) : nullptr;
+        const Device* group = n.motion.valid() ? findDevice(m->song(), n.motion) : nullptr;
         if (!group || double(n.end()) < t.left())
             continue;
         float y = float(pitch.pitchToY(n.pitch));
         float x0 = float(t.tickToX(double(n.start)));
         float size = std::min(6.f, row - 2);
-        // A corner in the group's colour: this note moves while it plays.
+        // A corner in its Motion device's colour: this note moves while it plays.
         nvgBeginPath(vg);
         nvgMoveTo(vg, x0 + 1, y + 1);
         nvgLineTo(vg, x0 + 1 + size, y + 1);

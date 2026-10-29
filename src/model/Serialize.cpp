@@ -41,9 +41,12 @@ const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed",
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
 const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord",    "arpeggiator",
-                                    "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads"};
+                                    "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads",
+                                    "motion"};
 const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note", "curve"};
-const char* const kParamOwners[] = {"device", "modulator", "playhead", "motion"};
+// "motion" (a clip's motion group, before 30 Oct 2026) reads as "device": each group became a Motion device with
+// the group's ID.
+const char* const kParamOwners[] = {"device", "modulator", "playhead"};
 const char* const kModulationKinds[] = {"param", "auto", "knob"};
 
 constexpr int kNoteMuted = 1;
@@ -92,7 +95,7 @@ ParamRef paramRefFromJson(const json_t* j) {
     ParamRef r;
     if (!json_is_array(j))
         return r;
-    r.kind = enumFromName(json_array_get(j, 0), kParamOwners, r.kind);
+    r.kind = enumFromName(json_array_get(j, 0), kParamOwners, ParamRef::Kind::Device);
     r.owner = uint64_t(std::max<int64_t>(0, intAt(j, 1, 0)));
     r.param = saturate<uint16_t>(intAt(j, 2, 0));
     return r;
@@ -310,7 +313,7 @@ bool noteFromJson(const json_t* arr, Note& n) {
         n.pitchExpr = exprFromJson(get(extras, "pitch"));
         n.timbreExpr = exprFromJson(get(extras, "timbre"));
         n.pressureExpr = exprFromJson(get(extras, "pressure"));
-        n.motion = readId<MotionId>(get(extras, "motion"));
+        n.motion = readId<DeviceId>(get(extras, "motion"));
     }
     return true;
 }
@@ -604,6 +607,8 @@ json_t* deviceToJson(const Device& d) {
             json_array_append_new(list, playheadToJson(p));
         set(j, "playheads", list);
     }
+    if (d.type == DeviceType::Motion)
+        setInt(j, "color", d.color);
     return j;
 }
 
@@ -617,6 +622,7 @@ Device deviceFromJson(const json_t* j) {
     d.params = floatsFromJson(get(j, "params"));
     d.modulators = modulatorListFromJson(get(j, "modulators"));
     forEach(get(j, "playheads"), [&](const json_t* pj) { d.playheads.push_back(playheadFromJson(pj)); });
+    d.color = saturate<uint8_t>(getInt(j, "color", 0));
     return d;
 }
 
@@ -725,18 +731,6 @@ json_t* clipToJson(const Clip& c) {
         set(j, "scale", scaleToJson(*c.scaleOverride));
     if (c.launchQuantize)
         setString(j, "launchQuantize", enumName(*c.launchQuantize, kLaunchQuantize));
-    if (!c.motions.empty()) {
-        json_t* motions = json_array();
-        for (const MotionGroup& m : c.motions) {
-            json_t* mj = json_object();
-            set(mj, "id", idJson(m.id));
-            setString(mj, "name", m.name);
-            setInt(mj, "color", m.color);
-            set(mj, "params", floatsToJson(m.params));
-            json_array_append_new(motions, mj);
-        }
-        set(j, "motions", motions);
-    }
     return j;
 }
 
@@ -761,18 +755,37 @@ Clip clipFromJson(const json_t* j) {
         c.scaleOverride = scaleFromJson(get(j, "scale"));
     if (json_is_string(get(j, "launchQuantize")))
         c.launchQuantize = enumFromName(get(j, "launchQuantize"), kLaunchQuantize, LaunchQuantize::Bar);
-    forEach(get(j, "motions"), [&](const json_t* mj) {
-        MotionGroup m;
-        m.id = readId<MotionId>(get(mj, "id"));
-        m.name = getString(mj, "name", m.name);
-        m.color = saturate<uint8_t>(getInt(mj, "color", m.color));
-        m.params = floatsFromJson(get(mj, "params"));
-        c.motions.push_back(m);
-    });
     return c;
 }
 
 // ---- Song ---------------------------------------------------------------------------------------------------
+
+/// Clips saved before 30 Oct 2026 kept motion groups. Each becomes a Motion device with the group's ID (so its notes
+/// and the routes to its knobs still point at it) on the track that plays the clip, right after its Playheads
+/// device, where the group used to act: on each note as a playhead played it.
+void motionGroupsToDevices(const json_t* clips, Song& s) {
+    forEach(clips, [&](const json_t* cj) {
+        ClipId clip = readId<ClipId>(get(cj, "id"));
+        Track* owner = nullptr;
+        for (Track& t : s.tracks) {
+            for (const ClipSlot& slot : t.slots)
+                owner = owner ? owner : (slot.clip == clip ? &t : nullptr);
+            for (const ArrangerClip& a : t.arrangement)
+                owner = owner ? owner : (a.clip == clip ? &t : nullptr);
+        }
+        if (!owner)
+            return;
+        forEach(get(cj, "motions"), [&](const json_t* mj) {
+            Device d = devices::makeDevice(DeviceType::Motion, readId<DeviceId>(get(mj, "id")));
+            d.name = getString(mj, "name", d.name);
+            d.color = saturate<uint8_t>(getInt(mj, "color", 0));
+            d.params = floatsFromJson(get(mj, "params"));
+            auto at = std::find_if(owner->devices.begin(), owner->devices.end(),
+                                   [](const Device& k) { return k.type == DeviceType::Playheads; });
+            owner->devices.insert(at == owner->devices.end() ? owner->devices.begin() : at + 1, d);
+        });
+    });
+}
 
 json_t* songToJson(const Song& s) {
     json_t* j = json_object();
@@ -1056,6 +1069,7 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
             s.clips.emplace(c.id, std::move(c));
     });
     forEach(get(j, "tracks"), [&](const json_t* tj) { s.tracks.push_back(trackFromJson(tj)); });
+    motionGroupsToDevices(get(j, "clips"), s);
     forEach(get(j, "groups"), [&](const json_t* gj) {
         TrackGroup g;
         g.id = readId<GroupId>(get(gj, "id"));

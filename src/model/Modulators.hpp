@@ -75,7 +75,7 @@ bool bipolar(ModulatorType type, const float* knobs);
 bool perPass(ModulatorType type, const float* knobs);
 /// A "Per pass" modulator's value on pass `pass` of a note (pure: no state, no time), for drifting notes.
 float passValue(ModulatorType type, uint64_t id, const float* knobs, int64_t pass, TimeSig ts, const float* steps,
-                int stepCount);
+                int stepCount, const Drawn* drawn = nullptr);
 /// A note started on the modulator's track, lasting `lengthTicks` (infinite while a key is held).
 void trigger(State& state, double songTick, double lengthTicks, const NoteValues& values, const Clock& clock);
 /// A held key was let go: an envelope still holding starts its release now.
