@@ -331,6 +331,15 @@ class Engine {
             uint8_t lane; // the playhead that read it, for its branch; 0 = none
         };
         std::array<PendingHit, kMaxPendingHits> pending{};
+        /// How far ahead the playheads have read the launched clip (ticks since it started): they read a control
+        /// block at a time and queue its notes, so the track sleeps between notes instead of waking every sample.
+        struct PlayheadLook {
+            double until = NAN;
+            double last = NAN; // the window start seen last, to notice a jump back
+            const ClipPlayback* clip = nullptr;
+            double launch = NAN;
+        };
+        PlayheadLook playheadLook;
         int pendingCount = 0;
         int64_t lastPass = -1;
         bool previousPlayed = true;

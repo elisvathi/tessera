@@ -83,6 +83,7 @@ TEST_CASE("performance: the engine stays inside its CPU budget (DESIGN.md §18)"
 #if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
     CHECK(busy16 < 1);
     CHECK(busy64 < 3);
+    CHECK(heads16 < 8); // four playheads read four times the notes: about four busy tracks' worth, no more
 #else
     CHECK(busy64 < 400); // unoptimized with sanitizers: only a guard against something quadratic
 #endif
