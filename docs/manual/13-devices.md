@@ -87,7 +87,8 @@ it replaces the clip's own playhead; turn it off with its power button and the c
 
 It starts with two playheads: **Playhead 1** plays the clip as before, **Playhead 2** starts a beat later, so you hear a
 canon at once. Each playhead shows as a line in its colour over the notes; the clip's own playhead stays as a faint
-grey line.
+grey line. Each playhead's start is a small triangle in its colour on the ruler's loop strip: drag it to move where
+that playhead starts (it snaps to the grid, at most to 1/16 steps; hold Alt to snap less).
 
 - **The chips** at the top of the card are the playheads. Click one to show its settings. **+** adds a playhead (up to
   16), each starting a beat after the last.

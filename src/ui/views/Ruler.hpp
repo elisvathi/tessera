@@ -53,6 +53,16 @@ class TimelineSource {
     virtual void previewInstanceEnd(double end) {}
     /// Makes the timeline clip end at `end`, as one undo step.
     virtual void setInstanceEnd(double end) {}
+
+    /// A playhead's start, drawn as a small triangle in its colour on the loop strip (docs/design/PLAYHEADS.md §3.2).
+    struct PlayheadMark {
+        uint64_t id; // PlayheadId value
+        double tick;
+        int color;
+    };
+    virtual std::vector<PlayheadMark> playheadMarks() { return {}; }
+    /// Moves a playhead's start to `tick` (already snapped), as one undo step.
+    virtual void setPlayheadStart(uint64_t id, double tick) {}
 };
 
 /// The strip above a timeline: markers row, loop strip, time labels and the overview minimap (EDITOR_UX §3).
@@ -108,6 +118,9 @@ class Ruler : public InteractiveView {
     void changeMarker(MarkerId id, const std::string& undoName,
                       const std::function<void(std::vector<Marker>&, size_t)>& change);
     void drawLoop(NVGcontext* vg);
+    void drawPlayheadMarks(NVGcontext* vg);
+    /// The playhead start mark under x on the loop strip, or nullopt.
+    std::optional<TimelineSource::PlayheadMark> playheadMarkAt(float x);
     /// The handle at the end of the timeline clip this view was opened from (its right edge is the end).
     rack::math::Rect instanceTag();
     void drawTimeLabels(NVGcontext* vg);
@@ -118,12 +131,14 @@ class Ruler : public InteractiveView {
 
     // Live previews while a gesture runs; the source is only changed on release.
     std::optional<std::pair<Tick, Tick>> loopPreview;
+    std::optional<std::pair<uint64_t, double>> markPreview; // a playhead start being dragged
     std::optional<std::vector<Marker>> markersPreview;
     // Explains a locked loop while the pointer rests on it.
     HoverTooltip tip{""};
     bool tipOn = false;
 
     friend class LoopGesture;
+    friend class PlayheadMarkGesture;
     friend class InstanceEndGesture;
     friend class MarkerGesture;
     friend class OverviewGesture;
