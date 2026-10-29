@@ -1283,8 +1283,9 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 const ModulatorPlayback& mp = snapshot->modulators[size_t(x.modulator)];
                 mods::State st = (*modStates)[size_t(mp.slot)];
                 const float* mk = &knobValues[size_t(mp.knobs)];
-                if (st.owner != mp.id || devices::display(devices::modulatorInfo(mp.type).params[mods::knob::kCurveSync],
-                                                          mk[mods::knob::kCurveSync]) < 0.5f)
+                if (st.owner != mp.id ||
+                    devices::display(devices::modulatorInfo(mp.type).params[mods::knob::kCurveSync],
+                                     mk[mods::knob::kCurveSync]) < 0.5f)
                     continue;
                 mods::Clock at;
                 at.songTick = songTick + (from - playTick);
@@ -1369,9 +1370,9 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                                                lane);
                         } else if (onPlay >= playTick && state.pendingCount < kMaxPendingHits) {
                             // Read ahead: it starts on its own sample, from the pending list.
-                            TrackState::PendingHit hit{onPlay,     onPlay + length, n.pitch, n.velocity,
-                                                       n.releaseVelocity, nullptr, double(n.start), pass,
-                                                       n.key,      n.channel,       lane};
+                            TrackState::PendingHit hit{onPlay,  onPlay + length, n.pitch, n.velocity, n.releaseVelocity,
+                                                       nullptr, double(n.start), pass,    n.key,      n.channel,
+                                                       lane};
                             state.pending[size_t(state.pendingCount++)] = hit;
                         } else {
                             startNote(track, state, n, onPlay, onPlay + length, pass, lane);
@@ -1393,6 +1394,9 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         }
                     if (clip.pattern > 0 && clip.pattern < clip.loopLength())
                         playheads::crossedRepeating(sweep, start, start, double(clip.pattern), clip.notes,
+                                                    clip.notesByEnd, onHit);
+                    else if (clip.loopLength() > 0) // a segment past the clip's end reads it as it repeats
+                        playheads::crossedRepeating(sweep, start, start, double(clip.loopLength()), clip.notes,
                                                     clip.notesByEnd, onHit);
                     else
                         playheads::crossed(sweep, clip.notes, clip.notesByEnd, onHit);
@@ -1878,8 +1882,8 @@ void Engine::advanceModulation() {
         }
         mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
         st.applied = st.out;
-        float out = mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, m.steps.data(), m.stepCount,
-                                   &drawn);
+        float out =
+            mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, m.steps.data(), m.stepCount, &drawn);
         liveModulators[size_t(m.slot)].store(out, std::memory_order_relaxed);
     }
 }

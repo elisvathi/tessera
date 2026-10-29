@@ -57,8 +57,7 @@ double unwrapped(const Motion& m, double content) {
 
 /// A clip position from the place within one wrap (`q`, 0..length) and which wrap it is.
 double positionOf(const Motion& m, double wrap, double q) {
-    bool backward = m.direction == Direction::Reverse ||
-                    (m.direction == Direction::PingPong && floorMod(wrap, 2) >= 1);
+    bool backward = m.direction == Direction::Reverse || (m.direction == Direction::PingPong && floorMod(wrap, 2) >= 1);
     return backward ? m.regionStart + m.regionLength - q : m.regionStart + q;
 }
 
@@ -81,7 +80,8 @@ double pathValue(const std::vector<AutoPoint>& path, int i, double c) {
 
 /// The segment `c` falls in: the last point at or before it, or -1 before the first.
 int pathSegment(const std::vector<AutoPoint>& path, double c) {
-    auto it = std::upper_bound(path.begin(), path.end(), c, [](double v, const AutoPoint& p) { return v < double(p.t); });
+    auto it =
+        std::upper_bound(path.begin(), path.end(), c, [](double v, const AutoPoint& p) { return v < double(p.t); });
     return int(it - path.begin()) - 1;
 }
 
@@ -127,9 +127,7 @@ int sweepDrawn(const Motion& m, double oa, double ob, double restartBase, Sweep*
     return count;
 }
 
-bool ordered(const Motion& m) {
-    return m.order != Order::InOrder && m.orderStep > 0 && m.orderStep < m.regionLength;
-}
+bool ordered(const Motion& m) { return m.order != Order::InOrder && m.orderStep > 0 && m.orderStep < m.regionLength; }
 
 /// How far the step holding `pos` moves when its region is read in order `m.order` on pass `pass`.
 double orderShift(const Motion& m, double pos, double pass) {
@@ -205,12 +203,12 @@ double ticksAt(const Length (&list)[N], int index, TimeSig ts) {
 
 const Length kRepeats[] = {{"Off", 0},       {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},
                            {"1/4", 1.0 / 4}, {"1/2", 1.0 / 2},   {"1 bar", 1, true}};
-const Length kCycles[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8}, {"1/4", 1.0 / 4},  {"1/2", 1.0 / 2},
+const Length kCycles[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},    {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},
                           {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}};
-const Length kPathCycles[] = {{"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}, {"8 bars", 8, true},
-                              {"16 bars", 16, true}};
-const Length kOrderSteps[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8}, {"1/4", 1.0 / 4}, {"1/2", 1.0 / 2},
-                              {"1 bar", 1, true}};
+const Length kPathCycles[] = {
+    {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}, {"8 bars", 8, true}, {"16 bars", 16, true}};
+const Length kOrderSteps[] = {
+    {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8}, {"1/4", 1.0 / 4}, {"1/2", 1.0 / 2}, {"1 bar", 1, true}};
 const Length kFixedLengths[] = {{"1/64", 1.0 / 64}, {"1/32", 1.0 / 32}, {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},
                                 {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},   {"1 bar", 1, true}};
 
@@ -218,10 +216,9 @@ struct Rate {
     const char* name;
     double value;
 };
-const Rate kRates[] = {{"1/16x", 1.0 / 16}, {"1/8x", 1.0 / 8}, {"1/4x", 0.25}, {"1/3x", 1.0 / 3},
-                       {"1/2x", 0.5},       {"2/3x", 2.0 / 3}, {"3/4x", 0.75}, {"1x", 1},
-                       {"4/3x", 4.0 / 3},   {"3/2x", 1.5},     {"2x", 2},      {"3x", 3},
-                       {"4x", 4},           {"8x", 8},         {"16x", 16}};
+const Rate kRates[] = {{"1/16x", 1.0 / 16}, {"1/8x", 1.0 / 8}, {"1/4x", 0.25}, {"1/3x", 1.0 / 3}, {"1/2x", 0.5},
+                       {"2/3x", 2.0 / 3},   {"3/4x", 0.75},    {"1x", 1},      {"4/3x", 4.0 / 3}, {"3/2x", 1.5},
+                       {"2x", 2},           {"3x", 3},         {"4x", 4},      {"8x", 8},         {"16x", 16}};
 
 } // namespace
 
@@ -235,9 +232,7 @@ const std::vector<std::string>& rateNames() {
     return names;
 }
 
-double playheadRate(int index) {
-    return kRates[size_t(std::clamp(index, 0, int(std::size(kRates)) - 1))].value;
-}
+double playheadRate(int index) { return kRates[size_t(std::clamp(index, 0, int(std::size(kRates)) - 1))].value; }
 
 const std::vector<std::string>& repeatNames() {
     static const std::vector<std::string> names = namesOf(kRepeats);
@@ -452,6 +447,14 @@ std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double st
     return corners;
 }
 
+std::pair<double, double> regionFrom(double startSteps, double lengthSteps, double clipLength) {
+    double step = double(kPpq) / 4;
+    double start = std::max(0.0, startSteps * step), length = lengthSteps * step;
+    if (length <= 0)
+        length = start < clipLength ? clipLength - start : clipLength;
+    return {start, std::max(0.0, length)};
+}
+
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts) {
     auto shown = [&](int k) { return devices::display(devices::playheadInfo().params[size_t(k)], knobs[k]); };
     auto index = [&](int k) { return int(std::lround(shown(k))); };
@@ -461,12 +464,9 @@ Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart
     Motion m;
     m.rate = playheadRate(index(knob::kRate));
     m.direction = Direction(index(knob::kDirection));
-    double regionStart = std::clamp(shown(knob::kRegionStart) * step, 0.0, std::max(0.0, clipLength - 1));
-    double regionLength = shown(knob::kRegionLength) * step;
-    if (regionLength <= 0 || regionStart + regionLength > clipLength)
-        regionLength = clipLength - regionStart;
+    auto [regionStart, regionLength] = regionFrom(shown(knob::kRegionStart), shown(knob::kRegionLength), clipLength);
     m.regionStart = clipStart + regionStart;
-    m.regionLength = std::max(0.0, regionLength);
+    m.regionLength = regionLength;
     m.start = (shown(knob::kStart) + shown(knob::kOffset)) * step;
     m.repeatSize = repeatTicks(index(knob::kRepeatSize), ts);
     m.repeatTimes = index(knob::kRepeatTimes);
