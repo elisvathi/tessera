@@ -19,6 +19,7 @@ struct Note {
     double origin = 0; // where it was written
     uint8_t key = 0;   // 0 = the song's key, k = `keys[k - 1]`
     uint8_t channel = 1;
+    uint8_t lane = 0; // the playhead that read it (1..16), for its branch; 0 = none
 };
 
 /// What `track`'s chain makes of `notes` (sorted by start). Devices that keep playing (echo, arpeggiator) stop at

@@ -142,7 +142,8 @@ void Chain::dispatch(const Message& m, const Context& c, Output& out) {
         return;
     }
     const DeviceSlot& d = c.devices[m.stage];
-    if (!d.on) {
+    // Another playhead's branch: its notes skip it. Ends carry no lane and pass devices that never saw the note.
+    if (!d.on || (d.lane != 0 && m.note.lane != d.lane && (m.kind == Kind::On || m.kind == Kind::Echo))) {
         forward(m, out);
         return;
     }

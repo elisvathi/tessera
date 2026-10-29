@@ -15,6 +15,7 @@ struct ModulatorPlace {
     DeviceId device; // Device level
 };
 
+/// A device in a track's chain or in one of its playheads' branches.
 Device* findDevice(Song& song, DeviceId id, TrackId* track = nullptr);
 const Device* findDevice(const Song& song, DeviceId id, TrackId* track = nullptr);
 Modulator* findModulator(Song& song, ModulatorId id, ModulatorPlace* place = nullptr);
@@ -23,6 +24,12 @@ const Modulator* findModulator(const Song& song, ModulatorId id, ModulatorPlace*
 /// A playhead, with the track and the Playheads device it is in.
 Playhead* findPlayhead(Song& song, PlayheadId id, TrackId* track = nullptr, DeviceId* device = nullptr);
 const Playhead* findPlayhead(const Song& song, PlayheadId id, TrackId* track = nullptr, DeviceId* device = nullptr);
+
+/// The list a device sits in: its track's chain, or a playhead's branch (then `playhead` says whose).
+std::vector<Device>* chainOf(Song& song, DeviceId id, PlayheadId* playhead = nullptr);
+
+/// The track's devices, its playheads' branches included (they share the kMaxDevices limit).
+int deviceCount(const Track& track);
 
 /// The track's Playheads device when it has one and it is on, else nullptr.
 const Device* activePlayheads(const Track& track);

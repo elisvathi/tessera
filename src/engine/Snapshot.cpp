@@ -403,10 +403,16 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
 uint64_t chainStructure(const Track& track) {
     uint64_t h = 1469598103934665603ull;
     auto add = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
-    for (const Device& d : track.devices) {
+    auto device = [&](const Device& d) {
         add(d.id.value);
         add(uint64_t(d.type));
         add(uint64_t(d.on) << 1 | uint64_t(d.affectDrumLanes));
+    };
+    for (const Device& d : track.devices) {
+        device(d);
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                device(b);
     }
     return h;
 }
@@ -430,7 +436,8 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                 int knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
                 bool solo = std::any_of(d.playheads.begin(), d.playheads.end(),
                                         [](const Playhead& p) { return p.solo && !p.mute; });
-                for (const Playhead& p : d.playheads) {
+                for (size_t k = 0; k < d.playheads.size(); k++) {
+                    const Playhead& p = d.playheads[k];
                     PlayheadPlayback pp;
                     pp.id = p.id.value;
                     pp.knobs = addOwner(ParamRef::Kind::Playhead, p.id.value, p.params);
@@ -438,6 +445,18 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                     pp.audible = !p.mute && (!solo || p.solo);
                     if (d.on)
                         chain.playheads.push_back(pp);
+                    // Branch devices run first in the chain; each only touches its own playhead's notes.
+                    for (const Device& b : p.branch) {
+                        DevicePlayback bp;
+                        bp.type = b.type;
+                        bp.on = b.on && d.on;
+                        bp.affectDrums = b.affectDrumLanes;
+                        bp.id = b.id.value;
+                        bp.knobs = addOwner(ParamRef::Kind::Device, b.id.value, b.params);
+                        bp.lane = uint8_t(k + 1);
+                        chain.devices.push_back(bp);
+                        chain.active |= bp.on;
+                    }
                 }
                 if (d.on)
                     chain.playheadKnobs = knobs;

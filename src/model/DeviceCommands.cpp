@@ -180,6 +180,12 @@ Playhead nextPlayhead(const Device& device, PlayheadId id) {
     return p;
 }
 
+TrackId trackOfPlayhead(const Song& song, PlayheadId id) {
+    TrackId track;
+    findPlayhead(song, id, &track);
+    return track;
+}
+
 std::string playheadName(const Song& song, PlayheadId id) {
     const Playhead* p = findPlayhead(song, id);
     return p ? p->name : "playhead";
@@ -206,7 +212,7 @@ std::string modulatorName(const Song& song, ModulatorId id) {
 
 CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int index, const NextId& nextId) {
     const Track* existing = song.findTrack(trackId);
-    if (!existing || int(existing->devices.size()) >= kMaxDevices)
+    if (!existing || deviceCount(*existing) >= kMaxDevices)
         return nullptr;
     if (type == DeviceType::Playheads && hasPlayheads(*existing))
         return nullptr;
@@ -239,8 +245,8 @@ CommandPtr removeDevice(const Song& song, DeviceId id) {
     if (!findDevice(song, id, &trackId))
         return nullptr;
     return chainEdit(song, "Remove " + deviceName(song, id), [&](Song& work) {
-        Track& track = *work.findTrack(trackId);
-        track.devices.erase(deviceIn(track, id));
+        std::vector<Device>& chain = *chainOf(work, id);
+        chain.erase(std::find_if(chain.begin(), chain.end(), [&](const Device& d) { return d.id == id; }));
         pruneRoutes(work);
         return true;
     });
@@ -251,8 +257,12 @@ CommandPtr moveDevice(const Song& song, DeviceId id, TrackId toTrack, int index)
     if (!findDevice(song, id, &fromTrack))
         return nullptr;
     const Track* target = song.findTrack(toTrack);
-    if (!target || (toTrack != fromTrack && int(target->devices.size()) >= kMaxDevices))
+    if (!target || (toTrack != fromTrack && deviceCount(*target) >= kMaxDevices))
         return nullptr;
+    PlayheadId inBranch;
+    chainOf(const_cast<Song&>(song), id, &inBranch);
+    if (inBranch.valid())
+        return nullptr; // branch devices stay in their branch
     if (findDevice(song, id)->type == DeviceType::Playheads && toTrack != fromTrack && hasPlayheads(*target))
         return nullptr;
     return chainEdit(song, "Move " + deviceName(song, id), [&](Song& work) {
@@ -277,6 +287,21 @@ CommandPtr duplicateDevice(const Song& song, DeviceId id, const NextId& nextId) 
     const Device* original = findDevice(song, id, &trackId);
     if (!original)
         return nullptr;
+    PlayheadId inBranch;
+    chainOf(const_cast<Song&>(song), id, &inBranch);
+    if (inBranch.valid()) {
+        const Playhead* p = findPlayhead(song, inBranch);
+        if (int(p->branch.size()) >= kMaxBranchDevices || deviceCount(*song.findTrack(trackId)) >= kMaxDevices)
+            return nullptr;
+        Device copy = *original;
+        copy.id = DeviceId(nextId());
+        return chainEdit(song, "Duplicate " + original->name, [&](Song& work) {
+            std::vector<Device>& branch = *chainOf(work, id);
+            auto at = std::find_if(branch.begin(), branch.end(), [&](const Device& d) { return d.id == id; });
+            branch.insert(at + 1, copy);
+            return true;
+        });
+    }
     const Track& track = *song.findTrack(trackId);
     int at = int(std::find_if(track.devices.begin(), track.devices.end(), [&](const Device& d) { return d.id == id; }) -
                  track.devices.begin());
@@ -290,7 +315,12 @@ CommandPtr duplicateDevice(const Song& song, DeviceId id, const NextId& nextId) 
 CommandPtr copyDevice(const Song& song, DeviceId id, TrackId toTrack, int index, const NextId& nextId) {
     const Device* original = findDevice(song, id);
     const Track* target = song.findTrack(toTrack);
-    if (!original || !target || int(target->devices.size()) >= kMaxDevices)
+    if (!original || !target)
+        return nullptr;
+    int adds = 1;
+    for (const Playhead& p : original->playheads)
+        adds += int(p.branch.size());
+    if (deviceCount(*target) + adds > kMaxDevices)
         return nullptr;
     if (original->type == DeviceType::Playheads && hasPlayheads(*target))
         return nullptr;
@@ -379,6 +409,20 @@ CommandPtr addPlayhead(const Song& song, DeviceId deviceId, const NextId& nextId
     });
 }
 
+CommandPtr addBranchDevice(const Song& song, PlayheadId id, DeviceType type, int index, const NextId& nextId) {
+    TrackId trackId;
+    const Playhead* p = findPlayhead(song, id, &trackId);
+    if (!p || type == DeviceType::Playheads || int(p->branch.size()) >= kMaxBranchDevices ||
+        deviceCount(*song.findTrack(trackId)) >= kMaxDevices)
+        return nullptr;
+    Device device = devices::makeDevice(type, DeviceId(nextId()));
+    return playheadEdit(song, id, "Add " + device.name + " to " + p->name, [&](Device&, Playhead& ph) {
+        int at = index < 0 ? int(ph.branch.size()) : std::min(index, int(ph.branch.size()));
+        ph.branch.insert(ph.branch.begin() + at, device);
+        return true;
+    });
+}
+
 CommandPtr removePlayhead(const Song& song, PlayheadId id) {
     return playheadEdit(song, id, "Remove " + playheadName(song, id), [&](Device& d, Playhead&) {
         d.playheads.erase(std::find_if(d.playheads.begin(), d.playheads.end(),
@@ -394,12 +438,20 @@ CommandPtr duplicatePlayhead(const Song& song, PlayheadId id, const NextId& next
         device = findDevice(song, deviceId);
     if (!device || int(device->playheads.size()) >= playheads::kMaxPlayheads)
         return nullptr;
+    const Playhead* source = findPlayhead(song, id);
+    if (deviceCount(*song.findTrack(trackOfPlayhead(song, id))) + int(source->branch.size()) > kMaxDevices)
+        return nullptr;
     PlayheadId fresh(nextId());
+    std::vector<DeviceId> branchIds;
+    for (size_t k = 0; k < source->branch.size(); k++)
+        branchIds.push_back(DeviceId(nextId()));
     if (added)
         *added = fresh;
     return playheadEdit(song, id, "Duplicate " + playheadName(song, id), [&](Device& d, Playhead& original) {
         Playhead copy = original;
         copy.id = fresh;
+        for (size_t k = 0; k < copy.branch.size(); k++)
+            copy.branch[k].id = branchIds[k];
         copy.name = original.name + " copy";
         copy.color = uint8_t(d.playheads.size() % 16);
         auto at = std::find_if(d.playheads.begin(), d.playheads.end(), [&](const Playhead& p) { return p.id == id; });
@@ -566,8 +618,11 @@ void renewIds(std::vector<Device>& devices, std::vector<Modulator>& modulators, 
         renew(d.id);
         for (Modulator& m : d.modulators)
             renew(m.id);
-        for (Playhead& p : d.playheads)
+        for (Playhead& p : d.playheads) {
             renew(p.id);
+            for (Device& b : p.branch)
+                renew(b.id);
+        }
     }
     for (Modulator& m : modulators)
         renew(m.id);

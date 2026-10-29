@@ -345,3 +345,33 @@ TEST_CASE("MIDI export with devices applied plays what the playheads read") {
     o.devices = render::DeviceMode::Bypassed;
     CHECK(render::trackNotes(song, song.tracks[0].id, o, {}).size() == 4);
 }
+
+TEST_CASE("each playhead has a branch of its own devices, sharing the track's limit") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    PlayheadId second = firstDevice(song).playheads[1].id;
+    applyUndoable(song, addBranchDevice(song, second, DeviceType::Transpose, -1, idsOf(song)));
+    applyUndoable(song, addBranchDevice(song, second, DeviceType::Echo, 0, idsOf(song)));
+    const std::vector<Device>& branch = firstDevice(song).playheads[1].branch;
+    REQUIRE(branch.size() == 2);
+    CHECK(branch[0].type == DeviceType::Echo);
+    CHECK(branch[1].type == DeviceType::Transpose);
+    CHECK(addBranchDevice(song, second, DeviceType::Playheads, -1, idsOf(song)) == nullptr);
+
+    DeviceId transpose = branch[1].id;
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Device, transpose.value, 0}, 0.75f));
+    applyUndoable(song, setDeviceOn(song, transpose, false));
+    applyUndoable(song, duplicateDevice(song, transpose, idsOf(song)));
+    CHECK(firstDevice(song).playheads[1].branch.size() == 3);
+    applyUndoable(song, removeDevice(song, transpose));
+    CHECK(firstDevice(song).playheads[1].branch.size() == 2);
+    CHECK(deviceCount(song.tracks[0]) == 3);
+
+    PlayheadId copy;
+    applyUndoable(song, duplicatePlayhead(song, second, idsOf(song), &copy));
+    const Playhead* dup = findPlayhead(song, copy);
+    REQUIRE(dup != nullptr);
+    CHECK(dup->branch.size() == 2);
+    CHECK(dup->branch[0].id != firstDevice(song).playheads[1].branch[0].id);
+    CHECK(savedAndLoaded(song) == song);
+}

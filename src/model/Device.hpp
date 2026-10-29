@@ -73,6 +73,10 @@ struct Modulator {
     }
 };
 
+struct Device;
+
+constexpr int kMaxBranchDevices = 4; // per playhead
+
 /// One reader of the clip inside a Playheads device (docs/design/PLAYHEADS.md).
 struct Playhead {
     PlayheadId id;
@@ -82,11 +86,11 @@ struct Playhead {
     uint8_t channel = 1;       // 1..16 put on its notes; 0 = each note keeps its own
     bool mute = false;
     bool solo = false;
+    /// Devices only this playhead's notes go through, before the track's chain (never a Playheads device). They
+    /// count toward the track's kMaxDevices.
+    std::vector<Device> branch;
 
-    bool operator==(const Playhead& o) const {
-        return id == o.id && name == o.name && color == o.color && params == o.params && channel == o.channel &&
-               mute == o.mute && solo == o.solo;
-    }
+    bool operator==(const Playhead& o) const;
 };
 
 struct Device {
@@ -104,5 +108,10 @@ struct Device {
                params == o.params && modulators == o.modulators && playheads == o.playheads;
     }
 };
+
+inline bool Playhead::operator==(const Playhead& o) const {
+    return id == o.id && name == o.name && color == o.color && params == o.params && channel == o.channel &&
+           mute == o.mute && solo == o.solo && branch == o.branch;
+}
 
 } // namespace tessera
