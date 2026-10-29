@@ -18,7 +18,7 @@ enum Steps { kStepCount, kStepRate, kStepSmooth, kStepBipolar, kStepPerPass };
 enum Random { kRandomRate, kRandomSmooth, kRandomBipolar };
 enum Ramp { kBars, kDirection, kThen, kCurve, kRampPerPass };
 enum NoteFollow { kFollows, kSmooth };
-enum Curve { kCurveSync, kCurveRate, kCurveRestart, kCurvePerPass };
+enum Curve { kCurveSync, kCurveRate, kCurveRestart, kCurvePerPass }; // only kCurvePerPass (Counts in) is read
 } // namespace knob
 
 enum class Shape : uint8_t { Sine, Triangle, SawUp, SawDown, Square, SampleHold, SmoothRandom };

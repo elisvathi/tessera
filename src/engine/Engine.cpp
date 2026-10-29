@@ -1226,16 +1226,14 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
             // Its settings as modulators have them now; the region is the whole loop (a drum clip's whole lane
             // cycle): the pattern and each lane with its own length repeat inside it, as they do without playheads.
             std::copy_n(&knobValues[size_t(p.knobs)], p.knobCount, clock.knobs.data());
-            // The knob table moves a block at a time, a block behind; playheads read a block ahead. A synced curve
-            // is a function of the song position, so it is read where the playhead reads: a step drawn on a bar
+            // The knob table moves a block at a time, a block behind; playheads read a block ahead. A curve is a
+            // function of the song position, so it is read where the playhead reads: a step drawn on a bar
             // reaches the note on that bar.
             for (const PlayheadPlayback::Exact& x : p.exact) {
                 const ModulatorPlayback& mp = snapshot->modulators[size_t(x.modulator)];
                 mods::State st = (*modStates)[size_t(mp.slot)];
                 const float* mk = &knobValues[size_t(mp.knobs)];
-                if (st.owner != mp.id ||
-                    devices::display(devices::modulatorInfo(mp.type).params[mods::knob::kCurveSync],
-                                     mk[mods::knob::kCurveSync]) < 0.5f)
+                if (st.owner != mp.id)
                     continue;
                 mods::Clock at;
                 at.songTick = songTick + (from - playTick);

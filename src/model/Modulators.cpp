@@ -201,9 +201,8 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
             out = drawn ? drawnAt(*drawn, k * double(kPassTicks)) * 2 - 1 : 0;
             break;
         }
-        double phase = cycles(shown(type, knobs, knob::kCurveSync) > 0.5f, double(length),
-                              double(shown(type, knobs, knob::kCurveRate)),
-                              Restart(int(shown(type, knobs, knob::kCurveRestart))), state, clock);
+        // Always with the song, from its start: the cycle is the drawn length, on the grid.
+        double phase = cycles(true, double(length), 0, Restart::Free, state, clock);
         // Drawn 0..1 around the middle: 0.5 leaves its targets where they are.
         out = drawn ? drawnAt(*drawn, (phase - std::floor(phase)) * double(length)) * 2 - 1 : 0;
         break;
