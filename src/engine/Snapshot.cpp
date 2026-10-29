@@ -255,6 +255,18 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
     for (LaneLoop& loop : out.laneLoops)
         for (NoteEvent& e : loop.notes)
             e.key = key;
+    for (const NoteEvent& e : out.notes) {
+        uint64_t motion = e.extras < out.extras.size() ? out.extras[e.extras].note.motion.value : 0;
+        if (!motion)
+            continue;
+        auto it = std::find_if(out.motions.begin(), out.motions.end(),
+                               [&](const ClipPlayback::MotionNotes& m) { return m.motion == motion; });
+        if (it == out.motions.end())
+            it = out.motions.insert(out.motions.end(), {motion, {}, {}});
+        it->notes.push_back(e);
+    }
+    for (ClipPlayback::MotionNotes& m : out.motions)
+        m.notesByEnd = playheads::orderByEnd(m.notes);
     return out;
 }
 
@@ -446,7 +458,18 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
     for (size_t i = 0; i < song.tracks.size(); i++) {
         const Track& track = song.tracks[i];
         ChainPlayback& chain = snap.chains[i];
+        const Device* reader = activePlayheads(track);
+        bool beforeReader = reader != nullptr;
         for (const Device& d : track.devices) {
+            if (&d == reader)
+                beforeReader = false;
+            if (d.type == DeviceType::Motion && beforeReader) {
+                // Moves the notes the playheads read, so they read it, not the chain.
+                int knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
+                if (d.on)
+                    chain.readMotions.push_back({d.id.value, knobs});
+                continue;
+            }
             if (d.type == DeviceType::Playheads) {
                 int knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
                 bool solo = std::any_of(d.playheads.begin(), d.playheads.end(),

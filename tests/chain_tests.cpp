@@ -1631,3 +1631,36 @@ TEST_CASE("engine: playheads play exactly the notes their settings say, whatever
                 }
     CHECK(checked == 72);
 }
+
+TEST_CASE("engine: a Motion device before the playheads moves the note inside the clip; after them it delays it") {
+    // One note on beat 1, pushed a beat later; one playhead at 2x.
+    auto firstStart = [](bool before) {
+        Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+        Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+        p.params[playheads::knob::kRate] = devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10);
+        heads.playheads.push_back(p);
+        Device motion = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+        motion.params[chain::knob::kMotionTime] =
+            devices::normalize(devices::motionInfo().params[chain::knob::kMotionTime], 4); // 4/16 = a beat
+        song.clips.begin()->second.notes[0].motion = motion.id;
+        if (before) {
+            song.tracks[0].devices.push_back(motion);
+            song.tracks[0].devices.push_back(heads);
+        } else {
+            song.tracks[0].devices.push_back(heads);
+            song.tracks[0].devices.push_back(motion);
+        }
+        Harness h(song);
+        for (int64_t s = 0; s < 2 * kPpq * kSamplesPerTick; s++) {
+            h.step();
+            if (h.gate())
+                return double(s) / kSamplesPerTick;
+        }
+        return -1.0;
+    };
+    // Before: the note sits on beat 2 of the clip, which a 2x playhead reaches after half a beat.
+    CHECK(firstStart(true) == doctest::Approx(kPpq / 2).epsilon(0.01));
+    // After: the playhead plays it on beat 1, then it is a beat late.
+    CHECK(firstStart(false) == doctest::Approx(kPpq).epsilon(0.01));
+}

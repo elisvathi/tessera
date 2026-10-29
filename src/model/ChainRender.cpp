@@ -1,6 +1,7 @@
 #include "ChainRender.hpp"
 
 #include "Arrangement.hpp"
+#include "DeviceLookup.hpp"
 #include "Devices.hpp"
 #include "Modulators.hpp"
 
@@ -93,9 +94,17 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
                 slots.push_back({b.type, b.on && d.on, b.affectDrumLanes, b.id.value,
                                  knobs[{int(ParamRef::Kind::Device), b.id.value}].value.data(), uint8_t(k + 1)});
             }
-    for (const Device& d : track.devices)
+    // Motion devices before an active Playheads device moved the notes the playheads read: not in the chain.
+    const Device* reader = activePlayheads(track);
+    bool beforeReader = reader != nullptr;
+    for (const Device& d : track.devices) {
+        if (&d == reader)
+            beforeReader = false;
+        if (d.type == DeviceType::Motion && beforeReader)
+            continue;
         slots.push_back({d.type, d.on, d.affectDrumLanes, d.id.value,
                          knobs[{int(ParamRef::Kind::Device), d.id.value}].value.data()});
+    }
 
     // Motion devices' knobs take "Per pass" modulators per note, at its pass (passKnob), not as time runs.
     std::vector<uint64_t> motions;

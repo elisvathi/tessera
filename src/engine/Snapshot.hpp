@@ -85,6 +85,14 @@ struct ClipPlayback {
     // In a lane cycle the loop is the whole cycle, and `notes` and the automation repeat the clip's own loop,
     // this long, inside it. 0: they repeat on the loop.
     Tick pattern = 0;
+    /// The notes of each Motion device, also kept apart: playheads read the ones whose Motion device sits before
+    /// them from here, shifted by its Time (a whole group moves together, so it stays in order).
+    struct MotionNotes {
+        uint64_t motion = 0;
+        std::vector<NoteEvent> notes;
+        std::vector<uint32_t> notesByEnd;
+    };
+    std::vector<MotionNotes> motions;
 
     Tick loopLength() const { return loopEnd - loopStart; }
     Tick patternLength() const { return pattern > 0 ? pattern : loopLength(); }
@@ -231,6 +239,13 @@ struct ChainPlayback {
     /// The track's Playheads device, when it has one that is on: its playheads and where its own knobs are.
     std::vector<PlayheadPlayback> playheads;
     int playheadKnobs = -1;
+    /// Motion devices before the Playheads device: the playheads read their notes moved (Engine::playPlayheads),
+    /// so they are not in `devices`.
+    struct ReadMotion {
+        uint64_t id = 0;
+        int knobs = 0;
+    };
+    std::vector<ReadMotion> readMotions;
     /// Changes when devices are added, removed, reordered, switched on or off: their notes in flight are dropped.
     uint64_t structure = 0;
     bool active = false; // some device is on

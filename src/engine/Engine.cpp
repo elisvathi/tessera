@@ -1275,7 +1275,11 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 int count = playheads::sweeps(m, ownA, ownB, sweeps);
                 for (int i = 0; i < count; i++) {
                     const playheads::Sweep& sweep = sweeps[i];
-                    auto onHit = [&](const NoteEvent& e, double pos) {
+                    // `moved`: the note comes from a Motion device before the playheads, already shifted in time.
+                    auto playHit = [&](const NoteEvent& e, double pos, const MovedBy* moved) {
+                        if (!moved && !chain.readMotions.empty() && e.extras < clip.extras.size() &&
+                            readMotion(chain, clip.extras[e.extras].note.motion.value))
+                            return; // read from its Motion device's own list, moved
                         if (!playheads::picked(clock.shape.pick, e.role))
                             return;
                         double t = segA + (playheads::timeAt(m, sweep, pos) - ownA) / rate;
@@ -1285,6 +1289,12 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                             n.channel = p.channel;
                         const Scale& key =
                             n.key > 0 && n.key <= track.keys.size() ? track.keys[size_t(n.key) - 1] : snapshot->key;
+                        if (moved) {
+                            if (moved->steps != 0)
+                                n.pitch = int8_t(std::clamp(
+                                    moved->inKey ? key.stepBy(n.pitch, moved->steps) : n.pitch + moved->steps, 0, 127));
+                            n.velocity = std::clamp(n.velocity + moved->velocity, 0.f, 1.f);
+                        }
                         n.pitch = int8_t(playheads::shapedPitch(clock.shape, n.pitch, clip.lowest, clip.highest, key));
                         n.velocity = std::clamp(n.velocity + clock.shape.velocity, 0.f, 1.f);
                         if (once) {
@@ -1298,6 +1308,8 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         playheads::Motion timed = m;
                         timed.rate = rate;
                         double length = playheads::noteLength(knobs, timed, double(e.end - e.start), ts) * stretch;
+                        if (moved)
+                            length = std::max(1.0, length * moved->lengthScale);
                         // Each playhead counts its own passes (its region's length of its own time), and the
                         // playhead's place is mixed in, so two playheads make their own chance and spread choices.
                         int64_t pass = int64_t(std::floor(ownA / std::max(1.0, m.regionLength))) * 16 + int64_t(index);
@@ -1315,7 +1327,20 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                             startNote(track, state, n, onPlay, onPlay + length, pass, lane);
                         }
                     };
+                    auto onHit = [&](const NoteEvent& e, double pos) { playHit(e, pos, nullptr); };
                     double start = double(clip.loopStart);
+                    // Each Motion device before the playheads: its notes shifted later by its Time on this pass of
+                    // the clip, wrapping at the loop's end, and moved in pitch, length and velocity.
+                    for (const ChainPlayback::ReadMotion& rm : chain.readMotions)
+                        for (const ClipPlayback::MotionNotes& group : clip.motions) {
+                            if (group.motion != rm.id || clip.loopLength() <= 0)
+                                continue;
+                            int64_t clipPass = int64_t(std::floor(segA / double(clip.loopLength())));
+                            MovedBy moved = movedBy(rm.knobs, clipPass);
+                            playheads::crossedRepeating(
+                                sweep, start, start - moved.delay, double(clip.loopLength()), group.notes,
+                                group.notesByEnd, [&](const NoteEvent& e, double pos) { playHit(e, pos, &moved); });
+                        }
                     if (clip.pattern > 0 && clip.pattern < clip.loopLength())
                         playheads::crossedRepeating(sweep, start, start, double(clip.pattern), clip.notes,
                                                     clip.notesByEnd, onHit);
@@ -1706,6 +1731,26 @@ bool Engine::perPassSlot(int slot) const {
         if (m.slot == slot)
             return mods::perPass(m.type, &knobValues[size_t(m.knobs)]);
     return false;
+}
+
+bool Engine::readMotion(const ChainPlayback& chain, uint64_t motion) {
+    for (const ChainPlayback::ReadMotion& rm : chain.readMotions)
+        if (rm.id == motion)
+            return motion != 0;
+    return false;
+}
+
+Engine::MovedBy Engine::movedBy(int knobs, int64_t pass) const {
+    auto value = [&](int k) {
+        return devices::display(devices::motionInfo().params[size_t(k)], motionKnob(knobs + k, pass));
+    };
+    MovedBy m;
+    m.steps = int(std::lround(value(chain::knob::kMotionPitch)));
+    m.inKey = value(chain::knob::kMotionInKey) > 0.5f;
+    m.delay = double(value(chain::knob::kMotionTime)) * double(kPpq / 4);
+    m.lengthScale = 1 + double(value(chain::knob::kMotionLength)) / 100;
+    m.velocity = value(chain::knob::kMotionVelocity) / 100;
+    return m;
 }
 
 float Engine::motionKnob(int knob, int64_t pass) const {
