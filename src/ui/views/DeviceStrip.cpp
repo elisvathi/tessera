@@ -1124,20 +1124,17 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             if (!ph)
                 break;
             std::string label, value;
-            bool dim = false;
             if (p.kind == Kind::PlayheadDirection) {
                 label = "Direction";
                 value = deviceActions::directionText(*ph);
-                dim = value == "Forward";
             } else if (p.kind == Kind::PlayheadRepeat) {
                 label = "Repeat";
                 value = deviceActions::repeatText(*ph);
-                dim = value == "Off";
             } else {
                 label = "Channel";
                 value = ph->channel == 0 ? "Own" : std::to_string(ph->channel);
             }
-            drawDropdown(vg, p, label, value, dim, hot);
+            drawDropdown(vg, p, label, value, hot);
             break;
         }
         case Kind::PlayheadMore: {
@@ -1205,11 +1202,9 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
 }
 
 void DeviceStrip::drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value,
-                               bool dim, bool hot) {
+                               bool hot) {
     const theme::Palette& c = theme::colors();
     nvgSave(vg);
-    if (dim)
-        nvgGlobalAlpha(vg, 0.5f);
     float cx = part.rect.getCenter().x;
     float top = part.rect.pos.y + 2;
     Rect box(cx - 28, top + 9, 56, 20);
@@ -1283,21 +1278,16 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
         if (!lanes.empty())
             valueColor = deviceActions::laneColor(song, lanes.front());
     }
-    // A playhead's knobs take its colour; one left at its default draws quiet; one with a curve shows it.
-    bool curved = deviceActions::curveOn(song, ref).valid(), quiet = false;
-    if (ref.kind == ParamRef::Kind::Playhead)
-        if (const Playhead* ph = findPlayhead(song, PlayheadId(ref.owner))) {
-            if (!automated)
-                valueColor = theme::playheadColor(ph->color);
-            quiet = !curved && std::fabs(base - devices::defaultNormalized(*info)) < 1e-4f;
-        }
+    // A playhead's knobs take its colour; one with a curve shows it.
+    bool curved = deviceActions::curveOn(song, ref).valid();
+    if (ref.kind == ParamRef::Kind::Playhead && !automated)
+        if (const Playhead* ph = findPlayhead(song, PlayheadId(ref.owner)))
+            valueColor = theme::playheadColor(ph->color);
     bool mapping = ctx.mappingModulator != 0;
     bool lit = mapping && reachableNow(ref);
     nvgSave(vg);
     if (mapping && !lit)
         nvgGlobalAlpha(vg, 0.3f);
-    else if (quiet)
-        nvgGlobalAlpha(vg, 0.5f);
 
     float cx = part.rect.getCenter().x;
     float top = part.rect.pos.y + 2;
