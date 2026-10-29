@@ -729,3 +729,40 @@ TEST_CASE("a clip's motion group saved before Motion devices loads as a Motion d
     CHECK(plain.tracks[0].devices[0].type == DeviceType::Playheads);
     CHECK(plain.tracks[0].devices[1].type == DeviceType::Motion);
 }
+
+TEST_CASE("MIDI export reads the notes of a Motion device before the playheads where it moved them") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.length = 240;
+    n.pitch = 60;
+    clip.notes.push_back(n);
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId head = firstDevice(song).playheads[0].id;
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRate)},
+                                 devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10)));
+    DeviceId motion;
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Motion, -1, idsOf(song), &motion));
+    applyUndoable(song, setNotesMotion(song, clip.id, {n.id}, motion));
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Device, motion.value, uint16_t(chain::knob::kMotionTime)},
+                                 devices::normalize(devices::motionInfo().params[chain::knob::kMotionTime], 4)));
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Device, motion.value, uint16_t(chain::knob::kMotionPitch)},
+                                 devices::normalize(devices::motionInfo().params[chain::knob::kMotionPitch], 1)));
+    std::vector<std::pair<Tick, int>> got;
+    for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+        got.push_back({e.start, e.pitch});
+    // On beat 2 of the clip (a 2x playhead reaches it after half a beat), a step up in the song's key.
+    int up = resolveScale(song.scale, song.customScales).stepBy(60, 1);
+    REQUIRE(!got.empty());
+    CHECK(got[0] == std::pair<Tick, int>{kPpq / 2, up});
+}

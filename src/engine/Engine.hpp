@@ -495,6 +495,17 @@ class Engine {
     /// A motion group knob as a note on `pass` reads it: the knob table's value, with "Per pass" modulators
     /// stepped to that pass instead of the bar.
     float motionKnob(int knob, int64_t pass) const;
+    /// How a Motion device whose knobs start at `knobs` moves its notes on `pass`.
+    struct MovedBy {
+        int steps = 0;
+        bool inKey = true;
+        double delay = 0;
+        double lengthScale = 1;
+        float velocity = 0;
+    };
+    MovedBy movedBy(int knobs, int64_t pass) const;
+    /// Whether `motion` is a Motion device before the track's playheads (they read its notes moved).
+    static bool readMotion(const ChainPlayback& chain, uint64_t motion);
     /// Whether the modulator in `slot` is a Steps or Ramp set to "Per pass".
     bool perPassSlot(int slot) const;
     void startWithOperators(const TrackPlayback& track, TrackState& state, const NoteEvent& n, const NoteExtras& ex,

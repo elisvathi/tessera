@@ -5,6 +5,7 @@
 #include "ChainRender.hpp"
 #include "DeviceLookup.hpp"
 #include "DeviceTypes.hpp"
+#include "Devices.hpp"
 #include "Modulators.hpp"
 #include "DrumKit.hpp"
 #include "Json.hpp"
@@ -114,6 +115,59 @@ void playheadKnobsAt(const Song& song, const Track& track, const Device& device,
     add(device.modulators);
     for (size_t i = 0; i < p.params.size(); i++)
         out[i] = std::clamp(out[i], 0.f, 1.f);
+}
+
+/// How a Motion device before the playheads moves its notes on `pass` of the clip: its knobs, with the "Per pass"
+/// modulators routed to them stepped to that pass, as the engine reads them.
+struct MovedBy {
+    int steps = 0;
+    bool inKey = true;
+    double delay = 0;
+    double lengthScale = 1;
+    float velocity = 0;
+};
+
+MovedBy movedAt(const Song& song, const Track& track, const Device& motion, int64_t pass) {
+    std::vector<float> knobs = motion.params;
+    auto add = [&](const std::vector<Modulator>& list) {
+        for (const Modulator& m : list) {
+            if (!mods::perPass(m.type, m.params.data()))
+                continue;
+            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            for (const Modulation& r : m.routes)
+                if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
+                    r.target.owner == motion.id.value && r.target.param < knobs.size())
+                    knobs[r.target.param] += r.amount * mods::passValue(m.type, m.id.value, m.params.data(), pass,
+                                                                        song.timeSig, m.steps.data(),
+                                                                        int(m.steps.size()), &drawn);
+        }
+    };
+    add(song.modulators);
+    add(track.modulators);
+    for (const Device& d : track.devices)
+        add(d.modulators);
+    auto value = [&](int k) {
+        return devices::display(devices::motionInfo().params[size_t(k)], std::clamp(knobs[size_t(k)], 0.f, 1.f));
+    };
+    MovedBy out;
+    out.steps = int(std::lround(value(chain::knob::kMotionPitch)));
+    out.inKey = value(chain::knob::kMotionInKey) > 0.5f;
+    out.delay = double(value(chain::knob::kMotionTime)) * double(kPpq / 4);
+    out.lengthScale = 1 + double(value(chain::knob::kMotionLength)) / 100;
+    out.velocity = value(chain::knob::kMotionVelocity) / 100;
+    return out;
+}
+
+/// The Motion devices before a track's Playheads device (switched on): the playheads read their notes moved.
+std::vector<const Device*> readMotions(const Track& track) {
+    std::vector<const Device*> out;
+    for (const Device& d : track.devices) {
+        if (d.type == DeviceType::Playheads)
+            return out;
+        if (d.type == DeviceType::Motion && d.on)
+            out.push_back(&d);
+    }
+    return {};
 }
 
 /// The items with the chosen timing and operators applied, sorted by start. Operators run exactly as the engine runs
@@ -243,6 +297,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             double base, period;
             std::vector<Readable> notes;
             std::vector<uint32_t> byEnd;
+            const Device* motion = nullptr; // a Motion device before the playheads: its notes, read moved
         };
         std::vector<Group> groups;
         std::vector<int> ownLoopPitches;
@@ -279,6 +334,24 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 highest = std::max(highest, n.pitch);
             }
         }
+        // Notes of a Motion device before the playheads leave the main list for their own, read shifted by its Time
+        // (chord roles stay as the whole clip gives them).
+        for (const Device* motion : readMotions(t)) {
+            Group moved{groups.back().base, groups.back().period, {}, {}, motion};
+            std::vector<Readable>& rest = groups.back().notes;
+            for (auto it = rest.begin(); it != rest.end();)
+                if (it->source && it->source->motion == motion->id) {
+                    moved.notes.push_back(*it);
+                    it = rest.erase(it);
+                } else {
+                    ++it;
+                }
+            if (moved.notes.empty())
+                continue;
+            groups.back().byEnd = playheads::orderByEnd(rest);
+            moved.byEnd = playheads::orderByEnd(moved.notes);
+            groups.insert(groups.end() - 1, std::move(moved));
+        }
         Scale scale = clip->scaleOverride ? resolveScale(*clip->scaleOverride, song.customScales)
                                         : resolveScale(song.scale, song.customScales);
 
@@ -303,32 +376,43 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 playheads::Sweep sweeps[playheads::kMaxSweeps];
                 int count = playheads::sweeps(m, e, to, sweeps);
                 for (int i = 0; i < count; i++)
-                    for (const Group& g : groups)
+                    for (const Group& g : groups) {
+                        MovedBy moved;
+                        if (g.motion) // its pass is the clip's
+                            moved = movedAt(song, t, *g.motion,
+                                            int64_t(std::floor(e / std::max(1.0, playEnd - playStart))));
                         playheads::crossedRepeating(
-                            sweeps[i], playStart, g.base, g.period, g.notes, g.byEnd,
+                            sweeps[i], playStart, g.base - moved.delay, g.period, g.notes, g.byEnd,
                             [&](const Readable& n, double pos) {
                                 if (!playheads::picked(shape.pick, n.role))
                                     return;
                                 double elapsed = playheads::timeAt(m, sweeps[i], pos);
                                 double at = double(a.position) + (elapsed - begin) * stretch;
-                                double len =
-                                    playheads::noteLength(knobs.data(), m, n.end - n.start, song.timeSig) * stretch;
+                                double len = playheads::noteLength(knobs.data(), m, n.end - n.start, song.timeSig) *
+                                             stretch * std::max(0.01, moved.lengthScale);
                                 // The pass as the engine counts it: the playhead's own time over its region, its place
                                 // mixed in.
                                 double own =
                                     m.rate * (m.restartEvery > 0 ? std::fmod(elapsed, m.restartEvery) : elapsed);
                                 int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
                                 Tick start = Tick(std::llround(at));
-                                int pitch = playheads::shapedPitch(shape, n.pitch, lowest, highest, scale);
+                                int written = n.pitch;
+                                if (moved.steps != 0)
+                                    written = std::clamp(moved.inKey ? scale.stepBy(written, moved.steps)
+                                                                     : written + moved.steps,
+                                                         0, 127);
+                                int pitch = playheads::shapedPitch(shape, written, lowest, highest, scale);
                                 TimedNote note{start,
                                                std::max(start + 1, Tick(std::llround(at + len))),
                                                int8_t(pitch),
-                                               std::clamp(n.source->velocity + shape.velocity, 0.f, 1.f),
+                                               std::clamp(n.source->velocity + shape.velocity + moved.velocity, 0.f,
+                                                          1.f),
                                                n.source->releaseVelocity,
                                                n.source,
                                                pass};
                                 items.push_back({note, a.clip, key, p.channel, uint8_t(index + 1)});
                             });
+                    }
             }
         }
     }
@@ -621,6 +705,7 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
                                      : resolveScale(song.scale, song.customScales);
     constexpr double kStep = double(kPpq) / 8;
     std::vector<float> knobs(p.params.size());
+    std::vector<const Device*> before = readMotions(track);
     for (double e = 0; e < playEnd - playStart; e += kStep) {
         playheadKnobsAt(song, track, device, p, e, knobs.data());
         playheads::Motion m =
@@ -632,8 +717,18 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
         int count = playheads::sweeps(m, e, e + kStep, sweeps);
         for (int i = 0; i < count; i++)
             playheads::crossed(sweeps[i], notes, byEnd, [&](const Readable& n, double) {
-                if (heard[n.index] < 0 && playheads::picked(shape.pick, n.role))
-                    heard[n.index] = playheads::shapedPitch(shape, n.pitch, lowest, highest, scale);
+                if (heard[n.index] >= 0 || !playheads::picked(shape.pick, n.role))
+                    return;
+                // A Motion device before the playheads moves the note's pitch first (its first pass).
+                int pitch = n.pitch;
+                for (const Device* motion : before)
+                    if (clip.notes[n.index].motion == motion->id) {
+                        MovedBy moved = movedAt(song, track, *motion, 0);
+                        if (moved.steps != 0)
+                            pitch = std::clamp(moved.inKey ? scale.stepBy(pitch, moved.steps) : pitch + moved.steps,
+                                               0, 127);
+                    }
+                heard[n.index] = playheads::shapedPitch(shape, pitch, lowest, highest, scale);
             });
     }
     return heard;
