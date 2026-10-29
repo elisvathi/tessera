@@ -1542,3 +1542,87 @@ TEST_CASE("engine: a curve moves a playhead setting while it plays") {
     }
     CHECK(pitches == std::vector<int>{60, 72, 60});
 }
+
+TEST_CASE("engine: playheads play every note while the song is being edited") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+    song.clips.begin()->second.notes[1].ops.velocitySpread = 0.01f; // a note with operators (extras)
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    // An odd tempo, so the playheads' reads ahead don't line up with the beats and hold queued notes.
+    h.engine.setTempo(kBpm * 1.37);
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = 0; s < int64_t((4 * 4 * kPpq - 100) * kSamplesPerTick / 1.37); s++) {
+        if (s % 47 == 0)
+            h.republish(); // edits all the time: the notes read ahead must still play
+        h.step();
+        bool now = h.anyGate();
+        starts += now && !was;
+        was = now;
+    }
+    CHECK(starts == 16);
+}
+
+TEST_CASE("engine: playheads play exactly the notes their settings say, whatever the settings") {
+    const devices::TypeInfo& info = devices::playheadInfo();
+    using namespace playheads::knob;
+    int checked = 0;
+    for (int rate : {4, 7, 10, 12})
+        for (int direction : {0, 1, 2})
+            for (int repeat : {0, 3})
+                for (int order : {0, 1, 4}) {
+                    Song song = songWith({{0, 120, 60}, {960, 120, 62}, {1920, 120, 64}, {2880, 120, 65}}, 4 * kPpq,
+                                         kAutoVoices);
+                    tessera::Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+                    tessera::Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+                    auto set = [&](int k, float v) { p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v); };
+                    set(kRate, float(rate));
+                    set(kDirection, float(direction));
+                    set(kRepeatSize, float(repeat));
+                    set(kOrder, float(order));
+                    set(kOrderStep, 3); // 1/4
+                    d.playheads.push_back(p);
+                    song.tracks[0].devices.push_back(d);
+
+                    // What should play: the pure maths over the same 4 bars.
+                    playheads::Motion m = playheads::motionFrom(p.params.data(), d.params.data(), 0, 4 * kPpq, TimeSig());
+                    const Clip& clip = song.clips.begin()->second;
+                    struct Ev {
+                        double start, end;
+                    };
+                    std::vector<Ev> evs;
+                    for (const Note& n : clip.notes)
+                        evs.push_back({double(n.start), double(n.end())});
+                    std::vector<uint32_t> byEnd = playheads::orderByEnd(evs);
+                    int expected = 0;
+                    double until = 4 * 4 * kPpq;
+                    for (double a = 0; a < until; a += 8) {
+                        playheads::Sweep s[playheads::kMaxSweeps];
+                        int n = playheads::sweeps(m, a, std::min(until, a + 8), s);
+                        for (int i = 0; i < n; i++)
+                            playheads::crossed(s[i], evs, byEnd, [&](const Ev&, double) { expected++; });
+                    }
+
+                    // What plays: gate rises on any voice.
+                    Harness h(song);
+                    int starts = 0;
+                    std::array<bool, kMaxVoices> was{};
+                    for (int64_t smp = 0; smp < int64_t(until) * kSamplesPerTick; smp++) {
+                        h.step();
+                        for (int v = 0; v < h.frame().channels; v++) {
+                            bool now = h.gate(v);
+                            starts += now && !was[size_t(v)];
+                            was[size_t(v)] = now;
+                        }
+                    }
+                    CAPTURE(rate);
+                    CAPTURE(direction);
+                    CAPTURE(repeat);
+                    CAPTURE(order);
+                    CHECK(starts == expected);
+                    checked++;
+                }
+    CHECK(checked == 72);
+}

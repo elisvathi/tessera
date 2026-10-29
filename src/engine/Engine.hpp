@@ -501,7 +501,10 @@ class Engine {
                             double onPlay, double endPlay, int64_t pass, uint8_t lane = 0);
     void startHit(const TrackPlayback& track, TrackState& state, const TrackState::PendingHit& hit);
     void firePending(const TrackPlayback& track, TrackState& state, double until);
-    static void clearPending(TrackState& state);
+    /// Notes the playheads read ahead are about to be thrown away while the clip plays on: they read again from now
+    /// (their own time wound back with them, so a moving rate stays smooth).
+    void rewindPlayheads(TrackState& state);
+    void clearPending(TrackState& state);
     void hitDrum(const TrackPlayback& track, TrackState& state, const chain::ChainNote& n);
     /// A note-off for a drum pitch: it ends a held "note length" gate. Triggers and fixed gates run their own
     /// length, so a key let go early doesn't shorten them.
