@@ -205,6 +205,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
                 }
             sortEvents(loop.notes);
             loop.notesByEnd = playheads::orderByEnd(loop.notes);
+            playheads::markChordRoles(loop.notes, [](NoteEvent& n) -> uint8_t& { return n.role; });
             out.laneLoops.push_back(std::move(loop));
             ownLoopPitches.push_back(lane.pitch);
         }
@@ -237,6 +238,18 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
     // Clip notes are already sorted by start; stable keeps chords in pitch order.
     sortEvents(out.notes);
     out.notesByEnd = playheads::orderByEnd(out.notes);
+    playheads::markChordRoles(out.notes, [](NoteEvent& n) -> uint8_t& { return n.role; });
+    bool any = false;
+    auto range = [&](const std::vector<NoteEvent>& list) {
+        for (const NoteEvent& n : list) {
+            out.lowest = any ? std::min(out.lowest, n.pitch) : n.pitch;
+            out.highest = any ? std::max(out.highest, n.pitch) : n.pitch;
+            any = true;
+        }
+    };
+    range(out.notes);
+    for (const LaneLoop& loop : out.laneLoops)
+        range(loop.notes);
     for (NoteEvent& e : out.notes)
         e.key = key;
     for (LaneLoop& loop : out.laneLoops)
@@ -422,7 +435,8 @@ uint64_t chainStructure(const Track& track) {
 void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slots) {
     auto addOwner = [&snap](ParamRef::Kind kind, uint64_t id, const std::vector<float>& params) {
         int first = int(snap.knobs.size());
-        int n = std::min<int>(int(params.size()), kMaxDeviceParams);
+        int most = kind == ParamRef::Kind::Playhead ? playheads::kMaxPlayheadParams : kMaxDeviceParams;
+        int n = std::min<int>(int(params.size()), most);
         snap.knobs.insert(snap.knobs.end(), params.begin(), params.begin() + n);
         snap.owners.push_back({kind, id, first, n});
         return first;

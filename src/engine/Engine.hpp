@@ -575,6 +575,7 @@ class Engine {
         double restart = 0;
         // Its settings in ticks, worked out once per control block (knobs only change there) for this clip.
         playheads::Motion motion;
+        playheads::NoteShape shape;
         uint64_t motionBlock = ~uint64_t(0);
         const ClipPlayback* motionClip = nullptr;
     };

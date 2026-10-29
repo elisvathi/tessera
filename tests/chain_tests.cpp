@@ -1502,3 +1502,23 @@ TEST_CASE("engine: a note in a motion group drifts pass by pass with a Per pass 
     }
     CHECK(pitches == std::vector<int>{60, 61, 60}); // up a semitone on the second pass, back on the third
 }
+
+TEST_CASE("engine: one piano roll, two parts: the bass playhead takes the lowest notes two octaves down") {
+    Song song = songWith({{0, 240, 60}, {0, 240, 64}, {0, 240, 67}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++)
+        d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), i));
+    const devices::TypeInfo& info = devices::playheadInfo();
+    auto set = [&](Playhead& p, int k, float v) { p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v); };
+    set(d.playheads[0], playheads::knob::kNotes, 2);   // the melody: highest notes
+    set(d.playheads[1], playheads::knob::kNotes, 1);   // the bass: lowest notes...
+    set(d.playheads[1], playheads::knob::kOctave, -2); // ...two octaves down
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    std::multiset<int> sounding;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding.insert(h.pitch(v));
+    CHECK(sounding == std::multiset<int>{36, 67});
+}

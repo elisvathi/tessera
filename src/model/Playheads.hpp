@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Automation.hpp"
+#include "Scale.hpp"
 #include "Types.hpp"
 
 #include <algorithm>
@@ -35,8 +36,15 @@ enum Playhead {
     kOffset,
     kLength,
     kFixedLength,
-    kPath,     // From settings, or Drawn (the playhead's path points)
-    kPathCycle // how long a drawn path lasts before it repeats
+    kPath,      // From settings, or Drawn (the playhead's path points)
+    kPathCycle, // how long a drawn path lasts before it repeats
+    kOctave,
+    kKeySteps,  // moves its notes by steps of the clip's key
+    kNotes,     // All, or only the lowest or highest of notes that start together
+    kInvert,    // mirrors its notes' pitches inside the clip's range
+    kVelocity,  // added to its notes' velocity
+    kOrder,     // reads its segment's steps in order, outside in, inside out, odd then even, or shuffled
+    kOrderStep  // the size of those steps
 };
 /// The Playheads device's own knobs.
 enum Device { kRestart, kRestartBars, kSameNote };
@@ -46,8 +54,11 @@ enum class Direction : uint8_t { Forward, Reverse, PingPong, Freeze };
 enum class Bend : uint8_t { Straight, EaseIn, EaseOut, EaseInOut, Swing, Stairs };
 enum class LengthMode : uint8_t { AsWritten, FollowsPlayhead, Fixed };
 enum class Restart : uint8_t { ClipStart, EveryBars };
+enum class Order : uint8_t { InOrder, OutsideIn, InsideOut, OddEven, Shuffle };
+enum class NotePick : uint8_t { All, Lowest, Highest };
 
 constexpr int kMaxPlayheads = 16;
+constexpr int kMaxPlayheadParams = 32; // settings per playhead, room to grow (the list is append-only)
 constexpr int kMaxSweeps = 16; // per call; a window that would need more is cut short (calls are one sample long)
 
 /// A playhead's settings in ticks, ready to move.
@@ -68,6 +79,10 @@ struct Motion {
     /// movement settings don't.
     const std::vector<AutoPoint>* path = nullptr;
     double pathCycle = 0;
+    /// The order steps of `orderStep` ticks are read in; each pass of a shuffle has its own order, from `seed`.
+    Order order = Order::InOrder;
+    double orderStep = 0;
+    uint32_t seed = 1;
     bool drawn() const { return path && !path->empty() && pathCycle > 0; }
 };
 
@@ -175,6 +190,10 @@ const std::vector<std::string>& cycleNames();
 double cycleTicks(int index, TimeSig ts);
 const std::vector<std::string>& fixedLengthNames();
 const std::vector<std::string>& pathCycleNames();
+const std::vector<std::string>& orderStepNames();
+double orderStepTicks(int index, TimeSig ts);
+/// Which of `count` steps is read `k`-th in `order` (pass `pass` of a shuffle). Every step is read once per pass.
+int orderedStep(Order order, int k, int count, int64_t pass, uint32_t seed);
 double pathCycleTicks(int index, TimeSig ts);
 double fixedLengthTicks(int index, TimeSig ts);
 
@@ -186,6 +205,45 @@ bool wantsDrawnPath(const float* knobs);
 /// The places a playhead's settings take it to over one path cycle, as points every `step` ticks, with a pair of points
 /// at each jump: what "Draw this path" starts from.
 std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double step);
+
+/// What a playhead does to the notes it plays (its NOTE settings).
+struct NoteShape {
+    int octave = 0;
+    int keySteps = 0;
+    NotePick pick = NotePick::All;
+    bool invert = false;
+    float velocity = 0; // added, -1..1
+};
+NoteShape noteShapeFrom(const float* knobs);
+
+/// Note roles among notes that start together, for NotePick: the lowest and the highest (a lone note is both).
+constexpr uint8_t kLowestNote = 1, kHighestNote = 2;
+inline bool picked(NotePick pick, uint8_t role) {
+    return pick == NotePick::All || (pick == NotePick::Lowest && (role & kLowestNote)) ||
+           (pick == NotePick::Highest && (role & kHighestNote));
+}
+
+/// A note's pitch as the playhead plays it: mirrored inside [low, high] (in the key) when inverting, then moved by
+/// octaves and key steps.
+int shapedPitch(const NoteShape& shape, int pitch, int low, int high, const Scale& key);
+
+/// Sets each note's role (kLowestNote, kHighestNote) among the notes that start with it. `notes` are sorted by start;
+/// `role` reads and writes a note's role.
+template <typename Note, typename Role>
+void markChordRoles(std::vector<Note>& notes, Role&& role) {
+    for (size_t i = 0; i < notes.size();) {
+        size_t j = i;
+        int lo = notes[i].pitch, hi = notes[i].pitch;
+        while (j < notes.size() && notes[j].start == notes[i].start) {
+            lo = std::min<int>(lo, notes[j].pitch);
+            hi = std::max<int>(hi, notes[j].pitch);
+            j++;
+        }
+        for (size_t k = i; k < j; k++)
+            role(notes[k]) = uint8_t((notes[k].pitch == lo ? kLowestNote : 0) | (notes[k].pitch == hi ? kHighestNote : 0));
+        i = j;
+    }
+}
 
 /// A playhead's settings, from its normalized knobs and the clip's play range [clipStart, clipStart + clipLength).
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts);

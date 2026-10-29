@@ -228,6 +228,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
         double start, end;
         const Note* source;
         int pitch;
+        uint8_t role = 3; // lowest and/or highest of the notes starting with it
     };
     std::map<ClipId, uint8_t> keyOf;
     bool once =
@@ -281,8 +282,17 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 std::find(ownLoopPitches.begin(), ownLoopPitches.end(), n.pitch) == ownLoopPitches.end())
                 main.notes.push_back(readable(n, patternEnd));
         groups.push_back(std::move(main));
-        for (Group& g : groups)
+        int lowest = 127, highest = 0;
+        for (Group& g : groups) {
             g.byEnd = playheads::orderByEnd(g.notes);
+            playheads::markChordRoles(g.notes, [](Readable& n) -> uint8_t& { return n.role; });
+            for (const Readable& n : g.notes) {
+                lowest = std::min(lowest, n.pitch);
+                highest = std::max(highest, n.pitch);
+            }
+        }
+        Scale scale = clip->scaleOverride ? resolveScale(*clip->scaleOverride, song.customScales)
+                                        : resolveScale(song.scale, song.customScales);
 
         double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
         double begin = double(normalizeOffset(*clip, a.offset)) - double(clipSpan(*clip).start);
@@ -295,6 +305,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                                         playEnd - playStart, song.timeSig);
             if (playheads::wantsDrawnPath(p.params.data()))
                 m.path = &p.path;
+            playheads::NoteShape shape = playheads::noteShapeFrom(p.params.data());
             // Small steps, so no window needs more sweeps than one call gives.
             constexpr double kStep = double(kPpq) / 8;
             for (double e = begin; e < begin + length; e += kStep) {
@@ -306,6 +317,8 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                         playheads::crossedRepeating(
                             sweeps[i], playStart, g.base, g.period, g.notes, g.byEnd,
                             [&](const Readable& n, double pos) {
+                                if (!playheads::picked(shape.pick, n.role))
+                                    return;
                                 double elapsed = playheads::timeAt(m, sweeps[i], pos);
                                 double at = double(a.position) + (elapsed - begin) * stretch;
                                 double len =
@@ -316,10 +329,11 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                     m.rate * (m.restartEvery > 0 ? std::fmod(elapsed, m.restartEvery) : elapsed);
                                 int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
                                 Tick start = Tick(std::llround(at));
+                                int pitch = playheads::shapedPitch(shape, n.pitch, lowest, highest, scale);
                                 TimedNote note{start,
                                                std::max(start + 1, Tick(std::llround(at + len))),
-                                               int8_t(n.pitch),
-                                               n.source->velocity,
+                                               int8_t(pitch),
+                                               std::clamp(n.source->velocity + shape.velocity, 0.f, 1.f),
                                                n.source->releaseVelocity,
                                                n.source,
                                                pass};

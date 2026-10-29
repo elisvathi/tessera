@@ -127,6 +127,23 @@ int sweepDrawn(const Motion& m, double oa, double ob, double restartBase, Sweep*
     return count;
 }
 
+bool ordered(const Motion& m) {
+    return m.order != Order::InOrder && m.orderStep > 0 && m.orderStep < m.regionLength;
+}
+
+/// How far the step holding `pos` moves when its region is read in order `m.order` on pass `pass`.
+double orderShift(const Motion& m, double pos, double pass) {
+    if (!ordered(m))
+        return 0;
+    int count = int(std::ceil(m.regionLength / m.orderStep - 1e-9));
+    int k = std::clamp(int(std::floor((pos - m.regionStart) / m.orderStep)), 0, count - 1);
+    int to = orderedStep(m.order, k, count, int64_t(pass), m.seed);
+    // The last step can be shorter; a full step moved there would run past the region's end.
+    double shift = double(to - k) * m.orderStep;
+    double rel = pos - m.regionStart + shift;
+    return rel >= m.regionLength ? shift - (rel - m.regionLength + 1e-6) : shift;
+}
+
 int sweepTravel(const Motion& m, double da, double db, double restartBase, Sweep* out, int max) {
     int count = 0;
     double d = da;
@@ -138,9 +155,21 @@ int sweepTravel(const Motion& m, double da, double db, double restartBase, Sweep
         double wrap = std::floor(x / length);
         double q = x - wrap * length;
         double end = std::min({db, segmentEnd, d + (length - q)});
+        double from = positionOf(m, wrap, q);
+        if (ordered(m)) {
+            // Each step is read on its own: a sweep ends at a step's edge, and moves to where the order puts it.
+            double rel = from - m.regionStart;
+            double into = std::fmod(rel, m.orderStep);
+            bool forward = positionOf(m, wrap, q + 1e-3) > from;
+            double room = forward ? m.orderStep - into : (into <= 1e-9 ? m.orderStep : into);
+            end = std::min(end, d + room);
+        }
         Sweep& s = out[count++];
-        s.from = positionOf(m, wrap, q);
+        s.from = from;
         s.to = positionOf(m, wrap, q + (end - d));
+        double shift = orderShift(m, (s.from + s.to) / 2, wrap);
+        s.from += shift;
+        s.to += shift;
         bool atSegmentStart = repeats(m) && d == std::floor(d / m.repeatSize) * m.repeatSize;
         s.includeFrom = !(m.direction == Direction::PingPong && q == 0 && x > 0 && !atSegmentStart);
         s.travelFrom = d;
@@ -180,6 +209,8 @@ const Length kCycles[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8}, {"1/4", 1.0 / 4}
                           {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}};
 const Length kPathCycles[] = {{"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}, {"8 bars", 8, true},
                               {"16 bars", 16, true}};
+const Length kOrderSteps[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8}, {"1/4", 1.0 / 4}, {"1/2", 1.0 / 2},
+                              {"1 bar", 1, true}};
 const Length kFixedLengths[] = {{"1/64", 1.0 / 64}, {"1/32", 1.0 / 32}, {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},
                                 {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},   {"1 bar", 1, true}};
 
@@ -226,6 +257,49 @@ const std::vector<std::string>& fixedLengthNames() {
 }
 double fixedLengthTicks(int index, TimeSig ts) { return ticksAt(kFixedLengths, index, ts); }
 
+const std::vector<std::string>& orderStepNames() {
+    static const std::vector<std::string> names = namesOf(kOrderSteps);
+    return names;
+}
+double orderStepTicks(int index, TimeSig ts) { return ticksAt(kOrderSteps, index, ts); }
+
+int orderedStep(Order order, int k, int count, int64_t pass, uint32_t seed) {
+    if (count <= 1)
+        return 0;
+    k = ((k % count) + count) % count;
+    switch (order) {
+    case Order::OutsideIn: // first, last, second, second-last…
+        return k % 2 == 0 ? k / 2 : count - 1 - k / 2;
+    case Order::InsideOut: // the same, from the middle outwards
+        return orderedStep(Order::OutsideIn, count - 1 - k, count, pass, seed);
+    case Order::OddEven: { // every other step, then the ones between
+        int half = (count + 1) / 2;
+        return k < half ? 2 * k : 2 * (k - half) + 1;
+    }
+    case Order::Shuffle: {
+        // An affine shuffle: a multiplier that shares no factor with the count visits every step once, and needs
+        // no table, so it runs on the audio thread. Each pass picks its own from the seed.
+        uint32_t h = seed * 2654435761u ^ uint32_t(pass) * 40503u;
+        h ^= h >> 15;
+        h *= 2246822519u;
+        h ^= h >> 13;
+        static const int kPrimes[] = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41};
+        int a = 1;
+        for (int i = 0; i < 12; i++) {
+            int p = kPrimes[(size_t(h) + size_t(i)) % 12];
+            if (count % p != 0) {
+                a = p;
+                break;
+            }
+        }
+        return int((int64_t(a) * k + int64_t(h % uint32_t(count))) % count);
+    }
+    case Order::InOrder:
+    default:
+        return k;
+    }
+}
+
 const std::vector<std::string>& pathCycleNames() {
     static const std::vector<std::string> names = namesOf(kPathCycles);
     return names;
@@ -270,7 +344,8 @@ double positionAt(const Motion& m, double elapsed) {
     double local = m.restartEvery > 0 ? floorMod(elapsed, m.restartEvery) : elapsed;
     double x = unwrapped(m, contentAt(m, bent(m, m.rate * std::max(0.0, local))));
     double wrap = std::floor(x / m.regionLength);
-    return positionOf(m, wrap, x - wrap * m.regionLength);
+    double pos = positionOf(m, wrap, x - wrap * m.regionLength);
+    return pos + orderShift(m, pos, wrap);
 }
 
 int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
@@ -310,6 +385,30 @@ double timeAt(const Motion& m, const Sweep& s, double pos) {
     }
     double travel = s.travelFrom + std::abs(pos - s.from);
     return s.restartBase + unbent(m, travel) / m.rate;
+}
+
+NoteShape noteShapeFrom(const float* knobs) {
+    auto shown = [&](int k) { return devices::display(devices::playheadInfo().params[size_t(k)], knobs[k]); };
+    NoteShape s;
+    s.octave = int(std::lround(shown(knob::kOctave)));
+    s.keySteps = int(std::lround(shown(knob::kKeySteps)));
+    s.pick = NotePick(std::lround(shown(knob::kNotes)));
+    s.invert = shown(knob::kInvert) > 0.5f;
+    s.velocity = shown(knob::kVelocity) / 100;
+    return s;
+}
+
+int shapedPitch(const NoteShape& shape, int pitch, int low, int high, const Scale& key) {
+    if (shape.invert) {
+        // Mirrored by key steps, so the mirror stays in the key: the lowest note becomes the highest.
+        int fromLow = key.indexOf(pitch) - key.indexOf(low);
+        int span = key.indexOf(high) - key.indexOf(low);
+        pitch = key.stepBy(low, span - fromLow);
+    }
+    pitch += 12 * shape.octave;
+    if (shape.keySteps != 0)
+        pitch = key.stepBy(pitch, shape.keySteps);
+    return std::clamp(pitch, 0, 127);
 }
 
 bool wantsDrawnPath(const float* knobs) {
@@ -375,6 +474,8 @@ Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart
     m.bendAmount = shown(knob::kBendAmount) / 100;
     m.bendCycle = cycleTicks(index(knob::kBendCycle), ts);
     m.pathCycle = pathCycleTicks(index(knob::kPathCycle), ts);
+    m.order = Order(index(knob::kOrder));
+    m.orderStep = orderStepTicks(index(knob::kOrderStep), ts);
     if (deviceKnobs) {
         const devices::TypeInfo& info = devices::deviceInfo(DeviceType::Playheads);
         auto device = [&](int k) { return devices::display(info.params[size_t(k)], deviceKnobs[k]); };

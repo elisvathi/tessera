@@ -2,6 +2,7 @@
 
 #include "../src/model/Playheads.hpp"
 
+#include <set>
 #include <vector>
 
 using namespace tessera;
@@ -519,4 +520,35 @@ TEST_CASE("MIDI export plays the drift too") {
     for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
         pitches.push_back(e.pitch);
     CHECK(pitches == std::vector<int>{60, 61, 60});
+}
+
+TEST_CASE("an order reads a segment's steps outside in, inside out, odd then even, or shuffled") {
+    std::vector<int> outside, inside, oddEven;
+    for (int k = 0; k < 4; k++) {
+        outside.push_back(orderedStep(Order::OutsideIn, k, 4, 0, 1));
+        inside.push_back(orderedStep(Order::InsideOut, k, 4, 0, 1));
+        oddEven.push_back(orderedStep(Order::OddEven, k, 4, 0, 1));
+    }
+    CHECK(outside == std::vector<int>{0, 3, 1, 2});
+    CHECK(inside == std::vector<int>{2, 1, 3, 0});
+    CHECK(oddEven == std::vector<int>{0, 2, 1, 3});
+    for (int pass = 0; pass < 5; pass++) {
+        std::set<int> seen;
+        for (int k = 0; k < 7; k++)
+            seen.insert(orderedStep(Order::Shuffle, k, 7, pass, 9));
+        CHECK(seen.size() == 7); // every step once
+    }
+
+    // Beats outside in: 1, 4, 2, 3.
+    Motion m = oneBar();
+    m.order = Order::OutsideIn;
+    m.orderStep = kBeat;
+    std::vector<Hit> hits = play(m, fourBeats(), 4 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 60}, {960, 65}, {1920, 62}, {2880, 64}});
+    CHECK(positionAt(m, 1000) == doctest::Approx(2880 + 40));
+}
+
+TEST_CASE("the playhead settings fit their limit") {
+    CHECK(devices::playheadInfo().params.size() <= size_t(playheads::kMaxPlayheadParams));
+    CHECK(devices::motionInfo().params.size() <= size_t(kMaxDeviceParams));
 }
