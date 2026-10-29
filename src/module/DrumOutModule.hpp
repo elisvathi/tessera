@@ -46,6 +46,8 @@ class DrumOutModule : public OutputModuleBase {
     static constexpr int kLightDivision = 64;
     rack::dsp::ClockDivider lightDivider;
     uint8_t hits = 0; // lanes that fired since the lights were last updated
+    // Each lane's velocity, pitch, timbre and pressure, held while hits on other channels come.
+    float heldVel[kMaxVoices] = {}, heldTune[kMaxVoices] = {}, heldTimbre[kMaxVoices] = {}, heldPress[kMaxVoices] = {};
 };
 
 } // namespace tessera

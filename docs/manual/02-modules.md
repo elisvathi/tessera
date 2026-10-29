@@ -188,7 +188,9 @@ length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings).
 Velocity, pitch, timbre and pressure hold until the lane's next hit. A hit's pitch, timbre and pressure can be one
 value or a curve that moves across the hit. See [Pitch, timbre and pressure](09-drums.md#pitch-timbre-and-pressure).
 
-The screen, arrows and menu work like Track Out's. A new Drum Out picks the first drum track with no output yet.
+The screen, arrows and menu work like Track Out's, channel included: the channel shows beside the track number
+("Ch: all"), and with one channel picked each lane sends only the hits on that channel. A new Drum Out picks the first
+drum track with no output yet.
 
 ## Auto Out
 

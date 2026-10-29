@@ -143,7 +143,8 @@ track's 16 devices; their cards stay in their branch (they can't be dragged out)
 Each playhead puts its **channel** on the notes it plays: Playhead 1 on channel 1, Playhead 2 on channel 2, and so on.
 A Track Out plays **All channels** unless you pick one. To give Playhead 2 its own sound, add a second Track Out for the
 same track, click its screen and pick **Channel 2**, and patch it to another voice. See
-[Track Out](02-modules.md#track-out).
+[Track Out](02-modules.md#track-out). On a drum track, Drum Out has the same picker: the reversed hats can go to one
+voice and the straight ones to another.
 
 ## Modulators
 

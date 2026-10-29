@@ -1731,6 +1731,7 @@ void Engine::hitDrum(const TrackPlayback& track, TrackState& state, const chain:
     else
         samples = l.gateMs > 0 ? int(std::ceil(l.gateMs * 0.001 * sampleRate)) : retriggerGap; // a 1 ms trigger
     state.drums.hit(lane, n.velocity, samples);
+    state.lanePart[size_t(lane)] = n.channel;
     // The hit's expression curves drive the lane's pitch, timbre and pressure outputs for the note's span. A hit
     // without curves sets them back to rest.
     const auto* ex = static_cast<const NoteExtras*>(n.extras);
@@ -2069,6 +2070,7 @@ void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state,
             frame.voct[c] = pitchToVolts(track.drumLanes[i].pitch) + frame.tune[c];
             frame.timbre[c] = curve.timbre * 10.f;
             frame.press[c] = curve.press * 10.f;
+            frame.part[c] = state.lanePart[i];
             if (high)
                 frame.gate[c] = 10.f;
         }

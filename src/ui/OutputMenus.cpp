@@ -1,5 +1,6 @@
 #include "OutputMenus.hpp"
 
+#include "../model/DeviceLookup.hpp"
 #include "../module/Registry.hpp"
 #include "../module/TesseraModule.hpp"
 #include "ModuleUndo.hpp"
@@ -46,17 +47,19 @@ std::string channelPlayers(OutputModuleBase* m, int channel) {
     if (!src || m->status() != BindingStatus::Bound)
         return "";
     const Track* track = src->song().findTrack(m->binding().track);
+    const Device* device = track ? activePlayheads(*track) : nullptr;
+    if (!device)
+        return "";
     std::string names;
-    for (const Device& d : track ? track->devices : std::vector<Device>())
-        for (const Playhead& p : d.playheads)
-            if (p.channel == channel)
-                names += (names.empty() ? "" : ", ") + p.name;
-    return names;
+    for (const Playhead& p : device->playheads)
+        if (p.channel == channel)
+            names += (names.empty() ? "" : ", ") + p.name;
+    return names.empty() ? "nothing" : names;
 }
 
 void appendChannelMenu(rack::ui::Menu* menu, OutputModuleBase* m) {
     auto pick = [m](int channel) {
-        withModuleUndo(m, "change Track Out channel", [&] { m->setPart(channel); });
+        withModuleUndo(m, "change output channel", [&] { m->setPart(channel); });
     };
     menu->addChild(rack::createCheckMenuItem(
         "All", "", [m] { return m->part() == 0; }, [pick] { pick(0); }));

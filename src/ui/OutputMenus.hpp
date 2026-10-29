@@ -14,7 +14,8 @@ void appendSourceMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::stri
 void appendTrackMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what);
 /// All, or one channel 1..16; each channel names the playheads of the bound track that play on it.
 void appendChannelMenu(rack::ui::Menu* menu, OutputModuleBase* m);
-/// Who plays on `channel` of the module's track: playhead names ("Lead, Bells"), or empty.
+/// Who plays on `channel` of the module's track: its playheads' names ("Lead, Bells"), "nothing" when it has
+/// playheads but none there, or empty when it has no playheads (its notes keep their own channels).
 std::string channelPlayers(OutputModuleBase* m, int channel);
 
 } // namespace tessera

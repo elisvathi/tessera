@@ -107,11 +107,18 @@ void TrackOutDisplay::drawBound(NVGcontext* vg) {
     if (channels) {
         // Always shown, so it reads as something to click.
         std::string label = part == 0 ? "All channels"
-                                      : "Ch " + std::to_string(part) +
-                                            (partPlayers.empty() ? " · nothing" : " · " + partPlayers);
+                                      : "Ch " + std::to_string(part) + (partPlayers.empty() ? "" : " · " + partPlayers);
         draw::TextStyle ch{fonts::ui(), metrics::kDisplaySmall, part == 0 ? c.text2 : c.text1,
                            NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
-        draw::text(vg, ch, cx, kNameBaseline + 13, draw::ellipsize(vg, ch, label, maxWidth));
+        if (box.size.y >= kNameBaseline + 16) {
+            draw::text(vg, ch, cx, kNameBaseline + 13, draw::ellipsize(vg, ch, label, maxWidth));
+        } else {
+            // A short, wide screen (Drum Out): beside the track number, at the right.
+            ch.align = NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE;
+            std::string compact = part == 0 ? "Ch: all" : label;
+            draw::text(vg, ch, box.size.x - kPad, kNumberBaseline - 8,
+                       draw::ellipsize(vg, ch, compact, box.size.x / 2 - kPad - 12));
+        }
     }
 }
 
