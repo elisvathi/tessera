@@ -44,6 +44,9 @@ A track holds up to 16 devices.
 | **Groove** | Swings this track its own way, in place of the song's swing: a straight bass under swung drums, or extra-swung hats. Turn its Swing with an LFO or a lane to ride it. A new Groove starts on the grid most of the track's off-beat notes sit on. | Swing (50% straight to 75%), Grid (1/16 or 1/8). |
 | **Note Filter** | Lets only some notes through. | Lowest, Highest, Min velocity, Max velocity, Every (play every Nth note), Offset, Channel (Any or 1 to 16). |
 
+**Playheads** is different from the others: it doesn't change notes, it reads the clip. See
+[Playheads](#playheads) below.
+
 **Order matters.** Chord → Arpeggiator arpeggiates the chord. Arpeggiator → Chord makes a chord on every arpeggio step.
 
 Random choices are repeatable: the same pass plays the same way every time, also in a MIDI export.
@@ -72,6 +75,68 @@ time.
 
 A knob draws an orange arc for its value. Each modulation adds a ring in the modulator's colour, showing how far it can
 push the knob, and a white dot shows where the knob is right now.
+
+## Playheads
+
+The **Playheads** device reads the playing clip with several playheads at once. Each one moves through the notes in
+its own way: slower, faster, backwards, bouncing, or repeating a short piece a few times. One melody becomes a canon,
+or a texture that keeps shifting.
+
+It is the first entry in the device browser, and it always sits first in the chain. A track holds one. While it is on,
+it replaces the clip's own playhead; turn it off with its power button and the clip plays as usual.
+
+It starts with two playheads: **Playhead 1** plays the clip as before, **Playhead 2** starts a beat later, so you hear a
+canon at once. Each playhead shows as a line in its colour over the notes; the clip's own playhead stays as a faint
+grey line.
+
+- **The chips** at the top of the card are the playheads. Click one to show its settings. **+** adds a playhead (up to
+  16), each starting a beat after the last.
+- **Right-click a chip** to rename it, pick its **Channel**, mute or solo it, duplicate or delete it.
+- The number at the right of a chip is its channel.
+
+A playhead's settings:
+
+| Setting | What it does |
+|---|---|
+| **Rate** | Speed against the song, from 1/16x to 16x. |
+| **Direction** | Forward, Reverse, Ping-pong (turns at the ends), or Freeze (stands still and plays nothing). |
+| **Start** | Where it starts, in 1/16 steps from the start of its region. |
+| **Region start**, **Region length** | The part of the clip it loops over, in 1/16 steps. A length of 0 means the whole clip. |
+| **Repeat**, **Repeat times** | Plays each piece of this length a number of times, then moves on one piece. 1/4 and 2 times plays beat 1, 1, 2, 2, 3, 3… |
+| **Bend**, **Bend amount**, **Bend cycle** | Speeds up and slows down inside each cycle, without moving the cycle's ends: Ease in, Ease out, Ease in-out, Swing, Stairs. |
+| **Offset** | Moves the playhead forward or back, in 1/16 steps. Good to automate. |
+| **Length**, **Fixed length** | How long its notes last: As written, Follows playhead (half speed, twice as long), or a Fixed length. |
+
+The device's own knobs, after a small gap:
+
+| Setting | What it does |
+|---|---|
+| **Restart**, **Restart bars** | Every playhead goes back to its start when the clip starts, or also every so many bars. |
+| **Same note** | When two playheads play the same note at the same moment: play it once, or play each. |
+
+**When a note plays.** Going forward, a playhead plays a note when it reaches the note's start. Going backward, it plays
+it when it reaches the note's end, so the order of the notes is reversed but each note still sounds normally. A
+playhead that jumps (a repeat, a restart) into the middle of a note doesn't start it.
+
+Every setting is a knob: modulators can move it, and it can be automated, as on any device.
+
+### A sound for each playhead
+
+Each playhead puts its **channel** on the notes it plays: Playhead 1 on channel 1, Playhead 2 on channel 2, and so on.
+A Track Out plays **All channels** unless you pick one. To give Playhead 2 its own sound, add a second Track Out for the
+same track, click its screen and pick **Channel 2**, and patch it to another voice. See
+[Track Out](02-modules.md#track-out).
+
+### Not yet
+
+This is a first version, to try the idea:
+
+- Playheads read clips launched from the clips panel (or a clip launched over the timeline). Clips playing from the
+  timeline play as usual.
+- MIDI export writes the clips as written, without the playheads.
+- Drum lanes with their own length, note operators (chance, repeats…) and note curves are not read by playheads yet.
+- Turning **Rate** while it plays moves the playhead to where the new speed would have it, instead of changing speed
+  smoothly.
 
 ## Modulators
 

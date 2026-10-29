@@ -355,11 +355,7 @@ stays for big work and opens from the strip's "Full editor" button.
 ## 24. Recording (milestone 10)
 
 - **Inputs:** REC V/OCT, GATE and VEL on the panel (poly; a rising gate above 1 V starts a note at that moment's
-  V/OCT, `round(v * 12) + 60`; it ends below 0.1 V; while the gate stays high, V/OCT moving to another semitone
-  for 1 ms ends the note and starts one at the new pitch, as a mono keyboard plays legato (issue #12); the output
-  retriggers between them, as touching notes do on playback, and a legato playback mode would be its own
-  feature), and one
-  MIDI input per Tessera (module menu or the record
+  V/OCT, `round(v * 12) + 60`; it ends below 0.1 V), and one MIDI input per Tessera (module menu or the record
   button's menu). Velocity is 0-10 V, or 0.8 without a cable. The new jack and button IDs come last, so saved
   cables stay on their jacks.
 - **Per track:** an arm button (track headers and launcher column headers; exclusive, Ctrl/Cmd+click adds), the
@@ -916,7 +912,6 @@ The review sorted every control by how often a producer uses it (artifact "Tesse
   timeline clip, else the one under the playhead, else the first on the track; in the loop pass the playhead is in,
   else the first pass that plays it (`songTickAt`, the inverse of `clipTimeAt`).
 - Nothing happens when the clip is in neither place for what plays.
-- **While playing, both jumps wait for their beat** (§96 replaces "at once" above).
 
 ## 62. New song (14 Oct)
 
@@ -1437,52 +1432,24 @@ Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifac
 
 Why: the user found the old jack area messy (two plates of different sizes, inputs on a plate, uneven spacing).
 
-## 94. Output module slugs and names without the "Tessera" prefix (5 Nov)
+## 94. Playheads: a source device, channels and a Track Out picker (29 Oct, first version)
 
-VCV's library review asked for the redundant plugin name to come out of the module slugs and names, since
-a module is already identified by its plugin. So `TesseraTrackOut`/`TesseraDrumOut`/`TesseraAutoOut` became
-`TrackOut`/`DrumOut`/`AutoOut`, and the display names became "Track Out"/"Drum Out"/"Auto Out" — in
-`plugin.json` and in the `createModel` calls, which must match the manifest or Rack refuses to load the plugin.
+Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead` only.
 
-Why: the library displays a module as "<plugin> <name>", so the old names read as "Tessera Tessera Track Out".
-
-Impact: patches saved before this change lose their Track Out, Drum Out and Auto Out modules (the main
-Tessera module kept its slug). The plugin was not yet in the library, so no user patches exist.
-
-## 95. The flagship module is "Roll"; "Tessera" stays the plugin and brand name (7 Nov)
-
-VCV's library review (issue #989) reopened the plugin because the plugin slug and name matched the main
-module's slug and name: the library and Rack's browser would show "Tessera Tessera". Instead of renaming
-the plugin, the main module is renamed to **Roll** (the piano roll), in `plugin.json` and in its
-`createModel` call. The plugin slug, name and brand stay "Tessera"; Track Out, Drum Out and Auto Out keep
-their names. The browser now shows "Tessera > Roll", like "Audible Instruments > Braids".
-
-Why: "Tessera" stays the brand that future modules can live under, and the module gets a name that says
-what it is.
-
-Impact: the `brand` field is what Rack's browser shows as the brand prefix; the VCV Library site prefixes
-modules with the plugin *name*. Both read fine now. Patches saved before this change lose their main
-module (its slug changed from `Tessera` to `Roll`); the plugin was not yet in the library, so no user
-patches exist. The song-title default in MIDI/DAWproject export stays "Tessera" (the product name);
-instance-name fallbacks and the panel title follow the module name.
-
-## 96. Ruler jumps wait for their beat while playing (10 Nov, issue #11)
-
-A click on the song's ruler, a marker, or a playing clip's ruler used to jump at once (§61). With one track on
-the launcher and another on the timeline, the two then played different beats.
-
-- **While playing, a jump waits** until the song reaches the target's place in the launch quantize grid, then
-  jumps. With 1 bar (the default): the song is on beat 2, the click is on beat 4 of bar 6, so the song plays on
-  to beat 4 of the bar it is in and jumps there. The wait can end in the current bar; it never waits more than
-  one grid step.
-- **The grid is Launch quantize**: the song's setting for song jumps; for a clip's ruler, the clip's own setting
-  if it has one. Launches and jumps then share one setting. With Off, or while stopped, the jump is at once.
-  With 1/16 or 1/4, a jump keeps that grid but not the bar, as a launch on that setting does.
-- **While it waits**, the target blinks on the ruler in the queue colour, as a queued launch does; a clip jump
-  also blinks the clip's slot. A newer click replaces the waiting one. **Stop** lands on the waiting target, as
-  stop carries out queued launches. Reset drops it. Esc is not used: it closes the editor.
-- The jump lands on its sample exactly, so a note right at the target plays.
-
-Why: launched clips are timed against the song's grid; a jump that keeps the song's place in the grid keeps
-them in time. The user who reported it asked for this behaviour, and it is the usual one for clip-based
-sequencers.
+- **One Playheads device per track, always first.** It holds the playheads; each is a set of knobs (ParamRef kind
+  Playhead), so modulators and lanes reach them like device knobs. The chain doesn't run it: the engine reads the
+  clip through it instead of the clip's own playhead.
+- **A playhead's place is a pure function of the time since the clip started** (`model/Playheads`): sweeps through the
+  clip with exact positions at wraps, turns and repeats, so a window of any size plays the same notes. Going
+  backward a note plays at its end. Ping-pong doesn't replay the note at a turn.
+- **Rows became chips.** The device strip is 128 px tall, so a Playheads card shows its playheads as chips and the
+  selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
+- **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
+  backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **New playheads start a beat apart** (not a bar), so a canon is heard in a one-bar clip too.
+- **Channels, not outputs per playhead.** Each playhead tags its notes with a channel; each voice remembers its note's
+  channel (`TrackFrame::part`); a Track Out plays All or one channel. A filtered Track Out keeps the track's voice
+  count and holds a voice's last values while another channel uses it, so voices never move between cables (the
+  design's voice groups per channel can come later).
+- **Not yet:** timeline playback, MIDI export, drum lanes with their own length, note operators and curves, branches,
+  the time map, drawn paths, note motion, a Drum Out picker, and changing Rate smoothly while it plays.

@@ -305,6 +305,11 @@ std::shared_ptr<rack::window::Font> mono() {
 
 } // namespace fonts
 
+NVGcolor playheadColor(int index) {
+    static const uint32_t kColors[] = {0x4BC7C2, 0xFF7AB6, 0xE8CC5A, 0x6BD68A, 0x8C8CFF, 0xFF9E5C, 0x56C2E8, 0xC99BFF};
+    return rgb(kColors[size_t(std::abs(index)) % 8]);
+}
+
 NVGcolor modulatorColor(uint64_t modulatorId) {
     // Neighbours differ strongly: modulators added one after another usually have neighbouring IDs.
     static const uint32_t kColors[] = {0x4BC7C2, 0xFF7AB6, 0xE8CC5A, 0x8C8CFF, 0x6BD68A, 0xC99BFF, 0x56C2E8, 0xFF9E9E};

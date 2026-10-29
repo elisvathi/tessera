@@ -2,6 +2,7 @@
 
 #include "../model/TrackColors.hpp"
 #include "../module/TesseraModule.hpp"
+#include "OutputMenus.hpp"
 #include "Theme.hpp"
 #include "widgets/Draw.hpp"
 
@@ -40,6 +41,19 @@ void TrackOutDisplay::gather() {
     trackName = track.name;
     trackNumber = index + 1;
     trackColor = track.color;
+    part = channels ? module->part() : 0;
+    partPlayers = part > 0 ? channelPlayers(module, part) : "";
+}
+
+void TrackOutDisplay::onButton(const ButtonEvent& e) {
+    if (!channels || !module || e.action != GLFW_PRESS || e.button != GLFW_MOUSE_BUTTON_LEFT) {
+        Widget::onButton(e);
+        return;
+    }
+    e.consume(this);
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Channel"));
+    appendChannelMenu(menu, module);
 }
 
 void TrackOutDisplay::draw(const DrawArgs& args) {
@@ -89,6 +103,16 @@ void TrackOutDisplay::drawBound(NVGcontext* vg) {
 
     draw::TextStyle name{fonts::uiStrong(), metrics::kDisplaySmall, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
     draw::text(vg, name, cx, kNameBaseline, draw::ellipsize(vg, name, trackName, maxWidth));
+
+    if (channels) {
+        // Always shown, so it reads as something to click.
+        std::string label = part == 0 ? "All channels"
+                                      : "Ch " + std::to_string(part) +
+                                            (partPlayers.empty() ? " · nothing" : " · " + partPlayers);
+        draw::TextStyle ch{fonts::ui(), metrics::kDisplaySmall, part == 0 ? c.text2 : c.text1,
+                           NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
+        draw::text(vg, ch, cx, kNameBaseline + 13, draw::ellipsize(vg, ch, label, maxWidth));
+    }
 }
 
 void TrackOutDisplay::drawMessage(NVGcontext* vg, const char* message, NVGcolor color, const char* hint) {

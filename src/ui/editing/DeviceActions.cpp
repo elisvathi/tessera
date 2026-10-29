@@ -25,7 +25,7 @@ template <typename Type>
 std::vector<SearchItem> itemsOf(int count, const std::function<void(Type, int)>& pick) {
     std::vector<SearchItem> items;
     // Groups in the order a musician thinks of them; any other group follows.
-    std::vector<std::string> order = {"Pitch", "Rhythm", "Feel", "Motion", "Notes", "Hand"};
+    std::vector<std::string> order = {"Source", "Pitch", "Rhythm", "Feel", "Motion", "Notes", "Hand"};
     for (int t = 0; t < count; t++) {
         const devices::TypeInfo& info = [&]() -> const devices::TypeInfo& {
             if constexpr (std::is_same_v<Type, DeviceType>)
@@ -80,6 +80,8 @@ const devices::ParamInfo* infoOf(const Song& song, const ParamRef& ref) {
         const Device* d = findDevice(song, DeviceId(ref.owner));
         return d ? devices::paramInfo(d->type, ref.param) : nullptr;
     }
+    if (ref.kind == ParamRef::Kind::Playhead)
+        return findPlayhead(song, PlayheadId(ref.owner)) ? devices::playheadParamInfo(ref.param) : nullptr;
     const Modulator* m = findModulator(song, ModulatorId(ref.owner));
     return m ? devices::paramInfo(m->type, ref.param) : nullptr;
 }
@@ -90,6 +92,9 @@ std::string paramName(const Song& song, const ParamRef& ref) {
     if (ref.kind == ParamRef::Kind::Device) {
         if (const Device* d = findDevice(song, DeviceId(ref.owner)))
             owner = d->name;
+    } else if (ref.kind == ParamRef::Kind::Playhead) {
+        if (const Playhead* p = findPlayhead(song, PlayheadId(ref.owner)))
+            owner = p->name;
     } else if (const Modulator* m = findModulator(song, ModulatorId(ref.owner))) {
         owner = m->name;
     }
@@ -188,6 +193,46 @@ void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) 
         setStripOpen(*c, true);
     };
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
+}
+
+void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
+    TesseraModule* m = moduleOf(ctx);
+    const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
+    if (!p)
+        return;
+    EditorContext* c = &ctx;
+    auto run = [c](auto make) {
+        if (TesseraModule* mod = c->module())
+            mod->perform(make(mod->song(), mod));
+    };
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(p->name));
+    menu->addChild(new MenuTextField(p->name, [run, id](const std::string& name) {
+        run([&](const Song& s, TesseraModule*) { return renamePlayhead(s, id, name); });
+    }));
+    int channel = p->channel;
+    menu->addChild(rack::createSubmenuItem(
+        "Channel", channel == 0 ? "As written" : std::to_string(channel), [run, id, channel](rack::ui::Menu* sub) {
+            for (int ch = 0; ch <= 16; ch++)
+                sub->addChild(rack::createCheckMenuItem(
+                    ch == 0 ? "As written" : "Channel " + std::to_string(ch), "",
+                    [channel, ch] { return channel == ch; },
+                    [run, id, ch] { run([&](const Song& s, TesseraModule*) { return setPlayheadChannel(s, id, ch); }); }));
+        }));
+    bool mute = p->mute, solo = p->solo;
+    menu->addChild(rack::createCheckMenuItem(
+        "Mute", "", [mute] { return mute; },
+        [run, id, mute] { run([&](const Song& s, TesseraModule*) { return setPlayheadMute(s, id, !mute); }); }));
+    menu->addChild(rack::createCheckMenuItem(
+        "Solo", "", [solo] { return solo; },
+        [run, id, solo] { run([&](const Song& s, TesseraModule*) { return setPlayheadSolo(s, id, !solo); }); }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuItem("Duplicate", "", [run, id] {
+        run([&](const Song& s, TesseraModule* mod) { return duplicatePlayhead(s, id, mod->ids()); });
+    }));
+    menu->addChild(rack::createMenuItem("Delete", "", [run, id] {
+        run([&](const Song& s, TesseraModule*) { return removePlayhead(s, id); });
+    }));
 }
 
 void openDeviceMenu(EditorContext& ctx, DeviceId id) {

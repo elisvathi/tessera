@@ -38,7 +38,7 @@ struct TrackOutWidget : rack::app::ModuleWidget {
         setModule(module);
         PanelBuilder panel(this, kHp, "TRACK OUT");
 
-        auto* display = new TrackOutDisplay(module);
+        auto* display = new TrackOutDisplay(module, true);
         display->box = Rect(rack::mm2px(kDisplay.pos), rack::mm2px(kDisplay.size));
         addChild(display);
 
@@ -70,6 +70,8 @@ struct TrackOutWidget : rack::app::ModuleWidget {
                                                [m](rack::ui::Menu* sub) { appendSourceMenu(sub, m, "Track Out"); }));
         menu->addChild(rack::createSubmenuItem(
             "Track", "", [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Track Out"); }, m->source() == nullptr));
+        menu->addChild(rack::createSubmenuItem("Channel", m->part() == 0 ? "All" : std::to_string(m->part()),
+                                               [m](rack::ui::Menu* sub) { appendChannelMenu(sub, m); }));
     }
 
   private:

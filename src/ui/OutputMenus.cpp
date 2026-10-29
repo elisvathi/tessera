@@ -41,6 +41,32 @@ class TrackMenuItem : public rack::ui::MenuItem {
 
 } // namespace
 
+std::string channelPlayers(OutputModuleBase* m, int channel) {
+    TesseraModule* src = m->source();
+    if (!src || m->status() != BindingStatus::Bound)
+        return "";
+    const Track* track = src->song().findTrack(m->binding().track);
+    std::string names;
+    for (const Device& d : track ? track->devices : std::vector<Device>())
+        for (const Playhead& p : d.playheads)
+            if (p.channel == channel)
+                names += (names.empty() ? "" : ", ") + p.name;
+    return names;
+}
+
+void appendChannelMenu(rack::ui::Menu* menu, OutputModuleBase* m) {
+    auto pick = [m](int channel) {
+        withModuleUndo(m, "change Track Out channel", [&] { m->setPart(channel); });
+    };
+    menu->addChild(rack::createCheckMenuItem(
+        "All", "", [m] { return m->part() == 0; }, [pick] { pick(0); }));
+    for (int c = 1; c <= 16; c++) {
+        std::string players = channelPlayers(m, c);
+        menu->addChild(rack::createCheckMenuItem(
+            "Channel " + std::to_string(c), players, [m, c] { return m->part() == c; }, [pick, c] { pick(c); }));
+    }
+}
+
 void appendSourceMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what) {
     std::vector<TesseraModule*> sources = Registry::get().sources();
     if (sources.empty()) {

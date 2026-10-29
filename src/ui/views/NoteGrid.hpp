@@ -106,6 +106,9 @@ class NoteGrid : public TimelineView {
     const Ghost* ghostAt(rack::math::Vec pos);
     /// The step input cursor, and a banner while step input or keyboard play is on.
     void drawLivePlay(NVGcontext* vg);
+    /// The track's playheads as lines in their colours, while they read this clip (docs/design/PLAYHEADS.md §3.2).
+    /// True when it drew them: the clip's own playhead then shows faint, for reference.
+    bool drawPlayheadLines(NVGcontext* vg);
     /// Operator marks on a note: repeat ticks, chance and occurrence text, recurrence dots (EDITOR_UX §4.5).
     void drawBadges(NVGcontext* vg, const Note& note, rack::math::Rect r, float labelRight);
     /// The note's expression curve, small, inside its body (EDITOR_UX §4.6).

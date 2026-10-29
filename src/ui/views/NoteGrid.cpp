@@ -3,6 +3,8 @@
 #include "../../model/Swing.hpp"
 
 #include "../../model/Arrangement.hpp"
+#include "../../model/DeviceLookup.hpp"
+#include "../../model/Playheads.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../model/NoteFields.hpp"
 #include "../../model/NoteOperators.hpp"
@@ -914,15 +916,55 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
 
     double p = playhead();
     if (std::isfinite(p) && ctx.module() && ctx.module()->playing()) {
+        bool faint = drawPlayheadLines(vg);
         float x = float(time().tickToX(p));
         if (x < 0)
             timeline::drawOffscreenArrow(vg, false, box.size.x, box.size.y / 2);
         else if (x > box.size.x)
             timeline::drawOffscreenArrow(vg, true, box.size.x, box.size.y / 2);
-        else
+        else if (faint) {
+            nvgBeginPath(vg);
+            nvgRect(vg, x - 0.5f, 0, 1, box.size.y);
+            nvgFillColor(vg, nvgTransRGBAf(theme::colors().text2, 0.5f));
+            nvgFill(vg);
+        } else {
             timeline::drawPlayhead(vg, x, box.size.y);
+        }
     }
     nvgRestore(vg);
+}
+
+bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
+    TesseraModule* m = ctx.module();
+    const Track* track = owner.track();
+    const Clip* clip = owner.clip();
+    if (!m || !track || !clip)
+        return false;
+    const Device* device = activePlayheads(*track);
+    if (!device)
+        return false;
+    LauncherStatus status = m->launcherStatus(track->id);
+    bool launched = status.playing >= 0 && status.playing < int(track->slots.size()) &&
+                    track->slots[size_t(status.playing)].clip == clip->id;
+    if (!launched || !std::isfinite(status.elapsed))
+        return false;
+    bool solo = std::any_of(device->playheads.begin(), device->playheads.end(),
+                            [](const Playhead& p) { return p.solo && !p.mute; });
+    double start = double(clip->playStart());
+    for (const Playhead& p : device->playheads) {
+        if (p.mute || (solo && !p.solo))
+            continue;
+        playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), start,
+                                                         double(clip->playEnd()) - start, owner.timeSig());
+        float x = float(time().tickToX(playheads::positionAt(motion, status.elapsed)));
+        if (x < -2 || x > box.size.x + 2)
+            continue;
+        nvgBeginPath(vg);
+        nvgRect(vg, x - 1, 0, 2, box.size.y);
+        nvgFillColor(vg, theme::playheadColor(p.color));
+        nvgFill(vg);
+    }
+    return true;
 }
 
 void NoteGrid::drawHoverGuide(NVGcontext* vg) {

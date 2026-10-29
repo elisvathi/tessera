@@ -290,3 +290,14 @@ TEST_CASE("playheads survive saving and loading, and a broken file is repaired")
         CHECK(loaded.tracks[0].devices[1].type == DeviceType::Echo);
     }
 }
+
+TEST_CASE("a new playhead reads as 1x forward from the clip's start") {
+    const devices::TypeInfo& info = devices::playheadInfo();
+    Playhead p = devices::makePlayhead(PlayheadId(1), 0);
+    CHECK(devices::format(info.params[playheads::knob::kRate], p.params[playheads::knob::kRate]) == "1x");
+    CHECK(devices::format(info.params[playheads::knob::kDirection], p.params[playheads::knob::kDirection]) == "Forward");
+    playheads::Motion m = playheads::motionFrom(p.params.data(), nullptr, 0, 3840, TimeSig());
+    CHECK(m.rate == 1);
+    CHECK(m.regionLength == 3840);
+    CHECK(m.repeatSize == 0);
+}

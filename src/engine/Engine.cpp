@@ -1466,6 +1466,7 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
     bool curves = note && (!note->pitchExpr.empty() || !note->timbreExpr.empty() || !note->pressureExpr.empty());
     setVoiceCurves(state, v, curves ? extras : nullptr);
     state.voiceStart[size_t(v)] = n.start - clockOffset();
+    state.voicePart[size_t(v)] = n.channel;
     // Curves span the note as written, not the part that sounds: a note cut short by the song loop, the clip's
     // loop or the gate length keeps its curve's timing, as the editor draws it.
     double length = note ? double(note->length) * extras->stretch : n.open() ? double(kPpq) : double(n.end - n.start);
@@ -1944,6 +1945,7 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
         frame.gate[v] = voices.gate(v) ? 10.f : 0.f;
         frame.vel[v] = voice.velocity * 10.f;
         frame.rel[v] = voice.releaseVelocity * 10.f;
+        frame.part[v] = state.voicePart[size_t(v)];
         frame.timbre[v] = 0;
         frame.press[v] = 0;
         if (const NoteExtras* ex = state.voiceExtras[size_t(v)]) {

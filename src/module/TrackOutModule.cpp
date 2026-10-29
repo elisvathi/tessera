@@ -1,5 +1,7 @@
 #include "TrackOutModule.hpp"
 
+#include <iterator>
+
 namespace tessera {
 
 TrackOutModule::TrackOutModule() : OutputModuleBase(TrackType::Instrument) {
@@ -22,9 +24,21 @@ void TrackOutModule::writeFrame(const TrackFrame& frame) {
         {VOCT_OUTPUT, frame.voct}, {GATE_OUTPUT, frame.gate},     {VEL_OUTPUT, frame.vel},
         {REL_OUTPUT, frame.rel},   {TIMBRE_OUTPUT, frame.timbre}, {PRESS_OUTPUT, frame.press},
     };
-    for (const Route& r : routes) {
+    int channel = part();
+    for (size_t i = 0; i < std::size(routes); i++) {
+        const Route& r = routes[i];
         outputs[r.output].setChannels(frame.channels);
-        outputs[r.output].writeVoltages(r.values);
+        if (channel == 0) {
+            outputs[r.output].writeVoltages(r.values);
+            continue;
+        }
+        for (int v = 0; v < frame.channels; v++) {
+            if (frame.part[v] == channel)
+                held[i][v] = r.values[v];
+            else if (r.output == GATE_OUTPUT)
+                held[i][v] = 0;
+            outputs[r.output].setVoltage(held[i][v], v);
+        }
     }
     outputs[AUTO_OUTPUT].setChannels(frame.autoChannels);
     outputs[AUTO_OUTPUT].writeVoltages(frame.automation);

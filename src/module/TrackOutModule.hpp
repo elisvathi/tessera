@@ -26,6 +26,11 @@ class TrackOutModule : public OutputModuleBase {
   protected:
     void writeFrame(const TrackFrame& frame) override;
     void silenceGates() override;
+
+  private:
+    // With a channel picked, each voice holds what it last played on that channel while another channel uses it,
+    // so its pitch doesn't jump during the release.
+    float held[6][kMaxVoices] = {};
 };
 
 } // namespace tessera

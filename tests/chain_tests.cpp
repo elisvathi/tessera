@@ -1378,6 +1378,9 @@ TEST_CASE("engine: playheads read the clip each from its own start") {
 
     h.step();
     CHECK(sounding() == std::multiset<int>{60, 64}); // the second playhead starts a beat in, on the 64
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            CHECK(int(h.frame().part[v]) == (h.pitch(v) == 60 ? 1 : 2)); // each playhead's channel, for Track Outs
     h.runTo(960 * kSamplesPerTick + 1);
     CHECK(sounding() == std::multiset<int>{64}); // the first reaches the 64; the second is past the clip's notes
 

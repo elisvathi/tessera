@@ -41,6 +41,8 @@ void openModulatorBrowser(EditorContext& ctx, TrackId track, DeviceId device = D
 void openDeviceMenu(EditorContext& ctx, DeviceId device);
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
 void openModulatorMenu(EditorContext& ctx, ModulatorId id);
+/// A playhead's menu: rename, channel, mute, solo, duplicate, delete.
+void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
 /// A choice knob's choices, the current one ticked.
 void openChoiceMenu(EditorContext& ctx, const ParamRef& ref);
 /// Type a value in the knob's units ("75", "1/16" for choices by name).
