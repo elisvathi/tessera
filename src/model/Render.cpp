@@ -5,6 +5,7 @@
 #include "ChainRender.hpp"
 #include "DeviceLookup.hpp"
 #include "DeviceTypes.hpp"
+#include "DrumKit.hpp"
 #include "Json.hpp"
 #include "NoteOperators.hpp"
 #include "Playheads.hpp"
@@ -175,8 +176,9 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
         int pitch;
     };
     std::map<ClipId, uint8_t> keyOf;
-    bool once = std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
-                                             device.params[playheads::knob::kSameNote])) == 1;
+    bool once =
+        std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
+                                     device.params[playheads::knob::kSameNote])) == 1;
     bool solo = std::any_of(device.playheads.begin(), device.playheads.end(),
                             [](const Playhead& p) { return p.solo && !p.mute; });
     std::vector<Item> items;
@@ -187,15 +189,46 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
         if (!clip)
             continue;
         uint8_t key = keyIndexOf(song, *clip, keys, keyOf);
-        double playStart = double(clip->playStart()), playEnd = double(clip->playEnd());
+        const std::vector<DrumLane>* drumLanes = t.type == TrackType::Drum ? &t.drumLanes : nullptr;
+        // The region is the whole span (a drum clip's lane cycle); the pattern and each lane with its own length
+        // repeat inside it, as in the engine.
+        ClipSpan span = clipSpan(*clip, drumLanes);
+        double playStart = double(span.start), playEnd = double(span.end);
+        double patternEnd = playStart + double(span.pattern);
         int transpose = t.type == TrackType::Drum ? 0 : t.transpose + a.transpose;
-        std::vector<Readable> notes;
+        struct Group {
+            double base, period;
+            std::vector<Readable> notes;
+            std::vector<uint32_t> byEnd;
+        };
+        std::vector<Group> groups;
+        std::vector<int> ownLoopPitches;
+        auto readable = [&](const Note& n, double end) {
+            return Readable{double(n.start),
+                            std::min(double(n.start) + std::max(1.0, double(n.length) * t.gateLengthScale), end), &n,
+                            std::clamp(n.pitch + transpose, 0, 127)};
+        };
+        if (drumLanes)
+            for (const DrumLane& lane : *drumLanes) {
+                if (!hasOwnLoop(lane, *clip))
+                    continue;
+                LaneRegion region = laneRegion(lane, *clip);
+                Group g{double(region.start), double(region.length), {}, {}};
+                for (const Note& n : clip->notes)
+                    if (!n.muted && n.pitch == lane.pitch && n.start >= region.start &&
+                        n.start < region.start + region.length)
+                        g.notes.push_back(readable(n, double(region.start + region.length)));
+                groups.push_back(std::move(g));
+                ownLoopPitches.push_back(lane.pitch);
+            }
+        Group main{playStart, double(span.pattern), {}, {}};
         for (const Note& n : clip->notes)
-            if (!n.muted && n.start >= playStart && n.start < playEnd)
-                notes.push_back({double(n.start),
-                                 std::min(double(n.start) + std::max(1.0, double(n.length) * t.gateLengthScale), playEnd),
-                                 &n, std::clamp(n.pitch + transpose, 0, 127)});
-        std::vector<uint32_t> byEnd = playheads::orderByEnd(notes);
+            if (!n.muted && n.start >= playStart && n.start < patternEnd &&
+                std::find(ownLoopPitches.begin(), ownLoopPitches.end(), n.pitch) == ownLoopPitches.end())
+                main.notes.push_back(readable(n, patternEnd));
+        groups.push_back(std::move(main));
+        for (Group& g : groups)
+            g.byEnd = playheads::orderByEnd(g.notes);
 
         double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
         double begin = double(normalizeOffset(*clip, a.offset)) - double(clipSpan(*clip).start);
@@ -204,8 +237,8 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             const Playhead& p = device.playheads[index];
             if (p.mute || (solo && !p.solo))
                 continue;
-            playheads::Motion m =
-                playheads::motionFrom(p.params.data(), device.params.data(), playStart, playEnd - playStart, song.timeSig);
+            playheads::Motion m = playheads::motionFrom(p.params.data(), device.params.data(), playStart,
+                                                        playEnd - playStart, song.timeSig);
             // Small steps, so no window needs more sweeps than one call gives.
             constexpr double kStep = double(kPpq) / 8;
             for (double e = begin; e < begin + length; e += kStep) {
@@ -213,18 +246,29 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 playheads::Sweep sweeps[playheads::kMaxSweeps];
                 int count = playheads::sweeps(m, e, to, sweeps);
                 for (int i = 0; i < count; i++)
-                    playheads::crossed(sweeps[i], notes, byEnd, [&](const Readable& n, double pos) {
-                        double elapsed = playheads::timeAt(m, sweeps[i], pos);
-                        double at = double(a.position) + (elapsed - begin) * stretch;
-                        double len = playheads::noteLength(p.params.data(), m, n.end - n.start, song.timeSig) * stretch;
-                        // The pass as the engine counts it: the playhead's own time over its region, its place mixed in.
-                        double own = m.rate * (m.restartEvery > 0 ? std::fmod(elapsed, m.restartEvery) : elapsed);
-                        int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
-                        Tick start = Tick(std::llround(at));
-                        TimedNote note{start, std::max(start + 1, Tick(std::llround(at + len))), int8_t(n.pitch),
-                                       n.source->velocity, n.source->releaseVelocity, n.source, pass};
-                        items.push_back({note, a.clip, key, p.channel, uint8_t(index + 1)});
-                    });
+                    for (const Group& g : groups)
+                        playheads::crossedRepeating(
+                            sweeps[i], playStart, g.base, g.period, g.notes, g.byEnd,
+                            [&](const Readable& n, double pos) {
+                                double elapsed = playheads::timeAt(m, sweeps[i], pos);
+                                double at = double(a.position) + (elapsed - begin) * stretch;
+                                double len =
+                                    playheads::noteLength(p.params.data(), m, n.end - n.start, song.timeSig) * stretch;
+                                // The pass as the engine counts it: the playhead's own time over its region, its place
+                                // mixed in.
+                                double own =
+                                    m.rate * (m.restartEvery > 0 ? std::fmod(elapsed, m.restartEvery) : elapsed);
+                                int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
+                                Tick start = Tick(std::llround(at));
+                                TimedNote note{start,
+                                               std::max(start + 1, Tick(std::llround(at + len))),
+                                               int8_t(n.pitch),
+                                               n.source->velocity,
+                                               n.source->releaseVelocity,
+                                               n.source,
+                                               pass};
+                                items.push_back({note, a.clip, key, p.channel, uint8_t(index + 1)});
+                            });
             }
         }
     }

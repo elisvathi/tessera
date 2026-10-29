@@ -41,7 +41,8 @@ std::vector<Hit> play(const Motion& m, const std::vector<N>& notes, double until
         Sweep s[kMaxSweeps];
         int n = sweeps(m, a, b, s);
         for (int i = 0; i < n; i++)
-            crossed(s[i], notes, byEnd, [&](const N& note, double pos) { hits.push_back({timeAt(m, s[i], pos), note.pitch}); });
+            crossed(s[i], notes, byEnd,
+                    [&](const N& note, double pos) { hits.push_back({timeAt(m, s[i], pos), note.pitch}); });
     }
     return hits;
 }
@@ -50,8 +51,8 @@ std::vector<Hit> play(const Motion& m, const std::vector<N>& notes, double until
 
 TEST_CASE("a playhead at 1x going forward plays each note at its start") {
     std::vector<Hit> hits = play(oneBar(), fourBeats(), 8 * kBeat);
-    CHECK(hits == std::vector<Hit>{{0, 60}, {960, 62}, {1920, 64}, {2880, 65},
-                                   {3840, 60}, {4800, 62}, {5760, 64}, {6720, 65}});
+    CHECK(hits ==
+          std::vector<Hit>{{0, 60}, {960, 62}, {1920, 64}, {2880, 65}, {3840, 60}, {4800, 62}, {5760, 64}, {6720, 65}});
 }
 
 TEST_CASE("the window size doesn't change what plays") {
@@ -62,8 +63,8 @@ TEST_CASE("a playhead at 2x plays twice as fast") {
     Motion m = oneBar();
     m.rate = 2;
     std::vector<Hit> hits = play(m, fourBeats(), 4 * kBeat);
-    CHECK(hits == std::vector<Hit>{{0, 60}, {480, 62}, {960, 64}, {1440, 65},
-                                   {1920, 60}, {2400, 62}, {2880, 64}, {3360, 65}});
+    CHECK(hits ==
+          std::vector<Hit>{{0, 60}, {480, 62}, {960, 64}, {1440, 65}, {1920, 60}, {2400, 62}, {2880, 64}, {3360, 65}});
 }
 
 TEST_CASE("a later start begins the canon partway in") {
@@ -94,8 +95,8 @@ TEST_CASE("ping-pong turns at the region's edges without playing the turning not
     m.direction = Direction::PingPong;
     std::vector<Hit> hits = play(m, fourBeats(), 8 * kBeat);
     // Forward over beats 1-4, then back: beat 4's note ends before the turn, so going back reaches it 480 later.
-    CHECK(hits == std::vector<Hit>{{0, 60}, {960, 62}, {1920, 64}, {2880, 65},
-                                   {4320, 65}, {5280, 64}, {6240, 62}, {7200, 60}});
+    CHECK(hits ==
+          std::vector<Hit>{{0, 60}, {960, 62}, {1920, 64}, {2880, 65}, {4320, 65}, {5280, 64}, {6240, 62}, {7200, 60}});
 }
 
 TEST_CASE("freeze plays nothing") {
@@ -109,8 +110,8 @@ TEST_CASE("repeat plays each segment its number of times, then moves on one segm
     m.repeatSize = kBeat;
     m.repeatTimes = 2;
     std::vector<Hit> hits = play(m, fourBeats(), 8 * kBeat);
-    CHECK(hits == std::vector<Hit>{{0, 60}, {960, 60}, {1920, 62}, {2880, 62},
-                                   {3840, 64}, {4800, 64}, {5760, 65}, {6720, 65}});
+    CHECK(hits ==
+          std::vector<Hit>{{0, 60}, {960, 60}, {1920, 62}, {2880, 62}, {3840, 64}, {4800, 64}, {5760, 65}, {6720, 65}});
 }
 
 TEST_CASE("a region reads only part of the clip and loops over it") {
@@ -162,6 +163,30 @@ TEST_CASE("the position for drawing follows the same path") {
     m.direction = Direction::Freeze;
     m.start = 500;
     CHECK(positionAt(m, 4800) == doctest::Approx(500));
+}
+
+TEST_CASE("notes repeating with their own length inside the region are read at their own place") {
+    // A lane 3 steps long (720 ticks) with one hit at its start, inside a one-bar region: forward it plays at 0, 720,
+    // 1440, 2160, 2880, 3600; the region wrap at 3840 starts the lane again.
+    std::vector<N> lane = {{0, 120, 36}};
+    std::vector<uint32_t> byEnd = orderByEnd(lane);
+    Motion m = oneBar();
+    std::vector<double> at;
+    Sweep s[kMaxSweeps];
+    int n = sweeps(m, 0, 4 * kBeat, s);
+    for (int i = 0; i < n; i++)
+        crossedRepeating(s[i], 0, 0, 720, lane, byEnd,
+                         [&](const N&, double pos) { at.push_back(timeAt(m, s[i], pos)); });
+    CHECK(at == std::vector<double>{0, 720, 1440, 2160, 2880, 3600});
+
+    at.clear();
+    m.direction = Direction::Reverse;
+    n = sweeps(m, 0, 4 * kBeat, s);
+    for (int i = 0; i < n; i++)
+        crossedRepeating(s[i], 0, 0, 720, lane, byEnd,
+                         [&](const N&, double pos) { at.push_back(timeAt(m, s[i], pos)); });
+    // Backward from the region's end (3840): the hits end at 3720, 3000, 2280, 1560, 840, 120.
+    CHECK(at == std::vector<double>{120, 840, 1560, 2280, 3000, 3720});
 }
 
 // ---- The Playheads device in a song ---------------------------------------------------------------------------
@@ -223,7 +248,9 @@ TEST_CASE("a new Playheads device comes first with two playheads, a beat apart, 
     CHECK(devices::display(start, d.playheads[1].params[playheads::knob::kStart]) == 4);
     CHECK(d.playheads[0].id != d.playheads[1].id);
 
-    SUBCASE("a track takes only one") { CHECK(addDevice(song, track, DeviceType::Playheads, -1, idsOf(song)) == nullptr); }
+    SUBCASE("a track takes only one") {
+        CHECK(addDevice(song, track, DeviceType::Playheads, -1, idsOf(song)) == nullptr);
+    }
     SUBCASE("other devices never go before it") {
         applyUndoable(song, addDevice(song, track, DeviceType::Chord, 0, idsOf(song)));
         CHECK(song.tracks[0].devices[0].type == DeviceType::Playheads);
@@ -295,7 +322,8 @@ TEST_CASE("a new playhead reads as 1x forward from the clip's start") {
     const devices::TypeInfo& info = devices::playheadInfo();
     Playhead p = devices::makePlayhead(PlayheadId(1), 0);
     CHECK(devices::format(info.params[playheads::knob::kRate], p.params[playheads::knob::kRate]) == "1x");
-    CHECK(devices::format(info.params[playheads::knob::kDirection], p.params[playheads::knob::kDirection]) == "Forward");
+    CHECK(devices::format(info.params[playheads::knob::kDirection], p.params[playheads::knob::kDirection]) ==
+          "Forward");
     playheads::Motion m = playheads::motionFrom(p.params.data(), nullptr, 0, 3840, TimeSig());
     CHECK(m.rate == 1);
     CHECK(m.regionLength == 3840);

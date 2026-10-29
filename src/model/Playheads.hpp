@@ -57,8 +57,8 @@ struct Motion {
     double repeatSize = 0;   // 0 = no repeat
     int repeatTimes = 1;
     Bend bend = Bend::Straight;
-    double bendAmount = 0; // 0..1
-    double bendCycle = 0;  // the playhead's own ticks (elapsed times rate); 0 = no bend
+    double bendAmount = 0;   // 0..1
+    double bendCycle = 0;    // the playhead's own ticks (elapsed times rate); 0 = no bend
     double restartEvery = 0; // elapsed ticks; 0 = only when the clip starts
 };
 
@@ -103,6 +103,43 @@ void crossed(const Sweep& s, const std::vector<Note>& notes, const std::vector<u
                 break;
             if (s.includeFrom || end < s.from)
                 hit(notes[*it], end);
+        }
+    }
+}
+
+/// Like `crossed`, for notes that repeat every `period` ticks inside a longer loop (a clip's pattern inside its lane
+/// cycle, a drum lane with its own length): clip position p reads them at base + (p - origin) mod period. `hit`
+/// gets each note with the position in the sweep where the playhead meets it.
+template <typename Note, typename Hit>
+void crossedRepeating(const Sweep& s, double origin, double base, double period, const std::vector<Note>& notes,
+                      const std::vector<uint32_t>& byEnd, Hit&& hit) {
+    if (period <= 0 || s.to == s.from)
+        return;
+    double u0 = s.from - origin, u1 = s.to - origin;
+    bool first = true;
+    if (u1 > u0) {
+        for (double k = std::floor(u0 / period); k * period < u1; k++) {
+            double a = std::max(u0, k * period), b = std::min(u1, (k + 1) * period);
+            if (b <= a)
+                continue;
+            Sweep piece = s;
+            piece.from = base + (a - k * period);
+            piece.to = base + (b - k * period);
+            piece.includeFrom = first ? s.includeFrom : true;
+            first = false;
+            crossed(piece, notes, byEnd, [&](const Note& n, double p) { hit(n, origin + k * period + (p - base)); });
+        }
+    } else {
+        for (double k = std::ceil(u0 / period) - 1; (k + 1) * period > u1; k--) {
+            double a = std::min(u0, (k + 1) * period), b = std::max(u1, k * period);
+            if (a <= b)
+                continue;
+            Sweep piece = s;
+            piece.from = base + (a - k * period);
+            piece.to = base + (b - k * period);
+            piece.includeFrom = first ? s.includeFrom : true;
+            first = false;
+            crossed(piece, notes, byEnd, [&](const Note& n, double p) { hit(n, origin + k * period + (p - base)); });
         }
     }
 }

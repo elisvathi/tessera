@@ -1177,13 +1177,14 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
     }
 }
 
-void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a,
-                           double b, double from, double stretch) {
+void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
+                           double from, double stretch) {
     const ChainPlayback& chain = *state.chainInfo;
     TimeSig ts = snapshot->timeSig;
     const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
-    bool once = std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
-                                             deviceKnobs[playheads::knob::kSameNote])) == 1;
+    bool once =
+        std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
+                                     deviceKnobs[playheads::knob::kSameNote])) == 1;
     // Notes started in this window, so two playheads landing on the same note at once play it once.
     struct Started {
         double at;
@@ -1196,8 +1197,10 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
     for (size_t index = 0; index < chain.playheads.size() && index < state.playheadClocks.size(); index++) {
         const PlayheadPlayback& p = chain.playheads[index];
         const float* knobs = &knobValues[size_t(p.knobs)];
+        // The region is the whole loop (a drum clip's whole lane cycle): the pattern and each lane with its own
+        // length repeat inside it, as they do without playheads.
         playheads::Motion m =
-            playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.patternLength()), ts);
+            playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
         double rate = m.rate;
         double restartEvery = m.restartEvery;
         // The engine counts the playhead's own time itself (rate 1 below), restarting where the song time says.
@@ -1218,8 +1221,9 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 playheads::Sweep sweeps[playheads::kMaxSweeps];
                 int count = playheads::sweeps(m, ownA, ownB, sweeps);
                 for (int i = 0; i < count; i++) {
-                    playheads::crossed(sweeps[i], clip.notes, clip.notesByEnd, [&](const NoteEvent& e, double pos) {
-                        double t = segA + (playheads::timeAt(m, sweeps[i], pos) - ownA) / rate;
+                    const playheads::Sweep& sweep = sweeps[i];
+                    auto onHit = [&](const NoteEvent& e, double pos) {
+                        double t = segA + (playheads::timeAt(m, sweep, pos) - ownA) / rate;
                         double onPlay = std::max(from, from + (t - a) * stretch);
                         NoteEvent n = e;
                         if (p.channel > 0)
@@ -1244,7 +1248,16 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                                                lane);
                         else
                             startNote(track, state, n, onPlay, onPlay + length, pass, lane);
-                    });
+                    };
+                    double start = double(clip.loopStart);
+                    if (clip.pattern > 0 && clip.pattern < clip.loopLength())
+                        playheads::crossedRepeating(sweep, start, start, double(clip.pattern), clip.notes,
+                                                    clip.notesByEnd, onHit);
+                    else
+                        playheads::crossed(sweep, clip.notes, clip.notesByEnd, onHit);
+                    for (const LaneLoop& lane : clip.laneLoops)
+                        playheads::crossedRepeating(sweep, start, double(lane.start), double(lane.length), lane.notes,
+                                                    lane.notesByEnd, onHit);
                 }
             }
             segA = segB;
