@@ -46,11 +46,12 @@ constexpr float kKnobRadius = 13.5f;
 constexpr float kKnobPx = 160;   // dragging this far turns a knob end to end
 constexpr float kAmountPx = 100; // dragging this far sets a modulation to its full amount
 constexpr float kPi = 3.14159265f;
-constexpr float kChip = 78;      // a playhead's chip on a Playheads card
+constexpr float kChip = 78; // a playhead's chip on a Playheads card
 constexpr float kChipHeight = 18;
-constexpr float kChipDot = 16; // the on/off dot at a chip's left end
-constexpr float kMotionJoin = 72;  // a Motion card's "+ Selected"
-constexpr float kMotionCount = 58; // and its "6 notes"
+constexpr float kChipDot = 16;      // the on/off dot at a chip's left end
+constexpr float kMotionJoin = 64;   // a Motion card's "+ Selected"
+constexpr float kMotionLeave = 64;  // its "− Selected"
+constexpr float kMotionCount = 52;  // and its "6 notes"
 constexpr float kKnobGroupGap = 14; // between a playhead's settings and the device's own
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
@@ -277,8 +278,7 @@ void DeviceStrip::layoutParts() {
                 x += kConnector;
                 for (size_t k = 0; k < p->branch.size(); k++) {
                     x = layoutCard(p->branch[k], kBranchBase + int(k), x, y0);
-                    parts.push_back(
-                        {Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), kBranchBase + int(k) + 1});
+                    parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), kBranchBase + int(k) + 1});
                     x += kConnector;
                 }
                 parts.insert(parts.begin() + long(band),
@@ -310,10 +310,13 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float knobTop
         parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, kPad + 7, 10, 10), index, int(k),
                          d.modulators[k].id.value});
     if (d.type == DeviceType::Motion) {
-        // Which notes move: "+ Selected" adds the piano roll's selection, "6 notes" selects them there.
+        // Which notes move: "+ Selected" adds the piano roll's selection, "− Selected" takes it out again, "6 notes"
+        // selects them there.
         float right = menu.pos.x - 6 - float(d.modulators.size()) * 11;
-        Rect join(right - kMotionJoin, kPad + 4, kMotionJoin, kChipHeight);
+        Rect leave(right - kMotionLeave, kPad + 4, kMotionLeave, kChipHeight);
+        Rect join(leave.pos.x - 4 - kMotionJoin, kPad + 4, kMotionJoin, kChipHeight);
         Rect count(join.pos.x - 4 - kMotionCount, kPad + 4, kMotionCount, kChipHeight);
+        parts.push_back({Kind::MotionLeave, leave, index, -1, d.id.value});
         parts.push_back({Kind::MotionJoin, join, index, -1, d.id.value});
         parts.push_back({Kind::MotionNotes, count, index, -1, d.id.value});
     }
@@ -382,11 +385,10 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
         int param;
         bool dial;
     };
-    const Item items[] = {{Control::Knob, kRate, true},       {Control::Direction, -1, false},
-                          {Control::Repeat, -1, false},       {Control::Knob, kOctave, false},
-                          {Control::Knob, kKeySteps, false},  {Control::Knob, kNotes, false},
-                          {Control::Knob, kVelocity, false},  {Control::Channel, -1, false},
-                          {Control::More, -1, false}};
+    const Item items[] = {
+        {Control::Knob, kRate, true},      {Control::Direction, -1, false},   {Control::Repeat, -1, false},
+        {Control::Knob, kOctave, false},   {Control::Knob, kKeySteps, false}, {Control::Knob, kNotes, false},
+        {Control::Knob, kVelocity, false}, {Control::Channel, -1, false},     {Control::More, -1, false}};
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
     float controls = float(std::size(items)) * kCell;
     Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);
@@ -397,8 +399,8 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     // The playheads, as chips beside the card's name.
     float cx = card.pos.x + 96;
     for (size_t k = 0; k < d.playheads.size(); k++) {
-        parts.push_back({Kind::PlayheadChip, Rect(cx, kPad + 3, kChip, kChipHeight), index, int(k),
-                         d.playheads[k].id.value});
+        parts.push_back(
+            {Kind::PlayheadChip, Rect(cx, kPad + 3, kChip, kChipHeight), index, int(k), d.playheads[k].id.value});
         cx += kChip + 4;
     }
     if (int(d.playheads.size()) < playheads::kMaxPlayheads)
@@ -729,6 +731,22 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         }
         std::vector<NoteId> notes(sel.notes.begin(), sel.notes.end());
         m->perform(setNotesMotion(m->song(), sel.clip, notes, DeviceId(hit->id)));
+        break;
+    }
+    case Kind::MotionLeave: {
+        // Only the selected notes that move with this device leave it; the rest of the selection is untouched.
+        const NoteSelection& sel = ctx.state().selection;
+        const Clip* clip = sel.clip.valid() ? m->song().findClip(sel.clip) : nullptr;
+        std::vector<NoteId> notes;
+        if (clip)
+            for (const Note& n : clip->notes)
+                if (n.motion.value == hit->id && sel.notes.count(n.id))
+                    notes.push_back(n.id);
+        if (notes.empty()) {
+            ctx.toast("Select notes of this Motion in the piano roll, then click \u2212 Selected");
+            break;
+        }
+        m->perform(setNotesMotion(m->song(), sel.clip, notes, DeviceId()));
         break;
     }
     case Kind::AddPlayhead: {
@@ -1163,7 +1181,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             float right = r.getRight() - 26 - float(d.modulators.size()) * 11;
             float left = r.pos.x + 26;
             if (d.type == DeviceType::Motion) {
-                right -= kMotionJoin + kMotionCount + 12;
+                right -= kMotionJoin + kMotionLeave + kMotionCount + 16;
                 // Its colour, the one its notes' corners wear.
                 draw::roundedRect(vg, Rect(left, p.rect.getCenter().y - 4, 8, 8), 2, theme::playheadColor(d.color));
                 left += 13;
@@ -1174,7 +1192,8 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             break;
         }
         case Kind::MotionNotes:
-        case Kind::MotionJoin: {
+        case Kind::MotionJoin:
+        case Kind::MotionLeave: {
             NVGcolor color = theme::playheadColor(d.color);
             bool count = p.kind == Kind::MotionNotes;
             int notes = count ? motionNoteCount(d.id) : 0;
@@ -1184,7 +1203,9 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             draw::TextStyle text{theme::fonts::ui(), 10.5f, count ? (notes > 0 ? c.text0 : c.text2) : c.accent,
                                  NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
             draw::text(vg, text, p.rect.getCenter().x, p.rect.getCenter().y,
-                       count ? (notes == 1 ? "1 note" : std::to_string(notes) + " notes") : "+ Selected");
+                       count                        ? (notes == 1 ? "1 note" : std::to_string(notes) + " notes")
+                       : p.kind == Kind::MotionJoin ? "+ Selected"
+                                                    : "\u2212 Selected");
             break;
         }
         default:
