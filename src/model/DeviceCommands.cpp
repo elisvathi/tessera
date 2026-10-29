@@ -2,6 +2,7 @@
 
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
+#include "Playheads.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -145,6 +146,55 @@ std::string deviceName(const Song& song, DeviceId id) {
     return d ? d->name : "device";
 }
 
+/// The first chain position other devices may take: after the Playheads device, which always comes first.
+int firstFree(const Track& track) {
+    return !track.devices.empty() && track.devices.front().type == DeviceType::Playheads ? 1 : 0;
+}
+
+bool hasPlayheads(const Track& track) {
+    return std::any_of(track.devices.begin(), track.devices.end(),
+                       [](const Device& d) { return d.type == DeviceType::Playheads; });
+}
+
+/// Puts a device into a chain at `at` (clamped): a Playheads device always goes first, others after it.
+void insertDevice(Track& track, int at, Device device) {
+    if (device.type == DeviceType::Playheads)
+        at = 0;
+    else
+        at = std::clamp(at, firstFree(track), int(track.devices.size()));
+    track.devices.insert(track.devices.begin() + at, std::move(device));
+}
+
+/// The playhead the device gets next: named and coloured by its place, on the lowest channel nobody uses,
+/// starting a beat after the one before so a canon is heard at once.
+Playhead nextPlayhead(const Device& device, PlayheadId id) {
+    int index = int(device.playheads.size());
+    Playhead p = devices::makePlayhead(id, index);
+    int channel = 1;
+    while (channel < 16 && std::any_of(device.playheads.begin(), device.playheads.end(),
+                                       [&](const Playhead& o) { return o.channel == channel; }))
+        channel++;
+    p.channel = uint8_t(channel);
+    const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
+    p.params[playheads::knob::kStart] = devices::normalize(start, float(4 * index));
+    return p;
+}
+
+std::string playheadName(const Song& song, PlayheadId id) {
+    const Playhead* p = findPlayhead(song, id);
+    return p ? p->name : "playhead";
+}
+
+/// Runs `edit` on a playhead and the device holding it.
+template <typename Edit>
+CommandPtr playheadEdit(const Song& song, PlayheadId id, const std::string& name, Edit&& edit) {
+    return chainEdit(song, name, [&](Song& work) {
+        DeviceId deviceId;
+        Playhead* p = findPlayhead(work, id, nullptr, &deviceId);
+        return p && edit(*findDevice(work, deviceId), *p);
+    });
+}
+
 std::string modulatorName(const Song& song, ModulatorId id) {
     const Modulator* m = findModulator(song, id);
     return m ? m->name : "modulator";
@@ -157,6 +207,8 @@ std::string modulatorName(const Song& song, ModulatorId id) {
 CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int index, const NextId& nextId) {
     const Track* existing = song.findTrack(trackId);
     if (!existing || int(existing->devices.size()) >= kMaxDevices)
+        return nullptr;
+    if (type == DeviceType::Playheads && hasPlayheads(*existing))
         return nullptr;
     Device device = devices::makeDevice(type, DeviceId(nextId()));
     if (type == DeviceType::Groove) {
@@ -172,10 +224,12 @@ CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int ind
         device.params[size_t(chain::knob::kGrooveGrid)] =
             devices::normalize(grid, swingStepFor(clips) == kPpq / 2 ? 1.f : 0.f);
     }
+    if (type == DeviceType::Playheads)
+        for (int i = 0; i < 2; i++)
+            device.playheads.push_back(nextPlayhead(device, PlayheadId(nextId())));
     return chainEdit(song, "Add " + device.name, [&](Song& work) {
         Track& track = *work.findTrack(trackId);
-        int at = index < 0 ? int(track.devices.size()) : std::min(index, int(track.devices.size()));
-        track.devices.insert(track.devices.begin() + at, device);
+        insertDevice(track, index < 0 ? int(track.devices.size()) : index, device);
         return true;
     });
 }
@@ -199,6 +253,8 @@ CommandPtr moveDevice(const Song& song, DeviceId id, TrackId toTrack, int index)
     const Track* target = song.findTrack(toTrack);
     if (!target || (toTrack != fromTrack && int(target->devices.size()) >= kMaxDevices))
         return nullptr;
+    if (findDevice(song, id)->type == DeviceType::Playheads && toTrack != fromTrack && hasPlayheads(*target))
+        return nullptr;
     return chainEdit(song, "Move " + deviceName(song, id), [&](Song& work) {
         Track& from = *work.findTrack(fromTrack);
         auto it = deviceIn(from, id);
@@ -210,8 +266,7 @@ CommandPtr moveDevice(const Song& song, DeviceId id, TrackId toTrack, int index)
         // `index` counts positions in the chain as it was, so moving right past itself lands one earlier.
         if (toTrack == fromTrack && at > oldIndex)
             at--;
-        at = std::clamp(at, 0, int(to.devices.size()));
-        to.devices.insert(to.devices.begin() + at, std::move(device));
+        insertDevice(to, at, std::move(device));
         pruneRoutes(work);
         return true;
     });
@@ -237,6 +292,8 @@ CommandPtr copyDevice(const Song& song, DeviceId id, TrackId toTrack, int index,
     const Track* target = song.findTrack(toTrack);
     if (!original || !target || int(target->devices.size()) >= kMaxDevices)
         return nullptr;
+    if (original->type == DeviceType::Playheads && hasPlayheads(*target))
+        return nullptr;
     std::vector<Device> copy = {*original};
     std::vector<Modulator> noTrackModulators;
     ChainRemap remap;
@@ -244,8 +301,7 @@ CommandPtr copyDevice(const Song& song, DeviceId id, TrackId toTrack, int index,
     retargetRoutes(copy, noTrackModulators, remap);
     return chainEdit(song, "Copy " + original->name, [&](Song& work) {
         Track& track = *work.findTrack(toTrack);
-        int at = index < 0 ? int(track.devices.size()) : std::min(index, int(track.devices.size()));
-        track.devices.insert(track.devices.begin() + at, std::move(copy.front()));
+        insertDevice(track, index < 0 ? int(track.devices.size()) : index, std::move(copy.front()));
         pruneRoutes(work);
         return true;
     });
@@ -291,6 +347,10 @@ CommandPtr setParam(const Song& song, const ParamRef& ref, float value) {
         if (const Device* d = findDevice(song, DeviceId(ref.owner)))
             if (const devices::ParamInfo* p = devices::paramInfo(d->type, ref.param))
                 label += d->name + " " + p->name;
+    } else if (ref.kind == ParamRef::Kind::Playhead) {
+        if (const Playhead* ph = findPlayhead(song, PlayheadId(ref.owner)))
+            if (const devices::ParamInfo* p = devices::playheadParamInfo(ref.param))
+                label += ph->name + " " + p->name;
     } else if (const Modulator* m = findModulator(song, ModulatorId(ref.owner))) {
         if (const devices::ParamInfo* p = devices::paramInfo(m->type, ref.param))
             label += m->name + " " + p->name;
@@ -300,6 +360,80 @@ CommandPtr setParam(const Song& song, const ParamRef& ref, float value) {
         if (!param)
             return false;
         *param = std::clamp(value, 0.f, 1.f);
+        return true;
+    });
+}
+
+// ---- Playheads ----------------------------------------------------------------------------------------------
+
+CommandPtr addPlayhead(const Song& song, DeviceId deviceId, const NextId& nextId, PlayheadId* added) {
+    const Device* device = findDevice(song, deviceId);
+    if (!device || device->type != DeviceType::Playheads || int(device->playheads.size()) >= playheads::kMaxPlayheads)
+        return nullptr;
+    Playhead p = nextPlayhead(*device, PlayheadId(nextId()));
+    if (added)
+        *added = p.id;
+    return chainEdit(song, "Add " + p.name, [&](Song& work) {
+        findDevice(work, deviceId)->playheads.push_back(p);
+        return true;
+    });
+}
+
+CommandPtr removePlayhead(const Song& song, PlayheadId id) {
+    return playheadEdit(song, id, "Remove " + playheadName(song, id), [&](Device& d, Playhead&) {
+        d.playheads.erase(std::find_if(d.playheads.begin(), d.playheads.end(),
+                                       [&](const Playhead& p) { return p.id == id; }));
+        return true;
+    });
+}
+
+CommandPtr duplicatePlayhead(const Song& song, PlayheadId id, const NextId& nextId, PlayheadId* added) {
+    const Device* device = nullptr;
+    DeviceId deviceId;
+    if (findPlayhead(song, id, nullptr, &deviceId))
+        device = findDevice(song, deviceId);
+    if (!device || int(device->playheads.size()) >= playheads::kMaxPlayheads)
+        return nullptr;
+    PlayheadId fresh(nextId());
+    if (added)
+        *added = fresh;
+    return playheadEdit(song, id, "Duplicate " + playheadName(song, id), [&](Device& d, Playhead& original) {
+        Playhead copy = original;
+        copy.id = fresh;
+        copy.name = original.name + " copy";
+        copy.color = uint8_t(d.playheads.size() % 16);
+        auto at = std::find_if(d.playheads.begin(), d.playheads.end(), [&](const Playhead& p) { return p.id == id; });
+        d.playheads.insert(at + 1, copy);
+        return true;
+    });
+}
+
+CommandPtr renamePlayhead(const Song& song, PlayheadId id, const std::string& name) {
+    if (name.empty())
+        return nullptr;
+    return playheadEdit(song, id, "Rename " + playheadName(song, id), [&](Device&, Playhead& p) {
+        p.name = name;
+        return true;
+    });
+}
+
+CommandPtr setPlayheadChannel(const Song& song, PlayheadId id, int channel) {
+    return playheadEdit(song, id, "Set " + playheadName(song, id) + " channel", [&](Device&, Playhead& p) {
+        p.channel = uint8_t(std::clamp(channel, 0, 16));
+        return true;
+    });
+}
+
+CommandPtr setPlayheadMute(const Song& song, PlayheadId id, bool mute) {
+    return playheadEdit(song, id, (mute ? "Mute " : "Unmute ") + playheadName(song, id), [&](Device&, Playhead& p) {
+        p.mute = mute;
+        return true;
+    });
+}
+
+CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo) {
+    return playheadEdit(song, id, (solo ? "Solo " : "Unsolo ") + playheadName(song, id), [&](Device&, Playhead& p) {
+        p.solo = solo;
         return true;
     });
 }
@@ -432,6 +566,8 @@ void renewIds(std::vector<Device>& devices, std::vector<Modulator>& modulators, 
         renew(d.id);
         for (Modulator& m : d.modulators)
             renew(m.id);
+        for (Playhead& p : d.playheads)
+            renew(p.id);
     }
     for (Modulator& m : modulators)
         renew(m.id);

@@ -1,6 +1,7 @@
 #include "DeviceTypes.hpp"
 
 #include "Chord.hpp"
+#include "Playheads.hpp"
 #include "Scale.hpp"
 
 #include <algorithm>
@@ -92,6 +93,10 @@ std::vector<TypeInfo> buildDevices() {
          number("Max velocity", 0, 100, 100, "%"), integer("Every", 1, 16, 1), integer("Offset", 0, 15, 0),
          choice("Channel",
                 {"Any", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"}, 0)}};
+    t[size_t(DeviceType::Playheads)] = {"Playheads",
+                                        {choice("Restart", {"Clip start", "Every N bars"}, 0),
+                                         integer("Restart bars", 1, 64, 4, "bars"),
+                                         choice("Same note", {"Play each", "Play once"}, 1)}};
     auto about = [&t](DeviceType type, const char* group, const char* description, const char* keywords) {
         TypeInfo& info = t[size_t(type)];
         info.group = group;
@@ -112,6 +117,8 @@ std::vector<TypeInfo> buildDevices() {
           "swing shuffle groove triplet feel");
     about(DeviceType::Random, "Feel", "changes pitches and drops notes on every pass", "variation chance random drop");
     about(DeviceType::NoteFilter, "Feel", "lets only some notes through", "filter range every skip thin channel part");
+    about(DeviceType::Playheads, "Source", "reads the clip with several playheads",
+          "playhead canon reverse speed time bend");
     return t;
 }
 
@@ -155,6 +162,20 @@ std::vector<TypeInfo> buildModulators() {
     return t;
 }
 
+TypeInfo buildPlayhead() {
+    using namespace playheads;
+    return {"Playhead",
+            {choice("Rate", rateNames(), 7), choice("Direction", {"Forward", "Reverse", "Ping-pong", "Freeze"}, 0),
+             integer("Start", 0, 256, 0, "steps"), integer("Region start", 0, 256, 0, "steps"),
+             integer("Region length", 0, 256, 0, "steps"), choice("Repeat", repeatNames(), 0),
+             integer("Repeat times", 2, 16, 2), choice("Bend", {"Straight", "Ease in", "Ease out", "Ease in-out",
+                                                                "Swing", "Stairs"}, 0),
+             number("Bend amount", 0, 100, 50, "%"), choice("Bend cycle", cycleNames(), 2),
+             integer("Offset", -16, 16, 0, "steps"),
+             choice("Length", {"As written", "Follows playhead", "Fixed"}, 0),
+             choice("Fixed length", fixedLengthNames(), 2)}};
+}
+
 const std::vector<TypeInfo>& deviceTable() {
     static const std::vector<TypeInfo> table = buildDevices();
     return table;
@@ -173,6 +194,16 @@ const TypeInfo& deviceInfo(DeviceType type) {
 
 const TypeInfo& modulatorInfo(ModulatorType type) {
     return modulatorTable()[size_t(std::clamp(int(type), 0, kModulatorTypeCount - 1))];
+}
+
+const TypeInfo& playheadInfo() {
+    static const TypeInfo info = buildPlayhead();
+    return info;
+}
+
+const ParamInfo* playheadParamInfo(int param) {
+    const TypeInfo& t = playheadInfo();
+    return param >= 0 && param < int(t.params.size()) ? &t.params[size_t(param)] : nullptr;
 }
 
 const ParamInfo* paramInfo(DeviceType type, int param) {
@@ -258,6 +289,17 @@ Device makeDevice(DeviceType type, DeviceId id) {
     for (const ParamInfo& p : deviceInfo(type).params)
         d.params.push_back(defaultNormalized(p));
     return d;
+}
+
+Playhead makePlayhead(PlayheadId id, int index) {
+    Playhead p;
+    p.id = id;
+    p.name = "Playhead " + std::to_string(index + 1);
+    p.color = uint8_t(index % 16);
+    p.channel = uint8_t(index % 16 + 1);
+    for (const ParamInfo& info : playheadInfo().params)
+        p.params.push_back(defaultNormalized(info));
+    return p;
 }
 
 Modulator makeModulator(ModulatorType type, ModulatorId id) {

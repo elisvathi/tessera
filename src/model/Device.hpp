@@ -22,9 +22,10 @@ enum class DeviceType : uint8_t {
     Random,
     NoteFilter,
     Humanize,
-    Groove
+    Groove,
+    Playheads // reads the clip with several playheads; always first in the chain (docs/design/PLAYHEADS.md)
 };
-constexpr int kDeviceTypeCount = 11;
+constexpr int kDeviceTypeCount = 12;
 
 enum class ModulatorType : uint8_t { Lfo, Envelope, Steps, Random, Ramp, Macro, Note };
 constexpr int kModulatorTypeCount = 7;
@@ -72,6 +73,22 @@ struct Modulator {
     }
 };
 
+/// One reader of the clip inside a Playheads device (docs/design/PLAYHEADS.md).
+struct Playhead {
+    PlayheadId id;
+    std::string name;
+    uint8_t color = 0;         // index into the playhead colours
+    std::vector<float> params; // normalized, the playhead parameter list (DeviceTypes.hpp playheadInfo)
+    uint8_t channel = 1;       // 1..16 put on its notes; 0 = each note keeps its own
+    bool mute = false;
+    bool solo = false;
+
+    bool operator==(const Playhead& o) const {
+        return id == o.id && name == o.name && color == o.color && params == o.params && channel == o.channel &&
+               mute == o.mute && solo == o.solo;
+    }
+};
+
 struct Device {
     DeviceId id;
     DeviceType type = DeviceType::Transpose;
@@ -80,10 +97,11 @@ struct Device {
     bool affectDrumLanes = false;      // pitch devices leave drum lanes alone unless this is set
     std::vector<float> params;         // normalized, the type's list
     std::vector<Modulator> modulators; // device level
+    std::vector<Playhead> playheads;   // Playheads devices only
 
     bool operator==(const Device& o) const {
         return id == o.id && type == o.type && name == o.name && on == o.on && affectDrumLanes == o.affectDrumLanes &&
-               params == o.params && modulators == o.modulators;
+               params == o.params && modulators == o.modulators && playheads == o.playheads;
     }
 };
 

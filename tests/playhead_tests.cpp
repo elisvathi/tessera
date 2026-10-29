@@ -1,0 +1,292 @@
+#include "doctest.h"
+
+#include "../src/model/Playheads.hpp"
+
+#include <vector>
+
+using namespace tessera;
+using namespace tessera::playheads;
+
+namespace {
+
+constexpr double kBeat = double(kPpq);
+
+struct N {
+    double start, end;
+    int pitch;
+};
+
+struct Hit {
+    double time;
+    int pitch;
+    bool operator==(const Hit& o) const { return std::abs(time - o.time) < 1e-6 && pitch == o.pitch; }
+};
+
+/// Four quarter notes in a one-bar region: pitches 60, 62, 64, 65 on beats 1-4.
+std::vector<N> fourBeats() { return {{0, 480, 60}, {960, 1440, 62}, {1920, 2400, 64}, {2880, 3360, 65}}; }
+
+Motion oneBar() {
+    Motion m;
+    m.regionStart = 0;
+    m.regionLength = 4 * kBeat;
+    return m;
+}
+
+/// Plays `m` over [0, until) in windows of `step` ticks, as the engine does sample by sample.
+std::vector<Hit> play(const Motion& m, const std::vector<N>& notes, double until, double step = 7.3) {
+    std::vector<uint32_t> byEnd = orderByEnd(notes);
+    std::vector<Hit> hits;
+    for (double a = 0; a < until; a += step) {
+        double b = std::min(until, a + step);
+        Sweep s[kMaxSweeps];
+        int n = sweeps(m, a, b, s);
+        for (int i = 0; i < n; i++)
+            crossed(s[i], notes, byEnd, [&](const N& note, double pos) { hits.push_back({timeAt(m, s[i], pos), note.pitch}); });
+    }
+    return hits;
+}
+
+} // namespace
+
+TEST_CASE("a playhead at 1x going forward plays each note at its start") {
+    std::vector<Hit> hits = play(oneBar(), fourBeats(), 8 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 60}, {960, 62}, {1920, 64}, {2880, 65},
+                                   {3840, 60}, {4800, 62}, {5760, 64}, {6720, 65}});
+}
+
+TEST_CASE("the window size doesn't change what plays") {
+    CHECK(play(oneBar(), fourBeats(), 8 * kBeat, 1) == play(oneBar(), fourBeats(), 8 * kBeat, 500));
+}
+
+TEST_CASE("a playhead at 2x plays twice as fast") {
+    Motion m = oneBar();
+    m.rate = 2;
+    std::vector<Hit> hits = play(m, fourBeats(), 4 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 60}, {480, 62}, {960, 64}, {1440, 65},
+                                   {1920, 60}, {2400, 62}, {2880, 64}, {3360, 65}});
+}
+
+TEST_CASE("a later start begins the canon partway in") {
+    Motion m = oneBar();
+    m.start = 2 * kBeat;
+    std::vector<Hit> hits = play(m, fourBeats(), 4 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 64}, {960, 65}, {1920, 60}, {2880, 62}});
+}
+
+TEST_CASE("going backward plays each note when the playhead reaches its end") {
+    Motion m = oneBar();
+    m.direction = Direction::Reverse;
+    // From the region's start it wraps to the end at once: the last note ends at 3360, reached 480 ticks later.
+    std::vector<Hit> hits = play(m, fourBeats(), 4 * kBeat);
+    CHECK(hits == std::vector<Hit>{{480, 65}, {1440, 64}, {2400, 62}, {3360, 60}});
+}
+
+TEST_CASE("a note that ends at the region's end plays as soon as a backward playhead wraps there") {
+    std::vector<N> notes = {{0, 960, 60}, {2880, 3840, 67}};
+    Motion m = oneBar();
+    m.direction = Direction::Reverse;
+    std::vector<Hit> hits = play(m, notes, 4 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 67}, {2880, 60}});
+}
+
+TEST_CASE("ping-pong turns at the region's edges without playing the turning note twice") {
+    Motion m = oneBar();
+    m.direction = Direction::PingPong;
+    std::vector<Hit> hits = play(m, fourBeats(), 8 * kBeat);
+    // Forward over beats 1-4, then back: beat 4's note ends before the turn, so going back reaches it 480 later.
+    CHECK(hits == std::vector<Hit>{{0, 60}, {960, 62}, {1920, 64}, {2880, 65},
+                                   {4320, 65}, {5280, 64}, {6240, 62}, {7200, 60}});
+}
+
+TEST_CASE("freeze plays nothing") {
+    Motion m = oneBar();
+    m.direction = Direction::Freeze;
+    CHECK(play(m, fourBeats(), 8 * kBeat).empty());
+}
+
+TEST_CASE("repeat plays each segment its number of times, then moves on one segment") {
+    Motion m = oneBar();
+    m.repeatSize = kBeat;
+    m.repeatTimes = 2;
+    std::vector<Hit> hits = play(m, fourBeats(), 8 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 60}, {960, 60}, {1920, 62}, {2880, 62},
+                                   {3840, 64}, {4800, 64}, {5760, 65}, {6720, 65}});
+}
+
+TEST_CASE("a region reads only part of the clip and loops over it") {
+    Motion m = oneBar();
+    m.regionStart = 2 * kBeat;
+    m.regionLength = 2 * kBeat;
+    std::vector<Hit> hits = play(m, fourBeats(), 4 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 64}, {960, 65}, {1920, 64}, {2880, 65}});
+}
+
+TEST_CASE("restarting every bar brings the playhead back to its start") {
+    Motion m = oneBar();
+    m.rate = 0.5;
+    m.restartEvery = 4 * kBeat;
+    std::vector<Hit> hits = play(m, fourBeats(), 8 * kBeat);
+    CHECK(hits == std::vector<Hit>{{0, 60}, {1920, 62}, {3840, 60}, {5760, 62}});
+}
+
+TEST_CASE("bend moves notes inside its cycle but keeps the cycle's ends") {
+    Motion m = oneBar();
+    m.bend = Bend::EaseIn;
+    m.bendAmount = 1;
+    m.bendCycle = 4 * kBeat;
+    std::vector<Hit> hits = play(m, fourBeats(), 8 * kBeat);
+    REQUIRE(hits.size() == 8);
+    CHECK(hits[0] == Hit{0, 60});
+    CHECK(hits[1].time > 960); // easing in: slow at first, so the second note comes late
+    CHECK(hits[4] == Hit{3840, 60});
+    for (Bend b : {Bend::EaseIn, Bend::EaseOut, Bend::EaseInOut, Bend::Swing, Bend::Stairs}) {
+        double last = 0;
+        for (int i = 0; i <= 100; i++) {
+            double w = warp(b, 1, i / 100.0);
+            CHECK(w >= last - 1e-12);
+            last = w;
+        }
+        CHECK(warp(b, 1, 0) == doctest::Approx(0));
+        CHECK(warp(b, 1, 1) == doctest::Approx(1));
+    }
+}
+
+TEST_CASE("the position for drawing follows the same path") {
+    Motion m = oneBar();
+    CHECK(positionAt(m, 960) == doctest::Approx(960));
+    CHECK(positionAt(m, 4000) == doctest::Approx(160));
+    m.direction = Direction::Reverse;
+    CHECK(positionAt(m, 960) == doctest::Approx(2880));
+    m.direction = Direction::PingPong;
+    CHECK(positionAt(m, 4800) == doctest::Approx(2880));
+    m.direction = Direction::Freeze;
+    m.start = 500;
+    CHECK(positionAt(m, 4800) == doctest::Approx(500));
+}
+
+// ---- The Playheads device in a song ---------------------------------------------------------------------------
+
+#include "../src/model/DeviceCommands.hpp"
+#include "../src/model/DeviceTypes.hpp"
+#include "../src/model/Json.hpp"
+#include "../src/model/Serialize.hpp"
+
+namespace {
+
+NextId idsOf(Song& song) {
+    return [&song] { return song.nextId++; };
+}
+
+/// Applies a command, checks that undo gives back the song exactly, then applies it again.
+void applyUndoable(Song& song, CommandPtr command) {
+    REQUIRE(command != nullptr);
+    Song before = song;
+    command->apply(song);
+    Song after = song;
+    command->revert(song);
+    CHECK(song == before);
+    command->apply(song);
+    CHECK(song == after);
+}
+
+Song songWithTrack() {
+    Song song;
+    normalize(song);
+    return song;
+}
+
+Device& firstDevice(Song& song) { return song.tracks[0].devices.front(); }
+
+Song savedAndLoaded(const Song& song) {
+    json::Ref j(songToJson(song));
+    char* text = json_dumps(j.get(), JSON_COMPACT);
+    REQUIRE(text != nullptr);
+    json::Ref loaded(json_loads(text, 0, nullptr));
+    free(text);
+    return songFromJson(loaded.get(), Song::kSchemaVersion);
+}
+
+} // namespace
+
+TEST_CASE("a new Playheads device comes first with two playheads, a beat apart, on channels 1 and 2") {
+    Song song = songWithTrack();
+    TrackId track = song.tracks[0].id;
+    applyUndoable(song, addDevice(song, track, DeviceType::Echo, -1, idsOf(song)));
+    applyUndoable(song, addDevice(song, track, DeviceType::Playheads, -1, idsOf(song)));
+    const Device& d = firstDevice(song);
+    REQUIRE(d.type == DeviceType::Playheads);
+    REQUIRE(d.playheads.size() == 2);
+    CHECK(d.playheads[0].channel == 1);
+    CHECK(d.playheads[1].channel == 2);
+    const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
+    CHECK(devices::display(start, d.playheads[0].params[playheads::knob::kStart]) == 0);
+    CHECK(devices::display(start, d.playheads[1].params[playheads::knob::kStart]) == 4);
+    CHECK(d.playheads[0].id != d.playheads[1].id);
+
+    SUBCASE("a track takes only one") { CHECK(addDevice(song, track, DeviceType::Playheads, -1, idsOf(song)) == nullptr); }
+    SUBCASE("other devices never go before it") {
+        applyUndoable(song, addDevice(song, track, DeviceType::Chord, 0, idsOf(song)));
+        CHECK(song.tracks[0].devices[0].type == DeviceType::Playheads);
+        CHECK(song.tracks[0].devices[1].type == DeviceType::Chord);
+        DeviceId echo = song.tracks[0].devices[2].id;
+        applyUndoable(song, moveDevice(song, echo, track, 0));
+        CHECK(song.tracks[0].devices[0].type == DeviceType::Playheads);
+        CHECK(song.tracks[0].devices[1].id == echo);
+    }
+}
+
+TEST_CASE("playheads are added, duplicated, changed and removed with undo") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    DeviceId device = firstDevice(song).id;
+
+    PlayheadId third;
+    applyUndoable(song, addPlayhead(song, device, idsOf(song), &third));
+    REQUIRE(firstDevice(song).playheads.size() == 3);
+    CHECK(firstDevice(song).playheads[2].id == third);
+    CHECK(firstDevice(song).playheads[2].channel == 3);
+
+    ParamRef rate{ParamRef::Kind::Playhead, third.value, uint16_t(playheads::knob::kRate)};
+    applyUndoable(song, setParam(song, rate, 0.25f));
+    CHECK(firstDevice(song).playheads[2].params[playheads::knob::kRate] == 0.25f);
+
+    PlayheadId copy;
+    applyUndoable(song, duplicatePlayhead(song, third, idsOf(song), &copy));
+    REQUIRE(firstDevice(song).playheads.size() == 4);
+    CHECK(firstDevice(song).playheads[3].id == copy);
+    CHECK(firstDevice(song).playheads[3].params == firstDevice(song).playheads[2].params);
+
+    applyUndoable(song, setPlayheadChannel(song, copy, 9));
+    applyUndoable(song, setPlayheadMute(song, copy, true));
+    applyUndoable(song, renamePlayhead(song, copy, "Bells"));
+    CHECK(firstDevice(song).playheads[3].channel == 9);
+    CHECK(firstDevice(song).playheads[3].mute);
+    CHECK(firstDevice(song).playheads[3].name == "Bells");
+    CHECK(song.voicesOf(song.tracks[0]) == 3); // three playheads playing, one note at a time each
+
+    applyUndoable(song, removePlayhead(song, third));
+    CHECK(firstDevice(song).playheads.size() == 3);
+}
+
+TEST_CASE("playheads survive saving and loading, and a broken file is repaired") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    PlayheadId id = firstDevice(song).playheads[1].id;
+    applyUndoable(song, setPlayheadChannel(song, id, 0));
+    applyUndoable(song, setPlayheadSolo(song, id, true));
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, id.value, 1}, 1));
+    CHECK(savedAndLoaded(song) == song);
+
+    SUBCASE("a second Playheads device and one placed late are put right") {
+        Song broken = song;
+        Device extra = devices::makeDevice(DeviceType::Playheads, DeviceId(broken.nextId++));
+        broken.tracks[0].devices.insert(broken.tracks[0].devices.begin(),
+                                        devices::makeDevice(DeviceType::Echo, DeviceId(broken.nextId++)));
+        broken.tracks[0].devices.push_back(extra);
+        Song loaded = savedAndLoaded(broken);
+        REQUIRE(loaded.tracks[0].devices.size() == 2);
+        CHECK(loaded.tracks[0].devices[0].type == DeviceType::Playheads);
+        CHECK(loaded.tracks[0].devices[0].playheads.size() == 2);
+        CHECK(loaded.tracks[0].devices[1].type == DeviceType::Echo);
+    }
+}

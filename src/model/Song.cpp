@@ -4,6 +4,7 @@
 #include "DeviceLookup.hpp"
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
+#include "Playheads.hpp"
 
 #include "Arrangement.hpp"
 
@@ -94,6 +95,13 @@ int voicesThroughChain(const Track& track, int voices) {
         case DeviceType::NoteLength:
             voices *= 2;
             break;
+        case DeviceType::Playheads: {
+            int playing = 0;
+            for (const Playhead& p : d.playheads)
+                playing += !p.mute;
+            voices *= std::max(1, playing);
+            break;
+        }
         default:
             break;
         }
@@ -261,14 +269,42 @@ void normalizeModulators(std::vector<Modulator>& mods, size_t limit, IdRepair& i
     }
 }
 
+/// A Playheads device reads the clip, so it comes first and there is at most one (docs/design/PLAYHEADS.md §4.6).
+void placePlayheads(Track& track) {
+    auto isPlayheads = [](const Device& d) { return d.type == DeviceType::Playheads; };
+    auto first = std::find_if(track.devices.begin(), track.devices.end(), isPlayheads);
+    if (first == track.devices.end())
+        return;
+    Device keep = *first;
+    track.devices.erase(std::remove_if(track.devices.begin(), track.devices.end(), isPlayheads), track.devices.end());
+    track.devices.insert(track.devices.begin(), keep);
+}
+
+void normalizePlayheads(Device& d, IdRepair& ids) {
+    if (d.type != DeviceType::Playheads) {
+        d.playheads.clear();
+        return;
+    }
+    if (d.playheads.size() > size_t(playheads::kMaxPlayheads))
+        d.playheads.resize(playheads::kMaxPlayheads);
+    for (Playhead& p : d.playheads) {
+        ids.fix(p.id);
+        normalizeParams(p.params, devices::playheadInfo().params);
+        clampValue<uint8_t>(p.channel, 0, 16);
+        p.color %= 16;
+    }
+}
+
 void normalizeDevices(Track& track, IdRepair& ids) {
     if (track.devices.size() > size_t(kMaxDevices))
         track.devices.resize(kMaxDevices);
+    placePlayheads(track);
     for (Device& d : track.devices) {
         ids.fix(d.id);
         d.type = DeviceType(std::clamp(int(d.type), 0, kDeviceTypeCount - 1));
         normalizeParams(d.params, devices::deviceInfo(d.type).params);
         normalizeModulators(d.modulators, kMaxDeviceModulators, ids);
+        normalizePlayheads(d, ids);
     }
     normalizeModulators(track.modulators, kMaxTrackModulators, ids);
 }

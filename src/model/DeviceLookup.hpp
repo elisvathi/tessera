@@ -20,6 +20,13 @@ const Device* findDevice(const Song& song, DeviceId id, TrackId* track = nullptr
 Modulator* findModulator(Song& song, ModulatorId id, ModulatorPlace* place = nullptr);
 const Modulator* findModulator(const Song& song, ModulatorId id, ModulatorPlace* place = nullptr);
 
+/// A playhead, with the track and the Playheads device it is in.
+Playhead* findPlayhead(Song& song, PlayheadId id, TrackId* track = nullptr, DeviceId* device = nullptr);
+const Playhead* findPlayhead(const Song& song, PlayheadId id, TrackId* track = nullptr, DeviceId* device = nullptr);
+
+/// The track's Playheads device when it has one and it is on, else nullptr.
+const Device* activePlayheads(const Track& track);
+
 /// The knob or setting a reference points at (normalized), or nullptr when it doesn't exist.
 float* findParam(Song& song, const ParamRef& ref);
 const float* findParam(const Song& song, const ParamRef& ref);
