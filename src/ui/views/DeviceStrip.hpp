@@ -62,7 +62,8 @@ class DeviceStrip : public InteractiveView {
             PlayheadMore,      // its rarer settings
             CurveLabel,        // a playhead knob's label: shows its curve in the lower pane
             MotionNotes,       // a Motion card's "6 notes": selects them in the piano roll
-            MotionJoin         // a Motion card's "+ Selected": the selected notes join it
+            MotionJoin,        // a Motion card's "+ Selected": the selected notes join it
+            MotionLeave        // a Motion card's "− Selected": the selected notes leave it
         };
         Kind kind;
         rack::math::Rect rect;
@@ -70,7 +71,7 @@ class DeviceStrip : public InteractiveView {
         int param = -1;  // knob index; PlayheadChip: the playhead's index
         uint64_t id = 0; // device, modulator or (playhead knobs and chips) playhead ID
         ParamRef::Kind refKind = ParamRef::Kind::Device; // what a knob's `id` is
-        bool dial = false; // a choice drawn as a knob (a playhead's rate)
+        bool dial = false;                               // a choice drawn as a knob (a playhead's rate)
     };
 
     // What running gestures show before they are committed.
