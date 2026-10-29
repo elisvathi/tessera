@@ -120,9 +120,11 @@ constexpr float kTextRuler = 10;
 constexpr float kTransportHeight = 40;
 constexpr float kMarkerRow = 14;
 constexpr float kLoopStrip = 12;
+constexpr float kPlayheadMarkWidth = 12; // a clip tile's stripe per playhead, when playheads play it
+constexpr float kPlayheadMarkHeight = 3;
 constexpr float kSegmentGrip = 6; // the solid grips at the ends of the selected playhead's segment
 constexpr float kSegmentRow = 16; // the piano roll ruler's row of playhead segments, when the track has playheads
-constexpr float kBranchCap = 3; // the coloured cap on a device in a playhead's own chain
+constexpr float kBranchCap = 3;   // the coloured cap on a device in a playhead's own chain
 constexpr float kTimeRuler = 20;
 constexpr float kOverview = 8;
 // The in-panel editor's thinner ruler strips: a module is only 380 px tall.

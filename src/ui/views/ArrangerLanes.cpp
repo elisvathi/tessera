@@ -14,6 +14,7 @@
 #include "../widgets/CachedLayer.hpp"
 #include "../widgets/Draw.hpp"
 #include "Arranger.hpp"
+#include "SlotDraw.hpp"
 #include "TimelineDraw.hpp"
 
 #include <cmath>
@@ -1049,6 +1050,9 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             nvgFillColor(vg, noteColor);
             nvgFill(vg);
         }
+
+        if (body.size.y >= 8)
+            slotDraw::drawPlayheadMark(vg, track, Vec(r.getRight() - 4, body.pos.y + 3), body.size.y - 6);
 
         // Name, then what makes this instance different from its clip, then the link badge.
         std::string extras;

@@ -28,6 +28,9 @@ void drawRing(NVGcontext* vg, rack::math::Vec c, float radius, float progress, N
 void drawNotePreview(NVGcontext* vg, const Clip& clip, const std::vector<DrumLane>* lanes, rack::math::Rect r,
                      NVGcolor color);
 bool blinkOn();
+/// The mark of a clip played by playheads: one short stripe per playhead of `track`, in its colour (hollow when
+/// muted), stacked from `topRight` down and leftwards. Draws nothing when the track has no Playheads device on.
+void drawPlayheadMark(NVGcontext* vg, const Track& track, rack::math::Vec topRight, float maxHeight);
 
 } // namespace slotDraw
 
