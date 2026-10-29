@@ -1193,32 +1193,53 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
     std::array<Started, 32> started;
     int startedCount = 0;
 
-    for (size_t index = 0; index < chain.playheads.size(); index++) {
+    for (size_t index = 0; index < chain.playheads.size() && index < state.playheadClocks.size(); index++) {
         const PlayheadPlayback& p = chain.playheads[index];
-        if (!p.audible)
-            continue;
         const float* knobs = &knobValues[size_t(p.knobs)];
         playheads::Motion m =
             playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.patternLength()), ts);
-        playheads::Sweep sweeps[playheads::kMaxSweeps];
-        int count = playheads::sweeps(m, a, b, sweeps);
-        for (int i = 0; i < count; i++) {
-            playheads::crossed(sweeps[i], clip.notes, clip.notesByEnd, [&](const NoteEvent& e, double pos) {
-                double onPlay = std::max(from, from + (playheads::timeAt(m, sweeps[i], pos) - a) * stretch);
-                NoteEvent n = e;
-                if (p.channel > 0)
-                    n.channel = p.channel;
-                if (once) {
-                    for (int k = 0; k < startedCount; k++)
-                        if (started[size_t(k)].pitch == n.pitch && started[size_t(k)].channel == n.channel &&
-                            std::abs(started[size_t(k)].at - onPlay) < 1e-6)
-                            return;
-                    if (startedCount < int(started.size()))
-                        started[size_t(startedCount++)] = {onPlay, n.pitch, n.channel};
+        double rate = m.rate;
+        double restartEvery = m.restartEvery;
+        // The engine counts the playhead's own time itself (rate 1 below), restarting where the song time says.
+        m.rate = 1;
+        m.restartEvery = 0;
+        TrackState::PlayheadClock& clock = state.playheadClocks[index];
+        for (double segA = a; segA < b;) {
+            double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
+            double segB = restartEvery > 0 ? std::min(b, restart + restartEvery) : b;
+            // A jump (launch, seek, restart, another timeline clip) starts counting afresh from where the time says.
+            if (!(clock.until == segA) || clock.restart != restart)
+                clock.own = rate * (segA - restart);
+            double ownA = clock.own, ownB = ownA + rate * (segB - segA);
+            clock.own = ownB;
+            clock.until = segB;
+            clock.restart = restart;
+            if (p.audible) {
+                playheads::Sweep sweeps[playheads::kMaxSweeps];
+                int count = playheads::sweeps(m, ownA, ownB, sweeps);
+                for (int i = 0; i < count; i++) {
+                    playheads::crossed(sweeps[i], clip.notes, clip.notesByEnd, [&](const NoteEvent& e, double pos) {
+                        double t = segA + (playheads::timeAt(m, sweeps[i], pos) - ownA) / rate;
+                        double onPlay = std::max(from, from + (t - a) * stretch);
+                        NoteEvent n = e;
+                        if (p.channel > 0)
+                            n.channel = p.channel;
+                        if (once) {
+                            for (int k = 0; k < startedCount; k++)
+                                if (started[size_t(k)].pitch == n.pitch && started[size_t(k)].channel == n.channel &&
+                                    std::abs(started[size_t(k)].at - onPlay) < 1e-6)
+                                    return;
+                            if (startedCount < int(started.size()))
+                                started[size_t(startedCount++)] = {onPlay, n.pitch, n.channel};
+                        }
+                        playheads::Motion timed = m;
+                        timed.rate = rate;
+                        double length = playheads::noteLength(knobs, timed, double(e.end - e.start), ts) * stretch;
+                        startNote(track, state, n, onPlay, onPlay + length, 0, uint8_t(index + 1));
+                    });
                 }
-                double length = playheads::noteLength(knobs, m, double(e.end - e.start), ts) * stretch;
-                startNote(track, state, n, onPlay, onPlay + length, 0, uint8_t(index + 1));
-            });
+            }
+            segA = segB;
         }
     }
 }

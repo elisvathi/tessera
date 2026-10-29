@@ -190,7 +190,7 @@ double positionAt(const Motion& m, double elapsed) {
     if (m.direction == Direction::Freeze)
         return m.regionStart + floorMod(m.start, m.regionLength);
     double local = m.restartEvery > 0 ? floorMod(elapsed, m.restartEvery) : elapsed;
-    double x = unwrapped(m, contentAt(m, m.rate * bent(m, std::max(0.0, local))));
+    double x = unwrapped(m, contentAt(m, bent(m, m.rate * std::max(0.0, local))));
     double wrap = std::floor(x / m.regionLength);
     return positionOf(m, wrap, x - wrap * m.regionLength);
 }
@@ -203,8 +203,8 @@ int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
     while (e < b && count < max) {
         double base = m.restartEvery > 0 ? std::floor(e / m.restartEvery) * m.restartEvery : 0;
         double pieceEnd = m.restartEvery > 0 ? std::min(b, base + m.restartEvery) : b;
-        double da = m.rate * bent(m, e - base);
-        double db = m.rate * bent(m, pieceEnd - base);
+        double da = bent(m, m.rate * (e - base));
+        double db = bent(m, m.rate * (pieceEnd - base));
         count += sweepTravel(m, da, db, base, out + count, max - count);
         e = pieceEnd;
     }
@@ -213,7 +213,7 @@ int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
 
 double timeAt(const Motion& m, const Sweep& s, double pos) {
     double travel = s.travelFrom + std::abs(pos - s.from);
-    return s.restartBase + unbent(m, travel / m.rate);
+    return s.restartBase + unbent(m, travel) / m.rate;
 }
 
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts) {

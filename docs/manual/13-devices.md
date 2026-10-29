@@ -103,7 +103,7 @@ A playhead's settings:
 | **Start** | Where it starts, in 1/16 steps from the start of its region. |
 | **Region start**, **Region length** | The part of the clip it loops over, in 1/16 steps. A length of 0 means the whole clip. |
 | **Repeat**, **Repeat times** | Plays each piece of this length a number of times, then moves on one piece. 1/4 and 2 times plays beat 1, 1, 2, 2, 3, 3… |
-| **Bend**, **Bend amount**, **Bend cycle** | Speeds up and slows down inside each cycle, without moving the cycle's ends: Ease in, Ease out, Ease in-out, Swing, Stairs. |
+| **Bend**, **Bend amount**, **Bend cycle** | Speeds up and slows down inside each cycle, without moving the cycle's ends: Ease in, Ease out, Ease in-out, Swing, Stairs. The cycle is counted in the playhead's own time: at 2x a 1/4 cycle passes in an eighth. |
 | **Offset** | Moves the playhead forward or back, in 1/16 steps. Good to automate. |
 | **Length**, **Fixed length** | How long its notes last: As written, Follows playhead (half speed, twice as long), or a Fixed length. |
 
@@ -118,7 +118,8 @@ The device's own knobs, after a small gap:
 it when it reaches the note's end, so the order of the notes is reversed but each note still sounds normally. A
 playhead that jumps (a repeat, a restart) into the middle of a note doesn't start it.
 
-Every setting is a knob: modulators can move it, and it can be automated, as on any device.
+Every setting is a knob: modulators can move it, and it can be automated, as on any device. Moving **Rate** while it
+plays speeds the playhead up or slows it down from where it is.
 
 Playheads read launched clips and timeline clips alike. On the timeline, each clip starts its playheads again, from
 where that clip begins (a clip that starts partway in starts the playheads partway in), and a stretched clip slows them
@@ -145,8 +146,6 @@ same track, click its screen and pick **Channel 2**, and patch it to another voi
 This is a first version, to try the idea:
 
 - Drum lanes with their own length, note operators (chance, repeats…) and note curves are not read by playheads yet.
-- Turning **Rate** while it plays moves the playhead to where the new speed would have it, instead of changing speed
-  smoothly.
 
 ## Modulators
 
