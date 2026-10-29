@@ -1,5 +1,6 @@
 #include "Ruler.hpp"
 
+#include "../../model/Playheads.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../widgets/ColorMenuItem.hpp"
 #include "../widgets/Draw.hpp"
@@ -68,26 +69,27 @@ class InstanceEndGesture : public DragGesture {
 /// starts. Snapped to the grid (at most 1/16 steps); one undo step on release.
 class PlayheadSegmentGesture : public DragGesture {
   public:
-    PlayheadSegmentGesture(Ruler& ruler, TimelineSource::PlayheadSegment segment, Ruler::SegmentGrab grab,
-                           double press)
+    PlayheadSegmentGesture(Ruler& ruler, TimelineSource::PlayheadSegment segment, Ruler::SegmentGrab grab, double press)
         : ruler(ruler), original(segment), now(segment), grab(grab), press(press) {}
     void update(rack::math::Vec pos, Modifiers mods) override {
         double step = double(std::min<Tick>(std::max<Tick>(1, ruler.snapStep()), kPpq / 4));
         double tick = ruler.viewport.time.xToTick(pos.x);
         double delta = std::round((tick - press) / step) * step;
+        double most = playheads::kMaxRegionSteps * double(kPpq) / 4;
         now = original;
         switch (grab) {
-        // The stored segment is cut at the clip's ends, so the drag stops there too instead of snapping back on
-        // release.
+        // The drag stops where the stored segment would: at the clip's start, and at the most its settings hold
+        // (so nothing snaps back on release).
         case Ruler::SegmentGrab::Start:
-            now.start = std::clamp(original.start + delta, original.clipStart, original.end - step);
+            now.start = std::clamp(original.start + delta, std::max(original.clipStart, original.end - most),
+                                   original.end - step);
             now.startTick = std::max(now.startTick, now.start);
             break;
         case Ruler::SegmentGrab::End:
-            now.end = std::clamp(original.end + delta, original.start + step, original.clipEnd);
+            now.end = std::clamp(original.end + delta, original.start + step, original.start + most);
             break;
         case Ruler::SegmentGrab::Move:
-            delta = std::clamp(delta, original.clipStart - original.start, original.clipEnd - original.end);
+            delta = std::clamp(delta, original.clipStart - original.start, original.clipStart + most - original.start);
             now.start += delta;
             now.end += delta;
             now.startTick += delta;
@@ -526,7 +528,7 @@ CursorShape Ruler::hoverCursor(rack::math::Vec pos, Modifiers mods) {
         return markerAt(source.markers(), pos.x) >= 0 ? CursorShape::Hand : CursorShape::Arrow;
     case Zone::Segments: {
         SegmentGrab grab = segmentGrabAt(pos.x, nullptr);
-        return grab == SegmentGrab::None ? CursorShape::Arrow
+        return grab == SegmentGrab::None   ? CursorShape::Arrow
                : grab == SegmentGrab::Move ? CursorShape::Move
                                            : CursorShape::ResizeH;
     }

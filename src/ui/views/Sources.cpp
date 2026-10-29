@@ -295,15 +295,11 @@ namespace {
 
 /// Where a playhead's region starts in the clip and how long it is, from its knobs, as the engine reads them.
 std::pair<double, double> regionOf(const Playhead& p, const ClipSpan& span) {
-    double step = double(kPpq) / 4;
     const devices::TypeInfo& info = devices::playheadInfo();
-    double start = std::clamp(double(devices::display(info.params[playheads::knob::kRegionStart],
-                                                       p.params[playheads::knob::kRegionStart])) * step,
-                              0.0, std::max(0.0, double(span.length()) - 1));
-    double length = double(devices::display(info.params[playheads::knob::kRegionLength],
-                                            p.params[playheads::knob::kRegionLength])) * step;
-    if (length <= 0 || start + length > double(span.length()))
-        length = double(span.length()) - start;
+    auto [start, length] = playheads::regionFrom(
+        devices::display(info.params[playheads::knob::kRegionStart], p.params[playheads::knob::kRegionStart]),
+        devices::display(info.params[playheads::knob::kRegionLength], p.params[playheads::knob::kRegionLength]),
+        double(span.length()));
     return {double(span.start) + start, length};
 }
 
@@ -327,7 +323,7 @@ std::vector<TimelineSource::PlayheadSegment> ClipSource::playheadSegments() {
         double offset = double(devices::display(start, p.params[playheads::knob::kStart])) * double(kPpq) / 4;
         segments.push_back({p.id.value, regionStart, regionStart + regionLength,
                             regionStart + std::fmod(offset, regionLength), p.color, shown && shown->id == p.id, p.name,
-                            double(span.start), double(span.start + span.length())});
+                            double(span.start)});
     }
     return segments;
 }
@@ -341,10 +337,10 @@ void ClipSource::setPlayheadSegment(uint64_t id, double start, double end) {
     double step = double(kPpq) / 4;
     using namespace playheads::knob;
     const devices::TypeInfo& info = devices::playheadInfo();
-    int from = std::max(0, int(std::lround((start - double(span.start)) / step)));
-    int length = std::max(1, int(std::lround((end - start) / step)));
-    // Covering the whole clip is stored as "whole clip", so it follows the clip when its loop changes.
-    if (from == 0 && double(length) * step >= double(span.length()))
+    int from = std::clamp(int(std::lround((start - double(span.start)) / step)), 0, playheads::kMaxRegionSteps);
+    int length = std::clamp(int(std::lround((end - start) / step)), 1, playheads::kMaxRegionSteps);
+    // Covering exactly the whole clip is stored as "whole clip", so it follows the clip when its loop changes.
+    if (from == 0 && std::abs(double(length) * step - double(span.length())) < 1)
         length = 0;
     Song work = m->song();
     auto both = std::make_unique<CompoundCommand>("Move playhead segment");

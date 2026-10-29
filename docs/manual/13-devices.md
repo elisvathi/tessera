@@ -115,7 +115,7 @@ many bars) and **Same note** (two playheads on the same note at the same moment 
 **The segment.** On top of the piano roll's ruler, the shown playhead's segment is a bar in its colour, drawn like the
 clip's loop bar, with its name inside and a solid grip at each end: the part of the clip that playhead plays, over and
 over. A thin line drops from each grip through the notes, so you can see which notes it reads. Drag a grip to resize
-the segment, the bar to move it. A segment stays inside the clip: to read further, make the clip longer. A white tick with a small ▼ over it shows where the playhead starts, with a dashed line
+the segment, the bar to move it. A segment can run past the clip's end or sit after it: there it reads the clip as it repeats, as if the clip kept looping. A white tick with a small ▼ over it shows where the playhead starts, with a dashed line
 down through the notes; drag it to start it later. The other playheads' segments show as thin lines in their colours.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a knob's name and a curve for it

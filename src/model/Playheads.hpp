@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 /// How playheads move through a clip (docs/design/PLAYHEADS.md §4–5). Pure and allocation free: the engine runs
@@ -40,12 +41,12 @@ enum Playhead {
     kPath,      // From settings, or Drawn (the playhead's path points)
     kPathCycle, // how long a drawn path lasts before it repeats
     kOctave,
-    kKeySteps,  // moves its notes by steps of the clip's key
-    kNotes,     // All, or only the lowest or highest of notes that start together
-    kInvert,    // mirrors its notes' pitches inside the clip's range
-    kVelocity,  // added to its notes' velocity
-    kOrder,     // reads its segment's steps in order, outside in, inside out, odd then even, or shuffled
-    kOrderStep  // the size of those steps
+    kKeySteps, // moves its notes by steps of the clip's key
+    kNotes,    // All, or only the lowest or highest of notes that start together
+    kInvert,   // mirrors its notes' pitches inside the clip's range
+    kVelocity, // added to its notes' velocity
+    kOrder,    // reads its segment's steps in order, outside in, inside out, odd then even, or shuffled
+    kOrderStep // the size of those steps
 };
 /// The Playheads device's own knobs.
 enum Device { kRestart, kRestartBars, kSameNote };
@@ -59,6 +60,7 @@ enum class Order : uint8_t { InOrder, OutsideIn, InsideOut, OddEven, Shuffle };
 enum class NotePick : uint8_t { All, Lowest, Highest };
 
 constexpr int kMaxPlayheads = 16;
+constexpr int kMaxRegionSteps = 256;   // how far Region start and Region length reach, in sixteenths
 constexpr int kMaxPlayheadParams = 32; // settings per playhead, room to grow (the list is append-only)
 constexpr int kMaxSweeps = 16; // per call; a window that would need more is cut short (calls are one sample long)
 
@@ -241,12 +243,17 @@ void markChordRoles(std::vector<Note>& notes, Role&& role) {
             j++;
         }
         for (size_t k = i; k < j; k++)
-            role(notes[k]) = uint8_t((notes[k].pitch == lo ? kLowestNote : 0) | (notes[k].pitch == hi ? kHighestNote : 0));
+            role(notes[k]) =
+                uint8_t((notes[k].pitch == lo ? kLowestNote : 0) | (notes[k].pitch == hi ? kHighestNote : 0));
         i = j;
     }
 }
 
 /// A playhead's settings, from its normalized knobs and the clip's play range [clipStart, clipStart + clipLength).
+/// A playhead's region from its Region start and Region length (in steps) in a clip `clipLength` long: where it starts
+/// after the clip's start and how long it is. It may run past the clip's end, where the clip reads as it repeats.
+/// Length 0 means up to the clip's end (the whole clip from its start).
+std::pair<double, double> regionFrom(double startSteps, double lengthSteps, double clipLength);
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts);
 
 /// How long a note the playhead plays lasts, in song ticks: as written, stretched by the playhead's speed, or fixed.

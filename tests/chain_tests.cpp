@@ -1392,6 +1392,35 @@ TEST_CASE("engine: playheads read the clip each from its own start") {
     }
 }
 
+TEST_CASE("engine: a segment running past the clip's end reads the clip as it repeats") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    const auto& info = devices::playheadInfo();
+    // From beat 3 of the one-bar clip, a bar long: beats 3 and 4, then beats 1 and 2 of the clip's next time round.
+    p.params[playheads::knob::kRegionStart] = devices::normalize(info.params[playheads::knob::kRegionStart], 8);
+    p.params[playheads::knob::kRegionLength] = devices::normalize(info.params[playheads::knob::kRegionLength], 16);
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto sounding = [&h] {
+        std::multiset<int> out;
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v))
+                out.insert(h.pitch(v));
+        return out;
+    };
+
+    h.step();
+    CHECK(sounding() == std::multiset<int>{64});
+    h.runTo(960 * kSamplesPerTick + 1);
+    CHECK(sounding() == std::multiset<int>{65});
+    h.runTo(2 * 960 * kSamplesPerTick + 1);
+    CHECK(sounding() == std::multiset<int>{60});
+    h.runTo(3 * 960 * kSamplesPerTick + 1);
+    CHECK(sounding() == std::multiset<int>{62});
+}
+
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     ArrangerClip a;
