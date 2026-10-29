@@ -100,7 +100,13 @@ void Engine::setSnapshot(const Snapshot* s) {
         // Extras live in the old snapshot, which is about to be freed: drop them, then find sounding notes' curves
         // again in the new one.
         std::array<uint64_t, kMaxVoices> clips = state.voiceClip, notes = state.voiceNote;
+        // Notes the playheads read ahead without extras point at nothing in the snapshot: they keep their time.
+        int kept = 0;
+        for (int k = 0; k < state.pendingCount; k++)
+            if (!state.pending[size_t(k)].extras)
+                state.pending[size_t(kept++)] = state.pending[size_t(k)];
         clearPending(state);
+        state.pendingCount = kept;
         state.voiceClip = clips;
         state.voiceNote = notes;
         reattachCurves(tp, state);
@@ -1071,8 +1077,15 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
     }
     const ClipPlayback* clip = track.slot(state.playing);
     if (clip && runs(track)) {
-        if (!clip->laneLoops.empty() || readByPlayheads(state))
-            return -INFINITY; // drum lanes with their own loops, or playheads: every sample
+        if (readByPlayheads(state)) {
+            // Playheads read ahead a block at a time and queue their notes: wake for those, or to read on.
+            const TrackState::PlayheadLook& look = state.playheadLook;
+            if (look.launch != state.launchTick || !std::isfinite(look.until))
+                return -INFINITY;
+            return std::min(wake, state.launchTick + look.until) - kEarly;
+        }
+        if (!clip->laneLoops.empty())
+            return -INFINITY; // drum lanes with their own loops: every sample
         double length = double(clip->loopLength());
         double a = now - state.launchTick;
         if (!clip->looping) {
@@ -1201,7 +1214,20 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
     double b = to - state.launchTick;
 
     if (readByPlayheads(state)) {
-        playPlayheads(track, state, clip, a, clip.looping ? b : std::min(b, length), from);
+        double end = clip.looping ? b : std::min(b, length);
+        TrackState::PlayheadLook& look = state.playheadLook;
+        // A relaunch or a jump reads afresh from here. A new snapshot of the same clip carries on where it read to.
+        if (look.launch != state.launchTick || !(a >= look.last - 1e-9) || !(look.until >= a - 1e-9))
+            look = {a, a, &clip, state.launchTick};
+        look.clip = &clip;
+        look.last = a;
+        if (end > look.until) {
+            double to = std::max(end, look.until + double(kControlBlock) * ticksPerSample);
+            if (!clip.looping)
+                to = std::min(to, length);
+            playPlayheads(track, state, clip, look.until, to, state.launchTick + look.until);
+            look.until = to;
+        }
         if (!clip.looping && b >= length)
             state.playing = kNoSlot;
         return;
@@ -1311,11 +1337,18 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         // playhead's place is mixed in, so two playheads make their own chance and spread choices.
                         int64_t pass = int64_t(std::floor(ownA / std::max(1.0, m.regionLength))) * 16 + int64_t(index);
                         uint8_t lane = uint8_t(index + 1);
-                        if (e.extras != kNoExtras && e.extras < clip.extras.size())
+                        if (e.extras != kNoExtras && e.extras < clip.extras.size()) {
                             startWithOperators(track, state, n, clip.extras[e.extras], onPlay, onPlay + length, pass,
                                                lane);
-                        else
+                        } else if (onPlay > playTick && state.pendingCount < kMaxPendingHits) {
+                            // Read ahead: it starts on its own sample, from the pending list.
+                            TrackState::PendingHit hit{onPlay,     onPlay + length, n.pitch, n.velocity,
+                                                       n.releaseVelocity, nullptr, double(n.start), pass,
+                                                       n.key,      n.channel,       lane};
+                            state.pending[size_t(state.pendingCount++)] = hit;
+                        } else {
                             startNote(track, state, n, onPlay, onPlay + length, pass, lane);
+                        }
                     };
                     double start = double(clip.loopStart);
                     if (clip.pattern > 0 && clip.pattern < clip.loopLength())
