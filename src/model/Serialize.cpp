@@ -490,6 +490,17 @@ json_t* playheadToJson(const Playhead& p) {
                                                   int(pt.curve), double(pt.tension)));
         set(j, "path", path);
     }
+    if (!p.curves.empty()) {
+        json_t* curves = json_array();
+        for (const PlayheadCurve& c : p.curves) {
+            json_t* points = json_array();
+            for (const AutoPoint& pt : c.points)
+                json_array_append_new(points, json_pack("[Ifif]", static_cast<json_int_t>(pt.t), double(pt.value),
+                                                        int(pt.curve), double(pt.tension)));
+            json_array_append_new(curves, json_pack("[iIo]", int(c.param), static_cast<json_int_t>(c.length), points));
+        }
+        set(j, "curves", curves);
+    }
     if (!p.branch.empty()) {
         json_t* branch = json_array();
         for (const Device& d : p.branch)
@@ -509,6 +520,23 @@ Playhead playheadFromJson(const json_t* j) {
     p.mute = getBool(j, "mute", p.mute);
     p.solo = getBool(j, "solo", p.solo);
     forEach(get(j, "branch"), [&](const json_t* dj) { p.branch.push_back(deviceFromJson(dj)); });
+    forEach(get(j, "curves"), [&](const json_t* cj) {
+        PlayheadCurve c;
+        c.param = saturate<uint16_t>(intAt(cj, 0, 0));
+        c.length = intAt(cj, 1, 0);
+        forEach(json_array_get(cj, 2), [&](const json_t* pj) {
+            if (json_array_size(pj) < 2)
+                return;
+            AutoPoint ap;
+            ap.t = intAt(pj, 0, 0);
+            ap.value = float(numberAt(pj, 1, 0));
+            int64_t curve = intAt(pj, 2, int64_t(ap.curve));
+            ap.curve = curve >= 0 && curve <= int64_t(CurveType::SCurve) ? CurveType(curve) : CurveType::Linear;
+            ap.tension = float(numberAt(pj, 3, 0));
+            c.points.push_back(ap);
+        });
+        p.curves.push_back(c);
+    });
     forEach(get(j, "path"), [&](const json_t* pj) {
         if (json_array_size(pj) < 2)
             return;

@@ -77,6 +77,18 @@ struct Device;
 
 constexpr int kMaxBranchDevices = 4; // per playhead
 
+/// A curve that moves one playhead setting while it plays (docs/design/PLAYHEADS.md §12): points over `length`
+/// ticks of time since the clip started, repeating; it sets the setting's value (normalized) while it plays.
+struct PlayheadCurve {
+    uint16_t param = 0;
+    Tick length = 0;
+    std::vector<AutoPoint> points;
+
+    bool operator==(const PlayheadCurve& o) const {
+        return param == o.param && length == o.length && points == o.points;
+    }
+};
+
 /// One reader of the clip inside a Playheads device (docs/design/PLAYHEADS.md).
 struct Playhead {
     PlayheadId id;
@@ -92,6 +104,7 @@ struct Playhead {
     /// A drawn path (docs/design/PLAYHEADS.md §4.2), used when its Path knob says Drawn: points at the playhead's
     /// own time within its path cycle (ticks), each giving a place in its region (0 = start, 1 = end).
     std::vector<AutoPoint> path;
+    std::vector<PlayheadCurve> curves; // at most one per setting
 
     bool operator==(const Playhead& o) const;
 };
@@ -114,7 +127,7 @@ struct Device {
 
 inline bool Playhead::operator==(const Playhead& o) const {
     return id == o.id && name == o.name && color == o.color && params == o.params && channel == o.channel &&
-           mute == o.mute && solo == o.solo && branch == o.branch && path == o.path;
+           mute == o.mute && solo == o.solo && branch == o.branch && path == o.path && curves == o.curves;
 }
 
 } // namespace tessera

@@ -1522,3 +1522,23 @@ TEST_CASE("engine: one piano roll, two parts: the bass playhead takes the lowest
             sounding.insert(h.pitch(v));
     CHECK(sounding == std::multiset<int>{36, 67});
 }
+
+TEST_CASE("engine: a curve moves a playhead setting while it plays") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    const devices::ParamInfo& octave = devices::playheadInfo().params[playheads::knob::kOctave];
+    // Two bars: the first at the octave as set, the second an octave up.
+    p.curves.push_back({uint16_t(playheads::knob::kOctave), 8 * kPpq,
+                        {{0, devices::normalize(octave, 0), CurveType::Hold, 0},
+                         {4 * kPpq, devices::normalize(octave, 1), CurveType::Hold, 0}}});
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int bar = 0; bar < 3; bar++) {
+        h.runTo(int64_t(bar) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    CHECK(pitches == std::vector<int>{60, 72, 60});
+}

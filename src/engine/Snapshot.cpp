@@ -459,6 +459,8 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                     pp.channel = p.channel;
                     pp.audible = !p.mute && (!solo || p.solo);
                     pp.path = p.path;
+                    pp.curves = p.curves;
+                    pp.knobCount = std::min<int>(int(p.params.size()), playheads::kMaxPlayheadParams);
                     if (d.on)
                         chain.playheads.push_back(pp);
                     // Branch devices run first in the chain; each only touches its own playhead's notes.
