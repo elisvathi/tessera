@@ -108,6 +108,7 @@ Give each Tessera its own **Instance name** (module menu). Output modules show t
 | Ghost notes | **View ▾** in the notes header |
 | Flats instead of sharps | **View ▾ → Name notes with flats** |
 | Colour scheme | **Tessera ▾ → Colour scheme** |
+| Vsync (moving lines tear) | Right-click the Tessera module → **Vsync (smooth moving lines)** |
 | Quantize | **Notes ▾ → Quantize…**, or **Q** |
 | Clip length | The clip chip at the left of the notes header |
 | Launch quantize | **Launch 1 bar ▾** above the track names |

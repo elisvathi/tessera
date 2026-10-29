@@ -64,6 +64,8 @@ const Device* playheadsDevice(EditorContext& ctx);
 /// The playhead the editor shows (the Playheads card, the ruler's segment, the lower pane's curves): the one last
 /// picked on the selected track, else its first. nullptr when the track has no playheads.
 const Playhead* shownPlayhead(EditorContext& ctx);
+/// Turns the shown playhead off or on (Shift+M, the dot on its chip); `solo` solos it instead (Alt-click).
+void togglePlayheadMute(EditorContext& ctx, bool solo = false);
 /// A choice knob's choices, the current one ticked.
 void openChoiceMenu(EditorContext& ctx, const ParamRef& ref);
 /// Type a value in the knob's units ("75", "1/16" for choices by name).

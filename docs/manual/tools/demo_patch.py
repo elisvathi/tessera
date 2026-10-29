@@ -212,6 +212,28 @@ def hit_values_song():
     return song, verse
 
 
+def playheads_module():
+    """The demo song with a Playheads device on Lead: three playheads (Sparkle off), the first with its own Echo,
+    then a Scale for all of them. The device strip is open."""
+    song, lead = make_song()
+    for t in song["tracks"]:
+        if t["name"] != "Lead":
+            continue
+        echo = {"id": ids.take(), "type": "echo", "name": "", "on": True, "params": []}
+        heads = [{"id": ids.take(), "name": name, "color": color, "params": [], "channel": ch, "mute": mute,
+                  "branch": branch}
+                 for name, color, ch, mute, branch in (("Melody", 0, 0, False, [echo]), ("Bass", 1, 2, False, []),
+                                                       ("Sparkle", 3, 3, True, []))]
+        t["devices"] = [{"id": ids.take(), "type": "playheads", "name": "", "on": True, "params": [],
+                         "playheads": heads},
+                        {"id": ids.take(), "type": "scale", "name": "", "on": True, "params": []}]
+    song["nextId"] = ids.next + 10
+    module = tessera_module(song, lead, 24, False)
+    module["data"]["schema"] = 6
+    module["data"]["ui"]["overlay"]["deviceStrip"] = True
+    return module
+
+
 def main():
     """Writes the patches into the folder given on the command line."""
     out = Path(sys.argv[1])
@@ -229,6 +251,7 @@ def main():
     values, beat = hit_values_song()
     (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, 24, False, "Drums", "pitch")] +
                                                          outputs(24))))
+    (out / "playheads.vcv").write_text(json.dumps(patch([playheads_module()] + outputs(24))))
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
 

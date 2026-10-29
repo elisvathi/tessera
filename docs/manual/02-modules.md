@@ -116,6 +116,7 @@ Right-click the Tessera panel for these settings.
 | **MIDI input (for recording)** | The MIDI device and channel Tessera listens to. |
 | **Panel editor** | Widens the panel to show a small editor in the rack: Off, 48, 80 or 120 HP. See [The editor](03-editor.md#the-editor-inside-the-panel). |
 | **Colour scheme** | The look of the editor and panels. See [The editor](03-editor.md#colour-schemes). |
+| **Vsync (smooth moving lines)** | Makes the screen wait for each frame, so moving lines such as playheads don't tear (show broken in two). Off by default. It changes the whole Rack window, not only Tessera, and is kept for every patch. |
 | **Editor size** | The size of the full editor: Auto (follows Rack's zoom) or 75% to 200%. |
 | **Instance name** | The name the output modules show. Give each Tessera its own name when you use more than one. |
 | **CLOCK output** | The rate of the CLOCK output. |

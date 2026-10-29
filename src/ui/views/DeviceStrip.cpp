@@ -48,6 +48,7 @@ constexpr float kAmountPx = 100; // dragging this far sets a modulation to its f
 constexpr float kPi = 3.14159265f;
 constexpr float kChip = 78;      // a playhead's chip on a Playheads card
 constexpr float kChipHeight = 18;
+constexpr float kChipDot = 16; // the on/off dot at a chip's left end
 constexpr float kKnobGroupGap = 14; // between a playhead's settings and the device's own
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
@@ -650,6 +651,9 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         break;
     case Kind::PlayheadChip:
         ctx.selectedPlayhead = hit->id;
+        // The dot at the chip's left end turns it off or on; with Alt it solos it.
+        if (pos.x < hit->rect.pos.x + kChipDot)
+            deviceActions::togglePlayheadMute(ctx, mods.alt);
         break;
     case Kind::PlayheadDirection:
         deviceActions::openDirectionMenu(ctx, PlayheadId(hit->id));
@@ -755,14 +759,6 @@ void DeviceStrip::drawView(const DrawArgs& args) {
         const Part& p = parts[i];
         bool hot = int(i) == hovered;
         switch (p.kind) {
-        case Kind::BranchBand: {
-            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
-            NVGcolor color = theme::playheadColor(ph ? ph->color : 0);
-            // Level with the cards; its colour says whose devices these are.
-            draw::roundedRect(vg, p.rect, 6, nvgTransRGBAf(color, 0.08f));
-            draw::roundedRectStroke(vg, p.rect, 6, nvgTransRGBAf(color, 0.45f), 1);
-            break;
-        }
         case Kind::Insert: {
             Vec mid = p.rect.getCenter();
             bool first = p.device == 0 && p.rect.size.x == kInWidth;
@@ -774,12 +770,17 @@ void DeviceStrip::drawView(const DrawArgs& args) {
                 nvgFillColor(vg, c.line1);
                 nvgFill(vg);
             }
-            // The insert button is faint until hovered: the row stays calm.
+            // The insert button is faint until hovered: the row stays calm. One that adds to a playhead's own
+            // chain wears its colour, so it reads apart from the shared chain's button next to it.
+            NVGcolor ring = c.line2;
+            if (p.device >= kBranchBase)
+                if (const Playhead* ph = !t->devices.empty() ? shownPlayhead(t->devices.front()) : nullptr)
+                    ring = theme::playheadColor(ph->color);
             nvgBeginPath(vg);
             nvgCircle(vg, mid.x, mid.y, 9);
             nvgFillColor(vg, nvgTransRGBAf(c.bg2, hot ? 1.f : 0.6f));
             nvgFill(vg);
-            nvgStrokeColor(vg, nvgTransRGBAf(c.line2, hot ? 1.f : 0.4f));
+            nvgStrokeColor(vg, nvgTransRGBAf(ring, hot ? 1.f : 0.5f));
             nvgStrokeWidth(vg, 1);
             nvgStroke(vg);
             nvgBeginPath(vg);
@@ -986,6 +987,25 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             border = deviceActions::colorOf(ModulatorId(ctx.mappingModulator));
     }
     draw::roundedRect(vg, r, 6, c.bg1);
+    // A device in a playhead's own chain wears that playhead's colour as a cap along its top.
+    if (index >= kBranchBase)
+        if (const Track* t = track(); t && !t->devices.empty())
+            if (const Playhead* ph = shownPlayhead(t->devices.front())) {
+                NVGcolor color = theme::playheadColor(ph->color);
+                nvgSave(vg);
+                nvgIntersectScissor(vg, r.pos.x, r.pos.y, r.size.x, theme::metrics::kBranchCap);
+                draw::roundedRect(vg, r, 6, color);
+                nvgRestore(vg);
+                // Its dot in the title too, left of the menu and modulator dots.
+                float left = r.getRight();
+                for (const Part& p : parts)
+                    if (p.device == index && (p.kind == Kind::Menu || p.kind == Kind::Dot))
+                        left = std::min(left, p.rect.pos.x);
+                nvgBeginPath(vg);
+                nvgCircle(vg, left - 6, r.pos.y + kCardHeader / 2, 3.5f);
+                nvgFillColor(vg, color);
+                nvgFill(vg);
+            }
     draw::roundedRectStroke(vg, r, 6, border, selected ? 1.5f : 1);
     nvgBeginPath(vg);
     nvgRect(vg, r.pos.x, r.pos.y + kCardHeader, r.size.x, 1);
@@ -1140,10 +1160,17 @@ void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& 
     draw::roundedRect(vg, part.rect, radius, selected ? nvgTransRGBAf(color, 0.22f) : (hot ? c.bg2 : c.bg1));
     draw::roundedRectStroke(vg, part.rect, radius, selected || hot ? color : nvgTransRGBAf(color, 0.5f), 1);
     Vec mid = part.rect.getCenter();
+    // Its on/off switch: filled when it plays, hollow when it is off.
     nvgBeginPath(vg);
     nvgCircle(vg, part.rect.pos.x + 9, mid.y, 3.5f);
-    nvgFillColor(vg, p.mute ? c.line2 : color);
-    nvgFill(vg);
+    if (p.mute) {
+        nvgStrokeColor(vg, color);
+        nvgStrokeWidth(vg, 1.3f);
+        nvgStroke(vg);
+    } else {
+        nvgFillColor(vg, color);
+        nvgFill(vg);
+    }
     // The channel at the right end: what a Track Out set to that channel plays.
     std::string channel = p.channel == 0 ? "–" : std::to_string(p.channel);
     draw::TextStyle ch{theme::fonts::mono(), 9.5f, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
