@@ -446,3 +446,41 @@ TEST_CASE("drawing a straight path keeps only its corners") {
         CHECK(std::abs(x[k].time - y[k].time) <= 1.0);
     }
 }
+
+// ---- Note motion ---------------------------------------------------------------------------------------------------
+
+TEST_CASE("notes move into a motion group whose knobs are set with undo, and it survives saving") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    for (int i = 0; i < 3; i++) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = i * kPpq;
+        clip.notes.push_back(n);
+    }
+    song.clips.emplace(clip.id, clip);
+    song.tracks[0].slots[0].clip = clip.id;
+    std::vector<NoteId> two = {clip.notes[0].id, clip.notes[2].id};
+
+    MotionId group;
+    applyUndoable(song, addMotion(song, clip.id, two, idsOf(song), &group));
+    const Clip& c = song.clips.at(clip.id);
+    REQUIRE(c.motions.size() == 1);
+    CHECK(c.motions[0].name == "Motion A");
+    CHECK(c.notes[0].motion == group);
+    CHECK_FALSE(c.notes[1].motion.valid());
+
+    ParamRef pitch{ParamRef::Kind::Motion, group.value, 0};
+    applyUndoable(song, setParam(song, pitch, 0.75f));
+    CHECK(*findParam(song, pitch) == 0.75f);
+    CHECK(trackOf(song, pitch) == song.tracks[0].id);
+    CHECK(savedAndLoaded(song) == song);
+
+    applyUndoable(song, setNotesMotion(song, clip.id, {clip.notes[0].id}, MotionId()));
+    CHECK_FALSE(song.clips.at(clip.id).notes[0].motion.valid());
+    applyUndoable(song, removeMotion(song, group));
+    CHECK(song.clips.at(clip.id).motions.empty());
+    CHECK_FALSE(song.clips.at(clip.id).notes[2].motion.valid());
+}

@@ -25,6 +25,9 @@ const Modulator* findModulator(const Song& song, ModulatorId id, ModulatorPlace*
 Playhead* findPlayhead(Song& song, PlayheadId id, TrackId* track = nullptr, DeviceId* device = nullptr);
 const Playhead* findPlayhead(const Song& song, PlayheadId id, TrackId* track = nullptr, DeviceId* device = nullptr);
 
+/// A motion group, with the clip it belongs to.
+const MotionGroup* findMotion(const Song& song, MotionId id, ClipId* clip = nullptr);
+
 /// The list a device sits in: its track's chain, or a playhead's branch (then `playhead` says whose).
 std::vector<Device>* chainOf(Song& song, DeviceId id, PlayheadId* playhead = nullptr);
 

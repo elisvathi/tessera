@@ -75,7 +75,7 @@ std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& la
 
 bool hasExtras(const Note& n) {
     return !(n.ops == NoteOperators()) || n.microOffset != 0 || !n.pitchExpr.empty() || !n.timbreExpr.empty() ||
-           !n.pressureExpr.empty();
+           !n.pressureExpr.empty() || n.motion.valid();
 }
 
 /// Gives an event the extras of its note: an index into `extras`, and its start moved by the note's micro-timing
@@ -474,6 +474,24 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
             chain.active |= d.on;
         }
         chain.structure = chainStructure(track);
+        // Motion groups of every clip the track plays, each once (a clip in several slots shares them).
+        std::vector<ClipId> seen;
+        auto addClip = [&](ClipId id) {
+            const Clip* clip = id.valid() ? song.findClip(id) : nullptr;
+            if (!clip || std::find(seen.begin(), seen.end(), id) != seen.end())
+                return;
+            seen.push_back(id);
+            // Modulators come later and always need their room.
+            size_t room = size_t(kMaxKnobs - kMaxModulatorSlots * kMaxDeviceParams);
+            for (const MotionGroup& m : clip->motions)
+                if (snap.knobs.size() + m.params.size() <= room)
+                    chain.motions.push_back({m.id.value, addOwner(ParamRef::Kind::Motion, m.id.value, m.params)});
+        };
+        for (const ClipSlot& s : track.slots)
+            if (s.clip)
+                addClip(*s.clip);
+        for (const ArrangerClip& a : track.arrangement)
+            addClip(a.clip);
     }
 
     forEachModulator(song, [&](const Modulator& m, const ModulatorPlace& place) {
@@ -512,6 +530,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                     snap.modulated.push_back({});
                     it = snap.modulated.end() - 1;
                     it->knob = knob;
+                    it->motion = r.target.kind == ParamRef::Kind::Motion;
                 }
                 if (it->count < kMaxModulationsPerKnob)
                     it->sources[size_t(it->count++)] = source;

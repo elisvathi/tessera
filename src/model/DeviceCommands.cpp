@@ -371,7 +371,98 @@ CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name) 
     });
 }
 
+namespace {
+
+/// Runs `edit` on a copy of a clip's motions and notes and turns what it changed into one command.
+template <typename Edit>
+CommandPtr motionEdit(const Song& song, ClipId clipId, const std::string& name, Edit&& edit) {
+    const Clip* clip = song.findClip(clipId);
+    if (!clip)
+        return nullptr;
+    ReplaceClipMotions::Parts before{clip->motions, clip->notes};
+    ReplaceClipMotions::Parts after = before;
+    if (!edit(after) || (after.motions == before.motions && after.notes == before.notes))
+        return nullptr;
+    return std::make_unique<ReplaceClipMotions>(name, clipId, std::move(before), std::move(after));
+}
+
+} // namespace
+
+void ReplaceClipMotions::set(Song& song, const Parts& parts) const {
+    Clip* c = song.findClip(clip);
+    assert(c && "ReplaceClipMotions on a missing clip");
+    if (!c)
+        return;
+    c->motions = parts.motions;
+    c->notes = parts.notes;
+}
+
+CommandPtr addMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, const NextId& nextId,
+                     MotionId* added) {
+    const Clip* c = song.findClip(clip);
+    if (!c || notes.empty() || int(c->motions.size()) >= kMaxMotionGroups)
+        return nullptr;
+    int index = 0;
+    while (std::any_of(c->motions.begin(), c->motions.end(),
+                       [&](const MotionGroup& m) { return m.name == devices::makeMotion(MotionId(), index).name; }))
+        index++;
+    MotionGroup group = devices::makeMotion(MotionId(nextId()), index);
+    if (added)
+        *added = group.id;
+    return motionEdit(song, clip, "Add " + group.name, [&](ReplaceClipMotions::Parts& p) {
+        p.motions.push_back(group);
+        bool any = false;
+        for (Note& n : p.notes)
+            if (std::find(notes.begin(), notes.end(), n.id) != notes.end()) {
+                n.motion = group.id;
+                any = true;
+            }
+        return any;
+    });
+}
+
+CommandPtr removeMotion(const Song& song, MotionId id) {
+    ClipId clip;
+    const MotionGroup* group = findMotion(song, id, &clip);
+    if (!group)
+        return nullptr;
+    return motionEdit(song, clip, "Remove " + group->name, [&](ReplaceClipMotions::Parts& p) {
+        p.motions.erase(std::find_if(p.motions.begin(), p.motions.end(), [&](const MotionGroup& m) { return m.id == id; }));
+        for (Note& n : p.notes)
+            if (n.motion == id)
+                n.motion = MotionId();
+        return true;
+    });
+}
+
+CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, MotionId motion) {
+    const Clip* c = song.findClip(clip);
+    if (!c || (motion.valid() && !c->findMotion(motion)))
+        return nullptr;
+    return motionEdit(song, clip, motion.valid() ? "Move notes into " + c->findMotion(motion)->name : "Stop notes moving",
+                      [&](ReplaceClipMotions::Parts& p) {
+                          for (Note& n : p.notes)
+                              if (std::find(notes.begin(), notes.end(), n.id) != notes.end())
+                                  n.motion = motion;
+                          return true;
+                      });
+}
+
 CommandPtr setParam(const Song& song, const ParamRef& ref, float value) {
+    if (ref.kind == ParamRef::Kind::Motion) {
+        // Motion knobs live in a clip, not in a chain.
+        ClipId clip;
+        const MotionGroup* group = findMotion(song, MotionId(ref.owner), &clip);
+        const devices::ParamInfo* info = devices::motionParamInfo(ref.param);
+        if (!group || !info)
+            return nullptr;
+        return motionEdit(song, clip, "Set " + group->name + " " + info->name, [&](ReplaceClipMotions::Parts& p) {
+            for (MotionGroup& m : p.motions)
+                if (m.id.value == ref.owner)
+                    m.params[ref.param] = std::clamp(value, 0.f, 1.f);
+            return true;
+        });
+    }
     std::string label = "Set ";
     if (ref.kind == ParamRef::Kind::Device) {
         if (const Device* d = findDevice(song, DeviceId(ref.owner)))

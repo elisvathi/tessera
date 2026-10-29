@@ -136,6 +136,26 @@ bool bipolar(ModulatorType type, const float* knobs) {
     }
 }
 
+bool perPass(ModulatorType type, const float* knobs) {
+    switch (type) {
+    case ModulatorType::Steps:
+        return shown(type, knobs, knob::kStepPerPass) > 0.5f;
+    case ModulatorType::Ramp:
+        return shown(type, knobs, knob::kRampPerPass) > 0.5f;
+    default:
+        return false;
+    }
+}
+
+float passValue(ModulatorType type, uint64_t id, const float* knobs, int64_t pass, TimeSig ts, const float* steps,
+                int stepCount) {
+    State state;
+    Clock clock;
+    clock.timeSig = ts;
+    clock.pass = std::max<int64_t>(0, pass);
+    return evaluate(type, id, knobs, state, clock, steps, stepCount);
+}
+
 float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state, const Clock& clock,
                const float* steps, int stepCount) {
     float out = 0;
@@ -154,6 +174,8 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
         int count = std::max(1, int(shown(type, knobs, knob::kStepCount)));
         double rate = double(devices::rateTicks(int(shown(type, knobs, knob::kStepRate)), clock.timeSig));
         double position = clock.songTick / rate;
+        if (perPass(type, knobs)) // one step per pass of a note, else per bar
+            position = clock.pass >= 0 ? double(clock.pass) : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)));
         int64_t step = int64_t(std::floor(position));
         auto valueAt = [&](int64_t k) {
             size_t i = size_t(((k % count) + count) % count);
@@ -177,6 +199,9 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
     case ModulatorType::Ramp: {
         double length = double(std::max(1, int(shown(type, knobs, knob::kBars)))) * double(ticksPerBar(clock.timeSig));
         double t = clock.songTick / length;
+        if (perPass(type, knobs)) // over that many passes of a note, else that many bars
+            t = (clock.pass >= 0 ? double(clock.pass) : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)))) /
+                std::max(1.0, double(shown(type, knobs, knob::kBars)));
         t = shown(type, knobs, knob::kThen) > 0.5f ? t - std::floor(t) : std::min(1.0, t);
         // Curve bends it: above 0 it moves early and settles, below 0 it waits and then rushes.
         float curve = shown(type, knobs, knob::kCurve) / 100;

@@ -86,6 +86,39 @@ CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo);
 CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoint> path,
                            const std::string& name = "Draw path");
 
+// ---- Note motion (docs/design/PLAYHEADS.md §6) --------------------------------------------------------------
+
+/// Swaps a clip's motion groups and notes between two states: every motion edit is expressed this way.
+class ReplaceClipMotions : public Command {
+  public:
+    struct Parts {
+        std::vector<MotionGroup> motions;
+        std::vector<Note> notes;
+    };
+    ReplaceClipMotions(std::string name, ClipId clip, Parts before, Parts after)
+        : label(std::move(name)), clip(clip), before(std::move(before)), after(std::move(after)) {}
+
+    void apply(Song& song) override { set(song, after); }
+    void revert(Song& song) override { set(song, before); }
+    std::string name() const override { return label; }
+    ChangeSet changes() const override { return ChangeSet::clip(clip); }
+
+  private:
+    void set(Song& song, const Parts& parts) const;
+    std::string label;
+    ClipId clip;
+    Parts before, after;
+};
+
+/// A new motion group in a clip, with the given notes moved into it (out of any other). Null at kMaxMotionGroups
+/// or without notes.
+CommandPtr addMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, const NextId& nextId,
+                     MotionId* added = nullptr);
+/// Removes a motion group; its notes stay, without motion.
+CommandPtr removeMotion(const Song& song, MotionId id);
+/// Moves notes into a motion group, or (an invalid `motion`) out of their group.
+CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, MotionId motion);
+
 // ---- Modulators ---------------------------------------------------------------------------------------------
 
 /// A new modulator at `place`, named "LFO", "LFO 2"... Null when that level is full.

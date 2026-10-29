@@ -8,9 +8,9 @@ namespace tessera {
 /// a setting of a modulator, or a setting of a playhead (docs/design/PLAYHEADS.md). `param` indexes the owner
 /// type's parameter list.
 struct ParamRef {
-    enum class Kind : uint8_t { Device, Modulator, Playhead };
+    enum class Kind : uint8_t { Device, Modulator, Playhead, Motion };
     Kind kind = Kind::Device;
-    uint64_t owner = 0; // DeviceId, ModulatorId or PlayheadId value
+    uint64_t owner = 0; // DeviceId, ModulatorId, PlayheadId or MotionId value
     uint16_t param = 0;
 
     bool valid() const { return owner != 0; }

@@ -43,6 +43,7 @@ using MarkerId = Id<struct MarkerTag>;
 using DeviceId = Id<struct DeviceTag>;
 using ModulatorId = Id<struct ModulatorTag>;
 using PlayheadId = Id<struct PlayheadTag>;
+using MotionId = Id<struct MotionTag>;
 
 struct TimeSig {
     int num = 4;

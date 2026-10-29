@@ -218,6 +218,8 @@ void normalizeAutomation(std::vector<AutomationEnvelope>& lanes, IdRepair& ids) 
     }
 }
 
+void normalizeParams(std::vector<float>& params, const std::vector<devices::ParamInfo>& table);
+
 void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
     if (clip.length < 1)
         clip.length = ticksPerBar(ts);
@@ -238,6 +240,16 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
         clampValue<uint8_t>(n.ops.recurrenceLength, 1, 16);
         clampValue(n.ops.timingSpread, 0.f, 0.5f);
     }
+    if (clip.motions.size() > size_t(kMaxMotionGroups))
+        clip.motions.resize(kMaxMotionGroups);
+    for (MotionGroup& m : clip.motions) {
+        ids.fix(m.id);
+        normalizeParams(m.params, devices::motionInfo().params);
+        m.color %= 16;
+    }
+    for (Note& n : clip.notes)
+        if (n.motion.valid() && !clip.findMotion(n.motion))
+            n.motion = MotionId();
     clip.sortNotes();
     normalizeAutomation(clip.automation, ids);
     if (clip.scaleOverride)
