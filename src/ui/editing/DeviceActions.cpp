@@ -448,6 +448,29 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id) {
         if (TesseraModule* mod = c->module())
             mod->perform(renameDevice(mod->song(), id, name));
     }));
+    if (d->type == DeviceType::Playheads) {
+        // The settings every playhead shares, set once.
+        const devices::TypeInfo& info = devices::deviceInfo(DeviceType::Playheads);
+        for (int k = 0; k < int(info.params.size()); k++) {
+            const devices::ParamInfo& p = info.params[size_t(k)];
+            int now = int(devices::display(p, d->params[size_t(k)]));
+            std::vector<std::string> choices = p.choices;
+            if (choices.empty())
+                for (int v = int(p.min); v <= int(p.max); v++)
+                    choices.push_back(std::to_string(v) + " " + p.unit);
+            int first = p.choices.empty() ? int(p.min) : 0;
+            menu->addChild(rack::createSubmenuItem(
+                p.name, choices[size_t(std::clamp(now - first, 0, int(choices.size()) - 1))], [=](rack::ui::Menu* sub) {
+                    for (int i = 0; i < int(choices.size()); i++)
+                        sub->addChild(rack::createCheckMenuItem(
+                            choices[size_t(i)], "", [now, i, first] { return now == i + first; }, [c, id, k, i, first, p] {
+                                setKnob(*c, {ParamRef::Kind::Device, id.value, uint16_t(k)},
+                                        devices::normalize(p, float(i + first)));
+                            }));
+                }));
+        }
+        menu->addChild(new rack::ui::MenuSeparator);
+    }
     menu->addChild(rack::createMenuItem("Duplicate", "Ctrl+D", [c, id] {
         if (TesseraModule* mod = c->module())
             mod->perform(duplicateDevice(mod->song(), id, mod->ids()));
