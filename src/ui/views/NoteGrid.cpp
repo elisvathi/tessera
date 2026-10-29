@@ -903,6 +903,7 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         drawTimelineRepeats(vg);
         drawLaneLoops(vg);
         drawNotes(vg);
+        drawMotionMarks(vg);
         dimSilentLanes(vg);
         if (!owner.drumMode())
             drawBends(vg);
@@ -932,6 +933,34 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         }
     }
     nvgRestore(vg);
+}
+
+void NoteGrid::drawMotionMarks(NVGcontext* vg) {
+    const Clip* clip = owner.clip();
+    if (!clip || clip->motions.empty())
+        return;
+    TimeAxis& t = time();
+    PitchAxis& pitch = owner.pitch;
+    float row = float(pitch.rowHeight());
+    double right = t.right();
+    for (const Note& n : owner.notes()) {
+        if (double(n.start) > right)
+            break;
+        const MotionGroup* group = n.motion.valid() ? clip->findMotion(n.motion) : nullptr;
+        if (!group || double(n.end()) < t.left())
+            continue;
+        float y = float(pitch.pitchToY(n.pitch));
+        float x0 = float(t.tickToX(double(n.start)));
+        float size = std::min(6.f, row - 2);
+        // A corner in the group's colour: this note moves while it plays.
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x0 + 1, y + 1);
+        nvgLineTo(vg, x0 + 1 + size, y + 1);
+        nvgLineTo(vg, x0 + 1, y + 1 + size);
+        nvgClosePath(vg);
+        nvgFillColor(vg, theme::playheadColor(group->color));
+        nvgFill(vg);
+    }
 }
 
 bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {

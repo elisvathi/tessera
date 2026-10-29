@@ -42,6 +42,9 @@ void openModulatorBrowser(EditorContext& ctx, TrackId track, DeviceId device = D
 
 void openDeviceMenu(EditorContext& ctx, DeviceId device);
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
+/// "Drift per pass" on a motion knob: a Steps modulator on its track, set to Per pass and mapped four steps up the
+/// knob, either rising then falling back (`bounce`) or rising then starting again. One undo step.
+void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce);
 void openModulatorMenu(EditorContext& ctx, ModulatorId id);
 /// A playhead's menu: rename, channel, mute, solo, duplicate, delete.
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id);

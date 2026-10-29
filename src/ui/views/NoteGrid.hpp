@@ -109,6 +109,8 @@ class NoteGrid : public TimelineView {
     /// The track's playheads as lines in their colours, while they read this clip (docs/design/PLAYHEADS.md §3.2).
     /// True when it drew them: the clip's own playhead then shows faint, for reference.
     bool drawPlayheadLines(NVGcontext* vg);
+    /// A small corner in its group's colour on every note in a motion group (docs/design/PLAYHEADS.md §6.2).
+    void drawMotionMarks(NVGcontext* vg);
     /// Operator marks on a note: repeat ticks, chance and occurrence text, recurrence dots (EDITOR_UX §4.5).
     void drawBadges(NVGcontext* vg, const Note& note, rack::math::Rect r, float labelRight);
     /// The note's expression curve, small, inside its body (EDITOR_UX §4.6).

@@ -166,6 +166,17 @@ same track, click its screen and pick **Channel 2**, and patch it to another voi
 [Track Out](02-modules.md#track-out). On a drum track, Drum Out has the same picker: the reversed hats can go to one
 voice and the straight ones to another.
 
+### Notes that drift
+
+Select notes and click **+ Add motion** in the inspector's **MOTION** section. The notes join a motion group (a small
+corner in the group's colour marks them) with five knobs: **Pitch** (steps), **Time** (a delay in 1/16 steps),
+**Length**, **Velocity** and **In key**. The written notes never change; the motion plays on top of them.
+
+Right-click a knob for **Drift per pass**: it adds a Steps modulator, set to **Per pass**, that moves the knob a
+little more on each pass of the clip, then back down or from the start again. Any modulator or automation lane can
+move these knobs too. With playheads, each playhead counts its own passes. MIDI export with devices applied plays the
+drift.
+
 ## Modulators
 
 The **MODULATORS** list on the left of the strip holds the modulators. Click **+ Add** to make one. A chip row at the

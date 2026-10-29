@@ -332,6 +332,7 @@ TEST_CASE("a new playhead reads as 1x forward from the clip's start") {
 
 // ---- MIDI export -------------------------------------------------------------------------------------------------
 
+#include "../src/model/Modulators.hpp"
 #include "../src/model/Render.hpp"
 
 TEST_CASE("MIDI export with devices applied plays what the playheads read") {
@@ -483,4 +484,39 @@ TEST_CASE("notes move into a motion group whose knobs are set with undo, and it 
     applyUndoable(song, removeMotion(song, group));
     CHECK(song.clips.at(clip.id).motions.empty());
     CHECK_FALSE(song.clips.at(clip.id).notes[2].motion.valid());
+}
+
+TEST_CASE("MIDI export plays the drift too") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.length = 240;
+    clip.notes.push_back(n);
+    MotionGroup group = devices::makeMotion(song.newId<MotionId>(), 0);
+    group.params[4] = 0; // semitones
+    clip.motions.push_back(group);
+    clip.notes[0].motion = group.id;
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 3 * 4 * kPpq; // three passes
+    song.tracks[0].arrangement.push_back(a);
+    Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+    steps.params[mods::knob::kStepCount] = devices::normalize(devices::modulatorInfo(ModulatorType::Steps).params[0], 2);
+    steps.params[mods::knob::kStepPerPass] = 1;
+    steps.steps = {0, 1};
+    Modulation route;
+    route.target = {ParamRef::Kind::Motion, group.id.value, 0};
+    route.amount = 1.f / 48;
+    steps.routes.push_back(route);
+    song.tracks[0].modulators.push_back(steps);
+
+    std::vector<int> pitches;
+    for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+        pitches.push_back(e.pitch);
+    CHECK(pitches == std::vector<int>{60, 61, 60});
 }

@@ -32,10 +32,10 @@ class Inspector : public InteractiveView {
 
     /// One clickable or draggable part of the notes section.
     struct Region {
-        enum class Kind { Field, Chart, Mean, Spread, Chaos, Chip, Occurrence, Pass };
+        enum class Kind { Field, Chart, Mean, Spread, Chaos, Chip, Occurrence, Pass, MotionAdd, MotionHeader, MotionKnob };
         Kind kind;
         fields::Field field = fields::Field::Velocity;
-        int index = 0; // Chip: the operator; Occurrence: the choice; Pass: the pass
+        int index = 0; // Chip: the operator; Occurrence: the choice; Pass: the pass; MotionKnob: the knob
         rack::math::Rect rect;
     };
 
@@ -77,6 +77,16 @@ class Inspector : public InteractiveView {
     void toggleChart(fields::Field field);
     /// How many of the selected notes have an operator on.
     size_t countOn(fields::Operator op);
+    /// The motion group every selected note is in, or nullptr when they aren't all in the same one.
+    const MotionGroup* sharedMotion();
+    /// The menu of the MOTION section: join a group, leave it, delete it.
+    void openMotionMenu();
+
+  public:
+    /// A motion knob being dragged, and its value (shown until the edit lands).
+    std::optional<std::pair<ParamRef, float>> motionPreview;
+
+  private:
 
     struct Title {
         float y;

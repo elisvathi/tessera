@@ -1478,4 +1478,8 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   1/16, keeps only the corners and picks the shortest cycle covering the clip. Offset, start, repeat, bend and
   direction don't apply to a drawn path. Path points are their own small editor here, not the automation editor
   (its lane menus are about AUTO outputs and recording, which a path doesn't have).
-- **Not yet:** note motion.
+- **Note motion** (added the same day): motion groups live in the clip (up to 8), notes point at one by ID, and
+  the knobs are ParamRef kind Motion. Steps and Ramp get a "Per pass" switch; a per-pass modulator is left out of
+  motion knobs as it runs and added when a note starts, at that note's pass (a playhead's own pass). Time only
+  delays (0 to 1 bar), so notes never need to be read ahead. Export applies the knobs plus per-pass modulators;
+  other modulation of motion knobs isn't in the file yet. No moving ghost of a note is drawn yet.
