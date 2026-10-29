@@ -466,6 +466,9 @@ std::vector<Modulator> modulatorListFromJson(const json_t* arr) {
     return out;
 }
 
+json_t* deviceToJson(const Device& d);
+Device deviceFromJson(const json_t* j);
+
 json_t* playheadToJson(const Playhead& p) {
     json_t* j = json_object();
     set(j, "id", idJson(p.id));
@@ -477,6 +480,12 @@ json_t* playheadToJson(const Playhead& p) {
         setBool(j, "mute", true);
     if (p.solo)
         setBool(j, "solo", true);
+    if (!p.branch.empty()) {
+        json_t* branch = json_array();
+        for (const Device& d : p.branch)
+            json_array_append_new(branch, deviceToJson(d));
+        set(j, "branch", branch);
+    }
     return j;
 }
 
@@ -489,6 +498,7 @@ Playhead playheadFromJson(const json_t* j) {
     p.channel = saturate<uint8_t>(getInt(j, "channel", p.channel));
     p.mute = getBool(j, "mute", p.mute);
     p.solo = getBool(j, "solo", p.solo);
+    forEach(get(j, "branch"), [&](const json_t* dj) { p.branch.push_back(deviceFromJson(dj)); });
     return p;
 }
 

@@ -191,6 +191,7 @@ struct DevicePlayback {
     bool affectDrums = false;
     uint64_t id = 0;
     int knobs = 0;
+    uint8_t lane = 0; // in a playhead's branch: that playhead's place (1..16); 0 = the track's chain
 };
 
 /// One modulation onto a knob or an AUTO channel: a modulator (by slot) and how far it moves its target.

@@ -84,7 +84,15 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             running.push_back({&m, mods::State(), true});
         }
     }
+    // Playheads' branch devices come first, each only for its own playhead's notes, as in the engine.
     std::vector<chain::DeviceSlot> slots;
+    for (const Device& d : track.devices)
+        for (size_t k = 0; k < d.playheads.size(); k++)
+            for (const Device& b : d.playheads[k].branch) {
+                own(ParamRef::Kind::Device, b.id.value, b.params);
+                slots.push_back({b.type, b.on && d.on, b.affectDrumLanes, b.id.value,
+                                 knobs[{int(ParamRef::Kind::Device), b.id.value}].value.data(), uint8_t(k + 1)});
+            }
     for (const Device& d : track.devices)
         slots.push_back({d.type, d.on, d.affectDrumLanes, d.id.value,
                          knobs[{int(ParamRef::Kind::Device), d.id.value}].value.data()});
@@ -159,6 +167,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             cn.id = c->newId();
             cn.key = n.key;
             cn.channel = n.channel;
+            cn.lane = n.lane;
             cn.extras = n.source;
             cn.origin = n.origin;
             cn.pass = n.pass;

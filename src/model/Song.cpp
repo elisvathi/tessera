@@ -68,10 +68,11 @@ int Song::clipUses(ClipId clip) const {
 
 namespace {
 
-/// How many voices the track's devices need for `voices` notes at once: chords multiply them, echoes and longer
-/// notes overlap them, an arpeggiator plays one step at a time (all of them at once in its Chord pattern).
-int voicesThroughChain(const Track& track, int voices) {
-    for (const Device& d : track.devices) {
+/// How many voices `chain` needs for `voices` notes at once: chords multiply them, echoes and longer notes overlap
+/// them, an arpeggiator plays one step at a time (all of them at once in its Chord pattern), and each playhead
+/// plays its own notes through its own branch.
+int voicesThrough(const std::vector<Device>& chain, int voices) {
+    for (const Device& d : chain) {
         if (!d.on)
             continue;
         auto shown = [&d](int k) {
@@ -96,10 +97,11 @@ int voicesThroughChain(const Track& track, int voices) {
             voices *= 2;
             break;
         case DeviceType::Playheads: {
-            int playing = 0;
+            int total = 0;
             for (const Playhead& p : d.playheads)
-                playing += !p.mute;
-            voices *= std::max(1, playing);
+                if (!p.mute)
+                    total += voicesThrough(p.branch, voices);
+            voices = std::max(1, total);
             break;
         }
         default:
@@ -137,7 +139,7 @@ int Song::voicesOf(const Track& track) const {
         sounding += n;
         most = std::max(most, sounding);
     }
-    return std::clamp(voicesThroughChain(track, std::min(most, kMaxVoices)), 1, kMaxVoices);
+    return std::clamp(voicesThrough(track.devices, std::min(most, kMaxVoices)), 1, kMaxVoices);
 }
 
 bool Song::anySolo() const {
@@ -280,7 +282,8 @@ void placePlayheads(Track& track) {
     track.devices.insert(track.devices.begin(), keep);
 }
 
-void normalizePlayheads(Device& d, IdRepair& ids) {
+/// `room`: how many more devices the track may hold; branch devices count toward it.
+void normalizePlayheads(Device& d, IdRepair& ids, int& room) {
     if (d.type != DeviceType::Playheads) {
         d.playheads.clear();
         return;
@@ -292,6 +295,19 @@ void normalizePlayheads(Device& d, IdRepair& ids) {
         normalizeParams(p.params, devices::playheadInfo().params);
         clampValue<uint8_t>(p.channel, 0, 16);
         p.color %= 16;
+        p.branch.erase(std::remove_if(p.branch.begin(), p.branch.end(),
+                                      [](const Device& b) { return b.type == DeviceType::Playheads; }),
+                       p.branch.end());
+        size_t keep = size_t(std::clamp(std::min(room, kMaxBranchDevices), 0, int(p.branch.size())));
+        p.branch.resize(keep);
+        room -= int(keep);
+        for (Device& b : p.branch) {
+            ids.fix(b.id);
+            b.type = DeviceType(std::clamp(int(b.type), 0, kDeviceTypeCount - 1));
+            normalizeParams(b.params, devices::deviceInfo(b.type).params);
+            b.modulators.clear(); // branch devices have no modulators of their own (yet)
+            b.playheads.clear();
+        }
     }
 }
 
@@ -299,12 +315,13 @@ void normalizeDevices(Track& track, IdRepair& ids) {
     if (track.devices.size() > size_t(kMaxDevices))
         track.devices.resize(kMaxDevices);
     placePlayheads(track);
+    int room = kMaxDevices - int(track.devices.size());
     for (Device& d : track.devices) {
         ids.fix(d.id);
         d.type = DeviceType(std::clamp(int(d.type), 0, kDeviceTypeCount - 1));
         normalizeParams(d.params, devices::deviceInfo(d.type).params);
         normalizeModulators(d.modulators, kMaxDeviceModulators, ids);
-        normalizePlayheads(d, ids);
+        normalizePlayheads(d, ids, room);
     }
     normalizeModulators(track.modulators, kMaxTrackModulators, ids);
 }

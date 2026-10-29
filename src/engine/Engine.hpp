@@ -465,7 +465,7 @@ class Engine {
                   Tick loopStart, Tick length, double a, double b, double playAtFrom,
                   const std::vector<NoteExtras>* extras);
     void startNote(const TrackPlayback& track, TrackState& state, const NoteEvent& n, double onPlay, double endPlay,
-                   int64_t pass);
+                   int64_t pass, uint8_t lane = 0);
     /// A note with extras: decides whether it plays on this pass and turns it into hits, now or later.
     void startWithOperators(const TrackPlayback& track, TrackState& state, const NoteEvent& n, const NoteExtras& ex,
                             double onPlay, double endPlay, int64_t pass);

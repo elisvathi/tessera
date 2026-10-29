@@ -52,6 +52,7 @@ struct Played {
     double origin = 0;
     uint8_t key = 0; // 0 = the song's key, k = the clip key k - 1
     uint8_t channel = 1;
+    uint8_t lane = 0; // the playhead that read it (1..16), for its branch
 };
 
 /// The channel a clip note plays on; 1 for notes made by the export itself.
@@ -197,7 +198,8 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
         double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
         double begin = double(normalizeOffset(*clip, a.offset)) - double(clipSpan(*clip).start);
         double length = double(instanceEnd(a) - a.position) / stretch;
-        for (const Playhead& p : device.playheads) {
+        for (size_t index = 0; index < device.playheads.size(); index++) {
+            const Playhead& p = device.playheads[index];
             if (p.mute || (solo && !p.solo))
                 continue;
             playheads::Motion m =
@@ -214,7 +216,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                         double len = playheads::noteLength(p.params.data(), m, n.end - n.start, song.timeSig) * stretch;
                         uint8_t channel = p.channel > 0 ? p.channel : n.source->channel;
                         out.push_back({at, at + len, n.pitch, n.source->velocity, n.source->releaseVelocity, n.source,
-                                       0, n.start, key, channel});
+                                       0, n.start, key, channel, uint8_t(index + 1)});
                     });
             }
         }
@@ -248,7 +250,8 @@ std::vector<Played> throughChain(const Song& song, const Track& t, const std::ve
     std::vector<chainrender::Note> in;
     in.reserve(notes.size());
     for (const Played& p : notes)
-        in.push_back({p.start, p.end, p.pitch, p.velocity, p.release, p.source, p.pass, p.origin, p.key, p.channel});
+        in.push_back(
+            {p.start, p.end, p.pitch, p.velocity, p.release, p.source, p.pass, p.origin, p.key, p.channel, p.lane});
     std::vector<Played> out;
     for (const chainrender::Note& n : chainrender::run(song, t, in, until, tempo, keys))
         out.push_back({n.start, n.end, n.pitch, n.velocity, n.release, n.source, n.pass, n.origin, n.key, n.channel});

@@ -72,6 +72,9 @@ CommandPtr setParam(const Song& song, const ParamRef& ref, float value);
 /// A new playhead at the end of a Playheads device. Null when it already has playheads::kMaxPlayheads.
 CommandPtr addPlayhead(const Song& song, DeviceId device, const NextId& nextId, PlayheadId* added = nullptr);
 CommandPtr removePlayhead(const Song& song, PlayheadId id);
+/// A new device in a playhead's branch at `index` (-1 = the end). Null when the branch has kMaxBranchDevices or the
+/// track kMaxDevices. Removing, renaming, bypassing and setting knobs of branch devices use the device commands.
+CommandPtr addBranchDevice(const Song& song, PlayheadId id, DeviceType type, int index, const NextId& nextId);
 /// A copy right after the original, with a new ID and every setting the same.
 CommandPtr duplicatePlayhead(const Song& song, PlayheadId id, const NextId& nextId, PlayheadId* added = nullptr);
 CommandPtr renamePlayhead(const Song& song, PlayheadId id, const std::string& name);

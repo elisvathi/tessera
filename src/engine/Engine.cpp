@@ -1193,7 +1193,8 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
     std::array<Started, 32> started;
     int startedCount = 0;
 
-    for (const PlayheadPlayback& p : chain.playheads) {
+    for (size_t index = 0; index < chain.playheads.size(); index++) {
+        const PlayheadPlayback& p = chain.playheads[index];
         if (!p.audible)
             continue;
         const float* knobs = &knobValues[size_t(p.knobs)];
@@ -1216,7 +1217,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         started[size_t(startedCount++)] = {onPlay, n.pitch, n.channel};
                 }
                 double length = playheads::noteLength(knobs, m, double(e.end - e.start), ts) * stretch;
-                startNote(track, state, n, onPlay, onPlay + length, 0);
+                startNote(track, state, n, onPlay, onPlay + length, 0, uint8_t(index + 1));
             });
         }
     }
@@ -1385,7 +1386,7 @@ void Engine::clearPending(TrackState& state) {
 }
 
 void Engine::startNote(const TrackPlayback& track, TrackState& state, const NoteEvent& e, double onPlay, double endPlay,
-                       int64_t pass) {
+                       int64_t pass, uint8_t lane) {
     double off = clockOffset();
     chain::ChainNote n;
     n.start = onPlay + off;
@@ -1397,6 +1398,7 @@ void Engine::startNote(const TrackPlayback& track, TrackState& state, const Note
     n.channel = e.channel;
     n.origin = double(e.start);
     n.pass = pass;
+    n.lane = lane;
     deliver(track, state, n);
 }
 
@@ -1526,7 +1528,7 @@ void Engine::runChain(const TrackPlayback& track, TrackState& state, double unti
     int count = std::min<int>(int(devices.size()), kMaxDevices);
     for (int k = 0; k < count; k++) {
         const DevicePlayback& d = devices[size_t(k)];
-        slots[size_t(k)] = {d.type, d.on, d.affectDrums, d.id, &knobValues[size_t(d.knobs)]};
+        slots[size_t(k)] = {d.type, d.on, d.affectDrums, d.id, &knobValues[size_t(d.knobs)], d.lane};
     }
     chain::Context context;
     context.devices = slots.data();

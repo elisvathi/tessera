@@ -52,6 +52,7 @@ struct ChainNote {
     uint32_t id = 0;
     uint8_t key = 0;              // the key it was written in: 0 = the song's, k = the context's clip key k - 1
     uint8_t channel = 1;          // the note's channel, 1..16
+    uint8_t lane = 0;             // the playhead that read it (1..16), whose branch it goes through; 0 = none
     const void* extras = nullptr; // the engine's expression curves, carried along untouched
     double origin = 0;            // where it was written (clip or song ticks), so randomness repeats
     int64_t pass = 0;
@@ -67,6 +68,7 @@ struct DeviceSlot {
     bool affectDrums = false;
     uint64_t id = 0;
     const float* knobs = nullptr;
+    uint8_t lane = 0; // a playhead's branch device (1..16): only that playhead's notes go through it; 0 = all notes
 };
 
 struct Context {

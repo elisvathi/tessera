@@ -9,12 +9,20 @@ namespace {
 template <typename SongT, typename DeviceT>
 DeviceT* findDeviceIn(SongT& song, DeviceId id, TrackId* track) {
     for (auto& t : song.tracks)
-        for (auto& d : t.devices)
+        for (auto& d : t.devices) {
             if (d.id == id) {
                 if (track)
                     *track = t.id;
                 return &d;
             }
+            for (auto& p : d.playheads)
+                for (auto& b : p.branch)
+                    if (b.id == id) {
+                        if (track)
+                            *track = t.id;
+                        return &b;
+                    }
+        }
     return nullptr;
 }
 
@@ -66,6 +74,33 @@ Playhead* findPlayhead(Song& song, PlayheadId id, TrackId* track, DeviceId* devi
 }
 const Playhead* findPlayhead(const Song& song, PlayheadId id, TrackId* track, DeviceId* device) {
     return findPlayheadIn<const Song, const Playhead>(song, id, track, device);
+}
+
+std::vector<Device>* chainOf(Song& song, DeviceId id, PlayheadId* playhead) {
+    for (Track& t : song.tracks)
+        for (Device& d : t.devices) {
+            if (d.id == id) {
+                if (playhead)
+                    *playhead = PlayheadId();
+                return &t.devices;
+            }
+            for (Playhead& p : d.playheads)
+                for (const Device& b : p.branch)
+                    if (b.id == id) {
+                        if (playhead)
+                            *playhead = p.id;
+                        return &p.branch;
+                    }
+        }
+    return nullptr;
+}
+
+int deviceCount(const Track& track) {
+    int n = int(track.devices.size());
+    for (const Device& d : track.devices)
+        for (const Playhead& p : d.playheads)
+            n += int(p.branch.size());
+    return n;
 }
 
 const Device* activePlayheads(const Track& track) {

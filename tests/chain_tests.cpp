@@ -1418,3 +1418,24 @@ TEST_CASE("engine: playheads read the timeline's clips too, from each clip's sta
     CHECK(h.gate());
     CHECK(h.pitch() == 64);
 }
+
+TEST_CASE("engine: a playhead's branch changes only that playhead's notes") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++)
+        d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), i));
+    Device up = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+    up.params = knobsOf(DeviceType::Transpose, {{chain::knob::kSemitones, 12}});
+    d.playheads[1].branch.push_back(up);
+    song.tracks[0].devices.push_back(d);
+    Device fifth = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+    fifth.params = knobsOf(DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    song.tracks[0].devices.push_back(fifth); // the shared chain, after the branches
+    Harness h(song);
+    h.step();
+    std::multiset<int> sounding;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding.insert(h.pitch(v));
+    CHECK(sounding == std::multiset<int>{67, 79}); // both playheads on the 60: one up a fifth, one up an octave too
+}
