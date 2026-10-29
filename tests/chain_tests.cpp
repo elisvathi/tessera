@@ -1456,3 +1456,25 @@ TEST_CASE("engine: changing a playhead's rate while it plays changes its speed, 
     CHECK(h.gate());
     CHECK(h.pitch() == 64);
 }
+
+TEST_CASE("engine: note operators still apply to the notes playheads play") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}}, 4 * kPpq, kAutoVoices);
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].ops.chance = 0; // never plays
+    clip.notes[1].ops.repeats = 2; // twice
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    CHECK_FALSE(h.anyGate());
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = h.sample; s < 1920 * kSamplesPerTick; s++) {
+        h.step();
+        bool now = h.anyGate();
+        starts += now && !was;
+        was = now;
+    }
+    CHECK(starts == 2);
+}

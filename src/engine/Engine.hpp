@@ -340,6 +340,7 @@ class Engine {
             int64_t pass;
             uint8_t key;
             uint8_t channel;
+            uint8_t lane; // the playhead that read it, for its branch; 0 = none
         };
         std::array<PendingHit, kMaxPendingHits> pending{};
         int pendingCount = 0;
@@ -490,7 +491,7 @@ class Engine {
                    int64_t pass, uint8_t lane = 0);
     /// A note with extras: decides whether it plays on this pass and turns it into hits, now or later.
     void startWithOperators(const TrackPlayback& track, TrackState& state, const NoteEvent& n, const NoteExtras& ex,
-                            double onPlay, double endPlay, int64_t pass);
+                            double onPlay, double endPlay, int64_t pass, uint8_t lane = 0);
     void startHit(const TrackPlayback& track, TrackState& state, const TrackState::PendingHit& hit);
     void firePending(const TrackPlayback& track, TrackState& state, double until);
     static void clearPending(TrackState& state);

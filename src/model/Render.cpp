@@ -66,48 +66,28 @@ Tick songEnd(const Song& song) {
     return end;
 }
 
-/// Every note `t` plays on the timeline, with the chosen timing and operators applied. Clips with their own key
-/// add it to `keys`.
-std::vector<Played> playedNotes(const Song& song, const Track& t, const Options& o, std::vector<Scale>& keys) {
-    struct Item {
-        TimedNote note;
-        ClipId clip;
-    };
-    std::map<ClipId, uint8_t> keyOf;
-    auto keyIndex = [&](const Clip& clip) -> uint8_t {
-        if (!clip.scaleOverride || keys.size() >= 255)
-            return 0;
-        auto it = keyOf.find(clip.id);
-        if (it != keyOf.end())
-            return it->second;
-        keys.push_back(resolveScale(*clip.scaleOverride, song.customScales));
-        return keyOf[clip.id] = uint8_t(keys.size());
-    };
-    std::vector<Item> items;
-    for (const ArrangerClip& a : t.arrangement) {
-        if (a.muted && !o.includeMuted)
-            continue;
-        const Clip* clip = song.findClip(a.clip);
-        if (!clip)
-            continue;
-        std::vector<TimedNote> notes;
-        renderInstance(*clip, a, notes, t.transpose, t.gateLengthScale,
-                       t.type == TrackType::Drum ? &t.drumLanes : nullptr);
-        for (const TimedNote& n : notes)
-            items.push_back({n, a.clip});
-    }
+/// A note on its way to the file: where it came from, before timing and operators.
+struct Item {
+    TimedNote note;
+    ClipId clip;
+    uint8_t key = 0;     // 0 = the song's key, k = the clip key k - 1
+    uint8_t channel = 0; // 0 = the clip note's own
+    uint8_t lane = 0;    // the playhead that read it (1..16)
+};
+
+/// The items with the chosen timing and operators applied, sorted by start. Operators run exactly as the engine runs
+/// them: the same seed, clip and pass give the same result, and "previous note" restarts with each pass.
+std::vector<Played> applyOperators(const Song& song, const Options& o, std::vector<Item>& items) {
     std::stable_sort(items.begin(), items.end(),
                      [](const Item& a, const Item& b) { return a.note.start < b.note.start; });
-
     std::vector<Played> out;
-    // Operators run exactly as the engine runs them: the same seed, clip and pass give the same result, and
-    // "previous note" restarts with each pass.
     int lastPass = -1;
     bool previousPlayed = true;
     Tick beat = ticksPerBeat(song.timeSig);
     for (const Item& item : items) {
         const TimedNote& n = item.note;
         const Note* src = n.source;
+        uint8_t channel = item.channel > 0 ? item.channel : noteChannel(src);
         double start = double(n.start), end = double(n.end);
         if (o.timing == Timing::Played) {
             double micro = src ? operators::microTicks(*src) : 0;
@@ -116,11 +96,9 @@ std::vector<Played> playedNotes(const Song& song, const Track& t, const Options&
             start = swung(start, swing, song.swingStep) + micro;
             end = swung(end, swing, song.swingStep) + micro;
         }
-        const Clip* clip = song.findClip(item.clip);
-        uint8_t key = clip ? keyIndex(*clip) : 0;
         if (o.operators == OperatorMode::Written || !src) {
-            out.push_back({start, end, n.pitch, n.velocity, n.releaseVelocity, src, n.pass, double(n.start), key,
-                           noteChannel(src)});
+            out.push_back({start, end, n.pitch, n.velocity, n.releaseVelocity, src, n.pass, double(n.start), item.key,
+                           channel, item.lane});
             continue;
         }
         if (n.pass != lastPass) {
@@ -148,11 +126,43 @@ std::vector<Played> playedNotes(const Song& song, const Track& t, const Options&
             float shape = src->velocity > 0 ? h.velocity / src->velocity : 1;
             float v = std::clamp(n.velocity * shape + spread, 0.f, 1.f);
             out.push_back({std::max(0.0, hitStart), hitEnd, n.pitch, v, n.releaseVelocity, src, n.pass,
-                           double(n.start) + i, key, noteChannel(src)});
+                           double(n.start) + i, item.key, channel, item.lane});
         }
     }
     std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
     return out;
+}
+
+/// The key index of a clip with its own key (added to `keys` the first time), or 0 for the song's.
+uint8_t keyIndexOf(const Song& song, const Clip& clip, std::vector<Scale>& keys, std::map<ClipId, uint8_t>& keyOf) {
+    if (!clip.scaleOverride || keys.size() >= 255)
+        return 0;
+    auto it = keyOf.find(clip.id);
+    if (it != keyOf.end())
+        return it->second;
+    keys.push_back(resolveScale(*clip.scaleOverride, song.customScales));
+    return keyOf[clip.id] = uint8_t(keys.size());
+}
+
+/// Every note `t` plays on the timeline, with the chosen timing and operators applied. Clips with their own key
+/// add it to `keys`.
+std::vector<Played> playedNotes(const Song& song, const Track& t, const Options& o, std::vector<Scale>& keys) {
+    std::map<ClipId, uint8_t> keyOf;
+    std::vector<Item> items;
+    for (const ArrangerClip& a : t.arrangement) {
+        if (a.muted && !o.includeMuted)
+            continue;
+        const Clip* clip = song.findClip(a.clip);
+        if (!clip)
+            continue;
+        std::vector<TimedNote> notes;
+        renderInstance(*clip, a, notes, t.transpose, t.gateLengthScale,
+                       t.type == TrackType::Drum ? &t.drumLanes : nullptr);
+        uint8_t key = keyIndexOf(song, *clip, keys, keyOf);
+        for (const TimedNote& n : notes)
+            items.push_back({n, a.clip, key});
+    }
+    return applyOperators(song, o, items);
 }
 
 /// What the track's playheads play from its timeline clips (docs/design/PLAYHEADS.md), with the code the engine
@@ -169,22 +179,14 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                              device.params[playheads::knob::kSameNote])) == 1;
     bool solo = std::any_of(device.playheads.begin(), device.playheads.end(),
                             [](const Playhead& p) { return p.solo && !p.mute; });
-    std::vector<Played> out;
+    std::vector<Item> items;
     for (const ArrangerClip& a : t.arrangement) {
         if (a.muted && !o.includeMuted)
             continue;
         const Clip* clip = song.findClip(a.clip);
         if (!clip)
             continue;
-        uint8_t key = 0;
-        if (clip->scaleOverride && keys.size() < 255) {
-            auto it = keyOf.find(clip->id);
-            if (it == keyOf.end()) {
-                keys.push_back(resolveScale(*clip->scaleOverride, song.customScales));
-                it = keyOf.emplace(clip->id, uint8_t(keys.size())).first;
-            }
-            key = it->second;
-        }
+        uint8_t key = keyIndexOf(song, *clip, keys, keyOf);
         double playStart = double(clip->playStart()), playEnd = double(clip->playEnd());
         int transpose = t.type == TrackType::Drum ? 0 : t.transpose + a.transpose;
         std::vector<Readable> notes;
@@ -212,16 +214,21 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 int count = playheads::sweeps(m, e, to, sweeps);
                 for (int i = 0; i < count; i++)
                     playheads::crossed(sweeps[i], notes, byEnd, [&](const Readable& n, double pos) {
-                        double at = double(a.position) + (playheads::timeAt(m, sweeps[i], pos) - begin) * stretch;
+                        double elapsed = playheads::timeAt(m, sweeps[i], pos);
+                        double at = double(a.position) + (elapsed - begin) * stretch;
                         double len = playheads::noteLength(p.params.data(), m, n.end - n.start, song.timeSig) * stretch;
-                        uint8_t channel = p.channel > 0 ? p.channel : n.source->channel;
-                        out.push_back({at, at + len, n.pitch, n.source->velocity, n.source->releaseVelocity, n.source,
-                                       0, n.start, key, channel, uint8_t(index + 1)});
+                        // The pass as the engine counts it: the playhead's own time over its region, its place mixed in.
+                        double own = m.rate * (m.restartEvery > 0 ? std::fmod(elapsed, m.restartEvery) : elapsed);
+                        int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
+                        Tick start = Tick(std::llround(at));
+                        TimedNote note{start, std::max(start + 1, Tick(std::llround(at + len))), int8_t(n.pitch),
+                                       n.source->velocity, n.source->releaseVelocity, n.source, pass};
+                        items.push_back({note, a.clip, key, p.channel, uint8_t(index + 1)});
                     });
             }
         }
     }
-    std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
+    std::vector<Played> out = applyOperators(song, o, items);
     if (once) {
         // Two playheads on one note at the same moment play it once, as in the engine.
         std::vector<Played> kept;
