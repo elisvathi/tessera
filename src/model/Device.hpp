@@ -23,9 +23,10 @@ enum class DeviceType : uint8_t {
     NoteFilter,
     Humanize,
     Groove,
-    Playheads // reads the clip with several playheads; always first in the chain (docs/design/PLAYHEADS.md)
+    Playheads, // reads the clip with several playheads; first in the chain but for Motion (docs/design/PLAYHEADS.md)
+    Motion     // moves the notes that joined it a little on every pass; may sit before Playheads
 };
-constexpr int kDeviceTypeCount = 12;
+constexpr int kDeviceTypeCount = 13;
 
 enum class ModulatorType : uint8_t { Lfo, Envelope, Steps, Random, Ramp, Macro, Note, Curve };
 constexpr int kModulatorTypeCount = 8;
@@ -109,10 +110,11 @@ struct Device {
     std::vector<float> params;         // normalized, the type's list
     std::vector<Modulator> modulators; // device level
     std::vector<Playhead> playheads;   // Playheads devices only
+    uint8_t color = 0;                 // Motion devices: index into the playhead colours, marking their notes
 
     bool operator==(const Device& o) const {
         return id == o.id && type == o.type && name == o.name && on == o.on && affectDrumLanes == o.affectDrumLanes &&
-               params == o.params && modulators == o.modulators && playheads == o.playheads;
+               params == o.params && modulators == o.modulators && playheads == o.playheads && color == o.color;
     }
 };
 

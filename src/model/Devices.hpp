@@ -30,6 +30,7 @@ enum Random { kRandomPitch, kRandomInKey, kDrop };
 enum Humanize { kHumanizeTiming, kHumanizeVelocity, kHumanizeLength };
 enum Groove { kGrooveSwing, kGrooveGrid };
 enum NoteFilter { kLowest, kHighest, kMinVelocity, kMaxVelocity, kEvery, kOffset, kChannel };
+enum Motion { kMotionPitch, kMotionTime, kMotionLength, kMotionVelocity, kMotionInKey };
 } // namespace knob
 
 enum class KeyFrom : uint8_t { Clip, Song, Fixed };
@@ -56,6 +57,7 @@ struct ChainNote {
     const void* extras = nullptr; // the engine's expression curves, carried along untouched
     double origin = 0;            // where it was written (clip or song ticks), so randomness repeats
     int64_t pass = 0;
+    uint64_t motion = 0; // the Motion device the written note moves with; 0 = none
 
     bool open() const { return !std::isfinite(end); }
 };
@@ -82,6 +84,10 @@ struct Context {
     /// Song ticks = chain ticks + songOffset, so arpeggiators step on the song's grid (0 while stopped: they step
     /// on their own clock then).
     double songOffset = 0;
+    /// A Motion device's knob as a note on `pass` reads it: with its "Per pass" modulators stepped to that pass.
+    /// Unset, the knob as it stands.
+    float (*passKnob)(const void* user, const DeviceSlot& device, int knob, int64_t pass) = nullptr;
+    const void* passUser = nullptr;
 
     const Scale& keyOf(uint8_t key) const;
 };
@@ -178,6 +184,8 @@ class Chain {
     /// Swings this track's notes by where they were written, in place of the song's swing.
     void groove(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     void noteFilter(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
+    /// Moves the notes that joined this Motion device by its knobs, read for the note's pass (a playhead's own).
+    void motion(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     /// An arpeggiator lets go of a note (it ended, or its time is up).
     void release(int stage, uint32_t id, bool hold);
     /// Remembers an open note in the stage's state; when full, the oldest legato note ends to make room.

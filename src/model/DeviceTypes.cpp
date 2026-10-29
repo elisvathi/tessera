@@ -97,6 +97,10 @@ std::vector<TypeInfo> buildDevices() {
                                         {choice("Restart", {"Clip start", "Every N bars"}, 0),
                                          integer("Restart bars", 1, 64, 4, "bars"),
                                          choice("Same note", {"Play each", "Play once"}, 1)}};
+    t[size_t(DeviceType::Motion)] = {"Motion",
+                                     {integer("Pitch", -24, 24, 0, "steps"), integer("Time", 0, 16, 0, "steps"),
+                                      number("Length", -90, 400, 0, "%"), number("Velocity", -100, 100, 0, "%"),
+                                      toggle("In key", true)}};
     auto about = [&t](DeviceType type, const char* group, const char* description, const char* keywords) {
         TypeInfo& info = t[size_t(type)];
         info.group = group;
@@ -119,6 +123,8 @@ std::vector<TypeInfo> buildDevices() {
     about(DeviceType::NoteFilter, "Feel", "lets only some notes through", "filter range every skip thin channel part");
     about(DeviceType::Playheads, "Source", "reads the clip with several playheads",
           "playhead canon reverse speed time bend");
+    about(DeviceType::Motion, "Source", "moves chosen notes a little on every pass: drift, evolve",
+          "motion drift evolve move notes per pass");
     return t;
 }
 
@@ -168,12 +174,6 @@ std::vector<TypeInfo> buildModulators() {
     return t;
 }
 
-TypeInfo buildMotion() {
-    return {"Motion",
-            {integer("Pitch", -24, 24, 0, "steps"), integer("Time", 0, 16, 0, "steps"),
-             number("Length", -90, 400, 0, "%"), number("Velocity", -100, 100, 0, "%"), toggle("In key", true)}};
-}
-
 TypeInfo buildPlayhead() {
     using namespace playheads;
     return {"Playhead",
@@ -218,15 +218,7 @@ const TypeInfo& playheadInfo() {
     return info;
 }
 
-const TypeInfo& motionInfo() {
-    static const TypeInfo info = buildMotion();
-    return info;
-}
-
-const ParamInfo* motionParamInfo(int param) {
-    const TypeInfo& t = motionInfo();
-    return param >= 0 && param < int(t.params.size()) ? &t.params[size_t(param)] : nullptr;
-}
+const TypeInfo& motionInfo() { return deviceInfo(DeviceType::Motion); }
 
 const ParamInfo* playheadParamInfo(int param) {
     const TypeInfo& t = playheadInfo();
@@ -316,16 +308,6 @@ Device makeDevice(DeviceType type, DeviceId id) {
     for (const ParamInfo& p : deviceInfo(type).params)
         d.params.push_back(defaultNormalized(p));
     return d;
-}
-
-MotionGroup makeMotion(MotionId id, int index) {
-    MotionGroup m;
-    m.id = id;
-    m.name = std::string("Motion ") + char('A' + index % 26);
-    m.color = uint8_t(index % 16);
-    for (const ParamInfo& info : motionInfo().params)
-        m.params.push_back(defaultNormalized(info));
-    return m;
 }
 
 Playhead makePlayhead(PlayheadId id, int index) {

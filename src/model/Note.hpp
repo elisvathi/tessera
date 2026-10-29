@@ -52,7 +52,7 @@ struct Note {
     NoteOperators ops;
     // Per-note expression curves; empty means flat. Pitch is in semitones (±48, MPE's default range), the others 0..1.
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr;
-    MotionId motion; // the clip's motion group it moves with (docs/design/PLAYHEADS.md §6); none when invalid
+    DeviceId motion; // the Motion device it moves with (docs/design/PLAYHEADS.md §6); none when invalid
 
     Tick end() const { return start + length; }
 

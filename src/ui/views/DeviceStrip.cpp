@@ -49,6 +49,8 @@ constexpr float kPi = 3.14159265f;
 constexpr float kChip = 78;      // a playhead's chip on a Playheads card
 constexpr float kChipHeight = 18;
 constexpr float kChipDot = 16; // the on/off dot at a chip's left end
+constexpr float kMotionJoin = 72;  // a Motion card's "+ Selected"
+constexpr float kMotionCount = 58; // and its "6 notes"
 constexpr float kKnobGroupGap = 14; // between a playhead's settings and the device's own
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
@@ -307,11 +309,21 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float knobTop
     for (size_t k = 0; k < d.modulators.size(); k++)
         parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, kPad + 7, 10, 10), index, int(k),
                          d.modulators[k].id.value});
+    if (d.type == DeviceType::Motion) {
+        // Which notes move: "+ Selected" adds the piano roll's selection, "6 notes" selects them there.
+        float right = menu.pos.x - 6 - float(d.modulators.size()) * 11;
+        Rect join(right - kMotionJoin, kPad + 4, kMotionJoin, kChipHeight);
+        Rect count(join.pos.x - 4 - kMotionCount, kPad + 4, kMotionCount, kChipHeight);
+        parts.push_back({Kind::MotionJoin, join, index, -1, d.id.value});
+        parts.push_back({Kind::MotionNotes, count, index, -1, d.id.value});
+    }
     parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
     for (int k = 0, cell = 0; k < int(devices::deviceInfo(d.type).params.size()); k++) {
         if (!paramVisible(d, k))
             continue;
         float cx = card.pos.x + kCardPad + float(cell++) * kCell;
+        // Its name opens its curve in the lower pane, as on the Playheads card.
+        parts.push_back({Kind::CurveLabel, Rect(cx, knobTop + 40, kCell, 12), index, k, d.id.value});
         parts.push_back({Kind::KnobValue, Rect(cx, knobTop + 52, kCell, 13), index, k, d.id.value});
         parts.push_back({Kind::Knob, Rect(cx, knobTop - 2, kCell, 54), index, k, d.id.value});
     }
@@ -325,9 +337,31 @@ const Device* DeviceStrip::cardDevice(int index) {
         return nullptr;
     if (index < kBranchBase)
         return index >= 0 && index < int(t->devices.size()) ? &t->devices[size_t(index)] : nullptr;
-    const Playhead* p = !t->devices.empty() ? shownPlayhead(t->devices.front()) : nullptr;
+    const Playhead* p = branchPlayhead();
     int k = index - kBranchBase;
     return p && k < int(p->branch.size()) ? &p->branch[size_t(k)] : nullptr;
+}
+
+int DeviceStrip::motionNoteCount(DeviceId id) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return 0;
+    // Counted once per song revision: every clip of the song is read.
+    if (motionCountRevision != m->songRevision()) {
+        motionCounts.clear();
+        for (const auto& [key, clip] : m->song().clips)
+            for (const Note& n : clip.notes)
+                if (n.motion.valid())
+                    motionCounts[n.motion.value]++;
+        motionCountRevision = m->songRevision();
+    }
+    auto it = motionCounts.find(id.value);
+    return it == motionCounts.end() ? 0 : it->second;
+}
+
+const Playhead* DeviceStrip::branchPlayhead() {
+    const Device* d = deviceActions::playheadsDevice(ctx);
+    return d ? shownPlayhead(*d) : nullptr;
 }
 
 const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
@@ -639,7 +673,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     }
     case Kind::Insert:
         if (hit->device >= kBranchBase) {
-            const Playhead* p = !t->devices.empty() ? shownPlayhead(t->devices.front()) : nullptr;
+            const Playhead* p = branchPlayhead();
             if (p)
                 deviceActions::openBranchBrowser(ctx, p->id, hit->device - kBranchBase);
         } else {
@@ -674,6 +708,29 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     case Kind::CurveLabel:
         deviceActions::showCurveFor(ctx, knobRef(*hit));
         break;
+    case Kind::MotionNotes: {
+        // Its notes in the shown clip, selected.
+        const Clip* clip = m->song().findClip(ctx.state().selectedClip);
+        if (!clip)
+            break;
+        NoteSelection sel;
+        sel.clip = clip->id;
+        for (const Note& n : clip->notes)
+            if (n.motion.value == hit->id)
+                sel.notes.insert(n.id);
+        ctx.state().selection = sel;
+        break;
+    }
+    case Kind::MotionJoin: {
+        const NoteSelection& sel = ctx.state().selection;
+        if (sel.empty() || !sel.clip.valid()) {
+            ctx.toast("Select notes in the piano roll, then click + Selected");
+            break;
+        }
+        std::vector<NoteId> notes(sel.notes.begin(), sel.notes.end());
+        m->perform(setNotesMotion(m->song(), sel.clip, notes, DeviceId(hit->id)));
+        break;
+    }
     case Kind::AddPlayhead: {
         PlayheadId added;
         if (CommandPtr add = addPlayhead(m->song(), DeviceId(hit->id), m->ids(), &added)) {
@@ -778,7 +835,7 @@ void DeviceStrip::drawView(const DrawArgs& args) {
             // chain wears its colour, so it reads apart from the shared chain's button next to it.
             NVGcolor ring = c.line2;
             if (p.device >= kBranchBase)
-                if (const Playhead* ph = !t->devices.empty() ? shownPlayhead(t->devices.front()) : nullptr)
+                if (const Playhead* ph = branchPlayhead())
                     ring = theme::playheadColor(ph->color);
             nvgBeginPath(vg);
             nvgCircle(vg, mid.x, mid.y, 9);
@@ -994,7 +1051,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
     // A device in a playhead's own chain wears that playhead's colour as a cap along its top.
     if (index >= kBranchBase)
         if (const Track* t = track(); t && !t->devices.empty())
-            if (const Playhead* ph = shownPlayhead(t->devices.front())) {
+            if (const Playhead* ph = branchPlayhead()) {
                 NVGcolor color = theme::playheadColor(ph->color);
                 nvgSave(vg);
                 nvgIntersectScissor(vg, r.pos.x, r.pos.y, r.size.x, theme::metrics::kBranchCap);
@@ -1107,10 +1164,30 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
         }
         case Kind::CardHeader: {
             float right = r.getRight() - 26 - float(d.modulators.size()) * 11;
+            float left = r.pos.x + 26;
+            if (d.type == DeviceType::Motion) {
+                right -= kMotionJoin + kMotionCount + 12;
+                // Its colour, the one its notes' corners wear.
+                draw::roundedRect(vg, Rect(left, p.rect.getCenter().y - 4, 8, 8), 2, theme::playheadColor(d.color));
+                left += 13;
+            }
             draw::TextStyle name{theme::fonts::uiStrong(), 11.5f, d.on ? c.text0 : c.text2,
                                  NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-            draw::text(vg, name, r.pos.x + 26, p.rect.getCenter().y,
-                       draw::ellipsize(vg, name, d.name, right - r.pos.x - 30));
+            draw::text(vg, name, left, p.rect.getCenter().y, draw::ellipsize(vg, name, d.name, right - left - 4));
+            break;
+        }
+        case Kind::MotionNotes:
+        case Kind::MotionJoin: {
+            NVGcolor color = theme::playheadColor(d.color);
+            bool count = p.kind == Kind::MotionNotes;
+            int notes = count ? motionNoteCount(d.id) : 0;
+            draw::roundedRect(vg, p.rect, kChipHeight / 2,
+                              count && notes > 0 ? nvgTransRGBAf(color, hot ? 0.3f : 0.18f) : (hot ? c.bg2 : c.bg1));
+            draw::roundedRectStroke(vg, p.rect, kChipHeight / 2, count && notes > 0 ? color : c.line1, 1);
+            draw::TextStyle text{theme::fonts::ui(), 10.5f, count ? (notes > 0 ? c.text0 : c.text2) : c.accent,
+                                 NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, text, p.rect.getCenter().x, p.rect.getCenter().y,
+                       count ? (notes == 1 ? "1 note" : std::to_string(notes) + " notes") : "+ Selected");
             break;
         }
         default:
@@ -1207,12 +1284,11 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
             valueColor = deviceActions::laneColor(song, lanes.front());
     }
     // A playhead's knobs take its colour; one left at its default draws quiet; one with a curve shows it.
-    bool curved = false, quiet = false;
+    bool curved = deviceActions::curveOn(song, ref).valid(), quiet = false;
     if (ref.kind == ParamRef::Kind::Playhead)
         if (const Playhead* ph = findPlayhead(song, PlayheadId(ref.owner))) {
             if (!automated)
                 valueColor = theme::playheadColor(ph->color);
-            curved = deviceActions::curveOn(song, ref).valid();
             quiet = !curved && std::fabs(base - devices::defaultNormalized(*info)) < 1e-4f;
         }
     bool mapping = ctx.mappingModulator != 0;

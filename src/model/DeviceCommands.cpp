@@ -146,9 +146,20 @@ std::string deviceName(const Song& song, DeviceId id) {
     return d ? d->name : "device";
 }
 
-/// The first chain position other devices may take: after the Playheads device, which always comes first.
+/// How many Motion devices lead the chain: the only devices allowed before Playheads.
+int leadingMotions(const Track& track) {
+    int n = 0;
+    while (n < int(track.devices.size()) && track.devices[size_t(n)].type == DeviceType::Motion)
+        n++;
+    return n;
+}
+
+/// The first chain position other devices may take: after the Playheads device, which only Motion devices precede.
 int firstFree(const Track& track) {
-    return !track.devices.empty() && track.devices.front().type == DeviceType::Playheads ? 1 : 0;
+    for (size_t i = 0; i < track.devices.size(); i++)
+        if (track.devices[i].type == DeviceType::Playheads)
+            return int(i) + 1;
+    return 0;
 }
 
 bool hasPlayheads(const Track& track) {
@@ -156,10 +167,13 @@ bool hasPlayheads(const Track& track) {
                        [](const Device& d) { return d.type == DeviceType::Playheads; });
 }
 
-/// Puts a device into a chain at `at` (clamped): a Playheads device always goes first, others after it.
+/// Puts a device into a chain at `at` (clamped): a Playheads device goes first but for leading Motion devices,
+/// others after it; a Motion device may go anywhere.
 void insertDevice(Track& track, int at, Device device) {
     if (device.type == DeviceType::Playheads)
-        at = 0;
+        at = leadingMotions(track);
+    else if (device.type == DeviceType::Motion)
+        at = std::clamp(at, 0, int(track.devices.size()));
     else
         at = std::clamp(at, firstFree(track), int(track.devices.size()));
     track.devices.insert(track.devices.begin() + at, std::move(device));
@@ -210,7 +224,8 @@ std::string modulatorName(const Song& song, ModulatorId id) {
 
 // ---- Devices ------------------------------------------------------------------------------------------------
 
-CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int index, const NextId& nextId) {
+CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int index, const NextId& nextId,
+                     DeviceId* added) {
     const Track* existing = song.findTrack(trackId);
     if (!existing || deviceCount(*existing) >= kMaxDevices)
         return nullptr;
@@ -230,9 +245,33 @@ CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int ind
         device.params[size_t(chain::knob::kGrooveGrid)] =
             devices::normalize(grid, swingStepFor(clips) == kPpq / 2 ? 1.f : 0.f);
     }
+    if (added)
+        *added = device.id;
     if (type == DeviceType::Playheads)
         for (int i = 0; i < 2; i++)
             device.playheads.push_back(nextPlayhead(device, PlayheadId(nextId())));
+    if (type == DeviceType::Motion) {
+        // "Motion 1", "Motion 2"…, each in a colour no playhead or other Motion on the track wears.
+        std::vector<int> used;
+        int count = 0;
+        for (const Device& d : existing->devices) {
+            if (d.type == DeviceType::Motion) {
+                used.push_back(d.color);
+                count++;
+            }
+            for (const Playhead& p : d.playheads)
+                used.push_back(p.color);
+        }
+        device.name = "Motion " + std::to_string(count + 1);
+        for (int c = 4; c < 20; c++)
+            if (std::find(used.begin(), used.end(), c % 16) == used.end()) {
+                device.color = uint8_t(c % 16);
+                break;
+            }
+        // A new one moves the notes the playheads read: before them, after any Motion already there.
+        if (index < 0)
+            index = leadingMotions(*existing);
+    }
     return chainEdit(song, "Add " + device.name, [&](Song& work) {
         Track& track = *work.findTrack(trackId);
         insertDevice(track, index < 0 ? int(track.devices.size()) : index, device);
@@ -371,98 +410,19 @@ CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name) 
     });
 }
 
-namespace {
-
-/// Runs `edit` on a copy of a clip's motions and notes and turns what it changed into one command.
-template <typename Edit>
-CommandPtr motionEdit(const Song& song, ClipId clipId, const std::string& name, Edit&& edit) {
-    const Clip* clip = song.findClip(clipId);
-    if (!clip)
-        return nullptr;
-    ReplaceClipMotions::Parts before{clip->motions, clip->notes};
-    ReplaceClipMotions::Parts after = before;
-    if (!edit(after) || (after.motions == before.motions && after.notes == before.notes))
-        return nullptr;
-    return std::make_unique<ReplaceClipMotions>(name, clipId, std::move(before), std::move(after));
-}
-
-} // namespace
-
-void ReplaceClipMotions::set(Song& song, const Parts& parts) const {
-    Clip* c = song.findClip(clip);
-    assert(c && "ReplaceClipMotions on a missing clip");
-    if (!c)
-        return;
-    c->motions = parts.motions;
-    c->notes = parts.notes;
-}
-
-CommandPtr addMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, const NextId& nextId,
-                     MotionId* added) {
+CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, DeviceId motion) {
     const Clip* c = song.findClip(clip);
-    if (!c || notes.empty() || int(c->motions.size()) >= kMaxMotionGroups)
+    const Device* d = motion.valid() ? findDevice(song, motion) : nullptr;
+    if (!c || (motion.valid() && (!d || d->type != DeviceType::Motion)))
         return nullptr;
-    int index = 0;
-    while (std::any_of(c->motions.begin(), c->motions.end(),
-                       [&](const MotionGroup& m) { return m.name == devices::makeMotion(MotionId(), index).name; }))
-        index++;
-    MotionGroup group = devices::makeMotion(MotionId(nextId()), index);
-    if (added)
-        *added = group.id;
-    return motionEdit(song, clip, "Add " + group.name, [&](ReplaceClipMotions::Parts& p) {
-        p.motions.push_back(group);
-        bool any = false;
-        for (Note& n : p.notes)
-            if (std::find(notes.begin(), notes.end(), n.id) != notes.end()) {
-                n.motion = group.id;
-                any = true;
-            }
-        return any;
-    });
-}
-
-CommandPtr removeMotion(const Song& song, MotionId id) {
-    ClipId clip;
-    const MotionGroup* group = findMotion(song, id, &clip);
-    if (!group)
-        return nullptr;
-    return motionEdit(song, clip, "Remove " + group->name, [&](ReplaceClipMotions::Parts& p) {
-        p.motions.erase(std::find_if(p.motions.begin(), p.motions.end(), [&](const MotionGroup& m) { return m.id == id; }));
-        for (Note& n : p.notes)
-            if (n.motion == id)
-                n.motion = MotionId();
-        return true;
-    });
-}
-
-CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, MotionId motion) {
-    const Clip* c = song.findClip(clip);
-    if (!c || (motion.valid() && !c->findMotion(motion)))
-        return nullptr;
-    return motionEdit(song, clip, motion.valid() ? "Move notes into " + c->findMotion(motion)->name : "Stop notes moving",
-                      [&](ReplaceClipMotions::Parts& p) {
-                          for (Note& n : p.notes)
-                              if (std::find(notes.begin(), notes.end(), n.id) != notes.end())
-                                  n.motion = motion;
-                          return true;
-                      });
+    std::vector<Note> after = c->notes;
+    for (Note& n : after)
+        if (std::find(notes.begin(), notes.end(), n.id) != notes.end())
+            n.motion = motion;
+    return replaceNotes(d ? "Move notes with " + d->name : "Stop notes moving", clip, c->notes, after);
 }
 
 CommandPtr setParam(const Song& song, const ParamRef& ref, float value) {
-    if (ref.kind == ParamRef::Kind::Motion) {
-        // Motion knobs live in a clip, not in a chain.
-        ClipId clip;
-        const MotionGroup* group = findMotion(song, MotionId(ref.owner), &clip);
-        const devices::ParamInfo* info = devices::motionParamInfo(ref.param);
-        if (!group || !info)
-            return nullptr;
-        return motionEdit(song, clip, "Set " + group->name + " " + info->name, [&](ReplaceClipMotions::Parts& p) {
-            for (MotionGroup& m : p.motions)
-                if (m.id.value == ref.owner)
-                    m.params[ref.param] = std::clamp(value, 0.f, 1.f);
-            return true;
-        });
-    }
     std::string label = "Set ";
     if (ref.kind == ParamRef::Kind::Device) {
         if (const Device* d = findDevice(song, DeviceId(ref.owner)))

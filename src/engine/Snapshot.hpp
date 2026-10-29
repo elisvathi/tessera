@@ -181,15 +181,11 @@ struct TrackPlayback {
 
 // ---- Devices and modulators (docs/DEVICES.md §5) ------------------------------------------------------------
 
-/// Room for motion group knobs: many clips can have groups, so this is a generous budget, not a hard bound; a
-/// snapshot never holds more knobs than kMaxKnobs (the builder stops adding motion groups there).
-constexpr int kMaxMotionKnobs = 16384;
-
 /// Upper bounds the engine sizes its tables by, so it never allocates.
 constexpr int kMaxModulatorSlots =
     kMaxSongModulators + kMaxTracks * (kMaxTrackModulators + kMaxDevices * kMaxDeviceModulators);
 constexpr int kMaxKnobs = (kMaxTracks * kMaxDevices + kMaxModulatorSlots) * kMaxDeviceParams +
-                          kMaxTracks * playheads::kMaxPlayheads * playheads::kMaxPlayheadParams + kMaxMotionKnobs;
+                          kMaxTracks * playheads::kMaxPlayheads * playheads::kMaxPlayheadParams;
 
 /// A device as the engine runs it. Its knob values start at `knobs` in the knob table.
 struct DevicePlayback {
@@ -235,12 +231,6 @@ struct ChainPlayback {
     /// The track's Playheads device, when it has one that is on: its playheads and where its own knobs are.
     std::vector<PlayheadPlayback> playheads;
     int playheadKnobs = -1;
-    /// The motion groups of the clips the track plays, and where their knobs are in the knob table.
-    struct MotionKnobs {
-        uint64_t id = 0;
-        int knobs = 0;
-    };
-    std::vector<MotionKnobs> motions;
     /// Changes when devices are added, removed, reordered, switched on or off: their notes in flight are dropped.
     uint64_t structure = 0;
     bool active = false; // some device is on
@@ -268,7 +258,7 @@ struct KnobModulation {
     int knob = 0;
     std::array<ModSource, kMaxModulationsPerKnob> sources{};
     int count = 0;
-    bool motion = false; // a motion group's knob: "Per pass" modulators add to it per note, not as they run
+    bool motion = false; // a Motion device's knob: "Per pass" modulators add to it per note, not as they run
 };
 
 /// Whose knobs a range of the knob table holds, for finding a knob by reference.

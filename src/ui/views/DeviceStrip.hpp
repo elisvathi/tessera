@@ -60,7 +60,9 @@ class DeviceStrip : public InteractiveView {
             PlayheadRepeat,    // its repeat (size and times), one dropdown
             PlayheadChannel,   // its channel
             PlayheadMore,      // its rarer settings
-            CurveLabel         // a playhead knob's label: shows its curve in the lower pane
+            CurveLabel,        // a playhead knob's label: shows its curve in the lower pane
+            MotionNotes,       // a Motion card's "6 notes": selects them in the piano roll
+            MotionJoin         // a Motion card's "+ Selected": the selected notes join it
         };
         Kind kind;
         rack::math::Rect rect;
@@ -100,6 +102,12 @@ class DeviceStrip : public InteractiveView {
     const Part* partAt(rack::math::Vec pos) const;
     ParamRef knobRef(const Part& p) const { return {p.refKind, p.id, uint16_t(p.param)}; }
     /// The playhead whose settings a Playheads card shows: the one last clicked, else its first.
+    /// How many notes, in every clip, move with the Motion device `id`.
+    int motionNoteCount(DeviceId id);
+    std::map<uint64_t, int> motionCounts;
+    uint64_t motionCountRevision = ~uint64_t(0);
+    /// The shown playhead of the track's Playheads device (wherever it sits): whose own devices the strip shows.
+    const Playhead* branchPlayhead();
     const Playhead* shownPlayhead(const Device& d) const;
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     /// A dropdown in a knob's place (a playhead's direction, repeat, channel), with its label under it.

@@ -46,6 +46,15 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
 /// knob, either rising then falling back (`bounce`) or rising then starting again. One undo step.
 void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce);
 void openModulatorMenu(EditorContext& ctx, ModulatorId id);
+/// A new Motion device on the selected track (before its Playheads) with `notes` of `clip` joining it, as one undo
+/// step; the strip opens on it.
+void newMotion(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes);
+/// Which Motion device `notes` of `clip` move with: the track's Motion devices (`current` ticked), a new one, or
+/// none (the inspector's MOTION line, a note's right-click menu).
+void openMotionMenu(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes, DeviceId current);
+/// The same choices, added to `menu` (a note's Motion › submenu).
+void appendMotionItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes,
+                       DeviceId current);
 /// A playhead's menu: rename, channel, mute, solo, duplicate, delete.
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
 /// The merged Direction dropdown (direction, or a step order with its step size), the Repeat dropdown (piece size and

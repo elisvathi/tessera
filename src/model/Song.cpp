@@ -240,16 +240,6 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
         clampValue<uint8_t>(n.ops.recurrenceLength, 1, 16);
         clampValue(n.ops.timingSpread, 0.f, 0.5f);
     }
-    if (clip.motions.size() > size_t(kMaxMotionGroups))
-        clip.motions.resize(kMaxMotionGroups);
-    for (MotionGroup& m : clip.motions) {
-        ids.fix(m.id);
-        normalizeParams(m.params, devices::motionInfo().params);
-        m.color %= 16;
-    }
-    for (Note& n : clip.notes)
-        if (n.motion.valid() && !clip.findMotion(n.motion))
-            n.motion = MotionId();
     clip.sortNotes();
     normalizeAutomation(clip.automation, ids);
     if (clip.scaleOverride)
@@ -297,14 +287,20 @@ void normalizeModulators(std::vector<Modulator>& mods, size_t limit, IdRepair& i
 }
 
 /// A Playheads device reads the clip, so it comes first and there is at most one (docs/design/PLAYHEADS.md §4.6).
+/// Only Motion devices may come before it: they move the notes it reads.
 void placePlayheads(Track& track) {
     auto isPlayheads = [](const Device& d) { return d.type == DeviceType::Playheads; };
     auto first = std::find_if(track.devices.begin(), track.devices.end(), isPlayheads);
     if (first == track.devices.end())
         return;
+    size_t was = size_t(first - track.devices.begin());
     Device keep = *first;
     track.devices.erase(std::remove_if(track.devices.begin(), track.devices.end(), isPlayheads), track.devices.end());
-    track.devices.insert(track.devices.begin(), keep);
+    // Where it was, unless a device other than Motion came before it.
+    size_t at = 0;
+    while (at < was && track.devices[at].type == DeviceType::Motion)
+        at++;
+    track.devices.insert(track.devices.begin() + long(at), keep);
 }
 
 /// `room`: how many more devices the track may hold; branch devices count toward it.
@@ -353,6 +349,7 @@ void normalizeDevices(Track& track, IdRepair& ids) {
         normalizeParams(d.params, devices::deviceInfo(d.type).params);
         normalizeModulators(d.modulators, kMaxDeviceModulators, ids);
         normalizePlayheads(d, ids, room);
+        d.color = d.type == DeviceType::Motion ? uint8_t(d.color % 16) : 0;
     }
     normalizeModulators(track.modulators, kMaxTrackModulators, ids);
 }
@@ -489,6 +486,21 @@ void normalize(Song& song) {
             g.tracks.end());
     }
     normalizeModulators(song.modulators, kMaxSongModulators, ids);
+    // A note moves with a Motion device that exists; one whose device is gone stays still.
+    std::set<uint64_t> motions;
+    for (const Track& t : song.tracks)
+        for (const Device& d : t.devices) {
+            if (d.type == DeviceType::Motion)
+                motions.insert(d.id.value);
+            for (const Playhead& p : d.playheads)
+                for (const Device& b : p.branch)
+                    if (b.type == DeviceType::Motion)
+                        motions.insert(b.id.value);
+        }
+    for (auto& [key, clip] : song.clips)
+        for (Note& n : clip.notes)
+            if (n.motion.valid() && !motions.count(n.motion.value))
+                n.motion = DeviceId();
     pruneRoutes(song);
     limitModulationsPerKnob(song);
     for (Marker& m : song.markers) {

@@ -76,16 +76,6 @@ const Playhead* findPlayhead(const Song& song, PlayheadId id, TrackId* track, De
     return findPlayheadIn<const Song, const Playhead>(song, id, track, device);
 }
 
-const MotionGroup* findMotion(const Song& song, MotionId id, ClipId* clip) {
-    for (const auto& [clipId, c] : song.clips)
-        if (const MotionGroup* m = c.findMotion(id)) {
-            if (clip)
-                *clip = clipId;
-            return m;
-        }
-    return nullptr;
-}
-
 std::vector<Device>* chainOf(Song& song, DeviceId id, PlayheadId* playhead) {
     for (Track& t : song.tracks)
         for (Device& d : t.devices) {
@@ -143,9 +133,6 @@ const float* findParam(const Song& song, const ParamRef& ref) {
     } else if (ref.kind == ParamRef::Kind::Playhead) {
         if (const Playhead* p = findPlayhead(song, PlayheadId(ref.owner)))
             params = &p->params;
-    } else if (ref.kind == ParamRef::Kind::Motion) {
-        if (const MotionGroup* m = findMotion(song, MotionId(ref.owner)))
-            params = &m->params;
     } else if (const Modulator* m = findModulator(song, ModulatorId(ref.owner))) {
         params = &m->params;
     }
@@ -163,21 +150,6 @@ TrackId trackOf(const Song& song, const ParamRef& ref) {
     if (ref.kind == ParamRef::Kind::Playhead) {
         findPlayhead(song, PlayheadId(ref.owner), &track);
         return track;
-    }
-    if (ref.kind == ParamRef::Kind::Motion) {
-        ClipId clip;
-        if (!findMotion(song, MotionId(ref.owner), &clip))
-            return TrackId();
-        // The track that plays the clip: from its slots, else its timeline.
-        for (const Track& t : song.tracks) {
-            for (const ClipSlot& s : t.slots)
-                if (s.clip == clip)
-                    return t.id;
-            for (const ArrangerClip& a : t.arrangement)
-                if (a.clip == clip)
-                    return t.id;
-        }
-        return TrackId();
     }
     ModulatorPlace place;
     if (findModulator(song, ModulatorId(ref.owner), &place))
@@ -209,8 +181,6 @@ bool reachable(const Song& song, const ModulatorPlace& place, ModulatorId self, 
     case ModLevel::Device: {
         if (m.target.kind == ParamRef::Kind::Device)
             return m.target.owner == place.device.value;
-        if (m.target.kind == ParamRef::Kind::Motion)
-            return false; // a device's modulators stay with the device
         if (m.target.kind == ParamRef::Kind::Playhead) {
             DeviceId device;
             findPlayhead(song, PlayheadId(m.target.owner), nullptr, &device);

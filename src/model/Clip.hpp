@@ -34,21 +34,6 @@ constexpr Tick launchQuantizeTicks(LaunchQuantize q, TimeSig ts) {
     }
 }
 
-/// Notes of a clip that move together while it plays (docs/design/PLAYHEADS.md §6): four knobs (pitch, time,
-/// length, velocity), turned by modulators and lanes like device knobs, never changing the written notes.
-struct MotionGroup {
-    MotionId id;
-    std::string name;
-    uint8_t color = 0;
-    std::vector<float> params; // normalized, the motion parameter list (DeviceTypes.hpp motionInfo)
-
-    bool operator==(const MotionGroup& o) const {
-        return id == o.id && name == o.name && color == o.color && params == o.params;
-    }
-};
-
-constexpr int kMaxMotionGroups = 8; // per clip
-
 struct Clip {
     ClipId id;
     std::string name;
@@ -62,14 +47,6 @@ struct Clip {
     std::vector<AutomationEnvelope> automation; // clip time, loops with the clip
     std::optional<ScaleRef> scaleOverride;
     std::optional<LaunchQuantize> launchQuantize; // overrides the song's setting for this clip
-    std::vector<MotionGroup> motions;             // up to kMaxMotionGroups
-
-    const MotionGroup* findMotion(MotionId motionId) const {
-        for (const MotionGroup& m : motions)
-            if (m.id == motionId)
-                return &m;
-        return nullptr;
-    }
 
     const Note* findNote(NoteId noteId) const;
     /// The most unmuted notes that sound at the same moment while the clip plays.
@@ -89,7 +66,7 @@ struct Clip {
         return id == o.id && name == o.name && color == o.color && ownColor == o.ownColor && length == o.length &&
                loopStart == o.loopStart &&
                loopEnd == o.loopEnd && loopMode == o.loopMode && notes == o.notes && automation == o.automation &&
-               scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize && motions == o.motions;
+               scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize;
     }
 };
 
