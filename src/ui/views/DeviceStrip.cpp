@@ -266,38 +266,67 @@ void DeviceStrip::layoutParts() {
         const Device& d = t->devices[i];
         if (d.type == DeviceType::Playheads) {
             x = layoutPlayheads(d, int(i), x, y0);
+            if (const Playhead* p = shownPlayhead(d)) {
+                // The shown playhead's branch, on a band in its colour: devices only its notes go through.
+                size_t band = parts.size();
+                float left = x;
+                parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), kBranchBase});
+                x += kConnector;
+                for (size_t k = 0; k < p->branch.size(); k++) {
+                    x = layoutCard(p->branch[k], kBranchBase + int(k), x, y0);
+                    parts.push_back(
+                        {Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), kBranchBase + int(k) + 1});
+                    x += kConnector;
+                }
+                parts.insert(parts.begin() + long(band),
+                             {Kind::BranchBand, Rect(left, kPad - 4, x - left, h - 2 * kPad + 8), -1, -1, p->id.value});
+            }
             parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), int(i) + 1});
             x += kConnector;
             continue;
         }
-        int n = 0;
-        for (int k = 0; k < int(devices::deviceInfo(d.type).params.size()); k++)
-            n += int(paramVisible(d, k));
-        Rect card(x, kPad, 2 * kCardPad + n * kCell, h - 2 * kPad);
-        int index = int(i);
-        parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
-        Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
-        parts.push_back({Kind::Menu, menu, index, -1, d.id.value});
-        for (size_t k = 0; k < d.modulators.size(); k++)
-            parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, kPad + 7, 10, 10), index, int(k),
-                             d.modulators[k].id.value});
-        parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
-        for (int k = 0, cell = 0; k < int(devices::deviceInfo(d.type).params.size()); k++) {
-            if (!paramVisible(d, k))
-                continue;
-            float cx = card.pos.x + kCardPad + float(cell) * kCell;
-            parts.push_back({Kind::KnobValue, Rect(cx, y0 + 52, kCell, 13), index, k, d.id.value});
-            parts.push_back({Kind::Knob, Rect(cx, y0 - 2, kCell, 54), index, k, d.id.value});
-            cell++;
-        }
-        parts.push_back({Kind::Card, card, index, -1, d.id.value});
-        x = card.getRight();
-        parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), index + 1});
+        x = layoutCard(d, int(i), x, y0);
+        parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), int(i) + 1});
         x += kConnector;
     }
     parts.push_back({Kind::AddTile, Rect(x, kPad, kAddTile, h - 2 * kPad)});
     x += kAddTile + kOutWidth;
     contentWidth = x + scrollX - chainLeft;
+}
+
+float DeviceStrip::layoutCard(const Device& d, int index, float x, float knobTop) {
+    float h = box.size.y;
+    int n = 0;
+    for (int k = 0; k < int(devices::deviceInfo(d.type).params.size()); k++)
+        n += int(paramVisible(d, k));
+    Rect card(x, kPad, 2 * kCardPad + n * kCell, h - 2 * kPad);
+    parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
+    Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
+    parts.push_back({Kind::Menu, menu, index, -1, d.id.value});
+    for (size_t k = 0; k < d.modulators.size(); k++)
+        parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, kPad + 7, 10, 10), index, int(k),
+                         d.modulators[k].id.value});
+    parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
+    for (int k = 0, cell = 0; k < int(devices::deviceInfo(d.type).params.size()); k++) {
+        if (!paramVisible(d, k))
+            continue;
+        float cx = card.pos.x + kCardPad + float(cell++) * kCell;
+        parts.push_back({Kind::KnobValue, Rect(cx, knobTop + 52, kCell, 13), index, k, d.id.value});
+        parts.push_back({Kind::Knob, Rect(cx, knobTop - 2, kCell, 54), index, k, d.id.value});
+    }
+    parts.push_back({Kind::Card, card, index, -1, d.id.value});
+    return card.getRight();
+}
+
+const Device* DeviceStrip::cardDevice(int index) {
+    const Track* t = track();
+    if (!t)
+        return nullptr;
+    if (index < kBranchBase)
+        return index >= 0 && index < int(t->devices.size()) ? &t->devices[size_t(index)] : nullptr;
+    const Playhead* p = !t->devices.empty() ? shownPlayhead(t->devices.front()) : nullptr;
+    int k = index - kBranchBase;
+    return p && k < int(p->branch.size()) ? &p->branch[size_t(k)] : nullptr;
 }
 
 const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
@@ -353,6 +382,8 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
 
 const DeviceStrip::Part* DeviceStrip::partAt(Vec pos) const {
     for (const Part& p : parts) {
+        if (p.kind == Kind::BranchBand)
+            continue; // only drawn: the cards on it take the clicks
         bool inChain = p.kind != Kind::AddModulator && p.kind != Kind::ModulatorRow && p.kind != Kind::ModulatorMap &&
                        p.kind != Kind::ClosedBar;
         if (inChain && pos.x < chainLeft)
@@ -487,9 +518,11 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
                                              onClick);
     }
     case Kind::CardHeader: {
+        if (p.device >= kBranchBase)
+            return nullptr; // branch devices stay in their branch: a click selects them
         std::vector<float> centers;
         for (const Part& q : parts)
-            if (q.kind == Kind::Card)
+            if (q.kind == Kind::Card && q.device < kBranchBase)
                 centers.push_back(q.rect.getCenter().x);
         DeviceId device(p.id);
         return std::make_unique<ClickOrDrag>(std::make_unique<CardDrag>(*this, ctx, device, centers), pos,
@@ -575,7 +608,17 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         break;
     }
     case Kind::Insert:
-        deviceActions::openDeviceBrowser(ctx, t->id, hit->device);
+        if (hit->device >= kBranchBase) {
+            const Playhead* p = !t->devices.empty() ? shownPlayhead(t->devices.front()) : nullptr;
+            if (p)
+                deviceActions::openBranchBrowser(ctx, p->id, hit->device - kBranchBase);
+        } else {
+            deviceActions::openDeviceBrowser(ctx, t->id, hit->device);
+        }
+        break;
+    case Kind::CardHeader:
+        ctx.selectedDevice = hit->id;
+        ctx.mappingModulator = 0;
         break;
     case Kind::AddTile:
         deviceActions::openDeviceBrowser(ctx, t->id, -1);
@@ -672,6 +715,19 @@ void DeviceStrip::drawView(const DrawArgs& args) {
         const Part& p = parts[i];
         bool hot = int(i) == hovered;
         switch (p.kind) {
+        case Kind::BranchBand: {
+            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
+            NVGcolor color = theme::playheadColor(ph ? ph->color : 0);
+            draw::roundedRect(vg, p.rect, 8, nvgTransRGBAf(color, 0.08f));
+            draw::roundedRectStroke(vg, p.rect, 8, nvgTransRGBAf(color, 0.45f), 1);
+            draw::TextStyle only{theme::fonts::ui(), 9.5f, color, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
+            if (ph && ph->branch.empty())
+                draw::text(vg, only, p.rect.pos.x + 4, p.rect.pos.y + 3, "only");
+            else if (ph)
+                draw::text(vg, only, p.rect.pos.x + 4, p.rect.getBottom() - 13,
+                           draw::ellipsize(vg, only, "only " + ph->name, p.rect.size.x - 8));
+            break;
+        }
         case Kind::Insert: {
             Vec mid = p.rect.getCenter();
             bool first = p.device == 0 && p.rect.size.x == kInWidth;
@@ -728,7 +784,8 @@ void DeviceStrip::drawView(const DrawArgs& args) {
             break;
         }
         case Kind::Card:
-            drawCard(vg, t->devices[size_t(p.device)], p.device);
+            if (const Device* d = cardDevice(p.device))
+                drawCard(vg, *d, p.device);
             break;
         default:
             break;

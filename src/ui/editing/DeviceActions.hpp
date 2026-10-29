@@ -36,6 +36,8 @@ NVGcolor laneColor(const Song& song, const FoundLane& lane);
 void openDeviceBrowser(EditorContext& ctx, TrackId track, int index);
 /// The searchable list of modulators, with chips for where the new one lives (song, this track, a device).
 /// `device` lights that device's chip first.
+/// The device list, adding the picked device to a playhead's branch at `index` (-1 = the end).
+void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index);
 void openModulatorBrowser(EditorContext& ctx, TrackId track, DeviceId device = DeviceId());
 
 void openDeviceMenu(EditorContext& ctx, DeviceId device);

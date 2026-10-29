@@ -160,6 +160,28 @@ void openDeviceBrowser(EditorContext& ctx, TrackId trackId, int index) {
     openSearchList(itemsOf<DeviceType>(kDeviceTypeCount, pick), options);
 }
 
+void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index) {
+    TesseraModule* m = moduleOf(ctx);
+    const Playhead* p = m ? findPlayhead(m->song(), playhead) : nullptr;
+    if (!p)
+        return;
+    EditorContext* c = &ctx;
+    std::function<void(DeviceType, int)> pick = [c, playhead, index](DeviceType type, int) {
+        if (TesseraModule* mod = c->module())
+            mod->perform(addBranchDevice(mod->song(), playhead, type, index, mod->ids()));
+    };
+    std::vector<SearchItem> items = itemsOf<DeviceType>(kDeviceTypeCount, pick);
+    items.erase(std::remove_if(items.begin(), items.end(),
+                               [](const SearchItem& i) { return i.group == std::string("Source"); }),
+                items.end());
+    SearchListOptions options;
+    options.placeholder = "Search devices: arp, delay, key…";
+    options.footer = "only " + p->name + " plays through it";
+    if (int(p->branch.size()) >= kMaxBranchDevices)
+        options.footer = p->name + "'s branch is full (" + std::to_string(kMaxBranchDevices) + " devices)";
+    openSearchList(items, options);
+}
+
 void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) {
     TesseraModule* m = moduleOf(ctx);
     const Track* t = m ? m->song().findTrack(trackId) : nullptr;

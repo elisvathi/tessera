@@ -1454,5 +1454,9 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
 - **Timeline and export** (added the same day): each timeline clip restarts the playheads from where it begins the
   clip, slower when stretched. MIDI export with devices applied reads the clips with the same code, from the knobs'
   saved values (no modulation or knob lanes on playhead settings in the file yet).
-- **Not yet:** drum lanes with their own length, note operators and curves, branches,
+- **Branches** (added the same day): branch devices run as the first stages of the track's chain, each marked with
+  its playhead's place (a "lane"); a note carries the lane of the playhead that read it and skips other lanes'
+  stages. So one chain and one message queue per track still serve every branch. The strip shows only the selected
+  playhead's branch, on a band in its colour; branch cards can't be dragged and have no modulators of their own yet.
+- **Not yet:** drum lanes with their own length, note operators and curves,
   the time map, drawn paths, note motion, a Drum Out picker, and changing Rate smoothly while it plays.
