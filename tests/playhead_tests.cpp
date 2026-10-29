@@ -297,6 +297,30 @@ TEST_CASE("playheads are added, duplicated, changed and removed with undo") {
     CHECK(firstDevice(song).playheads.size() == 3);
 }
 
+TEST_CASE("Auto voices make room for every echo and for a fast playhead's overlapping notes") {
+    Song song = songWithTrack();
+    TrackId track = song.tracks[0].id;
+    // One note at a time in the clip (a fresh track's clips are empty: one voice).
+    REQUIRE(song.voicesOf(song.tracks[0]) == 1);
+
+    DeviceId echo;
+    applyUndoable(song, addDevice(song, track, DeviceType::Echo, -1, idsOf(song), &echo));
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Device, echo.value, uint16_t(chain::knob::kRepeats)},
+                                 devices::normalize(devices::deviceInfo(DeviceType::Echo).params[chain::knob::kRepeats], 2)));
+    CHECK(song.voicesOf(song.tracks[0]) == 3); // the note and its two repeats can all sound together
+    applyUndoable(song, removeDevice(song, echo));
+
+    applyUndoable(song, addDevice(song, track, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId head = firstDevice(song).playheads[0].id;
+    const auto& rate = devices::playheadInfo().params[playheads::knob::kRate];
+    int twice = int(std::find(rate.choices.begin(), rate.choices.end(), "2x") - rate.choices.begin());
+    REQUIRE(twice < int(rate.choices.size()));
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRate)},
+                                 devices::normalize(rate, float(twice))));
+    CHECK(song.voicesOf(song.tracks[0]) == 2); // twice as fast, notes as long as written: two overlap
+}
+
 TEST_CASE("playheads survive saving and loading, and a broken file is repaired") {
     Song song = songWithTrack();
     applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));

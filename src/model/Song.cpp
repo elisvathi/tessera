@@ -92,15 +92,29 @@ int voicesThrough(const std::vector<Device>& chain, int voices) {
             else
                 voices = shown(chain::knob::kGate) > 100 ? 2 : 1;
             break;
-        case DeviceType::Echo:
+        case DeviceType::Echo: // the note and each of its repeats can sound together
+            voices *= 1 + std::max(0, int(std::lround(shown(chain::knob::kRepeats))));
+            break;
         case DeviceType::NoteLength:
             voices *= 2;
             break;
         case DeviceType::Playheads: {
+            // A playhead faster than 1x reaches the next note sooner, but plays notes as long as written (or fixed):
+            // they overlap that many times more.
+            const devices::ParamInfo& rate = devices::playheadInfo().params[playheads::knob::kRate];
+            const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
             int total = 0;
-            for (const Playhead& p : d.playheads)
-                if (!p.mute)
-                    total += voicesThrough(p.branch, voices);
+            for (const Playhead& p : d.playheads) {
+                if (p.mute)
+                    continue;
+                double speed =
+                    playheads::playheadRate(int(std::lround(devices::display(rate, p.params[playheads::knob::kRate]))));
+                bool follows =
+                    playheads::LengthMode(std::lround(devices::display(length, p.params[playheads::knob::kLength]))) ==
+                    playheads::LengthMode::FollowsPlayhead;
+                int overlap = follows ? 1 : std::max(1, int(std::ceil(speed - 1e-6)));
+                total += voicesThrough(p.branch, voices * overlap);
+            }
             voices = std::max(1, total);
             break;
         }
@@ -321,7 +335,8 @@ void normalizePlayheads(Device& d, IdRepair& ids, int& room) {
             clampValue(pt.tension, -1.f, 1.f);
             pt.t = std::max<Tick>(0, pt.t);
         }
-        std::stable_sort(p.path.begin(), p.path.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+        std::stable_sort(p.path.begin(), p.path.end(),
+                         [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
         p.branch.erase(std::remove_if(p.branch.begin(), p.branch.end(),
                                       [](const Device& b) { return b.type == DeviceType::Playheads; }),
                        p.branch.end());
