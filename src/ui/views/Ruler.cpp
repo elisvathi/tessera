@@ -65,6 +65,30 @@ class InstanceEndGesture : public DragGesture {
     double end;
 };
 
+/// Dragging a playhead's start mark: snapped to the grid, one undo step on release.
+class PlayheadMarkGesture : public DragGesture {
+  public:
+    PlayheadMarkGesture(Ruler& ruler, uint64_t id) : ruler(ruler), id(id) {}
+    void update(rack::math::Vec pos, Modifiers mods) override {
+        Tick step = std::min<Tick>(ruler.snapStep(), kPpq / 4);
+        tick = std::max(0.0, snapped(ruler.viewport.time.xToTick(pos.x), step, mods.alt));
+        ruler.markPreview = std::make_pair(id, tick);
+    }
+    void commit() override {
+        ruler.markPreview.reset();
+        if (tick >= 0)
+            ruler.source.setPlayheadStart(id, tick);
+    }
+    void cancel() override { ruler.markPreview.reset(); }
+    std::string readout() const override { return "Playhead start"; }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
+
+  private:
+    Ruler& ruler;
+    uint64_t id;
+    double tick = -1;
+};
+
 class LoopGesture : public DragGesture {
   public:
     enum class Mode { Create, Move, ResizeStart, ResizeEnd };
@@ -309,6 +333,8 @@ std::unique_ptr<DragGesture> Ruler::startGesture(rack::math::Vec pos, int button
         return nullptr;
     }
     case Zone::Loop: {
+        if (std::optional<TimelineSource::PlayheadMark> mark = playheadMarkAt(pos.x))
+            return std::make_unique<PlayheadMarkGesture>(*this, mark->id);
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return std::make_unique<InstanceEndGesture>(*this);
         if (source.loopLocked())
@@ -457,6 +483,8 @@ CursorShape Ruler::hoverCursor(rack::math::Vec pos, Modifiers mods) {
     case Zone::Markers:
         return markerAt(source.markers(), pos.x) >= 0 ? CursorShape::Hand : CursorShape::Arrow;
     case Zone::Loop: {
+        if (playheadMarkAt(pos.x))
+            return CursorShape::ResizeH;
         if (std::isfinite(source.instanceEnd()) && instanceTag().grow(rack::math::Vec(edge / 2, 0)).contains(pos))
             return CursorShape::ResizeH;
         if (source.loopLocked())
@@ -512,6 +540,7 @@ void Ruler::drawView(const DrawArgs& args) {
     if (source.hasMarkers())
         drawMarkers(vg);
     drawLoop(vg);
+    drawPlayheadMarks(vg);
     drawTimeLabels(vg);
     drawOverview(vg);
 
@@ -565,6 +594,28 @@ void Ruler::drawMarkers(NVGcontext* vg) {
         float width = kMarkerFlagWidth + draw::textWidth(vg, text, m.name) + 6;
         draw::roundedRect(vg, rack::math::Rect(x, 1, width, h - 2), 2, color);
         draw::text(vg, text, x + kMarkerFlagWidth - 2, h / 2, m.name);
+    }
+}
+
+std::optional<TimelineSource::PlayheadMark> Ruler::playheadMarkAt(float x) {
+    for (const TimelineSource::PlayheadMark& m : source.playheadMarks())
+        if (std::fabs(float(viewport.time.tickToX(m.tick)) - x) <= 6)
+            return m;
+    return std::nullopt;
+}
+
+void Ruler::drawPlayheadMarks(NVGcontext* vg) {
+    float top = markersBottom();
+    for (const TimelineSource::PlayheadMark& m : source.playheadMarks()) {
+        double tick = markPreview && markPreview->first == m.id ? markPreview->second : m.tick;
+        float x = float(viewport.time.tickToX(tick));
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x - 5, top + 1);
+        nvgLineTo(vg, x + 5, top + 1);
+        nvgLineTo(vg, x, top + 8);
+        nvgClosePath(vg);
+        nvgFillColor(vg, theme::playheadColor(m.color));
+        nvgFill(vg);
     }
 }
 

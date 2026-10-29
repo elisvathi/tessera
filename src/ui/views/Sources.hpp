@@ -71,6 +71,9 @@ class ClipSource : public TimelineSource {
     /// The timeline clip the piano roll was opened from: the one selected in the arranger, when it plays this clip.
     const ArrangerClip* instance();
 
+    std::vector<PlayheadMark> playheadMarks() override;
+    void setPlayheadStart(uint64_t id, double tick) override;
+
   private:
     const Clip* current();
     /// The track's drum lanes, which can make the clip loop their whole cycle; nullptr on other tracks.

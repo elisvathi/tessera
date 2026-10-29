@@ -2,6 +2,9 @@
 
 #include "../../model/Arrangement.hpp"
 #include "../../model/ArrangementEdits.hpp"
+#include "../../model/DeviceCommands.hpp"
+#include "../../model/DeviceTypes.hpp"
+#include "../../model/Playheads.hpp"
 
 #include "../../module/TesseraModule.hpp"
 
@@ -305,6 +308,58 @@ void ClipSource::setInstanceEnd(double end) {
         if (p.clip.id == a->id)
             p.clip.length = length;
     m->perform(arrange::replaceArrangement(m->song(), "Timeline clip length", before, after));
+}
+
+namespace {
+
+/// Where a playhead's region starts in the clip and how long it is, from its knobs, as the engine reads them.
+std::pair<double, double> regionOf(const Playhead& p, const ClipSpan& span) {
+    double step = double(kPpq) / 4;
+    const devices::TypeInfo& info = devices::playheadInfo();
+    double start = std::clamp(double(devices::display(info.params[playheads::knob::kRegionStart],
+                                                       p.params[playheads::knob::kRegionStart])) * step,
+                              0.0, std::max(0.0, double(span.length()) - 1));
+    double length = double(devices::display(info.params[playheads::knob::kRegionLength],
+                                            p.params[playheads::knob::kRegionLength])) * step;
+    if (length <= 0 || start + length > double(span.length()))
+        length = double(span.length()) - start;
+    return {double(span.start) + start, length};
+}
+
+} // namespace
+
+std::vector<TimelineSource::PlayheadMark> ClipSource::playheadMarks() {
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(track) : nullptr;
+    const Clip* c = current();
+    const Device* device = t && c ? activePlayheads(*t) : nullptr;
+    if (!device)
+        return {};
+    ClipSpan span = clipSpan(*c, lanes());
+    std::vector<PlayheadMark> marks;
+    const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
+    for (const Playhead& p : device->playheads) {
+        auto [regionStart, regionLength] = regionOf(p, span);
+        if (regionLength <= 0)
+            continue;
+        double offset = double(devices::display(start, p.params[playheads::knob::kStart])) * double(kPpq) / 4;
+        marks.push_back({p.id.value, regionStart + std::fmod(offset, regionLength), p.color});
+    }
+    return marks;
+}
+
+void ClipSource::setPlayheadStart(uint64_t id, double tick) {
+    TesseraModule* m = ctx.module();
+    const Playhead* p = m ? findPlayhead(m->song(), PlayheadId(id)) : nullptr;
+    const Clip* c = current();
+    if (!p || !c)
+        return;
+    auto [regionStart, regionLength] = regionOf(*p, clipSpan(*c, lanes()));
+    double step = double(kPpq) / 4;
+    int steps = int(std::lround(std::fmod(std::max(0.0, tick - regionStart), std::max(step, regionLength)) / step));
+    const devices::ParamInfo& start = devices::playheadInfo().params[playheads::knob::kStart];
+    m->perform(setParam(m->song(), {ParamRef::Kind::Playhead, id, uint16_t(playheads::knob::kStart)},
+                        devices::normalize(start, float(steps))));
 }
 
 } // namespace tessera

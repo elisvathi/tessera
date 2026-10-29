@@ -1469,4 +1469,6 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
 - **Drum Out picker** (added the same day): each drum lane output remembers the channel of its last hit
   (`TrackFrame::part`); a Drum Out on one channel sends only those hits and holds the lane's velocity otherwise.
   An output shows "nothing" for a channel only when its track has playheads and none plays there.
+- **Start marks on the ruler** (added the same day): each playhead's start is a triangle in its colour on the piano
+  roll's loop strip, dragged to set its Start knob in one undo step. Region edges aren't dragged there yet.
 - **Not yet:** the time map, drawn paths and note motion.
