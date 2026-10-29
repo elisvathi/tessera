@@ -79,53 +79,56 @@ push the knob, and a white dot shows where the knob is right now.
 ## Playheads
 
 The **Playheads** device reads the playing clip with several playheads at once. Each one moves through the notes in
-its own way: slower, faster, backwards, bouncing, or repeating a short piece a few times. One melody becomes a canon,
-or a texture that keeps shifting.
+its own way: slower, faster, backwards, in another order, an octave down, only the lowest notes… One melody becomes a
+canon, a bass and a melody, or a texture that keeps shifting.
 
 It is the first entry in the device browser, and it always sits first in the chain. A track holds one. While it is on,
-it replaces the clip's own playhead; turn it off with its power button and the clip plays as usual.
+it replaces the clip's own playhead; turn it off with its power button and the clip plays as usual. The playheads
+belong to the track: launch another clip and the same playheads read it.
 
 It starts with two playheads: **Playhead 1** plays the clip as before, **Playhead 2** starts a beat later, so you hear a
-canon at once. Each playhead shows as a line in its colour over the notes; the clip's own playhead stays as a faint
-grey line. Each playhead's start is a small triangle in its colour on the ruler's loop strip: drag it to move where
-that playhead starts, in 1/16 steps.
+canon at once. Each playhead shows as a line in its colour over the notes (the one the card shows is bolder); the
+clip's own playhead stays as a faint grey line.
 
-- **The chips** at the top of the card are the playheads. Click one to show its settings. **+** adds a playhead (up to
-  16), each starting a beat after the last.
-- **Right-click a chip** to rename it, pick its **Channel**, mute or solo it, duplicate or delete it.
-- The number at the right of a chip is its channel.
-
-A playhead's settings:
+**The card.** The chips beside its name are the playheads: click one to show it (the card takes its colour), **+** adds
+one (up to 16). Right-click a chip to rename it, mute or solo it, duplicate or delete it. Under the chips, one row of
+settings for the shown playhead. A setting still at its default draws faint, so the ones you changed stand out:
 
 | Setting | What it does |
 |---|---|
 | **Rate** | Speed against the song, from 1/16x to 16x. |
-| **Direction** | Forward, Reverse, Ping-pong (turns at the ends), or Freeze (stands still and plays nothing). |
-| **Start** | Where it starts, in 1/16 steps from the start of its region. |
-| **Region start**, **Region length** | The part of the clip it loops over, in 1/16 steps. A length of 0 means the whole clip. |
-| **Repeat**, **Repeat times** | Plays each piece of this length a number of times, then moves on one piece. 1/4 and 2 times plays beat 1, 1, 2, 2, 3, 3… |
-| **Bend**, **Bend amount**, **Bend cycle** | Speeds up and slows down inside each cycle, without moving the cycle's ends: Ease in, Ease out, Ease in-out, Swing, Stairs. The cycle is counted in the playhead's own time: at 2x a 1/4 cycle passes in an eighth. |
-| **Offset** | Moves the playhead forward or back, in 1/16 steps. Good to automate. |
-| **Length**, **Fixed length** | How long its notes last: As written, Follows playhead (half speed, twice as long), or a Fixed length. |
-| **Path**, **Path cycle** | From settings (all of the above), or **Drawn**: the playhead follows a path you draw in the time map, repeating every cycle. Rate still applies; the other movement settings don't. |
+| **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size. |
+| **Repeat** | Plays each piece a number of times, then moves on one piece: 1/4 ×2 plays beat 1, 1, 2, 2, 3, 3… |
+| **Octave**, **Steps** | Moves its notes by octaves, and by steps in the clip's key. |
+| **Notes** | All, or only the **Lowest** or **Highest** of the notes that start together. A bass and a melody out of one piano roll: one playhead on Lowest two octaves down, one on Highest. |
+| **Velocity** | Plays its notes softer or harder. |
+| **Channel** | The channel its notes go out on (see below). |
+| **More** | Rarer settings: Invert (mirrors its notes inside the clip's range, in the key), note Length (as written, follows the playhead, fixed), Path (from the settings, or drawn in the time map), and rename, mute, solo, duplicate, delete. |
 
-The device's own knobs, after a small gap:
+The card's **⋯** menu holds the settings every playhead shares: **Restart** (when the clip starts, or also every so
+many bars) and **Same note** (two playheads on the same note at the same moment play it once, or each).
 
-| Setting | What it does |
-|---|---|
-| **Restart**, **Restart bars** | Every playhead goes back to its start when the clip starts, or also every so many bars. |
-| **Same note** | When two playheads play the same note at the same moment: play it once, or play each. |
+**The segment.** On top of the piano roll's ruler, the shown playhead's segment is a bar in its colour with a ▶ at its
+start and a ◀ at its end: the part of the clip that playhead plays, over and over. Drag an end to resize it, the bar to
+move it. A white tick inside shows where the playhead starts; drag it to start it later. The other playheads' segments
+show as thin lines in their colours.
 
-On a drum clip whose lanes have their own length, the region is the whole lane cycle, and each lane repeats on its own
+**Curves.** Any setting can move by itself. Click a knob's name and its curve opens in the piano roll's lower pane:
+click to add a point, drag points, double-click to delete one, right-click for ready shapes or to stop. The bar on top
+of the curve, with ▶ ◀ ends, sets how long the curve lasts before it repeats, so how fast the setting moves; drag its
+◀. A knob with a curve has a dotted ring and its name underlined. The lower pane's menu lists the shown playhead's
+curves.
+
+On a drum clip whose lanes have their own length, the segment is the whole lane cycle, and each lane repeats on its own
 length under every playhead. Note operators (chance, repeats…) and note curves work as usual; each playhead makes its
 own chance choices.
 
 **When a note plays.** Going forward, a playhead plays a note when it reaches the note's start. Going backward, it plays
 it when it reaches the note's end, so the order of the notes is reversed but each note still sounds normally. A
-playhead that jumps (a repeat, a restart) into the middle of a note doesn't start it.
+playhead that jumps (a repeat, a restart, the next step of an order) into the middle of a note doesn't start it.
 
-Every setting is a knob: modulators can move it, and it can be automated, as on any device. Moving **Rate** while it
-plays speeds the playhead up or slows it down from where it is.
+Every setting can also be moved by a modulator or an automation lane, as on any device. Moving **Rate** while it plays
+speeds the playhead up or slows it down from where it is.
 
 Playheads read launched clips and timeline clips alike. On the timeline, each clip starts its playheads again, from
 where that clip begins (a clip that starts partway in starts the playheads partway in), and a stretched clip slows them
@@ -148,11 +151,12 @@ playhead, and its cycle becomes as long as the clip.
 - **Right-click** the row for **Back to settings**, **Clear points** and **Path cycle**.
 
 Between two points the playhead moves straight from one place to the other, and plays the notes it crosses on the way,
-in either direction. A drawn playhead has no start marker on the ruler: its path says where it starts.
+in either direction. A drawn path says where the playhead is at every moment: its segment's start tick no longer
+applies.
 
 ### Devices for one playhead
 
-Right after the Playheads card, the shown playhead's **branch** sits on a band in its colour: devices only that
+Right after the Playheads card, the shown playhead's own devices sit on a band in its colour: devices only that
 playhead's notes go through, before the rest of the chain. Click the **+** on the band to add one (up to 4 per
 playhead). Give the slow reversed playhead an Echo, or move the fast one up an octave with Transpose, while the devices
 after the band still shape every playhead. Click another chip to see its branch. Branch devices count toward the

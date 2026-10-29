@@ -1483,3 +1483,11 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   motion knobs as it runs and added when a note starts, at that note's pass (a playhead's own pass). Time only
   delays (0 to 1 bar), so notes never need to be read ahead. Export applies the knobs plus per-pass modulators;
   other modulation of motion knobs isn't in the file yet. No moving ghost of a note is drawn yet.
+- **Redesign after trying it** (30 Oct, agreed on canvas board J): the Playheads card shows one row of the settings
+  reached for every few seconds (Rate, Direction, Repeat, Octave, Steps, Notes, Velocity, Channel, More); defaults
+  draw faint. Direction merges direction and step order; Repeat merges size and times; Bend and Start left the row
+  (a curve on Rate bends; the start is a tick in the segment). The segment is its own row on top of the ruler, with
+  ▶ ◀ handles. Any setting can have a curve (its own length, repeating), opened from the knob's label in the lower
+  pane. Pitch moved into the playhead (octave, key steps, lowest/highest notes, invert, velocity), reversing §4.3 of
+  the design: bass and melody from one piano roll.
+
