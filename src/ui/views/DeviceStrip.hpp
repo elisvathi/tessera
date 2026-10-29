@@ -20,6 +20,8 @@ class DeviceStrip : public InteractiveView {
     explicit DeviceStrip(EditorContext& ctx) : InteractiveView(ctx) {}
 
     static constexpr float kOpenHeight = 128;
+    /// Card indices from here on are devices in the shown playhead's branch (index - kBranchBase).
+    static constexpr int kBranchBase = 1000;
     static constexpr float kClosedHeight = 24;
     static constexpr float kListRight = 222; // the right edge of the modulator list
     /// Below this the knobs don't fit: an open strip then shows as a bar that says so.
@@ -52,11 +54,12 @@ class DeviceStrip : public InteractiveView {
             Insert,
             AddTile,
             PlayheadChip, // one playhead of a Playheads device: click to show its settings
-            AddPlayhead
+            AddPlayhead,
+            BranchBand // behind the shown playhead's branch; `id` is the playhead
         };
         Kind kind;
         rack::math::Rect rect;
-        int device = -1; // index in the chain
+        int device = -1; // index in the chain; from kBranchBase on, in the shown playhead's branch
         int param = -1;  // knob index; PlayheadChip: the playhead's index
         uint64_t id = 0; // device, modulator or (playhead knobs and chips) playhead ID
         ParamRef::Kind refKind = ParamRef::Kind::Device; // what a knob's `id` is
@@ -84,6 +87,10 @@ class DeviceStrip : public InteractiveView {
     /// A Playheads card at `x`: chips for its playheads, then the shown playhead's settings and the device's own
     /// knobs. Returns its right edge.
     float layoutPlayheads(const Device& d, int index, float x, float knobTop);
+    /// A device's card at `x`, with its knobs at `knobTop`. Returns its right edge.
+    float layoutCard(const Device& d, int index, float x, float knobTop);
+    /// The device a card index stands for: in the chain, or (from kBranchBase) in the shown playhead's branch.
+    const Device* cardDevice(int index);
     const Part* partAt(rack::math::Vec pos) const;
     ParamRef knobRef(const Part& p) const { return {p.refKind, p.id, uint16_t(p.param)}; }
     /// The playhead whose settings a Playheads card shows: the one last clicked, else its first.

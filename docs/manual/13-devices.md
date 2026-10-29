@@ -125,6 +125,14 @@ where that clip begins (a clip that starts partway in starts the playheads partw
 down. MIDI export with **Devices: Applied** writes what the playheads play, each playhead on its channel; **Bypassed**
 writes the clips as written.
 
+### Devices for one playhead
+
+Right after the Playheads card, the shown playhead's **branch** sits on a band in its colour: devices only that
+playhead's notes go through, before the rest of the chain. Click the **+** on the band to add one (up to 4 per
+playhead). Give the slow reversed playhead an Echo, or move the fast one up an octave with Transpose, while the devices
+after the band still shape every playhead. Click another chip to see its branch. Branch devices count toward the
+track's 16 devices; their cards stay in their branch (they can't be dragged out).
+
 ### A sound for each playhead
 
 Each playhead puts its **channel** on the notes it plays: Playhead 1 on channel 1, Playhead 2 on channel 2, and so on.
