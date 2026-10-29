@@ -10,6 +10,7 @@
 #include "../editing/DeviceActions.hpp"
 #include "../widgets/Draw.hpp"
 #include "PianoRoll.hpp"
+#include "TimelineDraw.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -652,6 +653,32 @@ void CurveView::drawView(const DrawArgs& args) {
             nvgStrokeColor(vg, nvgTransRGBAf(color, first ? 1.f : 0.35f));
             nvgStrokeWidth(vg, 1.4f);
             nvgStroke(vg);
+        }
+    }
+    // Where playback is, as over the notes. Counting passes, the pass it is on lights up and a line crosses it.
+    if (m->playing()) {
+        float playTop = kHead + kBar;
+        if (perPass()) {
+            double elapsed = owner.source.elapsed();
+            const Clip* clip = owner.clip();
+            double loop = clip ? double(clipSpan(*clip).length()) : 0;
+            if (std::isfinite(elapsed) && loop > 0) {
+                double passes = elapsed / loop;
+                float px0 = xOf(std::floor(passes) * double(mods::kPassTicks));
+                nvgBeginPath(vg);
+                nvgRect(vg, px0, playTop, kPassWidth, box.size.y - playTop);
+                nvgFillColor(vg, nvgTransRGBAf(color, 0.12f));
+                nvgFill(vg);
+                nvgSave(vg);
+                nvgTranslate(vg, 0, playTop);
+                timeline::drawPlayhead(vg, xOf(passes * double(mods::kPassTicks)), box.size.y - playTop);
+                nvgRestore(vg);
+            }
+        } else if (double p = owner.source.playhead(); std::isfinite(p)) {
+            nvgSave(vg);
+            nvgTranslate(vg, 0, playTop);
+            timeline::drawPlayhead(vg, xOf(p), box.size.y - playTop);
+            nvgRestore(vg);
         }
     }
     if (points.empty()) {

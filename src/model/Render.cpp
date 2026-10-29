@@ -120,7 +120,8 @@ void playheadKnobsAt(const Song& song, const Track& track, const Device& device,
 }
 
 /// How a Motion device before the playheads moves its notes on `pass` of the clip: its knobs, with the "Per pass"
-/// modulators routed to them stepped to that pass, as the engine reads them.
+/// modulators routed to them stepped to that pass, as the engine reads them. With `songTick`, Curves that count in
+/// time add their value at that moment too.
 struct MovedBy {
     int steps = 0;
     bool inKey = true;
@@ -129,19 +130,31 @@ struct MovedBy {
     float velocity = 0;
 };
 
-MovedBy movedAt(const Song& song, const Track& track, const Device& motion, int64_t pass) {
+MovedBy movedAt(const Song& song, const Track& track, const Device& motion, int64_t pass,
+                double songTick = std::numeric_limits<double>::quiet_NaN()) {
     std::vector<float> knobs = motion.params;
     auto add = [&](const std::vector<Modulator>& list) {
         for (const Modulator& m : list) {
-            if (!mods::perPass(m.type, m.params.data()))
+            bool passes = mods::perPass(m.type, m.params.data());
+            bool timed = !passes && m.type == ModulatorType::Curve && std::isfinite(songTick);
+            if (!passes && !timed)
                 continue;
             mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            float value = 0;
+            if (passes) {
+                value = mods::passValue(m.type, m.id.value, m.params.data(), pass, song.timeSig, m.steps.data(),
+                                        int(m.steps.size()), &drawn);
+            } else {
+                mods::State state;
+                mods::Clock clock;
+                clock.songTick = songTick;
+                clock.timeSig = song.timeSig;
+                value = mods::evaluate(m.type, m.id.value, m.params.data(), state, clock, nullptr, 0, &drawn);
+            }
             for (const Modulation& r : m.routes)
                 if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
                     r.target.owner == motion.id.value && r.target.param < knobs.size())
-                    knobs[r.target.param] +=
-                        r.amount * mods::passValue(m.type, m.id.value, m.params.data(), pass, song.timeSig,
-                                                   m.steps.data(), int(m.steps.size()), &drawn);
+                    knobs[r.target.param] += r.amount * value;
         }
     };
     add(song.modulators);
@@ -906,6 +919,52 @@ bool Options::operator==(const Options& o) const {
            expressions == o.expressions && range == o.range && split == o.split && devices == o.devices &&
            includeMuted == o.includeMuted && noteChannels == o.noteChannels && from == o.from && to == o.to &&
            ccStep == o.ccStep && bendRange == o.bendRange && laneCc == o.laneCc && channels == o.channels;
+}
+
+std::vector<std::vector<int>> motionPitches(const Song& song, const Track& track, const Clip& clip) {
+    std::vector<std::vector<int>> out(clip.notes.size());
+    ClipSpan span = clipSpan(clip);
+    double loop = std::max(1.0, double(span.length()));
+    Scale scale = clip.scaleOverride ? resolveScale(*clip.scaleOverride, song.customScales)
+                                     : resolveScale(song.scale, song.customScales);
+    for (const Device& motion : track.devices) {
+        if (motion.type != DeviceType::Motion)
+            continue;
+        // How many passes before its curves line up again: the longest of them, capped so a long cycle stays cheap.
+        int passes = 1;
+        auto measure = [&](const std::vector<Modulator>& list) {
+            for (const Modulator& m : list) {
+                bool routed = std::any_of(m.routes.begin(), m.routes.end(), [&](const Modulation& r) {
+                    return r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
+                           r.target.owner == motion.id.value;
+                });
+                if (!routed || m.length <= 0)
+                    continue;
+                if (mods::perPass(m.type, m.params.data()))
+                    passes = std::max(passes, int(std::lround(double(m.length) / double(mods::kPassTicks))));
+                else if (m.type == ModulatorType::Curve)
+                    passes = std::max(passes, int(std::ceil(double(m.length) / loop)));
+            }
+        };
+        measure(song.modulators);
+        measure(track.modulators);
+        for (const Device& d : track.devices)
+            measure(d.modulators);
+        passes = std::clamp(passes, 1, kMaxGhostPasses);
+        for (size_t i = 0; i < clip.notes.size(); i++) {
+            const Note& n = clip.notes[i];
+            if (n.muted || n.motion != motion.id)
+                continue;
+            for (int k = 0; k < passes; k++) {
+                MovedBy moved = movedAt(song, track, motion, k, double(k) * loop + double(n.start - span.start));
+                int pitch = n.pitch;
+                if (moved.steps != 0)
+                    pitch = moved.inKey ? scale.stepBy(pitch, moved.steps) : pitch + moved.steps;
+                out[i].push_back(std::clamp(pitch, 0, 127));
+            }
+        }
+    }
+    return out;
 }
 
 } // namespace tessera::render

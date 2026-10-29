@@ -90,4 +90,11 @@ std::vector<std::pair<Tick, float>> laneSamples(const Song& song, TrackId track,
 std::vector<int> heardPitches(const Song& song, const Track& track, const Device& device, const Playhead& p,
                               const Clip& clip);
 
+/// The most passes motionPitches works out for one note.
+constexpr int kMaxGhostPasses = 16;
+/// For each of `clip`'s notes that moves with a Motion device on `track`: the pitch it plays on each pass of the
+/// clip, pass 1 first, over one cycle of the curves on that Motion (Per pass ones and ones that count in time); empty
+/// for the other notes. For the piano roll's ghosts of notes a Motion moves.
+std::vector<std::vector<int>> motionPitches(const Song& song, const Track& track, const Clip& clip);
+
 } // namespace tessera::render
