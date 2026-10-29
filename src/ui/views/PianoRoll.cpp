@@ -14,6 +14,8 @@
 #include "../widgets/IconButton.hpp"
 #include "../widgets/ToolButton.hpp"
 #include "ClipLaneView.hpp"
+#include "../editing/DeviceActions.hpp"
+#include "../../model/DeviceTypes.hpp"
 #include "PlayheadCurveView.hpp"
 #include "TimeMapView.hpp"
 #include "DrumLaneHeaders.hpp"
@@ -891,6 +893,16 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
         menu->addChild(rack::createCheckMenuItem(
             "Time map (playheads)", "", [c] { return c->view().lowerLane == kTimeMapLane; },
             [c] { c->view().lowerLane = kTimeMapLane; }));
+        // The shown playhead's curves; any other setting's curve opens from its knob's label.
+        if (const Playhead* ph = deviceActions::shownPlayhead(ctx))
+            for (const PlayheadCurve& k : ph->curves)
+                if (const devices::ParamInfo* info = devices::playheadParamInfo(k.param)) {
+                    int param = k.param;
+                    menu->addChild(rack::createCheckMenuItem(
+                        ph->name + " · " + info->name + " curve", "",
+                        [c, param] { return c->view().lowerLane == kPlayheadCurveLane && c->playheadCurve == param; },
+                        [c, param] { deviceActions::showPlayheadCurve(*c, param); }));
+                }
     }
     ClipId clipId = shown->id;
     if (withNoteLanes)
