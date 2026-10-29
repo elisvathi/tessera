@@ -28,6 +28,7 @@ bool hasCurves(const NoteExtras* ex) {
 
 Engine::Engine()
     : chains(std::make_unique<std::array<ChainRuntime, kMaxTracks>>()),
+      playheadClocks(std::make_unique<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>>()),
       knobValues(std::make_unique<float[]>(size_t(kMaxKnobs))),
       modStates(std::make_unique<std::array<mods::State, kMaxModulatorSlots>>()),
       liveKnobs(new std::atomic<float>[size_t(kMaxKnobs)]()), liveBases(new std::atomic<float>[size_t(kMaxKnobs)]()),
@@ -67,6 +68,7 @@ void Engine::setTempo(double newBpm) {
 }
 
 void Engine::setSnapshot(const Snapshot* s) {
+    controlBlock++;
     wakeAll();
     frameEpoch++;
     activeMask = 0;
@@ -1244,21 +1246,27 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
     std::array<Started, 32> started;
     int startedCount = 0;
 
-    for (size_t index = 0; index < chain.playheads.size() && index < state.playheadClocks.size(); index++) {
+    auto& clocks = (*playheadClocks)[size_t(&state - tracks.data())];
+    for (size_t index = 0; index < chain.playheads.size() && index < clocks.size(); index++) {
         const PlayheadPlayback& p = chain.playheads[index];
         const float* knobs = &knobValues[size_t(p.knobs)];
-        // The region is the whole loop (a drum clip's whole lane cycle): the pattern and each lane with its own
-        // length repeat inside it, as they do without playheads.
-        playheads::Motion m =
-            playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
-        if (playheads::wantsDrawnPath(knobs))
-            m.path = &p.path;
+        PlayheadClock& clock = clocks[index];
+        if (clock.motionBlock != controlBlock || clock.motionClip != &clip) {
+            // The region is the whole loop (a drum clip's whole lane cycle): the pattern and each lane with its own
+            // length repeat inside it, as they do without playheads.
+            clock.motion =
+                playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
+            if (playheads::wantsDrawnPath(knobs))
+                clock.motion.path = &p.path;
+            clock.motionBlock = controlBlock;
+            clock.motionClip = &clip;
+        }
+        playheads::Motion m = clock.motion;
         double rate = m.rate;
         double restartEvery = m.restartEvery;
         // The engine counts the playhead's own time itself (rate 1 below), restarting where the song time says.
         m.rate = 1;
         m.restartEvery = 0;
-        TrackState::PlayheadClock& clock = state.playheadClocks[index];
         for (double segA = a; segA < b;) {
             double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
             double segB = restartEvery > 0 ? std::min(b, restart + restartEvery) : b;
@@ -1703,6 +1711,7 @@ float Engine::motionKnob(int knob, int64_t pass) const {
 }
 
 void Engine::advanceModulation() {
+    controlBlock++;
     if (!snapshot)
         return;
     const Snapshot& s = *snapshot;

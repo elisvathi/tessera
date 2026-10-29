@@ -351,14 +351,6 @@ class Engine {
         std::array<double, kMaxVoices> voiceStart{}, voiceLength{};
         std::array<uint8_t, kMaxVoices> voicePart{}; // the channel of each voice's note
         std::array<uint8_t, kMaxDrumLanes> lanePart{}; // the channel of each drum lane's last hit
-        /// Each playhead's own time (elapsed times its rate, added up as the rate moves), and the clip time and
-        /// restart it was counted to, so a moving Rate changes speed instead of making the playhead jump.
-        struct PlayheadClock {
-            double own = 0;
-            double until = NAN;
-            double restart = 0;
-        };
-        std::array<PlayheadClock, playheads::kMaxPlayheads> playheadClocks{};
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
         std::array<uint64_t, kMaxVoices> voiceClip{}, voiceNote{};
@@ -575,6 +567,19 @@ class Engine {
 
     const Snapshot* snapshot = nullptr;
     size_t trackCount = 0;
+    /// Each playhead's own time (elapsed times its rate, added up as the rate moves), and the clip time and
+    /// restart it was counted to, so a moving Rate changes speed instead of making the playhead jump.
+    struct PlayheadClock {
+        double own = 0;
+        double until = NAN;
+        double restart = 0;
+        // Its settings in ticks, worked out once per control block (knobs only change there) for this clip.
+        playheads::Motion motion;
+        uint64_t motionBlock = ~uint64_t(0);
+        const ClipPlayback* motionClip = nullptr;
+    };
+    /// Per track (by index in `tracks`) and playhead. On the heap: the engine sits on the stack in tests.
+    std::unique_ptr<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>> playheadClocks;
     std::array<TrackState, kMaxTracks> tracks;
     std::array<TrackState, kMaxTracks> previous; // scratch for setSnapshot, kept here so it never allocates
     int retriggerGap = 48;
@@ -657,6 +662,7 @@ class Engine {
     bool overrideOn = false;
     bool overrideWasOn = false;
     bool knobsDirty = true;
+    uint64_t controlBlock = 0; // counts control blocks and snapshot swaps: cached playhead settings go stale
     bool knobLanesOn = false, knobLanesWereOn = false; // some knob lane set a knob this block, the last one
 };
 
