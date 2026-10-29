@@ -1356,3 +1356,35 @@ TEST_CASE("engine: song swing plays on the timeline too, and an off-beat 1/8 swi
     CHECK(startOf(480, kPpq / 4, false) == doctest::Approx(480).epsilon(0.01)); // an off-beat 1/8 doesn't move on 1/16s
     CHECK(startOf(480, kPpq / 2, false) == doctest::Approx(720).epsilon(0.01)); // it does on 1/8s
 }
+
+TEST_CASE("engine: playheads read the clip each from its own start") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.params[playheads::knob::kStart] =
+            devices::normalize(devices::playheadInfo().params[playheads::knob::kStart], float(4 * i));
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto sounding = [&h] {
+        std::multiset<int> out;
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v))
+                out.insert(h.pitch(v));
+        return out;
+    };
+
+    h.step();
+    CHECK(sounding() == std::multiset<int>{60, 64}); // the second playhead starts a beat in, on the 64
+    h.runTo(960 * kSamplesPerTick + 1);
+    CHECK(sounding() == std::multiset<int>{64}); // the first reaches the 64; the second is past the clip's notes
+
+    SUBCASE("bypassed, the clip plays as usual") {
+        h.song.tracks[0].devices[0].on = false;
+        h.republish();
+        h.runTo(4 * 960 * kSamplesPerTick + 1);
+        CHECK(sounding() == std::multiset<int>{60});
+    }
+}

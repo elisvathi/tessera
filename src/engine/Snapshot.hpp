@@ -3,6 +3,7 @@
 #include "../model/Commands.hpp"
 #include "../model/Device.hpp"
 #include "../model/NoteOperators.hpp"
+#include "../model/Playheads.hpp"
 #include "../model/Scale.hpp"
 #include "../model/Song.hpp"
 
@@ -73,6 +74,7 @@ struct ClipPlayback {
     bool looping = true;
     Tick launchQuantize = -1;     // this clip's own launch grid in ticks; -1 = the song's
     std::vector<NoteEvent> notes; // sorted by start, all inside [loopStart, loopEnd)
+    std::vector<uint32_t> notesByEnd; // indices into `notes` sorted by end, for playheads going backwards
     std::vector<LaneLoop> laneLoops;
     std::vector<LanePlayback> lanes; // clip automation, clip time
     std::vector<KnobLanePlayback> knobLanes;
@@ -177,7 +179,8 @@ struct TrackPlayback {
 /// Upper bounds the engine sizes its tables by, so it never allocates.
 constexpr int kMaxModulatorSlots =
     kMaxSongModulators + kMaxTracks * (kMaxTrackModulators + kMaxDevices * kMaxDeviceModulators);
-constexpr int kMaxKnobs = (kMaxTracks * kMaxDevices + kMaxModulatorSlots) * kMaxDeviceParams;
+constexpr int kMaxKnobs =
+    (kMaxTracks * (kMaxDevices + playheads::kMaxPlayheads) + kMaxModulatorSlots) * kMaxDeviceParams;
 
 /// A device as the engine runs it. Its knob values start at `knobs` in the knob table.
 struct DevicePlayback {
@@ -199,9 +202,20 @@ struct AutoModulation {
     ModSource source;
 };
 
+/// A playhead as the engine runs it (docs/design/PLAYHEADS.md). Its settings start at `knobs` in the knob table.
+struct PlayheadPlayback {
+    uint64_t id = 0;
+    int knobs = 0;
+    uint8_t channel = 1; // 0 = each note keeps its own
+    bool audible = true; // mute and solo already applied
+};
+
 /// A track's device chain.
 struct ChainPlayback {
-    std::vector<DevicePlayback> devices;
+    std::vector<DevicePlayback> devices; // the Playheads device is not among them: it reads the clip instead
+    /// The track's Playheads device, when it has one that is on: its playheads and where its own knobs are.
+    std::vector<PlayheadPlayback> playheads;
+    int playheadKnobs = -1;
     /// Changes when devices are added, removed, reordered, switched on or off: their notes in flight are dropped.
     uint64_t structure = 0;
     bool active = false; // some device is on

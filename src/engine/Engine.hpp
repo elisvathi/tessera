@@ -422,6 +422,14 @@ class Engine {
     void advanceSong(double dt, TransportEvents& events);
     void scheduleTrackNow(const TrackPlayback& track, TrackState& state, double prevPlay, double curPlay);
     void playClip(const TrackPlayback& track, TrackState& state, double from, double to);
+    /// The playing clip read by the track's playheads instead of its own playhead (docs/design/PLAYHEADS.md):
+    /// `a` and `b` are ticks since the clip started, `from` the play tick `a` falls on.
+    void playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
+                       double from);
+    /// Whether the track's clips are read by playheads.
+    static bool readByPlayheads(const TrackState& state) {
+        return state.chainInfo && state.chainInfo->playheadKnobs >= 0;
+    }
     void playSource(const TrackPlayback& track, TrackState& state, double from, double to);
     void playArrangement(const TrackPlayback& track, TrackState& state, double from, double to);
     void fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom);

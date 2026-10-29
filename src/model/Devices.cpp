@@ -66,6 +66,7 @@ void warmUp() {
         devices::deviceInfo(DeviceType(t));
     for (int t = 0; t < kModulatorTypeCount; t++)
         devices::modulatorInfo(ModulatorType(t));
+    devices::playheadInfo();
 }
 
 // ---- The message queue ----------------------------------------------------------------------------------------
