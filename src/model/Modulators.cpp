@@ -166,6 +166,8 @@ bool bipolar(ModulatorType type, const float* knobs) {
 
 bool perPass(ModulatorType type, const float* knobs) {
     switch (type) {
+    case ModulatorType::Curve:
+        return shown(type, knobs, knob::kCurvePerPass) > 0.5f;
     case ModulatorType::Steps:
         return shown(type, knobs, knob::kStepPerPass) > 0.5f;
     case ModulatorType::Ramp:
@@ -190,6 +192,15 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
     switch (type) {
     case ModulatorType::Curve: {
         Tick length = drawn ? drawn->length : 0;
+        if (perPass(type, knobs)) {
+            // One point of the drawing per pass of a note (per bar when there is none), around and around.
+            double position = clock.pass >= 0 ? double(clock.pass)
+                                               : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)));
+            double passes = std::max(1.0, std::round(double(length) / double(kPassTicks)));
+            double k = position - std::floor(position / passes) * passes;
+            out = drawn ? drawnAt(*drawn, k * double(kPassTicks)) * 2 - 1 : 0;
+            break;
+        }
         double phase = cycles(shown(type, knobs, knob::kCurveSync) > 0.5f, double(length),
                               double(shown(type, knobs, knob::kCurveRate)),
                               Restart(int(shown(type, knobs, knob::kCurveRestart))), state, clock);

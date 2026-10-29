@@ -58,9 +58,14 @@ class CurveDrag : public DragGesture {
             double t = view.tAt(pos.x) - view.spanStart();
             Tick old = length;
             length = std::max<Tick>(snap, Tick(std::llround(t / double(snap))) * snap);
-            // The shape stretches with its cycle, so a longer cycle plays the same shape slower.
-            for (AutoPoint& p : points)
-                p.t = Tick(std::llround(double(p.t) * double(length) / double(std::max<Tick>(1, old))));
+            // The shape stretches with its cycle, so a longer cycle plays the same shape slower. Per pass, points
+            // stay on their passes: the cycle just gains or loses passes.
+            if (!view.perPass())
+                for (AutoPoint& p : points)
+                    p.t = Tick(std::llround(double(p.t) * double(length) / double(std::max<Tick>(1, old))));
+            else
+                for (AutoPoint& p : points)
+                    p.t = std::min(p.t, length);
         } else {
             double t = view.tAt(pos.x) - view.spanStart() - cycleBase;
             Tick at = Tick(std::llround(t / double(snap))) * snap;
@@ -145,7 +150,12 @@ bool CurveView::synced() {
     if (!mod)
         return true;
     const devices::ParamInfo* info = devices::paramInfo(ModulatorType::Curve, mods::knob::kCurveSync);
-    return info && devices::display(*info, mod->params[mods::knob::kCurveSync]) > 0.5f;
+    return perPass() || (info && devices::display(*info, mod->params[mods::knob::kCurveSync]) > 0.5f);
+}
+
+bool CurveView::perPass() {
+    const Modulator* mod = modulator();
+    return mod && mods::perPass(mod->type, mod->params.data());
 }
 
 bool CurveView::hasCurve() { return modulator() || (ctx.curveTarget.valid() && targetInfo()); }
@@ -158,6 +168,8 @@ std::string CurveView::title() {
 }
 
 double CurveView::spanStart() {
+    if (perPass())
+        return 0;
     const Clip* c = owner.clip();
     const Track* t = owner.track();
     if (!c || !t)
@@ -207,8 +219,17 @@ void CurveView::commit(Tick length, std::vector<AutoPoint> points) {
     deviceActions::showCurve(ctx, added);
 }
 
-float CurveView::xOf(double t) { return float(owner.viewport.time.tickToX(t)); }
-double CurveView::tAt(float x) { return owner.viewport.time.xToTick(x); }
+float CurveView::xOf(double t) {
+    if (perPass())
+        return kPassLeft + float(t / double(mods::kPassTicks)) * kPassWidth;
+    return float(owner.viewport.time.tickToX(t));
+}
+
+double CurveView::tAt(float x) {
+    if (perPass())
+        return double(x - kPassLeft) / double(kPassWidth) * double(mods::kPassTicks);
+    return owner.viewport.time.xToTick(x);
+}
 
 float CurveView::yOf(float value) const {
     float top = kBar + kPad, bottom = box.size.y - kPad;
@@ -236,7 +257,7 @@ std::string CurveView::format(float v) {
     return devices::format(*info, std::clamp(base + amount * (2 * v - 1), 0.f, 1.f));
 }
 
-Tick CurveView::snap() { return std::clamp<Tick>(owner.snapStep(), 1, kPpq); }
+Tick CurveView::snap() { return perPass() ? mods::kPassTicks : std::clamp<Tick>(owner.snapStep(), 1, kPpq); }
 
 int CurveView::pointAt(Vec pos) {
     auto [points, length] = shown();
@@ -313,11 +334,39 @@ void CurveView::openMenu() {
                 m->perform(removeModulator(m->song(), id));
         }));
         auto knob = [id](int k) { return ParamRef{ParamRef::Kind::Modulator, id.value, uint16_t(k)}; };
-        bool sync = synced();
-        menu->addChild(rack::createCheckMenuItem("Sync to the song", "", [sync] { return sync; }, [c, knob, sync] {
-            if (TesseraModule* m = c->module())
-                m->perform(setParam(m->song(), knob(mods::knob::kCurveSync), sync ? 0.f : 1.f));
-        }));
+        // Timing: one cycle as long as the bar (synced), at a rate in Hz (free), or one point a pass (per pass).
+        int timing = perPass() ? 2 : synced() ? 0 : 1;
+        Tick clipLength = std::max<Tick>(kPpq, owner.clip() ? owner.clip()->playEnd() - owner.clip()->playStart() : 0);
+        menu->addChild(rack::createSubmenuItem(
+            "Timing", timing == 2 ? "Per pass" : timing == 0 ? "Synced" : "Free", [=](rack::ui::Menu* sub) {
+                const char* names[] = {"Synced (the bar sets a cycle)", "Free (Rate in Hz)", "Per pass (one point a pass)"};
+                for (int k = 0; k < 3; k++)
+                    sub->addChild(rack::createCheckMenuItem(names[k], "", [timing, k] { return timing == k; }, [=] {
+                        TesseraModule* m = c->module();
+                        const Modulator* now = m ? findModulator(m->song(), id) : nullptr;
+                        if (!now || timing == k)
+                            return;
+                        // Made step by step on a copy: each command sees what the one before did.
+                        Song work = m->song();
+                        auto all = std::make_unique<CompoundCommand>("Set " + now->name + " timing");
+                        auto step = [&](CommandPtr command) {
+                            if (command)
+                                command->apply(work);
+                            all->add(std::move(command));
+                        };
+                        step(setParam(work, knob(mods::knob::kCurveSync), k == 1 ? 0.f : 1.f));
+                        step(setParam(work, knob(mods::knob::kCurvePerPass), k == 2 ? 1.f : 0.f));
+                        // Into or out of passes, the shape keeps its look over the new cycle: 4 passes, or the clip.
+                        if ((k == 2) != (timing == 2)) {
+                            Tick length = k == 2 ? 4 * mods::kPassTicks : clipLength;
+                            std::vector<AutoPoint> points = now->points;
+                            for (AutoPoint& p : points)
+                                p.t = Tick(std::llround(double(p.t) * double(length) / double(std::max<Tick>(1, now->length))));
+                            step(setCurve(work, id, length, points));
+                        }
+                        m->perform(std::move(all));
+                    }));
+            }));
         const devices::ParamInfo& restart =
             devices::modulatorInfo(ModulatorType::Curve).params[mods::knob::kCurveRestart];
         int now = int(std::lround(devices::display(restart, mod->params[mods::knob::kCurveRestart])));
@@ -381,6 +430,9 @@ void CurveView::drawView(const DrawArgs& args) {
     if (ref.kind == ParamRef::Kind::Playhead)
         if (const Playhead* p = findPlayhead(m->song(), PlayheadId(ref.owner)))
             color = theme::playheadColor(p->color);
+    if (ref.kind == ParamRef::Kind::Device)
+        if (const Device* d = findDevice(m->song(), DeviceId(ref.owner)); d && d->type == DeviceType::Motion)
+            color = theme::playheadColor(d->color);
     auto [points, length] = shown();
     double start = spanStart();
     float base = 0, amount = 1;
@@ -449,10 +501,26 @@ void CurveView::drawView(const DrawArgs& args) {
         nvgFillColor(vg, color);
         nvgFill(vg);
     } else if (const Modulator* mod = modulator()) {
+        // Free running: the bar only marks a cycle; Rate sets how fast it goes round.
         const devices::ParamInfo& rate = devices::modulatorInfo(ModulatorType::Curve).params[mods::knob::kCurveRate];
         draw::TextStyle free{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         draw::text(vg, free, x0 + 6, kBar / 2,
                    "Free: " + devices::format(rate, mod->params[mods::knob::kCurveRate]) + " a cycle");
+    }
+
+    if (perPass()) {
+        // A column per pass, numbered, over the cycle and a little past it.
+        draw::TextStyle pass{theme::fonts::ui(), 10, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM};
+        int passes = int(std::max<Tick>(1, length / mods::kPassTicks));
+        for (int k = 0; xOf(double(k) * double(mods::kPassTicks)) < box.size.x; k++) {
+            float x = xOf(double(k) * double(mods::kPassTicks));
+            nvgBeginPath(vg);
+            nvgRect(vg, x, kBar, 1, box.size.y - kBar);
+            nvgFillColor(vg, k % passes == 0 ? c.line1 : c.line0);
+            nvgFill(vg);
+            pass.color = k < passes ? c.text2 : nvgTransRGBAf(c.text2, 0.5f);
+            draw::text(vg, pass, x + 4, box.size.y - 2, "pass " + std::to_string(k + 1));
+        }
     }
 
     // The curve, every cycle across the view; the first one bright, its repeats faint.
@@ -463,10 +531,21 @@ void CurveView::drawView(const DrawArgs& args) {
             continue;
         bool first = cycle == start;
         nvgBeginPath(vg);
-        for (int i = 0; i <= 128; i++) {
-            double t = double(length) * i / 128;
-            float x = xOf(cycle + t), y = yOf(points.empty() ? 0.5f : mods::drawnAt(drawn, t));
-            i == 0 ? nvgMoveTo(vg, x, y) : nvgLineTo(vg, x, y);
+        if (perPass()) {
+            // A pass takes the value at its start: a step each.
+            for (Tick k = 0; k * mods::kPassTicks < length; k++) {
+                double t = double(k * mods::kPassTicks);
+                float y = yOf(points.empty() ? 0.5f : mods::drawnAt(drawn, t));
+                float x0 = xOf(cycle + t), x1 = xOf(cycle + t + double(mods::kPassTicks));
+                k == 0 ? nvgMoveTo(vg, x0, y) : nvgLineTo(vg, x0, y);
+                nvgLineTo(vg, x1, y);
+            }
+        } else {
+            for (int i = 0; i <= 128; i++) {
+                double t = double(length) * i / 128;
+                float x = xOf(cycle + t), y = yOf(points.empty() ? 0.5f : mods::drawnAt(drawn, t));
+                i == 0 ? nvgMoveTo(vg, x, y) : nvgLineTo(vg, x, y);
+            }
         }
         nvgStrokeColor(vg, nvgTransRGBAf(color, first ? 1.f : 0.35f));
         nvgStrokeWidth(vg, first ? 2.f : 1.4f);
