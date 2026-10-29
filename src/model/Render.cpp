@@ -5,6 +5,7 @@
 #include "ChainRender.hpp"
 #include "DeviceLookup.hpp"
 #include "DeviceTypes.hpp"
+#include "Modulators.hpp"
 #include "DrumKit.hpp"
 #include "Json.hpp"
 #include "NoteOperators.hpp"
@@ -76,9 +77,50 @@ struct Item {
     uint8_t lane = 0;    // the playhead that read it (1..16)
 };
 
+/// How a note in a motion group moves on `pass` (docs/design/PLAYHEADS.md §6): from the group's knobs, with the
+/// "Per pass" modulators routed to them stepped to that pass, as the engine plays it.
+struct Moved {
+    int pitch;
+    double delay = 0;
+    double lengthScale = 1;
+    float velocity = 0;
+};
+
+Moved motionOf(const Song& song, const Track* track, const Clip& clip, const Note& note, int pitch, int64_t pass) {
+    Moved out{pitch};
+    const MotionGroup* group = clip.findMotion(note.motion);
+    if (!group)
+        return out;
+    std::vector<float> knobs = group->params;
+    auto addRoutes = [&](const std::vector<Modulator>& mods) {
+        for (const Modulator& m : mods)
+            if (mods::perPass(m.type, m.params.data()))
+                for (const Modulation& r : m.routes)
+                    if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Motion &&
+                        r.target.owner == group->id.value && r.target.param < knobs.size())
+                        knobs[r.target.param] += r.amount * mods::passValue(m.type, m.id.value, m.params.data(), pass,
+                                                                            song.timeSig, m.steps.data(),
+                                                                            int(m.steps.size()));
+    };
+    addRoutes(song.modulators);
+    if (track)
+        addRoutes(track->modulators);
+    auto value = [&](int k) {
+        return devices::display(devices::motionInfo().params[size_t(k)], std::clamp(knobs[size_t(k)], 0.f, 1.f));
+    };
+    int steps = int(std::lround(value(0)));
+    Scale key = clip.scaleOverride ? resolveScale(*clip.scaleOverride, song.customScales)
+                                   : resolveScale(song.scale, song.customScales);
+    out.pitch = std::clamp(value(4) > 0.5f ? key.stepBy(pitch, steps) : pitch + steps, 0, 127);
+    out.delay = double(value(1)) * double(kPpq) / 4;
+    out.lengthScale = std::max(0.01, 1 + double(value(2)) / 100);
+    out.velocity = value(3) / 100;
+    return out;
+}
+
 /// The items with the chosen timing and operators applied, sorted by start. Operators run exactly as the engine runs
 /// them: the same seed, clip and pass give the same result, and "previous note" restarts with each pass.
-std::vector<Played> applyOperators(const Song& song, const Options& o, std::vector<Item>& items) {
+std::vector<Played> applyOperators(const Song& song, const Track& track, const Options& o, std::vector<Item>& items) {
     std::stable_sort(items.begin(), items.end(),
                      [](const Item& a, const Item& b) { return a.note.start < b.note.start; });
     std::vector<Played> out;
@@ -97,8 +139,20 @@ std::vector<Played> applyOperators(const Song& song, const Options& o, std::vect
             start = swung(start, swing, song.swingStep) + micro;
             end = swung(end, swing, song.swingStep) + micro;
         }
+        int pitch = n.pitch;
+        float velocity = n.velocity;
+        // Motion plays on top of the notes, like the devices: only when they are applied.
+        if (src && src->motion.valid() && o.devices == DeviceMode::Applied)
+            if (const Clip* clip = song.findClip(item.clip)) {
+                Moved mv = motionOf(song, &track, *clip, *src, pitch, item.lane > 0 ? n.pass / 16 : n.pass);
+                pitch = mv.pitch;
+                double length = (end - start) * mv.lengthScale;
+                start += mv.delay;
+                end = start + length;
+                velocity = std::clamp(velocity + mv.velocity, 0.f, 1.f);
+            }
         if (o.operators == OperatorMode::Written || !src) {
-            out.push_back({start, end, n.pitch, n.velocity, n.releaseVelocity, src, n.pass, double(n.start), item.key,
+            out.push_back({start, end, pitch, velocity, n.releaseVelocity, src, n.pass, double(n.start), item.key,
                            channel, item.lane});
             continue;
         }
@@ -125,8 +179,8 @@ std::vector<Played> applyOperators(const Song& song, const Options& o, std::vect
             double hitStart = start + offset + h.start * scale;
             double hitEnd = count > 1 ? hitStart + h.length * scale : hitStart + length;
             float shape = src->velocity > 0 ? h.velocity / src->velocity : 1;
-            float v = std::clamp(n.velocity * shape + spread, 0.f, 1.f);
-            out.push_back({std::max(0.0, hitStart), hitEnd, n.pitch, v, n.releaseVelocity, src, n.pass,
+            float v = std::clamp(velocity * shape + spread, 0.f, 1.f);
+            out.push_back({std::max(0.0, hitStart), hitEnd, pitch, v, n.releaseVelocity, src, n.pass,
                            double(n.start) + i, item.key, channel, item.lane});
         }
     }
@@ -163,7 +217,7 @@ std::vector<Played> playedNotes(const Song& song, const Track& t, const Options&
         for (const TimedNote& n : notes)
             items.push_back({n, a.clip, key});
     }
-    return applyOperators(song, o, items);
+    return applyOperators(song, t, o, items);
 }
 
 /// What the track's playheads play from its timeline clips (docs/design/PLAYHEADS.md), with the code the engine
@@ -274,7 +328,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             }
         }
     }
-    std::vector<Played> out = applyOperators(song, o, items);
+    std::vector<Played> out = applyOperators(song, t, o, items);
     if (once) {
         // Two playheads on one note at the same moment play it once, as in the engine.
         std::vector<Played> kept;

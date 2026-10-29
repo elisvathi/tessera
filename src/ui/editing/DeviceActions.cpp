@@ -1,5 +1,6 @@
 #include "DeviceActions.hpp"
 
+#include "../../model/Modulators.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../widgets/MenuTextField.hpp"
@@ -82,6 +83,8 @@ const devices::ParamInfo* infoOf(const Song& song, const ParamRef& ref) {
     }
     if (ref.kind == ParamRef::Kind::Playhead)
         return findPlayhead(song, PlayheadId(ref.owner)) ? devices::playheadParamInfo(ref.param) : nullptr;
+    if (ref.kind == ParamRef::Kind::Motion)
+        return findMotion(song, MotionId(ref.owner)) ? devices::motionParamInfo(ref.param) : nullptr;
     const Modulator* m = findModulator(song, ModulatorId(ref.owner));
     return m ? devices::paramInfo(m->type, ref.param) : nullptr;
 }
@@ -95,6 +98,9 @@ std::string paramName(const Song& song, const ParamRef& ref) {
     } else if (ref.kind == ParamRef::Kind::Playhead) {
         if (const Playhead* p = findPlayhead(song, PlayheadId(ref.owner)))
             owner = p->name;
+    } else if (ref.kind == ParamRef::Kind::Motion) {
+        if (const MotionGroup* g = findMotion(song, MotionId(ref.owner)))
+            owner = g->name;
     } else if (const Modulator* m = findModulator(song, ModulatorId(ref.owner))) {
         owner = m->name;
     }
@@ -308,6 +314,44 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id) {
     }));
 }
 
+void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce) {
+    TesseraModule* m = moduleOf(ctx);
+    if (!m)
+        return;
+    TrackId track = trackOf(m->song(), ref);
+    const devices::ParamInfo* info = infoOf(m->song(), ref);
+    if (!track.valid() || !info || info->max <= info->min)
+        return;
+    // A step is one key step or 1/16 for Pitch and Time, 10% for Length and Velocity; the drift goes four steps.
+    float unit = info->kind == devices::ParamInfo::Kind::Integer ? 1.f : 10.f;
+    float amount = 4 * unit / (info->max - info->min);
+    std::vector<float> steps = bounce ? std::vector<float>{0, 0.25f, 0.5f, 0.75f, 1, 0.75f, 0.5f, 0.25f}
+                                      : std::vector<float>{0, 0.25f, 0.5f, 0.75f, 1};
+    // Each step is made on the song as the steps before left it: chain edits replace whole chains.
+    Song work = m->song();
+    auto all = std::make_unique<CompoundCommand>("Drift " + paramName(work, ref) + " per pass");
+    auto step = [&](CommandPtr command) {
+        if (command)
+            command->apply(work);
+        all->add(std::move(command));
+    };
+    ModulatorId mod;
+    step(addModulator(work, {ModLevel::Track, track, DeviceId()}, ModulatorType::Steps, m->ids(), &mod));
+    if (!findModulator(work, mod))
+        return;
+    step(renameModulator(work, mod, "Drift"));
+    step(setSteps(work, mod, steps));
+    const devices::TypeInfo& stepsInfo = devices::modulatorInfo(ModulatorType::Steps);
+    step(setParam(work, {ParamRef::Kind::Modulator, mod.value, uint16_t(mods::knob::kStepCount)},
+                  devices::normalize(stepsInfo.params[mods::knob::kStepCount], float(steps.size()))));
+    step(setParam(work, {ParamRef::Kind::Modulator, mod.value, uint16_t(mods::knob::kStepPerPass)}, 1));
+    Modulation route;
+    route.target = ref;
+    route.amount = std::clamp(amount, -1.f, 1.f);
+    step(addRoute(work, mod, route));
+    m->perform(std::move(all));
+}
+
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
     TesseraModule* m = moduleOf(ctx);
     if (!m)
@@ -323,6 +367,13 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
     float def = devices::defaultNormalized(*p);
     menu->addChild(rack::createMenuItem("Reset to " + devices::format(*p, def), "double-click",
                                         [c, ref, def] { setKnob(*c, ref, def); }));
+    if (ref.kind == ParamRef::Kind::Motion && p->kind != devices::ParamInfo::Kind::Toggle)
+        menu->addChild(rack::createSubmenuItem("Drift per pass", "", [c, ref](rack::ui::Menu* sub) {
+            sub->addChild(rack::createMenuItem("Up a little each pass, 4 passes, then back down", "",
+                                               [c, ref] { addDrift(*c, ref, true); }));
+            sub->addChild(rack::createMenuItem("Up a little each pass, 4 passes, then start again", "",
+                                               [c, ref] { addDrift(*c, ref, false); }));
+        }));
     menu->addChild(rack::createMenuItem("Type a value…", "", [c, ref] { openTyping(*c, ref); }));
 
     // Modulators that may reach this knob, and those already on it.
