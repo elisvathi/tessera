@@ -132,7 +132,8 @@ way. The knob's ring shows the amount; change it there or in the modulator's set
 delete one. The row on top holds **Counts in** (**Time** or **Passes**), ready **Shapes** and **Remove curve**. Under
 it, a bar drawn like a playhead's segment says how long a cycle lasts, such as "repeats every 2 bars"; drag its right
 grip to change it (it snaps to the grid). A curve always runs with the song, from its start. A knob with a curve has a
-dotted ring and its name underlined.
+dotted ring and its name underlined. While the song plays, a playhead line crosses the curve; counting in passes,
+the pass playing now is lit.
 
 **Moved notes.** When the shown playhead plays notes at another pitch (its Octave, Steps or Invert, or a curve on
 them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's
@@ -198,8 +199,8 @@ a note slides later and later, velocities swell. The written notes never change;
 
 **Which notes.** Select notes in the piano roll, right-click one and choose **Motion › New motion**. That adds a Motion
 device, named "Motion 1" in a colour of its own, and the notes join it. A small corner in that colour marks them. To
-add more notes later, select them and click **+ Selected** on the card, or use **Motion ›** again. The chip beside it
-(**6 notes**) selects the card's notes in the piano roll. **Motion › Leave motion** takes notes out. The inspector's
+add more notes later, select them and click **+ Selected** on the card; to take notes out, select them and click
+**− Selected**. The chip beside them (**6 notes**) selects the card's notes in the piano roll. The inspector's
 **MOTION** line says which Motion device the selected notes move with, and opens the same choices. Notes from any clip
 on the track can join the same Motion device.
 
@@ -208,6 +209,11 @@ and **Velocity**. To make them change, click a knob's name: its curve opens in t
 [Modulators](#modulators)). A curve that **Counts in: Passes** takes one value each pass of the clip, so "up one step a
 pass for four passes, then back" is four points. Right-click a knob for **Drift per pass**, a ready-made version of
 that. Any modulator or automation lane can move these knobs too.
+
+**Seeing it.** A note a Motion moves to another pitch shows where it plays, in the Motion's colour: the written note
+turns see-through with a dashed outline, and the note appears again where it sounds, with its change ("+2 st"). With a
+curve on **Pitch**, that is the pass playing now (the first one when stopped), and faint outlines mark the other
+pitches the curve takes it to over its cycle.
 
 **Where it sits.** A new Motion device goes before the Playheads device, the only place in front of it:
 

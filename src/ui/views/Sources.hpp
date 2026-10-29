@@ -57,6 +57,9 @@ class ClipSource : public TimelineSource {
     void setLoop(Tick start, Tick end) override;
     void toggleLoop() override;
     double playhead() override;
+    /// How far into the clip the music is, in clip ticks since it started (launched or on the timeline), not wrapped
+    /// at its loop; NaN when it isn't playing. Playheads and passes count from here.
+    double elapsed();
     double instanceEnd() override;
     double instanceStart() override;
     void previewInstanceEnd(double end) override { endPreview = end; }

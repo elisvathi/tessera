@@ -5,6 +5,7 @@
 #include "../src/model/DeviceTypes.hpp"
 #include "../src/model/Devices.hpp"
 #include "../src/model/Modulators.hpp"
+#include "../src/model/Render.hpp"
 
 #include <algorithm>
 #include <set>
@@ -1721,4 +1722,28 @@ TEST_CASE("engine: a Curve set to Per pass steps a Motion knob once a pass") {
         pitches.push_back(h.gate() ? h.pitch() : -1);
     }
     CHECK(pitches == std::vector<int>{60, 61, 62, 60}); // then round again
+}
+
+TEST_CASE("the piano roll learns the pitch a Motion's curve gives each note on every pass, as the engine plays it") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = motion.id;
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.params = knobsOf(ModulatorType::Curve, {{mods::knob::kCurvePerPass, 1}});
+    curve.length = 3 * mods::kPassTicks;
+    float semitone = 1.f / 96;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0},
+                    {mods::kPassTicks, 0.5f + semitone, CurveType::Hold, 0},
+                    {2 * mods::kPassTicks, 0.5f + 2 * semitone, CurveType::Hold, 0}};
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
+
+    std::vector<std::vector<int>> pitches = render::motionPitches(song, song.tracks[0], clip);
+    REQUIRE(pitches.size() == 2);
+    CHECK(pitches[0] == std::vector<int>{60, 61, 62}); // the same three passes the engine plays
+    CHECK(pitches[1].empty());                        // not in the Motion
 }

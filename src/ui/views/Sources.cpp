@@ -186,6 +186,29 @@ double ClipSource::playhead() {
     return NAN;
 }
 
+double ClipSource::elapsed() {
+    TesseraModule* m = ctx.module();
+    const Track* track = m ? m->song().findTrack(this->track) : nullptr;
+    const Clip* clip = current();
+    if (!track || !clip)
+        return NAN;
+    LauncherStatus status = m->launcherStatus(track->id);
+    bool launched = status.playing >= 0 && status.playing < int(track->slots.size()) &&
+                    track->slots[size_t(status.playing)].clip == clip->id;
+    if (launched)
+        return status.elapsed;
+    if (m->playMode() == PlayMode::Arranger && !status.overridden) {
+        // A timeline clip: it starts where it begins the clip, and runs slower when it is stretched.
+        double song = m->playheadTicks();
+        if (const ArrangerClip* a = instanceAt(*track, Tick(song)); a && a->clip == clip->id) {
+            double stretch = a->stretch > 0 ? double(a->stretch) : 1.0;
+            return double(normalizeOffset(*clip, a->offset) - clipSpan(*clip).start) +
+                   (song - double(a->position)) / stretch;
+        }
+    }
+    return NAN;
+}
+
 int ClipSource::seekSlot() {
     TesseraModule* m = ctx.module();
     const Track* t = m->song().findTrack(track);

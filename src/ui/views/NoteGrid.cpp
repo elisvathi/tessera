@@ -930,6 +930,7 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         drawLaneLoops(vg);
         drawNotes(vg);
         drawMovedNotes(vg);
+        drawMotionGhosts(vg);
         drawMotionMarks(vg);
         drawSegmentEdges(vg);
         dimSilentLanes(vg);
@@ -1033,56 +1034,126 @@ const Playhead* NoteGrid::updateMoved() {
     return p;
 }
 
+void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, int to, NVGcolor color) {
+    TimeAxis& t = time();
+    PitchAxis& pitch = owner.pitch;
+    float row = float(pitch.rowHeight());
+    draw::TextStyle label{theme::fonts::ui(), std::min(10.f, row - 3), theme::colors().bg0,
+                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    float x0 = float(t.tickToX(double(n.start))), x1 = float(t.tickToX(double(n.end())));
+    float written = float(pitch.pitchToY(n.pitch)), played = float(pitch.pitchToY(to));
+    float w = std::max(3.f, x1 - x0 - 1);
+    // The written note, see-through (drawNotes): a dashed outline in the mover's colour, "moved from here".
+    float top = written + 0.75f, bottom = written + row - 1.25f, right = x0 + w;
+    nvgBeginPath(vg);
+    for (float x = x0; x < right; x += 6) {
+        nvgMoveTo(vg, x, top);
+        nvgLineTo(vg, std::min(x + 3, right), top);
+        nvgMoveTo(vg, x, bottom);
+        nvgLineTo(vg, std::min(x + 3, right), bottom);
+    }
+    for (float y = top; y < bottom; y += 6) {
+        nvgMoveTo(vg, x0, y);
+        nvgLineTo(vg, x0, std::min(y + 3, bottom));
+        nvgMoveTo(vg, right, y);
+        nvgLineTo(vg, right, std::min(y + 3, bottom));
+    }
+    nvgStrokeColor(vg, nvgTransRGBAf(color, 0.85f));
+    nvgStrokeWidth(vg, 1.2f);
+    nvgStroke(vg);
+    // A thin line to where it plays, and the note there.
+    float lineX = x0 + std::min(5.f, w / 2);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, lineX, played < written ? played + row - 1 : played + 1);
+    nvgLineTo(vg, lineX, played < written ? written + 1 : written + row - 1);
+    nvgStrokeColor(vg, nvgTransRGBAf(color, 0.5f));
+    nvgStrokeWidth(vg, 1);
+    nvgStroke(vg);
+    Rect r(x0, played + 1, w, std::max(2.f, row - 2));
+    draw::roundedRect(vg, r, 2, nvgTransRGBAf(color, 0.85f));
+    if (row >= 10 && w > 24) {
+        int steps = to - n.pitch;
+        draw::text(vg, label, x0 + 4, played + row / 2, (steps > 0 ? "+" : "") + std::to_string(steps) + " st");
+    }
+}
+
 void NoteGrid::drawMovedNotes(NVGcontext* vg) {
     const Clip* clip = owner.clip();
     const Playhead* p = updateMoved();
     if (!clip || !p)
         return;
     TimeAxis& t = time();
-    PitchAxis& pitch = owner.pitch;
-    float row = float(pitch.rowHeight());
     NVGcolor color = theme::playheadColor(p->color);
-    draw::TextStyle label{theme::fonts::ui(), std::min(10.f, row - 3), theme::colors().bg0,
-                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++) {
         const Note& n = clip->notes[i];
         if (moved[i] < 0 || moved[i] == n.pitch || double(n.end()) < t.left() || double(n.start) > t.right())
             continue;
+        drawMovedNote(vg, n, moved[i], color);
+    }
+}
+
+int NoteGrid::updateMotionMoved() {
+    TesseraModule* m = ctx.module();
+    const Clip* clip = owner.clip();
+    const Track* track = owner.track();
+    motionNow.clear();
+    if (!m || !clip || !track || track->type == TrackType::Drum) {
+        motionPitches.clear();
+        motionFor = {~uint64_t(0), 0};
+        return 0;
+    }
+    std::pair<uint64_t, uint64_t> key{m->songRevision(), clip->id.value};
+    if (key != motionFor) {
+        motionPitches = render::motionPitches(m->song(), *track, *clip);
+        motionFor = key;
+    }
+    // While it plays, the pass it is on; stopped, the first, which plays next.
+    int pass = 0;
+    double elapsed = m->playing() ? owner.source.elapsed() : NAN;
+    ClipSpan span = clipSpan(*clip);
+    if (std::isfinite(elapsed) && span.length() > 0)
+        pass = int(std::max(0.0, std::floor(elapsed / double(span.length()))));
+    for (size_t i = 0; i < clip->notes.size() && i < motionPitches.size(); i++) {
+        const std::vector<int>& list = motionPitches[i];
+        if (!list.empty() && list[size_t(pass) % list.size()] != clip->notes[i].pitch &&
+            !movedIds.count(clip->notes[i].id.value))
+            motionNow.insert(clip->notes[i].id.value);
+    }
+    return pass;
+}
+
+void NoteGrid::drawMotionGhosts(NVGcontext* vg) {
+    const Clip* clip = owner.clip();
+    const Track* track = owner.track();
+    if (!clip || !track)
+        return;
+    int pass = updateMotionMoved();
+    TimeAxis& t = time();
+    PitchAxis& pitch = owner.pitch;
+    float row = float(pitch.rowHeight());
+    for (size_t i = 0; i < clip->notes.size() && i < motionPitches.size(); i++) {
+        const Note& n = clip->notes[i];
+        const std::vector<int>& list = motionPitches[i];
+        // A playhead that moves this note already shows where it goes.
+        if (list.empty() || movedIds.count(n.id.value) || double(n.end()) < t.left() || double(n.start) > t.right())
+            continue;
+        const Device* motion = findDevice(ctx.module()->song(), n.motion);
+        if (!motion)
+            continue;
+        NVGcolor color = theme::playheadColor(motion->color);
+        int now = list[size_t(pass) % list.size()];
+        // The other pitches its curve takes it to, faint, so the whole movement shows at once.
         float x0 = float(t.tickToX(double(n.start))), x1 = float(t.tickToX(double(n.end())));
-        float written = float(pitch.pitchToY(n.pitch)), played = float(pitch.pitchToY(moved[i]));
-        float w = std::max(3.f, x1 - x0 - 1);
-        // The written note, see-through (drawNotes): a dashed outline in the playhead's colour, "moved from here".
-        float top = written + 0.75f, bottom = written + row - 1.25f, right = x0 + w;
-        nvgBeginPath(vg);
-        for (float x = x0; x < right; x += 6) {
-            nvgMoveTo(vg, x, top);
-            nvgLineTo(vg, std::min(x + 3, right), top);
-            nvgMoveTo(vg, x, bottom);
-            nvgLineTo(vg, std::min(x + 3, right), bottom);
+        std::set<int> others(list.begin(), list.end());
+        for (int other : others) {
+            if (other == now || other == n.pitch)
+                continue;
+            float y = float(pitch.pitchToY(other));
+            draw::roundedRectStroke(vg, Rect(x0, y + 1, std::max(3.f, x1 - x0 - 1), std::max(2.f, row - 2)), 2,
+                                    nvgTransRGBAf(color, 0.45f), 1);
         }
-        for (float y = top; y < bottom; y += 6) {
-            nvgMoveTo(vg, x0, y);
-            nvgLineTo(vg, x0, std::min(y + 3, bottom));
-            nvgMoveTo(vg, right, y);
-            nvgLineTo(vg, right, std::min(y + 3, bottom));
-        }
-        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.85f));
-        nvgStrokeWidth(vg, 1.2f);
-        nvgStroke(vg);
-        // A thin line to where it plays, and the note there.
-        float lineX = x0 + std::min(5.f, w / 2);
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, lineX, played < written ? played + row - 1 : played + 1);
-        nvgLineTo(vg, lineX, played < written ? written + 1 : written + row - 1);
-        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.5f));
-        nvgStrokeWidth(vg, 1);
-        nvgStroke(vg);
-        Rect r(x0, played + 1, w, std::max(2.f, row - 2));
-        draw::roundedRect(vg, r, 2, nvgTransRGBAf(color, 0.85f));
-        if (row >= 10 && w > 24) {
-            int steps = moved[i] - n.pitch;
-            draw::text(vg, label, x0 + 4, played + row / 2, (steps > 0 ? "+" : "") + std::to_string(steps) + " st");
-        }
+        if (now != n.pitch)
+            drawMovedNote(vg, n, now, color);
     }
 }
 
@@ -1095,19 +1166,7 @@ bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
     const Device* device = activePlayheads(*track);
     if (!device)
         return false;
-    LauncherStatus status = m->launcherStatus(track->id);
-    bool launched = status.playing >= 0 && status.playing < int(track->slots.size()) &&
-                    track->slots[size_t(status.playing)].clip == clip->id;
-    double elapsed = launched ? status.elapsed : NAN;
-    if (!launched && m->playMode() == PlayMode::Arranger && !status.overridden) {
-        // A timeline clip: the playheads start where it begins the clip, and run slower when it is stretched.
-        double song = m->playheadTicks();
-        if (const ArrangerClip* a = instanceAt(*track, Tick(song)); a && a->clip == clip->id) {
-            double stretch = a->stretch > 0 ? double(a->stretch) : 1.0;
-            elapsed = double(normalizeOffset(*clip, a->offset) - clipSpan(*clip).start) +
-                      (song - double(a->position)) / stretch;
-        }
-    }
+    double elapsed = owner.source.elapsed();
     if (!std::isfinite(elapsed))
         return false;
     bool solo = std::any_of(device->playheads.begin(), device->playheads.end(),
@@ -1187,8 +1246,10 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
     double playing = m && m->playing() ? playhead() : NAN;
     double glowTicks = m ? std::max(1.0, 0.15 * m->tempo() / 60.0 * double(kPpq)) : 1;
 
-    // Notes the shown playhead plays at another pitch show see-through here; drawMovedNotes draws where they go.
+    // Notes the shown playhead or a Motion plays at another pitch show see-through here; drawMovedNotes and
+    // drawMotionGhosts draw where they go.
     updateMoved();
+    updateMotionMoved();
 
     // Notes are sorted by start, so stop at the first one past the right edge.
     for (const Note& n : owner.notes()) {
@@ -1218,7 +1279,7 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
             fill = nvgLerpRGBA(fill, c.text0, 0.06f);
         if (n.muted)
             fill = nvgTransRGBAf(fill, 0.35f);
-        bool ghost = !drum && movedIds.count(n.id.value) > 0;
+        bool ghost = !drum && (movedIds.count(n.id.value) > 0 || motionNow.count(n.id.value) > 0);
         if (ghost)
             fill = nvgTransRGBAf(fill, 0.15f);
         float radius = std::min(theme::metrics::kRadiusItem, row / 3);
