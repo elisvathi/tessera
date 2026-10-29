@@ -263,9 +263,10 @@ CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int ind
                 used.push_back(p.color);
         }
         device.name = "Motion " + std::to_string(count + 1);
-        for (int c = 4; c < 20; c++)
-            if (std::find(used.begin(), used.end(), c % 16) == used.end()) {
-                device.color = uint8_t(c % 16);
+        // From orange on: the first colours are the playheads' own.
+        for (int c = 5; c < 13; c++)
+            if (std::find(used.begin(), used.end(), c % 8) == used.end()) {
+                device.color = uint8_t(c % 8);
                 break;
             }
         // A new one moves the notes the playheads read: before them, after any Motion already there.

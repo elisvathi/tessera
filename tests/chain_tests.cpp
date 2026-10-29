@@ -1664,3 +1664,30 @@ TEST_CASE("engine: a Motion device before the playheads moves the note inside th
     // After: the playhead plays it on beat 1, then it is a beat late.
     CHECK(firstStart(false) == doctest::Approx(kPpq).epsilon(0.01));
 }
+
+TEST_CASE("engine: a Curve set to Per pass steps a Motion knob once a pass") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    song.clips.begin()->second.notes[0].motion = motion.id;
+    // Three passes: as written, one semitone up, two up. Pitch spans 48 semitones, so a semitone is 1/48 of the knob:
+    // with amount 1 the drawn value moves half that per semitone.
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.params = knobsOf(ModulatorType::Curve, {{mods::knob::kCurvePerPass, 1}});
+    curve.length = 3 * mods::kPassTicks;
+    float semitone = 1.f / 96;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0},
+                    {mods::kPassTicks, 0.5f + semitone, CurveType::Hold, 0},
+                    {2 * mods::kPassTicks, 0.5f + 2 * semitone, CurveType::Hold, 0}};
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int pass = 0; pass < 4; pass++) {
+        h.runTo(int64_t(pass) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    CHECK(pitches == std::vector<int>{60, 61, 62, 60}); // then round again
+}

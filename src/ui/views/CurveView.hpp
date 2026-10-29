@@ -31,7 +31,9 @@ class CurveView : public InteractiveView {
     // What a running drag shows before it is committed: the points and the length.
     std::optional<std::pair<std::vector<AutoPoint>, Tick>> preview;
 
-    static constexpr float kBar = 18; // the length bar at the top
+    static constexpr float kBar = 18;      // the length bar at the top
+    static constexpr float kPassWidth = 72; // one pass across, per pass
+    static constexpr float kPassLeft = 46;  // where pass 1 starts, per pass (room for the row labels)
 
   protected:
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
@@ -47,8 +49,10 @@ class CurveView : public InteractiveView {
     ParamRef target();
     /// What that setting is, its value as set (normalized) and how far the curve turns it (-1..1).
     const devices::ParamInfo* targetInfo(float* base = nullptr, float* amount = nullptr);
-    /// Whether the cycle follows the song (Sync on): only then does the bar set its length.
+    /// Whether the cycle follows the song (Sync on, or Per pass): only then does the bar set its length.
     bool synced();
+    /// Whether the curve steps once a pass (Per pass): across are passes, not the piano roll's time.
+    bool perPass();
     /// The points and length shown: the dragged ones, the modulator's, or none over a bar.
     std::pair<std::vector<AutoPoint>, Tick> shown();
     /// Commits a new shape: onto the modulator, or a new one moving the waiting setting.

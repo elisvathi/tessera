@@ -18,7 +18,7 @@ enum Steps { kStepCount, kStepRate, kStepSmooth, kStepBipolar, kStepPerPass };
 enum Random { kRandomRate, kRandomSmooth, kRandomBipolar };
 enum Ramp { kBars, kDirection, kThen, kCurve, kRampPerPass };
 enum NoteFollow { kFollows, kSmooth };
-enum Curve { kCurveSync, kCurveRate, kCurveRestart };
+enum Curve { kCurveSync, kCurveRate, kCurveRestart, kCurvePerPass };
 } // namespace knob
 
 enum class Shape : uint8_t { Sine, Triangle, SawUp, SawDown, Square, SampleHold, SmoothRandom };
@@ -57,7 +57,10 @@ struct Clock {
     int64_t pass = -1;
 };
 
-/// A Curve modulator's drawn shape: points over one cycle of `length` ticks.
+/// Per pass, a Curve's cycle counts passes: each pass of a note is this many ticks of its drawing.
+constexpr Tick kPassTicks = 4 * kPpq;
+
+/// A Curve modulator's drawn shape: points over one cycle of `length` ticks (per pass: kPassTicks a pass).
 struct Drawn {
     const AutoPoint* points = nullptr;
     int count = 0;

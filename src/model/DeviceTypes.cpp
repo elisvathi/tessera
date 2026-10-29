@@ -156,7 +156,8 @@ std::vector<TypeInfo> buildModulators() {
                                        exponential("Smooth", 1, 2000, 1, "ms")}};
     t[size_t(ModulatorType::Curve)] = {"Curve",
                                        {toggle("Sync", true), exponential("Rate", 0.01f, 20, 0.5f, "Hz"),
-                                        choice("Restart", {"Free", "Each bar", "Each note"}, 0)}};
+                                        choice("Restart", {"Free", "Each bar", "Each note"}, 0),
+                                        toggle("Per pass", false)}};
     auto about = [&t](ModulatorType type, const char* group, const char* description, const char* keywords) {
         TypeInfo& info = t[size_t(type)];
         info.group = group;
