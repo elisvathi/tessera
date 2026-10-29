@@ -167,6 +167,8 @@ panels.
   panels.
 - Light: **Plaster**, **Sand**.
 - Dark: **Slate**, **Gruvbox**, **Nord**, **Catppuccin**, **One Dark**, **Monokai**.
+- Darker: **Carbon** (Tessera's first look: near black with an orange accent), **Tokyo Night**, **Rosé Pine**,
+  **Kanagawa**.
 
 ![The editor in the light Plaster scheme](images/editor-light.png)
 
