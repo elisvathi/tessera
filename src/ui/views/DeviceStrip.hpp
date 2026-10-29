@@ -111,8 +111,7 @@ class DeviceStrip : public InteractiveView {
     const Playhead* shownPlayhead(const Device& d) const;
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     /// A dropdown in a knob's place (a playhead's direction, repeat, channel), with its label under it.
-    void drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value, bool dim,
-                      bool hot);
+    void drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value, bool hot);
     /// While mapping: whether the mapped modulator may reach this knob.
     bool reachableNow(const ParamRef& ref);
     void drawClosed(NVGcontext* vg);
