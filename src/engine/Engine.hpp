@@ -336,6 +336,7 @@ class Engine {
         // Per voice: the expression curves of the note it plays, and when that note started and how long it is.
         std::array<const NoteExtras*, kMaxVoices> voiceExtras{};
         std::array<double, kMaxVoices> voiceStart{}, voiceLength{};
+        std::array<uint8_t, kMaxVoices> voicePart{}; // the channel of each voice's note
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
         std::array<uint64_t, kMaxVoices> voiceClip{}, voiceNote{};

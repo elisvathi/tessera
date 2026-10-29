@@ -132,6 +132,8 @@ json_t* OutputModuleBase::dataToJson() {
     json_object_set_new(root, "sourceName", json_string(bindingData.sourceName.c_str()));
     json_object_set_new(root, "track", json_integer(static_cast<json_int_t>(bindingData.track.value)));
     json_object_set_new(root, "followSelected", json_boolean(bindingData.followSelected));
+    if (part() > 0)
+        json_object_set_new(root, "channel", json_integer(part()));
     return root;
 }
 
@@ -144,6 +146,7 @@ void OutputModuleBase::dataFromJson(json_t* root) {
     if (json_t* j = json_object_get(root, "track"))
         bindingData.track = TrackId(uint64_t(json_integer_value(j)));
     bindingData.followSelected = json_is_true(json_object_get(root, "followSelected"));
+    setPart(int(json_integer_value(json_object_get(root, "channel"))));
 }
 
 } // namespace tessera

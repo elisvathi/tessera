@@ -165,7 +165,7 @@ std::vector<TypeInfo> buildModulators() {
 TypeInfo buildPlayhead() {
     using namespace playheads;
     return {"Playhead",
-            {choice("Rate", rateNames(), 7), choice("Direction", {"Forward", "Reverse", "Ping-pong", "Freeze"}, 0),
+            {choice("Rate", playheads::rateNames(), 7), choice("Direction", {"Forward", "Reverse", "Ping-pong", "Freeze"}, 0),
              integer("Start", 0, 256, 0, "steps"), integer("Region start", 0, 256, 0, "steps"),
              integer("Region length", 0, 256, 0, "steps"), choice("Repeat", repeatNames(), 0),
              integer("Repeat times", 2, 16, 2), choice("Bend", {"Straight", "Ease in", "Ease out", "Ease in-out",

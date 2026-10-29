@@ -50,13 +50,16 @@ class DeviceStrip : public InteractiveView {
             Knob,
             KnobValue,
             Insert,
-            AddTile
+            AddTile,
+            PlayheadChip, // one playhead of a Playheads device: click to show its settings
+            AddPlayhead
         };
         Kind kind;
         rack::math::Rect rect;
         int device = -1; // index in the chain
-        int param = -1;
-        uint64_t id = 0; // device or modulator ID
+        int param = -1;  // knob index; PlayheadChip: the playhead's index
+        uint64_t id = 0; // device, modulator or (playhead knobs and chips) playhead ID
+        ParamRef::Kind refKind = ParamRef::Kind::Device; // what a knob's `id` is
     };
 
     // What running gestures show before they are committed.
@@ -78,8 +81,14 @@ class DeviceStrip : public InteractiveView {
   private:
     const Track* track();
     void layoutParts();
+    /// A Playheads card at `x`: chips for its playheads, then the shown playhead's settings and the device's own
+    /// knobs. Returns its right edge.
+    float layoutPlayheads(const Device& d, int index, float x, float knobTop);
     const Part* partAt(rack::math::Vec pos) const;
-    ParamRef knobRef(const Part& p) const { return {ParamRef::Kind::Device, p.id, uint16_t(p.param)}; }
+    ParamRef knobRef(const Part& p) const { return {p.refKind, p.id, uint16_t(p.param)}; }
+    /// The playhead whose settings a Playheads card shows: the one last clicked, else its first.
+    const Playhead* shownPlayhead(const Device& d) const;
+    void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     /// While mapping: whether the mapped modulator may reach this knob.
     bool reachableNow(const ParamRef& ref);
     void drawClosed(NVGcontext* vg);
@@ -99,6 +108,7 @@ class DeviceStrip : public InteractiveView {
     std::map<uint64_t, std::array<float, 40>> scopes;
     int scopeHead = 0;
     TrackId shownTrack;
+    PlayheadId selectedPlayhead;
 };
 
 } // namespace tessera

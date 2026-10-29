@@ -19,6 +19,8 @@ struct TrackFrame {
     float press[kMaxVoices] = {};
     float tune[kMaxVoices] = {}; // drum tracks: the hit's tuning away from normal, 1 V per octave (Drum Out PITCH)
     float automation[kMaxAutomationLanes] = {}; // already in volts
+    // The channel (1..16) of the note each voice plays or last played, so an output can play one channel only.
+    uint8_t part[kMaxVoices] = {};
 };
 
 } // namespace tessera

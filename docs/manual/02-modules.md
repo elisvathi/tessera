@@ -147,7 +147,12 @@ another track by itself: undo the delete, or pick a track, and it plays again.
 
 **The arrow buttons** step through the instrument tracks. Each step can be undone.
 
-**Right-click** for the **Source** (which Tessera, by instance name) and **Track** menus.
+**The channel** shows on the last line of the screen: **All channels**, or one channel and who plays on it ("Ch 2 ·
+Playhead 2"). Click the screen to pick it. With one channel picked, the Track Out plays only the notes on that channel;
+its other voices stay silent. This gives each playhead of a [Playheads](13-devices.md#playheads) device its own sound,
+and also splits a clip that holds several parts on different channels.
+
+**Right-click** for the **Source** (which Tessera, by instance name), **Track** and **Channel** menus.
 
 ![The Track Out menu: Source and Track](images/track-out-menu.png)
 

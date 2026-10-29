@@ -6,6 +6,7 @@
 
 #include <rack.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <optional>
@@ -48,6 +49,10 @@ class OutputModuleBase : public rack::engine::Module {
     void refreshBinding();
     void bind(const TesseraModule& source, TrackId track);
     void setFollowSelected(bool on) { bindingData.followSelected = on; }
+    /// The channel the module plays: 0 for all, 1..16 for only the notes on that channel (docs/design/PLAYHEADS.md
+    /// §2.2). Only Track Out offers it.
+    int part() const { return partValue.load(std::memory_order_relaxed); }
+    void setPart(int channel) { partValue.store(std::clamp(channel, 0, 16), std::memory_order_relaxed); }
     /// Moves to the next (+1) or previous (-1) track this module can output, wrapping around.
     void stepTrack(int delta);
     const OutputBinding& binding() const { return bindingData; }
@@ -75,6 +80,7 @@ class OutputModuleBase : public rack::engine::Module {
     AudioHandoff<const OutputBus> bus;
     std::atomic<int> busSlot{-1};
     std::atomic<uint64_t> boundTrack{0};
+    std::atomic<int> partValue{0};
 };
 
 } // namespace tessera

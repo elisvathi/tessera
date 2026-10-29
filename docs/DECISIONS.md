@@ -1431,3 +1431,25 @@ Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifac
 - Jack IDs are unchanged, so saved cables stay on their jacks.
 
 Why: the user found the old jack area messy (two plates of different sizes, inputs on a plate, uneven spacing).
+
+## 94. Playheads: a source device, channels and a Track Out picker (29 Oct, first version)
+
+Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead` only.
+
+- **One Playheads device per track, always first.** It holds the playheads; each is a set of knobs (ParamRef kind
+  Playhead), so modulators and lanes reach them like device knobs. The chain doesn't run it: the engine reads the
+  clip through it instead of the clip's own playhead.
+- **A playhead's place is a pure function of the time since the clip started** (`model/Playheads`): sweeps through the
+  clip with exact positions at wraps, turns and repeats, so a window of any size plays the same notes. Going
+  backward a note plays at its end. Ping-pong doesn't replay the note at a turn.
+- **Rows became chips.** The device strip is 128 px tall, so a Playheads card shows its playheads as chips and the
+  selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
+- **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
+  backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **New playheads start a beat apart** (not a bar), so a canon is heard in a one-bar clip too.
+- **Channels, not outputs per playhead.** Each playhead tags its notes with a channel; each voice remembers its note's
+  channel (`TrackFrame::part`); a Track Out plays All or one channel. A filtered Track Out keeps the track's voice
+  count and holds a voice's last values while another channel uses it, so voices never move between cables (the
+  design's voice groups per channel can come later).
+- **Not yet:** timeline playback, MIDI export, drum lanes with their own length, note operators and curves, branches,
+  the time map, drawn paths, note motion, a Drum Out picker, and changing Rate smoothly while it plays.

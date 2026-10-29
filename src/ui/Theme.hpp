@@ -97,6 +97,8 @@ NVGcolor recessed(const Palette& p, NVGcolor base, float strength);
 /// Each modulator's colour: its rows, its rings on the knobs it moves, its mapping highlight. Picked from a set
 /// that stays clear of the accent and of each other, by modulator ID so it never changes.
 NVGcolor modulatorColor(uint64_t modulatorId);
+/// A playhead's colour, by its colour index (docs/design/PLAYHEADS.md §3.2): its chip, its line over the notes.
+NVGcolor playheadColor(int index);
 
 namespace fonts {
 std::shared_ptr<rack::window::Font> ui();
