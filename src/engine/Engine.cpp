@@ -2247,10 +2247,7 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
         frame.vel[v] = voice.velocity * 10.f;
         frame.rel[v] = voice.releaseVelocity * 10.f;
         // A playhead channel's voices always say its channel, so an output on that channel keeps a steady count.
-        uint8_t block = voices.partOf(v);
-        frame.part[v] = block ? block : state.voicePart[size_t(v)];
-        frame.used[v] = voices.used(v) ? 1 : 0;
-        byChannel = byChannel || block != 0;
+        frame.part[v] = state.voicePart[size_t(v)];
         frame.timbre[v] = 0;
         frame.press[v] = 0;
         if (const NoteExtras* ex = state.voiceExtras[size_t(v)]) {
@@ -2272,6 +2269,19 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
         if (live) {
             frame.voct[v] += state.liveChannelBend;
             frame.press[v] = std::max(frame.press[v], state.liveChannelPress);
+        }
+    }
+    // A playhead channel's voices always say its channel (so an output on that channel keeps a steady count), and
+    // which of them it has needed so far. One walk through the blocks.
+    for (int b = 0; b < voices.blockTotal(); b++) {
+        const VoiceAllocator::Block& block = voices.block(b);
+        int used = voices.usedIn(b);
+        byChannel = byChannel || block.part != 0;
+        for (int i = 0; i < block.size; i++) {
+            int v = block.start + i;
+            if (block.part)
+                frame.part[v] = block.part;
+            frame.used[v] = i < used ? 1 : 0;
         }
     }
     frame.byChannel = byChannel;
