@@ -1533,6 +1533,36 @@ TEST_CASE("engine: playheads read the timeline's clips too, from each clip's sta
     CHECK(h.pitch() == 64);
 }
 
+TEST_CASE("engine: timeline playheads read ahead, and play every note once while the song is being edited") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.length = 16 * kPpq; // the one-bar clip looping four times on the timeline
+    song.tracks[0].arrangement.push_back(a);
+    song.clips.begin()->second.loopMode = LoopMode::Loop;
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    // An odd tempo, so reads ahead don't line up with the beats and hold queued notes when an edit comes.
+    h.engine.setTempo(kBpm * 1.37);
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = 0; s < int64_t((16 * kPpq - 100) * kSamplesPerTick / 1.37); s++) {
+        if (s % 47 == 0)
+            h.republish();
+        h.step();
+        bool now = h.anyGate();
+        starts += now && !was;
+        was = now;
+    }
+    CHECK(starts == 16);
+}
+
 TEST_CASE("engine: a playhead's branch changes only that playhead's notes") {
     Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());

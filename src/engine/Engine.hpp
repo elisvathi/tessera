@@ -340,6 +340,12 @@ class Engine {
             double launch = NAN;
         };
         PlayheadLook playheadLook;
+        // The same on the timeline, in song ticks: how far its playheads have read the timeline clips.
+        struct SongLook {
+            double until = NAN;
+            double last = NAN;
+        };
+        SongLook songLook;
         int pendingCount = 0;
         int64_t lastPass = -1;
         bool previousPlayed = true;

@@ -1026,8 +1026,12 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
     if (state.queued != kNothingQueued)
         wake = std::min(wake, state.queuedAt);
     if (followsArrangement(state)) {
-        if (runs(track) && readByPlayheads(state) && !track.instances.empty())
-            return -INFINITY; // playheads read the timeline's clips: every sample
+        if (runs(track) && readByPlayheads(state) && !track.instances.empty()) {
+            // Playheads read the timeline's clips ahead: wake to read on (queued notes wake it too).
+            if (!std::isfinite(state.songLook.until))
+                return -INFINITY;
+            wake = std::min(wake, now + (state.songLook.until - songTick));
+        }
         // The arrangement is flat and in song ticks, which keep pace with play ticks until the song loop wraps.
         if (runs(track) && state.arrangementCursor < track.arrangement.size())
             wake = std::min(wake, now + (track.arrangement[state.arrangementCursor].start - songTick));
@@ -1111,8 +1115,22 @@ void Engine::fireArrangement(const TrackPlayback& track, TrackState& state, doub
         while (state.arrangementCursor < track.arrangement.size() &&
                track.arrangement[state.arrangementCursor].start < to)
             state.arrangementCursor++;
-        if (!replacing(track))
-            playInstancesByPlayheads(track, state, from, to, playAtFrom);
+        if (!replacing(track)) {
+            // Read ahead a block at a time, as a launched clip's playheads do, queueing the notes found: not on every
+            // sample. Never past the song loop's end, where the song jumps back.
+            TrackState::SongLook& look = state.songLook;
+            if (!(from >= look.last - 1e-9) || !(look.until >= from - 1e-9))
+                look = {from, from};
+            look.last = from;
+            if (to > look.until) {
+                double readTo = std::max(to, look.until + double(kControlBlock) * ticksPerSample);
+                double loopEnd = double(snapshot->loopEnd);
+                if (loopOn && loopEnd > double(snapshot->loopStart) && from < loopEnd)
+                    readTo = std::min(readTo, loopEnd);
+                playInstancesByPlayheads(track, state, look.until, readTo, playAtFrom + (look.until - from));
+                look.until = readTo;
+            }
+        }
         return;
     }
     bool looping = loopOn && snapshot->loopEnd > snapshot->loopStart;
@@ -1563,6 +1581,17 @@ void Engine::reattachCurves(const TrackPlayback& tp, TrackState& state) {
 }
 
 void Engine::rewindPlayheads(TrackState& state) {
+    if (followsArrangement(state) && std::isfinite(state.songLook.until)) {
+        // The timeline: read again from where the song is; each playhead's clock follows the song time anew.
+        state.songLook = {};
+        size_t index = size_t(&state - tracks.data());
+        if (index < tracks.size())
+            for (PlayheadClock& clock : (*playheadClocks)[index]) {
+                clock.until = NAN;
+                clock.lastPos = NAN;
+            }
+        return;
+    }
     TrackState::PlayheadLook& look = state.playheadLook;
     if (!std::isfinite(look.until))
         return;
