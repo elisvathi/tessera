@@ -1027,6 +1027,11 @@ const Playhead* NoteGrid::updateMoved() {
     std::tuple<uint64_t, uint64_t, uint64_t, int64_t> key{m->songRevision(), clip->id.value, p->id.value, pass};
     if (key != movedFor) {
         moved = render::heardPitches(m->song(), *track, *device, *p, *clip, pass);
+        // A note in a Motion shows where the Motion's curves are now (drawMotionGhosts), which moves while the
+        // song plays; worked out per pass here, it would stand still.
+        for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++)
+            if (clip->notes[i].motion.valid())
+                moved[i] = -1;
         movedIds.clear();
         for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++)
             if (moved[i] >= 0 && moved[i] != clip->notes[i].pitch)
@@ -1116,14 +1121,18 @@ int NoteGrid::updateMotionMoved() {
     const Clip* clip = owner.clip();
     const Track* track = owner.track();
     motionNow.clear();
+    motionCurrent.clear();
     if (!m || !clip || !track || track->type == TrackType::Drum) {
         motionPitches.clear();
-        motionFor = {~uint64_t(0), 0};
+        motionFor = {~uint64_t(0), 0, false};
         return 0;
     }
-    std::pair<uint64_t, uint64_t> key{m->songRevision(), clip->id.value};
+    // Playheads may read a note at any moment, so its pitch is wherever the Motion's curves are now; a clip that
+    // plays straight meets each note at its own place on each pass.
+    bool anyTime = activePlayheads(*track) != nullptr;
+    std::tuple<uint64_t, uint64_t, bool> key{m->songRevision(), clip->id.value, anyTime};
     if (key != motionFor) {
-        motionPitches = render::motionPitches(m->song(), *track, *clip);
+        motionPitches = render::motionPitches(m->song(), *track, *clip, anyTime);
         motionFor = key;
     }
     // While it plays, the pass it is on; stopped, the first, which plays next.
@@ -1132,10 +1141,16 @@ int NoteGrid::updateMotionMoved() {
     ClipSpan span = clipSpan(*clip);
     if (std::isfinite(elapsed) && span.length() > 0)
         pass = int(std::max(0.0, std::floor(elapsed / double(span.length()))));
+    motionCurrent.assign(clip->notes.size(), -1);
+    double songTick = m->playheadTicks();
     for (size_t i = 0; i < clip->notes.size() && i < motionPitches.size(); i++) {
         const std::vector<int>& list = motionPitches[i];
-        if (!list.empty() && list[size_t(pass) % list.size()] != clip->notes[i].pitch &&
-            !movedIds.count(clip->notes[i].id.value))
+        if (list.empty())
+            continue;
+        int now = anyTime ? render::motionPitchAt(m->song(), *track, *clip, i, pass, songTick)
+                          : list[size_t(pass) % list.size()];
+        motionCurrent[i] = now;
+        if (now != clip->notes[i].pitch && !movedIds.count(clip->notes[i].id.value))
             motionNow.insert(clip->notes[i].id.value);
     }
     return pass;
@@ -1160,7 +1175,8 @@ void NoteGrid::drawMotionGhosts(NVGcontext* vg) {
         if (!motion)
             continue;
         NVGcolor color = theme::playheadColor(motion->color);
-        int now = list[size_t(pass) % list.size()];
+        int now =
+            i < motionCurrent.size() && motionCurrent[i] >= 0 ? motionCurrent[i] : list[size_t(pass) % list.size()];
         // The other pitches its curve takes it to, faint, so the whole movement shows at once.
         float x0 = float(t.tickToX(double(n.start))), x1 = float(t.tickToX(double(n.end())));
         std::set<int> others(list.begin(), list.end());

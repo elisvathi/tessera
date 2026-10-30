@@ -94,7 +94,12 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
 constexpr int kMaxGhostPasses = 16;
 /// For each of `clip`'s notes that moves with a Motion device on `track`: the pitch it plays on each pass of the
 /// clip, pass 1 first, over one cycle of the curves on that Motion (Per pass ones and ones that count in time); empty
-/// for the other notes. For the piano roll's ghosts of notes a Motion moves.
-std::vector<std::vector<int>> motionPitches(const Song& song, const Track& track, const Clip& clip);
+/// for the other notes. With `anyTime` (playheads, which may read a note at any moment), every pitch the curves take
+/// it to over their cycle instead, each once. For the piano roll's ghosts of notes a Motion moves.
+std::vector<std::vector<int>> motionPitches(const Song& song, const Track& track, const Clip& clip,
+                                            bool anyTime = false);
+/// The pitch note `index` of `clip` plays at when its Motion device moves it on `pass` at `songTick`, its curves
+/// read there; -1 for a note in no Motion.
+int motionPitchAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass, double songTick);
 
 } // namespace tessera::render

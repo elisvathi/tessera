@@ -967,47 +967,87 @@ bool Options::operator==(const Options& o) const {
            ccStep == o.ccStep && bendRange == o.bendRange && laneCc == o.laneCc && channels == o.channels;
 }
 
-std::vector<std::vector<int>> motionPitches(const Song& song, const Track& track, const Clip& clip) {
+namespace {
+
+/// The longest cycle of the curves on Motion device `motion`: how many passes its Per pass ones take, and how many
+/// ticks its time ones last (0 when none).
+std::pair<int, Tick> motionCycle(const Song& song, const Track& track, const Device& motion) {
+    int passes = 1;
+    Tick ticks = 0;
+    auto measure = [&](const std::vector<Modulator>& list) {
+        for (const Modulator& m : list) {
+            bool routed = std::any_of(m.routes.begin(), m.routes.end(), [&](const Modulation& r) {
+                return r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
+                       r.target.owner == motion.id.value;
+            });
+            if (!routed || m.length <= 0)
+                continue;
+            if (mods::perPass(m.type, m.params.data()))
+                passes = std::max(passes, int(std::lround(double(m.length) / double(mods::kPassTicks))));
+            else if (m.type == ModulatorType::Curve)
+                ticks = std::max(ticks, m.length);
+        }
+    };
+    measure(song.modulators);
+    measure(track.modulators);
+    for (const Device& d : track.devices)
+        measure(d.modulators);
+    return {std::clamp(passes, 1, kMaxGhostPasses), ticks};
+}
+
+/// The key a clip's notes are moved in.
+Scale keyOf(const Song& song, const Clip& clip) {
+    return clip.scaleOverride ? resolveScale(*clip.scaleOverride, song.customScales)
+                              : resolveScale(song.scale, song.customScales);
+}
+
+} // namespace
+
+int motionPitchAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass, double songTick) {
+    if (index >= clip.notes.size())
+        return -1;
+    const Note& n = clip.notes[index];
+    const Device* motion = nullptr;
+    for (const Device& d : track.devices)
+        if (d.type == DeviceType::Motion && d.id == n.motion)
+            motion = &d;
+    if (!motion || n.muted)
+        return -1;
+    MovedBy moved = movedAt(song, track, *motion, pass, songTick);
+    int pitch = n.pitch;
+    if (moved.steps != 0)
+        pitch = moved.inKey ? keyOf(song, clip).stepBy(pitch, moved.steps) : pitch + moved.steps;
+    return std::clamp(pitch, 0, 127);
+}
+
+std::vector<std::vector<int>> motionPitches(const Song& song, const Track& track, const Clip& clip, bool anyTime) {
     std::vector<std::vector<int>> out(clip.notes.size());
     ClipSpan span = clipSpan(clip);
     double loop = std::max(1.0, double(span.length()));
-    Scale scale = clip.scaleOverride ? resolveScale(*clip.scaleOverride, song.customScales)
-                                     : resolveScale(song.scale, song.customScales);
     for (const Device& motion : track.devices) {
         if (motion.type != DeviceType::Motion)
             continue;
-        // How many passes before its curves line up again: the longest of them, capped so a long cycle stays cheap.
-        int passes = 1;
-        auto measure = [&](const std::vector<Modulator>& list) {
-            for (const Modulator& m : list) {
-                bool routed = std::any_of(m.routes.begin(), m.routes.end(), [&](const Modulation& r) {
-                    return r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
-                           r.target.owner == motion.id.value;
-                });
-                if (!routed || m.length <= 0)
-                    continue;
-                if (mods::perPass(m.type, m.params.data()))
-                    passes = std::max(passes, int(std::lround(double(m.length) / double(mods::kPassTicks))));
-                else if (m.type == ModulatorType::Curve)
-                    passes = std::max(passes, int(std::ceil(double(m.length) / loop)));
-            }
-        };
-        measure(song.modulators);
-        measure(track.modulators);
-        for (const Device& d : track.devices)
-            measure(d.modulators);
-        passes = std::clamp(passes, 1, kMaxGhostPasses);
+        auto [passes, ticks] = motionCycle(song, track, motion);
         for (size_t i = 0; i < clip.notes.size(); i++) {
             const Note& n = clip.notes[i];
             if (n.muted || n.motion != motion.id)
                 continue;
-            for (int k = 0; k < passes; k++) {
-                MovedBy moved = movedAt(song, track, motion, k, double(k) * loop + double(n.start - span.start));
-                int pitch = n.pitch;
-                if (moved.steps != 0)
-                    pitch = moved.inKey ? scale.stepBy(pitch, moved.steps) : pitch + moved.steps;
-                out[i].push_back(std::clamp(pitch, 0, 127));
+            if (!anyTime) {
+                // The clip plays straight: on pass k the note is met at its own place, k loops in.
+                int cycle = std::clamp(std::max(passes, int(std::ceil(double(ticks) / loop))), 1, kMaxGhostPasses);
+                for (int k = 0; k < cycle; k++)
+                    out[i].push_back(
+                        motionPitchAt(song, track, clip, i, k, double(k) * loop + double(n.start - span.start)));
+                continue;
             }
+            // Read at any moment (playheads): every pitch its curves reach over their cycle, each once.
+            Tick step = std::max<Tick>(kPpq / 4, ticks / 128);
+            for (int k = 0; k < passes; k++)
+                for (Tick t = 0; t < std::max<Tick>(1, ticks); t += step) {
+                    int pitch = motionPitchAt(song, track, clip, i, k, double(t));
+                    if (std::find(out[i].begin(), out[i].end(), pitch) == out[i].end())
+                        out[i].push_back(pitch);
+                }
         }
     }
     return out;
