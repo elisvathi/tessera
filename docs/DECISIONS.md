@@ -1446,6 +1446,10 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **Timeline playheads read ahead** (30 Oct). On the timeline the playheads read on every sample, which made one track
+  cost several percent of a core. They now read a control block ahead in song ticks and queue what they find, like a
+  launched clip's playheads, never past the song loop's end; an edit (which clears the queue) or a jump reads again
+  from the song's place. A Track Out with 16 voices or fewer on All copies them in one go again.
 - **A note lasts while its playhead is on it** (30 Oct). Length defaulted to "As written", so at ½× a note stopped
   halfway while the playhead still swept across it: the picture and the sound disagreed. "Follows playhead" is now the
   default, and songs saved as schema 6 (only this branch wrote it) switch their As written playheads to it.
