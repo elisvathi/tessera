@@ -68,6 +68,17 @@ int Song::clipUses(ClipId clip) const {
 
 namespace {
 
+/// How many times more a playhead's notes overlap than as written: one faster than 1x reaches the next note
+/// sooner, but plays notes as long as written (or fixed).
+int playheadOverlap(const Playhead& p) {
+    const devices::ParamInfo& rate = devices::playheadInfo().params[playheads::knob::kRate];
+    const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
+    double speed = playheads::playheadRate(int(std::lround(devices::display(rate, p.params[playheads::knob::kRate]))));
+    bool follows = playheads::LengthMode(std::lround(devices::display(length, p.params[playheads::knob::kLength]))) ==
+                   playheads::LengthMode::FollowsPlayhead;
+    return follows ? 1 : std::max(1, int(std::ceil(speed - 1e-6)));
+}
+
 /// How many voices `chain` needs for `voices` notes at once: chords multiply them, echoes and longer notes overlap
 /// them, an arpeggiator plays one step at a time (all of them at once in its Chord pattern), and each playhead
 /// plays its own notes through its own branch.
@@ -99,22 +110,10 @@ int voicesThrough(const std::vector<Device>& chain, int voices) {
             voices *= 2;
             break;
         case DeviceType::Playheads: {
-            // A playhead faster than 1x reaches the next note sooner, but plays notes as long as written (or fixed):
-            // they overlap that many times more.
-            const devices::ParamInfo& rate = devices::playheadInfo().params[playheads::knob::kRate];
-            const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
             int total = 0;
-            for (const Playhead& p : d.playheads) {
-                if (p.mute)
-                    continue;
-                double speed =
-                    playheads::playheadRate(int(std::lround(devices::display(rate, p.params[playheads::knob::kRate]))));
-                bool follows =
-                    playheads::LengthMode(std::lround(devices::display(length, p.params[playheads::knob::kLength]))) ==
-                    playheads::LengthMode::FollowsPlayhead;
-                int overlap = follows ? 1 : std::max(1, int(std::ceil(speed - 1e-6)));
-                total += voicesThrough(p.branch, voices * overlap);
-            }
+            for (const Playhead& p : d.playheads)
+                if (!p.mute)
+                    total += voicesThrough(p.branch, voices * playheadOverlap(p));
             voices = std::max(1, total);
             break;
         }
@@ -129,8 +128,55 @@ int voicesThrough(const std::vector<Device>& chain, int voices) {
 } // namespace
 
 int Song::voicesOf(const Track& track) const {
+    if (track.type != TrackType::Drum && activePlayheads(track)) {
+        int total = 0;
+        for (const VoiceBlock& b : voiceBlocks(track))
+            total += b.size;
+        return total;
+    }
     if (track.polyphony != kAutoVoices)
         return std::clamp(track.polyphony, 1, kMaxVoices);
+    return std::clamp(voicesThrough(track.devices, std::min(mostNotesAtOnce(track), kMaxVoices)), 1, kMaxVoices);
+}
+
+std::vector<Song::VoiceBlock> Song::voiceBlocks(const Track& track) const {
+    const Device* heads = track.type == TrackType::Drum ? nullptr : activePlayheads(track);
+    if (!heads)
+        return {{0, voicesOf(track)}};
+    auto at = std::find_if(track.devices.begin(), track.devices.end(), [&](const Device& d) { return &d == heads; });
+    std::vector<Device> before(track.devices.begin(), at), after(at + 1, track.devices.end());
+    int base = voicesThrough(before, std::min(mostNotesAtOnce(track), kMaxVoices));
+    std::vector<VoiceBlock> blocks;
+    for (const Playhead& p : heads->playheads) {
+        if (p.mute)
+            continue;
+        int size = track.polyphony != kAutoVoices
+                       ? track.polyphony
+                       : voicesThrough(after, voicesThrough(p.branch, base * playheadOverlap(p)));
+        auto same =
+            std::find_if(blocks.begin(), blocks.end(), [&](const VoiceBlock& b) { return b.part == p.channel; });
+        if (same != blocks.end())
+            same->size += size;
+        else
+            blocks.push_back({p.channel, size});
+    }
+    if (blocks.empty())
+        blocks.push_back({0, 1});
+    // Each up to 16; past the track's room the last playheads give way.
+    int room = kMaxTrackVoices;
+    size_t keep = 0;
+    for (VoiceBlock& b : blocks) {
+        b.size = std::clamp(b.size, 1, kMaxVoices);
+        if (b.size > room)
+            break;
+        room -= b.size;
+        keep++;
+    }
+    blocks.resize(std::max<size_t>(1, keep));
+    return blocks;
+}
+
+int Song::mostNotesAtOnce(const Track& track) const {
     int most = 1;
     auto add = [&](ClipId id) {
         if (const Clip* clip = findClip(id))
@@ -153,7 +199,7 @@ int Song::voicesOf(const Track& track) const {
         sounding += n;
         most = std::max(most, sounding);
     }
-    return std::clamp(voicesThrough(track.devices, std::min(most, kMaxVoices)), 1, kMaxVoices);
+    return most;
 }
 
 bool Song::anySolo() const {

@@ -95,6 +95,18 @@ struct Song {
     /// ever play at once (at least 1).
     int voicesOf(const Track& track) const;
 
+    /// A channel's own voices: notes on channel `part` (0: any channel with none of its own) play in `size` voices.
+    struct VoiceBlock {
+        uint8_t part;
+        int size;
+    };
+    /// The track's voices as blocks, in the order an output stacks them: with a Playheads device, one per channel of
+    /// its playheads that aren't muted, in playhead order, each up to 16 (its Auto count, or the fixed count); else
+    /// one block of voicesOf. At most kMaxTrackVoices in all.
+    std::vector<VoiceBlock> voiceBlocks(const Track& track) const;
+    /// The most notes the track's clips ever play at once (at least 1), before its devices.
+    int mostNotesAtOnce(const Track& track) const;
+
     /// Whether any clip in the track's slots or on its timeline has a note: the track has something to play.
     bool hasNotes(const Track& track) const;
 

@@ -25,19 +25,21 @@ void TrackOutModule::writeFrame(const TrackFrame& frame) {
         {REL_OUTPUT, frame.rel},   {TIMBRE_OUTPUT, frame.timbre}, {PRESS_OUTPUT, frame.press},
     };
     int channel = part();
+    std::array<int8_t, kMaxVoices> voices;
+    int count = picker.pick(frame, channel, voices);
+    // Up to 16 voices, one channel: every voice keeps its place, the other channels' gates stay low.
+    bool masked = channel != 0 && frame.channels <= kMaxVoices;
     for (size_t i = 0; i < std::size(routes); i++) {
         const Route& r = routes[i];
-        outputs[r.output].setChannels(frame.channels);
-        if (channel == 0) {
-            outputs[r.output].writeVoltages(r.values);
-            continue;
-        }
-        for (int v = 0; v < frame.channels; v++) {
-            if (frame.part[v] == channel)
-                held[i][v] = r.values[v];
-            else if (r.output == GATE_OUTPUT)
-                held[i][v] = 0;
-            outputs[r.output].setVoltage(held[i][v], v);
+        bool gate = r.output == GATE_OUTPUT;
+        outputs[r.output].setChannels(count);
+        for (int c = 0; c < count; c++) {
+            int v = voices[size_t(c)];
+            if (v >= 0 && (!masked || frame.part[v] == channel))
+                held[i][c] = r.values[v];
+            else if (gate)
+                held[i][c] = 0; // nothing sounding here: pitch and the rest hold for a release tail
+            outputs[r.output].setVoltage(held[i][c], c);
         }
     }
     outputs[AUTO_OUTPUT].setChannels(frame.autoChannels);

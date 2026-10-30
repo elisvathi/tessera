@@ -28,7 +28,9 @@ bool hasCurves(const NoteExtras* ex) {
 
 Engine::Engine()
     : playheadClocks(std::make_unique<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>>()),
-      chains(std::make_unique<std::array<ChainRuntime, kMaxTracks>>()),
+      trackStore(std::make_unique<std::array<TrackState, kMaxTracks>>()),
+      previousStore(std::make_unique<std::array<TrackState, kMaxTracks>>()), tracks(*trackStore),
+      previous(*previousStore), chains(std::make_unique<std::array<ChainRuntime, kMaxTracks>>()),
       knobValues(std::make_unique<float[]>(size_t(kMaxKnobs))),
       modStates(std::make_unique<std::array<mods::State, kMaxModulatorSlots>>()),
       liveKnobs(new std::atomic<float>[size_t(kMaxKnobs)]()), liveBases(new std::atomic<float>[size_t(kMaxKnobs)]()),
@@ -99,15 +101,15 @@ void Engine::setSnapshot(const Snapshot* s) {
         state.id = tp.id;
         // Extras live in the old snapshot, which is about to be freed: drop them, then find sounding notes' curves
         // again in the new one.
-        std::array<uint64_t, kMaxVoices> clips = state.voiceClip, notes = state.voiceNote;
+        std::array<uint64_t, kMaxTrackVoices> clips = state.voiceClip, notes = state.voiceNote;
         clearPending(state);
         state.voiceClip = clips;
         state.voiceNote = notes;
         reattachCurves(tp, state);
         state.voices.setRetriggerGap(retriggerGap);
         state.drums.setRetriggerGap(retriggerGap);
-        state.voices.setPolyphony(tp.polyphony);
-        for (int v = state.voices.polyphony(); v < kMaxVoices; v++)
+        state.voices.setBlocks(tp.voiceBlocks.data(), tp.voiceBlockCount);
+        for (int v = state.voices.polyphony(); v < kMaxTrackVoices; v++)
             if (state.audition[size_t(v)] >= 0)
                 endAudition(state, v);
         state.chainInfo = i < s->chains.size() ? &s->chains[i] : nullptr;
@@ -373,7 +375,7 @@ void Engine::endAudition(TrackState& state, int voice) {
 }
 
 void Engine::advanceAuditions(TrackState& state) {
-    for (int v = 0; v < kMaxVoices; v++) {
+    for (int v = 0; v < kMaxTrackVoices; v++) {
         int32_t& left = state.audition[size_t(v)];
         if (left > 0 && --left == 0) {
             state.voices.release(v);
@@ -634,9 +636,9 @@ void Engine::liveValue(const LiveValue& lv) {
             TrackState& state = tracks[i];
             int v = state.voices.find(id);
             if (v >= 0) {
-                std::array<float, kMaxVoices>& target = lv.curve == NoteCurve::Pitch    ? state.liveBend
-                                                        : lv.curve == NoteCurve::Timbre ? state.liveTimbre
-                                                                                        : state.livePress;
+                std::array<float, kMaxTrackVoices>& target = lv.curve == NoteCurve::Pitch    ? state.liveBend
+                                                             : lv.curve == NoteCurve::Timbre ? state.liveTimbre
+                                                                                             : state.livePress;
                 target[size_t(v)] = lv.value;
                 state.autoChanges++;
             }
@@ -1628,7 +1630,8 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
         hitDrum(track, state, n);
         return;
     }
-    int v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id);
+    // Into its channel's own voices: a playhead's notes never take another channel's.
+    int v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id, n.channel);
     clearLiveVoice(state, v);
     if (n.id & chain::kLiveNote) {
         // Held until its key is released, like an audition: clip events leave it alone.
@@ -2179,7 +2182,9 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
         frame.gate[v] = voices.gate(v) ? 10.f : 0.f;
         frame.vel[v] = voice.velocity * 10.f;
         frame.rel[v] = voice.releaseVelocity * 10.f;
-        frame.part[v] = state.voicePart[size_t(v)];
+        // A playhead channel's voices always say its channel, so an output on that channel keeps a steady count.
+        uint8_t block = voices.partOf(v);
+        frame.part[v] = block ? block : state.voicePart[size_t(v)];
         frame.timbre[v] = 0;
         frame.press[v] = 0;
         if (const NoteExtras* ex = state.voiceExtras[size_t(v)]) {

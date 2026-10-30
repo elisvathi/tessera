@@ -6,6 +6,7 @@
 #include "../model/Playheads.hpp"
 #include "../model/Scale.hpp"
 #include "../model/Song.hpp"
+#include "VoiceAllocator.hpp"
 
 #include <array>
 #include <cmath>
@@ -47,7 +48,7 @@ struct NoteExtras {
 struct LaneLoop {
     Tick start = 0; // clip ticks
     Tick length = 0;
-    std::vector<NoteEvent> notes; // sorted by start, all inside [start, start + length)
+    std::vector<NoteEvent> notes;     // sorted by start, all inside [start, start + length)
     std::vector<uint32_t> notesByEnd; // for playheads going backwards
 };
 
@@ -74,8 +75,8 @@ struct ClipPlayback {
     Tick loopStart = 0;
     Tick loopEnd = 0;
     bool looping = true;
-    Tick launchQuantize = -1;     // this clip's own launch grid in ticks; -1 = the song's
-    std::vector<NoteEvent> notes; // sorted by start, all inside [loopStart, loopEnd)
+    Tick launchQuantize = -1;         // this clip's own launch grid in ticks; -1 = the song's
+    std::vector<NoteEvent> notes;     // sorted by start, all inside [loopStart, loopEnd)
     std::vector<uint32_t> notesByEnd; // indices into `notes` sorted by end, for playheads going backwards
     int8_t lowest = 0, highest = 127; // the clip's pitch range, which playheads invert inside
     std::vector<LaneLoop> laneLoops;
@@ -134,6 +135,9 @@ struct TrackPlayback {
     TrackId id;
     int busSlot = -1;
     int polyphony = 1;
+    // Its voices as blocks, one per channel of its playheads in playhead order (Song::voiceBlocks).
+    std::array<VoiceAllocator::Block, VoiceAllocator::kMaxBlocks> voiceBlocks{{{0, 0, 1}}};
+    int voiceBlockCount = 1;
     bool audible = true;
     bool drum = false;
     // Recording: an armed track takes live notes from its input; with monitor on it plays them too.
@@ -220,8 +224,8 @@ struct AutoModulation {
 struct PlayheadPlayback {
     uint64_t id = 0;
     int knobs = 0;
-    uint8_t channel = 1; // 0 = each note keeps its own
-    bool audible = true; // mute and solo already applied
+    uint8_t channel = 1;         // 0 = each note keeps its own
+    bool audible = true;         // mute and solo already applied
     std::vector<AutoPoint> path; // its drawn path, when its Path knob says Drawn
     /// Curve modulators on its settings, which it reads at the moment it reads (Engine::playPlayheads).
     struct Exact {

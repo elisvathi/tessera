@@ -1446,6 +1446,13 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **Each playhead channel has its own voices** (30 Oct). Playheads shared one set of at most 16 voices, so a busy one
+  (an Echo in its chain) took voices from the others and cut their notes. Now a track with playheads holds a block of
+  voices per channel (Auto for that playhead, or the fixed count, up to 16 each; at most 64 in all), and a note only
+  steals inside its block. A Track Out on one channel sends that block. On All, more than 16 voices are packed into
+  16: sticky (a voice returns to its last poly channel when free), the first playheads first (one may take a channel
+  from a voice later in the order, never earlier); what doesn't fit isn't sent. Chosen over fixed blocks, which waste
+  channels while a playhead rests, and over plain packing, which moves playheads around.
 - **Pitch and loudness leave the playhead** (30 Oct). Octave, Steps and Velocity duplicated the Transpose and Velocity
   devices, which a playhead's own chain already holds. They are gone from the card; on load, a playhead that set
   them gets those devices at the start of its chain, and curves and lanes on Octave and Steps move to the Transpose

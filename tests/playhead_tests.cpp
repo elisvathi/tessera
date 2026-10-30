@@ -193,8 +193,8 @@ TEST_CASE("notes repeating with their own length inside the region are read at t
 // ---- The Playheads device in a song ---------------------------------------------------------------------------
 
 #include "../src/model/DeviceCommands.hpp"
-#include "../src/model/Devices.hpp"
 #include "../src/model/DeviceTypes.hpp"
+#include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
 
@@ -305,8 +305,9 @@ TEST_CASE("Auto voices make room for every echo and for a fast playhead's overla
 
     DeviceId echo;
     applyUndoable(song, addDevice(song, track, DeviceType::Echo, -1, idsOf(song), &echo));
-    applyUndoable(song, setParam(song, {ParamRef::Kind::Device, echo.value, uint16_t(chain::knob::kRepeats)},
-                                 devices::normalize(devices::deviceInfo(DeviceType::Echo).params[chain::knob::kRepeats], 2)));
+    applyUndoable(song,
+                  setParam(song, {ParamRef::Kind::Device, echo.value, uint16_t(chain::knob::kRepeats)},
+                           devices::normalize(devices::deviceInfo(DeviceType::Echo).params[chain::knob::kRepeats], 2)));
     CHECK(song.voicesOf(song.tracks[0]) == 3); // the note and its two repeats can all sound together
     applyUndoable(song, removeDevice(song, echo));
 
@@ -353,6 +354,37 @@ TEST_CASE("a playhead's own Octave, Steps and Velocity move into devices in its 
 
     normalize(song); // and again changes nothing
     CHECK(firstDevice(song).playheads[0].branch.size() == 2);
+}
+
+TEST_CASE("each playhead channel gets its own block of voices, in playhead order") {
+    Song song = songWithTrack();
+    TrackId track = song.tracks[0].id;
+    applyUndoable(song, addDevice(song, track, DeviceType::Playheads, -1, idsOf(song)));
+    PlayheadId third;
+    applyUndoable(song, addPlayhead(song, firstDevice(song).id, idsOf(song), &third)); // channels 1, 2, 3
+    // The first playhead echoes (2 repeats: three voices a note); the third is muted.
+    PlayheadId first = firstDevice(song).playheads[0].id;
+    applyUndoable(song, addBranchDevice(song, first, DeviceType::Echo, -1, idsOf(song)));
+    DeviceId echo = firstDevice(song).playheads[0].branch.at(0).id;
+    applyUndoable(song,
+                  setParam(song, {ParamRef::Kind::Device, echo.value, uint16_t(chain::knob::kRepeats)},
+                           devices::normalize(devices::deviceInfo(DeviceType::Echo).params[chain::knob::kRepeats], 2)));
+    applyUndoable(song, setPlayheadMute(song, third, true));
+
+    std::vector<Song::VoiceBlock> blocks = song.voiceBlocks(song.tracks[0]);
+    REQUIRE(blocks.size() == 2);
+    CHECK(blocks[0].part == 1);
+    CHECK(blocks[0].size == 3);
+    CHECK(blocks[1].part == 2);
+    CHECK(blocks[1].size == 1);
+    CHECK(song.voicesOf(song.tracks[0]) == 4);
+
+    // A fixed voice count is per channel.
+    applyUndoable(song, setTrackField(song, track, &Track::polyphony, 5, "Voices"));
+    blocks = song.voiceBlocks(song.tracks[0]);
+    REQUIRE(blocks.size() == 2);
+    CHECK(blocks[0].size == 5);
+    CHECK(blocks[1].size == 5);
 }
 
 TEST_CASE("playheads survive saving and loading, and a broken file is repaired") {
@@ -502,8 +534,8 @@ TEST_CASE("each playhead has a branch of its own devices, sharing the track's li
 
 TEST_CASE("a drawn path takes the playhead where its points say, and repeats every cycle") {
     // Over a 2-beat cycle: up through the first half of the bar, then straight back down.
-    std::vector<AutoPoint> path = {{0, 0, CurveType::Linear, 0}, {960, 0.5f, CurveType::Linear, 0},
-                                   {1920, 0, CurveType::Linear, 0}};
+    std::vector<AutoPoint> path = {
+        {0, 0, CurveType::Linear, 0}, {960, 0.5f, CurveType::Linear, 0}, {1920, 0, CurveType::Linear, 0}};
     Motion m = oneBar();
     m.path = &path;
     m.pathCycle = 2 * kBeat;
@@ -608,7 +640,8 @@ TEST_CASE("MIDI export plays the drift too") {
     a.length = 3 * 4 * kPpq; // three passes
     song.tracks[0].arrangement.push_back(a);
     Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
-    steps.params[mods::knob::kStepCount] = devices::normalize(devices::modulatorInfo(ModulatorType::Steps).params[0], 2);
+    steps.params[mods::knob::kStepCount] =
+        devices::normalize(devices::modulatorInfo(ModulatorType::Steps).params[0], 2);
     steps.params[mods::knob::kStepPerPass] = 1;
     steps.steps = {0, 1};
     Modulation route;
@@ -670,7 +703,7 @@ TEST_CASE("a synced Curve modulator plays its drawn shape every cycle, around no
         return mods::evaluate(m.type, m.id.value, m.params.data(), state, clock, nullptr, 0, &drawn);
     };
     CHECK(mods::bipolar(m.type, m.params.data()));
-    CHECK(at(0) == doctest::Approx(0));         // 0.5 drawn: no change
+    CHECK(at(0) == doctest::Approx(0));          // 0.5 drawn: no change
     CHECK(at(kPpq / 2) == doctest::Approx(0.5)); // halfway up the ramp to 1
     CHECK(at(kPpq) == doctest::Approx(1));
     CHECK(at(1.5 * kPpq) == doctest::Approx(1)); // held
@@ -693,8 +726,8 @@ TEST_CASE("Curve modulators are drawn and added with undo, and survive saving") 
     CHECK(m.routes[0].target == octave);
     CHECK(m.routes[0].amount == 1);
     // Points come back sorted and inside the cycle.
-    applyUndoable(song, setCurve(song, added, 2 * kPpq,
-                                 {{3 * kPpq, 2, CurveType::Linear, 0}, {0, 0.25f, CurveType::Linear, 0}}));
+    applyUndoable(
+        song, setCurve(song, added, 2 * kPpq, {{3 * kPpq, 2, CurveType::Linear, 0}, {0, 0.25f, CurveType::Linear, 0}}));
     CHECK(song.tracks[0].modulators[0].points ==
           std::vector<AutoPoint>{{0, 0.25f, CurveType::Linear, 0}, {2 * kPpq, 1, CurveType::Linear, 0}});
     CHECK(savedAndLoaded(song) == song);
@@ -707,10 +740,11 @@ TEST_CASE("a playhead curve saved before curves were modulators loads as a Curve
     json::Ref j(songToJson(song));
     // The old form: [setting, length, points], the points setting the value itself (Octave 0 is 0.5, +1 is 0.625).
     json_t* track = json_array_get(json_object_get(j.get(), "tracks"), 0);
-    json_t* head = json_array_get(json_object_get(json_array_get(json_object_get(track, "devices"), 0), "playheads"), 0);
-    json_object_set_new(head, "curves", json_pack("[[iI[[Ifif],[Ifif]]]]", playheads::knob::kOctave,
-                                                  static_cast<json_int_t>(8 * kPpq), json_int_t(0), 0.5, 1, 0.0,
-                                                  static_cast<json_int_t>(4 * kPpq), 0.625, 1, 0.0));
+    json_t* head =
+        json_array_get(json_object_get(json_array_get(json_object_get(track, "devices"), 0), "playheads"), 0);
+    json_object_set_new(head, "curves",
+                        json_pack("[[iI[[Ifif],[Ifif]]]]", playheads::knob::kOctave, static_cast<json_int_t>(8 * kPpq),
+                                  json_int_t(0), 0.5, 1, 0.0, static_cast<json_int_t>(4 * kPpq), 0.625, 1, 0.0));
     Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
     REQUIRE(loaded.tracks[0].modulators.size() == 1);
     const Modulator& m = loaded.tracks[0].modulators[0];
@@ -750,11 +784,11 @@ TEST_CASE("MIDI export plays a synced Curve modulator on a playhead setting") {
     applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
     PlayheadId id = firstDevice(song).playheads[0].id;
     // Bar 1 as set, bar 2 an octave up, repeating every two bars.
-    applyUndoable(song, animateWithCurve(song, song.tracks[0].id,
-                                         {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)},
-                                         "Octave", 8 * kPpq,
-                                         {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, 0.5625f, CurveType::Hold, 0}},
-                                         idsOf(song)));
+    applyUndoable(song,
+                  animateWithCurve(song, song.tracks[0].id,
+                                   {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)}, "Octave",
+                                   8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, 0.5625f, CurveType::Hold, 0}},
+                                   idsOf(song)));
     std::vector<int> pitches;
     for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
         pitches.push_back(e.pitch);
@@ -808,8 +842,8 @@ TEST_CASE("a clip's motion group saved before Motion devices loads as a Motion d
     uint64_t group = song.nextId + 100;
     json_t* clipJson = json_array_get(json_object_get(j.get(), "clips"), 0);
     json_object_set_new(clipJson, "motions",
-                        json_pack("[{s:I,s:s,s:i,s:[fffff]}]", "id", static_cast<json_int_t>(group), "name",
-                                  "Motion A", "color", 3, "params", 0.75, 0.0, 0.0, 0.5, 1.0));
+                        json_pack("[{s:I,s:s,s:i,s:[fffff]}]", "id", static_cast<json_int_t>(group), "name", "Motion A",
+                                  "color", 3, "params", 0.75, 0.0, 0.0, 0.5, 1.0));
     Song plain = songFromJson(j.get(), Song::kSchemaVersion);
     CHECK(plain.tracks[0].devices.size() == 2);
     Device* motion = nullptr;

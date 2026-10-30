@@ -311,6 +311,10 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     tp->id = track.id;
     tp->busSlot = slots.slotOf(track.id);
     tp->polyphony = song.voicesOf(track);
+    std::vector<Song::VoiceBlock> blocks = song.voiceBlocks(track);
+    tp->voiceBlockCount = int(std::min(blocks.size(), tp->voiceBlocks.size()));
+    for (int b = 0; b < tp->voiceBlockCount; b++)
+        tp->voiceBlocks[size_t(b)] = {blocks[size_t(b)].part, 0, uint8_t(blocks[size_t(b)].size)};
     tp->audible = song.isAudible(track);
     tp->armed = track.armed;
     tp->monitor = track.monitor;

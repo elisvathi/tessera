@@ -153,6 +153,12 @@ Playhead 2"). Click the screen to pick it. With one channel picked, the Track Ou
 its other voices stay silent. This gives each playhead of a [Playheads](13-devices.md#playheads) device its own sound,
 and also splits a clip that holds several parts on different channels.
 
+With playheads, each channel has voices of its own (up to 16), so one busy playhead never cuts another's notes. A
+Track Out on one channel sends that channel's voices. On **All channels**, when the playheads hold more than 16 voices
+together, the Track Out fills its 16 with the voices that are sounding, the first playheads first: a voice goes back to
+the poly channel it used before when it can, so each playhead tends to stay in the same place, and one that doesn't
+fit isn't sent. For every voice, use a Track Out per channel.
+
 **Right-click** for the **Source** (which Tessera, by instance name), **Track** and **Channel** menus.
 
 ![The Track Out menu: Source and Track](images/track-out-menu.png)
