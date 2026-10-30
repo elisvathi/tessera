@@ -3,6 +3,7 @@
 #include "../../model/Scale.hpp"
 #include "../interaction/InteractiveView.hpp"
 
+#include <array>
 #include <bitset>
 #include <map>
 #include <string>
@@ -67,6 +68,7 @@ class PianoKeyboard : public InteractiveView {
     CachedLayer* layer;
     Look look;
     std::bitset<128> sounding;
+    std::array<NVGcolor, 128> keyColor{}; // each sounding key's colour: the track's, or the playhead's reading it
     int hoverPitch = -1;
 };
 

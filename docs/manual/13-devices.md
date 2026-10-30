@@ -88,9 +88,10 @@ It is the first entry in the device browser, and it sits first in the chain: onl
 it replaces the clip's own playhead; turn it off with its power button and the clip plays as usual. The playheads
 belong to the track: launch another clip and the same playheads read it.
 
-It starts with two playheads, both reading the whole clip from its start. Change one's **Rate**, segment or start to
-hear them part. Each playhead shows as a line in its colour over the notes (the one the card shows is bolder); the
-clip's own playhead stays as a faint grey line.
+It starts with two playheads, both reading the whole clip from its start. Change one's **Rate** or segment to hear
+them part. Each playhead shows as a line in its colour over the notes (the one the card shows is bolder). The notes it
+reads light up in its colour, and so do their keys on the piano at the left. The clip's own playhead isn't drawn:
+with playheads, it doesn't say what plays.
 
 **The card.** The chips beside its name are the playheads: click one to show it (the card takes its colour), **+** adds
 one (up to 16). The dot at a chip's left end turns that playhead off and on without losing its settings: it is hollow

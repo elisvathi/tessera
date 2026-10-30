@@ -143,6 +143,8 @@ void NoteGrid::zoomToFit() {
 
 void NoteGrid::step() {
     layer->setSize(box.size);
+    updateMoved();
+    updateHeads();
     owner.pitch.setViewHeight(box.size.y);
     uint64_t key = 0;
     key = hashMix(key, time().left());
@@ -945,23 +947,17 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
     drawEmptyState(vg);
 
     double p = playhead();
-    // Playheads keep going after a clip that plays once has run out its own notes, so they are drawn even when the
-    // clip has no position any more.
-    bool faint = ctx.module() && ctx.module()->playing() && drawPlayheadLines(vg);
-    if (std::isfinite(p) && ctx.module() && ctx.module()->playing()) {
+    // With playheads, they are the only lines: the clip's own position means nothing on the canvas. They keep
+    // going after a clip that plays once has run out of its own notes, so they don't wait for its position.
+    bool byPlayheads = ctx.module() && ctx.module()->playing() && drawPlayheadLines(vg);
+    if (!byPlayheads && std::isfinite(p) && ctx.module() && ctx.module()->playing()) {
         float x = float(time().tickToX(p));
         if (x < 0)
             timeline::drawOffscreenArrow(vg, false, box.size.x, box.size.y / 2);
         else if (x > box.size.x)
             timeline::drawOffscreenArrow(vg, true, box.size.x, box.size.y / 2);
-        else if (faint) {
-            nvgBeginPath(vg);
-            nvgRect(vg, x - 0.5f, 0, 1, box.size.y);
-            nvgFillColor(vg, nvgTransRGBAf(theme::colors().text2, 0.5f));
-            nvgFill(vg);
-        } else {
+        else
             timeline::drawPlayhead(vg, x, box.size.y);
-        }
     }
     nvgRestore(vg);
 }
@@ -1157,22 +1153,24 @@ void NoteGrid::drawMotionGhosts(NVGcontext* vg) {
     }
 }
 
-bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
+void NoteGrid::updateHeads() {
+    heads.clear();
+    reading.clear();
     TesseraModule* m = ctx.module();
     const Track* track = owner.track();
     const Clip* clip = owner.clip();
-    if (!m || !track || !clip)
-        return false;
-    const Device* device = activePlayheads(*track);
-    if (!device)
-        return false;
+    const Device* device = m && track && clip ? activePlayheads(*track) : nullptr;
+    playheadsOn = device != nullptr;
+    if (!device || !m->playing())
+        return;
     double elapsed = owner.source.elapsed();
     if (!std::isfinite(elapsed))
-        return false;
+        return;
     bool solo = std::any_of(device->playheads.begin(), device->playheads.end(),
                             [](const Playhead& p) { return p.solo && !p.mute; });
     // The region is the whole span: a drum clip's lane cycle, as the engine reads it.
     ClipSpan span = clipSpan(*clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr);
+    const Playhead* shownHead = deviceActions::shownPlayhead(ctx);
     for (const Playhead& p : device->playheads) {
         if (p.mute || (solo && !p.solo))
             continue;
@@ -1180,15 +1178,36 @@ bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
                                                          double(span.length()), owner.timeSig());
         if (playheads::wantsDrawnPath(p.params.data()))
             motion.path = &p.path;
-        float x = float(time().tickToX(playheads::positionAt(motion, elapsed)));
+        double pos = playheads::positionAt(motion, elapsed);
+        NVGcolor color = theme::playheadColor(p.color);
+        bool shown = shownHead == &p;
+        heads.push_back({pos, color, shown});
+        // The notes it is on now. Notes are sorted by start, so stop at the first one after it.
+        for (size_t i = 0; i < clip->notes.size(); i++) {
+            const Note& n = clip->notes[i];
+            if (double(n.start) > pos)
+                break;
+            if (n.muted || double(n.end()) <= pos)
+                continue;
+            int at = shown && i < moved.size() && moved[i] >= 0 ? moved[i] : n.pitch;
+            double into =
+                motion.direction == playheads::Direction::Reverse ? double(n.end()) - pos : pos - double(n.start);
+            reading.push_back({n.id.value, at, color, into / std::max(1e-3, motion.rate)});
+        }
+    }
+}
+
+bool NoteGrid::drawPlayheadLines(NVGcontext* vg) {
+    if (!playheadsOn)
+        return false;
+    for (const HeadNow& h : heads) {
+        float x = float(time().tickToX(h.pos));
         if (x < -2 || x > box.size.x + 2)
             continue;
-        // The playhead the editor shows is drawn bolder.
-        bool shown = deviceActions::shownPlayhead(ctx) == &p;
-        float w = shown ? 3 : 2;
+        float w = h.shown ? 3 : 2;
         nvgBeginPath(vg);
         nvgRect(vg, x - w / 2, 0, w, box.size.y);
-        nvgFillColor(vg, theme::playheadColor(p.color));
+        nvgFillColor(vg, h.color);
         nvgFill(vg);
     }
     return true;
@@ -1284,13 +1303,25 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
             fill = nvgTransRGBAf(fill, 0.15f);
         float radius = std::min(theme::metrics::kRadiusItem, row / 3);
         float glow = 0;
-        if (std::isfinite(playing) && double(n.start) <= playing && playing < double(n.end()) && !n.muted) {
+        NVGcolor halo = full;
+        if (playheadsOn) {
+            // Lit by the playheads reading it, in their colour; the clip's own position lights nothing.
+            for (const ReadNow& rn : reading)
+                if (rn.note == n.id.value) {
+                    float attack = float(std::max(0.0, 1.0 - rn.into / glowTicks));
+                    float g = kSustainGlow + (1 - kSustainGlow) * attack;
+                    if (g > glow) {
+                        glow = g;
+                        halo = rn.color;
+                    }
+                }
+        } else if (std::isfinite(playing) && double(n.start) <= playing && playing < double(n.end()) && !n.muted) {
             float attack = float(std::max(0.0, 1.0 - (playing - double(n.start)) / glowTicks));
             glow = kSustainGlow + (1 - kSustainGlow) * attack;
         }
         if (glow > 0) {
             draw::roundedRect(vg, Rect(r.pos.minus(Vec(2, 2)), r.size.plus(Vec(4, 4))), radius + 2,
-                              nvgTransRGBAf(full, 0.45f * glow));
+                              nvgTransRGBAf(halo, 0.45f * glow));
             fill = nvgLerpRGBA(fill, c.text0, 0.3f * glow);
         }
         if (drum) {

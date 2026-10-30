@@ -111,16 +111,24 @@ void PianoKeyboard::step() {
     look.rootMark = owner.highlightKey();
     look.key = owner.scale();
 
-    // Keys light up while their notes sound, in the track's colour, and while one is auditioned.
+    // Keys light up while their notes sound, in the track's colour, and while one is auditioned. With playheads,
+    // each lights the keys of the notes it reads, in its colour.
     sounding.reset();
+    keyColor.fill(look.lit);
     if (playing >= 0 && playing < 128)
         sounding.set(size_t(playing));
     TesseraModule* m = ctx.module();
-    double now = m && m->playing() ? grid.playhead() : NAN;
-    if (std::isfinite(now))
+    if (grid.playheadsPlay()) {
+        for (const NoteGrid::ReadNow& rn : grid.readingNow())
+            if (rn.pitch >= 0 && rn.pitch < 128) {
+                sounding.set(size_t(rn.pitch));
+                keyColor[size_t(rn.pitch)] = rn.color;
+            }
+    } else if (double now = m && m->playing() ? grid.playhead() : NAN; std::isfinite(now)) {
         for (const Note& n : owner.notes())
             if (!n.muted && double(n.start) <= now && now < double(n.end()) && n.pitch >= 0)
                 sounding.set(size_t(n.pitch));
+    }
 
     const PitchAxis& pitch = owner.pitch;
     uint64_t key = 0;
@@ -247,7 +255,7 @@ void PianoKeyboard::paintWhiteKey(NVGcontext* vg, int p, bool on, bool hover) {
     if (on || hover) {
         nvgBeginPath(vg);
         nvgRoundedRectVarying(vg, 0, y0, w, y1 - y0, 0, 1.5f, 1.5f, 0);
-        nvgFillColor(vg, nvgTransRGBAf(on ? look.lit : c.accent, on ? 0.55f : 0.15f));
+        nvgFillColor(vg, nvgTransRGBAf(on ? keyColor[size_t(p)] : c.accent, on ? 0.55f : 0.15f));
         nvgFill(vg);
     }
     if (look.rootMark && look.key.isRoot(p))
@@ -285,7 +293,7 @@ void PianoKeyboard::paintBlackKey(NVGcontext* vg, int p, bool on, bool hover, bo
     if (on || hover) {
         nvgBeginPath(vg);
         nvgRoundedRectVarying(vg, 0, y, bw, h, 0, 2, 2, 0);
-        nvgFillColor(vg, nvgTransRGBAf(on ? look.lit : c.accent, on ? 0.85f : 0.3f));
+        nvgFillColor(vg, nvgTransRGBAf(on ? keyColor[size_t(p)] : c.accent, on ? 0.85f : 0.3f));
         nvgFill(vg);
     }
     if (look.rootMark && look.key.isRoot(p))
@@ -313,7 +321,7 @@ void PianoKeyboard::paintNamedKey(NVGcontext* vg, int p, bool on, bool hover) {
     if (on || hover) {
         nvgBeginPath(vg);
         nvgRoundedRectVarying(vg, body.pos.x, body.pos.y, body.size.x, body.size.y, 0, 2, 2, 0);
-        nvgFillColor(vg, nvgTransRGBAf(on ? look.lit : c.accent, on ? 0.7f : 0.2f));
+        nvgFillColor(vg, nvgTransRGBAf(on ? keyColor[size_t(p)] : c.accent, on ? 0.7f : 0.2f));
         nvgFill(vg);
     }
     bool root = look.rootMark && look.key.isRoot(p);
