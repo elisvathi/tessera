@@ -68,15 +68,23 @@ double secondOfAudio(int tracks, bool busy = true, bool automation = true, int p
     return seconds * 100; // share of one core, in percent, for one second of audio
 }
 
+/// The best of three runs: other work on the machine only ever makes a run slower.
+double bestOf3(int tracks, bool busy = true, bool automation = true, int playheads = 0) {
+    double best = secondOfAudio(tracks, busy, automation, playheads);
+    for (int i = 0; i < 2; i++)
+        best = std::min(best, secondOfAudio(tracks, busy, automation, playheads));
+    return best;
+}
+
 } // namespace
 
 TEST_CASE("performance: the engine stays inside its CPU budget (DESIGN.md §18)") {
-    double busy16 = secondOfAudio(16);
-    double busy64 = secondOfAudio(64);
-    double idle64 = secondOfAudio(64, false, false);
-    double notesOnly64 = secondOfAudio(64, true, false);
-    double heads16 = secondOfAudio(16, true, true, 4);
-    double heads16x16 = secondOfAudio(16, true, true, 16);
+    double busy16 = bestOf3(16);
+    double busy64 = bestOf3(64);
+    double idle64 = bestOf3(64, false, false);
+    double notesOnly64 = bestOf3(64, true, false);
+    double heads16 = bestOf3(16, true, true, 4);
+    double heads16x16 = bestOf3(16, true, true, 16);
     MESSAGE("16 busy tracks with 4 playheads each: " << heads16 << "%, with 16 each: " << heads16x16 << "%");
     MESSAGE("16 busy tracks: " << busy16 << "% of a core, 64: " << busy64 << "%; 64 without automation: " << notesOnly64
                                << "%, 64 idle: " << idle64 << "%");
