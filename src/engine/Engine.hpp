@@ -358,7 +358,7 @@ class Engine {
         // Per voice: the expression curves of the note it plays, and when that note started and how long it is.
         std::array<const NoteExtras*, kMaxVoices> voiceExtras{};
         std::array<double, kMaxVoices> voiceStart{}, voiceLength{};
-        std::array<uint8_t, kMaxVoices> voicePart{}; // the channel of each voice's note
+        std::array<uint8_t, kMaxVoices> voicePart{};   // the channel of each voice's note
         std::array<uint8_t, kMaxDrumLanes> lanePart{}; // the channel of each drum lane's last hit
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
@@ -602,6 +602,14 @@ class Engine {
         std::array<float, playheads::kMaxPlayheadParams> knobs{}; // its settings with its curves applied
         uint64_t motionBlock = ~uint64_t(0);
         const ClipPlayback* motionClip = nullptr;
+        // What `motion` and `shape` were last built from: rebuilt only when a setting really changed.
+        std::array<float, playheads::kMaxPlayheadParams> builtFrom{};
+        std::array<float, 4> builtDevice{};
+        const ClipPlayback* builtClip = nullptr;
+        const void* builtSnapshot = nullptr; // a new snapshot may reuse a clip's address; its path points into it
+        // Where its last sweep ended, so the next can tell a jump without working the place out again; NaN after
+        // its own time starts afresh.
+        double lastPos = NAN;
     };
     /// Per track (by index in `tracks`) and playhead. On the heap: the engine sits on the stack in tests.
     std::unique_ptr<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>> playheadClocks;

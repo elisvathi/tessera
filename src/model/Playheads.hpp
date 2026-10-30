@@ -110,7 +110,9 @@ struct Sweep {
 double positionAt(const Motion& m, double elapsed);
 
 /// The sweeps the playhead makes between elapsed `a` and `b` (a <= b), in order. Returns how many were written.
-int sweeps(const Motion& m, double a, double b, Sweep* out, int max = kMaxSweeps);
+/// `before` is where the playhead was just before `a`, if the caller knows (for marking a jump at `a`); NaN works it
+/// out, infinity means "don't mark the first one".
+int sweeps(const Motion& m, double a, double b, Sweep* out, int max = kMaxSweeps, double before = NAN);
 
 /// The elapsed time at which a sweep reaches `pos` (which must lie in it).
 double timeAt(const Motion& m, const Sweep& s, double pos);

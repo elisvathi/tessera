@@ -370,12 +370,13 @@ int sweepsUnmarked(const Motion& m, double a, double b, Sweep* out, int max) {
 
 } // namespace
 
-int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
+int sweeps(const Motion& m, double a, double b, Sweep* out, int max, double before) {
     if (b <= a || m.regionLength <= 0 || m.rate <= 0 || m.direction == Direction::Freeze)
         return 0;
     int count = sweepsUnmarked(m, a, b, out, max);
     // A jump is a sweep that starts away from where the playhead just was.
-    double before = a > 0 ? positionAt(m, a - 1e-6) : NAN;
+    if (std::isnan(before))
+        before = a > 0 ? positionAt(m, a - 1e-6) : NAN;
     for (int i = 0; i < count; i++) {
         double last = i > 0 ? out[i - 1].to : before;
         out[i].jumped = std::isfinite(last) && std::abs(out[i].from - last) > 1e-3;
@@ -387,7 +388,8 @@ double nextJump(const Motion& m, double from, double horizon) {
     Sweep found[kMaxSweeps];
     double a = from, end = from + horizon;
     while (a < end) {
-        int n = sweeps(m, a, end, found);
+        // A jump right at `from` doesn't count, so the place before it isn't needed.
+        int n = sweeps(m, a, end, found, kMaxSweeps, std::numeric_limits<double>::infinity());
         if (n == 0)
             break;
         for (int i = 0; i < n; i++) {
