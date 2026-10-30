@@ -1015,12 +1015,18 @@ const Playhead* NoteGrid::updateMoved() {
     if (!p || p->mute) {
         moved.clear();
         movedIds.clear();
-        movedFor = {~uint64_t(0), 0, 0};
+        movedFor = {~uint64_t(0), 0, 0, 0};
         return nullptr;
     }
-    std::tuple<uint64_t, uint64_t, uint64_t> key{m->songRevision(), clip->id.value, p->id.value};
+    // While it plays, the pass playing now, so a curve on its pitch shows where each note goes this time round.
+    int64_t pass = 0;
+    double elapsed = m->playing() ? owner.source.elapsed() : NAN;
+    ClipSpan span = clipSpan(*clip);
+    if (std::isfinite(elapsed) && span.length() > 0)
+        pass = int64_t(std::max(0.0, std::floor(elapsed / double(span.length()))));
+    std::tuple<uint64_t, uint64_t, uint64_t, int64_t> key{m->songRevision(), clip->id.value, p->id.value, pass};
     if (key != movedFor) {
-        moved = render::heardPitches(m->song(), *track, *device, *p, *clip);
+        moved = render::heardPitches(m->song(), *track, *device, *p, *clip, pass);
         movedIds.clear();
         for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++)
             if (moved[i] >= 0 && moved[i] != clip->notes[i].pitch)

@@ -178,10 +178,10 @@ class NoteGrid : public TimelineView {
     CachedLayer* layer;
     std::vector<Ghost> ghosts;
     // The pitches the shown playhead plays the clip's notes at (render::heardPitches), and what they were worked
-    // out for: the song revision, clip and playhead.
+    // out for: the song revision, clip, playhead and pass.
     std::vector<int> moved;
     std::set<uint64_t> movedIds; // notes it plays at another pitch: drawn see-through where they are written
-    std::tuple<uint64_t, uint64_t, uint64_t> movedFor{~uint64_t(0), 0, 0};
+    std::tuple<uint64_t, uint64_t, uint64_t, int64_t> movedFor{~uint64_t(0), 0, 0, 0};
     // Each note's pitch on every pass of its Motion's curves (render::motionPitches), what for (song revision,
     // clip), and the notes moved on the current pass: drawn see-through where they are written.
     // Worked out in step(): see headsNow and readingNow.

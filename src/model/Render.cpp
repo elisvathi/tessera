@@ -710,7 +710,7 @@ smf::Track conductor(const Song& song, const Context& ctx, Tick from, Tick to) {
 } // namespace
 
 std::vector<int> heardPitches(const Song& song, const Track& track, const Device& device, const Playhead& p,
-                              const Clip& clip) {
+                              const Clip& clip, int64_t pass) {
     struct Readable {
         double start, end;
         int pitch;
@@ -738,7 +738,8 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
     constexpr double kStep = double(kPpq) / 8;
     std::vector<float> knobs(p.params.size());
     std::vector<const Device*> before = readMotions(track);
-    for (double e = 0; e < playEnd - playStart; e += kStep) {
+    double from = double(std::max<int64_t>(0, pass)) * (playEnd - playStart);
+    for (double e = from; e < from + (playEnd - playStart); e += kStep) {
         playheadKnobsAt(song, track, device, p, e, knobs.data());
         playheads::Motion m =
             playheads::motionFrom(knobs.data(), device.params.data(), playStart, playEnd - playStart, song.timeSig);
@@ -751,11 +752,11 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
             playheads::crossed(sweeps[i], notes, byEnd, [&](const Readable& n, double) {
                 if (heard[n.index] >= 0 || !playheads::picked(shape.pick, n.role))
                     return;
-                // A Motion device before the playheads moves the note's pitch first (its first pass).
+                // A Motion device before the playheads moves the note's pitch first, on this pass.
                 int pitch = n.pitch;
                 for (const Device* motion : before)
                     if (clip.notes[n.index].motion == motion->id) {
-                        MovedBy moved = movedAt(song, track, *motion, 0);
+                        MovedBy moved = movedAt(song, track, *motion, pass, from + n.start - playStart);
                         if (moved.steps != 0)
                             pitch = std::clamp(moved.inKey ? scale.stepBy(pitch, moved.steps) : pitch + moved.steps, 0,
                                                127);
