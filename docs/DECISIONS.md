@@ -1446,6 +1446,11 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **A playhead channel sends the voices it needs** (30 Oct). Its block size is still an estimate (the clip's biggest
+  chord, times rules per device), which overshoots: a Notes: Highest bass got 3, an Echo 9. Instead of measuring
+  ahead, the count comes from playing: a playhead channel's notes take its first free voice (not round-robin), the
+  allocator remembers the most voices each channel has needed, and a Track Out sends only those (on All, packed as
+  before). It grows during playback and resets on stop. Tracks without playheads are unchanged.
 - **Playing with playheads live never cuts the others** (30 Oct). Muting or unmuting a playhead used to rebuild the
   voice blocks without it, shifting every block after it, so the other playheads' sounding notes stopped. Muted
   playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change

@@ -80,6 +80,13 @@ class VoiceAllocator {
         for (int v = 0; v < kMaxTrackVoices; v++)
             if (place[v] < 0 && gate(old[v]))
                 changes++;
+        // Each channel remembers how many voices it has needed, in its new block too.
+        std::array<uint8_t, kMaxBlocks> nextPeaks{};
+        for (int nb = 0; nb < count; nb++)
+            for (int ob = 0; ob < blockCount; ob++)
+                if (blocks[ob].part == next[nb].part)
+                    nextPeaks[nb] = std::min(peaks[ob], next[nb].size);
+        peaks = nextPeaks;
         blocks = next;
         blockCount = count;
         poly = total;
@@ -99,6 +106,19 @@ class VoiceAllocator {
     }
     /// All the voices, over every block.
     int polyphony() const { return poly; }
+    /// Whether voice `v` is one its channel has needed since play started (or its first): a playhead channel only
+    /// sends those, so a one-note line sends one voice. Every voice of the shared block counts.
+    bool used(int v) const {
+        for (int b = 0; b < blockCount; b++)
+            if (v >= blocks[b].start && v < blocks[b].start + blocks[b].size)
+                return blocks[b].part == 0 || v - blocks[b].start < std::max<int>(1, peaks[b]);
+        return false;
+    }
+    /// Forgets how many voices each channel has needed (the song stopped): each sends one again.
+    void forgetUse() {
+        peaks.fill(0);
+        changes++;
+    }
     /// The channel whose block voice `v` is in; 0 for the shared block (its notes keep their own channels).
     uint8_t partOf(int v) const {
         for (int b = 0; b < blockCount; b++)
@@ -130,6 +150,10 @@ class VoiceAllocator {
         voice.id = id;
         voice.startOrder = ++order;
         nexts[b] = (v - blocks[b].start + 1) % blocks[b].size;
+        if (v - blocks[b].start + 1 > peaks[b]) {
+            peaks[b] = uint8_t(v - blocks[b].start + 1);
+            changes++;
+        }
         nextEnd = std::min(nextEnd, endTick);
         if (voice.gateFrom > now)
             nextRise = std::min(nextRise, voice.gateFrom);
@@ -223,11 +247,12 @@ class VoiceAllocator {
         return shared;
     }
 
-    /// A free voice in block `b`, round-robin from where the last note went; else its oldest.
+    /// A free voice in block `b`: a playhead channel's first free one (so a line of single notes stays on one
+    /// voice), the shared block's round-robin from where the last note went; else its oldest.
     int pickVoice(int b) const {
         const Block& block = blocks[b];
         for (int i = 0; i < block.size; i++) {
-            int v = block.start + (nexts[b] + i) % block.size;
+            int v = block.start + (block.part ? i : (nexts[b] + i) % block.size);
             if (!voices[v].held)
                 return v;
         }
@@ -252,6 +277,7 @@ class VoiceAllocator {
     uint64_t order = 0;
     std::array<Block, kMaxBlocks> blocks{{{0, 0, 1}}};
     std::array<uint8_t, kMaxBlocks> nexts{};
+    std::array<uint8_t, kMaxBlocks> peaks{}; // per block: the most voices its notes have needed at once
     int blockCount = 1;
     std::array<Voice, kMaxTrackVoices> voices{};
 };

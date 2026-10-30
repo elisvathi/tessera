@@ -159,8 +159,11 @@ TEST_CASE("a Track Out on All packs more than 16 voices: sticky, and the first p
     // Three channels of 8 voices each: 24 voices, more than an output's 16.
     TrackFrame frame;
     frame.channels = 24;
-    for (int v = 0; v < 24; v++)
+    frame.byChannel = true;
+    for (int v = 0; v < 24; v++) {
         frame.part[v] = uint8_t(1 + v / 8);
+        frame.used[v] = 1;
+    }
     VoicePicker picker;
     std::array<int8_t, kMaxVoices> out;
     auto gates = [&](std::initializer_list<int> on) {
@@ -195,13 +198,33 @@ TEST_CASE("a Track Out on All packs more than 16 voices: sticky, and the first p
 TEST_CASE("a Track Out on one channel sends that channel's own voices when the track has more than 16") {
     TrackFrame frame;
     frame.channels = 24;
-    for (int v = 0; v < 24; v++)
+    frame.byChannel = true;
+    for (int v = 0; v < 24; v++) {
         frame.part[v] = uint8_t(1 + v / 8);
+        frame.used[v] = 1;
+    }
     VoicePicker picker;
     std::array<int8_t, kMaxVoices> out;
     CHECK(picker.pick(frame, 3, out) == 8);
     for (int i = 0; i < 8; i++)
         CHECK(out[size_t(i)] == 16 + i);
+}
+
+TEST_CASE("a playhead channel sends only the voices it has needed: a one-note bass sends one") {
+    // Channel 1 (a bass) has 3 voices and has only ever needed its first; channel 2 has used all 3.
+    TrackFrame frame;
+    frame.channels = 6;
+    frame.byChannel = true;
+    for (int v = 0; v < 6; v++)
+        frame.part[v] = uint8_t(1 + v / 3);
+    frame.used[0] = 1;
+    frame.used[3] = frame.used[4] = frame.used[5] = 1;
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    CHECK(picker.pick(frame, 1, out) == 1);
+    CHECK(out[0] == 0);
+    CHECK(picker.pick(frame, 2, out) == 3);
+    CHECK(picker.pick(frame, 0, out) == 4); // All: the four voices in use, not six
 }
 
 TEST_CASE("a Track Out with 16 voices or fewer sends them as they are") {

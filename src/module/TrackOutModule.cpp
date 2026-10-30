@@ -25,7 +25,7 @@ void TrackOutModule::writeFrame(const TrackFrame& frame) {
         {REL_OUTPUT, frame.rel},   {TIMBRE_OUTPUT, frame.timbre}, {PRESS_OUTPUT, frame.press},
     };
     int channel = part();
-    if (channel == 0 && frame.channels <= kMaxVoices) {
+    if (channel == 0 && !frame.byChannel && frame.channels <= kMaxVoices) {
         // The usual case: every voice as it is, copied in one go.
         for (size_t i = 0; i < std::size(routes); i++) {
             outputs[routes[i].output].setChannels(frame.channels);
@@ -37,8 +37,8 @@ void TrackOutModule::writeFrame(const TrackFrame& frame) {
     }
     std::array<int8_t, kMaxVoices> voices;
     int count = picker.pick(frame, channel, voices);
-    // Up to 16 voices, one channel: every voice keeps its place, the other channels' gates stay low.
-    bool masked = channel != 0 && frame.channels <= kMaxVoices;
+    // Without playheads, one channel: every voice keeps its place, the other channels' gates stay low.
+    bool masked = channel != 0 && !frame.byChannel;
     for (size_t i = 0; i < std::size(routes); i++) {
         const Route& r = routes[i];
         bool gate = r.output == GATE_OUTPUT;

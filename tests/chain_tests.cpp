@@ -1551,6 +1551,44 @@ TEST_CASE("engine: muting or unmuting one playhead leaves the others' sounding n
     CHECK(sounding(3) == 3);
 }
 
+TEST_CASE("engine: a bass playhead over chords uses one voice; its Track Out sends just that one") {
+    // Chords on every beat. Playhead 1 picks the highest note of each (a line); playhead 2 plays the chords.
+    Song song = songWith({{0, 900, 60},
+                          {0, 900, 64},
+                          {0, 900, 67},
+                          {960, 900, 62},
+                          {960, 900, 65},
+                          {960, 900, 69},
+                          {1920, 900, 60},
+                          {1920, 900, 64},
+                          {1920, 900, 67}},
+                         4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.params[playheads::knob::kNotes] =
+                devices::normalize(devices::playheadInfo().params[playheads::knob::kNotes], 2); // Highest
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto used = [&h](int channel) {
+        int n = 0;
+        for (int v = 0; v < h.frame().channels; v++)
+            n += h.frame().part[v] == channel && h.frame().used[v] ? 1 : 0;
+        return n;
+    };
+    h.runTo(int64_t(3000) * kSamplesPerTick);
+    REQUIRE(h.frame().byChannel);
+    CHECK(used(1) == 1); // a line of single notes: always its first voice
+    CHECK(used(2) == 3); // the chords: three
+    h.engine.stop();
+    h.step();
+    CHECK(used(2) == 1); // stopped: each channel back to one until it needs more
+}
+
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     ArrangerClip a;

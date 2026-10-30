@@ -233,6 +233,31 @@ TEST_CASE("VoiceAllocator: a new layout moves each channel's sounding voices to 
     CHECK_FALSE(v.setBlocks(after, 3, &moved));
 }
 
+TEST_CASE("VoiceAllocator: a channel's notes take its first free voice, and it remembers how many it has used") {
+    VoiceAllocator v;
+    VoiceAllocator::Block blocks[] = {{1, 0, 4}, {2, 4, 4}};
+    v.setBlocks(blocks, 2);
+    CHECK(v.used(0));       // a channel always sends at least one voice
+    CHECK_FALSE(v.used(1)); // none of the others yet
+    // A line of single notes on channel 1: each one back on its first voice.
+    for (int i = 0; i < 4; i++) {
+        CHECK(v.noteOn(int8_t(40 + i), 1, 0.5f, 1000, uint32_t(1 + i), 1) == 0);
+        v.release(0);
+    }
+    CHECK_FALSE(v.used(1));
+    // A chord on channel 2 fills its first three voices: now three are in use.
+    for (int i = 0; i < 3; i++)
+        CHECK(v.noteOn(int8_t(60 + i), 1, 0.5f, 1000, uint32_t(10 + i), 2) == 4 + i);
+    CHECK(v.used(6));
+    CHECK_FALSE(v.used(7));
+    // Notes ending don't make it forget; stopping does.
+    v.releaseAll();
+    CHECK(v.used(6));
+    v.forgetUse();
+    CHECK_FALSE(v.used(6));
+    CHECK(v.used(4));
+}
+
 TEST_CASE("clips loop, including notes right at the loop end") {
     Harness h(songWith({{0, 100, 60}, {kPpq - 1, 1, 67}}, kPpq, 2));
     int64_t loop = kPpq * kSamplesPerTick;
