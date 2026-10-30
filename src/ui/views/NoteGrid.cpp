@@ -1041,15 +1041,20 @@ const Playhead* NoteGrid::updateMoved() {
     return p;
 }
 
-void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, int to, NVGcolor color) {
+void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, const render::MotionMove& move, NVGcolor color) {
     TimeAxis& t = time();
     PitchAxis& pitch = owner.pitch;
     float row = float(pitch.rowHeight());
     draw::TextStyle label{theme::fonts::ui(), std::min(10.f, row - 3), theme::colors().bg0,
                           NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     float x0 = float(t.tickToX(double(n.start))), x1 = float(t.tickToX(double(n.end())));
-    float written = float(pitch.pitchToY(n.pitch)), played = float(pitch.pitchToY(to));
+    float written = float(pitch.pitchToY(n.pitch)), played = float(pitch.pitchToY(move.pitch));
     float w = std::max(3.f, x1 - x0 - 1);
+    // Where it plays: later by its delay, and as long as its new length.
+    double movedStart = double(n.start) + move.delay;
+    float mx0 = float(t.tickToX(movedStart));
+    float mw = std::max(3.f, float(t.tickToX(movedStart + double(n.length) * move.lengthScale)) - mx0 - 1);
+
     // The written note, see-through (drawNotes): a dashed outline in the mover's colour, "moved from here".
     float top = written + 0.75f, bottom = written + row - 1.25f, right = x0 + w;
     nvgBeginPath(vg);
@@ -1068,35 +1073,47 @@ void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, int to, NVGcolor col
     nvgStrokeColor(vg, nvgTransRGBAf(color, 0.85f));
     nvgStrokeWidth(vg, 1.2f);
     nvgStroke(vg);
-    int steps = to - n.pitch;
-    std::string change = (steps > 0 ? "+" : "") + std::to_string(steps) + " st";
-    // Moved out of view: a marker at the edge it went past, so the move is never invisible.
-    if (played + row < 0 || played > box.size.y) {
-        bool up = played < 0;
-        Rect tag(x0, up ? 2.f : box.size.y - 16, std::max(w, 46.f), 14);
+
+    // What changed, only that: "+7 st", "+2 steps", or both.
+    std::string change;
+    int steps = move.pitch - n.pitch;
+    if (steps != 0)
+        change = (steps > 0 ? "+" : "") + std::to_string(steps) + " st";
+    int later = int(std::lround(move.delay / double(kPpq / 4)));
+    if (later != 0)
+        change += (change.empty() ? "" : " \u00b7 ") + std::string(later > 0 ? "+" : "") + std::to_string(later) +
+                  (std::abs(later) == 1 ? " step" : " steps");
+
+    // A line from the middle of the written note to the middle of where it plays, with a dot where it starts; the
+    // moved note is drawn over its end. Off view, it runs to a marker at the edge it went past.
+    Vec from(x0 + w / 2, written + row / 2);
+    bool off = played + row < 0 || played > box.size.y;
+    bool up = played < 0;
+    Rect tag(mx0, up ? 2.f : box.size.y - 16, std::max(mw, 54.f), 14);
+    Rect r(mx0, played + 1, mw, std::max(2.f, row - 2));
+    Vec to = off ? Vec(tag.getCenter().x, up ? tag.getBottom() : tag.pos.y) : r.getCenter();
+    if (std::abs(to.x - from.x) + std::abs(to.y - from.y) > row) {
         nvgBeginPath(vg);
-        nvgMoveTo(vg, x0 + 5, up ? tag.getBottom() : tag.pos.y);
-        nvgLineTo(vg, x0 + 5, up ? written + 1 : written + row - 1);
-        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.5f));
-        nvgStrokeWidth(vg, 1);
+        nvgMoveTo(vg, from.x, from.y);
+        nvgLineTo(vg, to.x, to.y);
+        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.6f));
+        nvgStrokeWidth(vg, 1.25f);
+        nvgLineCap(vg, NVG_ROUND);
         nvgStroke(vg);
+        nvgBeginPath(vg);
+        nvgCircle(vg, from.x, from.y, 2.5f);
+        nvgFillColor(vg, color);
+        nvgFill(vg);
+    }
+    if (off) {
         draw::roundedRect(vg, tag, 2, nvgTransRGBAf(color, 0.85f));
         label.size = 10;
         draw::text(vg, label, tag.pos.x + 4, tag.getCenter().y, std::string(up ? "\u25b2 " : "\u25bc ") + change);
         return;
     }
-    // A thin line to where it plays, and the note there.
-    float lineX = x0 + std::min(5.f, w / 2);
-    nvgBeginPath(vg);
-    nvgMoveTo(vg, lineX, played < written ? played + row - 1 : played + 1);
-    nvgLineTo(vg, lineX, played < written ? written + 1 : written + row - 1);
-    nvgStrokeColor(vg, nvgTransRGBAf(color, 0.5f));
-    nvgStrokeWidth(vg, 1);
-    nvgStroke(vg);
-    Rect r(x0, played + 1, w, std::max(2.f, row - 2));
-    draw::roundedRect(vg, r, 2, nvgTransRGBAf(color, 0.85f));
-    if (row >= 10 && w > 24)
-        draw::text(vg, label, x0 + 4, played + row / 2, change);
+    draw::roundedRect(vg, r, 2, nvgTransRGBAf(color, 0.9f));
+    if (row >= 10 && mw > draw::textWidth(vg, label, change) + 8)
+        draw::text(vg, label, mx0 + 4, played + row / 2, change);
 }
 
 void NoteGrid::drawMovedNotes(NVGcontext* vg) {
@@ -1112,7 +1129,7 @@ void NoteGrid::drawMovedNotes(NVGcontext* vg) {
             continue;
         // A note in a Motion wears its colour: that is what moves it, more than the playhead reading it.
         const Device* motion = n.motion.valid() ? findDevice(ctx.module()->song(), n.motion) : nullptr;
-        drawMovedNote(vg, n, moved[i], motion ? theme::playheadColor(motion->color) : color);
+        drawMovedNote(vg, n, {moved[i], 0, 1}, motion ? theme::playheadColor(motion->color) : color);
     }
 }
 
@@ -1123,16 +1140,13 @@ int NoteGrid::updateMotionMoved() {
     motionNow.clear();
     motionCurrent.clear();
     if (!m || !clip || !track || track->type == TrackType::Drum) {
-        motionPitches.clear();
-        motionFor = {~uint64_t(0), 0, false};
+        motionMoves.clear();
+        motionFor = {~uint64_t(0), 0};
         return 0;
     }
-    // Playheads may read a note at any moment, so its pitch is wherever the Motion's curves are now; a clip that
-    // plays straight meets each note at its own place on each pass.
-    bool anyTime = activePlayheads(*track) != nullptr;
-    std::tuple<uint64_t, uint64_t, bool> key{m->songRevision(), clip->id.value, anyTime};
+    std::pair<uint64_t, uint64_t> key{m->songRevision(), clip->id.value};
     if (key != motionFor) {
-        motionPitches = render::motionPitches(m->song(), *track, *clip, anyTime);
+        motionMoves = render::motionMoves(m->song(), *track, *clip);
         motionFor = key;
     }
     // While it plays, the pass it is on; stopped, the first, which plays next.
@@ -1141,16 +1155,21 @@ int NoteGrid::updateMotionMoved() {
     ClipSpan span = clipSpan(*clip);
     if (std::isfinite(elapsed) && span.length() > 0)
         pass = int(std::max(0.0, std::floor(elapsed / double(span.length()))));
-    motionCurrent.assign(clip->notes.size(), -1);
+    // Playheads may read a note at any moment, so it moves to wherever the Motion's curves are now; a clip that
+    // plays straight meets each note at its own place on each pass.
+    bool anyTime = activePlayheads(*track) != nullptr;
     double songTick = m->playheadTicks();
-    for (size_t i = 0; i < clip->notes.size() && i < motionPitches.size(); i++) {
-        const std::vector<int>& list = motionPitches[i];
+    motionCurrent.assign(clip->notes.size(), render::MotionMove{});
+    for (size_t i = 0; i < clip->notes.size() && i < motionMoves.size(); i++) {
+        const std::vector<render::MotionMove>& list = motionMoves[i];
         if (list.empty())
             continue;
-        int now = anyTime ? render::motionPitchAt(m->song(), *track, *clip, i, pass, songTick)
-                          : list[size_t(pass) % list.size()];
+        render::MotionMove now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick)
+                                         : list[size_t(pass) % list.size()];
         motionCurrent[i] = now;
-        if (now != clip->notes[i].pitch && !movedIds.count(clip->notes[i].id.value))
+        bool moves =
+            now.pitch != clip->notes[i].pitch || std::abs(now.delay) > 0.5 || std::abs(now.lengthScale - 1) > 1e-3;
+        if (now.pitch >= 0 && moves && !movedIds.count(clip->notes[i].id.value))
             motionNow.insert(clip->notes[i].id.value);
     }
     return pass;
@@ -1161,34 +1180,15 @@ void NoteGrid::drawMotionGhosts(NVGcontext* vg) {
     const Track* track = owner.track();
     if (!clip || !track)
         return;
-    int pass = updateMotionMoved();
+    updateMotionMoved();
     TimeAxis& t = time();
-    PitchAxis& pitch = owner.pitch;
-    float row = float(pitch.rowHeight());
-    for (size_t i = 0; i < clip->notes.size() && i < motionPitches.size(); i++) {
+    for (size_t i = 0; i < clip->notes.size() && i < motionCurrent.size(); i++) {
         const Note& n = clip->notes[i];
-        const std::vector<int>& list = motionPitches[i];
-        // A playhead that moves this note already shows where it goes.
-        if (list.empty() || movedIds.count(n.id.value) || double(n.end()) < t.left() || double(n.start) > t.right())
+        // Only notes moved now; one a playhead moves already shows where it goes.
+        if (!motionNow.count(n.id.value) || double(n.end()) < t.left() || double(n.start) > t.right())
             continue;
-        const Device* motion = findDevice(ctx.module()->song(), n.motion);
-        if (!motion)
-            continue;
-        NVGcolor color = theme::playheadColor(motion->color);
-        int now =
-            i < motionCurrent.size() && motionCurrent[i] >= 0 ? motionCurrent[i] : list[size_t(pass) % list.size()];
-        // The other pitches its curve takes it to, faint, so the whole movement shows at once.
-        float x0 = float(t.tickToX(double(n.start))), x1 = float(t.tickToX(double(n.end())));
-        std::set<int> others(list.begin(), list.end());
-        for (int other : others) {
-            if (other == now || other == n.pitch)
-                continue;
-            float y = float(pitch.pitchToY(other));
-            draw::roundedRectStroke(vg, Rect(x0, y + 1, std::max(3.f, x1 - x0 - 1), std::max(2.f, row - 2)), 2,
-                                    nvgTransRGBAf(color, 0.45f), 1);
-        }
-        if (now != n.pitch)
-            drawMovedNote(vg, n, now, color);
+        if (const Device* motion = findDevice(ctx.module()->song(), n.motion))
+            drawMovedNote(vg, n, motionCurrent[i], theme::playheadColor(motion->color));
     }
 }
 

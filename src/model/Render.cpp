@@ -1003,51 +1003,41 @@ Scale keyOf(const Song& song, const Clip& clip) {
 
 } // namespace
 
-int motionPitchAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass, double songTick) {
+MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
+                        double songTick) {
     if (index >= clip.notes.size())
-        return -1;
+        return {};
     const Note& n = clip.notes[index];
     const Device* motion = nullptr;
     for (const Device& d : track.devices)
         if (d.type == DeviceType::Motion && d.id == n.motion)
             motion = &d;
     if (!motion || n.muted)
-        return -1;
+        return {};
     MovedBy moved = movedAt(song, track, *motion, pass, songTick);
     int pitch = n.pitch;
     if (moved.steps != 0)
         pitch = moved.inKey ? keyOf(song, clip).stepBy(pitch, moved.steps) : pitch + moved.steps;
-    return std::clamp(pitch, 0, 127);
+    return {std::clamp(pitch, 0, 127), moved.delay, std::max(0.01, moved.lengthScale)};
 }
 
-std::vector<std::vector<int>> motionPitches(const Song& song, const Track& track, const Clip& clip, bool anyTime) {
-    std::vector<std::vector<int>> out(clip.notes.size());
+std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& track, const Clip& clip) {
+    std::vector<std::vector<MotionMove>> out(clip.notes.size());
     ClipSpan span = clipSpan(clip);
     double loop = std::max(1.0, double(span.length()));
     for (const Device& motion : track.devices) {
         if (motion.type != DeviceType::Motion)
             continue;
         auto [passes, ticks] = motionCycle(song, track, motion);
+        int cycle = std::clamp(std::max(passes, int(std::ceil(double(ticks) / loop))), 1, kMaxGhostPasses);
         for (size_t i = 0; i < clip.notes.size(); i++) {
             const Note& n = clip.notes[i];
             if (n.muted || n.motion != motion.id)
                 continue;
-            if (!anyTime) {
-                // The clip plays straight: on pass k the note is met at its own place, k loops in.
-                int cycle = std::clamp(std::max(passes, int(std::ceil(double(ticks) / loop))), 1, kMaxGhostPasses);
-                for (int k = 0; k < cycle; k++)
-                    out[i].push_back(
-                        motionPitchAt(song, track, clip, i, k, double(k) * loop + double(n.start - span.start)));
-                continue;
-            }
-            // Read at any moment (playheads): every pitch its curves reach over their cycle, each once.
-            Tick step = std::max<Tick>(kPpq / 4, ticks / 128);
-            for (int k = 0; k < passes; k++)
-                for (Tick t = 0; t < std::max<Tick>(1, ticks); t += step) {
-                    int pitch = motionPitchAt(song, track, clip, i, k, double(t));
-                    if (std::find(out[i].begin(), out[i].end(), pitch) == out[i].end())
-                        out[i].push_back(pitch);
-                }
+            // The clip plays straight: on pass k the note is met at its own place, k loops in.
+            for (int k = 0; k < cycle; k++)
+                out[i].push_back(
+                    motionMoveAt(song, track, clip, i, k, double(k) * loop + double(n.start - span.start)));
         }
     }
     return out;
