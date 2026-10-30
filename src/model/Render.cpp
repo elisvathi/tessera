@@ -400,13 +400,21 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                         if (g.motion) // its pass is the clip's
                             moved = movedAt(song, t, *g.motion,
                                             int64_t(std::floor(e / std::max(1.0, playEnd - playStart))));
-                        auto onHit = [&](const Readable& n, double pos) {
+                        // `rest`: how much of the note is left to play, when a jump landed inside it.
+                        auto onHit = [&](const Readable& n, double pos, double rest = -1) {
                             if (!playheads::picked(shape.pick, n.role))
                                 return;
                             double elapsed = playheads::timeAt(m, sweeps[i], pos);
                             double at = double(a.position) + (elapsed - begin) * stretch;
-                            double len = playheads::noteLength(knobs.data(), m, n.end - n.start, song.timeSig) *
+                            double len = playheads::noteLength(knobs.data(), m, rest >= 0 ? rest : n.end - n.start,
+                                                               song.timeSig) *
                                          stretch * std::max(0.01, moved.lengthScale);
+                            if (playheads::retriggers(knobs.data())) {
+                                // Retrigger: the note stops where the playhead next jumps, as in the engine.
+                                double jump = playheads::nextJump(m, elapsed, len / stretch + 1);
+                                if (std::isfinite(jump))
+                                    len = std::min(len, (jump - elapsed) * stretch);
+                            }
                             // The pass as the engine counts it: the playhead's own time over its region, its place
                             // mixed in.
                             double own = m.rate * (m.restartEvery > 0 ? std::fmod(elapsed, m.restartEvery) : elapsed);
@@ -431,6 +439,11 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                                         g.byEnd, onHit);
                         else
                             playheads::crossedShifted(sweeps[i], moved.delay, g.notes, g.byEnd, onHit);
+                        // Retrigger: a jump plays again the notes it lands inside (on the canvas, unmoved).
+                        if (sweeps[i].jumped && !g.repeats && !g.motion && playheads::retriggers(knobs.data()))
+                            playheads::landedIn(sweeps[i], g.notes, [&](const Readable& n, double rest) {
+                                onHit(n, sweeps[i].from, rest);
+                            });
                     }
             }
         }

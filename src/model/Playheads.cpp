@@ -2,6 +2,9 @@
 
 #include "DeviceTypes.hpp"
 
+#include <cmath>
+#include <limits>
+
 namespace tessera::playheads {
 
 namespace {
@@ -343,9 +346,10 @@ double positionAt(const Motion& m, double elapsed) {
     return pos + orderShift(m, pos, wrap);
 }
 
-int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
-    if (b <= a || m.regionLength <= 0 || m.rate <= 0 || m.direction == Direction::Freeze)
-        return 0;
+namespace {
+
+/// The sweeps between `a` and `b`, before jumps are marked on them.
+int sweepsUnmarked(const Motion& m, double a, double b, Sweep* out, int max) {
     int count = 0;
     double e = std::max(0.0, a);
     while (e < b && count < max) {
@@ -362,6 +366,48 @@ int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
         e = pieceEnd;
     }
     return count;
+}
+
+} // namespace
+
+int sweeps(const Motion& m, double a, double b, Sweep* out, int max) {
+    if (b <= a || m.regionLength <= 0 || m.rate <= 0 || m.direction == Direction::Freeze)
+        return 0;
+    int count = sweepsUnmarked(m, a, b, out, max);
+    // A jump is a sweep that starts away from where the playhead just was.
+    double before = a > 0 ? positionAt(m, a - 1e-6) : NAN;
+    for (int i = 0; i < count; i++) {
+        double last = i > 0 ? out[i - 1].to : before;
+        out[i].jumped = std::isfinite(last) && std::abs(out[i].from - last) > 1e-3;
+    }
+    return count;
+}
+
+double nextJump(const Motion& m, double from, double horizon) {
+    Sweep found[kMaxSweeps];
+    double a = from, end = from + horizon;
+    while (a < end) {
+        int n = sweeps(m, a, end, found);
+        if (n == 0)
+            break;
+        for (int i = 0; i < n; i++) {
+            double at = timeAt(m, found[i], found[i].from);
+            if (found[i].jumped && at > from + 1e-6)
+                return at;
+        }
+        if (n < kMaxSweeps)
+            break;
+        // More than one call holds: carry on from where the last sweep ended.
+        double next = timeAt(m, found[n - 1], found[n - 1].to);
+        if (next <= a)
+            break;
+        a = next;
+    }
+    return std::numeric_limits<double>::infinity();
+}
+
+bool retriggers(const float* knobs) {
+    return std::lround(devices::display(devices::playheadInfo().params[knob::kOnJump], knobs[knob::kOnJump])) == 0;
 }
 
 double timeAt(const Motion& m, const Sweep& s, double pos) {

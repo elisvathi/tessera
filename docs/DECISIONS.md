@@ -1446,6 +1446,11 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **Retrigger on a jump** (30 Oct). A jump (repeat, wrap, order step, restart, drawn step; not a ping-pong turn)
+  used to start only notes beginning where it landed and let the sounding one ring, so a repeat over a long note was
+  silent. Now, by default, a note's length is cut at its playhead's next jump and the notes it lands inside play
+  again for what is left of them: a stutter. "Let ring" keeps the old way. The cut is worked out when the note
+  starts (the path is known ahead), so nothing in the device chain has to be stopped later.
 - **A Curve runs with the song** (30 Oct). Its timing was Sync, Rate (Hz), Restart and Per pass, which overlapped and
   confused. Now one bar sets its length on the grid and one switch says what it counts in: Time or Passes. The old
   knobs stay stored (the list only grows) but are not read; free-running speed in Hz is the LFO's job.
