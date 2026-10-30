@@ -182,15 +182,16 @@ class NoteGrid : public TimelineView {
     std::vector<int> moved;
     std::set<uint64_t> movedIds; // notes it plays at another pitch: drawn see-through where they are written
     std::tuple<uint64_t, uint64_t, uint64_t, int64_t> movedFor{~uint64_t(0), 0, 0, 0};
-    // Each note's pitch on every pass of its Motion's curves (render::motionPitches), what for (song revision,
-    // clip), and the notes moved on the current pass: drawn see-through where they are written.
+    // Each note's pitches over its Motion's curves (render::motionPitches), what for (song revision, clip, read at
+    // any moment), and the notes moved now: drawn see-through where they are written.
     // Worked out in step(): see headsNow and readingNow.
     void updateHeads();
     bool playheadsOn = false;
     std::vector<HeadNow> heads;
     std::vector<ReadNow> reading;
     std::vector<std::vector<int>> motionPitches;
-    std::pair<uint64_t, uint64_t> motionFor{~uint64_t(0), 0};
+    std::tuple<uint64_t, uint64_t, bool> motionFor{~uint64_t(0), 0, false};
+    std::vector<int> motionCurrent; // each note's pitch now (-1: in no Motion)
     std::set<uint64_t> motionNow;
     std::vector<CurveStrip> strips; // from the last stripAt, which points into it
     std::vector<std::pair<rack::math::Rect, ClipId>> layerChips;
