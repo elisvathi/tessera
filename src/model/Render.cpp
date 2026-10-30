@@ -79,12 +79,13 @@ struct Item {
     uint8_t lane = 0;    // the playhead that read it (1..16)
 };
 
-/// A playhead's settings at `songTick` as the engine plays them: its knobs plus the modulators that reach them and
-/// move with the song alone (synced waves and curves, steps, random, ramps, macros). Free-running ones and those that
-/// follow notes are left out: a file has no wall clock or live notes to follow.
-void playheadKnobsAt(const Song& song, const Track& track, const Device& device, const Playhead& p, double songTick,
-                     float* out) {
-    std::copy(p.params.begin(), p.params.end(), out);
+/// The settings of `owner` (a playhead or a device, by `kind`) at `songTick` as the engine plays them: `base` plus
+/// the modulators that reach them and move with the song alone (synced waves and curves, steps, random, ramps,
+/// macros). Free-running ones and those that follow notes are left out: a file has no wall clock or live notes to
+/// follow. `count` settings are written to `out`.
+void knobsAt(const Song& song, const Track& track, const Device& device, ParamRef::Kind kind, uint64_t owner,
+             const float* base, size_t count, double songTick, float* out) {
+    std::copy(base, base + count, out);
     mods::Clock clock;
     clock.songTick = songTick;
     clock.timeSig = song.timeSig;
@@ -103,20 +104,31 @@ void playheadKnobsAt(const Song& song, const Track& track, const Device& device,
                 m.type == ModulatorType::Random || m.type == ModulatorType::Macro;
             if (!songOnly)
                 continue;
+            bool reaches = std::any_of(m.routes.begin(), m.routes.end(), [&](const Modulation& r) {
+                return r.kind == Modulation::Kind::Param && r.target.kind == kind && r.target.owner == owner;
+            });
+            if (!reaches)
+                continue;
             mods::State state;
             mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
             float v = mods::evaluate(m.type, m.id.value, k, state, clock, m.steps.data(), int(m.steps.size()), &drawn);
             for (const Modulation& r : m.routes)
-                if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Playhead &&
-                    r.target.owner == p.id.value && r.target.param < p.params.size())
+                if (r.kind == Modulation::Kind::Param && r.target.kind == kind && r.target.owner == owner &&
+                    r.target.param < count)
                     out[r.target.param] += r.amount * v;
         }
     };
     add(song.modulators);
     add(track.modulators);
     add(device.modulators);
-    for (size_t i = 0; i < p.params.size(); i++)
+    for (size_t i = 0; i < count; i++)
         out[i] = std::clamp(out[i], 0.f, 1.f);
+}
+
+/// A playhead's settings at `songTick` as the engine plays them (knobsAt).
+void playheadKnobsAt(const Song& song, const Track& track, const Device& device, const Playhead& p, double songTick,
+                     float* out) {
+    knobsAt(song, track, device, ParamRef::Kind::Playhead, p.id.value, p.params.data(), p.params.size(), songTick, out);
 }
 
 /// How a Motion device before the playheads moves its notes on `pass` of the clip: its knobs, with the "Per pass"
@@ -761,7 +773,27 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
                             pitch = std::clamp(moved.inKey ? scale.stepBy(pitch, moved.steps) : pitch + moved.steps, 0,
                                                127);
                     }
-                heard[n.index] = playheads::shapedPitch(shape, pitch, lowest, highest, scale);
+                pitch = playheads::shapedPitch(shape, pitch, lowest, highest, scale);
+                // Then the Transpose devices in the playhead's own chain, with their curves at this moment.
+                for (const Device& b : p.branch) {
+                    if (!b.on || b.type != DeviceType::Transpose)
+                        continue;
+                    float bk[8] = {};
+                    size_t count = std::min(b.params.size(), std::size(bk));
+                    knobsAt(song, track, device, ParamRef::Kind::Device, b.id.value, b.params.data(), count, e, bk);
+                    const auto& info = devices::deviceInfo(DeviceType::Transpose).params;
+                    int semis =
+                        int(std::lround(devices::display(info[chain::knob::kSemitones], bk[chain::knob::kSemitones])));
+                    int octaves =
+                        int(std::lround(devices::display(info[chain::knob::kOctaves], bk[chain::knob::kOctaves])));
+                    int steps =
+                        int(std::lround(devices::display(info[chain::knob::kKeySteps], bk[chain::knob::kKeySteps])));
+                    pitch += semis + 12 * octaves;
+                    if (steps != 0)
+                        pitch = scale.stepBy(pitch, steps);
+                    pitch = std::clamp(pitch, 0, 127);
+                }
+                heard[n.index] = pitch;
             });
     }
     return heard;

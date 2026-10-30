@@ -1446,6 +1446,10 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **Pitch and loudness leave the playhead** (30 Oct). Octave, Steps and Velocity duplicated the Transpose and Velocity
+  devices, which a playhead's own chain already holds. They are gone from the card; on load, a playhead that set
+  them gets those devices at the start of its chain, and curves and lanes on Octave and Steps move to the Transpose
+  (velocity curves are dropped: the Velocity device has no plain offset). Ghosts read the chain's Transposes.
 - **Retrigger on a jump** (30 Oct). A jump (repeat, wrap, order step, restart, drawn step; not a ping-pong turn)
   used to start only notes beginning where it landed and let the sounding one ring, so a repeat over a long note was
   silent. Now, by default, a note's length is cut at its playhead's next jump and the notes it lands inside play
