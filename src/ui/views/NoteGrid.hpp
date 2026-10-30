@@ -30,6 +30,26 @@ class NoteGrid : public TimelineView {
 
     void step() override;
 
+    /// A playhead playing now: where it is on the canvas, and its colour.
+    struct HeadNow {
+        double pos;
+        NVGcolor color;
+        bool shown; // the playhead the editor shows: drawn bolder
+    };
+    /// A note a playhead is reading now: the pitch it sounds at (moved, for the shown playhead), its colour, and how
+    /// far in the playhead is (for the bright start of its glow).
+    struct ReadNow {
+        uint64_t note;
+        int pitch;
+        NVGcolor color;
+        double into;
+    };
+    /// Whether playheads play the shown clip: then they, not the clip's own playhead, light notes and keys.
+    bool playheadsPlay() const { return playheadsOn; }
+    /// The playheads playing now and the notes they read, worked out once a frame in step().
+    const std::vector<HeadNow>& headsNow() const { return heads; }
+    const std::vector<ReadNow>& readingNow() const { return reading; }
+
   protected:
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
     void click(rack::math::Vec pos, int button, Modifiers mods) override;
@@ -164,6 +184,11 @@ class NoteGrid : public TimelineView {
     std::tuple<uint64_t, uint64_t, uint64_t> movedFor{~uint64_t(0), 0, 0};
     // Each note's pitch on every pass of its Motion's curves (render::motionPitches), what for (song revision,
     // clip), and the notes moved on the current pass: drawn see-through where they are written.
+    // Worked out in step(): see headsNow and readingNow.
+    void updateHeads();
+    bool playheadsOn = false;
+    std::vector<HeadNow> heads;
+    std::vector<ReadNow> reading;
     std::vector<std::vector<int>> motionPitches;
     std::pair<uint64_t, uint64_t> motionFor{~uint64_t(0), 0};
     std::set<uint64_t> motionNow;

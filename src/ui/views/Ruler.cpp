@@ -591,7 +591,8 @@ void Ruler::drawView(const DrawArgs& args) {
     drawTimeLabels(vg);
     drawOverview(vg);
 
-    double p = source.playhead();
+    // With playheads, the clip's own position means nothing on the canvas: they draw their own lines below.
+    double p = loopByPlayheads() ? NAN : source.playhead();
     if (std::isfinite(p)) {
         float x = float(viewport.time.tickToX(p));
         nvgSave(vg);
@@ -788,7 +789,7 @@ void Ruler::drawOverview(NVGcontext* vg) {
     draw::roundedRect(vg, w.shrink(rack::math::Vec(0, 1)), 2, nvgTransRGBAf(c.text1, 0.14f));
     draw::roundedRectStroke(vg, w.shrink(rack::math::Vec(0, 1)), 2, c.line2, 1);
 
-    double p = source.playhead();
+    double p = loopByPlayheads() ? NAN : source.playhead();
     if (std::isfinite(p)) {
         float x = float(p / end) * box.size.x;
         nvgBeginPath(vg);
