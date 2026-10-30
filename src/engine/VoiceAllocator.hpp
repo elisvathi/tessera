@@ -114,17 +114,14 @@ class VoiceAllocator {
                 return blocks[b].part == 0 || v - blocks[b].start < std::max<int>(1, peaks[b]);
         return false;
     }
+    /// The blocks, in order, and how many voices each has needed: for walking every voice once.
+    int blockTotal() const { return blockCount; }
+    const Block& block(int b) const { return blocks[b]; }
+    int usedIn(int b) const { return blocks[b].part == 0 ? blocks[b].size : std::max<int>(1, peaks[b]); }
     /// Forgets how many voices each channel has needed (the song stopped): each sends one again.
     void forgetUse() {
         peaks.fill(0);
         changes++;
-    }
-    /// The channel whose block voice `v` is in; 0 for the shared block (its notes keep their own channels).
-    uint8_t partOf(int v) const {
-        for (int b = 0; b < blockCount; b++)
-            if (v >= blocks[b].start && v < blocks[b].start + blocks[b].size)
-                return blocks[b].part;
-        return 0;
     }
 
     void setRetriggerGap(int samples) { gap = std::max(1, samples); }
