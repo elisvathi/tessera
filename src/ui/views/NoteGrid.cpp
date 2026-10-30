@@ -1063,6 +1063,23 @@ void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, int to, NVGcolor col
     nvgStrokeColor(vg, nvgTransRGBAf(color, 0.85f));
     nvgStrokeWidth(vg, 1.2f);
     nvgStroke(vg);
+    int steps = to - n.pitch;
+    std::string change = (steps > 0 ? "+" : "") + std::to_string(steps) + " st";
+    // Moved out of view: a marker at the edge it went past, so the move is never invisible.
+    if (played + row < 0 || played > box.size.y) {
+        bool up = played < 0;
+        Rect tag(x0, up ? 2.f : box.size.y - 16, std::max(w, 46.f), 14);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x0 + 5, up ? tag.getBottom() : tag.pos.y);
+        nvgLineTo(vg, x0 + 5, up ? written + 1 : written + row - 1);
+        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.5f));
+        nvgStrokeWidth(vg, 1);
+        nvgStroke(vg);
+        draw::roundedRect(vg, tag, 2, nvgTransRGBAf(color, 0.85f));
+        label.size = 10;
+        draw::text(vg, label, tag.pos.x + 4, tag.getCenter().y, std::string(up ? "\u25b2 " : "\u25bc ") + change);
+        return;
+    }
     // A thin line to where it plays, and the note there.
     float lineX = x0 + std::min(5.f, w / 2);
     nvgBeginPath(vg);
@@ -1073,10 +1090,8 @@ void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, int to, NVGcolor col
     nvgStroke(vg);
     Rect r(x0, played + 1, w, std::max(2.f, row - 2));
     draw::roundedRect(vg, r, 2, nvgTransRGBAf(color, 0.85f));
-    if (row >= 10 && w > 24) {
-        int steps = to - n.pitch;
-        draw::text(vg, label, x0 + 4, played + row / 2, (steps > 0 ? "+" : "") + std::to_string(steps) + " st");
-    }
+    if (row >= 10 && w > 24)
+        draw::text(vg, label, x0 + 4, played + row / 2, change);
 }
 
 void NoteGrid::drawMovedNotes(NVGcontext* vg) {
@@ -1090,7 +1105,9 @@ void NoteGrid::drawMovedNotes(NVGcontext* vg) {
         const Note& n = clip->notes[i];
         if (moved[i] < 0 || moved[i] == n.pitch || double(n.end()) < t.left() || double(n.start) > t.right())
             continue;
-        drawMovedNote(vg, n, moved[i], color);
+        // A note in a Motion wears its colour: that is what moves it, more than the playhead reading it.
+        const Device* motion = n.motion.valid() ? findDevice(ctx.module()->song(), n.motion) : nullptr;
+        drawMovedNote(vg, n, moved[i], motion ? theme::playheadColor(motion->color) : color);
     }
 }
 

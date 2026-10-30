@@ -221,7 +221,8 @@ that. Any modulator or automation lane can move these knobs too.
 **Seeing it.** A note a Motion moves to another pitch shows where it plays, in the Motion's colour: the written note
 turns see-through with a dashed outline, and the note appears again where it sounds, with its change ("+2 st"). With a
 curve on **Pitch**, that is the pass playing now (the first one when stopped), and faint outlines mark the other
-pitches the curve takes it to over its cycle.
+pitches the curve takes it to over its cycle. When the note moves out of view, a marker at the top or bottom edge
+of its column says how far ("▼ −7 st").
 
 **Where it sits.** A new Motion device goes before the Playheads device, the only place in front of it:
 
