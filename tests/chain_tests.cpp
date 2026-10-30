@@ -1462,6 +1462,28 @@ TEST_CASE("engine: a playhead that jumps into a note plays it again, and cuts th
     CHECK(most >= 1);          // the notes from beat 1 still ring
 }
 
+TEST_CASE("engine: a chord read by playheads keeps its whole length when one playhead echoes it") {
+    // A three-note chord, half a bar long, read by two playheads; the first has an Echo in its own chain (1/8,
+    // 3 repeats, gate 50%). Auto voices must hold the chord and every echo, or the echoes take the chord's voices
+    // halfway through it.
+    Song song = songWith({{0, 1920, 60}, {0, 1920, 64}, {0, 1920, 67}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.branch.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(int64_t(1800) * kSamplesPerTick);
+    int sounding = 0;
+    for (int v = 0; v < h.frame().channels; v++)
+        sounding += h.gate(v) ? 1 : 0;
+    CHECK(sounding == 12); // both playheads' chords (6) and the two echoes still going (6)
+}
+
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     ArrangerClip a;
