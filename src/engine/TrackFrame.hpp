@@ -21,6 +21,10 @@ struct TrackFrame {
     float automation[kMaxAutomationLanes] = {}; // already in volts
     // The channel (1..16) of the note each voice plays or last played, so an output can play one channel only.
     uint8_t part[kMaxTrackVoices] = {};
+    // With playheads: the voices come in blocks, one per playhead channel (`part` says whose), and a channel sends
+    // only the voices it has needed so far (`used`); without, every voice is sent as it is.
+    bool byChannel = false;
+    uint8_t used[kMaxTrackVoices] = {};
 };
 
 } // namespace tessera

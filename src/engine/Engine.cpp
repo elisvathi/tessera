@@ -693,8 +693,10 @@ void Engine::stop() {
     // After `playing` drops, so the recorder knows the take ended with the transport (its clip shouldn't play on).
     stopRecording();
     applyQueued();
-    for (TrackState& t : tracks)
+    for (TrackState& t : tracks) {
         releaseAll(t);
+        t.voices.forgetUse(); // each playhead channel sends one voice again until it needs more
+    }
 }
 
 void Engine::reset() {
@@ -2235,6 +2237,7 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
     const VoiceAllocator& voices = state.voices;
     frame.trackId = track.id.value;
     frame.channels = uint8_t(voices.polyphony());
+    bool byChannel = false;
     writeAutomation(track, state, frame);
     bool live = playsLiveValues(track);
     for (int v = 0; v < voices.polyphony(); v++) {
@@ -2246,6 +2249,8 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
         // A playhead channel's voices always say its channel, so an output on that channel keeps a steady count.
         uint8_t block = voices.partOf(v);
         frame.part[v] = block ? block : state.voicePart[size_t(v)];
+        frame.used[v] = voices.used(v) ? 1 : 0;
+        byChannel = byChannel || block != 0;
         frame.timbre[v] = 0;
         frame.press[v] = 0;
         if (const NoteExtras* ex = state.voiceExtras[size_t(v)]) {
@@ -2269,6 +2274,7 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
             frame.press[v] = std::max(frame.press[v], state.liveChannelPress);
         }
     }
+    frame.byChannel = byChannel;
 }
 
 } // namespace tessera
@@ -2279,6 +2285,7 @@ void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state,
     // One channel per lane output: a gate (or trigger) with the lane's velocity and its note as pitch (for a Track
     // Out). `tune` carries the hit's own pitch alone (0 V = as the drum module is tuned), for Drum Out.
     frame.trackId = track.id.value;
+    frame.byChannel = false;
     frame.channels = uint8_t(std::clamp(track.drumChannels, 1, kMaxVoices));
     writeAutomation(track, state, frame);
     for (int c = 0; c < frame.channels; c++) {
