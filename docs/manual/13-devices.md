@@ -110,7 +110,7 @@ settings for the shown playhead. A setting still at its default draws faint, so 
 Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
 playhead's own chain, like any other note change. Songs made when a playhead had its own Octave, Steps and Velocity
 get those devices added for them, curves included.
-| **More** | Rarer settings: On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (as written, follows the playhead, fixed), Path (from the settings, or drawn in the time map), and rename, mute, solo, duplicate, delete. |
+| **More** | Rarer settings: On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed), Path (from the settings, or drawn in the time map), and rename, mute, solo, duplicate, delete. |
 
 The card's **⋯** menu holds the settings every playhead shares: **Restart** (when the clip starts, or also every so
 many bars) and **Same note** (two playheads on the same note at the same moment play it once, or each).

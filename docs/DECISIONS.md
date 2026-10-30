@@ -1446,6 +1446,9 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **A note lasts while its playhead is on it** (30 Oct). Length defaulted to "As written", so at ½× a note stopped
+  halfway while the playhead still swept across it: the picture and the sound disagreed. "Follows playhead" is now the
+  default, and songs saved as schema 6 (only this branch wrote it) switch their As written playheads to it.
 - **Each playhead channel has its own voices** (30 Oct). Playheads shared one set of at most 16 voices, so a busy one
   (an Echo in its chain) took voices from the others and cut their notes. Now a track with playheads holds a block of
   voices per channel (Auto for that playhead, or the fixed count, up to 16 each; past 64 in all the biggest shrink, so every channel

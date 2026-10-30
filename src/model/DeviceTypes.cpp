@@ -191,7 +191,7 @@ TypeInfo buildPlayhead() {
              number("Bend amount", 0, 100, 50, "%"),
              choice("Bend cycle", cycleNames(), 2),
              integer("Offset", -16, 16, 0, "steps"),
-             choice("Length", {"As written", "Follows playhead", "Fixed"}, 0),
+             choice("Length", {"As written", "Follows playhead", "Fixed"}, 1),
              choice("Fixed length", fixedLengthNames(), 2),
              choice("Path", {"From settings", "Drawn"}, 0),
              choice("Path cycle", pathCycleNames(), 0),
