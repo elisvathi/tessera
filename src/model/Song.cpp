@@ -155,24 +155,27 @@ std::vector<Song::VoiceBlock> Song::voiceBlocks(const Track& track) const {
                        : voicesThrough(after, voicesThrough(p.branch, base * playheadOverlap(p)));
         auto same =
             std::find_if(blocks.begin(), blocks.end(), [&](const VoiceBlock& b) { return b.part == p.channel; });
+        // Playheads sharing a channel share its voices: Auto adds up what each needs; a fixed count is per channel.
         if (same != blocks.end())
-            same->size += size;
+            same->size = track.polyphony != kAutoVoices ? size : same->size + size;
         else
             blocks.push_back({p.channel, size});
     }
     if (blocks.empty())
         blocks.push_back({0, 1});
-    // Each up to 16; past the track's room the last playheads give way.
-    int room = kMaxTrackVoices;
-    size_t keep = 0;
+    // Each up to 16. Past the track's room the biggest give a voice at a time (the last first), so every channel
+    // keeps voices of its own and none has to share another's.
+    int total = 0;
     for (VoiceBlock& b : blocks) {
         b.size = std::clamp(b.size, 1, kMaxVoices);
-        if (b.size > room)
-            break;
-        room -= b.size;
-        keep++;
+        total += b.size;
     }
-    blocks.resize(std::max<size_t>(1, keep));
+    while (total > kMaxTrackVoices) {
+        auto biggest = std::max_element(blocks.rbegin(), blocks.rend(),
+                                        [](const VoiceBlock& a, const VoiceBlock& b) { return a.size < b.size; });
+        biggest->size--;
+        total--;
+    }
     return blocks;
 }
 
