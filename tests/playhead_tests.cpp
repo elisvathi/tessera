@@ -291,7 +291,7 @@ TEST_CASE("playheads are added, duplicated, changed and removed with undo") {
     CHECK(firstDevice(song).playheads[3].channel == 9);
     CHECK(firstDevice(song).playheads[3].mute);
     CHECK(firstDevice(song).playheads[3].name == "Bells");
-    CHECK(song.voicesOf(song.tracks[0]) == 3); // three playheads playing, one note at a time each
+    CHECK(song.voicesOf(song.tracks[0]) == 4); // four playheads, one note at a time each (muted ones keep theirs)
 
     applyUndoable(song, removePlayhead(song, third));
     CHECK(firstDevice(song).playheads.size() == 3);
@@ -360,7 +360,7 @@ TEST_CASE("a playhead's own Octave, Steps and Velocity move into devices in its 
     CHECK(firstDevice(song).playheads[0].branch.size() == 2);
 }
 
-TEST_CASE("each playhead channel gets its own block of voices, in playhead order") {
+TEST_CASE("each playhead channel gets its own block of voices, in playhead order, muted ones too") {
     Song song = songWithTrack();
     TrackId track = song.tracks[0].id;
     applyUndoable(song, addDevice(song, track, DeviceType::Playheads, -1, idsOf(song)));
@@ -375,18 +375,21 @@ TEST_CASE("each playhead channel gets its own block of voices, in playhead order
                            devices::normalize(devices::deviceInfo(DeviceType::Echo).params[chain::knob::kRepeats], 2)));
     applyUndoable(song, setPlayheadMute(song, third, true));
 
+    // The muted third keeps its block, so muting it moves no one else's voices.
     std::vector<Song::VoiceBlock> blocks = song.voiceBlocks(song.tracks[0]);
-    REQUIRE(blocks.size() == 2);
+    REQUIRE(blocks.size() == 3);
     CHECK(blocks[0].part == 1);
     CHECK(blocks[0].size == 3);
     CHECK(blocks[1].part == 2);
     CHECK(blocks[1].size == 1);
-    CHECK(song.voicesOf(song.tracks[0]) == 4);
+    CHECK(blocks[2].part == 3);
+    CHECK(blocks[2].size == 1);
+    CHECK(song.voicesOf(song.tracks[0]) == 5);
 
     // A fixed voice count is per channel.
     applyUndoable(song, setTrackField(song, track, &Track::polyphony, 5, "Voices"));
     blocks = song.voiceBlocks(song.tracks[0]);
-    REQUIRE(blocks.size() == 2);
+    REQUIRE(blocks.size() == 3);
     CHECK(blocks[0].size == 5);
     CHECK(blocks[1].size == 5);
 

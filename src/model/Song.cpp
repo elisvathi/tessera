@@ -147,9 +147,9 @@ std::vector<Song::VoiceBlock> Song::voiceBlocks(const Track& track) const {
     std::vector<Device> before(track.devices.begin(), at), after(at + 1, track.devices.end());
     int base = voicesThrough(before, std::min(mostNotesAtOnce(track), kMaxVoices));
     std::vector<VoiceBlock> blocks;
+    // Muted playheads keep their voices: muting or unmuting one (live, Shift+M) then moves no other playhead's
+    // voices, and the voice count going out stays the same.
     for (const Playhead& p : heads->playheads) {
-        if (p.mute)
-            continue;
         int size = track.polyphony != kAutoVoices
                        ? track.polyphony
                        : voicesThrough(after, voicesThrough(p.branch, base * playheadOverlap(p)));

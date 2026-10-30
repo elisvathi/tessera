@@ -1446,6 +1446,11 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
 - **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
   backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **Playing with playheads live never cuts the others** (30 Oct). Muting or unmuting a playhead used to rebuild the
+  voice blocks without it, shifting every block after it, so the other playheads' sounding notes stopped. Muted
+  playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change
+  (a playhead added, removed or moved, an Echo needing more), each channel's sounding voices move to its new block
+  with their note, and what the engine keeps per voice moves along.
 - **Timeline playheads read ahead** (30 Oct). On the timeline the playheads read on every sample, which made one track
   cost several percent of a core. They now read a control block ahead in song ticks and queue what they find, like a
   launched clip's playheads, never past the song loop's end; an edit (which clears the queue) or a jump reads again

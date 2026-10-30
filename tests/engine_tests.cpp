@@ -210,6 +210,29 @@ TEST_CASE("VoiceAllocator: each channel's block of voices steals only from itsel
     CHECK(v.noteOn(90, 1, 0.5f, 1000, 30, 7) < 2);
 }
 
+TEST_CASE("VoiceAllocator: a new layout moves each channel's sounding voices to its new block") {
+    VoiceAllocator v;
+    VoiceAllocator::Block before[] = {{1, 0, 2}, {2, 2, 2}};
+    v.setBlocks(before, 2);
+    v.noteOn(60, 1, 0.5f, 1000, 1, 1);
+    v.noteOn(64, 1, 0.5f, 1000, 2, 2);
+    v.advance();
+    REQUIRE(v.gate(2));
+    // Channel 3 comes first now: channel 2's block moves from voices 2-3 to 4-5, channel 1's from 0-1 to 2-3.
+    VoiceAllocator::Block after[] = {{3, 0, 2}, {1, 2, 2}, {2, 4, 2}};
+    std::array<int8_t, kMaxTrackVoices> moved;
+    CHECK(v.setBlocks(after, 3, &moved));
+    CHECK(moved[0] == 2);
+    CHECK(moved[2] == 4);
+    CHECK(v.gate(4));
+    CHECK(v.voice(4).pitch == 64);
+    CHECK(v.gate(2));
+    CHECK(v.voice(2).pitch == 60);
+    CHECK_FALSE(v.gate(0)); // channel 3's new voices start empty
+    // The same layout again changes nothing.
+    CHECK_FALSE(v.setBlocks(after, 3, &moved));
+}
+
 TEST_CASE("clips loop, including notes right at the loop end") {
     Harness h(songWith({{0, 100, 60}, {kPpq - 1, 1, 67}}, kPpq, 2));
     int64_t loop = kPpq * kSamplesPerTick;

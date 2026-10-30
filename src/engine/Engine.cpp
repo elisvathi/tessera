@@ -105,13 +105,14 @@ void Engine::setSnapshot(const Snapshot* s) {
         clearPending(state);
         state.voiceClip = clips;
         state.voiceNote = notes;
-        reattachCurves(tp, state);
         state.voices.setRetriggerGap(retriggerGap);
         state.drums.setRetriggerGap(retriggerGap);
-        state.voices.setBlocks(tp.voiceBlocks.data(), tp.voiceBlockCount);
-        for (int v = state.voices.polyphony(); v < kMaxTrackVoices; v++)
-            if (state.audition[size_t(v)] >= 0)
-                endAudition(state, v);
+        // A new layout of voices (a playhead added, removed or moved) carries every sounding note to its channel's
+        // new place; what the engine keeps per voice goes along.
+        std::array<int8_t, kMaxTrackVoices> moved;
+        if (state.voices.setBlocks(tp.voiceBlocks.data(), tp.voiceBlockCount, &moved))
+            moveVoiceState(state, moved);
+        reattachCurves(tp, state);
         state.chainInfo = i < s->chains.size() ? &s->chains[i] : nullptr;
         state.autoChannels = std::max(tp.autoChannels, state.chainInfo ? state.chainInfo->autoChannels : 0);
         // Lanes may have come or gone: live controls find their channels again when they next move.
@@ -391,6 +392,29 @@ void Engine::releaseAll(TrackState& state) {
 void Engine::endAudition(TrackState& state, int voice) {
     state.audition[size_t(voice)] = -1;
     state.auditions--;
+}
+
+void Engine::moveVoiceState(TrackState& state, const std::array<int8_t, kMaxTrackVoices>& moved) {
+    for (int v = 0; v < kMaxTrackVoices; v++)
+        if (moved[size_t(v)] < 0 && state.audition[size_t(v)] >= 0)
+            endAudition(state, v);
+    auto move = [&](auto& list, auto empty) {
+        auto old = list;
+        list.fill(empty);
+        for (int v = 0; v < kMaxTrackVoices; v++)
+            if (moved[size_t(v)] >= 0)
+                list[size_t(moved[size_t(v)])] = old[size_t(v)];
+    };
+    move(state.audition, int32_t(-1));
+    move(state.voiceExtras, static_cast<const NoteExtras*>(nullptr));
+    move(state.voiceStart, 0.0);
+    move(state.voiceLength, 0.0);
+    move(state.voicePart, uint8_t(0));
+    move(state.voiceClip, uint64_t(0));
+    move(state.voiceNote, uint64_t(0));
+    move(state.liveBend, 0.f);
+    move(state.liveTimbre, 0.f);
+    move(state.livePress, 0.f);
 }
 
 void Engine::advanceAuditions(TrackState& state) {
