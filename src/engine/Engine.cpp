@@ -1245,11 +1245,23 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 float& k = clock.knobs[x.param];
                 k = std::clamp(k + x.amount * (v - applied), 0.f, 1.f);
             }
-            clock.motion =
-                playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
-            if (playheads::wantsDrawnPath(knobs))
-                clock.motion.path = &p.path;
-            clock.shape = playheads::noteShapeFrom(knobs);
+            // Turning knobs into ticks reads every setting's table; most blocks nothing moved, so it is skipped.
+            size_t deviceCount =
+                std::min(devices::deviceInfo(DeviceType::Playheads).params.size(), clock.builtDevice.size());
+            bool same = clock.builtClip == &clip && clock.builtSnapshot == snapshot &&
+                        std::equal(clock.knobs.begin(), clock.knobs.begin() + p.knobCount, clock.builtFrom.begin()) &&
+                        std::equal(deviceKnobs, deviceKnobs + deviceCount, clock.builtDevice.begin());
+            if (!same) {
+                clock.motion =
+                    playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
+                if (playheads::wantsDrawnPath(knobs))
+                    clock.motion.path = &p.path;
+                clock.shape = playheads::noteShapeFrom(knobs);
+                std::copy_n(clock.knobs.begin(), p.knobCount, clock.builtFrom.begin());
+                std::copy_n(deviceKnobs, deviceCount, clock.builtDevice.begin());
+                clock.builtClip = &clip;
+                clock.builtSnapshot = snapshot;
+            }
             clock.motionBlock = controlBlock;
             clock.motionClip = &clip;
         }
@@ -1263,15 +1275,21 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
             double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
             double segB = restartEvery > 0 ? std::min(b, restart + restartEvery) : b;
             // A jump (launch, seek, restart, another timeline clip) starts counting afresh from where the time says.
-            if (!(clock.until == segA) || clock.restart != restart)
+            if (!(clock.until == segA) || clock.restart != restart) {
                 clock.own = rate * (segA - restart);
+                clock.lastPos = NAN;
+            }
             double ownA = clock.own, ownB = ownA + rate * (segB - segA);
             clock.own = ownB;
             clock.until = segB;
             clock.restart = restart;
+            if (!p.audible)
+                clock.lastPos = NAN;
             if (p.audible) {
                 playheads::Sweep sweeps[playheads::kMaxSweeps];
-                int count = playheads::sweeps(m, ownA, ownB, sweeps);
+                int count = playheads::sweeps(m, ownA, ownB, sweeps, playheads::kMaxSweeps, clock.lastPos);
+                if (count > 0)
+                    clock.lastPos = sweeps[count - 1].to;
                 for (int i = 0; i < count; i++) {
                     const playheads::Sweep& sweep = sweeps[i];
                     // `moved`: the note comes from a Motion device before the playheads, already shifted in time.
@@ -1544,6 +1562,7 @@ void Engine::rewindPlayheads(TrackState& state) {
         if (std::isfinite(clock.until) && clock.until > now) {
             clock.own -= clock.motion.rate * (clock.until - now);
             clock.until = now;
+            clock.lastPos = NAN; // it was further on: going back there is no jump
         }
 }
 
