@@ -508,6 +508,16 @@ class Engine {
         float velocity = 0;
     };
     MovedBy movedBy(int knobs, int64_t pass) const;
+    // What movedBy worked out lately (by knobs, pass and control block): it is asked on every sample a playhead
+    // reads, for the same few Motion devices.
+    struct MovedCache {
+        int knobs = -1;
+        int64_t pass = 0;
+        uint64_t block = ~uint64_t(0);
+        MovedBy moved;
+    };
+    mutable std::array<MovedCache, 8> movedCache{};
+    mutable size_t movedNext = 0;
     /// Whether `motion` is a Motion device before the track's playheads (they read its notes moved).
     static bool readMotion(const ChainPlayback& chain, uint64_t motion);
     /// Whether the modulator in `slot` is a Steps or Ramp set to "Per pass".
