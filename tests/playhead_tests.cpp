@@ -319,6 +319,10 @@ TEST_CASE("Auto voices make room for every echo and for a fast playhead's overla
     REQUIRE(twice < int(rate.choices.size()));
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRate)},
                                  devices::normalize(rate, float(twice))));
+    CHECK(song.voicesOf(song.tracks[0]) == 1); // following the playhead, its notes shrink with it: no overlap
+    const auto& length = devices::playheadInfo().params[playheads::knob::kLength];
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kLength)},
+                                 devices::normalize(length, float(playheads::LengthMode::AsWritten))));
     CHECK(song.voicesOf(song.tracks[0]) == 2); // twice as fast, notes as long as written: two overlap
 }
 
@@ -399,6 +403,26 @@ TEST_CASE("each playhead channel gets its own block of voices, in playhead order
         total += b.size;
     }
     CHECK(total == kMaxTrackVoices);
+}
+
+TEST_CASE("a playhead's notes last while it is on them: Length follows the playhead, also in older songs") {
+    const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
+    auto follows = [&](const Playhead& p) {
+        return playheads::LengthMode(std::lround(devices::display(length, p.params[playheads::knob::kLength]))) ==
+               playheads::LengthMode::FollowsPlayhead;
+    };
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    CHECK(follows(firstDevice(song).playheads[0]));
+
+    // A song saved before (schema 6) with "As written": it now follows the playhead too.
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, firstDevice(song).playheads[0].id.value,
+                                        uint16_t(playheads::knob::kLength)},
+                                 devices::normalize(length, float(playheads::LengthMode::AsWritten))));
+    json::Ref j(songToJson(song));
+    REQUIRE(migrateSong(j.get(), 6));
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK(follows(loaded.tracks[0].devices[0].playheads[0]));
 }
 
 TEST_CASE("playheads survive saving and loading, and a broken file is repaired") {

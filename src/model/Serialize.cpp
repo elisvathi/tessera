@@ -3,8 +3,10 @@
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
 #include "Json.hpp"
+#include "Playheads.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace tessera {
@@ -909,6 +911,27 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     // Version 5 added device chains and modulators. Older songs have none, and every new field loads as empty,
     // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob (songFromJson rescales it), and
     // version 7 added the Playheads device.
+    if (fromVersion == 6) {
+        // Before it was released as Transpose's version, this branch saved version 6 with playheads that played
+        // their notes for the written length by default, so at half speed a note stopped halfway while the playhead
+        // was still on it. Its notes now last while the playhead is on them. Released version 6 songs have no
+        // playheads, so this leaves them alone.
+        const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
+        float asWritten = devices::normalize(length, float(playheads::LengthMode::AsWritten));
+        float follows = devices::normalize(length, float(playheads::LengthMode::FollowsPlayhead));
+        size_t i, k, h;
+        json_t *t, *d, *p;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) {
+            json_array_foreach(json_object_get(t, "devices"), k, d) {
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_t* params = json_object_get(p, "params");
+                    json_t* value = json_array_get(params, size_t(playheads::knob::kLength));
+                    if (json_is_number(value) && std::fabs(json_number_value(value) - asWritten) < 1e-4)
+                        json_array_set_new(params, size_t(playheads::knob::kLength), json_real(follows));
+                }
+            }
+        }
+    }
     return fromVersion <= Song::kSchemaVersion;
 }
 
