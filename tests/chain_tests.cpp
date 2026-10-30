@@ -1506,6 +1506,51 @@ TEST_CASE("engine: one playhead running out of voices never takes another playhe
     CHECK(second == 3); // playhead 2's chord, whole, while playhead 1's echoes fight over its own three
 }
 
+TEST_CASE("engine: muting or unmuting one playhead leaves the others' sounding notes alone") {
+    // Three long notes read by three playheads, each on its own channel.
+    Song song = songWith({{0, 3800, 60}, {0, 3800, 64}, {0, 3800, 67}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 3; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    // What each channel has sounding, by the channel the frame reports for its voices.
+    auto sounding = [&h](int channel) {
+        int n = 0;
+        for (int v = 0; v < h.frame().channels; v++)
+            n += h.gate(v) && h.frame().part[v] == channel ? 1 : 0;
+        return n;
+    };
+    h.runTo(int64_t(1000) * kSamplesPerTick);
+    REQUIRE(sounding(2) == 3);
+    REQUIRE(sounding(3) == 3);
+
+    h.song.tracks[0].devices[0].playheads[0].mute = true;
+    h.republish();
+    h.runTo(int64_t(1200) * kSamplesPerTick);
+    CHECK(sounding(2) == 3);
+    CHECK(sounding(3) == 3);
+
+    h.song.tracks[0].devices[0].playheads[0].mute = false;
+    h.republish();
+    h.runTo(int64_t(1400) * kSamplesPerTick);
+    CHECK(sounding(2) == 3);
+    CHECK(sounding(3) == 3);
+
+    // A playhead added in front shifts every block: the sounding notes move along with their channels.
+    Playhead added = devices::makePlayhead(h.song.newId<PlayheadId>(), 3);
+    added.channel = 4;
+    auto& heads = h.song.tracks[0].devices[0].playheads;
+    heads.insert(heads.begin(), added);
+    h.republish();
+    h.runTo(int64_t(1600) * kSamplesPerTick);
+    CHECK(sounding(2) == 3);
+    CHECK(sounding(3) == 3);
+}
+
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     ArrangerClip a;

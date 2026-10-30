@@ -499,6 +499,9 @@ class Engine {
         double lengthScale = 1;
         float velocity = 0;
     };
+    /// After a new layout of a track's voices: what the engine keeps per voice follows each voice to its new place
+    /// (`moved`, -1 for gone).
+    void moveVoiceState(TrackState& state, const std::array<int8_t, kMaxTrackVoices>& moved);
     MovedBy movedBy(int knobs, int64_t pass) const;
     // What movedBy worked out lately (by knobs, pass and control block): it is asked on every sample a playhead
     // reads, for the same few Motion devices.

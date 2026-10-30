@@ -41,9 +41,13 @@ class VoiceAllocator {
         Block one{0, 0, uint8_t(std::clamp(n, 1, kMaxVoices))};
         setBlocks(&one, 1);
     }
-    /// The voices, as blocks laid end to end (at most kMaxTrackVoices in all). Voices past the end are released.
-    void setBlocks(const Block* list, int count) {
+    /// The voices, as blocks laid end to end (at most kMaxTrackVoices in all). When the layout changes, each
+    /// channel's voices move to its new block with whatever they play, so no note is cut; a channel that is gone, or
+    /// a block that shrank, lets its extra voices go. `moved` (when given) gets each old voice's new place, -1 for
+    /// gone. Returns whether the layout changed.
+    bool setBlocks(const Block* list, int count, std::array<int8_t, kMaxTrackVoices>* moved = nullptr) {
         count = std::clamp(count, 1, kMaxBlocks);
+        std::array<Block, kMaxBlocks> next{};
         int total = 0;
         bool same = count == blockCount;
         for (int b = 0; b < count; b++) {
@@ -52,18 +56,46 @@ class VoiceAllocator {
             block.size = uint8_t(std::clamp(int(block.size), 1, std::min(kMaxVoices, kMaxTrackVoices - block.start)));
             same =
                 same && block.part == blocks[b].part && block.start == blocks[b].start && block.size == blocks[b].size;
-            blocks[b] = block;
+            next[b] = block;
             total = block.start + block.size;
         }
         if (same)
-            return;
-        changes++;
+            return false;
+        std::array<Voice, kMaxTrackVoices> old = voices;
+        std::array<int8_t, kMaxTrackVoices> place;
+        place.fill(-1);
+        for (Voice& voice : voices)
+            voice = Voice();
+        for (int ob = 0; ob < blockCount; ob++)
+            for (int nb = 0; nb < count; nb++) {
+                if (next[nb].part != blocks[ob].part)
+                    continue;
+                for (int i = 0; i < std::min(blocks[ob].size, next[nb].size); i++) {
+                    place[blocks[ob].start + i] = int8_t(next[nb].start + i);
+                    voices[next[nb].start + i] = old[blocks[ob].start + i];
+                }
+                break;
+            }
+        // Voices left with no place stop: their gates fall now.
+        for (int v = 0; v < kMaxTrackVoices; v++)
+            if (place[v] < 0 && gate(old[v]))
+                changes++;
+        blocks = next;
         blockCount = count;
         poly = total;
-        for (int v = poly; v < kMaxTrackVoices; v++)
-            release(v);
-        for (int b = 0; b < blockCount; b++)
-            nexts[b] = 0;
+        nexts.fill(0);
+        nextEnd = kNoEnd;
+        nextRise = kNever;
+        for (int v = 0; v < poly; v++) {
+            if (voices[v].held)
+                nextEnd = std::min(nextEnd, voices[v].endTick);
+            if (voices[v].held && voices[v].gateFrom > now)
+                nextRise = std::min(nextRise, voices[v].gateFrom);
+        }
+        changes++;
+        if (moved)
+            *moved = place;
+        return true;
     }
     /// All the voices, over every block.
     int polyphony() const { return poly; }
