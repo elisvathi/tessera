@@ -410,6 +410,8 @@ class Engine {
             catchUp(i, clockAt);
         wakeAt.fill(-INFINITY);
         idleUntil.fill(0);
+        earliestWake = -INFINITY;
+        earliestIdleEnd = 0;
         controlNow = true; // and automation catches up at once (a seek, a launch, a new snapshot)
     }
     /// Counts the samples track `i` skipped while idle, so its voices' clock reads `sample`.
@@ -419,6 +421,8 @@ class Engine {
         catchUp(i, clockAt);
         wakeAt[i] = -INFINITY;
         idleUntil[i] = 0;
+        earliestWake = -INFINITY;
+        earliestIdleEnd = 0;
     }
     void catchUp(size_t i, uint64_t sample) {
         if (clockOf[i] < sample) {
@@ -626,6 +630,10 @@ class Engine {
     // track until then; -infinity works it out on the next sample. idleUntil: before this sample the track's
     // outputs can't change on their own, so the output loop skips it. clockOf: the sample its voices count to.
     std::array<double, kMaxTracks> wakeAt{};
+    // The soonest of wakeAt and of idleUntil: until then no track has anything to do, and the per-track loops are
+    // skipped whole (most samples, with many tracks).
+    double earliestWake = -INFINITY;
+    uint64_t earliestIdleEnd = 0;
     std::array<uint64_t, kMaxTracks> idleUntil{};
     std::array<uint64_t, kMaxTracks> clockOf{};
     uint64_t clockAt = 0; // the sample events happen at: the one being processed, or else the next one

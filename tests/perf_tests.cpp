@@ -57,12 +57,14 @@ double secondOfAudio(int tracks, bool busy = true, bool automation = true, int p
     engine.setTempo(140);
     engine.setSnapshot(snapshot.get());
     engine.launch({LaunchEvent::Kind::Scene, 0, 0, true});
-    std::array<TrackFrame, kMaxTracks> frames{};
+    // Two buffers, written in turn, as the module's output bus does: a quiet track only rests once both hold its
+    // outputs, so a single buffer would keep every track busy on every sample.
+    std::array<std::array<TrackFrame, kMaxTracks>, 2> frames{};
     TransportEvents events;
     auto start = std::chrono::steady_clock::now();
     for (int s = 0; s < 48000; s++) {
         engine.setPlayMode(PlayMode::Launcher); // the module sets the mode on every sample
-        engine.process(frames.data(), events);
+        engine.process(frames[size_t(s & 1)].data(), events);
     }
     double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     return seconds * 100; // share of one core, in percent, for one second of audio
