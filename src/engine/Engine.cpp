@@ -1290,7 +1290,9 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
             double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
             double segB = restartEvery > 0 ? std::min(b, restart + restartEvery) : b;
             // A jump (launch, seek, restart, another timeline clip) starts counting afresh from where the time says.
-            if (!(clock.until == segA) || clock.restart != restart) {
+            // A timeline clip works its time out from the song's every sample, a hair off where the last stretch
+            // ended: that is no jump.
+            if (!(std::abs(clock.until - segA) <= 1e-6) || clock.restart != restart) {
                 clock.own = rate * (segA - restart);
                 clock.lastPos = NAN;
             }
@@ -1789,6 +1791,10 @@ bool Engine::readMotion(const ChainPlayback& chain, uint64_t motion) {
 }
 
 Engine::MovedBy Engine::movedBy(int knobs, int64_t pass) const {
+    // Its knobs change once a control block at most: what they make is kept until then.
+    for (const MovedCache& c : movedCache)
+        if (c.knobs == knobs && c.pass == pass && c.block == controlBlock)
+            return c.moved;
     auto value = [&](int k) {
         return devices::display(devices::motionInfo().params[size_t(k)], motionKnob(knobs + k, pass));
     };
@@ -1798,6 +1804,8 @@ Engine::MovedBy Engine::movedBy(int knobs, int64_t pass) const {
     m.delay = double(value(chain::knob::kMotionTime)) * double(kPpq / 4);
     m.lengthScale = 1 + double(value(chain::knob::kMotionLength)) / 100;
     m.velocity = value(chain::knob::kMotionVelocity) / 100;
+    movedCache[movedNext] = {knobs, pass, controlBlock, m};
+    movedNext = (movedNext + 1) % movedCache.size();
     return m;
 }
 
