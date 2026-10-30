@@ -916,13 +916,20 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
                 releaseClipVoices(tracks[i]);
             }
         }
-        for (size_t i = 0; i < trackCount; i++) {
-            if (!wrapped && playTick < wakeAt[i])
-                continue; // most tracks have nothing due on most samples
-            catchUp(i, sample);
-            scheduleTrackNow(*snapshot->tracks[i], tracks[i], prevPlay, playTick);
-            wakeAt[i] = nextWake(*snapshot->tracks[i], tracks[i], playTick);
-            idleUntil[i] = 0; // its outputs may have changed
+        if (wrapped || playTick >= earliestWake) {
+            for (size_t i = 0; i < trackCount; i++) {
+                if (!wrapped && playTick < wakeAt[i])
+                    continue; // most tracks have nothing due on most samples
+                catchUp(i, sample);
+                scheduleTrackNow(*snapshot->tracks[i], tracks[i], prevPlay, playTick);
+                wakeAt[i] = nextWake(*snapshot->tracks[i], tracks[i], playTick);
+                idleUntil[i] = 0; // its outputs may have changed
+                earliestIdleEnd = 0;
+            }
+            // Over all of them again: a track can wake another it feeds, one already passed in this loop.
+            earliestWake = INFINITY;
+            for (size_t i = 0; i < trackCount; i++)
+                earliestWake = std::min(earliestWake, wakeAt[i]);
         }
         if (events.loop && capturing)
             captureLoopWrap();
@@ -968,7 +975,8 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
     size_t parity = frames == buffers[1] ? 1 : 0;
 
     // Automation runs at control rate too: CV curves don't need every sample, and it is the costliest part.
-    for (size_t i = 0; i < trackCount; i++) {
+    bool anyAwake = controlTick || sample >= earliestIdleEnd;
+    for (size_t i = 0; anyAwake && i < trackCount; i++) {
         if (!controlTick && sample < idleUntil[i])
             continue; // its outputs can't change before the next control tick
         catchUp(i, sample);
@@ -998,6 +1006,11 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         state.drums.advance();
         clockOf[i] = sample + 1;
         idleUntil[i] = idleUntilControl(state, sample) ? (sample | (kControlBlock - 1)) + 1 : 0;
+    }
+    if (anyAwake) {
+        earliestIdleEnd = ~uint64_t(0);
+        for (size_t i = 0; i < trackCount; i++)
+            earliestIdleEnd = std::min(earliestIdleEnd, idleUntil[i]);
     }
     clockAt = sample + 1; // events until the next process() happen at the next sample
 }
