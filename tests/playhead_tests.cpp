@@ -321,6 +321,40 @@ TEST_CASE("Auto voices make room for every echo and for a fast playhead's overla
     CHECK(song.voicesOf(song.tracks[0]) == 2); // twice as fast, notes as long as written: two overlap
 }
 
+TEST_CASE("a playhead's own Octave, Steps and Velocity move into devices in its chain, curves and all") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    Playhead& p = firstDevice(song).playheads[0];
+    const auto& info = devices::playheadInfo();
+    p.params[playheads::knob::kOctave] = devices::normalize(info.params[playheads::knob::kOctave], -2);
+    p.params[playheads::knob::kVelocity] = devices::normalize(info.params[playheads::knob::kVelocity], 20);
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    Modulation route;
+    route.target = {ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOctave)};
+    route.amount = 0.5f;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
+
+    normalize(song);
+    const Playhead& after = firstDevice(song).playheads[0];
+    CHECK(devices::display(info.params[playheads::knob::kOctave], after.params[playheads::knob::kOctave]) == 0);
+    CHECK(devices::display(info.params[playheads::knob::kVelocity], after.params[playheads::knob::kVelocity]) == 0);
+    REQUIRE(after.branch.size() == 2);
+    const Device& transpose = after.branch[0];
+    CHECK(transpose.type == DeviceType::Transpose);
+    CHECK(devices::display(devices::deviceInfo(DeviceType::Transpose).params[chain::knob::kOctaves],
+                           transpose.params[chain::knob::kOctaves]) == -2);
+    CHECK(after.branch[1].type == DeviceType::Velocity);
+    CHECK(devices::display(devices::deviceInfo(DeviceType::Velocity).params[chain::knob::kMin],
+                           after.branch[1].params[chain::knob::kMin]) == doctest::Approx(20));
+    const Modulation& moved = song.tracks[0].modulators[0].routes.at(0);
+    CHECK(moved.target == ParamRef{ParamRef::Kind::Device, transpose.id.value, uint16_t(chain::knob::kOctaves)});
+    CHECK(moved.amount == 0.5f);
+
+    normalize(song); // and again changes nothing
+    CHECK(firstDevice(song).playheads[0].branch.size() == 2);
+}
+
 TEST_CASE("playheads survive saving and loading, and a broken file is repaired") {
     Song song = songWithTrack();
     applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
@@ -647,9 +681,9 @@ TEST_CASE("Curve modulators are drawn and added with undo, and survive saving") 
     Song song = songWithTrack();
     applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
     PlayheadId id = firstDevice(song).playheads[0].id;
-    ParamRef octave{ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)};
+    ParamRef octave{ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kDirection)};
     ModulatorId added;
-    applyUndoable(song, animateWithCurve(song, song.tracks[0].id, octave, "1 Octave", 4 * kPpq,
+    applyUndoable(song, animateWithCurve(song, song.tracks[0].id, octave, "1 Direction", 4 * kPpq,
                                          {{0, 0.5f, CurveType::Hold, 0}}, idsOf(song), &added));
     REQUIRE(song.tracks[0].modulators.size() == 1);
     const Modulator& m = song.tracks[0].modulators[0];
@@ -688,8 +722,11 @@ TEST_CASE("a playhead curve saved before curves were modulators loads as a Curve
     CHECK(m.points[0].value == doctest::Approx(0.5));
     CHECK(m.points[1].value == doctest::Approx(0.5625));
     REQUIRE(m.routes.size() == 1);
+    // Octave has since moved into a Transpose device in the playhead's chain; the curve went with it.
+    const Playhead& after = loaded.tracks[0].devices[0].playheads[0];
+    REQUIRE(!after.branch.empty());
     CHECK(m.routes[0].target ==
-          ParamRef{ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOctave)});
+          ParamRef{ParamRef::Kind::Device, after.branch[0].id.value, uint16_t(chain::knob::kOctaves)});
     CHECK(m.routes[0].amount == 1);
 }
 

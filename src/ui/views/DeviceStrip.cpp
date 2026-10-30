@@ -385,10 +385,9 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
         int param;
         bool dial;
     };
-    const Item items[] = {
-        {Control::Knob, kRate, true},      {Control::Direction, -1, false},   {Control::Repeat, -1, false},
-        {Control::Knob, kOctave, false},   {Control::Knob, kKeySteps, false}, {Control::Knob, kNotes, false},
-        {Control::Knob, kVelocity, false}, {Control::Channel, -1, false},     {Control::More, -1, false}};
+    // Pitch and loudness are devices in the playhead's own chain (Transpose, Velocity), like any other note change.
+    const Item items[] = {{Control::Knob, kRate, true},   {Control::Direction, -1, false}, {Control::Repeat, -1, false},
+                          {Control::Knob, kNotes, false}, {Control::Channel, -1, false},   {Control::More, -1, false}};
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
     float controls = float(std::size(items)) * kCell;
     Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);

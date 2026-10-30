@@ -459,6 +459,87 @@ void seeAllIds(Song& song, IdRepair& ids) {
 
 } // namespace
 
+/// Octave, Steps and Velocity left the playhead (30 Oct) for devices in its own chain, where every other note change
+/// lives. A playhead that still sets them, or has curves or lanes on them, gets a Transpose (and a Velocity) device
+/// at the start of its chain; curves and lanes on Octave and Steps move to the Transpose's knobs (same ranges).
+void movePlayheadNoteSettings(Song& song) {
+    namespace pk = playheads::knob;
+    const auto& info = devices::playheadInfo();
+    const auto& transposeInfo = devices::deviceInfo(DeviceType::Transpose).params;
+    const auto& velocityInfo = devices::deviceInfo(DeviceType::Velocity).params;
+    auto targets = [&](const ParamRef& ref, uint64_t owner, int k) {
+        return ref.kind == ParamRef::Kind::Playhead && ref.owner == owner && ref.param == k;
+    };
+    for (Track& t : song.tracks)
+        for (Device& d : t.devices)
+            for (Playhead& p : d.playheads) {
+                auto shown = [&](int k) { return devices::display(info.params[size_t(k)], p.params[size_t(k)]); };
+                bool driven = false;
+                forEachModulator(song, [&](Modulator& m, const ModulatorPlace&) {
+                    for (const Modulation& r : m.routes)
+                        driven = driven || targets(r.target, p.id.value, pk::kOctave) ||
+                                 targets(r.target, p.id.value, pk::kKeySteps);
+                });
+                auto lanesOf = [&](const std::function<void(AutomationEnvelope&)>& f) {
+                    for (AutomationEnvelope& lane : t.automation)
+                        f(lane);
+                    for (auto& [key, clip] : song.clips)
+                        for (AutomationEnvelope& lane : clip.automation)
+                            f(lane);
+                };
+                lanesOf([&](AutomationEnvelope& lane) {
+                    driven = driven || targets(lane.paramTarget, p.id.value, pk::kOctave) ||
+                             targets(lane.paramTarget, p.id.value, pk::kKeySteps);
+                });
+                float octave = shown(pk::kOctave), steps = shown(pk::kKeySteps), velocity = shown(pk::kVelocity);
+                std::vector<Device> front;
+                if (octave != 0 || steps != 0 || driven) {
+                    Device transpose = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+                    transpose.params[chain::knob::kOctaves] =
+                        devices::normalize(transposeInfo[chain::knob::kOctaves], octave);
+                    transpose.params[chain::knob::kKeySteps] =
+                        devices::normalize(transposeInfo[chain::knob::kKeySteps], steps);
+                    auto retarget = [&](ParamRef& ref) {
+                        if (targets(ref, p.id.value, pk::kOctave))
+                            ref = {ParamRef::Kind::Device, transpose.id.value, uint16_t(chain::knob::kOctaves)};
+                        else if (targets(ref, p.id.value, pk::kKeySteps))
+                            ref = {ParamRef::Kind::Device, transpose.id.value, uint16_t(chain::knob::kKeySteps)};
+                    };
+                    forEachModulator(song, [&](Modulator& m, const ModulatorPlace&) {
+                        for (Modulation& r : m.routes)
+                            retarget(r.target);
+                    });
+                    lanesOf([&](AutomationEnvelope& lane) { retarget(lane.paramTarget); });
+                    front.push_back(transpose);
+                }
+                if (velocity != 0) {
+                    // The nearest the Velocity device comes to "this much louder or softer".
+                    Device v = devices::makeDevice(DeviceType::Velocity, song.newId<DeviceId>());
+                    if (velocity > 0)
+                        v.params[chain::knob::kMin] = devices::normalize(velocityInfo[chain::knob::kMin], velocity);
+                    else
+                        v.params[chain::knob::kMax] =
+                            devices::normalize(velocityInfo[chain::knob::kMax], 100 + velocity);
+                    front.push_back(v);
+                }
+                for (int k : {pk::kOctave, pk::kKeySteps, pk::kVelocity})
+                    p.params[size_t(k)] = devices::defaultNormalized(info.params[size_t(k)]);
+                // A velocity curve has nowhere to go: the Velocity device has no "louder by" knob.
+                forEachModulator(song, [&](Modulator& m, const ModulatorPlace&) {
+                    m.routes.erase(std::remove_if(m.routes.begin(), m.routes.end(),
+                                                  [&](const Modulation& r) {
+                                                      return targets(r.target, p.id.value, pk::kVelocity);
+                                                  }),
+                                   m.routes.end());
+                });
+                if (front.empty())
+                    continue;
+                p.branch.insert(p.branch.begin(), front.begin(), front.end());
+                if (p.branch.size() > size_t(kMaxBranchDevices))
+                    p.branch.resize(kMaxBranchDevices);
+            }
+}
+
 void normalize(Song& song) {
     IdRepair ids(song);
     seeAllIds(song, ids);
@@ -516,6 +597,7 @@ void normalize(Song& song) {
         for (Note& n : clip.notes)
             if (n.motion.valid() && !motions.count(n.motion.value))
                 n.motion = DeviceId();
+    movePlayheadNoteSettings(song);
     pruneRoutes(song);
     limitModulationsPerKnob(song);
     for (Marker& m : song.markers) {

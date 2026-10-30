@@ -104,11 +104,13 @@ settings for the shown playhead. A setting still at its default draws faint, so 
 | **Rate** | Speed against the song, from 1/16x to 16x. |
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size. |
 | **Repeat** | Plays each piece a number of times, then moves on one piece: 1/4 ×2 plays beat 1, 1, 2, 2, 3, 3… |
-| **Octave**, **Steps** | Moves its notes by octaves, and by steps in the clip's key. |
-| **Notes** | All, or only the **Lowest** or **Highest** of the notes that start together. A bass and a melody out of one piano roll: one playhead on Lowest two octaves down, one on Highest. |
-| **Velocity** | Plays its notes softer or harder. |
+| **Notes** | All, or only the **Lowest** or **Highest** of the notes that start together. A bass and a melody out of one piano roll: one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest. |
 | **Channel** | The channel its notes go out on (see below). |
-| **More** | Rarer settings: Invert (mirrors its notes inside the clip's range, in the key), note Length (as written, follows the playhead, fixed), Path (from the settings, or drawn in the time map), and rename, mute, solo, duplicate, delete. |
+
+Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
+playhead's own chain, like any other note change. Songs made when a playhead had its own Octave, Steps and Velocity
+get those devices added for them, curves included.
+| **More** | Rarer settings: On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (as written, follows the playhead, fixed), Path (from the settings, or drawn in the time map), and rename, mute, solo, duplicate, delete. |
 
 The card's **⋯** menu holds the settings every playhead shares: **Restart** (when the clip starts, or also every so
 many bars) and **Same note** (two playheads on the same note at the same moment play it once, or each).
@@ -126,9 +128,9 @@ beat later. The other playheads' segments show as thin lines in their colours.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a knob's name and a curve for it
 opens in the piano roll's lower pane. Click to add a point: that makes a **Curve** modulator on the track (see [Modulators](#modulators)), named after
-the playhead and the setting, such as "Bass Steps". Up and down are in the setting's own units. For Steps or Octave,
+the playhead and the setting, such as "Bass Rate". Up and down are in the setting's own units. For Octaves or Key steps,
 each row is one value and points snap to the rows; hold **Alt** to place them between rows. The dashed line in the
-middle is the setting as you set it on the knob. A setting with many values, such as Steps, moves at most 7 either
+middle is the setting as you set it on the knob. A setting with many values, such as Key steps, moves at most 7 either
 way. The knob's ring shows the amount; change it there or in the modulator's settings. Drag points, double-click to
 delete one. The row on top holds **Counts in** (**Time** or **Passes**), ready **Shapes** and **Remove curve**. Under
 it, a bar drawn like a playhead's segment says how long a cycle lasts, such as "repeats every 2 bars"; drag its right
@@ -136,10 +138,10 @@ grip to change it (it snaps to the grid). A curve always runs with the song, fro
 dotted ring and its name underlined. While the song plays, a playhead line crosses the curve; counting in passes,
 the pass playing now is lit.
 
-**Moved notes.** When the shown playhead plays notes at another pitch (its Octave, Steps or Invert, or a curve on
-them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's
+**Moved notes.** When the shown playhead plays notes at another pitch (its Invert, or a Transpose in its own chain,
+and the curves on them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's
 colour, with the change in semitones ("+2 st"). The written note it came from turns see-through with a dashed outline.
-While the song plays this follows the pass playing now, so a curve on Octave or Steps shows each note moving from
+While the song plays this follows the pass playing now, so a curve on the Transpose shows each note moving from
 pass to pass; stopped, it shows the first pass. The notes you edit stay where they are written.
 
 On a drum clip whose lanes have their own length, the segment is the whole lane cycle, and each lane repeats on its own
