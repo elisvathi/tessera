@@ -201,7 +201,8 @@ TypeInfo buildPlayhead() {
              toggle("Invert", false),
              number("Velocity", -100, 100, 0, "%"),
              choice("Order", {"In order", "Outside in", "Inside out", "Odd then even", "Shuffle"}, 0),
-             choice("Order step", orderStepNames(), 1)}};
+             choice("Order step", orderStepNames(), 1),
+             choice("On a jump", {"Retrigger", "Let ring"}, 0)}};
 }
 
 const std::vector<TypeInfo>& deviceTable() {

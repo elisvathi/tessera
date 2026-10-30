@@ -1275,7 +1275,8 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 for (int i = 0; i < count; i++) {
                     const playheads::Sweep& sweep = sweeps[i];
                     // `moved`: the note comes from a Motion device before the playheads, already shifted in time.
-                    auto playHit = [&](const NoteEvent& e, double pos, const MovedBy* moved) {
+                    // `written`: how much of the note is left to play, when a jump landed inside it.
+                    auto playHit = [&](const NoteEvent& e, double pos, const MovedBy* moved, double written = -1) {
                         if (!moved && !chain.readMotions.empty() && e.extras < clip.extras.size() &&
                             readMotion(chain, clip.extras[e.extras].note.motion.value))
                             return; // read from its Motion device's own list, moved
@@ -1306,7 +1307,16 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         }
                         playheads::Motion timed = m;
                         timed.rate = rate;
-                        double length = playheads::noteLength(knobs, timed, double(e.end - e.start), ts) * stretch;
+                        double length =
+                            playheads::noteLength(knobs, timed, written >= 0 ? written : double(e.end - e.start), ts) *
+                            stretch;
+                        if (playheads::retriggers(knobs)) {
+                            // Retrigger: the note stops where the playhead next jumps.
+                            double own = playheads::timeAt(m, sweep, pos);
+                            double jump = playheads::nextJump(m, own, length / stretch * rate + 1);
+                            if (std::isfinite(jump))
+                                length = std::min(length, (jump - own) / rate * stretch);
+                        }
                         if (moved)
                             length = std::max(1.0, length * moved->lengthScale);
                         // Each playhead counts its own passes (its region's length of its own time), and the
@@ -1347,6 +1357,11 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                     for (const LaneLoop& lane : clip.laneLoops)
                         playheads::crossedRepeating(sweep, start, double(lane.start), double(lane.length), lane.notes,
                                                     lane.notesByEnd, onHit);
+                    // Retrigger: a jump plays again the notes it lands inside, for what is left of them.
+                    if (sweep.jumped && clip.pattern == 0 && playheads::retriggers(knobs))
+                        playheads::landedIn(sweep, clip.notes, [&](const NoteEvent& e, double rest) {
+                            playHit(e, sweep.from, nullptr, rest);
+                        });
                 }
             }
             segA = segB;

@@ -401,6 +401,41 @@ TEST_CASE("MIDI export with devices applied plays what the playheads read") {
     CHECK(render::trackNotes(song, song.tracks[0].id, o, {}).size() == 4);
 }
 
+TEST_CASE("MIDI export retriggers the notes a playhead jumps into, as the engine does") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.length = 4 * kPpq; // one long note
+    n.pitch = 60;
+    clip.notes.push_back(n);
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId head = firstDevice(song).playheads[0].id;
+    const auto& info = devices::playheadInfo();
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRepeatSize)},
+                                 devices::normalize(info.params[playheads::knob::kRepeatSize], 1)));
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRepeatTimes)},
+                                 devices::normalize(info.params[playheads::knob::kRepeatTimes], 4)));
+
+    std::vector<std::pair<Tick, Tick>> beat2; // start and length of each note in beat 2
+    for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options{}, {}))
+        if (e.start >= kPpq && e.start < 2 * kPpq)
+            beat2.push_back({Tick(e.start), Tick(e.end - e.start)});
+    std::sort(beat2.begin(), beat2.end());
+    // At 960 it moves on from one sixteenth to the next without jumping, so the note from 720 rings on; each repeat
+    // after that jumps back into the note and plays it again until the next jump.
+    CHECK(beat2 == std::vector<std::pair<Tick, Tick>>{{1200, 240}, {1440, 240}, {1680, 480}});
+}
+
 TEST_CASE("each playhead has a branch of its own devices, sharing the track's limit") {
     Song song = songWithTrack();
     applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));

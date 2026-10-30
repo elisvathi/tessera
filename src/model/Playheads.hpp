@@ -41,12 +41,13 @@ enum Playhead {
     kPath,      // From settings, or Drawn (the playhead's path points)
     kPathCycle, // how long a drawn path lasts before it repeats
     kOctave,
-    kKeySteps, // moves its notes by steps of the clip's key
-    kNotes,    // All, or only the lowest or highest of notes that start together
-    kInvert,   // mirrors its notes' pitches inside the clip's range
-    kVelocity, // added to its notes' velocity
-    kOrder,    // reads its segment's steps in order, outside in, inside out, odd then even, or shuffled
-    kOrderStep // the size of those steps
+    kKeySteps,  // moves its notes by steps of the clip's key
+    kNotes,     // All, or only the lowest or highest of notes that start together
+    kInvert,    // mirrors its notes' pitches inside the clip's range
+    kVelocity,  // added to its notes' velocity
+    kOrder,     // reads its segment's steps in order, outside in, inside out, odd then even, or shuffled
+    kOrderStep, // the size of those steps
+    kOnJump     // Retrigger: a jump cuts the note playing and plays again the notes it lands inside; or Let ring
 };
 /// The Playheads device's own knobs.
 enum Device { kRestart, kRestartBars, kSameNote };
@@ -100,6 +101,9 @@ struct Sweep {
     double restartBase = 0;
     // A drawn path's sweep: the playhead's own time it covers, for finding when it reaches a place.
     double ownFrom = 0, ownTo = 0;
+    // It starts somewhere the playhead wasn't just before: a repeat, a wrap, an order's step, a restart, a drawn
+    // path's step. A ping-pong turn starts where the last sweep ended, so it isn't one.
+    bool jumped = false;
 };
 
 /// Where the playhead is after `elapsed` ticks, for drawing.
@@ -110,6 +114,27 @@ int sweeps(const Motion& m, double a, double b, Sweep* out, int max = kMaxSweeps
 
 /// The elapsed time at which a sweep reaches `pos` (which must lie in it).
 double timeAt(const Motion& m, const Sweep& s, double pos);
+
+/// The elapsed time of the playhead's first jump after `from`, looking no further than `horizon`; infinity when
+/// there is none in that time. A Retrigger playhead cuts the note it plays there.
+double nextJump(const Motion& m, double from, double horizon);
+
+/// Whether a playhead set to Retrigger plays again the notes it jumps into (the On a jump setting).
+bool retriggers(const float* knobs);
+
+/// Calls `hit(note, rest)` for every note the sweep lands inside when it jumps: one that started before where it
+/// lands and is still going there (going backward, one that ends after it). `rest` is how much of the note is left
+/// to play from there, in the playhead's direction. Notes sorted by start; they need `start` and `end`.
+template <typename Note, typename Hit>
+void landedIn(const Sweep& s, const std::vector<Note>& notes, Hit&& hit) {
+    bool backward = s.to < s.from;
+    for (const Note& n : notes) {
+        if (double(n.start) >= s.from)
+            break;
+        if (double(n.end) > s.from)
+            hit(n, backward ? s.from - double(n.start) : double(n.end) - s.from);
+    }
+}
 
 /// Calls `hit(note, pos)` for every note the sweep crosses into: going forward at its start, going backward at its
 /// end. `notes` are sorted by start; `byEnd` lists their indices sorted by end. Notes need `start` and `end`.

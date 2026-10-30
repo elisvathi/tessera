@@ -439,7 +439,7 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
     // The rarer settings, each its own choice list.
     menu->addChild(new rack::ui::MenuSeparator);
     using namespace playheads::knob;
-    for (int k : {kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
+    for (int k : {kOnJump, kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
         const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
         float now = playheadValue(*p, k);
         std::vector<std::string> choices =

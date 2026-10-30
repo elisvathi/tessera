@@ -1424,6 +1424,44 @@ TEST_CASE("engine: a segment past the clip's end reads the notes written there, 
     CHECK(sounding().empty()); // nothing written there: silence, not the clip again
 }
 
+TEST_CASE("engine: a playhead that jumps into a note plays it again, and cuts the one it was playing") {
+    // One long note; Repeat 1/16 x4 reads each sixteenth four times, so in beat 2 it keeps jumping back into the note.
+    const auto& info = devices::playheadInfo();
+    auto run = [&](int onJump, int* most) {
+        Song song = songWith({{0, 3840, 60}}, 4 * kPpq, kAutoVoices);
+        Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+        p.params[playheads::knob::kRepeatSize] = devices::normalize(info.params[playheads::knob::kRepeatSize], 1);
+        p.params[playheads::knob::kRepeatTimes] = devices::normalize(info.params[playheads::knob::kRepeatTimes], 4);
+        p.params[playheads::knob::kOnJump] = devices::normalize(info.params[playheads::knob::kOnJump], float(onJump));
+        d.playheads.push_back(p);
+        song.tracks[0].devices.push_back(d);
+        Harness h(song);
+        // The notes that start in beat 2, counted by gates rising, and the most sounding at once.
+        int starts = 0;
+        *most = 0;
+        std::vector<bool> was(16, false);
+        for (int64_t s = 960 * kSamplesPerTick; s < 1920 * kSamplesPerTick; s += 4) {
+            h.runTo(s);
+            int now = 0;
+            for (int v = 0; v < h.frame().channels && v < 16; v++) {
+                if (h.gate(v) && !was[size_t(v)] && s > 960 * kSamplesPerTick)
+                    starts++;
+                was[size_t(v)] = h.gate(v);
+                now += h.gate(v) ? 1 : 0;
+            }
+            *most = std::max(*most, now);
+        }
+        return starts;
+    };
+    int most = 0;
+    CHECK(run(0, &most) == 3); // Retrigger: the jumps back at 1/16, 2/16 and 3/16 into beat 2 (at its start it
+                                // moves on to the next sixteenth without jumping)
+    CHECK(most == 1);          // each repeat cuts the one before
+    CHECK(run(1, &most) == 0); // Let ring: no note starts where it lands, so nothing new plays
+    CHECK(most >= 1);          // the notes from beat 1 still ring
+}
+
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     ArrangerClip a;
