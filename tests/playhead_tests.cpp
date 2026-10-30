@@ -385,6 +385,20 @@ TEST_CASE("each playhead channel gets its own block of voices, in playhead order
     REQUIRE(blocks.size() == 2);
     CHECK(blocks[0].size == 5);
     CHECK(blocks[1].size == 5);
+
+    // More than a track holds (16 channels of 16): every channel keeps voices of its own, smaller.
+    applyUndoable(song, setTrackField(song, track, &Track::polyphony, 16, "Voices"));
+    for (int i = 0; i < 13; i++)
+        applyUndoable(song, addPlayhead(song, firstDevice(song).id, idsOf(song)));
+    applyUndoable(song, setPlayheadMute(song, third, false));
+    blocks = song.voiceBlocks(song.tracks[0]);
+    REQUIRE(blocks.size() == 16);
+    int total = 0;
+    for (const Song::VoiceBlock& b : blocks) {
+        CHECK(b.size == 4);
+        total += b.size;
+    }
+    CHECK(total == kMaxTrackVoices);
 }
 
 TEST_CASE("playheads survive saving and loading, and a broken file is repaired") {
