@@ -1484,6 +1484,28 @@ TEST_CASE("engine: a chord read by playheads keeps its whole length when one pla
     CHECK(sounding == 12); // both playheads' chords (6) and the two echoes still going (6)
 }
 
+TEST_CASE("engine: one playhead running out of voices never takes another playhead's") {
+    // Three voices per channel. Playhead 1 echoes its chord, far more than 3 voices; playhead 2 just plays it.
+    Song song = songWith({{0, 1920, 60}, {0, 1920, 64}, {0, 1920, 67}}, 4 * kPpq, 3);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.branch.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    REQUIRE(int(h.frame().channels) == 6);
+    h.runTo(int64_t(1800) * kSamplesPerTick);
+    int second = 0;
+    for (int v = 0; v < h.frame().channels; v++)
+        second += h.frame().part[v] == 2 && h.gate(v) ? 1 : 0;
+    CHECK(second == 3); // playhead 2's chord, whole, while playhead 1's echoes fight over its own three
+}
+
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     ArrangerClip a;

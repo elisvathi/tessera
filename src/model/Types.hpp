@@ -10,6 +10,8 @@ using Tick = int64_t;
 constexpr Tick kPpq = 960;
 constexpr int kMaxTracks = 64;
 constexpr int kMaxVoices = 16;
+// Voices a track holds in all: with playheads, each channel has up to kMaxVoices of its own.
+constexpr int kMaxTrackVoices = 64;
 constexpr int kMaxAutomationLanes = 8;
 constexpr int kMaxKnobLanes = 16; // lanes that turn device knobs, per track and per clip
 // Lanes played into the voices instead of an AUTO channel: pitch bend (on V/OCT) and pressure (on PRESS). The

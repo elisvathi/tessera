@@ -305,7 +305,7 @@ class Engine {
         VoiceAllocator voices;
         TrackId id;
         // Per voice: -1 = clip note or idle, 0 = audition held until note-off, > 0 = audition samples left.
-        std::array<int32_t, kMaxVoices> audition;
+        std::array<int32_t, kMaxTrackVoices> audition;
         size_t cursor = 0; // next note to consider in the playing clip
         int playing = kNoSlot;
         ClipId playingClip; // to find the clip again when slots move (a scene inserted above it)
@@ -356,16 +356,16 @@ class Engine {
         int64_t lastPass = -1;
         bool previousPlayed = true;
         // Per voice: the expression curves of the note it plays, and when that note started and how long it is.
-        std::array<const NoteExtras*, kMaxVoices> voiceExtras{};
-        std::array<double, kMaxVoices> voiceStart{}, voiceLength{};
-        std::array<uint8_t, kMaxVoices> voicePart{};   // the channel of each voice's note
-        std::array<uint8_t, kMaxDrumLanes> lanePart{}; // the channel of each drum lane's last hit
+        std::array<const NoteExtras*, kMaxTrackVoices> voiceExtras{};
+        std::array<double, kMaxTrackVoices> voiceStart{}, voiceLength{};
+        std::array<uint8_t, kMaxTrackVoices> voicePart{}; // the channel of each voice's note
+        std::array<uint8_t, kMaxDrumLanes> lanePart{};    // the channel of each drum lane's last hit
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
-        std::array<uint64_t, kMaxVoices> voiceClip{}, voiceNote{};
+        std::array<uint64_t, kMaxTrackVoices> voiceClip{}, voiceNote{};
         // What the record inputs play now: per voice its key's own bend (semitones), timbre and pressure (0..1),
         // and for the track the values its channel shares, in volts (AUTO channels in `liveAutoMask`).
-        std::array<float, kMaxVoices> liveBend{}, liveTimbre{}, livePress{};
+        std::array<float, kMaxTrackVoices> liveBend{}, liveTimbre{}, livePress{};
         float liveChannelBend = 0, liveChannelPress = 0;
         std::array<float, kMaxAutomationLanes> liveAuto{};
         uint8_t liveAutoMask = 0;
@@ -617,8 +617,10 @@ class Engine {
     };
     /// Per track (by index in `tracks`) and playhead. On the heap: the engine sits on the stack in tests.
     std::unique_ptr<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>> playheadClocks;
-    std::array<TrackState, kMaxTracks> tracks;
-    std::array<TrackState, kMaxTracks> previous; // scratch for setSnapshot, kept here so it never allocates
+    // On the heap too (each track holds up to kMaxTrackVoices voices); `tracks` and `previous` name them.
+    std::unique_ptr<std::array<TrackState, kMaxTracks>> trackStore, previousStore;
+    std::array<TrackState, kMaxTracks>& tracks;
+    std::array<TrackState, kMaxTracks>& previous; // scratch for setSnapshot, kept here so it never allocates
     int retriggerGap = 48;
     std::array<bool, kMaxTracks> slotUsed{};
     // The bus is double buffered: which buffer this sample writes, so each gets every change once.

@@ -192,6 +192,24 @@ TEST_CASE("VoiceAllocator: lowering polyphony releases the voices above it") {
     CHECK(v.gate(0));
 }
 
+TEST_CASE("VoiceAllocator: each channel's block of voices steals only from itself") {
+    VoiceAllocator v;
+    // Channel 1 gets voices 0-1, channel 2 voices 2-4, in that order (playhead order).
+    VoiceAllocator::Block blocks[] = {{1, 0, 2}, {2, 2, 3}};
+    v.setBlocks(blocks, 2);
+    CHECK(v.polyphony() == 5);
+    CHECK(v.noteOn(60, 1, 0.5f, 1000, 1, 1) == 0);
+    CHECK(v.noteOn(62, 1, 0.5f, 1000, 2, 1) == 1);
+    for (int i = 0; i < 3; i++)
+        CHECK(v.noteOn(int8_t(70 + i), 1, 0.5f, 1000, uint32_t(10 + i), 2) == 2 + i);
+    // Channel 2 is full: its next note takes its own oldest voice, never one of channel 1's.
+    CHECK(v.noteOn(80, 1, 0.5f, 1000, 20, 2) == 2);
+    CHECK(v.voice(0).pitch == 60);
+    CHECK(v.voice(1).pitch == 62);
+    // A note on a channel with no block of its own goes to the first block.
+    CHECK(v.noteOn(90, 1, 0.5f, 1000, 30, 7) < 2);
+}
+
 TEST_CASE("clips loop, including notes right at the loop end") {
     Harness h(songWith({{0, 100, 60}, {kPpq - 1, 1, 67}}, kPpq, 2));
     int64_t loop = kPpq * kSamplesPerTick;

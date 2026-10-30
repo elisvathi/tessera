@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../engine/VoicePicker.hpp"
 #include "OutputModuleBase.hpp"
 
 namespace tessera {
@@ -31,6 +32,7 @@ class TrackOutModule : public OutputModuleBase {
     // With a channel picked, each voice holds what it last played on that channel while another channel uses it,
     // so its pitch doesn't jump during the release.
     float held[6][kMaxVoices] = {};
+    VoicePicker picker; // which of the track's voices go out on which channel, when it has more than 16
 };
 
 } // namespace tessera

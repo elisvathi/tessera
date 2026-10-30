@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/engine/VoicePicker.hpp"
 #include "../src/module/AudioHandoff.hpp"
 #include "../src/module/OutputBus.hpp"
 
@@ -7,6 +8,7 @@
 #include <atomic>
 #include <functional>
 #include <random>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -151,4 +153,63 @@ TEST_CASE("AudioHandoff keeps a replaced object alive until process() moves past
     handoff.markProcessed(7);
     handoff.collect();
     CHECK(alive == 0);
+}
+
+TEST_CASE("a Track Out on All packs more than 16 voices: sticky, and the first playheads first") {
+    // Three channels of 8 voices each: 24 voices, more than an output's 16.
+    TrackFrame frame;
+    frame.channels = 24;
+    for (int v = 0; v < 24; v++)
+        frame.part[v] = uint8_t(1 + v / 8);
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    auto gates = [&](std::initializer_list<int> on) {
+        for (int v = 0; v < 24; v++)
+            frame.gate[v] = 0;
+        for (int v : on)
+            frame.gate[v] = 10;
+    };
+
+    // Channel 2 plays alone: its voices take the first free channels.
+    gates({8, 9});
+    CHECK(picker.pick(frame, 0, out) == kMaxVoices);
+    CHECK(out[0] == 8);
+    CHECK(out[1] == 9);
+    // Quiet a moment, then the same voice plays again: it goes back where it was.
+    gates({});
+    picker.pick(frame, 0, out);
+    gates({9});
+    picker.pick(frame, 0, out);
+    CHECK(out[1] == 9);
+
+    // All 24 sound: the 16 first in playhead order win, channel 3's last voices don't fit.
+    for (int v = 0; v < 24; v++)
+        frame.gate[v] = 10;
+    picker.pick(frame, 0, out);
+    std::set<int> sent(out.begin(), out.end());
+    for (int v = 0; v < 16; v++)
+        CHECK(sent.count(v) == 1);
+    CHECK(out[1] == 9); // channel 2's voice kept its place
+}
+
+TEST_CASE("a Track Out on one channel sends that channel's own voices when the track has more than 16") {
+    TrackFrame frame;
+    frame.channels = 24;
+    for (int v = 0; v < 24; v++)
+        frame.part[v] = uint8_t(1 + v / 8);
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    CHECK(picker.pick(frame, 3, out) == 8);
+    for (int i = 0; i < 8; i++)
+        CHECK(out[size_t(i)] == 16 + i);
+}
+
+TEST_CASE("a Track Out with 16 voices or fewer sends them as they are") {
+    TrackFrame frame;
+    frame.channels = 5;
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    CHECK(picker.pick(frame, 0, out) == 5);
+    for (int i = 0; i < 5; i++)
+        CHECK(out[size_t(i)] == i);
 }

@@ -8,9 +8,11 @@
 
 namespace tessera {
 
-/// Assigns notes to a track's poly channels: round-robin, stealing the oldest note when all voices are busy.
-/// When a voice is reused while its gate is high (or was high only moments ago), the gate is held low for a
-/// short gap first so downstream envelopes see a fresh rising edge.
+/// Assigns notes to a track's voices: round-robin, stealing the oldest note when all voices are busy. The voices
+/// come in blocks, one per channel (a Playheads device gives each playhead channel its own, in playhead order), and a
+/// note only ever takes a voice in its channel's block, so one busy channel can't cut another's notes. A track
+/// without playheads has a single block. When a voice is reused while its gate is high (or was high only moments
+/// ago), the gate is held low for a short gap first so downstream envelopes see a fresh rising edge.
 ///
 /// Per sample, call order is: release / noteOn, read gate(), then advance().
 class VoiceAllocator {
@@ -27,21 +29,58 @@ class VoiceAllocator {
         int64_t lowSince = -kFar; // the first sample of the gate's current low stretch
     };
 
+    /// A channel's voices: `size` of them from `start`. Part 0 takes the notes of channels with no block of their own.
+    struct Block {
+        uint8_t part;
+        uint8_t start, size;
+    };
+    static constexpr int kMaxBlocks = 17;
+
+    /// One block of `n` voices for every note.
     void setPolyphony(int n) {
-        if (std::clamp(n, 1, kMaxVoices) != poly)
-            changes++;
-        poly = std::clamp(n, 1, kMaxVoices);
-        for (int v = poly; v < kMaxVoices; v++)
-            release(v);
-        next %= poly;
+        Block one{0, 0, uint8_t(std::clamp(n, 1, kMaxVoices))};
+        setBlocks(&one, 1);
     }
+    /// The voices, as blocks laid end to end (at most kMaxTrackVoices in all). Voices past the end are released.
+    void setBlocks(const Block* list, int count) {
+        count = std::clamp(count, 1, kMaxBlocks);
+        int total = 0;
+        bool same = count == blockCount;
+        for (int b = 0; b < count; b++) {
+            Block block = list[b];
+            block.start = uint8_t(std::min(total, kMaxTrackVoices - 1));
+            block.size = uint8_t(std::clamp(int(block.size), 1, std::min(kMaxVoices, kMaxTrackVoices - block.start)));
+            same =
+                same && block.part == blocks[b].part && block.start == blocks[b].start && block.size == blocks[b].size;
+            blocks[b] = block;
+            total = block.start + block.size;
+        }
+        if (same)
+            return;
+        changes++;
+        blockCount = count;
+        poly = total;
+        for (int v = poly; v < kMaxTrackVoices; v++)
+            release(v);
+        for (int b = 0; b < blockCount; b++)
+            nexts[b] = 0;
+    }
+    /// All the voices, over every block.
     int polyphony() const { return poly; }
+    /// The channel whose block voice `v` is in; 0 for the shared block (its notes keep their own channels).
+    uint8_t partOf(int v) const {
+        for (int b = 0; b < blockCount; b++)
+            if (v >= blocks[b].start && v < blocks[b].start + blocks[b].size)
+                return blocks[b].part;
+        return 0;
+    }
 
     void setRetriggerGap(int samples) { gap = std::max(1, samples); }
 
     /// Returns the voice index used.
-    int noteOn(int8_t pitch, float velocity, float releaseVelocity, double endTick, uint32_t id = 0) {
-        int v = pickVoice();
+    int noteOn(int8_t pitch, float velocity, float releaseVelocity, double endTick, uint32_t id = 0, uint8_t part = 0) {
+        int b = blockFor(part);
+        int v = pickVoice(b);
         Voice& voice = voices[v];
         if (gate(v)) {
             // Reused while sounding: the gate drops now and rises again after the gap.
@@ -58,7 +97,7 @@ class VoiceAllocator {
         voice.endTick = endTick;
         voice.id = id;
         voice.startOrder = ++order;
-        next = (v + 1) % poly;
+        nexts[b] = (v - blocks[b].start + 1) % blocks[b].size;
         nextEnd = std::min(nextEnd, endTick);
         if (voice.gateFrom > now)
             nextRise = std::min(nextRise, voice.gateFrom);
@@ -92,7 +131,7 @@ class VoiceAllocator {
     }
 
     void releaseAll() {
-        for (int v = 0; v < kMaxVoices; v++)
+        for (int v = 0; v < kMaxTrackVoices; v++)
             release(v);
         nextEnd = kNoEnd;
     }
@@ -140,14 +179,28 @@ class VoiceAllocator {
   private:
     bool gate(const Voice& voice) const { return voice.held && now >= voice.gateFrom; }
 
-    int pickVoice() const {
-        for (int i = 0; i < poly; i++) {
-            int v = (next + i) % poly;
+    /// The block a note of channel `part` plays in: its own, else the shared one (part 0), else the first.
+    int blockFor(uint8_t part) const {
+        int shared = 0;
+        for (int b = 0; b < blockCount; b++) {
+            if (blocks[b].part == part)
+                return b;
+            if (blocks[b].part == 0)
+                shared = b;
+        }
+        return shared;
+    }
+
+    /// A free voice in block `b`, round-robin from where the last note went; else its oldest.
+    int pickVoice(int b) const {
+        const Block& block = blocks[b];
+        for (int i = 0; i < block.size; i++) {
+            int v = block.start + (nexts[b] + i) % block.size;
             if (!voices[v].held)
                 return v;
         }
-        int oldest = 0;
-        for (int v = 1; v < poly; v++)
+        int oldest = block.start;
+        for (int v = block.start + 1; v < block.start + block.size; v++)
             if (voices[v].startOrder < voices[oldest].startOrder)
                 oldest = v;
         return oldest;
@@ -163,10 +216,12 @@ class VoiceAllocator {
     uint64_t changes = 0;
     double nextEnd = kNoEnd; // no held voice ends before this
     int poly = 1;
-    int next = 0;
     int gap = 48;
     uint64_t order = 0;
-    std::array<Voice, kMaxVoices> voices{};
+    std::array<Block, kMaxBlocks> blocks{{{0, 0, 1}}};
+    std::array<uint8_t, kMaxBlocks> nexts{};
+    int blockCount = 1;
+    std::array<Voice, kMaxTrackVoices> voices{};
 };
 
 } // namespace tessera
