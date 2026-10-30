@@ -2,6 +2,7 @@
 
 #include "../../model/ExpressionEdits.hpp"
 #include "../../model/NoteFields.hpp"
+#include "../../model/Render.hpp"
 #include "../editing/NoteGestures.hpp"
 #include "../editing/NoteHitTest.hpp"
 #include "TimelineView.hpp"
@@ -139,13 +140,14 @@ class NoteGrid : public TimelineView {
     /// Where the shown playhead moves notes to (its octave, steps, invert, and the modulators on them): each moved
     /// note drawn again at the pitch it plays, in the playhead's colour, with a dashed outline on the written note.
     void drawMovedNotes(NVGcontext* vg);
-    /// One moved note: its written place see-through with a dashed outline, a line to `to`, and the note there in
-    /// `color` with its change in semitones.
-    void drawMovedNote(NVGcontext* vg, const Note& n, int to, NVGcolor color);
-    /// Notes a Motion device moves with its knobs and curves: where they play on the current pass (the first, when
-    /// stopped), and faint outlines at the other pitches its curves take them to. In the Motion's colour.
+    /// One moved note: its written place see-through with a dashed outline, a line from its middle to the middle of
+    /// where it plays (`move`: another pitch, later, longer or shorter), and the note there in `color` with what
+    /// changed ("+7 st · +2 steps").
+    void drawMovedNote(NVGcontext* vg, const Note& n, const render::MotionMove& move, NVGcolor color);
+    /// Notes a Motion device moves with its knobs and curves, where they play now (with playheads, wherever its
+    /// curves are; else the pass playing, the first when stopped). In the Motion's colour.
     void drawMotionGhosts(NVGcontext* vg);
-    /// Works out motionPitches when the song or clip changed, and motionNow for the current pass; returns the pass.
+    /// Works out motionMoves when the song or clip changed, and motionCurrent and motionNow; returns the pass.
     int updateMotionMoved();
 
     /// Works out `moved` again when the song, clip or shown playhead changed; the shown playhead when it moves notes
@@ -182,16 +184,16 @@ class NoteGrid : public TimelineView {
     std::vector<int> moved;
     std::set<uint64_t> movedIds; // notes it plays at another pitch: drawn see-through where they are written
     std::tuple<uint64_t, uint64_t, uint64_t, int64_t> movedFor{~uint64_t(0), 0, 0, 0};
-    // Each note's pitches over its Motion's curves (render::motionPitches), what for (song revision, clip, read at
-    // any moment), and the notes moved now: drawn see-through where they are written.
     // Worked out in step(): see headsNow and readingNow.
     void updateHeads();
     bool playheadsOn = false;
     std::vector<HeadNow> heads;
     std::vector<ReadNow> reading;
-    std::vector<std::vector<int>> motionPitches;
-    std::tuple<uint64_t, uint64_t, bool> motionFor{~uint64_t(0), 0, false};
-    std::vector<int> motionCurrent; // each note's pitch now (-1: in no Motion)
+    // Each note's moves over its Motion's curves pass by pass (render::motionMoves) and what for (song revision,
+    // clip); where each moves now, and the notes moved now: drawn see-through where they are written.
+    std::vector<std::vector<render::MotionMove>> motionMoves;
+    std::pair<uint64_t, uint64_t> motionFor{~uint64_t(0), 0};
+    std::vector<render::MotionMove> motionCurrent;
     std::set<uint64_t> motionNow;
     std::vector<CurveStrip> strips; // from the last stripAt, which points into it
     std::vector<std::pair<rack::math::Rect, ClipId>> layerChips;

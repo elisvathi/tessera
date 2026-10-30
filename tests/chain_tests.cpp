@@ -1456,7 +1456,7 @@ TEST_CASE("engine: a playhead that jumps into a note plays it again, and cuts th
     };
     int most = 0;
     CHECK(run(0, &most) == 3); // Retrigger: the jumps back at 1/16, 2/16 and 3/16 into beat 2 (at its start it
-                                // moves on to the next sixteenth without jumping)
+                               // moves on to the next sixteenth without jumping)
     CHECK(most == 1);          // each repeat cuts the one before
     CHECK(run(1, &most) == 0); // Let ring: no note starts where it lands, so nothing new plays
     CHECK(most >= 1);          // the notes from beat 1 still ring
@@ -1592,7 +1592,8 @@ TEST_CASE("engine: changing a playhead's rate while it plays changes its speed, 
     Harness h(song);
     h.runTo(1000 * kSamplesPerTick);
     CHECK(h.pitch() == 62);
-    // Twice as fast from tick 1000: the 64 (at 1920) comes 460 ticks later; 2x from the start would play the 65 by then.
+    // Twice as fast from tick 1000: the 64 (at 1920) comes 460 ticks later; 2x from the start would play the 65 by
+    // then.
     float twice = devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10); // "2x"
     h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kRate] = twice;
     h.republish();
@@ -1604,7 +1605,7 @@ TEST_CASE("engine: changing a playhead's rate while it plays changes its speed, 
 TEST_CASE("engine: note operators still apply to the notes playheads play") {
     Song song = songWith({{0, 240, 60}, {960, 240, 62}}, 4 * kPpq, kAutoVoices);
     Clip& clip = song.clips.begin()->second;
-    clip.notes[0].ops.chance = 0; // never plays
+    clip.notes[0].ops.chance = 0;  // never plays
     clip.notes[1].ops.repeats = 2; // twice
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
     d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
@@ -1651,7 +1652,9 @@ TEST_CASE("engine: one piano roll, two parts: the bass playhead takes the lowest
     for (int i = 0; i < 2; i++)
         d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), i));
     const devices::TypeInfo& info = devices::playheadInfo();
-    auto set = [&](Playhead& p, int k, float v) { p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v); };
+    auto set = [&](Playhead& p, int k, float v) {
+        p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v);
+    };
     set(d.playheads[0], playheads::knob::kNotes, 2);   // the melody: highest notes
     set(d.playheads[1], playheads::knob::kNotes, 1);   // the bass: lowest notes...
     set(d.playheads[1], playheads::knob::kOctave, -2); // ...two octaves down
@@ -1726,7 +1729,9 @@ TEST_CASE("engine: playheads play exactly the notes their settings say, whatever
                                          kAutoVoices);
                     tessera::Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
                     tessera::Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-                    auto set = [&](int k, float v) { p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v); };
+                    auto set = [&](int k, float v) {
+                        p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v);
+                    };
                     set(kRate, float(rate));
                     set(kDirection, float(direction));
                     set(kRepeatSize, float(repeat));
@@ -1736,7 +1741,8 @@ TEST_CASE("engine: playheads play exactly the notes their settings say, whatever
                     song.tracks[0].devices.push_back(d);
 
                     // What should play: the pure maths over the same 4 bars.
-                    playheads::Motion m = playheads::motionFrom(p.params.data(), d.params.data(), 0, 4 * kPpq, TimeSig());
+                    playheads::Motion m =
+                        playheads::motionFrom(p.params.data(), d.params.data(), 0, 4 * kPpq, TimeSig());
                     const Clip& clip = song.clips.begin()->second;
                     struct Ev {
                         double start, end;
@@ -1782,7 +1788,8 @@ TEST_CASE("engine: a Motion device before the playheads moves the note inside th
         Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
         Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
         Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-        p.params[playheads::knob::kRate] = devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10);
+        p.params[playheads::knob::kRate] =
+            devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10);
         heads.playheads.push_back(p);
         Device motion = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
         motion.params[chain::knob::kMotionTime] =
@@ -1854,8 +1861,11 @@ TEST_CASE("the piano roll learns the pitch a Motion's curve gives each note on e
     curve.routes.push_back(route);
     song.tracks[0].modulators.push_back(curve);
 
-    std::vector<std::vector<int>> pitches = render::motionPitches(song, song.tracks[0], clip);
-    REQUIRE(pitches.size() == 2);
-    CHECK(pitches[0] == std::vector<int>{60, 61, 62}); // the same three passes the engine plays
-    CHECK(pitches[1].empty());                        // not in the Motion
+    std::vector<std::vector<render::MotionMove>> moves = render::motionMoves(song, song.tracks[0], clip);
+    REQUIRE(moves.size() == 2);
+    std::vector<int> pitches;
+    for (const render::MotionMove& m : moves[0])
+        pitches.push_back(m.pitch);
+    CHECK(pitches == std::vector<int>{60, 61, 62}); // the same three passes the engine plays
+    CHECK(moves[1].empty());                        // not in the Motion
 }
