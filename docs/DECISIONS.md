@@ -1569,3 +1569,17 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   without one), kPassTicks of drawing per pass; the editor then lays passes across the pane instead of following the
   piano roll's time, and draws steps.
 - **Knob names open curves on every device card**, not only on the Playheads card.
+- **Curves you can aim** (31 Oct, canvas board U; Trello "impossible to control a note where I want it"). A curve's
+  first route to a setting (mods::drawnRoute) turns it all the way and has no amount (setRouteAmount refuses it, the
+  popover says "as drawn"): one row is one step of the setting, over everything it can reach, and the curve adds to
+  the knob. The 7/span weight (curveAmount) is gone. A Curve has a `length` (1/16 to 256 bars) and a segment
+  [segmentStart, segmentEnd) that plays, round and round from when its track's clip started (Clock::sinceClip:
+  launched, or the timeline clip under the song; a song modulator, or no clip, counts from the song's start). Points
+  past the end are kept. Points are Step (Hold) or Ramp (Linear), switched by right-click; a new point copies the
+  kind before it. Time | Passes is gone: a playhead's clip loop repeats nothing, so a per-pass curve under playheads
+  only played its first pass; the Motion drift per pass stays with Steps (Drift per pass). The pane zooms and
+  scrolls on its own, opens with the segment's start under the clip's start, and its row labels sit in the keys'
+  column. Curves are read for the end of the control block and used in it (as knob lanes are), so a step drawn
+  where a note starts reaches that note; before, every modulator was a block late. Old songs: a curve saved without
+  a segment is drawn at full scale (its first route's amount folded into the points, other routes rescaled), with
+  the segment the whole length; one that counted passes becomes a Per pass Steps modulator with its values.

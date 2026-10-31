@@ -590,6 +590,9 @@ class Engine {
     /// playhead from bottom to top (later ones override the lanes they share). Returns how many.
     using LaneClips = std::array<std::pair<const ClipPlayback*, double>, 16>;
     int lanesClips(const TrackPlayback& tp, const TrackState& state, double song, double play, LaneClips& out) const;
+    /// Ticks since the track's clip started at song tick `song` (play tick `play`): the launched clip, or the
+    /// timeline clip under the song position (the latest to start). NaN when none plays. Curves count from here.
+    double sinceClipStart(const TrackPlayback& tp, const TrackState& state, double song, double play) const;
     static void endAudition(TrackState& state, int voice);
     void advanceAuditions(TrackState& state);
 

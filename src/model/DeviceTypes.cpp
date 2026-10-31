@@ -155,8 +155,8 @@ std::vector<TypeInfo> buildModulators() {
                                       {choice("Follows", {"Velocity", "Pitch", "Release", "Timbre", "Pressure"}, 0),
                                        exponential("Smooth", 1, 2000, 1, "ms")}};
     t[size_t(ModulatorType::Curve)] = {"Curve",
-                                       // Sync, Rate and Restart are kept so saved knobs keep their places, but a
-                                       // curve always runs with the song; only Counts in is read.
+                                       // Kept so saved knobs keep their places; none is read or shown: a curve
+                                       // plays its segment from when its track's clip started.
                                        {toggle("Sync", true), exponential("Rate", 0.01f, 20, 0.5f, "Hz"),
                                         choice("Restart", {"Free", "Each bar", "Each note"}, 0),
                                         choice("Counts in", {"Time", "Passes"}, 0)}};
@@ -168,7 +168,8 @@ std::vector<TypeInfo> buildModulators() {
     };
     about(ModulatorType::Lfo, "Motion", "a wave that keeps moving: sine, saw, square…", "oscillator wobble sweep");
     about(ModulatorType::Steps, "Motion", "a pattern of values you draw", "sequence step pattern");
-    about(ModulatorType::Curve, "Motion", "a shape you draw that repeats, like an LFO", "draw shape curve lfo");
+    about(ModulatorType::Curve, "Motion", "a shape you draw, of any length; a part of it plays and repeats",
+          "draw shape curve lfo");
     about(ModulatorType::Random, "Motion", "a new random value at a steady rate", "noise sample hold chaos");
     about(ModulatorType::Ramp, "Motion", "rises or falls over several bars: builds, fades", "build riser fade");
     about(ModulatorType::Envelope, "Notes", "rises and falls with each note", "adsr attack decay");
@@ -350,6 +351,7 @@ Modulator makeModulator(ModulatorType type, ModulatorId id) {
                     {bar / 4, 1, CurveType::Linear, 0},
                     {bar * 3 / 4, 0, CurveType::Linear, 0},
                     {bar, 0.5f, CurveType::Linear, 0}};
+        m.segmentEnd = bar;
     }
     return m;
 }

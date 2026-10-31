@@ -3,6 +3,7 @@
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
 #include "Json.hpp"
+#include "Modulators.hpp"
 #include "Playheads.hpp"
 
 #include <algorithm>
@@ -493,6 +494,44 @@ void curvesToModulators(const json_t* devices, Track& t) {
     });
 }
 
+/// Curves saved before 31 Oct 2026 had no segment. They repeated their whole drawing, could count passes instead of
+/// time, and turned their setting by the route's amount. One that counted passes becomes a Steps modulator stepping
+/// per pass with the same values; one that counted time is drawn at full scale (its first route turning all the
+/// way, its other routes rescaled), so both play as they did.
+void curveFromBefore(Modulator& m) {
+    const devices::ParamInfo& counts = devices::modulatorInfo(ModulatorType::Curve).params[mods::knob::kCurvePerPass];
+    bool passes = size_t(mods::knob::kCurvePerPass) < m.params.size() &&
+                  devices::display(counts, m.params[size_t(mods::knob::kCurvePerPass)]) > 0.5f;
+    if (passes) {
+        mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length, 0, m.length};
+        int count = std::clamp(int(std::lround(double(m.length) / double(mods::kPassTicks))), 1, kMaxSteps);
+        Modulator steps = devices::makeModulator(ModulatorType::Steps, m.id);
+        steps.name = m.name;
+        steps.routes = m.routes;
+        steps.steps.clear();
+        for (int k = 0; k < count; k++)
+            steps.steps.push_back(mods::drawnAt(drawn, double(k) * double(mods::kPassTicks)));
+        const devices::TypeInfo& info = devices::modulatorInfo(ModulatorType::Steps);
+        steps.params[mods::knob::kStepCount] = devices::normalize(info.params[mods::knob::kStepCount], float(count));
+        steps.params[mods::knob::kStepSmooth] = 0;
+        steps.params[mods::knob::kStepBipolar] = 1;
+        steps.params[mods::knob::kStepPerPass] = 1;
+        m = steps;
+        return;
+    }
+    m.segmentStart = 0;
+    m.segmentEnd = m.length;
+    auto first = std::find_if(m.routes.begin(), m.routes.end(),
+                              [](const Modulation& r) { return r.kind == Modulation::Kind::Param; });
+    if (first == m.routes.end() || !std::isfinite(first->amount) || std::fabs(first->amount) < 1e-6f)
+        return;
+    float amount = first->amount;
+    for (AutoPoint& p : m.points)
+        p.value = std::clamp(0.5f + amount * (p.value - 0.5f), 0.f, 1.f);
+    for (Modulation& r : m.routes)
+        r.amount = &r == &*first ? 1.f : std::clamp(r.amount / amount, -1.f, 1.f);
+}
+
 json_t* modulatorToJson(const Modulator& m) {
     json_t* j = json_object();
     set(j, "id", idJson(m.id));
@@ -504,6 +543,10 @@ json_t* modulatorToJson(const Modulator& m) {
     if (m.type == ModulatorType::Curve) {
         set(j, "length", json_integer(static_cast<json_int_t>(m.length)));
         set(j, "points", drawnPointsToJson(m.points));
+        json_t* segment = json_array();
+        json_array_append_new(segment, json_integer(static_cast<json_int_t>(m.segmentStart)));
+        json_array_append_new(segment, json_integer(static_cast<json_int_t>(m.segmentEnd)));
+        set(j, "segment", segment);
     }
     json_t* routes = json_array();
     for (const Modulation& r : m.routes)
@@ -522,6 +565,14 @@ Modulator modulatorFromJson(const json_t* j) {
     m.length = getInt(j, "length", 0);
     m.points = drawnPointsFromJson(get(j, "points"));
     forEach(get(j, "routes"), [&](const json_t* r) { m.routes.push_back(modulationFromJson(r)); });
+    if (m.type == ModulatorType::Curve) {
+        if (const json_t* segment = get(j, "segment")) {
+            m.segmentStart = intAt(segment, 0, 0);
+            m.segmentEnd = intAt(segment, 1, 0);
+        } else {
+            curveFromBefore(m);
+        }
+    }
     return m;
 }
 

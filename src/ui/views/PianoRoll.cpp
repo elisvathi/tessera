@@ -1,8 +1,10 @@
 #include "PianoRoll.hpp"
 
+#include "../../model/DeviceTypes.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
+#include "../editing/DeviceActions.hpp"
 #include "../editing/DrumActions.hpp"
 #include "../editing/ExportMidi.hpp"
 #include "../editing/KeyActions.hpp"
@@ -14,16 +16,14 @@
 #include "../widgets/IconButton.hpp"
 #include "../widgets/ToolButton.hpp"
 #include "ClipLaneView.hpp"
-#include "../editing/DeviceActions.hpp"
-#include "../../model/DeviceTypes.hpp"
 #include "CurveView.hpp"
-#include "TimeMapView.hpp"
 #include "DrumLaneHeaders.hpp"
 #include "ExpressionLane.hpp"
 #include "LaneTabs.hpp"
 #include "NoteGrid.hpp"
 #include "NoteValueLane.hpp"
 #include "PianoKeyboard.hpp"
+#include "TimeMapView.hpp"
 #include "TimelineDraw.hpp"
 #include "TrackHeaders.hpp"
 
@@ -52,8 +52,8 @@ constexpr float kViewButton = 56;
 constexpr float kLaneHeightOverlay = 72;
 constexpr float kLaneHeightPanel = 44;
 // A curve shows its setting's steps as rows, so it gets more room.
-constexpr float kCurveLaneHeightOverlay = 180;
-constexpr float kCurveLaneHeightPanel = 96;
+constexpr float kCurveLaneHeightOverlay = 220; // header, ruler and about fifteen rows
+constexpr float kCurveLaneHeightPanel = 120;
 
 /// The snap grid's choices, for the Snap chip's menu or the narrow header's "⋯".
 void appendSnapItems(rack::ui::Menu* menu, EditorContext* c) {
@@ -493,7 +493,9 @@ void PianoRollView::layout() {
     values->box = rack::math::Rect(side, body + gridHeight + tabs, box.size.x - side, lane);
     clipLane->box = values->box;
     timeMap->box = values->box;
-    curveView->box = values->box;
+    // The curve's row labels sit under the lower pane's button, where the keys are above.
+    curveView->box = rack::math::Rect(0, values->box.pos.y, box.size.x, lane);
+    curveView->left = side;
     expression->box = values->box;
     // The label stays inside the lane, however short the lane gets (the in-panel editor).
     lowerButton->box =

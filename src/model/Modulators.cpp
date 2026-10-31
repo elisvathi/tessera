@@ -149,6 +149,18 @@ float drawnAt(const Drawn& drawn, double t) {
     return p[drawn.count - 1].value;
 }
 
+double drawnPlace(const Drawn& drawn, double elapsed) {
+    double from = double(drawn.from), to = double(drawn.to);
+    if (!(to > from)) {
+        from = 0;
+        to = double(drawn.length);
+    }
+    double span = to - from;
+    if (!(span > 0))
+        return from;
+    return from + (elapsed - std::floor(elapsed / span) * span);
+}
+
 bool bipolar(ModulatorType type, const float* knobs) {
     switch (type) {
     case ModulatorType::Curve:
@@ -166,8 +178,6 @@ bool bipolar(ModulatorType type, const float* knobs) {
 
 bool perPass(ModulatorType type, const float* knobs) {
     switch (type) {
-    case ModulatorType::Curve:
-        return shown(type, knobs, knob::kCurvePerPass) > 0.5f;
     case ModulatorType::Steps:
         return shown(type, knobs, knob::kStepPerPass) > 0.5f;
     case ModulatorType::Ramp:
@@ -191,20 +201,9 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
     float out = 0;
     switch (type) {
     case ModulatorType::Curve: {
-        Tick length = drawn ? drawn->length : 0;
-        if (perPass(type, knobs)) {
-            // One point of the drawing per pass of a note (per bar when there is none), around and around.
-            double position = clock.pass >= 0 ? double(clock.pass)
-                                               : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)));
-            double passes = std::max(1.0, std::round(double(length) / double(kPassTicks)));
-            double k = position - std::floor(position / passes) * passes;
-            out = drawn ? drawnAt(*drawn, k * double(kPassTicks)) * 2 - 1 : 0;
-            break;
-        }
-        // Always with the song, from its start: the cycle is the drawn length, on the grid.
-        double phase = cycles(true, double(length), 0, Restart::Free, state, clock);
         // Drawn 0..1 around the middle: 0.5 leaves its targets where they are.
-        out = drawn ? drawnAt(*drawn, (phase - std::floor(phase)) * double(length)) * 2 - 1 : 0;
+        double elapsed = std::isfinite(clock.sinceClip) ? clock.sinceClip : clock.songTick;
+        out = drawn ? drawnAt(*drawn, drawnPlace(*drawn, elapsed)) * 2 - 1 : 0;
         break;
     }
     case ModulatorType::Lfo:
@@ -222,7 +221,8 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
         double rate = double(devices::rateTicks(int(shown(type, knobs, knob::kStepRate)), clock.timeSig));
         double position = clock.songTick / rate;
         if (perPass(type, knobs)) // one step per pass of a note, else per bar
-            position = clock.pass >= 0 ? double(clock.pass) : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)));
+            position =
+                clock.pass >= 0 ? double(clock.pass) : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)));
         int64_t step = int64_t(std::floor(position));
         auto valueAt = [&](int64_t k) {
             size_t i = size_t(((k % count) + count) % count);
@@ -247,7 +247,8 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
         double length = double(std::max(1, int(shown(type, knobs, knob::kBars)))) * double(ticksPerBar(clock.timeSig));
         double t = clock.songTick / length;
         if (perPass(type, knobs)) // over that many passes of a note, else that many bars
-            t = (clock.pass >= 0 ? double(clock.pass) : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)))) /
+            t = (clock.pass >= 0 ? double(clock.pass)
+                                 : std::floor(clock.songTick / double(ticksPerBar(clock.timeSig)))) /
                 std::max(1.0, double(shown(type, knobs, knob::kBars)));
         t = shown(type, knobs, knob::kThen) > 0.5f ? t - std::floor(t) : std::min(1.0, t);
         // Curve bends it: above 0 it moves early and settles, below 0 it waits and then rushes.

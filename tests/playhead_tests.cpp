@@ -419,8 +419,9 @@ TEST_CASE("a playhead's notes last while it is on them: Length follows the playh
     CHECK(follows(firstDevice(song).playheads[0]));
 
     // A song saved before (schema 6) with "As written": it now follows the playhead too.
-    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, firstDevice(song).playheads[0].id.value,
-                                        uint16_t(playheads::knob::kLength)},
+    applyUndoable(song, setParam(song,
+                                 {ParamRef::Kind::Playhead, firstDevice(song).playheads[0].id.value,
+                                  uint16_t(playheads::knob::kLength)},
                                  devices::normalize(length, float(playheads::LengthMode::AsWritten))));
     json::Ref j(songToJson(song));
     REQUIRE(migrateSong(j.get(), 6));
@@ -732,23 +733,36 @@ TEST_CASE("the playhead settings fit their limit") {
 
 #include "../src/model/Modulators.hpp"
 
-TEST_CASE("a synced Curve modulator plays its drawn shape every cycle, around no change") {
+TEST_CASE("a Curve plays its segment round and round from when it started, around no change") {
     Modulator m = devices::makeModulator(ModulatorType::Curve, ModulatorId(1));
-    m.length = 2 * kPpq;
+    m.length = 4 * kPpq;
     m.points = {{0, 0.5f, CurveType::Linear, 0}, {kPpq, 1, CurveType::Hold, 0}, {2 * kPpq, 0, CurveType::Hold, 0}};
-    mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
-    auto at = [&](double tick) {
+    m.segmentStart = 0;
+    m.segmentEnd = 2 * kPpq;
+    mods::Drawn drawn = mods::drawnOf(m);
+    auto at = [&](double since, double song = 0) {
         mods::State state;
         mods::Clock clock;
-        clock.songTick = tick;
+        clock.songTick = song;
+        clock.sinceClip = since;
         return mods::evaluate(m.type, m.id.value, m.params.data(), state, clock, nullptr, 0, &drawn);
     };
     CHECK(mods::bipolar(m.type, m.params.data()));
     CHECK(at(0) == doctest::Approx(0));          // 0.5 drawn: no change
     CHECK(at(kPpq / 2) == doctest::Approx(0.5)); // halfway up the ramp to 1
     CHECK(at(kPpq) == doctest::Approx(1));
-    CHECK(at(1.5 * kPpq) == doctest::Approx(1)); // held
-    CHECK(at(2 * kPpq) == doctest::Approx(0));   // the next cycle starts over
+    CHECK(at(1.5 * kPpq) == doctest::Approx(1)); // a step holds
+    CHECK(at(2 * kPpq) == doctest::Approx(0));   // the segment starts over: the last two beats never play
+    // Counted from the clip's start, whatever the song's position; without a clip, from the song's start.
+    CHECK(at(kPpq, 7 * kPpq) == doctest::Approx(1));
+    CHECK(at(NAN, 2 * kPpq + kPpq) == doctest::Approx(1));
+    // A segment inside the drawing starts there.
+    m.segmentStart = kPpq;
+    m.segmentEnd = 3 * kPpq;
+    drawn = mods::drawnOf(m);
+    CHECK(mods::drawnPlace(drawn, 0) == doctest::Approx(kPpq));
+    CHECK(mods::drawnPlace(drawn, 2.5 * kPpq) == doctest::Approx(1.5 * kPpq));
+    CHECK(at(kPpq + 1) == doctest::Approx(-1)); // two beats into the drawing: the 0 step
 }
 
 TEST_CASE("Curve modulators are drawn and added with undo, and survive saving") {
@@ -757,8 +771,9 @@ TEST_CASE("Curve modulators are drawn and added with undo, and survive saving") 
     PlayheadId id = firstDevice(song).playheads[0].id;
     ParamRef octave{ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kDirection)};
     ModulatorId added;
-    applyUndoable(song, animateWithCurve(song, song.tracks[0].id, octave, "1 Direction", 4 * kPpq,
-                                         {{0, 0.5f, CurveType::Hold, 0}}, idsOf(song), &added));
+    applyUndoable(song,
+                  animateWithCurve(song, song.tracks[0].id, octave, "1 Direction",
+                                   {4 * kPpq, {{0, 0.5f, CurveType::Hold, 0}}, 0, 4 * kPpq}, idsOf(song), &added));
     REQUIRE(song.tracks[0].modulators.size() == 1);
     const Modulator& m = song.tracks[0].modulators[0];
     CHECK(m.id == added);
@@ -766,12 +781,28 @@ TEST_CASE("Curve modulators are drawn and added with undo, and survive saving") 
     REQUIRE(m.routes.size() == 1);
     CHECK(m.routes[0].target == octave);
     CHECK(m.routes[0].amount == 1);
-    // Points come back sorted and inside the cycle.
+    CHECK(m.segmentStart == 0);
+    CHECK(m.segmentEnd == 4 * kPpq);
+    // Points come back sorted with values 0..1; one past the end is kept, so a longer drawing brings it back. A
+    // segment longer than the drawing is cut to fit it.
     applyUndoable(
-        song, setCurve(song, added, 2 * kPpq, {{3 * kPpq, 2, CurveType::Linear, 0}, {0, 0.25f, CurveType::Linear, 0}}));
-    CHECK(song.tracks[0].modulators[0].points ==
-          std::vector<AutoPoint>{{0, 0.25f, CurveType::Linear, 0}, {2 * kPpq, 1, CurveType::Linear, 0}});
+        song,
+        setCurve(song, added,
+                 {2 * kPpq, {{3 * kPpq, 2, CurveType::Linear, 0}, {0, 0.25f, CurveType::Linear, 0}}, kPpq, 8 * kPpq}));
+    const Modulator& drawn = song.tracks[0].modulators[0];
+    CHECK(drawn.points ==
+          std::vector<AutoPoint>{{0, 0.25f, CurveType::Linear, 0}, {3 * kPpq, 1, CurveType::Linear, 0}});
+    CHECK(drawn.length == 2 * kPpq);
+    CHECK(drawn.segmentStart == 0);
+    CHECK(drawn.segmentEnd == 2 * kPpq);
+    // A shorter drawing slides the segment back inside, as long as it was.
+    applyUndoable(song, setCurve(song, added, {16 * kPpq, drawn.points, 12 * kPpq, 16 * kPpq}));
+    applyUndoable(song, setCurve(song, added, {8 * kPpq, drawn.points, 12 * kPpq, 16 * kPpq}));
+    CHECK(song.tracks[0].modulators[0].segmentStart == 4 * kPpq);
+    CHECK(song.tracks[0].modulators[0].segmentEnd == 8 * kPpq);
     CHECK(savedAndLoaded(song) == song);
+    // The route the curve is drawn in has no amount of its own.
+    CHECK(setRouteAmount(song, added, 0, 0.5f) == nullptr);
 }
 
 TEST_CASE("a playhead curve saved before curves were modulators loads as a Curve modulator") {
@@ -805,6 +836,70 @@ TEST_CASE("a playhead curve saved before curves were modulators loads as a Curve
     CHECK(m.routes[0].amount == 1);
 }
 
+TEST_CASE("a Curve saved before it had a segment loads drawn at full scale, playing as it did") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Transpose, -1, idsOf(song)));
+    uint64_t transpose = firstDevice(song).id.value;
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.length = 2 * kPpq;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0}, {kPpq, 1, CurveType::Hold, 0}};
+    Modulation first, second;
+    first.target = {ParamRef::Kind::Device, transpose, 0};
+    first.amount = 0.25f;
+    second.target = {ParamRef::Kind::Device, transpose, 1};
+    second.amount = 0.125f;
+    curve.routes = {first, second};
+    song.tracks[0].modulators.push_back(curve);
+    json::Ref j(songToJson(song));
+    json_t* saved =
+        json_array_get(json_object_get(json_array_get(json_object_get(j.get(), "tracks"), 0), "modulators"), 0);
+    json_object_del(saved, "segment");
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    REQUIRE(loaded.tracks[0].modulators.size() == 1);
+    const Modulator& m = loaded.tracks[0].modulators[0];
+    CHECK(m.segmentStart == 0);
+    CHECK(m.segmentEnd == 2 * kPpq);
+    // 1 at a quarter of the way became 0.5 + 0.25 * 0.5: the same turn, with the first route turning all the way.
+    REQUIRE(m.points.size() == 2);
+    CHECK(m.points[1].value == doctest::Approx(0.625));
+    CHECK(m.routes[0].amount == 1);
+    CHECK(m.routes[1].amount == doctest::Approx(0.5));
+}
+
+TEST_CASE("a Curve saved counting passes loads as Steps stepping per pass, with the same values") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Transpose, -1, idsOf(song)));
+    uint64_t transpose = firstDevice(song).id.value;
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.params[mods::knob::kCurvePerPass] = 1;
+    curve.length = 3 * mods::kPassTicks;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0},
+                    {mods::kPassTicks, 0.6f, CurveType::Hold, 0},
+                    {2 * mods::kPassTicks, 0.7f, CurveType::Hold, 0}};
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, transpose, 0};
+    route.amount = 0.5f;
+    curve.routes = {route};
+    song.tracks[0].modulators.push_back(curve);
+    json::Ref j(songToJson(song));
+    json_t* saved =
+        json_array_get(json_object_get(json_array_get(json_object_get(j.get(), "tracks"), 0), "modulators"), 0);
+    json_object_del(saved, "segment");
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    REQUIRE(loaded.tracks[0].modulators.size() == 1);
+    const Modulator& m = loaded.tracks[0].modulators[0];
+    CHECK(m.type == ModulatorType::Steps);
+    CHECK(m.id == curve.id);
+    CHECK(m.steps == std::vector<float>{0.5f, 0.6f, 0.7f});
+    CHECK(mods::perPass(m.type, m.params.data()));
+    CHECK(mods::bipolar(m.type, m.params.data()));
+    REQUIRE(m.routes.size() == 1);
+    CHECK(m.routes[0].amount == 0.5f);
+    for (int64_t pass = 0; pass < 3; pass++)
+        CHECK(mods::passValue(m.type, m.id.value, m.params.data(), pass, TimeSig(), m.steps.data(),
+                              int(m.steps.size())) == doctest::Approx(m.steps[size_t(pass)] * 2 - 1));
+}
+
 TEST_CASE("MIDI export plays a synced Curve modulator on a playhead setting") {
     Song song = songWithTrack();
     Clip clip;
@@ -826,10 +921,11 @@ TEST_CASE("MIDI export plays a synced Curve modulator on a playhead setting") {
     PlayheadId id = firstDevice(song).playheads[0].id;
     // Bar 1 as set, bar 2 an octave up, repeating every two bars.
     applyUndoable(song,
-                  animateWithCurve(song, song.tracks[0].id,
-                                   {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)}, "Octave",
-                                   8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, 0.5625f, CurveType::Hold, 0}},
-                                   idsOf(song)));
+                  animateWithCurve(
+                      song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)},
+                      "Octave",
+                      {8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, 0.5625f, CurveType::Hold, 0}}, 0, 8 * kPpq},
+                      idsOf(song)));
     std::vector<int> pitches;
     for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
         pitches.push_back(e.pitch);

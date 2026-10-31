@@ -2,6 +2,7 @@
 
 #include "../model/Commands.hpp"
 #include "../model/Device.hpp"
+#include "../model/Modulators.hpp"
 #include "../model/NoteOperators.hpp"
 #include "../model/Playheads.hpp"
 #include "../model/Scale.hpp"
@@ -268,8 +269,12 @@ struct ModulatorPlayback {
     int track = -1; // display index of its track; -1 for song modulators
     std::array<float, kMaxSteps> steps{};
     int stepCount = 0;
-    Tick length = 0;               // Curve: one cycle
-    std::vector<AutoPoint> points; // Curve: its shape
+    Tick length = 0;                       // Curve: how long its drawing is
+    std::vector<AutoPoint> points;         // Curve: its shape
+    Tick segmentStart = 0, segmentEnd = 0; // Curve: the part that plays
+
+    /// A Curve's shape, for mods::evaluate().
+    mods::Drawn drawn() const { return {points.data(), int(points.size()), length, segmentStart, segmentEnd}; }
 };
 
 /// A knob with modulation on it.

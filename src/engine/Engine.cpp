@@ -1296,9 +1296,10 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                     continue;
                 mods::Clock at;
                 at.songTick = songTick + (from - playTick);
+                at.sinceClip = sinceClipStart(track, state, at.songTick, from);
                 at.timeSig = ts;
                 at.seed = snapshot->seed;
-                mods::Drawn drawn{mp.points.data(), int(mp.points.size()), mp.length};
+                mods::Drawn drawn = mp.drawn();
                 float applied = st.applied;
                 float v = mods::evaluate(mp.type, mp.id, mk, st, at, nullptr, 0, &drawn);
                 float& k = clock.knobs[x.param];
@@ -1874,7 +1875,7 @@ float Engine::motionKnob(int knob, int64_t pass) const {
             const ModSource& src = km.sources[size_t(j)];
             for (const ModulatorPlayback& m : snapshot->modulators)
                 if (m.slot == src.slot && mods::perPass(m.type, &knobValues[size_t(m.knobs)])) {
-                    mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+                    mods::Drawn drawn = m.drawn();
                     v += src.amount * mods::passValue(m.type, m.id, &knobValues[size_t(m.knobs)], pass,
                                                       snapshot->timeSig, m.steps.data(), m.stepCount, &drawn);
                 }
@@ -1888,8 +1889,32 @@ void Engine::advanceModulation() {
     if (!snapshot)
         return;
     const Snapshot& s = *snapshot;
-    // Every modulation uses the modulators' outputs from the previous block, so modulators turning each other's
-    // settings never loop.
+    // Curves depend on time alone, so they are read for where the song will be at the end of this block and used in
+    // it: a step drawn where a note starts reaches that note, as knob lanes do. Every other modulation uses the
+    // modulators' outputs from the previous block, so modulators turning each other's settings never loop.
+    double ahead = ticksPerSample * kControlBlock;
+    double songAhead = songTick + ahead;
+    if (loopOn && s.loopEnd > s.loopStart && songTick < double(s.loopEnd) && songAhead >= double(s.loopEnd))
+        songAhead = double(s.loopStart) + (songAhead - double(s.loopEnd));
+    for (const ModulatorPlayback& m : s.modulators) {
+        if (m.type != ModulatorType::Curve)
+            continue;
+        mods::State& st = (*modStates)[size_t(m.slot)];
+        if (st.owner != m.id) {
+            st = mods::State();
+            st.owner = m.id;
+        }
+        mods::Clock clock;
+        clock.songTick = songAhead;
+        clock.timeSig = s.timeSig;
+        if (m.track >= 0 && size_t(m.track) < trackCount)
+            clock.sinceClip =
+                sinceClipStart(*s.tracks[size_t(m.track)], tracks[size_t(m.track)], songAhead, playTick + ahead);
+        mods::Drawn drawn = m.drawn();
+        st.out = mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, nullptr, 0, &drawn);
+        st.applied = st.out;
+        liveModulators[size_t(m.slot)].store(st.out, std::memory_order_relaxed);
+    }
     if (knobsDirty || overrideOn || overrideWasOn || knobLanesOn || knobLanesWereOn || !s.modulated.empty()) {
         std::copy(s.knobs.begin(), s.knobs.end(), knobValues.get());
         // Knob lanes set the base; a knob held by the mouse wins while it is held, and modulation adds on top.
@@ -1932,12 +1957,14 @@ void Engine::advanceModulation() {
     clock.seed = s.seed;
     clock.ticksPerSecond = bpm * kPpq / 60.0;
     for (const ModulatorPlayback& m : s.modulators) {
+        if (m.type == ModulatorType::Curve) // read above, for this block
+            continue;
         mods::State& st = (*modStates)[size_t(m.slot)];
         if (st.owner != m.id) {
             st = mods::State();
             st.owner = m.id;
         }
-        mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+        mods::Drawn drawn = m.drawn();
         st.applied = st.out;
         float out =
             mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, m.steps.data(), m.stepCount, &drawn);
@@ -2039,6 +2066,21 @@ void Engine::seekAll() {
         return;
     for (size_t i = 0; i < trackCount; i++)
         seekTrack(*snapshot->tracks[i], tracks[i]);
+}
+
+double Engine::sinceClipStart(const TrackPlayback& tp, const TrackState& state, double song, double play) const {
+    if (tp.slot(state.playing))
+        return play - state.launchTick;
+    if (!followsArrangement(state) || replacing(tp))
+        return NAN;
+    double start = NAN;
+    for (const InstanceLanes& inst : tp.instances) {
+        if (double(inst.position) > song)
+            break;
+        if (double(inst.end) > song)
+            start = double(inst.position);
+    }
+    return song - start;
 }
 
 int Engine::lanesClips(const TrackPlayback& tp, const TrackState& state, double song, double play,

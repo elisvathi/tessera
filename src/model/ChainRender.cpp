@@ -139,7 +139,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             const Modulator& m = *r.modulator;
             if (!mods::perPass(m.type, m.params.data()))
                 continue;
-            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            mods::Drawn drawn = mods::drawnOf(m);
             for (const Modulation& route : m.routes)
                 if (route.kind == Modulation::Kind::Param && route.target.kind == ParamRef::Kind::Device &&
                     route.target.owner == d.id && route.target.param == k)
@@ -223,9 +223,13 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             c->push(cn);
         }
         clock.songTick = t;
+        // Track curves count from the start of the timeline clip under the song; song curves from the song's start.
+        const ArrangerClip* under = instanceAt(track, Tick(t));
+        double sinceClip = under && !under->muted ? t - double(under->position) : NAN;
         for (Running& r : running) {
             const Modulator& m = *r.modulator;
-            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            clock.sinceClip = r.followsNotes ? sinceClip : NAN;
+            mods::Drawn drawn = mods::drawnOf(m);
             mods::evaluate(m.type, m.id.value, knobs[{int(ParamRef::Kind::Modulator), m.id.value}].value.data(),
                            r.state, clock, m.steps.data(), int(m.steps.size()), &drawn);
         }

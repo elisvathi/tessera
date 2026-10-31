@@ -105,17 +105,23 @@ CommandPtr removeModulator(const Song& song, ModulatorId id);
 CommandPtr renameModulator(const Song& song, ModulatorId id, const std::string& name);
 /// The drawn values of a Steps modulator (at most kMaxSteps, each clamped to 0..1).
 CommandPtr setSteps(const Song& song, ModulatorId id, std::vector<float> steps);
-/// A Curve modulator's shape: its points (sorted, clamped into the cycle) and its cycle length (at least a 1/16).
-CommandPtr setCurve(const Song& song, ModulatorId id, Tick length, std::vector<AutoPoint> points);
+/// What a Curve modulator draws: how long the drawing is, its points, and the segment of it that plays.
+struct CurveDrawing {
+    Tick length = 4 * kPpq;
+    std::vector<AutoPoint> points;
+    Tick segmentStart = 0, segmentEnd = 4 * kPpq;
+};
+/// Makes `d` a drawing a Curve may hold: a length of 1/16 to kMaxCurveLength, points sorted with values 0..1 (points
+/// past the end are kept, so lengthening again brings them back), a segment of at least a 1/16 inside the length (one
+/// past the end slides back in, as long as before unless the drawing is shorter).
+void tidyCurve(CurveDrawing& d);
+/// A Curve modulator's drawing (tidied first).
+CommandPtr setCurve(const Song& song, ModulatorId id, CurveDrawing drawing);
 /// Starts moving `target` with a drawn shape, in one undo step: a new Curve modulator on `track` (named after the
-/// setting), turning the target by `amount` (curveAmount() for a new one), with `points` over `length`. Null when the
-/// track has no room for another modulator.
+/// setting), turning the target all the way, so a point's height is the setting's own value. Null when the track
+/// has no room for another modulator.
 CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& target, const std::string& name,
-                            Tick length, std::vector<AutoPoint> points, const NextId& nextId,
-                            ModulatorId* added = nullptr, float amount = 1);
-/// How far a new curve turns a setting: all the way, except that a setting with many steps (a playhead's Steps,
-/// Transpose) moves at most 7 of them either way, so its rows stay big enough to draw on.
-float curveAmount(const devices::ParamInfo& info);
+                            CurveDrawing drawing, const NextId& nextId, ModulatorId* added = nullptr);
 
 /// Adds a route. Null when the target is out of reach, the modulator has kMaxRoutes routes, the knob already
 /// takes kMaxModulationsPerKnob modulations, or the modulator already reaches that target.
