@@ -537,6 +537,8 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         std::copy(m.steps.begin(), m.steps.begin() + mp.stepCount, mp.steps.begin());
         mp.length = m.length;
         mp.points = m.points;
+        mp.segmentStart = m.segmentStart;
+        mp.segmentEnd = m.segmentEnd;
         snap.modulators.push_back(mp);
         if (mp.track >= 0)
             snap.chains[size_t(mp.track)].modulatorSlots.push_back(slot);

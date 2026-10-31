@@ -3,10 +3,11 @@
 
 Run it with an output folder: `demo_patch.py build/manual-rack`. It writes demo.vcv (a small song with its output
 modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the modules zoomed in), first.vcv
-(Roll, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Roll alone) and
-polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own) and hitvalues.vcv
-(the Drums track open on its Pitch lane: the snares tuned up step by step, the second a shaped curve, the hats with
-timbre).
+(Tessera, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Tessera alone) and
+polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own), playheads.vcv
+(Lead read by three playheads), curve.vcv (the Bass track open, a 16-bar Curve on its Transpose's key steps that
+plays bars 5 to 8) and hitvalues.vcv (the Drums track open on its Pitch lane: the snares tuned up step by step, the
+second a shaped curve, the hats with timbre).
 """
 
 import json
@@ -234,6 +235,32 @@ def playheads_module():
     return module
 
 
+def curve_module():
+    """The demo song with the Bass track open: a Transpose device whose Key steps a Curve modulator moves. The curve
+    is 16 bars of steps and one ramp; its segment plays bars 5 to 8. The device strip is open."""
+    song, _ = make_song()
+    bass = next(t for t in song["tracks"] if t["name"] == "Bass")
+    verse = next(c for c in song["clips"] if c["name"] == "Verse bass")
+    transpose = {"id": ids.take(), "type": "transpose", "name": "", "on": True, "params": []}
+    bass["devices"] = [transpose]
+
+    def at(steps):
+        """The drawn value for `steps` key steps from the knob: Key steps span 28, turned all the way."""
+        return 0.5 + steps / 56
+
+    steps = [0, 0, 2, 4, 5, 4, 2, 0, -3, -3, -1, 0]
+    points = [[bar * BAR, at(v), 0, 0.0] for bar, v in enumerate(steps)]
+    points += [[12 * BAR, at(7), 1, 0.0], [15 * BAR, at(2), 0, 0.0]]
+    bass["modulators"] = [{"id": ids.take(), "type": "curve", "name": "Bass Key steps", "params": [],
+                           "length": 16 * BAR, "points": points, "segment": [4 * BAR, 8 * BAR],
+                           "routes": [{"kind": "param", "amount": 1.0, "target": ["device", transpose["id"], 2]}]}]
+    song["nextId"] = ids.next + 10
+    module = tessera_module(song, verse, 24, False, "Bass")
+    module["data"]["schema"] = 6
+    module["data"]["ui"]["overlay"]["deviceStrip"] = True
+    return module
+
+
 def main():
     """Writes the patches into the folder given on the command line."""
     out = Path(sys.argv[1])
@@ -252,6 +279,7 @@ def main():
     (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, 24, False, "Drums", "pitch")] +
                                                          outputs(24))))
     (out / "playheads.vcv").write_text(json.dumps(patch([playheads_module()] + outputs(24))))
+    (out / "curve.vcv").write_text(json.dumps(patch([curve_module()] + outputs(24))))
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
 

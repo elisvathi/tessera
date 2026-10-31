@@ -2,10 +2,12 @@
 
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
+#include "Modulators.hpp"
 #include "Playheads.hpp"
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 
 namespace tessera {
 
@@ -184,8 +186,9 @@ void insertDevice(Track& track, int at, Device device) {
 Playhead nextPlayhead(const Device& device, PlayheadId id) {
     Playhead p = devices::makePlayhead(id, int(device.playheads.size()));
     int channel = 1;
-    while (channel < 16 && std::any_of(device.playheads.begin(), device.playheads.end(),
-                                       [&](const Playhead& o) { return o.channel == channel; }))
+    while (channel < 16 && std::any_of(
+                               device.playheads.begin(), device.playheads.end(),
+                               [&](const Playhead& o) { return o.channel == channel; }))
         channel++;
     p.channel = uint8_t(channel);
     return p;
@@ -474,8 +477,8 @@ CommandPtr addBranchDevice(const Song& song, PlayheadId id, DeviceType type, int
 
 CommandPtr removePlayhead(const Song& song, PlayheadId id) {
     return playheadEdit(song, id, "Remove " + playheadName(song, id), [&](Device& d, Playhead&) {
-        d.playheads.erase(std::find_if(d.playheads.begin(), d.playheads.end(),
-                                       [&](const Playhead& p) { return p.id == id; }));
+        d.playheads.erase(
+            std::find_if(d.playheads.begin(), d.playheads.end(), [&](const Playhead& p) { return p.id == id; }));
         return true;
     });
 }
@@ -609,44 +612,39 @@ CommandPtr setSteps(const Song& song, ModulatorId id, std::vector<float> steps) 
     });
 }
 
-namespace {
-
-/// Sorted, inside 0..length, values 0..1: what a Curve modulator may hold.
-void tidyCurve(Tick& length, std::vector<AutoPoint>& points) {
-    length = std::max<Tick>(kPpq / 4, length);
-    std::stable_sort(points.begin(), points.end(), [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
-    for (AutoPoint& p : points) {
-        p.value = std::clamp(p.value, 0.f, 1.f);
-        p.t = std::clamp<Tick>(p.t, 0, length);
+void tidyCurve(CurveDrawing& d) {
+    d.length = std::clamp<Tick>(d.length, kPpq / 4, kMaxCurveLength);
+    std::stable_sort(d.points.begin(), d.points.end(),
+                     [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+    for (AutoPoint& p : d.points) {
+        p.value = std::isfinite(p.value) ? std::clamp(p.value, 0.f, 1.f) : 0.5f;
+        p.t = std::clamp<Tick>(p.t, 0, kMaxCurveLength);
     }
+    // A segment past the end slides back inside, keeping its length unless the drawing is shorter.
+    Tick span = std::clamp<Tick>(d.segmentEnd - d.segmentStart, kPpq / 4, d.length);
+    d.segmentStart = std::clamp<Tick>(d.segmentStart, 0, d.length - span);
+    d.segmentEnd = d.segmentStart + span;
 }
 
-} // namespace
-
-CommandPtr setCurve(const Song& song, ModulatorId id, Tick length, std::vector<AutoPoint> points) {
-    tidyCurve(length, points);
+CommandPtr setCurve(const Song& song, ModulatorId id, CurveDrawing drawing) {
+    tidyCurve(drawing);
     return chainEdit(song, "Draw " + modulatorName(song, id), [&](Song& work) {
         Modulator* m = findModulator(work, id);
-        if (!m || m->type != ModulatorType::Curve || (m->length == length && m->points == points))
+        if (!m || m->type != ModulatorType::Curve ||
+            (m->length == drawing.length && m->points == drawing.points && m->segmentStart == drawing.segmentStart &&
+             m->segmentEnd == drawing.segmentEnd))
             return false;
-        m->length = length;
-        m->points = points;
+        m->length = drawing.length;
+        m->points = drawing.points;
+        m->segmentStart = drawing.segmentStart;
+        m->segmentEnd = drawing.segmentEnd;
         return true;
     });
 }
 
-float curveAmount(const devices::ParamInfo& info) {
-    using K = devices::ParamInfo::Kind;
-    float span = info.kind == K::Integer   ? info.max - info.min
-                 : info.kind == K::Choice ? float(info.choices.size()) - 1
-                                          : 0;
-    return span > 7 ? 7 / span : 1;
-}
-
 CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& target, const std::string& name,
-                            Tick length, std::vector<AutoPoint> points, const NextId& nextId, ModulatorId* added,
-                            float amount) {
-    tidyCurve(length, points);
+                            CurveDrawing drawing, const NextId& nextId, ModulatorId* added) {
+    tidyCurve(drawing);
     const Track* t = song.findTrack(track);
     if (!t || t->modulators.size() >= size_t(kMaxTrackModulators))
         return nullptr;
@@ -654,7 +652,7 @@ CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& tar
     Modulation route;
     route.kind = Modulation::Kind::Param;
     route.target = target;
-    route.amount = std::clamp(amount, -1.f, 1.f);
+    route.amount = 1;
     ModulatorPlace place;
     place.level = ModLevel::Track;
     place.track = track;
@@ -668,8 +666,10 @@ CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& tar
             return false;
         Modulator m = devices::makeModulator(ModulatorType::Curve, id);
         m.name = freeName(wt->modulators, name);
-        m.length = length;
-        m.points = points;
+        m.length = drawing.length;
+        m.points = drawing.points;
+        m.segmentStart = drawing.segmentStart;
+        m.segmentEnd = drawing.segmentEnd;
         m.routes.push_back(route);
         wt->modulators.push_back(m);
         return true;
@@ -710,7 +710,10 @@ CommandPtr addRoute(const Song& song, ModulatorId id, const Modulation& route) {
     return chainEdit(song, "Modulate with " + modulatorName(song, id), [&](Song& work) {
         Modulation r = route;
         r.amount = std::clamp(r.amount, -1.f, 1.f);
-        findModulator(work, id)->routes.push_back(r);
+        Modulator* m = findModulator(work, id);
+        m->routes.push_back(r);
+        if (mods::drawnRoute(*m) == int(m->routes.size()) - 1)
+            m->routes.back().amount = 1; // a Curve is drawn in the setting it reaches first
         return true;
     });
 }
@@ -728,7 +731,8 @@ CommandPtr removeRoute(const Song& song, ModulatorId id, int index) {
 CommandPtr setRouteAmount(const Song& song, ModulatorId id, int index, float amount) {
     return chainEdit(song, "Set modulation amount", [&](Song& work) {
         Modulation* r = routeAt(work, id, index);
-        if (!r)
+        const Modulator* m = findModulator(work, id);
+        if (!r || !m || mods::drawnRoute(*m) == index)
             return false;
         r->amount = std::clamp(amount, -1.f, 1.f);
         return true;

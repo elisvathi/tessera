@@ -123,11 +123,11 @@ class StepsDrag : public DragGesture {
     Rect area;
 };
 
-/// An LFO shows the one rate that applies: the synced length while Sync is on, else hertz. A Curve shows only Counts
-/// in: its length is the bar over its drawing, and it always runs with the song.
+/// An LFO shows the one rate that applies: the synced length while Sync is on, else hertz. A Curve shows no
+/// settings: its length and segment are set over its drawing in the lower pane.
 bool settingShown(const Modulator& m, int index) {
     if (m.type == ModulatorType::Curve)
-        return index == mods::knob::kCurvePerPass;
+        return false;
     if (m.type != ModulatorType::Lfo || m.params.size() <= size_t(mods::knob::kSyncedRate))
         return true;
     bool synced = m.params[size_t(mods::knob::kSync)] >= 0.5f;
@@ -262,6 +262,8 @@ std::unique_ptr<DragGesture> ModulatorPopover::startGesture(Vec pos, int button,
             onClick);
     }
     case Kind::RouteAmount:
+        if (p.index == mods::drawnRoute(*mod))
+            return nullptr;
         return std::make_unique<RouteAmountDrag>(*this, ctx, mod->id, p.index, mod->routes[size_t(p.index)].amount,
                                                  pos);
     case Kind::StepBars: {
@@ -434,6 +436,11 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
             float rowY = mid.y;
             draw::text(vg, label, kPad + 2, rowY,
                        draw::ellipsize(vg, label, deviceActions::targetName(song, route), p.rect.pos.x - kPad - 8));
+            if (p.index == mods::drawnRoute(*mod)) {
+                // Drawn in this setting's own values: nothing to scale.
+                draw::text(vg, value, p.rect.getRight() + 40, rowY, "as drawn");
+                break;
+            }
             Rect track(p.rect.pos.x, rowY - 3, p.rect.size.x, 6);
             draw::roundedRect(vg, track, 3, hot ? c.line1 : c.line0);
             float zero = track.getCenter().x;

@@ -84,10 +84,12 @@ struct Item {
 /// macros). Free-running ones and those that follow notes are left out: a file has no wall clock or live notes to
 /// follow. `count` settings are written to `out`.
 void knobsAt(const Song& song, const Track& track, const Device& device, ParamRef::Kind kind, uint64_t owner,
-             const float* base, size_t count, double songTick, float* out) {
+             const float* base, size_t count, double songTick, float* out,
+             double sinceClip = std::numeric_limits<double>::quiet_NaN()) {
     std::copy(base, base + count, out);
     mods::Clock clock;
     clock.songTick = songTick;
+    clock.sinceClip = sinceClip;
     clock.timeSig = song.timeSig;
     clock.seed = song.seed;
     auto add = [&](const std::vector<Modulator>& list) {
@@ -110,7 +112,7 @@ void knobsAt(const Song& song, const Track& track, const Device& device, ParamRe
             if (!reaches)
                 continue;
             mods::State state;
-            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            mods::Drawn drawn = mods::drawnOf(m);
             float v = mods::evaluate(m.type, m.id.value, k, state, clock, m.steps.data(), int(m.steps.size()), &drawn);
             for (const Modulation& r : m.routes)
                 if (r.kind == Modulation::Kind::Param && r.target.kind == kind && r.target.owner == owner &&
@@ -127,8 +129,9 @@ void knobsAt(const Song& song, const Track& track, const Device& device, ParamRe
 
 /// A playhead's settings at `songTick` as the engine plays them (knobsAt).
 void playheadKnobsAt(const Song& song, const Track& track, const Device& device, const Playhead& p, double songTick,
-                     float* out) {
-    knobsAt(song, track, device, ParamRef::Kind::Playhead, p.id.value, p.params.data(), p.params.size(), songTick, out);
+                     float* out, double sinceClip = std::numeric_limits<double>::quiet_NaN()) {
+    knobsAt(song, track, device, ParamRef::Kind::Playhead, p.id.value, p.params.data(), p.params.size(), songTick, out,
+            sinceClip);
 }
 
 /// How a Motion device before the playheads moves its notes on `pass` of the clip: its knobs, with the "Per pass"
@@ -151,7 +154,7 @@ MovedBy movedAt(const Song& song, const Track& track, const Device& motion, int6
             bool timed = !passes && m.type == ModulatorType::Curve && std::isfinite(songTick);
             if (!passes && !timed)
                 continue;
-            mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length};
+            mods::Drawn drawn = mods::drawnOf(m);
             float value = 0;
             if (passes) {
                 value = mods::passValue(m.type, m.id.value, m.params.data(), pass, song.timeSig, m.steps.data(),
@@ -398,7 +401,8 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             std::vector<float> knobs(p.params.size());
             for (double e = begin; e < begin + length; e += kStep) {
                 double to = std::min(begin + length, e + kStep);
-                playheadKnobsAt(song, t, device, p, double(a.position) + (e - begin) * stretch, knobs.data());
+                playheadKnobsAt(song, t, device, p, double(a.position) + (e - begin) * stretch, knobs.data(),
+                                (e - begin) * stretch);
                 playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), playStart,
                                                             playEnd - playStart, song.timeSig);
                 if (playheads::wantsDrawnPath(knobs.data()))
@@ -969,8 +973,8 @@ bool Options::operator==(const Options& o) const {
 
 namespace {
 
-/// The longest cycle of the curves on Motion device `motion`: how many passes its Per pass ones take, and how many
-/// ticks its time ones last (0 when none).
+/// The longest cycle of the modulators on Motion device `motion`: how many passes its Per pass Steps and Ramps take,
+/// and how many ticks the longest Curve segment lasts (0 when none).
 std::pair<int, Tick> motionCycle(const Song& song, const Track& track, const Device& motion) {
     int passes = 1;
     Tick ticks = 0;
@@ -980,12 +984,18 @@ std::pair<int, Tick> motionCycle(const Song& song, const Track& track, const Dev
                 return r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
                        r.target.owner == motion.id.value;
             });
-            if (!routed || m.length <= 0)
+            if (!routed)
                 continue;
-            if (mods::perPass(m.type, m.params.data()))
-                passes = std::max(passes, int(std::lround(double(m.length) / double(mods::kPassTicks))));
-            else if (m.type == ModulatorType::Curve)
-                ticks = std::max(ticks, m.length);
+            if (m.type == ModulatorType::Curve) {
+                ticks = std::max(ticks, m.segmentEnd - m.segmentStart);
+            } else if (mods::perPass(m.type, m.params.data())) {
+                // Steps go round their steps, a Ramp over its length in passes.
+                const devices::TypeInfo& info = devices::modulatorInfo(m.type);
+                int knob = m.type == ModulatorType::Steps ? int(mods::knob::kStepCount) : int(mods::knob::kBars);
+                if (size_t(knob) < m.params.size())
+                    passes = std::max(
+                        passes, int(std::lround(devices::display(info.params[size_t(knob)], m.params[size_t(knob)]))));
+            }
         }
     };
     measure(song.modulators);

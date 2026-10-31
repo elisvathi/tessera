@@ -127,16 +127,32 @@ muted), and the piano roll's title adds "read by 3 playheads". For a round, move
 beat later. The other playheads' segments show as thin lines in their colours.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a knob's name and a curve for it
-opens in the piano roll's lower pane. Click to add a point: that makes a **Curve** modulator on the track (see [Modulators](#modulators)), named after
-the playhead and the setting, such as "Bass Rate". Up and down are in the setting's own units. For Octaves or Key steps,
-each row is one value and points snap to the rows; hold **Alt** to place them between rows. The dashed line in the
-middle is the setting as you set it on the knob. A setting with many values, such as Key steps, moves at most 7 either
-way. The knob's ring shows the amount; change it there or in the modulator's settings. Drag points, double-click to
-delete one. The row on top holds **Counts in** (**Time** or **Passes**), ready **Shapes** and **Remove curve**. Under
-it, a bar drawn like a playhead's segment says how long a cycle lasts, such as "repeats every 2 bars"; drag its right
-grip to change it (it snaps to the grid). A curve always runs with the song, from its start. A knob with a curve has a
-dotted ring and its name underlined. While the song plays, a playhead line crosses the curve; counting in passes,
-the pass playing now is lit.
+opens in the piano roll's lower pane. Click to add a point: that makes a **Curve** modulator on the track (see
+[Modulators](#modulators)), named after the playhead and the setting, such as "Bass Rate".
+
+- **Up and down are the setting's own values.** For Octaves or Key steps each row is one value, labelled with what
+  plays, and points snap to the rows (hold **Alt** to place them between rows). The rows cover everything the setting
+  can reach. The dashed line is the knob as you set it: the curve adds to it, so with the knob on +2 a point on the
+  +5 row plays +5, and turning the knob moves the whole line.
+- **Two kinds of point.** A square is a **Step**: it holds its value until the next point. A circle is a **Ramp**:
+  it glides to the next point. Right-click a point to switch it, or to delete it. A new point takes the kind of the
+  point before it; the first point on a setting with rows is a Step. A ramp across rows is heard one row at a time,
+  drawn as dotted stairs under it.
+- **Its own zoom.** The curve zooms and scrolls on its own: **Ctrl+wheel** across, **Alt+wheel** up and down, the
+  wheel scrolls up and down, **Shift+wheel** across. Double-click its ruler to see the whole drawing. It opens lined
+  up under the notes; right-click for **Line up under the notes** or **Show the whole drawing**.
+- **Length** in the row on top says how much curve there is to draw: 1 to 256 bars. Next to it are ready **Shapes**
+  (drawn across the segment and the rows shown) and **Remove curve**.
+- **The segment says what plays.** On the curve's ruler, a bar drawn like a playhead's segment marks the part that
+  plays, such as "plays 4 bars". Drag its grips to resize it, or the bar to move it. It loops: when the clip starts
+  (launched, or reached on the timeline), the curve plays from the segment's start and goes round. Draw 16 bars and
+  play bars 5 to 8, or draw 100 bars with the segment covering them all for a slow change over the song. A new curve
+  is as long as the clip, with the segment covering all of it.
+
+Drag points, double-click to delete one. A knob with a curve has a dotted ring and its name underlined. While the song
+plays, a playhead line crosses the curve where it reads now.
+
+![A curve on the Bass track's Key steps: 16 bars drawn, bars 5 to 8 play, a ramp from bar 13](images/curve-pane.png)
 
 **Moved notes.** When the shown playhead plays notes at another pitch (its Invert, or a Transpose in its own chain,
 and the curves on them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's
@@ -214,9 +230,9 @@ on the track can join the same Motion device.
 
 **Its knobs.** **Pitch** (steps, in the key unless **In key** is off), **Time** (a delay in 1/16 steps), **Length**
 and **Velocity**. To make them change, click a knob's name: its curve opens in the lower pane (see
-[Modulators](#modulators)). A curve that **Counts in: Passes** takes one value each pass of the clip, so "up one step a
-pass for four passes, then back" is four points. Right-click a knob for **Drift per pass**, a ready-made version of
-that. Any modulator or automation lane can move these knobs too.
+[Modulators](#modulators)). For one value each pass of the clip ("up one step a pass for four passes, then back"),
+right-click a knob for **Drift per pass**: a **Steps** modulator set to **Per pass**, one step each pass. Any modulator
+or automation lane can move these knobs too.
 
 **Seeing it.** A note a Motion moves shows where it plays, in the Motion's colour: the written note turns see-through
 with a dashed outline, a thin line runs from its middle (a dot) to the middle of the note where it sounds, and that
@@ -258,15 +274,14 @@ top chooses where it lives:
 | **Ramp** | Rises or falls over several bars: builds and fades. | Length (bars), Direction, Then (Hold or Loop), Curve. |
 | **Macro** | One knob you turn (or automate) that moves many knobs at once. | Value. |
 | **Note** | Follows the last note. | Follows (Velocity, Pitch, Release, Timbre, Pressure), Smooth. |
-| **Curve** | A shape you draw that repeats, like an LFO you draw yourself. | Counts in (Time or Passes). |
+| **Curve** | A shape you draw, of any length; the part its segment marks plays and repeats. | None: Length and the segment sit over the drawing. |
 
-**Curve** opens its shape in the piano roll's lower pane, under the notes it moves: click its row, or pick it in the
-lower pane's menu under **Curves**. It always runs with the song, from its start. **Counts in: Time**: one cycle
-lasts as long as the bar over the curve, on the grid; drag the bar's right grip. **Counts in: Passes**: the curve takes
-one value each pass of the clip, drawn as one step a pass across the pane, and the bar says how many passes before it
-starts again. For a wave that runs at its own speed in Hz, use an **LFO**. The curve's middle line means "no
-change": above it moves its knobs up, below it moves them down, by the amount on each knob. Up and down are labelled
-in the units of the first knob it moves.
+**Curve** opens its drawing in the piano roll's lower pane: click its row, or pick it in the lower pane's menu under
+**Curves**. It plays the part of the drawing its segment marks, from when its track's clip starts, round and round
+(a song modulator counts from the song's start). The pane works as described under [Curves](#playheads) above. For a
+wave that runs at its own speed in Hz, use an **LFO**. The dashed line means "no change": above it moves the setting
+up, below it down. Up and down are the values of the first setting it moves, which it turns all the way (its row in
+**Moves** says **as drawn**, with no amount); other settings it moves follow by their own amounts.
 
 Each row in the list shows the modulator's colour, its name, where it lives, a small live graph, and a **↗** arrow.
 Click a row to open its settings:

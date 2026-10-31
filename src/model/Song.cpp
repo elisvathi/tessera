@@ -330,17 +330,23 @@ void normalizeModulators(std::vector<Modulator>& mods, size_t limit, IdRepair& i
         for (float& v : m.steps)
             v = std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f;
         if (m.type == ModulatorType::Curve) {
-            m.length = m.length > 0 ? std::max<Tick>(kPpq / 4, m.length) : 4 * kPpq;
+            m.length = m.length > 0 ? std::clamp<Tick>(m.length, kPpq / 4, kMaxCurveLength) : 4 * kPpq;
             for (AutoPoint& pt : m.points) {
                 pt.value = std::isfinite(pt.value) ? std::clamp(pt.value, 0.f, 1.f) : 0.5f;
                 clampValue(pt.tension, -1.f, 1.f);
-                pt.t = std::clamp<Tick>(pt.t, 0, m.length);
+                pt.t = std::clamp<Tick>(pt.t, 0, kMaxCurveLength);
             }
             std::stable_sort(m.points.begin(), m.points.end(),
                              [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+            // A segment that isn't one (none saved) plays the whole drawing.
+            if (m.segmentEnd <= m.segmentStart || m.segmentEnd > m.length || m.segmentStart < 0) {
+                m.segmentStart = 0;
+                m.segmentEnd = m.length;
+            }
         } else {
             m.length = 0;
             m.points.clear();
+            m.segmentStart = m.segmentEnd = 0;
         }
         if (m.routes.size() > size_t(kMaxRoutes))
             m.routes.resize(kMaxRoutes);

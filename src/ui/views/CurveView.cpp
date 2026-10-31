@@ -2,12 +2,12 @@
 
 #include "../../model/Arrangement.hpp"
 #include "../../model/Automation.hpp"
-#include "../../model/DeviceCommands.hpp"
 #include "../../model/DeviceLookup.hpp"
 #include "../../model/Modulators.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/DeviceActions.hpp"
+#include "../interaction/Navigation.hpp"
 #include "../widgets/Draw.hpp"
 #include "PianoRoll.hpp"
 #include "TimelineDraw.hpp"
@@ -24,6 +24,9 @@ namespace {
 
 constexpr float kPad = 6;
 constexpr float kHit = 6;
+constexpr float kGripHit = 8;
+constexpr int kRowsEachWay = 7;    // rows shown either side of the knob as set, when a curve opens
+constexpr float kRulerLabels = 12; // the ruler's top row, with the positions; the segment is under it
 
 bool discrete(const devices::ParamInfo& info) {
     using K = devices::ParamInfo::Kind;
@@ -45,7 +48,10 @@ std::vector<float> stepsOf(const devices::ParamInfo& info) {
     return out;
 }
 
-/// Ready shapes, over the cycle and across the whole height: (place in the cycle, value) pairs.
+/// Whether a point is a Step (holds until the next point) rather than a Ramp.
+bool isStep(const AutoPoint& p) { return p.curve == CurveType::Hold; }
+
+/// Ready shapes, over the segment and across the rows shown: (place in the segment, value) pairs.
 struct Shape {
     const char* name;
     std::vector<std::pair<double, float>> points;
@@ -54,82 +60,87 @@ struct Shape {
 const Shape kShapes[] = {{"Rise", {{0, 0}, {1, 1}}, CurveType::Linear},
                          {"Fall", {{0, 1}, {1, 0}}, CurveType::Linear},
                          {"Up and down", {{0, 0.5f}, {0.25, 1}, {0.75, 0}, {1, 0.5f}}, CurveType::Linear},
-                         {"Two steps", {{0, 0.5f}, {0.5, 1}, {1, 1}}, CurveType::Hold}};
+                         {"Two steps", {{0, 0.5f}, {0.5, 1}}, CurveType::Hold}};
 
-/// Dragging a point, or the length bar's end. One undo step on release.
+/// Dragging a point, or an end of the segment, or the whole segment. One undo step on release.
 class CurveDrag : public DragGesture {
   public:
-    enum class Mode { Point, Length };
-    CurveDrag(CurveView& view, std::vector<AutoPoint> points, Tick length, Mode mode, int index, double cycleBase)
-        : view(view), points(std::move(points)), length(length), mode(mode), index(index), cycleBase(cycleBase) {
-        view.preview = std::make_pair(this->points, length);
+    enum class Mode { Point, SegmentStart, SegmentEnd, Segment };
+    CurveDrag(CurveView& view, CurveDrawing drawing, Mode mode, int index, double grabbed)
+        : view(view), drawing(std::move(drawing)), start(this->drawing), mode(mode), index(index), grabbed(grabbed) {
+        view.preview = this->drawing;
     }
     void update(Vec pos, Modifiers mods) override {
         Tick snap = mods.alt ? 1 : view.snap();
-        if (mode == Mode::Length) {
-            double t = view.tAt(pos.x) - view.spanStart();
-            Tick old = length;
-            length = std::max<Tick>(snap, Tick(std::llround(t / double(snap))) * snap);
-            // The shape stretches with its cycle, so a longer cycle plays the same shape slower. Per pass, points
-            // stay on their passes: the cycle just gains or loses passes.
-            if (!view.perPass())
-                for (AutoPoint& p : points)
-                    p.t = Tick(std::llround(double(p.t) * double(length) / double(std::max<Tick>(1, old))));
-            else
-                for (AutoPoint& p : points)
-                    p.t = std::min(p.t, length);
-        } else {
-            double t = view.tAt(pos.x) - view.spanStart() - cycleBase;
-            Tick at = Tick(std::llround(t / double(snap))) * snap;
+        double t = view.tAt(pos.x);
+        auto snapped = [&](double v) { return Tick(std::llround(v / double(snap))) * snap; };
+        Tick shortest = std::max<Tick>(snap, kPpq / 4);
+        switch (mode) {
+        case Mode::Point: {
             // A point stays between its neighbours, so dragging never reorders the curve.
-            Tick lo = index > 0 ? points[size_t(index) - 1].t : 0;
-            Tick hi = index + 1 < int(points.size()) ? points[size_t(index) + 1].t : length;
-            points[size_t(index)].t = std::clamp(at, lo, hi);
-            points[size_t(index)].value = view.valueAt(pos.y, mods.alt);
+            Tick lo = index > 0 ? drawing.points[size_t(index) - 1].t : 0;
+            Tick hi = index + 1 < int(drawing.points.size()) ? drawing.points[size_t(index) + 1].t : kMaxCurveLength;
+            drawing.points[size_t(index)].t = std::clamp(snapped(t), lo, hi);
+            drawing.points[size_t(index)].value = view.valueAt(pos.y, mods.alt);
+            break;
         }
-        view.preview = std::make_pair(points, length);
+        case Mode::SegmentStart:
+            drawing.segmentStart = std::clamp(snapped(t), Tick(0), start.segmentEnd - shortest);
+            break;
+        case Mode::SegmentEnd:
+            drawing.segmentEnd = std::clamp(snapped(t), start.segmentStart + shortest, start.length);
+            break;
+        case Mode::Segment: {
+            Tick span = start.segmentEnd - start.segmentStart;
+            Tick from = std::clamp(start.segmentStart + snapped(t - grabbed), Tick(0), start.length - span);
+            drawing.segmentStart = from;
+            drawing.segmentEnd = from + span;
+            break;
+        }
+        }
+        view.preview = drawing;
         moved = true;
     }
     void commit() override {
         view.preview.reset();
         if (moved || fresh)
-            view.commit(length, points);
+            view.commit(drawing);
     }
     void cancel() override { view.preview.reset(); }
     std::string readout() const override {
-        if (mode == Mode::Length)
-            return "Repeats every " + view.lengthLabel(length);
-        return view.format(points[size_t(index)].value);
+        if (mode == Mode::Point)
+            return view.format(drawing.points[size_t(index)].value);
+        return "Plays " + view.lengthLabel(drawing.segmentEnd - drawing.segmentStart) + ", from " +
+               timeline::positionText(double(drawing.segmentStart),
+                                      view.module() ? view.module()->song().timeSig : TimeSig());
     }
-    CursorShape cursor() const override { return mode == Mode::Length ? CursorShape::ResizeH : CursorShape::Move; }
+    CursorShape cursor() const override { return mode == Mode::Point ? CursorShape::Move : CursorShape::ResizeH; }
     bool fresh = false;
 
   private:
     CurveView& view;
-    std::vector<AutoPoint> points;
-    Tick length;
+    CurveDrawing drawing;
+    CurveDrawing start;
     Mode mode;
     int index;
-    double cycleBase;
+    double grabbed; // Segment: where in the drawing the press was
     bool moved = false;
 };
 
 } // namespace
 
-const Modulator* CurveView::modulator() {
+const Modulator* CurveView::modulator(ModulatorPlace* place) {
     TesseraModule* m = ctx.module();
     if (!m || !ctx.curveModulator)
         return nullptr;
-    const Modulator* mod = findModulator(m->song(), ModulatorId(ctx.curveModulator));
+    const Modulator* mod = findModulator(m->song(), ModulatorId(ctx.curveModulator), place);
     return mod && mod->type == ModulatorType::Curve ? mod : nullptr;
 }
 
 ParamRef CurveView::target() {
     if (const Modulator* mod = modulator()) {
-        for (const Modulation& r : mod->routes)
-            if (r.kind == Modulation::Kind::Param)
-                return r.target;
-        return ParamRef();
+        int r = mods::drawnRoute(*mod);
+        return r >= 0 ? mod->routes[size_t(r)].target : ParamRef();
     }
     return ctx.curveTarget;
 }
@@ -146,20 +157,18 @@ const devices::ParamInfo* CurveView::targetInfo(float* base, float* amount) {
     if (base)
         *base = *value;
     if (amount) {
-        *amount = curveAmount(*info);
+        *amount = 1;
         if (const Modulator* mod = modulator())
-            for (const Modulation& r : mod->routes)
-                if (r.kind == Modulation::Kind::Param && r.target == ref) {
-                    *amount = r.amount;
-                    break;
-                }
+            if (int r = mods::drawnRoute(*mod); r >= 0)
+                *amount = mod->routes[size_t(r)].amount;
     }
     return info;
 }
 
-bool CurveView::perPass() {
-    const Modulator* mod = modulator();
-    return mod && mods::perPass(mod->type, mod->params.data());
+bool CurveView::stepped() {
+    float amount = 1;
+    const devices::ParamInfo* info = targetInfo(nullptr, &amount);
+    return info && discrete(*info) && std::fabs(amount) > 1e-4f;
 }
 
 bool CurveView::hasCurve() { return modulator() || (ctx.curveTarget.valid() && targetInfo()); }
@@ -172,8 +181,6 @@ std::string CurveView::title() {
 }
 
 double CurveView::spanStart() {
-    if (perPass())
-        return 0;
     const Clip* c = owner.clip();
     const Track* t = owner.track();
     if (!c || !t)
@@ -181,22 +188,25 @@ double CurveView::spanStart() {
     return double(clipSpan(*c, t->type == TrackType::Drum ? &t->drumLanes : nullptr).start);
 }
 
-std::pair<std::vector<AutoPoint>, Tick> CurveView::shown() {
+CurveDrawing CurveView::shown() {
     if (preview)
         return *preview;
     if (const Modulator* mod = modulator())
-        return {mod->points, mod->length};
-    // A new curve lasts as long as the clip, so its first cycle sits under the notes.
+        return {mod->length, mod->points, mod->segmentStart, mod->segmentEnd};
+    // A new curve is as long as the clip (whole bars), so it first sits under the notes.
+    Tick bar = std::max<Tick>(1, ticksPerBar(owner.timeSig()));
     const Clip* clip = owner.clip();
-    return {{}, clip ? std::max<Tick>(kPpq, clip->playEnd() - clip->playStart()) : 4 * kPpq};
+    Tick span = clip ? std::max<Tick>(kPpq, clip->playEnd() - clip->playStart()) : bar;
+    Tick length = std::max<Tick>(1, (span + bar - 1) / bar) * bar;
+    return {length, {}, 0, length};
 }
 
-void CurveView::commit(Tick length, std::vector<AutoPoint> points) {
+void CurveView::commit(CurveDrawing drawing) {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
     if (const Modulator* mod = modulator()) {
-        m->perform(setCurve(m->song(), mod->id, length, std::move(points)));
+        m->perform(setCurve(m->song(), mod->id, std::move(drawing)));
         return;
     }
     const Track* t = owner.track();
@@ -205,52 +215,75 @@ void CurveView::commit(Tick length, std::vector<AutoPoint> points) {
         return;
     // Named after what it moves: "Melody Rate", "Echo Time".
     std::string name = deviceActions::paramName(m->song(), ref);
-    for (size_t at = name.find(" \u00b7 "); at != std::string::npos; at = name.find(" \u00b7 "))
-        name.replace(at, std::string(" \u00b7 ").size(), " ");
+    for (size_t at = name.find(" · "); at != std::string::npos; at = name.find(" · "))
+        name.replace(at, std::string(" · ").size(), " ");
     if (ref.kind == ParamRef::Kind::Playhead)
         if (const Playhead* p = findPlayhead(m->song(), PlayheadId(ref.owner)))
             if (const devices::ParamInfo* info = devices::playheadParamInfo(ref.param))
                 name = p->name + " " + info->name;
     ModulatorId added;
-    const devices::ParamInfo* info = targetInfo();
-    CommandPtr add = animateWithCurve(m->song(), t->id, ref, name, length, std::move(points), m->ids(), &added,
-                                      info ? curveAmount(*info) : 1.f);
+    CommandPtr add = animateWithCurve(m->song(), t->id, ref, name, std::move(drawing), m->ids(), &added);
     if (!add) {
         ctx.toast("This track has no room for another modulator");
         return;
     }
     m->perform(std::move(add));
     deviceActions::showCurve(ctx, added);
+    // The new modulator is the same curve: keep the view where it is.
+    fittedModulator = added.value;
 }
 
-float CurveView::xOf(double t) {
-    if (perPass())
-        return kPassLeft + float(t / double(mods::kPassTicks)) * kPassWidth;
-    return float(owner.viewport.time.tickToX(t));
-}
+float CurveView::xOf(double t) { return left + float(time.tickToX(t)); }
 
-double CurveView::tAt(float x) {
-    if (perPass())
-        return double(x - kPassLeft) / double(kPassWidth) * double(mods::kPassTicks);
-    return owner.viewport.time.xToTick(x);
-}
+double CurveView::tAt(float x) { return time.xToTick(x - left); }
 
 float CurveView::yOf(float value) const {
-    float top = kHead + kBar + kPad, bottom = box.size.y - kPad;
-    return bottom - value * (bottom - top);
+    float top = kHead + kBar + kPad, bottom = std::max(top + 1, box.size.y - kPad);
+    return bottom - (value - low) / std::max(1e-6f, high - low) * (bottom - top);
+}
+
+std::pair<float, float> CurveView::reachable() {
+    float base = 0, amount = 1;
+    if (!targetInfo(&base, &amount) || std::fabs(amount) < 1e-4f)
+        return {0, 1};
+    // The setting reads base + amount * (2v - 1), kept in 0..1.
+    float a = 0.5f - base / (2 * amount), b = 0.5f + (1 - base) / (2 * amount);
+    if (a > b)
+        std::swap(a, b);
+    return {std::clamp(a, 0.f, 1.f), std::clamp(b, 0.f, 1.f)};
+}
+
+std::vector<float> CurveView::rowValues() {
+    float base = 0, amount = 1;
+    const devices::ParamInfo* info = targetInfo(&base, &amount);
+    std::vector<float> rows;
+    if (!info || !discrete(*info) || std::fabs(amount) < 1e-4f)
+        return rows;
+    for (float d : stepsOf(*info)) {
+        float v = ((devices::normalize(*info, d) - base) / amount + 1) / 2;
+        if (v >= -1e-4f && v <= 1 + 1e-4f)
+            rows.push_back(std::clamp(v, 0.f, 1.f));
+    }
+    std::sort(rows.begin(), rows.end());
+    return rows;
+}
+
+float CurveView::heard(float v) {
+    float base = 0, amount = 1;
+    const devices::ParamInfo* info = targetInfo(&base, &amount);
+    if (!info || !discrete(*info) || std::fabs(amount) < 1e-4f)
+        return v;
+    float n = std::clamp(base + amount * (2 * v - 1), 0.f, 1.f);
+    float snapped = devices::normalize(*info, std::round(devices::display(*info, n)));
+    return std::clamp(((snapped - base) / amount + 1) / 2, 0.f, 1.f);
 }
 
 float CurveView::valueAt(float y, bool free) {
-    float top = kHead + kBar + kPad, bottom = box.size.y - kPad;
-    float v = std::clamp((bottom - y) / std::max(1.f, bottom - top), 0.f, 1.f);
-    float base = 0, amount = 1;
-    const devices::ParamInfo* info = targetInfo(&base, &amount);
-    if (free || !info || !discrete(*info) || std::fabs(amount) < 1e-4f)
-        return v;
-    // Onto the nearest of the setting's steps.
-    float n = std::clamp(base + amount * (2 * v - 1), 0.f, 1.f);
-    float stepped = devices::normalize(*info, std::round(devices::display(*info, n)));
-    return std::clamp(((stepped - base) / amount + 1) / 2, 0.f, 1.f);
+    float top = kHead + kBar + kPad, bottom = std::max(top + 1, box.size.y - kPad);
+    float v = low + (bottom - y) / std::max(1.f, bottom - top) * (high - low);
+    auto [a, b] = reachable();
+    v = std::clamp(v, a, b);
+    return free ? v : heard(v);
 }
 
 std::string CurveView::format(float v) {
@@ -261,68 +294,189 @@ std::string CurveView::format(float v) {
     return devices::format(*info, std::clamp(base + amount * (2 * v - 1), 0.f, 1.f));
 }
 
-Tick CurveView::snap() { return perPass() ? mods::kPassTicks : std::clamp<Tick>(owner.snapStep(), 1, kPpq); }
+Tick CurveView::snap() { return std::clamp<Tick>(owner.snapStep(), 1, kPpq); }
+
+CurveType CurveView::kindAt(const std::vector<AutoPoint>& points, Tick t) {
+    const AutoPoint* before = nullptr;
+    for (const AutoPoint& p : points)
+        if (p.t <= t)
+            before = &p;
+    if (before)
+        return isStep(*before) ? CurveType::Hold : CurveType::Linear;
+    return stepped() ? CurveType::Hold : CurveType::Linear;
+}
 
 int CurveView::pointAt(Vec pos) {
-    auto [points, length] = shown();
-    if (length <= 0)
-        return -1;
-    double t = tAt(pos.x) - spanStart();
-    double base = std::floor(t / double(length)) * double(length);
-    for (size_t i = 0; i < points.size(); i++) {
-        float x = xOf(spanStart() + base + double(points[i].t));
-        if (std::fabs(x - pos.x) <= kHit && std::fabs(yOf(points[i].value) - pos.y) <= kHit)
+    CurveDrawing d = shown();
+    for (size_t i = 0; i < d.points.size(); i++)
+        if (std::fabs(xOf(double(d.points[i].t)) - pos.x) <= kHit && std::fabs(yOf(d.points[i].value) - pos.y) <= kHit)
             return int(i);
-    }
     return -1;
+}
+
+void CurveView::fit() {
+    CurveDrawing d = shown();
+    // Across: the piano roll's zoom, with the segment's start under the clip's start, as it plays.
+    time.setZoom(owner.viewport.time.pxPerTick(), 0);
+    time.scrollTo(double(d.segmentStart) + owner.viewport.time.left() - spanStart());
+    // Up and down: about seven rows either side of the knob as set, or the whole range it can reach.
+    auto [a, b] = reachable();
+    low = a;
+    high = b;
+    std::vector<float> rows = rowValues();
+    if (rows.size() > size_t(2 * kRowsEachWay + 1)) {
+        int middle = int(std::min_element(rows.begin(), rows.end(),
+                                          [](float x, float y) { return std::fabs(x - 0.5f) < std::fabs(y - 0.5f); }) -
+                         rows.begin());
+        int first = std::clamp(middle - kRowsEachWay, 0, int(rows.size()) - (2 * kRowsEachWay + 1));
+        float half = (rows[1] - rows[0]) / 2;
+        low = rows[size_t(first)] - half;
+        high = rows[size_t(first + 2 * kRowsEachWay)] + half;
+    } else if (rows.size() > 1) {
+        float half = (rows[1] - rows[0]) / 2;
+        low = rows.front() - half;
+        high = rows.back() + half;
+    }
+}
+
+void CurveView::fitAll() {
+    CurveDrawing d = shown();
+    time.showRange(0, double(d.length));
+}
+
+void CurveView::zoomValues(float y, float factor) {
+    auto [a, b] = reachable();
+    std::vector<float> rows = rowValues();
+    float half = rows.size() > 1 ? (rows[1] - rows[0]) / 2 : 0;
+    float lo = a - half, hi = b + half;
+    float smallest = rows.size() > 1 ? 6 * half : 0.02f; // three rows, or 2% of the range
+    float at = valueAt(y, true);
+    float span = std::clamp((high - low) / factor, smallest, hi - lo);
+    float k = (at - low) / std::max(1e-6f, high - low);
+    low = at - k * span;
+    high = low + span;
+    if (low < lo) {
+        high += lo - low;
+        low = lo;
+    }
+    if (high > hi) {
+        low -= high - hi;
+        high = hi;
+    }
+}
+
+void CurveView::scrollValues(float dy) {
+    auto [a, b] = reachable();
+    std::vector<float> rows = rowValues();
+    float half = rows.size() > 1 ? (rows[1] - rows[0]) / 2 : 0;
+    float lo = a - half, hi = b + half;
+    float body = std::max(1.f, box.size.y - kHead - kBar - 2 * kPad);
+    float shift = dy / body * (high - low);
+    shift = std::clamp(shift, lo - low, hi - high);
+    low += shift;
+    high += shift;
+}
+
+void CurveView::step() {
+    CurveDrawing d = shown();
+    double width = std::max(1.f, box.size.x - left);
+    time.setViewWidth(width);
+    time.setZoomLimits(width / (double(kMaxCurveLength) * 1.1), width / double(kPpq / 4));
+    time.setContentEnd(double(std::max(d.length, d.segmentEnd)) * 1.1 + double(ticksPerBar(owner.timeSig())));
+    // A different curve (or a new setting waiting for one) opens lined up under the notes.
+    uint64_t id = modulator() ? modulator()->id.value : 0;
+    ParamRef ref = target();
+    if (hasCurve() && visible && (!fitted || id != fittedModulator || !(ref == fittedTarget))) {
+        fit();
+        fitted = true;
+        fittedModulator = id;
+        fittedTarget = ref;
+    }
+    InteractiveView::step();
+}
+
+double CurveView::sinceClipStart() {
+    TesseraModule* m = ctx.module();
+    ModulatorPlace place;
+    const Modulator* mod = modulator(&place);
+    if (!m || !m->playing())
+        return NAN;
+    double song = m->playheadTicks();
+    if (mod && place.level == ModLevel::Song)
+        return song;
+    const Track* track = m->song().findTrack(mod ? place.track : owner.track() ? owner.track()->id : TrackId());
+    if (!track)
+        return NAN;
+    LauncherStatus status = m->launcherStatus(track->id);
+    if (status.playing >= 0 && std::isfinite(status.elapsed))
+        return status.elapsed;
+    if (m->playMode() == PlayMode::Arranger && !status.overridden)
+        if (const ArrangerClip* a = instanceAt(*track, Tick(song)); a && !a->muted)
+            return song - double(a->position);
+    return NAN;
 }
 
 std::unique_ptr<DragGesture> CurveView::startGesture(Vec pos, int button, Modifiers mods) {
     if (button != GLFW_MOUSE_BUTTON_LEFT || !hasCurve())
         return nullptr;
-    auto [points, length] = shown();
+    CurveDrawing d = shown();
     if (pos.y < kHead) // the header's buttons act on click
         return nullptr;
     if (pos.y < kHead + kBar) {
-        // Only the bar's right grip is a handle: the cycle always starts with the song.
-        if (std::fabs(pos.x - xOf(spanStart() + double(length))) > 8)
+        float x0 = xOf(double(d.segmentStart)), x1 = xOf(double(d.segmentEnd));
+        if (pos.y < kHead + kRulerLabels)
             return nullptr;
-        return std::make_unique<CurveDrag>(*this, points, length, CurveDrag::Mode::Length, -1, 0);
-    }
-    double t = tAt(pos.x) - spanStart();
-    if (t < 0)
+        if (std::fabs(pos.x - x0) <= kGripHit)
+            return std::make_unique<CurveDrag>(*this, d, CurveDrag::Mode::SegmentStart, -1, 0);
+        if (std::fabs(pos.x - x1) <= kGripHit)
+            return std::make_unique<CurveDrag>(*this, d, CurveDrag::Mode::SegmentEnd, -1, 0);
+        if (pos.x > x0 && pos.x < x1)
+            return std::make_unique<CurveDrag>(*this, d, CurveDrag::Mode::Segment, -1, tAt(pos.x));
         return nullptr;
-    double base = std::floor(t / double(length)) * double(length);
+    }
+    if (pos.x < left) // the row labels
+        return nullptr;
+    double t = tAt(pos.x);
     int index = pointAt(pos);
     bool fresh = index < 0;
     if (fresh) {
+        if (t < 0 || t > double(kMaxCurveLength))
+            return nullptr;
+        Tick at = std::clamp<Tick>(Tick(std::llround(t / double(snap()))) * snap(), 0, kMaxCurveLength);
         // The first point keeps the setting where it is: the curve starts from no change.
-        if (points.empty())
-            points.push_back({0, 0.5f, CurveType::Linear, 0});
-        Tick at = Tick(std::llround((t - base) / double(snap()))) * snap();
-        AutoPoint pt{std::clamp<Tick>(at, 0, length), valueAt(pos.y, mods.alt), CurveType::Linear, 0};
-        auto it =
-            std::upper_bound(points.begin(), points.end(), pt.t, [](Tick v, const AutoPoint& q) { return v < q.t; });
-        index = int(it - points.begin());
-        points.insert(it, pt);
+        if (d.points.empty() && at > 0)
+            d.points.push_back({0, 0.5f, kindAt(d.points, 0), 0});
+        AutoPoint pt{at, valueAt(pos.y, mods.alt), kindAt(d.points, at), 0};
+        auto it = std::upper_bound(d.points.begin(), d.points.end(), pt.t,
+                                   [](Tick v, const AutoPoint& q) { return v < q.t; });
+        index = int(it - d.points.begin());
+        d.points.insert(it, pt);
     }
-    auto drag = std::make_unique<CurveDrag>(*this, points, length, CurveDrag::Mode::Point, index, base);
+    auto drag = std::make_unique<CurveDrag>(*this, d, CurveDrag::Mode::Point, index, 0);
     drag->fresh = fresh;
     return drag;
 }
 
 void CurveView::doubleClick(Vec pos, Modifiers mods) {
+    if (pos.y >= kHead && pos.y < kHead + kBar) {
+        fitAll();
+        return;
+    }
     int index = pointAt(pos);
     if (index < 0 || !modulator())
         return;
-    auto [points, length] = shown();
-    points.erase(points.begin() + index);
-    commit(length, points);
+    CurveDrawing d = shown();
+    d.points.erase(d.points.begin() + index);
+    commit(d);
 }
 
 void CurveView::click(Vec pos, int button, Modifiers mods) {
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        openMenu();
+        int index = pos.y >= kHead + kBar ? pointAt(pos) : -1;
+        if (index >= 0 && modulator())
+            openPointMenu(index);
+        else
+            openMenu();
         return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT)
@@ -331,9 +485,8 @@ void CurveView::click(Vec pos, int button, Modifiers mods) {
         if (!part.rect.contains(pos))
             continue;
         switch (part.kind) {
-        case HeaderPart::Kind::Time:
-        case HeaderPart::Kind::Passes:
-            setCounting(part.kind == HeaderPart::Kind::Passes);
+        case HeaderPart::Kind::Length:
+            openLengthMenu();
             break;
         case HeaderPart::Kind::Shape:
             applyShape(part.shape);
@@ -348,17 +501,24 @@ void CurveView::click(Vec pos, int button, Modifiers mods) {
     }
 }
 
+void CurveView::wheel(Vec pos, Vec delta, Modifiers mods) {
+    ctx.touchNavigation();
+    if (mods.ctrl)
+        time.zoomAt(pos.x - left, wheelZoomFactor(delta.y));
+    else if (mods.alt)
+        zoomValues(pos.y, float(wheelZoomFactor(delta.y)));
+    else if (mods.shift || std::fabs(delta.x) > std::fabs(delta.y))
+        time.scrollByPx(-(delta.y + delta.x));
+    else
+        scrollValues(delta.y);
+}
+
 std::vector<CurveView::HeaderPart> CurveView::headerParts() {
     std::vector<HeaderPart> parts;
-    float x = kPad;
     float y = 3, h = kHead - 6;
-    if (modulator()) {
-        x += 64; // "Counts in"
-        parts.push_back({HeaderPart::Kind::Time, Rect(x, y, 44, h)});
-        parts.push_back({HeaderPart::Kind::Passes, Rect(x + 44, y, 52, h)});
-        x += 96 + 24;
-    }
-    x += 46; // "Shapes"
+    float x = left + kPad + 44; // "Length"
+    parts.push_back({HeaderPart::Kind::Length, Rect(x, y, 70, h)});
+    x += 70 + 16 + 46; // "Shapes"
     for (int i = 0; i < int(std::size(kShapes)); i++)
         parts.push_back({HeaderPart::Kind::Shape, Rect(x + float(i) * 30, y, 26, h), i});
     if (modulator())
@@ -366,55 +526,83 @@ std::vector<CurveView::HeaderPart> CurveView::headerParts() {
     return parts;
 }
 
-void CurveView::setCounting(bool passes) {
-    TesseraModule* m = ctx.module();
-    const Modulator* mod = modulator();
-    if (!m || !mod || passes == perPass())
-        return;
-    ParamRef counts{ParamRef::Kind::Modulator, mod->id.value, uint16_t(mods::knob::kCurvePerPass)};
-    // Made step by step on a copy: each command sees what the one before did.
-    Song work = m->song();
-    auto all = std::make_unique<CompoundCommand>(std::string(passes ? "Count " : "Time ") + mod->name +
-                                                 (passes ? " in passes" : " by the bar"));
-    auto step = [&](CommandPtr command) {
-        if (command)
-            command->apply(work);
-        all->add(std::move(command));
-    };
-    step(setParam(work, counts, passes ? 1.f : 0.f));
-    // The drawing keeps its look over the new cycle: 4 passes, or the clip.
-    Tick clipLength = std::max<Tick>(kPpq, owner.clip() ? owner.clip()->playEnd() - owner.clip()->playStart() : 0);
-    Tick length = passes ? 4 * mods::kPassTicks : clipLength;
-    std::vector<AutoPoint> points = mod->points;
-    for (AutoPoint& p : points)
-        p.t = Tick(std::llround(double(p.t) * double(length) / double(std::max<Tick>(1, mod->length))));
-    step(setCurve(work, mod->id, length, points));
-    m->perform(std::move(all));
-}
-
 void CurveView::applyShape(int index) {
     if (index < 0 || index >= int(std::size(kShapes)))
         return;
-    Tick length = shown().second;
-    std::vector<AutoPoint> points;
+    CurveDrawing d = shown();
+    // Across the segment that plays, from the lowest row shown to the highest.
+    double from = double(d.segmentStart), span = double(d.segmentEnd - d.segmentStart);
+    float lo = std::max(low, reachable().first), hi = std::min(high, reachable().second);
+    d.points.clear();
     for (auto [at, v] : kShapes[index].points)
-        points.push_back({Tick(at * double(length)), v, kShapes[index].curve, 0});
-    commit(length, points);
+        d.points.push_back({Tick(std::llround(from + at * span)), heard(lo + v * (hi - lo)), kShapes[index].curve, 0});
+    commit(d);
+}
+
+void CurveView::setLength(Tick length) {
+    CurveDrawing d = shown();
+    // A segment playing the whole drawing keeps doing so; any other stays where it is (cut to fit).
+    bool whole = d.segmentStart == 0 && d.segmentEnd == d.length;
+    d.length = length;
+    if (whole)
+        d.segmentEnd = length;
+    commit(d);
 }
 
 std::string CurveView::lengthLabel(Tick length) {
     auto plural = [](Tick n, const char* one, const char* many) {
         return std::to_string(n) + " " + (n == 1 ? one : many);
     };
-    if (perPass())
-        return plural(std::max<Tick>(1, Tick(std::llround(double(length) / double(mods::kPassTicks)))), "pass",
-                      "passes");
     Tick bar = ticksPerBar(owner.timeSig());
     if (bar > 0 && length % bar == 0)
         return plural(length / bar, "bar", "bars");
     if (length % kPpq == 0)
         return plural(length / kPpq, "beat", "beats");
-    return plural(std::max<Tick>(1, length / (kPpq / 4)), "step", "steps");
+    return plural(std::max<Tick>(1, length / (kPpq / 4)), "sixteenth", "sixteenths");
+}
+
+void CurveView::openLengthMenu() {
+    CurveView* view = this;
+    Tick bar = std::max<Tick>(1, ticksPerBar(owner.timeSig()));
+    Tick now = shown().length;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("How long the drawing is"));
+    for (int bars : {1, 2, 4, 8, 16, 32, 64, 128, 256}) {
+        Tick length = std::min<Tick>(kMaxCurveLength, Tick(bars) * bar);
+        menu->addChild(rack::createCheckMenuItem(
+            lengthLabel(length), "", [=] { return now == length; }, [view, length] { view->setLength(length); }));
+    }
+    menu->addChild(rack::createMenuLabel("The segment on the ruler says which part plays"));
+}
+
+void CurveView::openPointMenu(int index) {
+    CurveView* view = this;
+    CurveDrawing d = shown();
+    if (index < 0 || index >= int(d.points.size()))
+        return;
+    bool step = isStep(d.points[size_t(index)]);
+    auto setKind = [view, index](CurveType kind) {
+        CurveDrawing now = view->shown();
+        if (index >= int(now.points.size()))
+            return;
+        now.points[size_t(index)].curve = kind;
+        now.points[size_t(index)].tension = 0;
+        view->commit(now);
+    };
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(format(d.points[size_t(index)].value)));
+    menu->addChild(rack::createCheckMenuItem(
+        "Step", "holds until the next point", [step] { return step; }, [setKind] { setKind(CurveType::Hold); }));
+    menu->addChild(rack::createCheckMenuItem(
+        "Ramp", "glides to the next point", [step] { return !step; }, [setKind] { setKind(CurveType::Linear); }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuItem("Delete point", "", [view, index] {
+        CurveDrawing now = view->shown();
+        if (index < int(now.points.size())) {
+            now.points.erase(now.points.begin() + index);
+            view->commit(now);
+        }
+    }));
 }
 
 void CurveView::openMenu() {
@@ -428,6 +616,8 @@ void CurveView::openMenu() {
         for (int i = 0; i < int(std::size(kShapes)); i++)
             sub->addChild(rack::createMenuItem(kShapes[i].name, "", [view, i] { view->applyShape(i); }));
     }));
+    menu->addChild(rack::createMenuItem("Show the whole drawing", "", [view] { view->fitAll(); }));
+    menu->addChild(rack::createMenuItem("Line up under the notes", "", [view] { view->fit(); }));
     if (const Modulator* mod = modulator()) {
         ModulatorId id = mod->id;
         menu->addChild(rack::createMenuItem("Remove curve", "", [c, id] {
@@ -436,6 +626,8 @@ void CurveView::openMenu() {
         }));
     }
     menu->addChild(rack::createMenuLabel("Click to add a point, double-click to delete; Alt: off the grid"));
+    menu->addChild(rack::createMenuLabel("Right-click a point: Step or Ramp"));
+    menu->addChild(rack::createMenuLabel("Ctrl+wheel zooms across, Alt+wheel up and down"));
 }
 
 CursorShape CurveView::hoverCursor(Vec pos, Modifiers mods) {
@@ -447,35 +639,49 @@ CursorShape CurveView::hoverCursor(Vec pos, Modifiers mods) {
                 return CursorShape::Hand;
         return CursorShape::Arrow;
     }
-    if (pos.y < kHead + kBar)
-        return std::fabs(pos.x - xOf(spanStart() + double(shown().second))) <= 8 ? CursorShape::ResizeH
-                                                                                 : CursorShape::Arrow;
-    return pointAt(pos) >= 0 ? CursorShape::Move : CursorShape::Crosshair;
+    if (pos.y < kHead + kBar) {
+        CurveDrawing d = shown();
+        float x0 = xOf(double(d.segmentStart)), x1 = xOf(double(d.segmentEnd));
+        if (pos.y < kHead + kRulerLabels)
+            return CursorShape::Arrow;
+        if (std::fabs(pos.x - x0) <= kGripHit || std::fabs(pos.x - x1) <= kGripHit)
+            return CursorShape::ResizeH;
+        return pos.x > x0 && pos.x < x1 ? CursorShape::Move : CursorShape::Arrow;
+    }
+    if (pos.x < left)
+        return CursorShape::Arrow;
+    return pointAt(pos) >= 0 ? CursorShape::Move : CursorShape::AddPoint;
 }
 
 void CurveView::drawHeader(NVGcontext* vg, NVGcolor color) {
     const theme::Palette& c = theme::colors();
     nvgBeginPath(vg);
-    nvgRect(vg, 0, 0, box.size.x, kHead);
+    nvgRect(vg, left, 0, box.size.x - left, kHead);
     nvgFillColor(vg, c.bg1);
     nvgFill(vg);
     draw::TextStyle label{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle choice{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text1,
                            NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    bool passes = perPass();
     bool labelledShapes = false;
     for (const HeaderPart& part : headerParts()) {
         Rect r = part.rect;
         switch (part.kind) {
-        case HeaderPart::Kind::Time:
-        case HeaderPart::Kind::Passes: {
-            if (part.kind == HeaderPart::Kind::Time)
-                draw::text(vg, label, r.pos.x - 60, r.getCenter().y, "Counts in");
-            bool on = (part.kind == HeaderPart::Kind::Passes) == passes;
-            draw::roundedRect(vg, r, 3, on ? color : c.bg2);
-            choice.color = on ? c.onTile : c.text1;
-            draw::text(vg, choice, r.getCenter().x, r.getCenter().y,
-                       part.kind == HeaderPart::Kind::Time ? "Time" : "Passes");
+        case HeaderPart::Kind::Length: {
+            draw::text(vg, label, r.pos.x - 40, r.getCenter().y, "Length");
+            draw::roundedRect(vg, r, 3, c.bg2);
+            draw::TextStyle value = choice;
+            value.color = color;
+            value.align = NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE;
+            draw::text(vg, value, r.pos.x + 7, r.getCenter().y, lengthLabel(shown().length));
+            // A small arrow: it opens a list.
+            float ax = r.getRight() - 9, ay = r.getCenter().y;
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, ax - 3, ay - 1.5f);
+            nvgLineTo(vg, ax + 3, ay - 1.5f);
+            nvgLineTo(vg, ax, ay + 2);
+            nvgClosePath(vg);
+            nvgFillColor(vg, c.text1);
+            nvgFill(vg);
             break;
         }
         case HeaderPart::Kind::Shape: {
@@ -499,6 +705,8 @@ void CurveView::drawHeader(NVGcontext* vg, NVGcolor color) {
                     nvgLineTo(vg, x, icon.getBottom() - shape.points[i - 1].second * icon.size.y);
                 nvgLineTo(vg, x, y);
             }
+            if (shape.curve == CurveType::Hold)
+                nvgLineTo(vg, icon.getRight(), icon.getBottom() - shape.points.back().second * icon.size.y);
             nvgStrokeColor(vg, c.text1);
             nvgStrokeWidth(vg, 1.3f);
             nvgStroke(vg);
@@ -513,6 +721,223 @@ void CurveView::drawHeader(NVGcontext* vg, NVGcolor color) {
     }
 }
 
+void CurveView::drawRuler(NVGcontext* vg, NVGcolor color, const CurveDrawing& d) {
+    const theme::Palette& c = theme::colors();
+    TimeSig ts = owner.timeSig();
+    nvgBeginPath(vg);
+    nvgRect(vg, left, kHead, box.size.x - left, kBar);
+    nvgFillColor(vg, c.bg0);
+    nvgFill(vg);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, left, kHead, box.size.x - left, kBar);
+    // Positions in the drawing, as on the piano roll's ruler.
+    GridSpacing grid = gridSpacing(time.pxPerTick(), ts);
+    draw::TextStyle label{theme::fonts::mono(), 9, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    for (double t = std::floor(time.left() / double(grid.label)) * double(grid.label); t < time.right();
+         t += double(grid.label)) {
+        if (t < 0)
+            continue;
+        float x = xOf(t);
+        nvgBeginPath(vg);
+        nvgRect(vg, x, kHead + 2, 1, kRulerLabels - 3);
+        nvgFillColor(vg, c.line1);
+        nvgFill(vg);
+        draw::text(vg, label, x + 3, kHead + kRulerLabels / 2 + 1, timeline::positionLabel(Tick(t), grid.label, ts));
+    }
+    // The segment that plays, under the positions, drawn like a playhead's segment: grips at both ends, the bar
+    // between.
+    float x0 = xOf(double(d.segmentStart)), x1 = xOf(double(d.segmentEnd));
+    float row = kHead + kRulerLabels, rowH = kBar - kRulerLabels;
+    float top = row + 3, h = rowH - 6;
+    Rect bar(x0, top, std::max(2.f, x1 - x0), h);
+    draw::roundedRect(vg, bar, 2, nvgTransRGBAf(color, 0.35f));
+    draw::roundedRectStroke(vg, bar, 2, color, 1);
+    float grip = theme::metrics::kSegmentGrip;
+    draw::roundedRect(vg, Rect(x0 - 2, row + 1, grip, rowH - 2), 1.5f, color);
+    draw::roundedRect(vg, Rect(x1 - grip + 2, row + 1, grip, rowH - 2), 1.5f, color);
+    draw::TextStyle plays{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0,
+                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    std::string text = "plays " + lengthLabel(d.segmentEnd - d.segmentStart);
+    if (x0 + grip + 3 + draw::textWidth(vg, plays, text) < x1 - grip - 3)
+        draw::text(vg, plays, std::max(x0, left) + grip + 3, top + h / 2, text);
+    nvgRestore(vg);
+}
+
+void CurveView::drawRows(NVGcontext* vg) {
+    const theme::Palette& c = theme::colors();
+    float top = kHead + kBar, bottom = box.size.y;
+    draw::TextStyle label{theme::fonts::mono(), 9.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    std::vector<float> rows = rowValues();
+    std::vector<std::pair<float, std::string>> labels;
+    if (rows.size() > 1) {
+        float spacing = std::fabs(yOf(rows[0]) - yOf(rows[1]));
+        int every = std::max(1, int(std::ceil(13 / std::max(1.f, spacing))));
+        // Labels count out from the row as set, so it always has one.
+        int middle = int(std::min_element(rows.begin(), rows.end(),
+                                          [](float a, float b) { return std::fabs(a - 0.5f) < std::fabs(b - 0.5f); }) -
+                         rows.begin());
+        for (size_t i = 0; i < rows.size(); i++) {
+            float y = yOf(rows[i]);
+            if (y < top - spacing || y > bottom + spacing)
+                continue;
+            if ((int(i) - middle) % 2 == 0) {
+                nvgBeginPath(vg);
+                nvgRect(vg, left, y - spacing / 2, box.size.x - left, spacing);
+                nvgFillColor(vg, theme::recessed(c, c.bg0, 0.25f));
+                nvgFill(vg);
+            }
+            if ((int(i) - middle) % every == 0)
+                labels.push_back({y, format(rows[i])});
+        }
+    } else {
+        for (int k = 0; k <= 4; k++) {
+            float v = low + (high - low) * float(k) / 4;
+            labels.push_back({std::clamp(yOf(v), top + 6, bottom - 6), format(v)});
+        }
+    }
+    // The middle: the setting as set, which the curve adds to.
+    float mid = yOf(0.5f);
+    nvgBeginPath(vg);
+    for (float x = left; x < box.size.x; x += 6) {
+        nvgMoveTo(vg, x, mid);
+        nvgLineTo(vg, x + 3, mid);
+    }
+    nvgStrokeColor(vg, c.text2);
+    nvgStrokeWidth(vg, 1);
+    nvgStroke(vg);
+    // Labels sit in the column on the left, where the piano keys are above, so the curve never hides them.
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, top, left, bottom - top);
+    nvgFillColor(vg, c.bg1);
+    nvgFill(vg);
+    label.align = NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE;
+    for (auto& [y, text] : labels)
+        if (y > top && y < bottom)
+            draw::text(vg, label, left - 5, y, draw::ellipsize(vg, label, text, left - 8));
+    label.align = NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM;
+    if (mid > top + 10 && mid < bottom)
+        draw::text(vg, label, box.size.x - 6, mid - 2, "as set: " + format(0.5f));
+}
+
+void CurveView::drawCurve(NVGcontext* vg, NVGcolor color, const CurveDrawing& d) {
+    const theme::Palette& c = theme::colors();
+    float top = kHead + kBar, bottom = box.size.y;
+    // The segment lit across the rows; past the drawing's end, darker.
+    float s0 = xOf(double(d.segmentStart)), s1 = xOf(double(d.segmentEnd)), end = xOf(double(d.length));
+    nvgBeginPath(vg);
+    nvgRect(vg, s0, top, s1 - s0, bottom - top);
+    nvgFillColor(vg, nvgTransRGBAf(color, 0.07f));
+    nvgFill(vg);
+    for (float x : {s0, s1}) {
+        nvgBeginPath(vg);
+        nvgRect(vg, x - 0.5f, top, 1, bottom - top);
+        nvgFillColor(vg, nvgTransRGBAf(color, 0.6f));
+        nvgFill(vg);
+    }
+    if (end < box.size.x) {
+        nvgBeginPath(vg);
+        nvgRect(vg, end, top, box.size.x - end, bottom - top);
+        nvgFillColor(vg, theme::recessed(c, c.bg0, 0.35f));
+        nvgFill(vg);
+    }
+    nvgSave(vg);
+    nvgTranslate(vg, left, top);
+    timeline::drawGrid(vg, time, owner.timeSig(), bottom - top, snap());
+    nvgRestore(vg);
+
+    // The line, piece by piece: a step goes across then up or down, a ramp straight to the next point. Inside the
+    // segment it is bright, outside faint.
+    std::vector<AutoPoint> pts = d.points;
+    float firstValue = pts.empty() ? 0.5f : pts.front().value;
+    auto strokeSpan = [&](double from, double to, float alpha, float width) {
+        if (to <= from)
+            return;
+        mods::Drawn drawn{pts.data(), int(pts.size()), d.length, d.segmentStart, d.segmentEnd};
+        nvgSave(vg);
+        nvgIntersectScissor(vg, xOf(from), top, std::max(0.f, xOf(to) - xOf(from)), bottom - top);
+        nvgBeginPath(vg);
+        double a = std::max(0.0, time.left()), b = std::min(double(d.length), time.right());
+        nvgMoveTo(vg, xOf(a), yOf(pts.empty() ? 0.5f : mods::drawnAt(drawn, a)));
+        for (size_t i = 0; i < pts.size(); i++) {
+            const AutoPoint& p = pts[i];
+            double t = double(p.t);
+            if (t < a)
+                continue;
+            if (t > b)
+                break;
+            const AutoPoint* prev = i > 0 ? &pts[i - 1] : nullptr;
+            if (!prev || isStep(*prev)) {
+                nvgLineTo(vg, xOf(t), yOf(prev ? prev->value : firstValue));
+            } else if (prev->curve != CurveType::Linear || prev->tension != 0) {
+                for (int k = 1; k < 24; k++) {
+                    double u = double(prev->t) + (t - double(prev->t)) * k / 24;
+                    if (u > a)
+                        nvgLineTo(vg, xOf(u), yOf(mods::drawnAt(drawn, u)));
+                }
+            }
+            nvgLineTo(vg, xOf(t), yOf(p.value));
+        }
+        nvgLineTo(vg, xOf(b), yOf(pts.empty() ? 0.5f : mods::drawnAt(drawn, b)));
+        nvgStrokeColor(vg, nvgTransRGBAf(color, alpha));
+        nvgStrokeWidth(vg, width);
+        nvgStroke(vg);
+        nvgRestore(vg);
+    };
+    strokeSpan(0, double(d.segmentStart), 0.4f, 1.4f);
+    strokeSpan(double(d.segmentEnd), double(d.length), 0.4f, 1.4f);
+    strokeSpan(double(d.segmentStart), double(d.segmentEnd), 1, 2);
+
+    // A ramp on a setting with steps is heard a step at a time: those stairs, dotted under it.
+    if (stepped()) {
+        mods::Drawn drawn{pts.data(), int(pts.size()), d.length, d.segmentStart, d.segmentEnd};
+        for (size_t i = 0; i + 1 < pts.size(); i++) {
+            if (isStep(pts[i]) || pts[i].t >= pts[i + 1].t)
+                continue;
+            // Only where it plays at all: inside the drawing.
+            float xa = std::max(left, xOf(double(pts[i].t)));
+            float xb = std::min({box.size.x, xOf(double(pts[i + 1].t)), xOf(double(d.length))});
+            if (xb <= xa)
+                continue;
+            nvgBeginPath(vg);
+            float lastY = yOf(heard(mods::drawnAt(drawn, tAt(xa))));
+            nvgMoveTo(vg, xa, lastY);
+            for (float x = xa + 1; x <= xb; x += 1) {
+                float y = yOf(heard(mods::drawnAt(drawn, tAt(x))));
+                if (y != lastY) {
+                    nvgLineTo(vg, x, lastY);
+                    nvgLineTo(vg, x, y);
+                    lastY = y;
+                }
+            }
+            nvgLineTo(vg, xb, lastY);
+            nvgStrokeColor(vg, nvgTransRGBAf(color, 0.55f));
+            nvgStrokeWidth(vg, 1);
+            nvgStroke(vg);
+        }
+    }
+
+    // Points: a square is a step, a circle a ramp; dim outside the segment and past the end.
+    for (const AutoPoint& p : pts) {
+        float x = xOf(double(p.t)), y = yOf(p.value);
+        if (x < -6 || x > box.size.x + 6)
+            continue;
+        bool inside = p.t >= d.segmentStart && p.t <= d.segmentEnd;
+        float alpha = p.t > d.length ? 0.3f : inside ? 1.f : 0.5f;
+        nvgBeginPath(vg);
+        if (isStep(p))
+            nvgRect(vg, x - 3.5f, y - 3.5f, 7, 7);
+        else
+            nvgCircle(vg, x, y, 3.8f);
+        nvgFillColor(vg, c.bg0);
+        nvgFill(vg);
+        nvgFillColor(vg, nvgTransRGBAf(color, alpha * 0.6f));
+        nvgFill(vg);
+        nvgStrokeColor(vg, nvgTransRGBAf(color, alpha));
+        nvgStrokeWidth(vg, 1.4f);
+        nvgStroke(vg);
+    }
+}
+
 void CurveView::drawView(const DrawArgs& args) {
     NVGcontext* vg = args.vg;
     const theme::Palette& c = theme::colors();
@@ -524,7 +949,7 @@ void CurveView::drawView(const DrawArgs& args) {
     if (!m || !hasCurve())
         return;
     nvgSave(vg);
-    nvgScissor(vg, 0, 0, box.size.x, box.size.y);
+    nvgIntersectScissor(vg, 0, 0, box.size.x, box.size.y);
     ParamRef ref = target();
     NVGcolor color = c.accent;
     if (const Modulator* mod = modulator())
@@ -535,155 +960,28 @@ void CurveView::drawView(const DrawArgs& args) {
     if (ref.kind == ParamRef::Kind::Device)
         if (const Device* d = findDevice(m->song(), DeviceId(ref.owner)); d && d->type == DeviceType::Motion)
             color = theme::playheadColor(d->color);
-    auto [points, length] = shown();
-    double start = spanStart();
-    float base = 0, amount = 1;
-    const devices::ParamInfo* info = targetInfo(&base, &amount);
-    draw::TextStyle label{theme::fonts::mono(), 9.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    CurveDrawing d = shown();
 
-    // Up and down in the setting's own units: a row per step for a stepped setting, a few marks otherwise.
-    if (info && discrete(*info) && std::fabs(amount) > 1e-4f) {
-        std::vector<float> rows;
-        for (float d : stepsOf(*info)) {
-            float v = ((devices::normalize(*info, d) - base) / amount + 1) / 2;
-            if (v >= -1e-4f && v <= 1 + 1e-4f)
-                rows.push_back(v);
-        }
-        std::sort(rows.begin(), rows.end());
-        float spacing = rows.size() > 1 ? std::fabs(yOf(rows[0]) - yOf(rows[1])) : box.size.y;
-        int every = std::max(1, int(std::ceil(13 / std::max(1.f, spacing))));
-        // Labels count out from the row as set, so it always has one.
-        int middle = int(std::min_element(rows.begin(), rows.end(),
-                                          [](float a, float b) { return std::fabs(a - 0.5f) < std::fabs(b - 0.5f); }) -
-                         rows.begin());
-        for (size_t i = 0; i < rows.size(); i++) {
-            float y = yOf(rows[i]);
-            if ((int(i) - middle) % 2 == 0) {
-                nvgBeginPath(vg);
-                nvgRect(vg, 0, y - spacing / 2, box.size.x, spacing);
-                nvgFillColor(vg, theme::recessed(c, c.bg0, 0.25f));
-                nvgFill(vg);
-            }
-            if ((int(i) - middle) % every == 0)
-                draw::text(vg, label, 6, y, format(rows[i]));
-        }
-    } else {
-        for (float v : {0.f, 0.25f, 0.75f, 1.f}) {
-            float y = std::clamp(yOf(v), kHead + kBar + 6, box.size.y - 6);
-            draw::text(vg, label, 6, y, format(v));
-        }
+    drawRows(vg);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, left, kHead + kBar, box.size.x - left, box.size.y - kHead - kBar);
+    drawCurve(vg, color, d);
+    // The curve's own playhead: where it reads now, counted from when its clip started.
+    double since = sinceClipStart();
+    if (std::isfinite(since)) {
+        mods::Drawn drawn{d.points.data(), int(d.points.size()), d.length, d.segmentStart, d.segmentEnd};
+        float x = xOf(mods::drawnPlace(drawn, since));
+        nvgSave(vg);
+        nvgTranslate(vg, 0, kHead + kBar);
+        timeline::drawPlayhead(vg, x, box.size.y - kHead - kBar);
+        nvgRestore(vg);
     }
-    // The middle: the setting as set, which the curve moves away from.
-    float mid = yOf(0.5f);
-    nvgBeginPath(vg);
-    for (float x = 0; x < box.size.x; x += 6) {
-        nvgMoveTo(vg, x, mid);
-        nvgLineTo(vg, x + 3, mid);
-    }
-    nvgStrokeColor(vg, c.text2);
-    nvgStrokeWidth(vg, 1);
-    nvgStroke(vg);
-    label.align = NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM;
-    draw::text(vg, label, box.size.x - 6, mid - 2, "as set: " + format(0.5f));
-
-    // The cycle, drawn like a playhead's segment: it starts with the song, its right grip sets how long it lasts.
-    float x0 = xOf(start), x1 = xOf(start + double(length));
-    float barTop = kHead + 3, barH = kBar - 6;
-    Rect bar(x0, barTop, std::max(2.f, x1 - x0), barH);
-    draw::roundedRect(vg, bar, 2, nvgTransRGBAf(color, 0.35f));
-    draw::roundedRectStroke(vg, bar, 2, color, 1);
-    float grip = theme::metrics::kSegmentGrip;
-    draw::roundedRect(vg, Rect(x1 - grip + 2, kHead + 1, grip, kBar - 2), 1.5f, color);
-    draw::TextStyle cycle{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0,
-                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    std::string every = "repeats every " + lengthLabel(length);
-    if (x0 + 6 + draw::textWidth(vg, cycle, every) < x1 - grip - 3)
-        draw::text(vg, cycle, x0 + 6, barTop + barH / 2, every);
-    else if (x0 + 6 + draw::textWidth(vg, cycle, lengthLabel(length)) < x1 - grip - 3)
-        draw::text(vg, cycle, x0 + 6, barTop + barH / 2, lengthLabel(length));
+    nvgRestore(vg);
+    drawRuler(vg, color, d);
     drawHeader(vg, color);
-
-    if (perPass()) {
-        // A column per pass, numbered, over the cycle and a little past it.
-        draw::TextStyle pass{theme::fonts::ui(), 10, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM};
-        int passes = int(std::max<Tick>(1, length / mods::kPassTicks));
-        for (int k = 0; xOf(double(k) * double(mods::kPassTicks)) < box.size.x; k++) {
-            float x = xOf(double(k) * double(mods::kPassTicks));
-            nvgBeginPath(vg);
-            nvgRect(vg, x, kHead + kBar, 1, box.size.y - kHead - kBar);
-            nvgFillColor(vg, k % passes == 0 ? c.line1 : c.line0);
-            nvgFill(vg);
-            pass.color = k < passes ? c.text2 : nvgTransRGBAf(c.text2, 0.5f);
-            draw::text(vg, pass, x + 4, box.size.y - 2, "pass " + std::to_string(k + 1));
-        }
-    }
-
-    // The curve, every cycle across the view; the first one bright, its repeats faint.
-    double t1 = tAt(box.size.x), t0 = tAt(0);
-    mods::Drawn drawn{points.data(), int(points.size()), length};
-    for (double cycle = start; cycle < t1 && length > 0; cycle += double(length)) {
-        if (cycle + double(length) < t0)
-            continue;
-        bool first = cycle == start;
-        nvgBeginPath(vg);
-        if (perPass()) {
-            // A pass takes the value at its start: a step each.
-            for (Tick k = 0; k * mods::kPassTicks < length; k++) {
-                double t = double(k * mods::kPassTicks);
-                float y = yOf(points.empty() ? 0.5f : mods::drawnAt(drawn, t));
-                float x0 = xOf(cycle + t), x1 = xOf(cycle + t + double(mods::kPassTicks));
-                k == 0 ? nvgMoveTo(vg, x0, y) : nvgLineTo(vg, x0, y);
-                nvgLineTo(vg, x1, y);
-            }
-        } else {
-            for (int i = 0; i <= 128; i++) {
-                double t = double(length) * i / 128;
-                float x = xOf(cycle + t), y = yOf(points.empty() ? 0.5f : mods::drawnAt(drawn, t));
-                i == 0 ? nvgMoveTo(vg, x, y) : nvgLineTo(vg, x, y);
-            }
-        }
-        nvgStrokeColor(vg, nvgTransRGBAf(color, first ? 1.f : 0.35f));
-        nvgStrokeWidth(vg, first ? 2.f : 1.4f);
-        nvgStroke(vg);
-        for (const AutoPoint& pt : points) {
-            nvgBeginPath(vg);
-            nvgCircle(vg, xOf(cycle + double(pt.t)), yOf(pt.value), 3.5f);
-            nvgFillColor(vg, c.bg0);
-            nvgFill(vg);
-            nvgStrokeColor(vg, nvgTransRGBAf(color, first ? 1.f : 0.35f));
-            nvgStrokeWidth(vg, 1.4f);
-            nvgStroke(vg);
-        }
-    }
-    // Where playback is, as over the notes. Counting passes, the pass it is on lights up and a line crosses it.
-    if (m->playing()) {
-        float playTop = kHead + kBar;
-        if (perPass()) {
-            double elapsed = owner.source.elapsed();
-            const Clip* clip = owner.clip();
-            double loop = clip ? double(clipSpan(*clip).length()) : 0;
-            if (std::isfinite(elapsed) && loop > 0) {
-                double passes = elapsed / loop;
-                float px0 = xOf(std::floor(passes) * double(mods::kPassTicks));
-                nvgBeginPath(vg);
-                nvgRect(vg, px0, playTop, kPassWidth, box.size.y - playTop);
-                nvgFillColor(vg, nvgTransRGBAf(color, 0.12f));
-                nvgFill(vg);
-                nvgSave(vg);
-                nvgTranslate(vg, 0, playTop);
-                timeline::drawPlayhead(vg, xOf(passes * double(mods::kPassTicks)), box.size.y - playTop);
-                nvgRestore(vg);
-            }
-        } else if (double p = owner.source.playhead(); std::isfinite(p)) {
-            nvgSave(vg);
-            nvgTranslate(vg, 0, playTop);
-            timeline::drawPlayhead(vg, xOf(p), box.size.y - playTop);
-            nvgRestore(vg);
-        }
-    }
-    if (points.empty()) {
+    if (d.points.empty()) {
         draw::TextStyle hint{theme::fonts::ui(), 11, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        draw::text(vg, hint, box.size.x / 2, (kHead + kBar + box.size.y) / 2 - 14,
+        draw::text(vg, hint, (left + box.size.x) / 2, (kHead + kBar + box.size.y) / 2 - 14,
                    "Click to add a point, or pick a shape above: " + title() + " starts moving.");
     }
     nvgRestore(vg);

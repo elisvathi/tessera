@@ -417,6 +417,18 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] In-panel editor: the strip starts closed; open it and drag the divider down: the strip shrinks, then
       becomes a bar saying there is no room; nothing is ever drawn over the rack. Open a modulator: the popover
       fits beside the list and scrolls. The header never overlaps the Devices button.
+- [ ] Curves: add a Transpose on a track, click **Key steps**. The curve pane opens under the notes, rows labelled
+      in key steps in the keys' column, ±7 rows shown; the wheel scrolls to +14 and −14, Alt+wheel zooms the rows,
+      Ctrl+wheel zooms across without moving the piano roll. Click a point on +12: the bass plays 12 steps up.
+- [ ] Right-click a point: Step (square, holds) and Ramp (circle, glides; dotted stairs under it on Key steps). A
+      new point takes the kind of the one before. Every change is one undo step.
+- [ ] Length → 16 bars, drag the segment to bars 5 to 8 (grips and bar): launched, the clip's first bar plays the
+      curve's bar 5, and the curve's playhead runs from bar 5 and wraps at 8. On the timeline, each timeline clip
+      starts the curve from the segment's start. A step drawn on a note's start changes that very note.
+- [ ] Length shorter than the segment: the segment slides back inside; points past the end stay dim and come back
+      when lengthened. Double-click the curve's ruler: the whole drawing shows.
+- [ ] The modulator's Moves row for the drawn setting says "as drawn" and has no amount bar. A song with curves
+      saved before 31 Oct plays the same; one with a Passes curve shows a Per pass Steps modulator instead.
 
 ## Knob automation (docs/DEVICES.md §1.3)
 - [ ] Right-click a knob: "Automate in the arranger" opens the arranger with a lane under the track ("Arpeggiator

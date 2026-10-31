@@ -42,6 +42,8 @@ constexpr int kMaxDeviceModulators = 4;
 constexpr int kMaxRoutes = 8; // targets per modulator
 constexpr int kMaxModulationsPerKnob = 4;
 constexpr int kMaxSteps = 16;
+/// The longest drawing a Curve modulator can have: 256 bars of 4/4.
+constexpr Tick kMaxCurveLength = 256 * 4 * kPpq;
 
 /// One route from a modulator: to a knob or setting in Tessera, to a track's AUTO output channel, or to a knob
 /// of another Rack module.
@@ -67,14 +69,17 @@ struct Modulator {
     std::vector<float> params; // normalized, the type's list
     std::vector<float> steps;  // Steps: the drawn values, 0..1
     std::vector<Modulation> routes;
-    /// Curve: the drawn shape, points over one cycle of `length` ticks (0.5 = no change, it moves its targets both
-    /// ways). Synced, a cycle lasts `length`; free, the Rate knob sets how fast it goes round.
+    /// Curve: the drawn shape, points over `length` ticks (0.5 = no change, it moves its targets both ways; its
+    /// first route turns its setting all the way, so a point's height is the setting's own value). Only the segment
+    /// [segmentStart, segmentEnd) plays, round and round from when the track's clip started.
     Tick length = 0;
     std::vector<AutoPoint> points;
+    Tick segmentStart = 0, segmentEnd = 0;
 
     bool operator==(const Modulator& o) const {
         return id == o.id && type == o.type && name == o.name && params == o.params && steps == o.steps &&
-               routes == o.routes && length == o.length && points == o.points;
+               routes == o.routes && length == o.length && points == o.points && segmentStart == o.segmentStart &&
+               segmentEnd == o.segmentEnd;
     }
 };
 

@@ -1761,7 +1761,7 @@ TEST_CASE("engine: a Curve modulator moves a playhead setting while it plays") {
     // Two bars: the first at the octave as set, the second an octave up. Drawn around the middle (no change), turning
     // the setting all the way: one octave is an eighth of the knob, so a sixteenth above the middle.
     Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
-    curve.length = 8 * kPpq;
+    curve.length = curve.segmentEnd = 8 * kPpq;
     float up = 0.5f + (devices::normalize(octave, 1) - devices::normalize(octave, 0)) / 2;
     curve.points = {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}};
     Modulation route;
@@ -1776,6 +1776,60 @@ TEST_CASE("engine: a Curve modulator moves a playhead setting while it plays") {
         pitches.push_back(h.gate() ? h.pitch() : -1);
     }
     CHECK(pitches == std::vector<int>{60, 72, 60});
+}
+
+/// A Curve on a Transpose's octaves: the first bar of its drawing as set, the second an octave up.
+Modulator octaveCurve(Song& song, Device& transpose, Tick segmentStart = 0) {
+    const devices::ParamInfo& octaves = devices::deviceInfo(DeviceType::Transpose).params[chain::knob::kOctaves];
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.length = 8 * kPpq;
+    float up = 0.5f + (devices::normalize(octaves, 1) - devices::normalize(octaves, 0)) / 2;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}};
+    curve.segmentStart = segmentStart;
+    curve.segmentEnd = 8 * kPpq;
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, transpose.id.value, uint16_t(chain::knob::kOctaves)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    return curve;
+}
+
+TEST_CASE("engine: a Curve counts from when its track's timeline clip starts, not from the song's start") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.position = 6 * kPpq; // halfway through bar 2: the song's own count would be inside the curve's second bar
+    a.length = 12 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    Device& transpose = addDevice(song, DeviceType::Transpose);
+    song.tracks[0].modulators.push_back(octaveCurve(song, transpose));
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    std::vector<int> pitches;
+    for (int bar = 0; bar < 3; bar++) {
+        h.runTo((6 * kPpq + int64_t(bar) * 4 * kPpq) * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    INFO(pitches[0], " ", pitches[1], " ", pitches[2]);
+    CHECK(pitches == std::vector<int>{60, 72, 60});
+}
+
+TEST_CASE("engine: a launched clip's Curve plays its segment, from the segment's start, round and round") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device& transpose = addDevice(song, DeviceType::Transpose);
+    // Only the second bar of the drawing plays: every pass is an octave up.
+    song.tracks[0].modulators.push_back(octaveCurve(song, transpose, 4 * kPpq));
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int bar = 0; bar < 3; bar++) {
+        h.runTo(int64_t(bar) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    INFO(pitches[0], " ", pitches[1], " ", pitches[2]);
+    CHECK(pitches == std::vector<int>{72, 72, 72});
 }
 
 TEST_CASE("engine: playheads play every note while the song is being edited") {
@@ -1899,24 +1953,22 @@ TEST_CASE("engine: a Motion device before the playheads moves the note inside th
     CHECK(firstStart(false) == doctest::Approx(kPpq).epsilon(0.01));
 }
 
-TEST_CASE("engine: a Curve set to Per pass steps a Motion knob once a pass") {
+TEST_CASE("engine: Steps set to Per pass step a Motion knob once a pass") {
     Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
     Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
     song.clips.begin()->second.notes[0].motion = motion.id;
     // Three passes: as written, one semitone up, two up. Pitch spans 48 semitones, so a semitone is 1/48 of the knob:
-    // with amount 1 the drawn value moves half that per semitone.
-    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
-    curve.params = knobsOf(ModulatorType::Curve, {{mods::knob::kCurvePerPass, 1}});
-    curve.length = 3 * mods::kPassTicks;
+    // bipolar with amount 1, the drawn value moves half that per semitone.
+    Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+    steps.params = knobsOf(ModulatorType::Steps,
+                           {{mods::knob::kStepCount, 3}, {mods::knob::kStepBipolar, 1}, {mods::knob::kStepPerPass, 1}});
     float semitone = 1.f / 96;
-    curve.points = {{0, 0.5f, CurveType::Hold, 0},
-                    {mods::kPassTicks, 0.5f + semitone, CurveType::Hold, 0},
-                    {2 * mods::kPassTicks, 0.5f + 2 * semitone, CurveType::Hold, 0}};
+    steps.steps = {0.5f, 0.5f + semitone, 0.5f + 2 * semitone};
     Modulation route;
     route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
     route.amount = 1;
-    curve.routes.push_back(route);
-    song.tracks[0].modulators.push_back(curve);
+    steps.routes.push_back(route);
+    song.tracks[0].modulators.push_back(steps);
     Harness h(song);
     std::vector<int> pitches;
     for (int pass = 0; pass < 4; pass++) {
@@ -1926,23 +1978,22 @@ TEST_CASE("engine: a Curve set to Per pass steps a Motion knob once a pass") {
     CHECK(pitches == std::vector<int>{60, 61, 62, 60}); // then round again
 }
 
-TEST_CASE("the piano roll learns the pitch a Motion's curve gives each note on every pass, as the engine plays it") {
+TEST_CASE(
+    "the piano roll learns the pitch a Motion's Per pass steps give each note on every pass, as the engine plays it") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
     Clip& clip = song.clips.begin()->second;
     clip.notes[0].motion = motion.id;
-    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
-    curve.params = knobsOf(ModulatorType::Curve, {{mods::knob::kCurvePerPass, 1}});
-    curve.length = 3 * mods::kPassTicks;
+    Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+    steps.params = knobsOf(ModulatorType::Steps,
+                           {{mods::knob::kStepCount, 3}, {mods::knob::kStepBipolar, 1}, {mods::knob::kStepPerPass, 1}});
     float semitone = 1.f / 96;
-    curve.points = {{0, 0.5f, CurveType::Hold, 0},
-                    {mods::kPassTicks, 0.5f + semitone, CurveType::Hold, 0},
-                    {2 * mods::kPassTicks, 0.5f + 2 * semitone, CurveType::Hold, 0}};
+    steps.steps = {0.5f, 0.5f + semitone, 0.5f + 2 * semitone};
     Modulation route;
     route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
     route.amount = 1;
-    curve.routes.push_back(route);
-    song.tracks[0].modulators.push_back(curve);
+    steps.routes.push_back(route);
+    song.tracks[0].modulators.push_back(steps);
 
     std::vector<std::vector<render::MotionMove>> moves = render::motionMoves(song, song.tracks[0], clip);
     REQUIRE(moves.size() == 2);
