@@ -173,7 +173,7 @@ NoteHit NoteGrid::hitAt(Vec pos) {
 
 BendHit NoteGrid::selectedBendAt(Vec pos) {
     IdSet selected = owner.selectedIds();
-    if (selected.empty())
+    if (selected.empty() || owner.drumMode())
         return BendHit();
     auto isSelected = [&selected](const Note& n) { return selected.count(n.id) > 0; };
     return hitTestCurves(owner.committedNotes(), time(), expr::Curve::Pitch, pitchCurveY(), pos.x, pos.y,
@@ -181,6 +181,8 @@ BendHit NoteGrid::selectedBendAt(Vec pos) {
 }
 
 BendHit NoteGrid::bendAt(Vec pos) {
+    if (owner.drumMode())
+        return BendHit(); // drum rows are lanes, not pitches: a hit's pitch is its value, shaped in the lower pane
     return hitTestBends(owner.committedNotes(), time(), owner.pitch, pos.x, pos.y, theme::metrics::kEdgeHit,
                         theme::metrics::kEdgeHit);
 }
@@ -894,7 +896,8 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         drawLaneLoops(vg);
         drawNotes(vg);
         dimSilentLanes(vg);
-        drawBends(vg);
+        if (!owner.drumMode())
+            drawBends(vg);
         drawStrips(vg);
         drawTakeNotes(vg);
         drawTransformFrame(vg);
@@ -961,6 +964,7 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
     Scale key = owner.scale();
     bool badges = ctx.state().noteBadges;
     std::optional<expr::Curve> curve = owner.shownCurve();
+    std::optional<fields::Field> hitValue = owner.drumValueField();
     // A sounding note glows for its whole length: a bright flash as it starts (150 ms), then a steady glow.
     TesseraModule* m = ctx.module();
     double playing = m && m->playing() ? playhead() : NAN;
@@ -1015,6 +1019,10 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
                 front = nvgLerpRGBA(front, c.text0, 0.3f * glow);
             draw::roundedRect(vg, Rect(r.pos.x, r.getBottom() - h, r.size.x, h), radius, front);
             fill = nvgLerpRGBA(c.bg0, full, 0.6f);
+            // The velocity tag (hover, velocity drags) takes the cell when it shows.
+            bool velocityTag = (n.id == hovered && !hasGesture()) || owner.velocityShown.count(n.id) > 0;
+            if (hitValue && !velocityTag)
+                drawHitValue(vg, n, r, *hitValue);
         } else {
             draw::roundedRect(vg, r, radius, fill);
         }
@@ -1297,6 +1305,36 @@ void NoteGrid::drawBadges(NVGcontext* vg, const Note& n, Rect r, float labelRigh
         nvgFillColor(vg, mark);
         nvgFill(vg);
     }
+}
+
+void NoteGrid::drawHitValue(NVGcontext* vg, const Note& n, Rect r, fields::Field field) {
+    const theme::Palette& c = theme::colors();
+    double v = fields::get(n, field);
+    bool shaped = fields::shaped(n, field);
+    if (v == 0 && !shaped)
+        return;
+    if (field == fields::Field::Bend) {
+        std::string text = fields::format(field, v);
+        text = text.substr(0, text.size() - 3) + (shaped ? "~" : ""); // "+3 st" -> "+3"
+        draw::TextStyle style{theme::fonts::mono(), std::min(theme::metrics::kTextRuler, r.size.y - 1), c.onTile,
+                              NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        if (r.size.x >= draw::textWidth(vg, style, text) + 2 && r.size.y >= kMinLabelRow) {
+            draw::text(vg, style, r.getCenter().x, r.getCenter().y, text);
+            return;
+        }
+        // Too small for the number: a corner mark still says this hit is tuned.
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, r.getRight(), r.pos.y);
+        nvgLineTo(vg, r.getRight() - 4, r.pos.y);
+        nvgLineTo(vg, r.getRight(), r.pos.y + 4);
+        nvgClosePath(vg);
+        nvgFillColor(vg, c.onTile);
+        nvgFill(vg);
+        return;
+    }
+    // Timbre or pressure: a thin bar along the top of the cell, as long as the value.
+    float w = std::max(2.f, r.size.x * float(v / 100));
+    draw::roundedRect(vg, Rect(r.pos.x + 1, r.pos.y + 1, w - 2, 2), 1, nvgTransRGBAf(c.text0, 0.85f));
 }
 
 void NoteGrid::drawCurveInside(NVGcontext* vg, const Note& n, Rect r, expr::Curve curve) {

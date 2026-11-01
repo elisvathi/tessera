@@ -24,6 +24,12 @@ enum class Field {
     RepeatGate,
     TimingSpread,
     Channel,
+    // A note's expression as one value: its curve's value where the note starts, which is what a drum hit is
+    // heard with. Setting one on a note with no curve or a flat one gives it that single value (0 = none); on a
+    // shaped curve it moves the whole curve, keeping its shape.
+    Bend,
+    Timbre,
+    Pressure,
     Count
 };
 
@@ -80,6 +86,11 @@ bool applyTyped(const edits::NoteList& notes, const edits::IdSet& ids, Field f, 
 std::string format(Field f, double value, TimeSig ts = TimeSig());
 /// A field's value on a new note (for double-click to reset).
 double defaultValue(Field f);
+/// The expression curve behind Bend, Timbre or Pressure, or nullptr for the other fields.
+const std::vector<ExprPoint>* curveOf(const Note& note, Field f);
+std::vector<ExprPoint>* curveOf(Note& note, Field f);
+/// The note's curve for an expression field changes along it (more than one value), rather than being one value.
+bool shaped(const Note& note, Field f);
 
 /// The operators as on/off switches: each is off (the note always plays as written) or on.
 enum class Operator { Chance, Repeats, Spread, Occurrence, Recurrence, Count };

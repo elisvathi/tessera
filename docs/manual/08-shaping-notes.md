@@ -17,6 +17,8 @@ The inspector is the panel on the right of the editor. Press **I** to show or hi
 ### Note fields
 
 The note fields are **Start**, **Length**, **Pitch**, **Channel**, **Velocity**, **Release** and **Micro-timing**.
+On drum tracks there are also **Pitch**, **Timbre** and **Pressure** for each hit, and the note's own pitch is
+called **Note**. See [Drums](09-drums.md#pitch-timbre-and-pressure).
 Each field is a slider that fills to its value. With several notes selected, a band shows the range of their values
 and a tick marks each note.
 

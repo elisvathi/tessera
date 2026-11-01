@@ -1338,3 +1338,23 @@ Impact: `Song::kSchemaVersion` 6, `narrowTransposeSemitones` in Serialize.cpp.
   every time, which the user found annoying.
 
 Impact: `confirmReplace` in ProjectFile.cpp.
+
+## 88. Drum hits take one value each, with curves on demand (1 Nov)
+
+- **A hit's pitch, timbre or pressure is one value by default.** It is stored as a curve with a single point, so
+  nothing new is saved and MIDI export already handles it. Read as one value, a curve gives its value where the hit
+  starts, which is what a drum is heard with; setting a value on a shaped curve moves the whole curve.
+- **On drum lanes the lower pane shows them as stems**, with the velocity lane's gestures. The drag is relative to
+  where the value was, so the first click of a double-click edits nothing. Instrument tracks keep their curve lanes.
+- **Double-clicking a stem zooms the lane onto that hit** (Back / Esc), where the curve editing of §63–66 works at
+  full width. A one-step hit was too narrow to shape in place, and a trigger lane's curve still spans the written
+  hit, which the header says.
+- **Drum rows are lanes, not pitches,** so the grid no longer draws pitch curves at the row they reach (a kick bent
+  +2 was drawn on the snare row), and grid presses never grab bend points there.
+- **One pitch window** (±2 to ±48) serves stems and curves, so zooming onto a hit keeps the scale.
+
+Why: a user asked for a quick way to set drum pitch, timbre and pressure as single values while keeping curves,
+and a better way to enter them for drums that are only triggers.
+
+Impact: `fields::Field::Bend / Timbre / Pressure`, `PianoRollView::drumValueField / curveFocus / pitchWindow`,
+`EditorState::curveFocusNote`, ExpressionLane's zoomed mode, NoteGrid::drawHitValue.

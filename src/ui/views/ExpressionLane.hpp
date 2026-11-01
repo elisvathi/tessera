@@ -14,11 +14,18 @@ class PianoRollView;
 /// Click inside a note's span to add a point, drag points to move them, drag a segment's middle handle to bend
 /// it, double-click a point to delete it. Pitch values snap to semitones with Shift. With notes selected, only
 /// their curves can be changed.
+///
+/// Zoomed onto one drum hit (PianoRollView::curveFocus), the hit's span fills the lane under a header with a Back
+/// button, and only its curve is shown and edited; right-click also deletes a point there.
 class ExpressionLane : public InteractiveView {
   public:
     ExpressionLane(EditorContext& ctx, PianoRollView& owner) : InteractiveView(ctx), owner(owner) {}
 
     expr::Curve curve = expr::Curve::Pitch;
+
+    void step() override;
+    /// Where notes are in time: the piano roll's axis, or the zoomed hit's own.
+    const TimeAxis& axis() const;
 
     /// The values the lane's height shows. Pitch has a choosable window (±2 to ±48 semitones).
     float low() const;
@@ -45,10 +52,15 @@ class ExpressionLane : public InteractiveView {
 
   private:
     rack::math::Rect rangeButton() const;
-    void openRangeMenu();
+    rack::math::Rect backButton() const;
+    /// Where the value scale starts: under the header while zoomed onto a hit.
+    float top() const;
+    /// The zoomed hit's header: Back, what is shaped, and how long the curve lasts.
+    void drawFocusHeader(NVGcontext* vg, const Note& note);
 
     PianoRollView& owner;
-    float pitchWindow = 12;
+    NoteId focus;       // the zoomed hit, refreshed each frame
+    TimeAxis focusAxis; // its span across the lane
 };
 
 } // namespace tessera

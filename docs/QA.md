@@ -206,6 +206,14 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Drum Out: each strip's chip has its lane's colour and number; recolouring a lane or moving it to another
       output updates the chip; hovering a jack names the lane ("Snare pitch").
 - [ ] A drum track on a Track Out still sends the lane's note on V/OCT.
+- [ ] Drum lanes, lower pane on Pitch: one stem per hit; dragging snaps to semitones (Shift: tenths); a click
+      without moving changes nothing; Alt+drag ramps; the cells show +3 (corner mark when narrow). Timbre and
+      Pressure show bars on the cells. The ±window button changes the stems and the zoomed curve together.
+- [ ] Double-click a stem: the lane zooms onto that hit with ← Back; add, move, arch and delete points; Esc and Back
+      return. Deleting the hit or switching clip returns too. A shaped hit shows a wave and "~"; dragging its stem
+      keeps the shape. Right-click a stem: Shape curve…, Flatten to one value, Clear (each one undo step).
+- [ ] Inspector with drum hits selected: Note, Pitch, Timbre, Pressure rows; "+7 st, curve" on a shaped hit; the
+      chart, typing (=+5) and double-click reset work.
 - [ ] Scale device: Root and Scale knobs hide unless Key from is Fixed; the card shrinks and grows back when the
       Key from knob is turned.
 - [ ] File menu: with a changed song, New song and Open project… ask in a dialog first (Cancel keeps the song);

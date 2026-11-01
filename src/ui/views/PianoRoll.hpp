@@ -4,6 +4,7 @@
 
 #include "../../model/ExpressionEdits.hpp"
 #include "../../model/NoteEdits.hpp"
+#include "../../model/NoteFields.hpp"
 #include "../../model/Scale.hpp"
 #include "../editing/LivePlay.hpp"
 #include "../editing/NoteTarget.hpp"
@@ -138,6 +139,17 @@ class PianoRollView : public EditorPane, public NoteTarget {
     bool bendMode();
     /// The curve whose points the grid edits now: the strip's, else Pitch.
     std::optional<expr::Curve> editableCurve();
+    /// Drum lanes with the lower pane on Pitch, Timbre or Pressure: hits take one value each, shown as stems (and
+    /// in the cells), so this is the field they edit. Nothing otherwise.
+    std::optional<fields::Field> drumValueField();
+    /// The hit whose curve the lower pane is zoomed onto, or none. Only valid while that hit is in the shown clip.
+    NoteId curveFocus();
+    /// Zooms the lower pane onto one hit's curve (`note` valid), or goes back to the stems.
+    void focusCurve(NoteId note);
+    /// How many semitones up and down the lower pane's pitch shows, for curves and hit values alike. Session only.
+    float pitchWindow = 12;
+    /// The menu of pitch windows (±2 to ±48 semitones).
+    void openPitchWindowMenu();
 
     /// Creates an empty clip on the selected track (the "double-click to create" empty state).
     void createClip();

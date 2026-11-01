@@ -47,6 +47,8 @@ shot)
   echo "$IMAGES/$2.png";;
 click) w=$(cat "$D/wid"); xdotool mousemove --window "$w" "$2" "$3"; sleep 0.25; xdotool mousedown "${4:-1}"; sleep 0.08
   xdotool mouseup "${4:-1}"; sleep 0.6;;
+dblclick) w=$(cat "$D/wid"); xdotool mousemove --window "$w" "$2" "$3"; sleep 0.25; xdotool click --repeat 2 --delay 90 1
+  sleep 0.6;;
 move) w=$(cat "$D/wid"); xdotool mousemove --window "$w" "$2" "$3"; sleep 0.3;;
 drag) w=$(cat "$D/wid"); xdotool mousemove --window "$w" "$2" "$3"; sleep 0.25; xdotool mousedown 1; sleep 0.1
   for i in 1 2 3 4 5 6 7 8; do xdotool mousemove --window "$w" $(( $2 + ($4-$2)*i/8 )) $(( $3 + ($5-$3)*i/8 )); sleep 0.05; done

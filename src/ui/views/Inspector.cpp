@@ -55,6 +55,9 @@ const char* const kOccurrences[] = {"Always",       "First pass", "Not first", "
 
 const Field kNoteFields[] = {Field::Start,    Field::Length,  Field::Pitch, Field::Channel,
                              Field::Velocity, Field::Release, Field::Micro};
+// Drum hits also take a pitch, timbre and pressure each (the Drum Out's PITCH, TIMBRE and PRESS jacks).
+const Field kHitFields[] = {Field::Start, Field::Length, Field::Pitch,    Field::Channel, Field::Velocity,
+                            Field::Bend,  Field::Timbre, Field::Pressure, Field::Release, Field::Micro};
 
 std::vector<Field> operatorFields(Operator op) {
     switch (op) {
@@ -210,8 +213,12 @@ void Inspector::layoutRegions() {
 
     titles.push_back({y, (multi ? "NOTES (" + std::to_string(selected.size()) + ")" : std::string("NOTE"))});
     y += kRowHeight;
-    for (Field f : kNoteFields)
-        field(f);
+    if (drumTrack())
+        for (Field f : kHitFields)
+            field(f);
+    else
+        for (Field f : kNoteFields)
+            field(f);
     y += kSectionGap / 2;
 
     titles.push_back({y, "OPERATORS"});
@@ -406,7 +413,7 @@ void Inspector::openTyping(Field field) {
     auto [lo, hi] = fields::range(notes, ids, field);
     rack::ui::Menu* menu = rack::createMenu();
     // Name and hint on two lines keep the box narrow, so it opens beside the field instead of against the edge.
-    menu->addChild(rack::createMenuLabel(field == Field::Length ? "Length in beats" : fields::info(field).name));
+    menu->addChild(rack::createMenuLabel(field == Field::Length ? "Length in beats" : fieldLabel(field)));
     if (field == Field::Start)
         menu->addChild(rack::createMenuLabel("A position like 2.1.1, or +1 beat"));
     else if (ids.size() > 1)
@@ -427,6 +434,16 @@ void Inspector::openTyping(Field field) {
     menu->addChild(typing);
     // The click was a request to type, so take the keyboard right away.
     APP->event->setSelectedWidget(typing);
+}
+
+bool Inspector::drumTrack() const {
+    const Track* t = ctx.module() ? ctx.module()->song().findTrack(ctx.state().selectedTrack) : nullptr;
+    return t && t->type == TrackType::Drum;
+}
+
+std::string Inspector::fieldLabel(Field f) const {
+    // On a drum hit the note's own pitch only picks the lane; "Pitch" is the hit's tuning.
+    return f == Field::Pitch && drumTrack() ? "Note" : fields::info(f).name;
 }
 
 TimeSig Inspector::timeSig() const { return ctx.module() ? ctx.module()->song().timeSig : TimeSig(); }
@@ -573,11 +590,17 @@ void Inspector::drawRegion(NVGcontext* vg, const Region& r, bool hot) {
             nvgFill(vg);
             labelX += 10;
         }
-        draw::text(vg, label, labelX, mid, info.name);
+        std::string name = fieldLabel(r.field);
+        draw::text(vg, label, labelX, mid, name);
         std::string text = fields::format(r.field, lo, timeSig());
         if (hi != lo)
             text += " – " + fields::format(r.field, hi, timeSig());
-        float nameWidth = draw::textWidth(vg, label, info.name) + (labelX - rect.pos.x);
+        bool shaped = false;
+        for (const Note& n : notes)
+            shaped = shaped || (ids.count(n.id) && fields::shaped(n, r.field));
+        if (shaped)
+            text += ", curve"; // the value is where the curve starts; editing moves the whole curve
+        float nameWidth = draw::textWidth(vg, label, name) + (labelX - rect.pos.x);
         std::string shown = draw::ellipsize(vg, value, text, rect.size.x - nameWidth - 12);
         draw::text(vg, value, rect.getRight() - 6, mid, shown);
         if (r.field == Field::Channel) {
@@ -669,9 +692,9 @@ void Inspector::drawChart(NVGcontext* vg, const Region& r) {
 
     // What the chart spans: the field's scale, except pitch, which zooms to the notes (with room to spread).
     double low = info.min, high = info.max;
-    if (r.field == Field::Pitch) {
+    if (r.field == Field::Pitch || r.field == Field::Bend) {
         auto [lo, hi] = fields::range(notes, ids, r.field);
-        double pad = std::max(6.0, (24 - (hi - lo)) / 2);
+        double pad = std::max(r.field == Field::Bend ? 3.0 : 6.0, ((r.field == Field::Bend ? 12 : 24) - (hi - lo)) / 2);
         low = std::max(info.min, lo - pad);
         high = std::min(info.max, hi + pad);
     }
