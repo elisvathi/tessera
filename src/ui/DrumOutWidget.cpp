@@ -92,8 +92,13 @@ struct DrumOutWidget : rack::app::ModuleWidget {
             panel.output(Vec(x, kVelRow), M::VEL_OUTPUT + i, "V", kHintAbove);
             panel.output(Vec(x, kTimbreRow), M::TIMBRE_OUTPUT + i, "T", kHintAbove);
             panel.output(Vec(x, kPressRow), M::PRESS_OUTPUT + i, "P", kHintAbove);
-            addChild(rack::createLightCentered<rack::componentlibrary::SmallLight<PlayLight>>(
-                rack::mm2px(Vec(x, 55.15f)), module, M::TRIG_LIGHT + i));
+            // A smaller-than-stock light: the stock 2 mm halo touches the trigger jack in the 3.5 mm gap.
+            auto* light = new rack::componentlibrary::SmallLight<PlayLight>;
+            light->module = module;
+            light->firstLightId = M::TRIG_LIGHT + i;
+            light->box.size = rack::mm2px(Vec(1.6f, 1.6f));
+            light->box.pos = rack::mm2px(Vec(x, 55.1f)).minus(light->box.size.div(2));
+            addChild(light);
         }
         const char* polyLabels[5] = {"TRIGS", "VEL", "TIMBRE", "PRESS", "AUTO"};
         const int polyOutputs[5] = {M::TRIG_POLY_OUTPUT, M::VEL_POLY_OUTPUT, M::TIMBRE_POLY_OUTPUT,
