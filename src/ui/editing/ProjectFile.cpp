@@ -92,9 +92,21 @@ void newSong(TesseraModule* m, Say say) {
     say("New song  ·  undo brings the old one back", false);
 }
 
+/// Replacing the whole song loses what is there (undo brings it back), so a song that isn't the untouched default
+/// confirms inside the menu — one more click, never a blocking dialog (Trello, user feedback).
 void appendFileMenu(rack::ui::Menu* menu, TesseraModule* m, std::function<EditorContext*()> editor, Say say) {
-    menu->addChild(rack::createMenuItem("New song", "", [m, say] { newSong(m, say); }));
-    menu->addChild(rack::createMenuItem("Open project…", "", [m, say] { open(m, say); }));
+    auto replaceItem = [&](const char* label, std::function<void()> run) {
+        if (m->song() == makeDefaultSong()) {
+            menu->addChild(rack::createMenuItem(label, "", run));
+            return;
+        }
+        menu->addChild(rack::createSubmenuItem(label, "", [label, run](rack::ui::Menu* sub) {
+            sub->addChild(rack::createMenuLabel("Replaces the current song. Undo brings it back."));
+            sub->addChild(rack::createMenuItem(std::string(label) + " anyway", "", run));
+        }));
+    };
+    replaceItem("New song", [m, say] { newSong(m, say); });
+    replaceItem("Open project…", [m, say] { open(m, say); });
     std::string file = m->projectPath.empty() ? "" : rack::system::getFilename(m->projectPath);
     menu->addChild(rack::createMenuItem("Save project", file, [m, say] { save(m, false, say); }));
     menu->addChild(rack::createMenuItem("Save project as…", "", [m, say] { save(m, true, say); }));
