@@ -14,6 +14,10 @@ DrumOutModule::DrumOutModule() : OutputModuleBase(TrackType::Drum) {
     configOutput(TRIG_POLY_OUTPUT, "All lanes")->description = "Every lane's trigger, one channel per lane output";
     configOutput(VEL_POLY_OUTPUT, "Velocity")->description = "0-10 V, one channel per lane output";
     configOutput(AUTO_OUTPUT, "Automation")->description = "One channel per automation lane";
+    configOutput(TIMBRE_POLY_OUTPUT, "Timbre")->description =
+        "Each hit's timbre curve, 0-10 V, one channel per lane output; 0 V while no curve plays";
+    configOutput(PRESS_POLY_OUTPUT, "Pressure")->description =
+        "Each hit's pressure curve, 0-10 V, one channel per lane output; 0 V while no curve plays";
     lightDivider.setDivision(kLightDivision);
 }
 
@@ -39,6 +43,10 @@ void DrumOutModule::writeFrame(const TrackFrame& frame) {
     outputs[VEL_POLY_OUTPUT].writeVoltages(frame.vel);
     outputs[AUTO_OUTPUT].setChannels(frame.autoChannels);
     outputs[AUTO_OUTPUT].writeVoltages(frame.automation);
+    outputs[TIMBRE_POLY_OUTPUT].setChannels(frame.channels);
+    outputs[TIMBRE_POLY_OUTPUT].writeVoltages(frame.timbre);
+    outputs[PRESS_POLY_OUTPUT].setChannels(frame.channels);
+    outputs[PRESS_POLY_OUTPUT].writeVoltages(frame.press);
 }
 
 void DrumOutModule::silenceGates() {

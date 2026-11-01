@@ -199,6 +199,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A note on a pitch no lane plays gets a "(no lane)" row under the lanes.
 - [ ] Mute or solo a lane: its row dims. A lane with its own steps (12 against 16): a line at its loop end,
       dimmed row and faded repeats after it.
+- [ ] Lane menu, Output length: Note length holds the gate for the note (long and short notes in one lane sound
+      different); the lane header shows T / G / N. Fixed gates and triggers are unchanged.
+- [ ] Drum Out: TIMBRE and PRESS poly outputs follow a hit's expression curves while it plays and hold after it;
+      pitch expression bends the lane's pitch on the trigger outputs.
 - [ ] In-panel editor: rows shrink to 16 px and the lanes clip inside the pane; the header fits.
 - [ ] Lane header: click the name to hear it, M / S work, double-click renames, right-click menu.
 - [ ] Lane menu: note, output, steps (12 against 16: faded repeats; it drifts against the bar while playing),

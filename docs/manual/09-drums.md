@@ -84,7 +84,7 @@ Right-click a lane's name for its menu.
 | **Steps** | The lane's own loop length, in steps. "Clip" follows the clip's loop. See [Polymeter](#polymeter). |
 | **Rate** | How long a step is for this lane: 1/4 to 1/32, triplets too. |
 | **Choke group** | 1 to 8, or none. When a lane in a group plays, it cuts the other lanes of the same group. In the kits, closed and open hats share group 1, so a closed hat cuts a ringing open hat. |
-| **Output length** | **Trigger** (1 ms, the default) or a gate of a fixed length in milliseconds. The note's own length doesn't matter. |
+| **Output length** | **Trigger** (1 ms, the default), a gate of a fixed length in milliseconds, or **Note length**: the gate is high for exactly as long as the hit's note, so notes of different lengths sound different. A letter before the output number in the lane header shows the mode: **T** trigger, **G** gate, **N** note length. |
 
 ### Pattern tools
 

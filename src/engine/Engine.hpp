@@ -348,6 +348,14 @@ class Engine {
         // CCs with no lane yet, and the free AUTO channel each plays on until its take makes the lane.
         std::array<int8_t, 128> liveCcOutput;
         int liveCcCount = 0;
+        // Per drum lane: the expression curves of the hit it plays (for the Drum Out's pitch bend, timbre and
+        // pressure outputs), when the hit started and its note's length in play ticks. Clip and note ID values
+        // find the curves again in a new snapshot; 0 = none.
+        std::array<const NoteExtras*, kMaxDrumLanes> drumExtras{};
+        std::array<double, kMaxDrumLanes> drumCurveStart{}, drumCurveLength{};
+        std::array<uint64_t, kMaxDrumLanes> drumClip{}, drumNote{};
+        std::array<bool, kMaxDrumLanes> drumCurved{};
+        int curvedLanes = 0; // lanes playing expression curves change their outputs every sample
         std::array<size_t, kMaxDrumLanes> laneCursor{}; // per own-loop lane of the playing clip
         // The device chain: what the snapshot says, and the runtime (an index into `chains`, -1 for none).
         const ChainPlayback* chainInfo = nullptr;
@@ -448,7 +456,7 @@ class Engine {
     void startHit(const TrackPlayback& track, TrackState& state, const TrackState::PendingHit& hit);
     void firePending(const TrackPlayback& track, TrackState& state, double until);
     static void clearPending(TrackState& state);
-    void hitDrum(const TrackPlayback& track, TrackState& state, int pitch, float velocity);
+    void hitDrum(const TrackPlayback& track, TrackState& state, const chain::ChainNote& n);
     void seekTrack(const TrackPlayback& track, TrackState& state);
     void seekAll();
     void writeFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const;

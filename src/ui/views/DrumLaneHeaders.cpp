@@ -208,9 +208,12 @@ void DrumLaneHeaders::drawLane(NVGcontext* vg, const DrumLane& l, int index, flo
     if (clip && hasOwnLoop(l, *clip))
         label += "  " + std::to_string(laneRegion(l, *clip).steps(l.stepLength));
     Rect solo = toggleRect(top, h, 0), mute = toggleRect(top, h, 1);
-    // The Drum Out jack the lane plays on; outputs past the 8 jacks are only on the poly outputs.
+    // The Drum Out jack the lane plays on; outputs past the 8 jacks are only on the poly outputs. The letter
+    // before it is the output length set in the lane menu: T trigger, G a fixed gate, N the hit's own length.
+    const char* mode = l.gateFollowsNote ? "N" : l.gateLengthMs > 0 ? "G" : "T";
     std::string output =
-        "→" + std::to_string(l.outputIndex + 1) + (l.outputIndex < DrumOutModule::kTrigJacks ? "" : " poly");
+        std::string(mode) + " →" + std::to_string(l.outputIndex + 1) +
+        (l.outputIndex < DrumOutModule::kTrigJacks ? "" : " poly");
     draw::TextStyle out{theme::fonts::mono(), std::min(theme::metrics::kTextRuler, h - 2), c.text2,
                         NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
     float outRight = mute.pos.x - 4;
