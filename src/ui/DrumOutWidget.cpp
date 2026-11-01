@@ -31,7 +31,6 @@ constexpr float kTrigRow = 60, kVelRow = 72, kTimbreRow = 87, kPressRow = 98.5f;
 constexpr float kLaneX[8] = {8.2f, 18.75f, 29.3f, 39.85f, 50.4f, 60.95f, 71.5f, 82.05f};
 constexpr float kPolyRow = 116;
 constexpr float kPolyX[5] = {11.2f, 28.5f, 45.7f, 63.f, 80.3f};
-constexpr float kLightAbove = 6.4f;
 constexpr float kHintAbove = 5.1f; // the V/T/P hint's distance from its own jack
 
 const DrumLane* laneOf(DrumOutModule* module, int lane) {
@@ -94,7 +93,7 @@ struct DrumOutWidget : rack::app::ModuleWidget {
             panel.output(Vec(x, kTimbreRow), M::TIMBRE_OUTPUT + i, "T", kHintAbove);
             panel.output(Vec(x, kPressRow), M::PRESS_OUTPUT + i, "P", kHintAbove);
             addChild(rack::createLightCentered<rack::componentlibrary::SmallLight<PlayLight>>(
-                rack::mm2px(Vec(x - 3.4f, kTrigRow - kLightAbove)), module, M::TRIG_LIGHT + i));
+                rack::mm2px(Vec(x, 55.15f)), module, M::TRIG_LIGHT + i));
         }
         const char* polyLabels[5] = {"TRIGS", "VEL", "TIMBRE", "PRESS", "AUTO"};
         const int polyOutputs[5] = {M::TRIG_POLY_OUTPUT, M::VEL_POLY_OUTPUT, M::TIMBRE_POLY_OUTPUT,
