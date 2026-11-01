@@ -18,6 +18,9 @@ draw::TextStyle labelStyle(PanelArt::LabelKind kind) {
         return {fonts::uiStrong(), metrics::kPanelTitle, c.text0, center, 2.f};
     case PanelArt::LabelKind::Section:
         return {fonts::uiStrong(), metrics::kPanelLabel, c.text2, center, metrics::kPanelLabelSpacing};
+    case PanelArt::LabelKind::RowName:
+        return {fonts::uiStrong(), metrics::kPanelLabel, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE,
+                metrics::kPanelLabelSpacing};
     case PanelArt::LabelKind::Output:
         return {fonts::uiStrong(), metrics::kPanelLabel, c.text0, center, metrics::kPanelLabelSpacing};
     case PanelArt::LabelKind::Control:
@@ -103,9 +106,10 @@ void PanelBuilder::input(rack::math::Vec mm, int inputId, const std::string& lab
                    PanelArt::LabelKind::Control);
 }
 
-void PanelBuilder::output(rack::math::Vec mm, int outputId, const std::string& label, float labelAboveMm) {
+void PanelBuilder::output(rack::math::Vec mm, int outputId, const std::string& label) {
     mw->addOutput(rack::createOutputCentered<PanelJack>(rack::mm2px(mm), mw->getModule(), outputId));
-    art().addLabel(mm.minus(rack::math::Vec(0, labelAboveMm)), label, PanelArt::LabelKind::Output);
+    art().addLabel(mm.minus(rack::math::Vec(0, theme::metrics::kPanelLabelAboveJackMm)), label,
+                   PanelArt::LabelKind::Output);
 }
 
 } // namespace tessera

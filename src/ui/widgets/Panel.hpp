@@ -27,15 +27,15 @@ struct PanelScrew : rack::componentlibrary::ThemedScrew {
 /// labels sit exactly where the builder put the controls. Positions are in mm, like Rack's helpers.
 class PanelArt : public rack::widget::Widget {
   public:
-    enum class LabelKind { Control, Output, Section, Title };
+    /// RowName: a row's name at the left of a grid of jacks, right-aligned and centred on the row.
+    enum class LabelKind { Control, Output, Section, Title, RowName };
 
     explicit PanelArt(rack::math::Vec sizePx) { box.size = sizePx; }
 
     void addLabel(rack::math::Vec mm, const std::string& text, LabelKind kind);
     /// A raised area that groups outputs (Rack convention: outputs sit on a contrasting plate).
     void addPlate(rack::math::Rect mm);
-    /// The opposite of a plate: a recessed tray that de-emphasises what's inside it, so the rest of the
-    /// plate reads as the primary area.
+    /// A recessed tray inside a plate, such as one mixer-style strip of jacks per drum lane.
     void addSunkPlate(rack::math::Rect mm);
 
     void draw(const DrawArgs& args) override;
@@ -63,9 +63,7 @@ class PanelBuilder {
     std::vector<rack::widget::Widget*> rightScrews() const { return rightScrewWidgets; }
 
     void input(rack::math::Vec mm, int inputId, const std::string& label);
-    /// `labelAboveMm` overrides how far above the jack the label sits, for rows packed tighter than usual.
-    void output(rack::math::Vec mm, int outputId, const std::string& label,
-                float labelAboveMm = theme::metrics::kPanelLabelAboveJackMm);
+    void output(rack::math::Vec mm, int outputId, const std::string& label);
 
     /// A param control with an optional label below it.
     template <typename TParamWidget>

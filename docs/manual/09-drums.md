@@ -148,9 +148,13 @@ The clip chip on the left of the header works as in the piano roll: rename, loop
 
 ## Wiring the Drum Out
 
-- Patch jacks **1** to **8** to your drum modules' trigger inputs. Each jack's light flashes on a hit.
-- **V1** to **V8** carry each lane's velocity, 0 to 10 V. Patch them to an accent or level input.
-- **TRIGS** and **VEL** carry all 16 outputs on poly cables, one channel per output.
-- **AUTO** carries the drum track's automation lanes.
+- Each strip is one drum output. Its chip has the lane's colour and number.
+- Patch the **TRIG** row to your drum modules' trigger inputs. The light above each strip flashes on a hit.
+- The **VEL** row carries each hit's velocity, 0 to 10 V. Patch it to an accent or level input.
+- The **PITCH** row carries each hit's tuning, 1 V per octave, 0 V for none. Patch it to a tune input.
+- The **TIMBRE** and **PRESS** rows carry each hit's timbre and pressure, 0 to 10 V. Patch them to a tone, decay or
+  level input.
+- The poly jacks at the bottom carry all 16 outputs, one channel per output. **AUTO** carries the drum track's
+  automation lanes.
 
 See [The modules](02-modules.md#drum-out).

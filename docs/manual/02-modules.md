@@ -152,27 +152,26 @@ V/OCT.
 
 ![The Drum Out module](images/drum-out.png)
 
-Drum Out plays one **drum track**. Each drum sound (a "lane") is a mixer-style strip: a colour chip with the
-lane's number on top (the chip takes the lane's colour), then the lane's trigger, velocity, timbre and pressure
-jacks, top to bottom — the small letters **V**, **T** and **P** mark the rows. Lanes 1 to 8 have their own strips;
-lanes 9 to 16 reach only the poly jacks.
+Drum Out plays one **drum track**. Each of the outputs 1 to 8 has a strip, like a mixer channel. On top is a chip
+with the output's number in the colour of the lane that plays there. Under it are five jacks, one per row. The rows
+are named once, at the left: **TRIG**, **VEL**, **PITCH**, **TIMBRE** and **PRESS**. Hover a jack to see which drum
+it is, for example "Snare pitch".
 
 | Jack | What it sends |
 |---|---|
-| **1** to **8** | A trigger (or gate) for the lanes on outputs 1 to 8. The small light flashes on each hit. |
-| **V1** to **V8** | The velocity of the last hit on that output, 0 to 10 V. It holds until the next hit. |
-| **T1** to **T8** | The lane's timbre curve, 0 to 10 V: the expression curve of the hit now playing. |
-| **P1** to **P8** | The lane's pressure curve, 0 to 10 V. |
-| **TRIGS** | All 16 outputs on one poly cable, one channel per output. |
-| **VEL** | All 16 velocities on one poly cable. |
-| **TIMBRE** | All 16 lanes' timbre curves on one poly cable. |
-| **PRESS** | All 16 lanes' pressure curves on one poly cable. |
+| **TRIG** row | A trigger (or gate) for the lane on that output. The small light above flashes on each hit. |
+| **VEL** row | The velocity of the last hit, 0 to 10 V. |
+| **PITCH** row | How far the hit is tuned away from normal, 1 V per octave: +12 semitones is +1 V. 0 V when the hit has no pitch. Patch it to a drum module's tune input. |
+| **TIMBRE** row | The hit's timbre, 0 to 10 V. 0 V when it has none. |
+| **PRESS** row | The hit's pressure, 0 to 10 V. 0 V when it has none. |
+| **TRIGS**, **VEL**, **PITCH**, **TIMBRE**, **PRESS** | The same for all 16 outputs, on poly cables, one channel per output. |
 | **AUTO** | The track's automation lanes, one channel per lane. |
 
 Lanes on outputs 9 to 16 reach only the poly jacks. A lane sends a short 1 ms trigger by default, a gate of a set
-length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings). A hit's timbre and pressure curves
-come out of **T1–T8** and **P1–P8** (or the **TIMBRE** / **PRESS** poly jacks) while the hit plays. Afterwards they
-hold their last value until the lane's next hit. A hit with no curve sets them back to 0 V.
+length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings).
+
+Velocity, pitch, timbre and pressure hold until the lane's next hit. A hit's pitch, timbre and pressure can be one
+value or a curve that moves across the hit. See [Pitch, timbre and pressure](09-drums.md#pitch-timbre-and-pressure).
 
 The screen, arrows and menu work like Track Out's. A new Drum Out picks the first drum track with no output yet.
 

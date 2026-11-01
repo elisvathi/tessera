@@ -1301,20 +1301,25 @@ Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and a
   does the track run per sample.
 - **A note-off ends only a "Note length" gate.** Triggers and fixed gates run their own length, so letting a key
   go early never shortens them.
-- **Drum Out is a fixed 18 HP module.** Every lane has its own timbre and pressure jack next to its trigger and
-  velocity. An expandable panel (a right-click toggle that resized the widget) was tried first and dropped: it
-  rebuilt the widget at runtime, which fought Rack's ModuleWidget panel ownership — two crashes — for no musical
-  gain. The panel lays one mixer-style channel strip per lane: a colour chip with the lane's number on top (no
-  lane names on the panel — position, colour and number carry the identity), then its four jacks in fixed order
-  (trigger, velocity, timbre, pressure, with small V/T/P hints).
+- **Drum Out is a fixed 20 HP console** (1 Nov, picked from three mockups: this, a 12 HP core with an expression
+  expander, and squeezing five rows into 18 HP). One mixer-style strip per lane output: a chip with the output's
+  number in its lane's colour (the track's when the lane has none), the hit light, then five jacks: TRIG, VEL,
+  PITCH, TIMBRE, PRESS. The rows are named once at the left instead of a letter in every strip. Jack tooltips name
+  the lanes on that output ("Snare pitch"). New kits give each lane its own colour so the chips tell the strips
+  apart. An expandable panel (a right-click toggle that resized the widget) was tried first and dropped: it rebuilt
+  the widget at runtime, which fought Rack's ModuleWidget panel ownership.
+- **Drum Out's PITCH is the hit's tuning, not the lane's note.** 0 V when the hit has no pitch, 1 V per octave away
+  from it, for a drum module's tune input. The lane's note (36 for a kick) would read as about -2 V and detune the
+  drum. The frame's `voct` keeps the lane's note plus the bend, for a drum track played through a Track Out;
+  `tune` carries the bend alone.
 - **The curves live in the snapshot**, so a snapshot swap re-finds a sounding lane's curves by clip and note ID,
   the same re-attachment voices use.
 
 Why: drum clips allow any note length and pitch/timbre/pressure expressions, but until now the lane always fired a
 trigger or a fixed gate and the expressions reached no output, so writing them had no effect. Reported by a user.
 
-Impact: `DrumLane.gateFollowsNote` (saved as "gateNote"), `hitDrum` takes the chain note, Drum Out gains TIMBRE
-and PRESS poly outputs (appended after the old ones, so saved patches keep their cables).
+Impact: `DrumLane.gateFollowsNote` (saved as "gateNote"), `hitDrum` takes the chain note, `TrackFrame::tune`,
+Drum Out gains PITCH, TIMBRE and PRESS outputs (appended after the old ones, so saved patches keep their cables).
 
 ## 86. Transpose's Semitones knob is ±24, and old songs keep their pitch (1 Nov)
 

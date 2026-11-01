@@ -784,6 +784,7 @@ TEST_CASE("drum lanes: a 1 ms trigger on the lane's channel, with velocity and t
     CHECK_FALSE(h.gate(1));
     CHECK(h.frame().vel[0] == doctest::Approx(8.f));
     CHECK(h.frame().voct[1] == doctest::Approx(pitchToVolts(38)));
+    CHECK(h.frame().tune[1] == doctest::Approx(0.f)); // no pitch on the hit: Drum Out's PITCH rests at 0 V
     h.runTo(kRetriggerGap - 1);
     CHECK(h.gate(0));
     h.step();
@@ -842,6 +843,7 @@ TEST_CASE("drum lanes: a hit's expression curves play on the lane's timbre, pres
     h.runTo(kStepSamples / 2);
     CHECK(h.frame().timbre[0] == doctest::Approx(5).epsilon(0.2));
     CHECK(h.frame().voct[0] == doctest::Approx(pitchToVolts(42)).epsilon(0.01));
+    CHECK(h.frame().tune[0] == doctest::Approx(0.5).epsilon(0.01)); // Drum Out's PITCH: the bend alone
     h.runTo(kStepSamples);
     CHECK(h.frame().timbre[0] == doctest::Approx(10).epsilon(0.2));
     CHECK(h.frame().voct[0] == doctest::Approx(pitchToVolts(48)).epsilon(0.01));

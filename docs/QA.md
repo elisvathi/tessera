@@ -201,10 +201,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       dimmed row and faded repeats after it.
 - [ ] Lane menu, Output length: Note length holds the gate for the note (long and short notes in one lane sound
       different); the lane header shows T / G / N. Fixed gates and triggers are unchanged.
-- [ ] Drum Out: TIMBRE and PRESS poly outputs follow a hit's expression curves while it plays and hold after it;
-      pitch expression bends the lane's pitch on the trigger outputs.
-- [ ] Drum Out: each lane strip shows a colour chip with the lane's number (the chip takes the lane's colour);
-      jacks read trigger, V, T, P top to bottom; recolouring a lane in the editor updates the chip.
+- [ ] Drum Out: the PITCH, TIMBRE and PRESS rows (and poly jacks) follow a hit's value or curve and hold until the
+      lane's next hit; PITCH is 0 V for a hit with no pitch and +1 V for +12 semitones.
+- [ ] Drum Out: each strip's chip has its lane's colour and number; recolouring a lane or moving it to another
+      output updates the chip; hovering a jack names the lane ("Snare pitch").
+- [ ] A drum track on a Track Out still sends the lane's note on V/OCT.
 - [ ] Scale device: Root and Scale knobs hide unless Key from is Fixed; the card shrinks and grows back when the
       Key from knob is turned.
 - [ ] File menu: with a changed song, New song and Open project… open a submenu that says the current song is

@@ -18,6 +18,10 @@ TESSERA_ID = 1001
 TRACK_IDS = {"Bass": 1, "Chords": 2, "Lead": 3, "Drums": 4}
 COLORS = {"Bass": 0x4498E8, "Chords": 0xDA743C, "Lead": 0x9B7FE2, "Drums": 0x1AAE74}
 
+# The model's 16 track colours (src/model/TrackColors.hpp); a kit lane takes colour (output * 5) % 16, as new kits do.
+TRACK_COLORS = [0xEF806F, 0xE88949, 0xD79628, 0xBDA422, 0x9AB140, 0x6DBA67, 0x2DC08E, 0x00C0B4,
+                0x00BBD5, 0x24B2ED, 0x65A7FA, 0x909BFB, 0xB28FEF, 0xCE85D8, 0xE17EB9, 0xED7C95]
+
 STANDARD_8 = [
     ("Kick", 36, 0, 0), ("Snare", 38, 1, 0), ("Clap", 39, 2, 0), ("Closed hat", 42, 3, 1),
     ("Open hat", 46, 4, 1), ("Low tom", 45, 5, 0), ("High tom", 50, 6, 0), ("Rim", 37, 7, 0),
@@ -104,7 +108,7 @@ def make_song():
     def track(name, kind, slots, arrangement, automation=()):
         """A track with its launcher slots (8 scenes) and timeline clips."""
         lanes = [{"name": n, "pitch": p, "output": o, "mute": False, "solo": False, "gateMs": 0.0, "choke": ch,
-                  "loop": 0, "step": 240, "color": 0} for n, p, o, ch in STANDARD_8] if kind == "drum" else []
+                  "loop": 0, "step": 240, "color": TRACK_COLORS[(o * 5) % 16]} for n, p, o, ch in STANDARD_8] if kind == "drum" else []
         return {"id": TRACK_IDS[name], "name": name, "color": COLORS[name], "type": kind, "polyphony": 0,
                 "mute": False, "solo": False, "armed": False, "monitor": True, "recordInput": "any",
                 "midiChannel": 0, "gateScale": 1.0, "transpose": 0, "drumLanes": lanes,

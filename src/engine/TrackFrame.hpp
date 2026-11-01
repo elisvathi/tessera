@@ -17,6 +17,7 @@ struct TrackFrame {
     float rel[kMaxVoices] = {};
     float timbre[kMaxVoices] = {};
     float press[kMaxVoices] = {};
+    float tune[kMaxVoices] = {}; // drum tracks: the hit's tuning away from normal, 1 V per octave (Drum Out PITCH)
     float automation[kMaxAutomationLanes] = {}; // already in volts
 };
 

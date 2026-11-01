@@ -1,4 +1,5 @@
 #include "DrumKit.hpp"
+#include "TrackColors.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -14,6 +15,7 @@ DrumLane lane(const char* name, int pitch, int output, int choke = 0) {
     l.pitch = int8_t(pitch);
     l.outputIndex = output;
     l.chokeGroup = choke;
+    l.color = trackColorForIndex(output); // each sound its own colour, in the editor and on Drum Out
     return l;
 }
 

@@ -1859,11 +1859,13 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
 namespace tessera {
 
 void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const {
-    // One channel per lane output: a gate (or trigger) with the lane's velocity and its note as pitch.
+    // One channel per lane output: a gate (or trigger) with the lane's velocity and its note as pitch (for a Track
+    // Out). `tune` carries the hit's own pitch alone (0 V = as the drum module is tuned), for Drum Out.
     frame.trackId = track.id.value;
     frame.channels = uint8_t(std::clamp(track.drumChannels, 1, kMaxVoices));
     writeAutomation(track, state, frame);
     for (int c = 0; c < frame.channels; c++) {
+        frame.tune[c] = 0;
         frame.gate[c] = 0;
         frame.rel[c] = 0;
         frame.timbre[c] = 0;
@@ -1877,10 +1879,10 @@ void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state,
             bool high = state.drums.gate(int(i));
             if (c >= frame.channels || (pass == 1 && !high))
                 continue;
-            frame.voct[c] = pitchToVolts(track.drumLanes[i].pitch);
             frame.vel[c] = state.drums.velocity(int(i)) * 10.f;
             const TrackState::DrumCurve& curve = state.drumCurves[i];
-            frame.voct[c] += curve.bend / 12.f;
+            frame.tune[c] = curve.bend / 12.f;
+            frame.voct[c] = pitchToVolts(track.drumLanes[i].pitch) + frame.tune[c];
             frame.timbre[c] = curve.timbre * 10.f;
             frame.press[c] = curve.press * 10.f;
             if (high)

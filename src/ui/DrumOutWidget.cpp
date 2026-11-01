@@ -16,54 +16,66 @@ namespace {
 using rack::math::Rect;
 using rack::math::Vec;
 
-constexpr int kHp = 18;
+constexpr int kHp = 20;
 
-// Layout in mm. The panel is 91.4 x 128.5.
-const Rect kDisplay(4, 12.5f, 83.4f, 24);
+// Layout in mm. The panel is 101.6 x 128.5.
+const Rect kDisplay(4, 12.5f, 93.6f, 24);
 constexpr float kButtonRow = 40.75f; // the arrows sit exactly halfway between the display and the plate
 const Vec kButtonSize(12, 6);
-const Rect kOutputPlate(2.5f, 45, 86.4f, 78);
-// One mixer-style channel strip per lane: a color chip with the lane's number on top, then its four jacks
-// (trigger, velocity, timbre, pressure). The strips recede into the plate; the chip carries the identity.
-constexpr float kStripW = 9.6f;
-constexpr float kChipTop = 49.1f, kChipH = 4.3f;
-constexpr float kTrigRow = 60, kVelRow = 72, kTimbreRow = 87, kPressRow = 98.5f;
-constexpr float kLaneX[8] = {8.2f, 18.75f, 29.3f, 39.85f, 50.4f, 60.95f, 71.5f, 82.05f};
-constexpr float kPolyRow = 116;
-constexpr float kPolyX[5] = {11.2f, 28.5f, 45.7f, 63.f, 80.3f};
-constexpr float kHintAbove = 5.1f; // the V/T/P hint's distance from its own jack
+const Rect kOutputPlate(2.5f, 45, 96.6f, 78.5f);
+// One mixer-style strip per lane output: a colour chip with its number, the hit light, then five jacks. The rows are
+// named once, at the left, instead of a letter in every strip.
+constexpr float kStripW = 9.6f, kStripPitch = 10.44f, kFirstStrip = 20.7f;
+constexpr float kStripTop = 46.5f, kStripH = 60;
+constexpr float kChipTop = 47.3f, kChipH = 4;
+constexpr float kLightRow = 53.4f;
+constexpr float kRows[5] = {59, 69.5f, 80, 90.5f, 101}; // trigger, velocity, pitch, timbre, pressure
+constexpr float kRowNameRight = 14.4f;
+constexpr float kPolyRow = 116.5f, kFirstPoly = 10.55f, kPolyPitch = 16.1f;
 
-/// The drum lane `lane` of the track this Drum Out plays, or nullptr when it has no source or no such lane.
-const DrumLane* laneOf(DrumOutModule* module, int lane) {
-    if (!module)
-        return nullptr;
-    TesseraModule* src = module->source();
+/// The drum track this Drum Out plays, or nullptr when it has no source or the track is gone.
+const Track* trackOf(DrumOutModule* module) {
+    TesseraModule* src = module ? module->source() : nullptr;
     if (!src)
         return nullptr;
     const Song& song = src->song();
     int index = song.trackIndex(module->binding().track);
-    if (index < 0 || lane >= int(song.tracks[size_t(index)].drumLanes.size()))
-        return nullptr;
-    return &song.tracks[size_t(index)].drumLanes[size_t(lane)];
+    return index < 0 ? nullptr : &song.tracks[size_t(index)];
 }
 
-/// The strip's color chip: the lane's colour with its number in ink, like a mixer channel's coloured tag.
+/// The lanes that play on lane output `output` (several lanes may share one), in the lanes' order.
+std::vector<const DrumLane*> lanesOn(const Track& track, int output) {
+    std::vector<const DrumLane*> out;
+    for (const DrumLane& l : track.drumLanes)
+        if (l.outputIndex == output)
+            out.push_back(&l);
+    return out;
+}
+
+/// The strip's colour chip: the colour of the first lane on this output (the track's when the lane has none) with
+/// the output's number, like a mixer channel's coloured tag. Grey while no lane plays there.
 struct LaneChip : rack::widget::Widget {
-    LaneChip(DrumOutModule* module, int lane) : module(module), lane(lane) {}
+    LaneChip(DrumOutModule* module, int output) : module(module), output(output) {}
 
     void draw(const DrawArgs& args) override {
         const theme::Palette& c = theme::panelColors();
-        const DrumLane* l = laneOf(module, lane);
-        uint32_t color = l ? l->color : 0;
-        NVGcolor chip = color ? theme::rgb(color) : c.bg2;
+        NVGcolor chip = c.bg2;
+        NVGcolor ink = c.text1;
+        if (const Track* t = trackOf(module)) {
+            std::vector<const DrumLane*> lanes = lanesOn(*t, output);
+            if (!lanes.empty()) {
+                chip = theme::rgb(lanes[0]->color ? lanes[0]->color : t->color);
+                ink = c.ink;
+            }
+        }
         draw::roundedRect(args.vg, Rect(Vec(), box.size), rack::mm2px(1.4f), chip);
-        tessera::draw::TextStyle number{theme::fonts::uiStrong(), theme::metrics::kPanelLabel, c.ink,
+        tessera::draw::TextStyle number{theme::fonts::uiStrong(), theme::metrics::kPanelLabel, ink,
                                         NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        tessera::draw::text(args.vg, number, box.size.x / 2, box.size.y / 2 + 0.3f, std::to_string(lane + 1));
+        tessera::draw::text(args.vg, number, box.size.x / 2, box.size.y / 2 + 0.3f, std::to_string(output + 1));
     }
 
     DrumOutModule* module;
-    int lane;
+    int output;
 };
 
 } // namespace
@@ -78,40 +90,44 @@ struct DrumOutWidget : rack::app::ModuleWidget {
         display->box = Rect(rack::mm2px(kDisplay.pos), rack::mm2px(kDisplay.size));
         addChild(display);
 
-        addStepButton(IconButton::Icon::Previous, Vec(39.2f, kButtonRow), "Previous drum track", -1);
-        addStepButton(IconButton::Icon::Next, Vec(52.2f, kButtonRow), "Next drum track", +1);
+        addStepButton(IconButton::Icon::Previous, Vec(44.3f, kButtonRow), "Previous drum track", -1);
+        addStepButton(IconButton::Icon::Next, Vec(57.3f, kButtonRow), "Next drum track", +1);
 
         panel.art().addPlate(kOutputPlate);
+        const char* rowNames[5] = {"TRIG", "VEL", "PITCH", "TIMBRE", "PRESS"};
+        for (int r = 0; r < 5; r++)
+            panel.art().addLabel(Vec(kRowNameRight, kRows[r]), rowNames[r], PanelArt::LabelKind::RowName);
         for (int i = 0; i < M::kTrigJacks; i++) {
-            float x = kLaneX[i];
-            panel.art().addSunkPlate(Rect(x - kStripW / 2, 48.5f, kStripW, 57));
+            float x = kFirstStrip + float(i) * kStripPitch;
+            panel.art().addSunkPlate(Rect(x - kStripW / 2, kStripTop, kStripW, kStripH));
             auto* chip = new LaneChip(module, i);
             chip->box =
                 Rect(rack::mm2px(Vec(x - kStripW / 2 + 0.6f, kChipTop)), rack::mm2px(Vec(kStripW - 1.2f, kChipH)));
             addChild(chip);
-            panel.output(Vec(x, kTrigRow), M::TRIG_OUTPUT + i, "");
-            // The V/T/P hints hug their own jack: the standard label offset would push them into the jack above.
-            panel.output(Vec(x, kVelRow), M::VEL_OUTPUT + i, "V", kHintAbove);
-            panel.output(Vec(x, kTimbreRow), M::TIMBRE_OUTPUT + i, "T", kHintAbove);
-            panel.output(Vec(x, kPressRow), M::PRESS_OUTPUT + i, "P", kHintAbove);
-            // A smaller-than-stock light: the stock 2 mm halo touches the trigger jack in the 3.5 mm gap.
+            const int jacks[5] = {M::TRIG_OUTPUT + i, M::VEL_OUTPUT + i, M::PITCH_OUTPUT + i, M::TIMBRE_OUTPUT + i,
+                                  M::PRESS_OUTPUT + i};
+            for (int r = 0; r < 5; r++)
+                panel.output(Vec(x, kRows[r]), jacks[r], "");
+            // A smaller-than-stock light: the stock 2 mm halo would touch the trigger jack.
             auto* light = new rack::componentlibrary::SmallLight<PlayLight>;
             light->module = module;
             light->firstLightId = M::TRIG_LIGHT + i;
             light->box.size = rack::mm2px(Vec(1.6f, 1.6f));
-            light->box.pos = rack::mm2px(Vec(x, 55.1f)).minus(light->box.size.div(2));
+            light->box.pos = rack::mm2px(Vec(x, kLightRow)).minus(light->box.size.div(2));
             addChild(light);
         }
-        const char* polyLabels[5] = {"TRIGS", "VEL", "TIMBRE", "PRESS", "AUTO"};
-        const int polyOutputs[5] = {M::TRIG_POLY_OUTPUT, M::VEL_POLY_OUTPUT, M::TIMBRE_POLY_OUTPUT,
-                                    M::PRESS_POLY_OUTPUT, M::AUTO_OUTPUT};
-        for (int k = 0; k < 5; k++)
-            panel.output(Vec(kPolyX[k], kPolyRow), polyOutputs[k], polyLabels[k]);
+        const char* polyLabels[6] = {"TRIGS", "VEL", "PITCH", "TIMBRE", "PRESS", "AUTO"};
+        const int polyOutputs[6] = {M::TRIG_POLY_OUTPUT,   M::VEL_POLY_OUTPUT,   M::PITCH_POLY_OUTPUT,
+                                    M::TIMBRE_POLY_OUTPUT, M::PRESS_POLY_OUTPUT, M::AUTO_OUTPUT};
+        for (int k = 0; k < 6; k++)
+            panel.output(Vec(kFirstPoly + float(k) * kPolyPitch, kPolyRow), polyOutputs[k], polyLabels[k]);
     }
 
     void step() override {
-        if (auto* m = outputModule())
+        if (auto* m = outputModule()) {
             m->refreshBinding();
+            nameJacks(m);
+        }
         ModuleWidget::step();
     }
 
@@ -127,7 +143,34 @@ struct DrumOutWidget : rack::app::ModuleWidget {
     }
 
   private:
+    /// The module this widget shows, or nullptr in the module browser.
     DrumOutModule* outputModule() const { return static_cast<DrumOutModule*>(module); }
+
+    /// Names each lane jack after the lanes that play on it ("Snare pitch"), so hovering a jack says which drum it
+    /// is; back to "Lane 3 pitch" while no lane plays there.
+    void nameJacks(DrumOutModule* m) {
+        using M = DrumOutModule;
+        const Track* track = trackOf(m);
+        for (int i = 0; i < M::kTrigJacks; i++) {
+            std::string name;
+            if (track)
+                for (const DrumLane* l : lanesOn(*track, i))
+                    name += (name.empty() ? "" : " + ") + l->name;
+            if (name.empty())
+                name = "Lane " + std::to_string(i + 1);
+            if (name == jackNames[size_t(i)])
+                continue;
+            jackNames[size_t(i)] = name;
+            m->outputInfos[size_t(M::TRIG_OUTPUT + i)]->name = name;
+            m->outputInfos[size_t(M::VEL_OUTPUT + i)]->name = name + " velocity";
+            m->outputInfos[size_t(M::PITCH_OUTPUT + i)]->name = name + " pitch";
+            m->outputInfos[size_t(M::TIMBRE_OUTPUT + i)]->name = name + " timbre";
+            m->outputInfos[size_t(M::PRESS_OUTPUT + i)]->name = name + " pressure";
+            m->lightInfos[size_t(M::TRIG_LIGHT + i)]->name = name;
+        }
+    }
+
+    std::array<std::string, DrumOutModule::kTrigJacks> jackNames;
 
     void addStepButton(IconButton::Icon icon, Vec centerMm, const std::string& tooltip, int delta) {
         auto* button = new IconButton(icon, tooltip, [this, delta] {
