@@ -467,7 +467,9 @@ void PianoRollView::layout() {
     rest -= rulerHeight;
     float lane = ctx.surface == Surface::Panel ? kLaneHeightPanel : kLaneHeightOverlay;
     if (ctx.view().lowerLane == kCurveLane && curveView->hasCurve())
-        lane = ctx.surface == Surface::Panel ? kCurveLaneHeightPanel : kCurveLaneHeightOverlay;
+        lane = ctx.view().curveHeight > 0                ? float(ctx.view().curveHeight)
+               : ctx.surface == Surface::Panel ? kCurveLaneHeightPanel
+                                               : kCurveLaneHeightOverlay;
     float tabs = 0; // the lane's own label picks what it shows; no row of tabs
     constexpr float kMinGrid = 48, kMinLane = 28;
     if (rest - lane - tabs < kMinGrid)

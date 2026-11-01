@@ -6,6 +6,7 @@
 #include "../interaction/Axes.hpp"
 #include "../interaction/InteractiveView.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -34,6 +35,13 @@ class CurveView : public InteractiveView {
 
     /// What a running drag shows before it is committed.
     std::optional<CurveDrawing> preview;
+    /// The picked points, by index into the drawing's points, in order. Step | Ramp in the header acts on them, and
+    /// dragging one moves them all.
+    std::vector<size_t> picked;
+    /// Whether point `index` is picked.
+    bool isPicked(size_t index) const { return std::binary_search(picked.begin(), picked.end(), index); }
+    /// Sets the curve pane's height (px) from a drag of its top edge; 0 goes back to the default.
+    void setHeight(double height);
     /// Across: ticks into the drawing, zoomed and scrolled on its own.
     TimeAxis time;
 
@@ -41,7 +49,8 @@ class CurveView : public InteractiveView {
     /// ruler and drawing start right of it.
     float left = 0;
 
-    static constexpr float kHead = 24; // the header row: Length, shapes, Remove
+    static constexpr float kEdge = 5;  // the top edge that drags to resize the pane
+    static constexpr float kHead = 24; // the header row: Length, Step | Ramp, shapes, Remove, close
     static constexpr float kBar = 28;  // the ruler (positions, then the segment), under the header
 
     /// Keeps the curve's own zoom inside its limits, and lines a newly shown curve up under the notes.
@@ -53,6 +62,8 @@ class CurveView : public InteractiveView {
     void doubleClick(rack::math::Vec pos, Modifiers mods) override;
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void wheel(rack::math::Vec pos, rack::math::Vec delta, Modifiers mods) override;
+    /// Scrolls across while a drag holds the pointer at the pane's edge.
+    void autoScroll(double dx, double dy) override;
     void drawView(const DrawArgs& args) override;
 
   public:
@@ -85,13 +96,15 @@ class CurveView : public InteractiveView {
     std::string lengthLabel(Tick length);
     /// Whether the setting has steps (rows) rather than a smooth range.
     bool stepped();
+    /// The drawn values the setting can reach from where its knob is (low, high).
+    std::pair<float, float> reachable();
     /// The kind a new point at `t` gets: the kind of the point before it, else Step on a setting with steps.
     CurveType kindAt(const std::vector<AutoPoint>& points, Tick t);
 
   private:
     /// One clickable part of the header row, rebuilt when needed.
     struct HeaderPart {
-        enum class Kind { Length, Shape, Remove } kind;
+        enum class Kind { Length, Step, Ramp, Shape, Remove, Close } kind;
         rack::math::Rect rect;
         int shape = -1;
     };
@@ -100,6 +113,8 @@ class CurveView : public InteractiveView {
     void applyShape(int index);
     /// Sets how long the drawing is, as one undo step; a segment playing all of it grows or shrinks with it.
     void setLength(Tick length);
+    /// Makes every picked point a Step (Hold) or a Ramp (Linear), as one undo step.
+    void setPickedKind(CurveType kind);
     /// The pane's right-click menu: shapes, fitting the view, removing the curve, and how to edit.
     void openMenu();
     /// A point's right-click menu: Step, Ramp or delete.
@@ -114,8 +129,6 @@ class CurveView : public InteractiveView {
     void drawRows(NVGcontext* vg);
     /// The segment's light, the grid, the line (bright in the segment), a ramp's stairs and the points.
     void drawCurve(NVGcontext* vg, NVGcolor color, const CurveDrawing& d);
-    /// The drawn values the setting can reach from where its knob is (low, high).
-    std::pair<float, float> reachable();
     /// The values each of the setting's steps is drawn at, lowest first (only those it can reach).
     std::vector<float> rowValues();
     /// Lines the drawing up under the notes (the segment's start under the clip's start, the piano roll's zoom)

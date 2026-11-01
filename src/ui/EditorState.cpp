@@ -58,6 +58,7 @@ json_t* viewToJson(const ViewState& v) {
     setNumber(j, "launcherPanelWidth", v.launcherPanelWidth);
     setBool(j, "clipsWide", v.clipsWide);
     setInt(j, "lowerLane", static_cast<json_int_t>(v.lowerLane));
+    setNumber(j, "curveHeight", v.curveHeight);
     setString(j, "noteLane", kNoteLaneNames[int(v.noteLane)]);
     json_t* lanes = json_array();
     for (const auto& [id, h] : v.laneHeights)
@@ -101,6 +102,7 @@ ViewState viewFromJson(const json_t* j, ViewState v = ViewState()) {
             v.foldedGroups.insert(uint64_t(asInt(g, 0)));
     });
     v.lowerLane = uint64_t(std::max<int64_t>(0, getInt(j, "lowerLane", 0)));
+    v.curveHeight = std::clamp(getNumber(j, "curveHeight", 0), 0.0, 4000.0);
     v.noteLane = fromName(get(j, "noteLane"), kNoteLaneNames, v.noteLane);
     if (v.noteLane == NoteLane::VelocitySpread)
         v.noteLane = NoteLane::Velocity; // varying each play is no longer edited in the editor

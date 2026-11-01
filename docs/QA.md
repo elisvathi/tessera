@@ -421,12 +421,22 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       in key steps in the keys' column, ±7 rows shown; the wheel scrolls to +14 and −14, Alt+wheel zooms the rows,
       Ctrl+wheel zooms across without moving the piano roll. Click a point on +12: the bass plays 12 steps up.
 - [ ] Right-click a point: Step (square, holds) and Ramp (circle, glides; dotted stairs under it on Key steps). A
-      new point takes the kind of the one before. Every change is one undo step.
+      new point takes the kind of the one before. Every change is one undo step. On a picked point, Step and Ramp
+      act on every picked point.
+- [ ] Click a point: it is picked (brighter, light outline). Shift+click picks one more; Shift+click a picked one
+      unpicks it. Drag from an empty spot: a box picks the points it touches (Shift adds them). The header counts
+      the picked points and lights **Step**/**Ramp** when all picked are that kind; clicking one makes every picked
+      point that kind, one undo step. Drag a picked point: all picked move together, staying between their
+      neighbours and on the rows.
+- [ ] Drag the pane's top edge: it grows or shrinks and keeps the height (saved with the view). Double-click the
+      edge: back to the default height. The **×** beside **Remove curve** closes the pane back to the note lane.
 - [ ] Length → 16 bars, drag the segment to bars 5 to 8 (grips and bar): launched, the clip's first bar plays the
       curve's bar 5, and the curve's playhead runs from bar 5 and wraps at 8. On the timeline, each timeline clip
       starts the curve from the segment's start. A step drawn on a note's start changes that very note.
 - [ ] Length shorter than the segment: the segment slides back inside; points past the end stay dim and come back
       when lengthened. Double-click the curve's ruler: the whole drawing shows.
+- [ ] Drag the segment's grip or the bar past the drawing's end: **Length** grows with it, so the segment never
+      sticks at the end.
 - [ ] The modulator's Moves row for the drawn setting says "as drawn" and has no amount bar. A song with curves
       saved before 31 Oct plays the same; one with a Passes curve shows a Per pass Steps modulator instead.
 

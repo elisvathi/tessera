@@ -7,6 +7,7 @@
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/DeviceActions.hpp"
+#include "../interaction/ClickOrDrag.hpp"
 #include "../interaction/Navigation.hpp"
 #include "../widgets/Draw.hpp"
 #include "PianoRoll.hpp"
@@ -77,24 +78,52 @@ class CurveDrag : public DragGesture {
         Tick shortest = std::max<Tick>(snap, kPpq / 4);
         switch (mode) {
         case Mode::Point: {
-            // A point stays between its neighbours, so dragging never reorders the curve.
-            Tick lo = index > 0 ? drawing.points[size_t(index) - 1].t : 0;
-            Tick hi = index + 1 < int(drawing.points.size()) ? drawing.points[size_t(index) + 1].t : kMaxCurveLength;
-            drawing.points[size_t(index)].t = std::clamp(snapped(t), lo, hi);
-            drawing.points[size_t(index)].value = view.valueAt(pos.y, mods.alt);
+            // The grabbed point follows the mouse; the other picked points move by as much. Each stays between the
+            // points that aren't moving, so dragging never reorders the curve.
+            const std::vector<AutoPoint>& from = start.points;
+            const AutoPoint& grab = from[size_t(index)];
+            Tick dt = snapped(t) - grab.t;
+            for (size_t i : view.picked) {
+                if (i >= from.size())
+                    continue;
+                Tick lo = 0, hi = kMaxCurveLength;
+                for (size_t j = i; j-- > 0;)
+                    if (!view.isPicked(j)) {
+                        lo = from[j].t;
+                        break;
+                    }
+                for (size_t j = i + 1; j < from.size(); j++)
+                    if (!view.isPicked(j)) {
+                        hi = from[j].t;
+                        break;
+                    }
+                dt = std::clamp(dt, lo - from[i].t, hi - from[i].t);
+            }
+            float dv = view.valueAt(pos.y, true) - grab.value;
+            auto [low, high] = view.reachable();
+            for (size_t i : view.picked) {
+                if (i >= from.size())
+                    continue;
+                drawing.points[i].t = from[i].t + dt;
+                float v = std::clamp(from[i].value + dv, low, high);
+                drawing.points[i].value = mods.alt ? v : view.heard(v);
+            }
             break;
         }
         case Mode::SegmentStart:
             drawing.segmentStart = std::clamp(snapped(t), Tick(0), start.segmentEnd - shortest);
             break;
         case Mode::SegmentEnd:
-            drawing.segmentEnd = std::clamp(snapped(t), start.segmentStart + shortest, start.length);
+            // Past the drawing's end the drawing grows with it, so the segment is never stuck at the length.
+            drawing.segmentEnd = std::clamp(snapped(t), start.segmentStart + shortest, kMaxCurveLength);
+            drawing.length = std::max(start.length, drawing.segmentEnd);
             break;
         case Mode::Segment: {
             Tick span = start.segmentEnd - start.segmentStart;
-            Tick from = std::clamp(start.segmentStart + snapped(t - grabbed), Tick(0), start.length - span);
+            Tick from = std::clamp(start.segmentStart + snapped(t - grabbed), Tick(0), kMaxCurveLength - span);
             drawing.segmentStart = from;
             drawing.segmentEnd = from + span;
+            drawing.length = std::max(start.length, drawing.segmentEnd);
             break;
         }
         }
@@ -115,6 +144,7 @@ class CurveDrag : public DragGesture {
                                       view.module() ? view.module()->song().timeSig : TimeSig());
     }
     CursorShape cursor() const override { return mode == Mode::Point ? CursorShape::Move : CursorShape::ResizeH; }
+    bool autoScrollX() const override { return true; }
     bool fresh = false;
 
   private:
@@ -127,7 +157,78 @@ class CurveDrag : public DragGesture {
     bool moved = false;
 };
 
+/// Dragging the pane's top edge: up makes it taller. No undo: it is how the editor looks.
+class CurveResize : public DragGesture {
+  public:
+    CurveResize(CurveView& view, Vec press) : view(view), startY(press.y + view.box.pos.y), startH(view.box.size.y) {}
+    void update(Vec pos, Modifiers mods) override {
+        // The pane moves as it grows, so the pointer is measured from where the drag began, not from the pane.
+        float y = pos.y + view.box.pos.y;
+        view.setHeight(std::max(60.0, double(startH + (startY - y))));
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeV; }
+
+  private:
+    CurveView& view;
+    float startY, startH;
+};
+
+/// A drag from empty space: picks the points inside the box (Shift adds to the picked ones).
+class CurvePick : public DragGesture {
+  public:
+    CurvePick(CurveView& view, Vec press, bool add)
+        : view(view), press(press), current(press), before(add ? view.picked : std::vector<size_t>{}),
+          points(view.shown().points) {}
+    void update(Vec pos, Modifiers mods) override {
+        current = pos;
+        float x0 = std::min(press.x, pos.x), x1 = std::max(press.x, pos.x);
+        float y0 = std::min(press.y, pos.y), y1 = std::max(press.y, pos.y);
+        std::vector<size_t> picked = before;
+        for (size_t i = 0; i < points.size(); i++) {
+            float x = view.xOf(double(points[i].t)), y = view.yOf(points[i].value);
+            if (x >= x0 - 2 && x <= x1 + 2 && y >= y0 - 2 && y <= y1 + 2)
+                picked.push_back(i);
+        }
+        std::sort(picked.begin(), picked.end());
+        picked.erase(std::unique(picked.begin(), picked.end()), picked.end());
+        view.picked = picked;
+    }
+    void cancel() override { view.picked = before; }
+    void drawOverlay(NVGcontext* vg) override {
+        const theme::Palette& c = theme::colors();
+        nvgBeginPath(vg);
+        nvgRect(vg, std::min(press.x, current.x), std::min(press.y, current.y), std::fabs(current.x - press.x),
+                std::fabs(current.y - press.y));
+        nvgFillColor(vg, nvgTransRGBAf(c.select, 0.15f));
+        nvgFill(vg);
+        nvgStrokeColor(vg, c.select);
+        nvgStrokeWidth(vg, 1);
+        nvgStroke(vg);
+    }
+
+  private:
+    CurveView& view;
+    Vec press, current;
+    std::vector<size_t> before;
+    std::vector<AutoPoint> points;
+};
+
 } // namespace
+
+void CurveView::setHeight(double height) { ctx.view().curveHeight = height; }
+
+void CurveView::setPickedKind(CurveType kind) {
+    CurveDrawing d = shown();
+    bool changed = false;
+    for (size_t i : picked)
+        if (i < d.points.size() && d.points[i].curve != kind) {
+            d.points[i].curve = kind;
+            d.points[i].tension = 0;
+            changed = true;
+        }
+    if (changed)
+        commit(d);
+}
 
 const Modulator* CurveView::modulator(ModulatorPlace* place) {
     TesseraModule* m = ctx.module();
@@ -386,7 +487,11 @@ void CurveView::step() {
     // A different curve (or a new setting waiting for one) opens lined up under the notes.
     uint64_t id = modulator() ? modulator()->id.value : 0;
     ParamRef ref = target();
+    size_t count = d.points.size();
+    picked.erase(std::remove_if(picked.begin(), picked.end(), [count](size_t i) { return i >= count; }), picked.end());
     if (hasCurve() && visible && (!fitted || id != fittedModulator || !(ref == fittedTarget))) {
+        if (fitted && id != fittedModulator && fittedModulator != 0)
+            picked.clear();
         fit();
         fitted = true;
         fittedModulator = id;
@@ -419,6 +524,8 @@ double CurveView::sinceClipStart() {
 std::unique_ptr<DragGesture> CurveView::startGesture(Vec pos, int button, Modifiers mods) {
     if (button != GLFW_MOUSE_BUTTON_LEFT || !hasCurve())
         return nullptr;
+    if (pos.y < kEdge && pos.x >= left)
+        return std::make_unique<CurveResize>(*this, pos);
     CurveDrawing d = shown();
     if (pos.y < kHead) // the header's buttons act on click
         return nullptr;
@@ -436,28 +543,49 @@ std::unique_ptr<DragGesture> CurveView::startGesture(Vec pos, int button, Modifi
     }
     if (pos.x < left) // the row labels
         return nullptr;
-    double t = tAt(pos.x);
     int index = pointAt(pos);
-    bool fresh = index < 0;
-    if (fresh) {
-        if (t < 0 || t > double(kMaxCurveLength))
+    if (index >= 0) {
+        // A press on a point picks it (Shift adds or takes it away); a drag moves every picked point.
+        size_t i = size_t(index);
+        if (mods.shift) {
+            if (isPicked(i))
+                picked.erase(std::find(picked.begin(), picked.end(), i));
+            else
+                picked.insert(std::upper_bound(picked.begin(), picked.end(), i), i);
             return nullptr;
-        Tick at = std::clamp<Tick>(Tick(std::llround(t / double(snap()))) * snap(), 0, kMaxCurveLength);
-        // The first point keeps the setting where it is: the curve starts from no change.
-        if (d.points.empty() && at > 0)
-            d.points.push_back({0, 0.5f, kindAt(d.points, 0), 0});
-        AutoPoint pt{at, valueAt(pos.y, mods.alt), kindAt(d.points, at), 0};
-        auto it = std::upper_bound(d.points.begin(), d.points.end(), pt.t,
-                                   [](Tick v, const AutoPoint& q) { return v < q.t; });
-        index = int(it - d.points.begin());
-        d.points.insert(it, pt);
+        }
+        if (!isPicked(i))
+            picked = {i};
+        return std::make_unique<CurveDrag>(*this, d, CurveDrag::Mode::Point, index, 0);
     }
-    auto drag = std::make_unique<CurveDrag>(*this, d, CurveDrag::Mode::Point, index, 0);
-    drag->fresh = fresh;
-    return drag;
+    // Empty space: a click adds a point (and picks it), a drag picks the points in a box.
+    double t = tAt(pos.x);
+    CurveView* view = this;
+    bool alt = mods.alt;
+    std::function<void()> add = [view, pos, t, alt] {
+        CurveDrawing now = view->shown();
+        if (t < 0 || t > double(kMaxCurveLength))
+            return;
+        Tick at = std::clamp<Tick>(Tick(std::llround(t / double(view->snap()))) * view->snap(), 0, kMaxCurveLength);
+        // The first point keeps the setting where it is: the curve starts from no change.
+        if (now.points.empty() && at > 0)
+            now.points.push_back({0, 0.5f, view->kindAt(now.points, 0), 0});
+        AutoPoint pt{at, view->valueAt(pos.y, alt), view->kindAt(now.points, at), 0};
+        auto it = std::upper_bound(now.points.begin(), now.points.end(), pt.t,
+                                   [](Tick v, const AutoPoint& q) { return v < q.t; });
+        size_t index = size_t(it - now.points.begin());
+        now.points.insert(it, pt);
+        view->picked = {index};
+        view->commit(now);
+    };
+    return std::make_unique<ClickOrDrag>(std::make_unique<CurvePick>(*this, pos, mods.shift), pos, add);
 }
 
 void CurveView::doubleClick(Vec pos, Modifiers mods) {
+    if (pos.y < kEdge && pos.x >= left) {
+        setHeight(0);
+        return;
+    }
     if (pos.y >= kHead && pos.y < kHead + kBar) {
         fitAll();
         return;
@@ -467,6 +595,7 @@ void CurveView::doubleClick(Vec pos, Modifiers mods) {
         return;
     CurveDrawing d = shown();
     d.points.erase(d.points.begin() + index);
+    picked.clear();
     commit(d);
 }
 
@@ -488,6 +617,16 @@ void CurveView::click(Vec pos, int button, Modifiers mods) {
         case HeaderPart::Kind::Length:
             openLengthMenu();
             break;
+        case HeaderPart::Kind::Step:
+            setPickedKind(CurveType::Hold);
+            break;
+        case HeaderPart::Kind::Ramp:
+            setPickedKind(CurveType::Linear);
+            break;
+        case HeaderPart::Kind::Close:
+            // Back to the note lane shown before the curve.
+            ctx.view().lowerLane = 0;
+            break;
         case HeaderPart::Kind::Shape:
             applyShape(part.shape);
             break;
@@ -500,6 +639,8 @@ void CurveView::click(Vec pos, int button, Modifiers mods) {
         return;
     }
 }
+
+void CurveView::autoScroll(double dx, double dy) { time.scrollByPx(dx); }
 
 void CurveView::wheel(Vec pos, Vec delta, Modifiers mods) {
     ctx.touchNavigation();
@@ -518,11 +659,15 @@ std::vector<CurveView::HeaderPart> CurveView::headerParts() {
     float y = 3, h = kHead - 6;
     float x = left + kPad + 44; // "Length"
     parts.push_back({HeaderPart::Kind::Length, Rect(x, y, 70, h)});
-    x += 70 + 16 + 46; // "Shapes"
+    x += 70 + 16;
+    parts.push_back({HeaderPart::Kind::Step, Rect(x, y, 42, h)});
+    parts.push_back({HeaderPart::Kind::Ramp, Rect(x + 42, y, 46, h)});
+    x += 88 + 96 + 46; // the picked count, then "Shapes"
     for (int i = 0; i < int(std::size(kShapes)); i++)
         parts.push_back({HeaderPart::Kind::Shape, Rect(x + float(i) * 30, y, 26, h), i});
+    parts.push_back({HeaderPart::Kind::Close, Rect(box.size.x - kPad - 20, y, 20, h)});
     if (modulator())
-        parts.push_back({HeaderPart::Kind::Remove, Rect(box.size.x - kPad - 96, y, 96, h)});
+        parts.push_back({HeaderPart::Kind::Remove, Rect(box.size.x - kPad - 20 - 6 - 96, y, 96, h)});
     return parts;
 }
 
@@ -581,14 +726,10 @@ void CurveView::openPointMenu(int index) {
     if (index < 0 || index >= int(d.points.size()))
         return;
     bool step = isStep(d.points[size_t(index)]);
-    auto setKind = [view, index](CurveType kind) {
-        CurveDrawing now = view->shown();
-        if (index >= int(now.points.size()))
-            return;
-        now.points[size_t(index)].curve = kind;
-        now.points[size_t(index)].tension = 0;
-        view->commit(now);
-    };
+    // On a picked point it acts on every picked point, as the header's Step | Ramp does.
+    if (!isPicked(size_t(index)))
+        picked = {size_t(index)};
+    auto setKind = [view](CurveType kind) { view->setPickedKind(kind); };
     rack::ui::Menu* menu = rack::createMenu();
     menu->addChild(rack::createMenuLabel(format(d.points[size_t(index)].value)));
     menu->addChild(rack::createCheckMenuItem(
@@ -633,6 +774,8 @@ void CurveView::openMenu() {
 CursorShape CurveView::hoverCursor(Vec pos, Modifiers mods) {
     if (!hasCurve())
         return CursorShape::Arrow;
+    if (pos.y < kEdge && pos.x >= left)
+        return CursorShape::ResizeV;
     if (pos.y < kHead) {
         for (const HeaderPart& part : headerParts())
             if (part.rect.contains(pos))
@@ -682,6 +825,38 @@ void CurveView::drawHeader(NVGcontext* vg, NVGcolor color) {
             nvgClosePath(vg);
             nvgFillColor(vg, c.text1);
             nvgFill(vg);
+            break;
+        }
+        case HeaderPart::Kind::Step:
+        case HeaderPart::Kind::Ramp: {
+            // Lit when every picked point is that kind; dim when nothing is picked.
+            CurveDrawing d = shown();
+            bool step = part.kind == HeaderPart::Kind::Step, all = !picked.empty();
+            for (size_t i : picked)
+                if (i < d.points.size() && isStep(d.points[i]) != step)
+                    all = false;
+            draw::roundedRect(vg, r, 3, all ? color : c.bg2);
+            draw::TextStyle kind = choice;
+            kind.color = all ? c.onTile : picked.empty() ? c.text2 : c.text1;
+            draw::text(vg, kind, r.getCenter().x, r.getCenter().y, step ? "Step" : "Ramp");
+            if (!step) {
+                std::string count = picked.empty()       ? "no point picked"
+                                    : picked.size() == 1 ? "1 point"
+                                                         : std::to_string(picked.size()) + " points";
+                draw::text(vg, label, r.getRight() + 8, r.getCenter().y, count);
+            }
+            break;
+        }
+        case HeaderPart::Kind::Close: {
+            Vec m = r.getCenter();
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, m.x - 4, m.y - 4);
+            nvgLineTo(vg, m.x + 4, m.y + 4);
+            nvgMoveTo(vg, m.x + 4, m.y - 4);
+            nvgLineTo(vg, m.x - 4, m.y + 4);
+            nvgStrokeColor(vg, c.text1);
+            nvgStrokeWidth(vg, 1.4f);
+            nvgStroke(vg);
             break;
         }
         case HeaderPart::Kind::Shape: {
@@ -917,7 +1092,8 @@ void CurveView::drawCurve(NVGcontext* vg, NVGcolor color, const CurveDrawing& d)
     }
 
     // Points: a square is a step, a circle a ramp; dim outside the segment and past the end.
-    for (const AutoPoint& p : pts) {
+    for (size_t i = 0; i < pts.size(); i++) {
+        const AutoPoint& p = pts[i];
         float x = xOf(double(p.t)), y = yOf(p.value);
         if (x < -6 || x > box.size.x + 6)
             continue;
@@ -930,10 +1106,11 @@ void CurveView::drawCurve(NVGcontext* vg, NVGcolor color, const CurveDrawing& d)
             nvgCircle(vg, x, y, 3.8f);
         nvgFillColor(vg, c.bg0);
         nvgFill(vg);
-        nvgFillColor(vg, nvgTransRGBAf(color, alpha * 0.6f));
+        bool on = isPicked(i);
+        nvgFillColor(vg, nvgTransRGBAf(color, on ? 1.f : alpha * 0.6f));
         nvgFill(vg);
-        nvgStrokeColor(vg, nvgTransRGBAf(color, alpha));
-        nvgStrokeWidth(vg, 1.4f);
+        nvgStrokeColor(vg, on ? c.text0 : nvgTransRGBAf(color, alpha));
+        nvgStrokeWidth(vg, on ? 1.6f : 1.4f);
         nvgStroke(vg);
     }
 }
@@ -979,6 +1156,9 @@ void CurveView::drawView(const DrawArgs& args) {
     nvgRestore(vg);
     drawRuler(vg, color, d);
     drawHeader(vg, color);
+    // The top edge drags to resize the pane: a small grip in its middle.
+    float gx = (left + box.size.x) / 2;
+    draw::roundedRect(vg, Rect(gx - 18, 1, 36, 3), 1.5f, c.line2);
     if (d.points.empty()) {
         draw::TextStyle hint{theme::fonts::ui(), 11, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
         draw::text(vg, hint, (left + box.size.x) / 2, (kHead + kBar + box.size.y) / 2 - 14,
