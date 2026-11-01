@@ -257,6 +257,47 @@ TEST_CASE("engine: track lanes play in arranger mode, in volts, on their AUTO ch
     CHECK(rig.engine.automationValue(0, 2) == doctest::Approx(1));
 }
 
+TEST_CASE("engine: a muted or soloed-out track holds its automation instead of following lanes") {
+    Song song = autoSong();
+    Track other;
+    other.id = song.newId<TrackId>();
+    other.slots.resize(1);
+    song.tracks.push_back(other);
+    AutomationEnvelope lane = makeLane(song.newId<AutomationId>(), 2, 0);
+    lane.rangeMin = -5;
+    lane.rangeMax = 5;
+    lane.points = {pt(0, 0), pt(960, 1)};
+    song.tracks[0].automation.push_back(lane);
+    AutoRig rig(song);
+    rig.engine.setPlayMode(PlayMode::Arranger);
+    rig.engine.play();
+    auto swap = [&] {
+        rig.snapshot = buildSnapshot(rig.song, rig.slots);
+        rig.engine.setSnapshot(rig.snapshot.get());
+    };
+
+    rig.run(480 * 32); // half way: lane value 0.5, 0 V
+    CHECK(rig.frame().automation[2] == doctest::Approx(0).epsilon(0.01));
+
+    // Muting the track leaves the channel holding its last value instead of following the lane up to +5 V.
+    rig.song.tracks[0].mute = true;
+    swap();
+    rig.run(480 * 32); // lane would be at its end now
+    CHECK(rig.frame().automation[2] == doctest::Approx(0).epsilon(0.01));
+
+    // Unmuting resumes the lane where the song is.
+    rig.song.tracks[0].mute = false;
+    swap();
+    rig.run(480 * 32);
+    CHECK(rig.frame().automation[2] == doctest::Approx(5).epsilon(0.01));
+
+    // A solo on another track silences this track's automation the same way, holding the last value.
+    rig.song.tracks[1].solo = true;
+    swap();
+    rig.run(480 * 32);
+    CHECK(rig.frame().automation[2] == doctest::Approx(5).epsilon(0.01));
+}
+
 TEST_CASE("engine: track lanes also play in launcher mode, along the song") {
     Song song = autoSong();
     AutomationEnvelope lane = makeLane(song.newId<AutomationId>(), 0, 0);

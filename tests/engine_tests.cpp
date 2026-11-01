@@ -813,6 +813,44 @@ TEST_CASE("drum lanes: gate length, choke groups, mute and solo") {
     CHECK(solo.gate(1));
 }
 
+TEST_CASE("drum lanes: a note-length gate follows the hit's own length, a trigger doesn't") {
+    Harness h(drumSong({{0, 2 * kStep, 36}}, [](std::vector<DrumLane>& l) { l[0].gateFollowsNote = true; }));
+    h.runTo(2 * kStepSamples - 1);
+    CHECK(h.gate(0));
+    h.step();
+    CHECK_FALSE(h.gate(0));
+
+    // Next to it, a trigger lane fires a 1 ms trigger for the same long note.
+    Harness t(drumSong({{0, 2 * kStep, 36}}));
+    t.step();
+    CHECK(t.gate(0));
+    t.runTo(kRetriggerGap);
+    CHECK_FALSE(t.gate(0));
+}
+
+TEST_CASE("drum lanes: a hit's expression curves play on the lane's timbre, pressure and pitch") {
+    Song song = drumSong({{0, kStep, 36}});
+    Note& n = song.clips.begin()->second.notes[0];
+    n.pitchExpr = {{0, 0, 0}, {1, 12, 0}};  // glides an octave up across the note
+    n.timbreExpr = {{0, 0, 0}, {1, 1, 0}};  // sweeps 0 to full
+    n.pressureExpr = {{0, 0.5f, 0}, {1, 0.5f, 0}}; // constant half
+    Harness h(song);
+    h.step();
+    CHECK(h.frame().timbre[0] == doctest::Approx(0).epsilon(0.02));
+    CHECK(h.frame().press[0] == doctest::Approx(5).epsilon(0.02));
+    CHECK(h.frame().voct[0] == doctest::Approx(pitchToVolts(36)).epsilon(0.01));
+    h.runTo(kStepSamples / 2);
+    CHECK(h.frame().timbre[0] == doctest::Approx(5).epsilon(0.2));
+    CHECK(h.frame().voct[0] == doctest::Approx(pitchToVolts(42)).epsilon(0.01));
+    h.runTo(kStepSamples);
+    CHECK(h.frame().timbre[0] == doctest::Approx(10).epsilon(0.2));
+    CHECK(h.frame().voct[0] == doctest::Approx(pitchToVolts(48)).epsilon(0.01));
+    // The outputs hold their last value after the note, like a voice's.
+    h.runTo(2 * kStepSamples);
+    CHECK(h.frame().timbre[0] == doctest::Approx(10).epsilon(0.2));
+    CHECK(h.frame().voct[0] == doctest::Approx(pitchToVolts(48)).epsilon(0.01));
+}
+
 TEST_CASE("drum lanes: a hit during a trigger drops low first, so it is a new edge") {
     Harness h(drumSong({{0, 1, 36}, {1, 1, 36}})); // two kicks one tick (32 samples) apart
     std::vector<int64_t> edges = h.risingEdges(0, 200);

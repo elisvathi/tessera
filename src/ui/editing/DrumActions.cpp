@@ -208,17 +208,27 @@ void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         }));
     char gate[16];
     snprintf(gate, sizeof(gate), "%g ms", double(l.gateLengthMs));
-    menu->addChild(rack::createSubmenuItem(
-        "Output length", l.gateLengthMs > 0 ? gate : "Trigger", [set, current](rack::ui::Menu* sub) {
-            for (float ms : kGateLengths) {
-                char text[24];
-                snprintf(text, sizeof(text), "Gate %g ms", double(ms));
-                sub->addChild(rack::createCheckMenuItem(
-                    ms == 0 ? "Trigger (1 ms)" : text, "",
-                    [current, ms] { return current() && current()->gateLengthMs == ms; },
-                    set("Set lane output length", [ms](DrumLane& d) { d.gateLengthMs = ms; })));
-            }
-        }));
+    const char* lengthLabel = l.gateFollowsNote ? "Note length" : l.gateLengthMs > 0 ? gate : "Trigger";
+    menu->addChild(rack::createSubmenuItem("Output length", lengthLabel, [set, current](rack::ui::Menu* sub) {
+        sub->addChild(rack::createCheckMenuItem(
+            "Note length", "the gate is high for the hit's own length",
+            [current] { return current() && current()->gateFollowsNote; },
+            set("Set lane output length", [](DrumLane& d) { d.gateFollowsNote = true; })));
+        sub->addChild(rack::createMenuLabel("Fixed"));
+        for (float ms : kGateLengths) {
+            char text[24];
+            snprintf(text, sizeof(text), "Gate %g ms", double(ms));
+            sub->addChild(rack::createCheckMenuItem(
+                ms == 0 ? "Trigger (1 ms)" : text, "",
+                [current, ms] {
+                    return current() && !current()->gateFollowsNote && current()->gateLengthMs == ms;
+                },
+                set("Set lane output length", [ms](DrumLane& d) {
+                    d.gateFollowsNote = false;
+                    d.gateLengthMs = ms;
+                })));
+        }
+    }));
 
     // Pattern tools
     menu->addChild(new rack::ui::MenuSeparator);

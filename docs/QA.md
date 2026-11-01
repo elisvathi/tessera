@@ -26,6 +26,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 ## Song, undo and saving
 - [ ] Tracks menu: mute and solo each track; Ctrl/Cmd+Z and redo restore exactly.
 - [ ] Muting while playing silences the track at once; unmuting brings it back on the next note.
+- [ ] With automation lanes playing, muting the track (or soloing another) stops the AUTO outputs following their
+      lanes: each channel holds its last value, pitch bend and pressure rest at 0. Unmuting resumes the lanes.
+- [ ] Muting the source track of a listener still feeds the listener (like a MIDI send).
 - [ ] Save, quit, reopen: the song (tracks, mute/solo, notes) is unchanged.
 - [ ] Rename Tessera, then undo past the rename: earlier song edits still undo correctly.
 - [ ] Initialize (Ctrl+I) resets the song; undo brings it back.
@@ -196,6 +199,14 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A note on a pitch no lane plays gets a "(no lane)" row under the lanes.
 - [ ] Mute or solo a lane: its row dims. A lane with its own steps (12 against 16): a line at its loop end,
       dimmed row and faded repeats after it.
+- [ ] Lane menu, Output length: Note length holds the gate for the note (long and short notes in one lane sound
+      different); the lane header shows T / G / N. Fixed gates and triggers are unchanged.
+- [ ] Drum Out: TIMBRE and PRESS poly outputs follow a hit's expression curves while it plays and hold after it;
+      pitch expression bends the lane's pitch on the trigger outputs.
+- [ ] Scale device: Root and Scale knobs hide unless Key from is Fixed; the card shrinks and grows back when the
+      Key from knob is turned.
+- [ ] File menu: with a changed song, New song and Open project… open a submenu that says the current song is
+      replaced; the item acts directly when the song is the untouched default.
 - [ ] In-panel editor: rows shrink to 16 px and the lanes clip inside the pane; the header fits.
 - [ ] Lane header: click the name to hear it, M / S work, double-click renames, right-click menu.
 - [ ] Lane menu: note, output, steps (12 against 16: faded repeats; it drifts against the bar while playing),

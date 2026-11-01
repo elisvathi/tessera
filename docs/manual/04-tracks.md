@@ -52,7 +52,8 @@ it plays again. Clips that only that track used are deleted with it; clips share
 
 ## Mute and solo
 
-- **M** (or the **M** key) mutes. A muted track sounds nothing, at once.
+- **M** (or the **M** key) mutes. A muted track sounds nothing, at once: its notes stop and its automation output
+  stops following its lanes (a channel with nothing playing holds its last value, as with a muted lane).
 - **S** solos a track: only soloed tracks play. Clicking **S** on another track adds it to the solo.
 - **Shift+click S** solos only this track and un-solos the others.
 - **Alt+S** adds the selected tracks to the solo.

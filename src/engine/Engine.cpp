@@ -381,9 +381,20 @@ void Engine::audition(const AuditionEvent& event) {
             continue;
         const TrackPlayback& tp = *snapshot->tracks[i];
         if (tp.drum) {
-            // A drum lane plays its trigger or gate by itself; there is nothing to release.
-            if (event.on)
-                hitDrum(tp, state, event.pitch, event.velocity);
+            // A drum lane plays its trigger or gate by itself; only a held "note length" gate waits for the
+            // note-off, which drops it low.
+            int lane = event.pitch >= 0 && event.pitch < 128 ? tp.laneOfPitch[size_t(event.pitch)] : -1;
+            if (event.on) {
+                chain::ChainNote n;
+                n.start = playTick;
+                n.end = event.seconds > 0 ? playTick + event.seconds * bpm * kPpq / 60.0
+                                          : std::numeric_limits<double>::infinity();
+                n.pitch = event.pitch;
+                n.velocity = event.velocity;
+                hitDrum(tp, state, n);
+            } else if (lane >= 0) {
+                state.drums.cut(lane);
+            }
             return;
         }
         if (event.on) {
@@ -530,6 +541,11 @@ void Engine::liveNote(const LiveNote& note) {
                 if (state.chainInfo)
                     for (int slot : state.chainInfo->modulatorSlots)
                         mods::releaseNote((*modStates)[size_t(slot)]);
+                if (tp.drum && played >= 0 && played < 128) {
+                    int lane = tp.laneOfPitch[size_t(played)];
+                    if (lane >= 0)
+                        state.drums.cut(lane);
+                }
                 endInput(tp, state, id);
                 audition({tp.id.value, played, note.velocity, 0, false});
             }
@@ -906,7 +922,7 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
             advanceAutomation(*snapshot->tracks[i], state);
         if (state.busSlot >= 0) {
             uint64_t version = state.outputVersion(frameEpoch);
-            if (state.curvedVoices > 0 || state.written[parity] != version) {
+            if (state.curvedVoices > 0 || state.curvedLanes > 0 || state.written[parity] != version) {
                 writeFrame(*snapshot->tracks[i], state, frames[state.busSlot]);
                 state.written[parity] = version;
             }
@@ -928,7 +944,7 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
 
 bool Engine::idleUntilControl(const TrackState& state, uint64_t sample) const {
     uint64_t next = (sample | (kControlBlock - 1)) + 1;
-    if (state.curvedVoices > 0 || state.auditions > 0 || state.drums.counting() ||
+    if (state.curvedVoices > 0 || state.curvedLanes > 0 || state.auditions > 0 || state.drums.counting() ||
         !state.voices.quietFor(int64_t(next - sample)))
         return false; // something counts down or moves on every sample
     // Both bus buffers must hold the current outputs, or the skipped samples would publish an older one.
@@ -1265,6 +1281,30 @@ void Engine::reattachCurves(const TrackPlayback& tp, TrackState& state) {
         setVoiceCurves(state, v, found);
         state.voiceLength[size_t(v)] = std::max(1.0, double(found->note.length) * found->stretch);
     }
+    for (int i = 0; i < kMaxDrumLanes; i++) {
+        uint64_t clip = state.drumClip[size_t(i)], note = state.drumNote[size_t(i)];
+        state.drumClip[size_t(i)] = state.drumNote[size_t(i)] = 0;
+        bool wasCurved = state.drumCurved[size_t(i)];
+        state.drumCurved[size_t(i)] = false;
+        state.drumExtras[size_t(i)] = nullptr;
+        // Only a gate still high keeps playing its curves; after the gate the outputs hold their last value.
+        if (!note || !state.drums.gate(i)) {
+            state.curvedLanes -= int(wasCurved);
+            continue;
+        }
+        const NoteExtras* found = find(tp.arrangementExtras, clip, note);
+        for (size_t s = 0; !found && s < tp.slots.size(); s++)
+            if (tp.slots[s])
+                found = find(tp.slots[s]->extras, clip, note);
+        bool curves = found && (!found->note.pitchExpr.empty() || !found->note.timbreExpr.empty() ||
+                                !found->note.pressureExpr.empty());
+        if (!curves)
+            continue; // wasCurved already dropped above
+        state.drumCurved[size_t(i)] = true;
+        state.drumExtras[size_t(i)] = found;
+        state.curvedLanes += int(!wasCurved);
+        state.drumCurveLength[size_t(i)] = std::max(1.0, double(found->note.length) * found->stretch);
+    }
 }
 
 void Engine::clearPending(TrackState& state) {
@@ -1310,7 +1350,7 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
     if (!track.audible)
         return; // it only feeds the tracks that listen to it
     if (track.drum) {
-        hitDrum(track, state, n.pitch, n.velocity);
+        hitDrum(track, state, n);
         return;
     }
     int v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id);
@@ -1507,8 +1547,8 @@ void Engine::advanceModulation() {
     }
 }
 
-void Engine::hitDrum(const TrackPlayback& track, TrackState& state, int pitch, float velocity) {
-    int lane = pitch >= 0 && pitch < 128 ? track.laneOfPitch[size_t(pitch)] : -1;
+void Engine::hitDrum(const TrackPlayback& track, TrackState& state, const chain::ChainNote& n) {
+    int lane = n.pitch >= 0 && n.pitch < 128 ? track.laneOfPitch[size_t(n.pitch)] : -1;
     if (lane < 0 || lane >= int(track.drumLanes.size()) || !track.drumLanes[size_t(lane)].audible)
         return;
     const DrumLanePlayback& l = track.drumLanes[size_t(lane)];
@@ -1516,8 +1556,25 @@ void Engine::hitDrum(const TrackPlayback& track, TrackState& state, int pitch, f
         for (size_t j = 0; j < track.drumLanes.size(); j++)
             if (int(j) != lane && track.drumLanes[j].choke == l.choke)
                 state.drums.cut(int(j));
-    int samples = l.gateMs > 0 ? int(std::ceil(l.gateMs * 0.001 * sampleRate)) : retriggerGap; // a 1 ms trigger
-    state.drums.hit(lane, velocity, samples);
+    // "Note length" gates hold for the note itself; a held live note stays high until its note-off cuts the lane.
+    double length = n.end - n.start;
+    int samples;
+    if (l.gateNote)
+        samples = std::isfinite(length) ? std::max(1, int(std::ceil(length / ticksPerSample)))
+                                        : std::numeric_limits<int32_t>::max();
+    else
+        samples = l.gateMs > 0 ? int(std::ceil(l.gateMs * 0.001 * sampleRate)) : retriggerGap; // a 1 ms trigger
+    state.drums.hit(lane, n.velocity, samples);
+    // The hit's expression curves drive the lane's pitch bend, timbre and pressure outputs for the note's span.
+    const auto* ex = static_cast<const NoteExtras*>(n.extras);
+    bool curved = ex && (!ex->note.pitchExpr.empty() || !ex->note.timbreExpr.empty() || !ex->note.pressureExpr.empty());
+    state.curvedLanes += int(curved && !state.drumCurved[size_t(lane)]) - int(!curved && state.drumCurved[size_t(lane)]);
+    state.drumCurved[size_t(lane)] = curved;
+    state.drumExtras[size_t(lane)] = curved ? ex : nullptr;
+    state.drumClip[size_t(lane)] = ex ? ex->clip : 0;
+    state.drumNote[size_t(lane)] = ex ? ex->note.id.value : 0;
+    state.drumCurveStart[size_t(lane)] = n.start - clockOffset();
+    state.drumCurveLength[size_t(lane)] = std::max(1.0, std::isfinite(length) ? length : double(kPpq));
 }
 
 void Engine::seekTrack(const TrackPlayback& track, TrackState& state) {
@@ -1642,9 +1699,11 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
             }
         return;
     }
-    bool trackLanes = mode == PlayMode::Launcher || followsArrangement(state);
+    // A track silenced by mute or a solo contributes no lanes, exactly as its muted lanes would: channels with
+    // nothing playing hold their last value, pitch bend and pressure rest at 0 V.
+    bool trackLanes = tp.audible && (mode == PlayMode::Launcher || followsArrangement(state));
     LaneClips clips;
-    int clipCount = lanesClips(tp, state, songTick, playTick, clips);
+    int clipCount = tp.audible ? lanesClips(tp, state, songTick, playTick, clips) : 0;
     std::array<float, kMaxPlayedLanes> target;
     std::array<bool, kMaxPlayedLanes> have{};
     auto take = [&](const LanePlayback& lane, float value) {
@@ -1663,6 +1722,7 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
     if (trackLanes)
         for (size_t k = 0; k < tp.lanes.size() && k < kMaxPlayedLanes; k++)
             take(tp.lanes[k], evaluateAt(tp.lanes[k].points, songTick, state.trackLaneCursor[k], tp.lanes[k].rest));
+
     // Modulate moves around the track lane's value, whatever stacked clips below did.
     std::array<float, kMaxPlayedLanes> trackTarget = target;
     std::array<bool, kMaxPlayedLanes> haveTrack = have;
@@ -1681,7 +1741,7 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
     // Modulators add onto the lanes (docs/DEVICES.md §3 "CV out").
     std::array<float, kMaxAutomationLanes> added{};
     std::array<bool, kMaxAutomationLanes> modulated{};
-    if (state.chainInfo)
+    if (tp.audible && state.chainInfo)
         for (const AutoModulation& r : state.chainInfo->autoRoutes) {
             size_t o = size_t(r.channel) & (kMaxAutomationLanes - 1);
             added[o] += r.source.amount * (*modStates)[size_t(r.source.slot)].out;
@@ -1782,8 +1842,11 @@ void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state,
     for (int c = 0; c < frame.channels; c++) {
         frame.gate[c] = 0;
         frame.rel[c] = 0;
+        frame.timbre[c] = 0;
+        frame.press[c] = 0;
     }
-    // Velocity holds after the trigger; where lanes share an output, the one sounding wins.
+    // Velocity holds after the trigger; where lanes share an output, the one sounding wins. A hit's expression
+    // curves play across its note (like a voice's), then hold their last value.
     for (int pass = 0; pass < 2; pass++) {
         for (size_t i = 0; i < track.drumLanes.size(); i++) {
             int c = track.drumLanes[i].output;
@@ -1792,6 +1855,13 @@ void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state,
                 continue;
             frame.voct[c] = pitchToVolts(track.drumLanes[i].pitch);
             frame.vel[c] = state.drums.velocity(int(i)) * 10.f;
+            if (const NoteExtras* ex = state.drumExtras[i]) {
+                float pos = float(
+                    std::clamp((playTick - state.drumCurveStart[i]) / state.drumCurveLength[i], 0.0, 1.0));
+                frame.voct[c] += expressionAt(ex->note.pitchExpr, pos, 0) / 12.f;
+                frame.timbre[c] = expressionAt(ex->note.timbreExpr, pos, 0) * 10.f;
+                frame.press[c] = expressionAt(ex->note.pressureExpr, pos, 0) * 10.f;
+            }
             if (high)
                 frame.gate[c] = 10.f;
         }

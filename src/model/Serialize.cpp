@@ -321,6 +321,7 @@ json_t* drumLaneToJson(const DrumLane& l) {
     setBool(j, "mute", l.mute);
     setBool(j, "solo", l.solo);
     setNumber(j, "gateMs", l.gateLengthMs);
+    setBool(j, "gateNote", l.gateFollowsNote);
     setInt(j, "choke", l.chokeGroup);
     setInt(j, "loop", l.loopLength);
     setInt(j, "step", l.stepLength);
@@ -336,6 +337,7 @@ DrumLane drumLaneFromJson(const json_t* j) {
     l.mute = getBool(j, "mute", l.mute);
     l.solo = getBool(j, "solo", l.solo);
     l.gateLengthMs = getFloat(j, "gateMs", l.gateLengthMs);
+    l.gateFollowsNote = getBool(j, "gateNote", l.gateFollowsNote);
     l.chokeGroup = saturate<int>(getInt(j, "choke", l.chokeGroup));
     l.loopLength = getInt(j, "loop", l.loopLength);
     l.stepLength = getInt(j, "step", l.stepLength);

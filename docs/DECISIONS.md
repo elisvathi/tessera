@@ -1272,3 +1272,37 @@ Refines §78.
   repeats and the loop end are there when you scroll or play to them. Lanes of 3, 5 and 7 steps in a 1-bar clip
   loop 105 bars. Playback and drawing only visit the part that plays or shows, so a long cycle costs nothing extra.
   The panel's mini piano roll shows one clip length of the cycle at a time, the page the playhead is on.
+
+## 84. A muted track's automation holds, like its muted lanes (31 Oct)
+
+- **Muting a track silences its AUTO output the same way muting every lane would.** The engine takes no lanes
+  (track lanes, clip lanes, modulator routes) from a track that `isAudible` denies: a channel with nothing
+  playing holds its last value, and pitch bend and pressure rest at 0 V.
+- **Solo works through the same flag**, so a track left out by a solo holds just the same, as it already did
+  for notes. Knob lanes keep turning device knobs: they are the track's own device state, not its output.
+- **Listening tracks still get notes**, not automation: the "muted track still feeds its listeners, like a MIDI
+  send" rule is about notes only. A listener's own automation is its own.
+
+Why: muting a track while its automation kept driving the patch sounded half-muted. Reported on GitHub as
+issue #8.
+
+Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and automation sections say so.
+
+## 85. Drum lanes: note-length gates and expression outputs (31 Oct)
+
+- **A drum lane's output length is one of three modes.** "Trigger" (1 ms, the default), "Gate" of a fixed number of
+  milliseconds, and "Note length": the gate is high for the hit's note's own length, so long and short notes in a
+  lane sound different. The lane header shows a T / G / N letter before the output number. A held live note in
+  "Note length" mode stays high until its note-off cuts the lane.
+- **A drum hit's expression curves play on the lane's outputs, like a voice's.** Pitch expression bends the lane's
+  pitch (V/OCT), timbre and pressure play on two new poly outputs on Drum Out (0-10 V, one channel per output).
+  Curves span the written note; after it they hold their last value. While any lane plays a curve the track runs
+  per sample, as a curved voice already does.
+- **The curves live in the snapshot**, so a snapshot swap re-finds a sounding lane's curves by clip and note ID,
+  the same re-attachment voices use.
+
+Why: drum clips allow any note length and pitch/timbre/pressure expressions, but until now the lane always fired a
+trigger or a fixed gate and the expressions reached no output, so writing them had no effect. Reported by a user.
+
+Impact: `DrumLane.gateFollowsNote` (saved as "gateNote"), `hitDrum` takes the chain note, Drum Out gains TIMBRE
+and PRESS poly outputs (appended after the old ones, so saved patches keep their cables).

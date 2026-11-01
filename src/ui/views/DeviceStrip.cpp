@@ -17,6 +17,20 @@ using Kind = DeviceStrip::Part::Kind;
 
 namespace {
 
+/// A Scale device's Root and Scale knobs only matter when its key comes from "Fixed"; with Clip or Song they
+/// hide, so the card shrinks to the knobs that do something.
+bool paramVisible(const Device& d, int k) {
+    if (d.type != DeviceType::Scale || (k != chain::knob::kRoot && k != chain::knob::kScale))
+        return true;
+    const std::vector<devices::ParamInfo>& params = devices::deviceInfo(d.type).params;
+    int keyFrom = 0;
+    if (chain::knob::kKeyFrom < int(d.params.size()) && chain::knob::kKeyFrom < int(params.size()) &&
+        params[size_t(chain::knob::kKeyFrom)].kind == devices::ParamInfo::Kind::Choice)
+        keyFrom = int(std::lround(d.params[size_t(chain::knob::kKeyFrom)] *
+                                  float(params[size_t(chain::knob::kKeyFrom)].choices.size() - 1)));
+    return keyFrom == int(chain::KeyFrom::Fixed);
+}
+
 constexpr float kPad = 8;
 constexpr float kModWidth = 214;
 constexpr float kModHeader = 24;
@@ -247,7 +261,9 @@ void DeviceStrip::layoutParts() {
     float y0 = bodyTop + (h - 2 * kPad - kCardHeader - 64) / 2;
     for (size_t i = 0; i < t->devices.size(); i++) {
         const Device& d = t->devices[i];
-        int n = int(devices::deviceInfo(d.type).params.size());
+        int n = 0;
+        for (int k = 0; k < int(devices::deviceInfo(d.type).params.size()); k++)
+            n += int(paramVisible(d, k));
         Rect card(x, kPad, 2 * kCardPad + n * kCell, h - 2 * kPad);
         int index = int(i);
         parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
@@ -257,10 +273,13 @@ void DeviceStrip::layoutParts() {
             parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, kPad + 7, 10, 10), index, int(k),
                              d.modulators[k].id.value});
         parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
-        for (int k = 0; k < n; k++) {
-            float cx = card.pos.x + kCardPad + float(k) * kCell;
+        for (int k = 0, cell = 0; k < int(devices::deviceInfo(d.type).params.size()); k++) {
+            if (!paramVisible(d, k))
+                continue;
+            float cx = card.pos.x + kCardPad + float(cell) * kCell;
             parts.push_back({Kind::KnobValue, Rect(cx, y0 + 52, kCell, 13), index, k, d.id.value});
             parts.push_back({Kind::Knob, Rect(cx, y0 - 2, kCell, 54), index, k, d.id.value});
+            cell++;
         }
         parts.push_back({Kind::Card, card, index, -1, d.id.value});
         x = card.getRight();
