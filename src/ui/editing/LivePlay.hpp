@@ -27,8 +27,13 @@ class KeyboardPlay {
     static std::optional<int> pitchFor(int key, int octave);
 
   private:
+    /// Whether a press of a setting key (Z, X, C, V) is the key held down rather than pressed again.
+    bool heldDown(int key, int action);
+
     std::map<int, int> held; // key -> pitch, so a release ends the note its press started
     TrackId heardOn;
+    std::set<int> settingsDown;           // setting keys pressed and not let go
+    std::map<int, double> settingRelease; // when each setting key was last let go
 };
 
 /// Step input (EDITOR_UX §4.2): notes played on any input are written at a cursor that moves on by the grid.
