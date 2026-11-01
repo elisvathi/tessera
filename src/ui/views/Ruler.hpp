@@ -6,6 +6,7 @@
 #include "TimelineView.hpp"
 #include <cmath>
 
+#include <functional>
 #include <optional>
 
 #include <memory>
@@ -75,6 +76,7 @@ class Ruler : public InteractiveView {
   protected:
     void drawView(const DrawArgs& args) override;
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
+    void click(rack::math::Vec pos, int button, Modifiers mods) override;
     void doubleClick(rack::math::Vec pos, Modifiers mods) override;
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void wheel(rack::math::Vec pos, rack::math::Vec delta, Modifiers mods) override;
@@ -98,6 +100,13 @@ class Ruler : public InteractiveView {
     double overviewTickAt(float x);
 
     void drawMarkers(NVGcontext* vg);
+    /// Opens a field to type a new name for the marker `id`; Enter renames it as one undo step.
+    void startMarkerRename(MarkerId id);
+    /// The right-click menu of the marker `id`: Rename, Colour and Delete.
+    void openMarkerMenu(MarkerId id);
+    /// Changes the marker `id` with `change` as one undo step named `undoName`; does nothing if it is gone.
+    void changeMarker(MarkerId id, const std::string& undoName,
+                      const std::function<void(std::vector<Marker>&, size_t)>& change);
     void drawLoop(NVGcontext* vg);
     /// The handle at the end of the timeline clip this view was opened from (its right edge is the end).
     rack::math::Rect instanceTag();

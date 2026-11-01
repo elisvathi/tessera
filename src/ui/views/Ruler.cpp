@@ -1,6 +1,9 @@
 #include "Ruler.hpp"
 
+#include "../../model/TrackColors.hpp"
+#include "../widgets/ColorMenuItem.hpp"
 #include "../widgets/Draw.hpp"
+#include "../widgets/MenuTextField.hpp"
 #include "TimelineDraw.hpp"
 
 #include <algorithm>
@@ -339,13 +342,75 @@ std::unique_ptr<DragGesture> Ruler::startGesture(rack::math::Vec pos, int button
     return nullptr;
 }
 
+void Ruler::click(rack::math::Vec pos, int button, Modifiers mods) {
+    if (button != GLFW_MOUSE_BUTTON_RIGHT || zoneAt(pos.y) != Zone::Markers)
+        return;
+    std::vector<Marker> m = source.markers();
+    if (int i = markerAt(m, pos.x); i >= 0)
+        openMarkerMenu(m[size_t(i)].id);
+}
+
+void Ruler::changeMarker(MarkerId id, const std::string& undoName,
+                         const std::function<void(std::vector<Marker>&, size_t)>& change) {
+    std::vector<Marker> m = source.markers();
+    auto it = std::find_if(m.begin(), m.end(), [id](const Marker& x) { return x.id == id; });
+    if (it == m.end())
+        return;
+    change(m, size_t(it - m.begin()));
+    source.setMarkers(std::move(m), undoName);
+}
+
+void Ruler::startMarkerRename(MarkerId id) {
+    std::vector<Marker> m = source.markers();
+    auto it = std::find_if(m.begin(), m.end(), [id](const Marker& x) { return x.id == id; });
+    if (it == m.end())
+        return;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Marker name"));
+    auto* field = new MenuTextField(it->name, [this, id](const std::string& name) {
+        // The marker may be gone by the time the field closes (an undo meanwhile); changeMarker checks.
+        changeMarker(id, "Rename marker to " + name, [&](std::vector<Marker>& m, size_t i) { m[i].name = name; });
+    });
+    menu->addChild(field);
+    APP->event->setSelectedWidget(field);
+}
+
+void Ruler::openMarkerMenu(MarkerId id) {
+    std::vector<Marker> m = source.markers();
+    auto it = std::find_if(m.begin(), m.end(), [id](const Marker& x) { return x.id == id; });
+    if (it == m.end())
+        return;
+    uint32_t current = it->color;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(it->name.empty() ? "Marker" : it->name));
+    menu->addChild(rack::createMenuItem("Rename", "double-click", [this, id] { startMarkerRename(id); }));
+    menu->addChild(rack::createSubmenuItem("Colour", "", [this, id, current](rack::ui::Menu* sub) {
+        auto setColor = [this, id](uint32_t color) {
+            changeMarker(id, "Change marker colour", [color](std::vector<Marker>& m, size_t i) { m[i].color = color; });
+        };
+        sub->addChild(
+            rack::createCheckMenuItem("None", "", [current] { return current == 0; }, [setColor] { setColor(0); }));
+        for (int i = 0; i < 16; i++) {
+            uint32_t color = kTrackColors[i];
+            sub->addChild(new ColorMenuItem("Colour " + std::to_string(i + 1), color, current == color,
+                                            [setColor, color] { setColor(color); }));
+        }
+    }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuItem("Delete", "", [this, id] {
+        changeMarker(id, "Delete marker", [](std::vector<Marker>& m, size_t i) { m.erase(m.begin() + long(i)); });
+    }));
+}
+
 void Ruler::doubleClick(rack::math::Vec pos, Modifiers mods) {
     TimeAxis& t = viewport.time;
     switch (zoneAt(pos.y)) {
     case Zone::Markers: {
         std::vector<Marker> m = source.markers();
-        if (markerAt(m, pos.x) >= 0)
+        if (int i = markerAt(m, pos.x); i >= 0) {
+            startMarkerRename(m[size_t(i)].id);
             return;
+        }
         Marker marker;
         marker.id = source.newMarkerId();
         marker.position = std::max<Tick>(0, Tick(snapped(t.xToTick(pos.x), snapStep(), mods.alt)));

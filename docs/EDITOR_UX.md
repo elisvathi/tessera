@@ -109,7 +109,8 @@ Toggle `Ctrl/Cmd+F` (button in transport). Modes: **Page** (jumps when the playh
 - Click in the ruler's lower half: move the playhead (snapped). Double-click: move and play from there.
 - Drag in the ruler's upper half (the loop strip): draw the loop region. Drag its body to move it, edges to resize. Double-click it to toggle loop on/off.
 - `Ctrl/Cmd+L`: set loop to selection.
-- Markers row above the ruler: double-click to add, drag to move, click a marker to jump.
+- Markers row above the ruler: double-click to add, drag to move, click a marker to jump, double-click a marker to
+  rename it, right-click a marker for Rename, Colour and Delete.
 
 ---
 
