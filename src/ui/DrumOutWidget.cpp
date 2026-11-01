@@ -82,7 +82,16 @@ struct DrumOutWidget : rack::app::ModuleWidget {
         DrumOutModule* module = outputModule();
         int hp = expand ? kExpandedHp : kCompactHp;
         box.size = rack::math::Vec(float(hp) * rack::RACK_GRID_WIDTH, rack::RACK_GRID_HEIGHT);
-        clearChildren();
+        // Delete every child except the panel: the PanelBuilder's setPanel() removes, deletes and replaces the
+        // old panel itself, and asserts if clearChildren() got there first.
+        rack::widget::Widget* oldPanel = getPanel();
+        for (auto it = children.begin(); it != children.end();) {
+            rack::widget::Widget* child = *it++;
+            if (child != oldPanel) {
+                removeChild(child);
+                delete child;
+            }
+        }
         PanelBuilder panel(this, hp, "DRUM OUT");
 
         const Rect& displayRect = expand ? kWideDisplay : kDisplay;
