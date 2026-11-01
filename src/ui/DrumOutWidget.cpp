@@ -44,7 +44,8 @@ constexpr float kExpandedPolyRow = 107;
 struct DrumOutWidget : rack::app::ModuleWidget {
     explicit DrumOutWidget(DrumOutModule* module) {
         setModule(module);
-        builtExpanded = module->expanded;
+        // Rack (and modules like Deepcache) build the widget with no module to preview it: nothing to read then.
+        builtExpanded = module && module->expanded;
         build(builtExpanded);
     }
 
