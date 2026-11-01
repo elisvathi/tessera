@@ -203,6 +203,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       different); the lane header shows T / G / N. Fixed gates and triggers are unchanged.
 - [ ] Drum Out: TIMBRE and PRESS poly outputs follow a hit's expression curves while it plays and hold after it;
       pitch expression bends the lane's pitch on the trigger outputs.
+- [ ] Scale device: Root and Scale knobs hide unless Key from is Fixed; the card shrinks and grows back when the
+      Key from knob is turned.
 - [ ] In-panel editor: rows shrink to 16 px and the lanes clip inside the pane; the header fits.
 - [ ] Lane header: click the name to hear it, M / S work, double-click renames, right-click menu.
 - [ ] Lane menu: note, output, steps (12 against 16: faded repeats; it drifts against the bar while playing),
