@@ -45,6 +45,9 @@ class NoteGrid : public TimelineView {
         NVGcolor color;
         double into;
     };
+    /// The pitch note `index` of the shown clip sounds at now: moved by its Motion, or by the shown playhead when
+    /// `shownPlayhead`; else as written. Lights the keyboard's keys.
+    int heardPitch(size_t index, bool shownPlayhead) const;
     /// Whether playheads play the shown clip: then they, not the clip's own playhead, light notes and keys.
     bool playheadsPlay() const { return playheadsOn; }
     /// The playheads playing now and the notes they read, worked out once a frame in step().
@@ -137,9 +140,6 @@ class NoteGrid : public TimelineView {
     void drawSegmentEdges(NVGcontext* vg);
     /// A small corner in its Motion device's colour on every note that moves with one (docs/design/PLAYHEADS.md §6.2).
     void drawMotionMarks(NVGcontext* vg);
-    /// Where the shown playhead moves notes to (its octave, steps, invert, and the modulators on them): each moved
-    /// note drawn again at the pitch it plays, in the playhead's colour, with a dashed outline on the written note.
-    void drawMovedNotes(NVGcontext* vg);
     /// One moved note: its written place see-through with a dashed outline, a line from its middle to the middle of
     /// where it plays (`move`: another pitch, later, longer or shorter), and the note there in `color` with what
     /// changed ("+7 st · +2 steps").
@@ -179,10 +179,9 @@ class NoteGrid : public TimelineView {
     PianoRollView& owner;
     CachedLayer* layer;
     std::vector<Ghost> ghosts;
-    // The pitches the shown playhead plays the clip's notes at (render::heardPitches), and what they were worked
-    // out for: the song revision, clip, playhead and pass.
+    // The pitches the shown playhead plays the clip's notes at (render::heardPitches), for the keys it lights, and
+    // what they were worked out for: the song revision, clip, playhead and pass.
     std::vector<int> moved;
-    std::set<uint64_t> movedIds; // notes it plays at another pitch: drawn see-through where they are written
     std::tuple<uint64_t, uint64_t, uint64_t, int64_t> movedFor{~uint64_t(0), 0, 0, 0};
     // Worked out in step(): see headsNow and readingNow.
     void updateHeads();

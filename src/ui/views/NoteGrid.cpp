@@ -144,6 +144,7 @@ void NoteGrid::zoomToFit() {
 void NoteGrid::step() {
     layer->setSize(box.size);
     updateMoved();
+    updateMotionMoved(); // before the heads, which light the keys of the pitches notes are moved to
     updateHeads();
     owner.pitch.setViewHeight(box.size.y);
     uint64_t key = 0;
@@ -931,7 +932,6 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         drawTimelineRepeats(vg);
         drawLaneLoops(vg);
         drawNotes(vg);
-        drawMovedNotes(vg);
         drawMotionGhosts(vg);
         drawMotionMarks(vg);
         drawSegmentEdges(vg);
@@ -1014,7 +1014,6 @@ const Playhead* NoteGrid::updateMoved() {
     const Playhead* p = device ? deviceActions::shownPlayhead(ctx) : nullptr;
     if (!p || p->mute) {
         moved.clear();
-        movedIds.clear();
         movedFor = {~uint64_t(0), 0, 0, 0};
         return nullptr;
     }
@@ -1032,10 +1031,6 @@ const Playhead* NoteGrid::updateMoved() {
         for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++)
             if (clip->notes[i].motion.valid())
                 moved[i] = -1;
-        movedIds.clear();
-        for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++)
-            if (moved[i] >= 0 && moved[i] != clip->notes[i].pitch)
-                movedIds.insert(clip->notes[i].id.value);
         movedFor = key;
     }
     return p;
@@ -1116,23 +1111,6 @@ void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, const render::Motion
         draw::text(vg, label, mx0 + 4, played + row / 2, change);
 }
 
-void NoteGrid::drawMovedNotes(NVGcontext* vg) {
-    const Clip* clip = owner.clip();
-    const Playhead* p = updateMoved();
-    if (!clip || !p)
-        return;
-    TimeAxis& t = time();
-    NVGcolor color = theme::playheadColor(p->color);
-    for (size_t i = 0; i < clip->notes.size() && i < moved.size(); i++) {
-        const Note& n = clip->notes[i];
-        if (moved[i] < 0 || moved[i] == n.pitch || double(n.end()) < t.left() || double(n.start) > t.right())
-            continue;
-        // A note in a Motion wears its colour: that is what moves it, more than the playhead reading it.
-        const Device* motion = n.motion.valid() ? findDevice(ctx.module()->song(), n.motion) : nullptr;
-        drawMovedNote(vg, n, {moved[i], 0, 1}, motion ? theme::playheadColor(motion->color) : color);
-    }
-}
-
 int NoteGrid::updateMotionMoved() {
     TesseraModule* m = ctx.module();
     const Clip* clip = owner.clip();
@@ -1169,7 +1147,7 @@ int NoteGrid::updateMotionMoved() {
         motionCurrent[i] = now;
         bool moves =
             now.pitch != clip->notes[i].pitch || std::abs(now.delay) > 0.5 || std::abs(now.lengthScale - 1) > 1e-3;
-        if (now.pitch >= 0 && moves && !movedIds.count(clip->notes[i].id.value))
+        if (now.pitch >= 0 && moves)
             motionNow.insert(clip->notes[i].id.value);
     }
     return pass;
@@ -1184,12 +1162,23 @@ void NoteGrid::drawMotionGhosts(NVGcontext* vg) {
     TimeAxis& t = time();
     for (size_t i = 0; i < clip->notes.size() && i < motionCurrent.size(); i++) {
         const Note& n = clip->notes[i];
-        // Only notes moved now; one a playhead moves already shows where it goes.
         if (!motionNow.count(n.id.value) || double(n.end()) < t.left() || double(n.start) > t.right())
             continue;
         if (const Device* motion = findDevice(ctx.module()->song(), n.motion))
             drawMovedNote(vg, n, motionCurrent[i], theme::playheadColor(motion->color));
     }
+}
+
+int NoteGrid::heardPitch(size_t index, bool shownPlayhead) const {
+    const Clip* clip = owner.clip();
+    if (!clip || index >= clip->notes.size())
+        return -1;
+    // A Motion moves the note first; the shown playhead's own pitch is known only for notes outside a Motion.
+    if (index < motionCurrent.size() && motionCurrent[index].pitch >= 0)
+        return motionCurrent[index].pitch;
+    if (shownPlayhead && index < moved.size() && moved[index] >= 0)
+        return moved[index];
+    return clip->notes[index].pitch;
 }
 
 void NoteGrid::updateHeads() {
@@ -1228,7 +1217,7 @@ void NoteGrid::updateHeads() {
                 break;
             if (n.muted || double(n.end()) <= pos)
                 continue;
-            int at = shown && i < moved.size() && moved[i] >= 0 ? moved[i] : n.pitch;
+            int at = heardPitch(i, shown);
             double into =
                 motion.direction == playheads::Direction::Reverse ? double(n.end()) - pos : pos - double(n.start);
             reading.push_back({n.id.value, at, color, into / std::max(1e-3, motion.rate)});
@@ -1304,9 +1293,8 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
     double playing = m && m->playing() ? playhead() : NAN;
     double glowTicks = m ? std::max(1.0, 0.15 * m->tempo() / 60.0 * double(kPpq)) : 1;
 
-    // Notes the shown playhead or a Motion plays at another pitch show see-through here; drawMovedNotes and
-    // drawMotionGhosts draw where they go.
-    updateMoved();
+    // Notes a Motion moves show see-through here; drawMotionGhosts draws where they go. Only a Motion's moves get
+    // ghosts: a playhead's own pitch, or a Transpose, changes every note it plays, so ghosts would only clutter.
     updateMotionMoved();
 
     // Notes are sorted by start, so stop at the first one past the right edge.
@@ -1337,7 +1325,7 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
             fill = nvgLerpRGBA(fill, c.text0, 0.06f);
         if (n.muted)
             fill = nvgTransRGBAf(fill, 0.35f);
-        bool ghost = !drum && (movedIds.count(n.id.value) > 0 || motionNow.count(n.id.value) > 0);
+        bool ghost = !drum && motionNow.count(n.id.value) > 0;
         if (ghost)
             fill = nvgTransRGBAf(fill, 0.15f);
         float radius = std::min(theme::metrics::kRadiusItem, row / 3);
