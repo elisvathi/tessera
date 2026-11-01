@@ -92,6 +92,7 @@ struct ViewState {
     std::set<uint64_t> openAutomation;       // tracks showing their automation lanes, by TrackId value
     std::map<uint64_t, double> laneHeights;  // by AutomationId value
     uint64_t lowerLane = 0;                  // the piano roll's lower pane: 0 = a note lane, else a clip lane
+    double curveHeight = 0;                  // the curve pane's height when dragged, px; 0 = the default
     NoteLane noteLane = NoteLane::Velocity;
 
     double defaultTrackHeight = 48; // for tracks never resized in this view

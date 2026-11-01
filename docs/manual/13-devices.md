@@ -135,16 +135,25 @@ opens in the piano roll's lower pane. Click to add a point: that makes a **Curve
   can reach. The dashed line is the knob as you set it: the curve adds to it, so with the knob on +2 a point on the
   +5 row plays +5, and turning the knob moves the whole line.
 - **Two kinds of point.** A square is a **Step**: it holds its value until the next point. A circle is a **Ramp**:
-  it glides to the next point. Right-click a point to switch it, or to delete it. A new point takes the kind of the
-  point before it; the first point on a setting with rows is a Step. A ramp across rows is heard one row at a time,
-  drawn as dotted stairs under it.
+  it glides to the next point. A new point takes the kind of the point before it; the first point on a setting with
+  rows is a Step. A ramp across rows is heard one row at a time, drawn as dotted stairs under it.
+- **Picking points.** Click a point to pick it: it draws brighter, and a drag moves every picked point together, so
+  a shape you built moves as one. **Shift+click** picks one more (or unpicks it). Drag an empty spot and a box
+  picks the points it touches; **Shift** adds them to the picked ones. A plain click in empty space still adds a
+  point, picked.
+- **Step and Ramp in the row on top** make every picked point that kind, as one undo step; right-clicking a point
+  does the same (it picks the point first). The count between the two says how many points are picked, and a button
+  lights when every picked point is already its kind. Right-click a point also deletes it.
 - **Its own zoom.** The curve zooms and scrolls on its own: **Ctrl+wheel** across, **Alt+wheel** up and down, the
   wheel scrolls up and down, **Shift+wheel** across. Double-click its ruler to see the whole drawing. It opens lined
   up under the notes; right-click for **Line up under the notes** or **Show the whole drawing**.
 - **Length** in the row on top says how much curve there is to draw: 1 to 256 bars. Next to it are ready **Shapes**
-  (drawn across the segment and the rows shown) and **Remove curve**.
+  (drawn across the segment and the rows shown), then **Remove curve** and a close button that puts the note lane
+  back. Drag the pane's top edge to make it taller or shorter; it keeps the height you set. Double-click the edge to
+  go back to the default height.
 - **The segment says what plays.** On the curve's ruler, a bar drawn like a playhead's segment marks the part that
-  plays, such as "plays 4 bars". Drag its grips to resize it, or the bar to move it. It loops: when the clip starts
+  plays, such as "plays 4 bars". Drag its grips to resize it, or the bar to move it; dragging past the drawing's
+  end grows **Length** with it. It loops: when the clip starts
   (launched, or reached on the timeline), the curve plays from the segment's start and goes round. Draw 16 bars and
   play bars 5 to 8, or draw 100 bars with the segment covering them all for a slow change over the song. A new curve
   is as long as the clip, with the segment covering all of it.
@@ -152,7 +161,7 @@ opens in the piano roll's lower pane. Click to add a point: that makes a **Curve
 Drag points, double-click to delete one. A knob with a curve has a dotted ring and its name underlined. While the song
 plays, a playhead line crosses the curve where it reads now.
 
-![A curve on the Bass track's Key steps: 16 bars drawn, bars 5 to 8 play, a ramp from bar 13](images/curve-pane.png)
+![A curve on the Bass track's Key steps: 16 bars drawn, bars 5 to 8 play, two ramp points picked](images/curve-pane.png)
 
 **Moved notes.** When the shown playhead plays notes at another pitch (its Invert, or a Transpose in its own chain,
 and the curves on them), the piano roll shows where they go: each moved note appears again at the pitch it plays, in the playhead's

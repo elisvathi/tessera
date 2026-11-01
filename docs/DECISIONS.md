@@ -1583,3 +1583,11 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   where a note starts reaches that note; before, every modulator was a block late. Old songs: a curve saved without
   a segment is drawn at full scale (its first route's amount folded into the points, other routes rescaled), with
   the segment the whole length; one that counted passes becomes a Per pass Steps modulator with its values.
+- **Picked curve points** (1 Nov). The curve pane edits a picked set of points, not one at a time. Click picks (a
+  press on a picked point keeps the set, and a drag moves every picked point by the same delta, clamped between the
+  unpicked neighbours and to the reachable rows); Shift+click toggles one in or out; a drag from empty space picks
+  the points a box touches (Shift adds), while a plain click there still adds a point (ClickOrDrag). The header's
+  Step | Ramp make every picked point that kind in one undo step, with the picked count between them; a point's
+  right-click menu picks it first, then acts on the picked. The pane's height drags from its top edge
+  (ViewState::curveHeight, per view, 0 = the default) and a × closes it back to the note lane. Dragging the segment
+  past the drawing's end grows Length with it, so the segment is never stuck at the end.
