@@ -272,3 +272,14 @@ TEST_CASE("on the timeline a lane with its own loop repeats for the whole clip, 
     CHECK(hats[5] == 15 * s);
     CHECK(hats[10] == 30 * s);
 }
+
+TEST_CASE("a new kit gives each lane its own colour, and neighbours differ") {
+    for (DrumKitPreset preset : {DrumKitPreset::Standard8, DrumKitPreset::Gm16}) {
+        std::vector<DrumLane> kit = drumKit(preset);
+        for (size_t i = 0; i < kit.size(); i++) {
+            CHECK(kit[i].color != 0);
+            if (i > 0)
+                CHECK(kit[i].color != kit[i - 1].color);
+        }
+    }
+}

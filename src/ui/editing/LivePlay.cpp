@@ -9,6 +9,8 @@ namespace {
 
 constexpr int kBasePitch = 60;
 constexpr float kVelocityStep = 20.f / 127;
+// A held key may repeat as a let-go and a press back to back; a person can't press again this quickly.
+constexpr double kRepeatGapSeconds = 0.03;
 
 struct KeyNote {
     int key;
@@ -25,6 +27,21 @@ const KeyNote kKeys[] = {
 } // namespace
 
 // ---- Keyboard play ------------------------------------------------------------------------------------------
+
+bool KeyboardPlay::heldDown(int key, int action) {
+    double now = rack::system::getTime();
+    if (action == GLFW_RELEASE) {
+        settingsDown.erase(key);
+        settingRelease[key] = now;
+        return false;
+    }
+    // Some systems send a held key as presses with no let-go between, others as a let-go and a press together.
+    auto released = settingRelease.find(key);
+    bool repeat = action == GLFW_REPEAT || settingsDown.count(key) ||
+                  (released != settingRelease.end() && now - released->second < kRepeatGapSeconds);
+    settingsDown.insert(key);
+    return repeat;
+}
 
 std::optional<int> KeyboardPlay::pitchFor(int key, int octave) {
     for (const KeyNote& k : kKeys)
@@ -45,10 +62,13 @@ bool KeyboardPlay::handleKey(EditorContext& ctx, const rack::widget::Widget::Key
     // With Ctrl or Alt held, keys are shortcuts again (Ctrl+K leaves keyboard play).
     if (e.mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER))
         return false;
+    bool settingKey = e.key == GLFW_KEY_Z || e.key == GLFW_KEY_X || e.key == GLFW_KEY_C || e.key == GLFW_KEY_V;
+    if (settingKey && heldDown(e.key, e.action))
+        return true;
     if (e.action == GLFW_RELEASE) {
         auto it = held.find(e.key);
         if (it == held.end())
-            return pitchFor(e.key, 0).has_value();
+            return settingKey || pitchFor(e.key, 0).has_value();
         m->playLive(it->second, 0, false);
         if (heardOn.valid())
             m->audition(heardOn, it->second, 0, false);
@@ -56,8 +76,7 @@ bool KeyboardPlay::handleKey(EditorContext& ctx, const rack::widget::Widget::Key
         return true;
     }
     if (e.action == GLFW_REPEAT)
-        return pitchFor(e.key, 0) || e.key == GLFW_KEY_Z || e.key == GLFW_KEY_X || e.key == GLFW_KEY_C ||
-               e.key == GLFW_KEY_V;
+        return settingKey || pitchFor(e.key, 0);
     switch (e.key) {
     case GLFW_KEY_Z:
         state.keyboardOctave = std::max(-5, state.keyboardOctave - 1);

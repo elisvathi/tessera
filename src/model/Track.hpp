@@ -52,6 +52,7 @@ struct DrumLane {
     bool mute = false;
     bool solo = false;
     float gateLengthMs = 0;     // 0 = trigger, > 0 = gate
+    bool gateFollowsNote = false; // gate high for the note's own length (clip notes)
     int chokeGroup = 0;         // 0 = none
     Tick loopLength = 0;        // polymeter: 0 = follow the clip loop
     Tick stepLength = kPpq / 4; // how long a step of this lane is
@@ -59,8 +60,8 @@ struct DrumLane {
 
     bool operator==(const DrumLane& o) const {
         return name == o.name && pitch == o.pitch && outputIndex == o.outputIndex && mute == o.mute && solo == o.solo &&
-               gateLengthMs == o.gateLengthMs && chokeGroup == o.chokeGroup && loopLength == o.loopLength &&
-               stepLength == o.stepLength && color == o.color;
+               gateLengthMs == o.gateLengthMs && gateFollowsNote == o.gateFollowsNote && chokeGroup == o.chokeGroup &&
+               loopLength == o.loopLength && stepLength == o.stepLength && color == o.color;
     }
 };
 

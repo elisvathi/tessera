@@ -101,7 +101,8 @@ While you drag a note or clip near the edge, the view scrolls by itself.
   its ends to resize it. Double-click it to turn the loop on or off. **L** also turns the loop on and off, and
   **Ctrl+L** sets the loop around what is selected.
 - **Markers** (Intro, Verse, Chorus above) sit in the top row. Double-click the row to add one (or press
-  **Ctrl+M**), drag a marker to move it, click it to jump there.
+  **Ctrl+M**), drag a marker to move it, click it to jump there. Double-click a marker to rename it. Right-click it
+  to rename it, give it a colour or delete it.
 - The **overview bar** shows the whole song in small. Drag its window to scroll, drag the window's ends to zoom,
   click to jump, double-click to fit.
 
@@ -121,7 +122,7 @@ right after you scroll, then comes back.
 | **Ctrl + click** | Add to or remove from the selection. |
 | **Shift + click** | Add to the selection. |
 | **Ctrl + drag from empty space** | Draw a selection box, with any tool. |
-| **Double-click** | Open, or create (a note, a clip, a marker). |
+| **Double-click** | Open, or create (a note, a clip, a marker). On a marker, rename it. |
 | **Right-click** | The menu for what you clicked. With Draw in the piano roll, it deletes notes instead. |
 | **Esc during a drag** | Cancel the drag. Everything goes back. |
 
@@ -167,6 +168,8 @@ panels.
   panels.
 - Light: **Plaster**, **Sand**.
 - Dark: **Slate**, **Gruvbox**, **Nord**, **Catppuccin**, **One Dark**, **Monokai**.
+- Darker: **Carbon** (Tessera's first look: near black with an orange accent), **Tokyo Night**, **Rosé Pine**,
+  **Kanagawa**.
 
 ![The editor in the light Plaster scheme](images/editor-light.png)
 

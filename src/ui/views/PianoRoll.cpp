@@ -143,6 +143,19 @@ fields::Field fieldOf(NoteLane lane) {
     }
 }
 
+/// The one-value field that stands for an expression curve on drum hits.
+fields::Field valueFieldOf(expr::Curve curve) {
+    switch (curve) {
+    case expr::Curve::Timbre:
+        return fields::Field::Timbre;
+    case expr::Curve::Pressure:
+        return fields::Field::Pressure;
+    case expr::Curve::Pitch:
+    default:
+        return fields::Field::Bend;
+    }
+}
+
 std::string noteLaneName(NoteLane lane) {
     if (std::optional<expr::Curve> curve = curveOf(lane))
         return expr::info(*curve).name;
@@ -176,9 +189,43 @@ bool PianoRollView::pointPicked(NoteId note, expr::Curve curve, const ExprPoint&
 }
 
 std::optional<expr::Curve> PianoRollView::shownCurve() {
-    if (!expression->visible)
+    // Zoomed onto one hit, the curve is edited in the lower pane only; the grid stays a step grid.
+    if (!expression->visible || curveFocus().valid())
         return std::nullopt;
     return expression->curve;
+}
+
+std::optional<fields::Field> PianoRollView::drumValueField() {
+    std::optional<expr::Curve> curve = curveOf(ctx.view().noteLane);
+    if (!curve || ctx.view().lowerLane != 0 || !drumMode())
+        return std::nullopt;
+    return valueFieldOf(*curve);
+}
+
+NoteId PianoRollView::curveFocus() {
+    const EditorState& state = ctx.state();
+    if (!state.curveFocusNote.valid() || state.curveFocusClip != source.clip || !drumValueField())
+        return NoteId();
+    for (const Note& n : committedNotes())
+        if (n.id == state.curveFocusNote)
+            return n.id;
+    return NoteId();
+}
+
+void PianoRollView::openPitchWindowMenu() {
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Pitch shown"));
+    for (float w : {2.f, 7.f, 12.f, 24.f, 48.f}) {
+        char text[24];
+        snprintf(text, sizeof(text), "±%.0f semitones", double(w));
+        menu->addChild(rack::createCheckMenuItem(
+            text, "", [this, w] { return pitchWindow == w; }, [this, w] { pitchWindow = w; }));
+    }
+}
+
+void PianoRollView::focusCurve(NoteId note) {
+    ctx.state().curveFocusNote = note;
+    ctx.state().curveFocusClip = note.valid() ? source.clip : ClipId();
 }
 
 // ---- Construction and layout --------------------------------------------------------------------------------
@@ -495,12 +542,16 @@ void PianoRollView::step() {
         }
         NoteLane noteLane = ctx.view().noteLane;
         std::optional<expr::Curve> curve = curveOf(noteLane);
-        expression->visible = !clipLane->visible && curve;
-        values->visible = !clipLane->visible && !curve;
+        // Drum hits show their curves as one value each (stems); double-clicking a stem zooms onto its curve.
+        std::optional<fields::Field> drumValues = drumValueField();
+        bool focused = curveFocus().valid();
+        if (!focused && state.curveFocusNote.valid())
+            focusCurve(NoteId()); // the hit, its clip or the lane went away
+        expression->visible = !clipLane->visible && curve && (!drumValues || focused);
+        values->visible = !clipLane->visible && (!curve || (drumValues && !focused));
         if (curve)
             expression->curve = *curve;
-        else
-            values->field = fieldOf(noteLane);
+        values->field = drumValues ? *drumValues : fieldOf(noteLane);
         lowerButton->setText(lowerLane ? lowerLane->name : noteLaneName(noteLane));
 
         bool stepOn = state.stepInput && shown;
@@ -810,7 +861,8 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
              {NoteLane::Velocity, NoteLane::Release, NoteLane::Chance, NoteLane::Repeats, NoteLane::Micro})
             noteLaneItem(lane);
         menu->addChild(new rack::ui::MenuSeparator);
-        menu->addChild(rack::createMenuLabel("Note expression (curves inside each note)"));
+        menu->addChild(rack::createMenuLabel(drumMode() ? "Hit values (one per hit, or a curve)"
+                                                        : "Note expression (curves inside each note)"));
         for (NoteLane lane : {NoteLane::Pitch, NoteLane::Timbre, NoteLane::Pressure})
             noteLaneItem(lane);
     }

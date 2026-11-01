@@ -69,6 +69,44 @@ Besides the piano roll's note items, it has **Velocity**, **Chance**, **Repeats*
 passes**. These are the operators of [Shaping notes](08-shaping-notes.md#operators-notes-that-change-from-pass-to-pass).
 With hits selected, the inspector edits them too.
 
+## Pitch, timbre and pressure
+
+Each hit can have its own pitch, timbre and pressure, like a drum machine's per-step tune and tone. They come out
+of the Drum Out's **PITCH**, **TIMBRE** and **PRESS** rows. Patch them to a drum module's tune, tone or decay
+inputs.
+
+![Hits with pitch values: the stems under the grid, and +2, -2 and +7~ on the cells](images/drum-hit-values.png)
+
+- Choose **Pitch**, **Timbre** or **Pressure** in the lower lane's menu. Each hit gets a stem, as in the velocity
+  lane. Drag a stem up or down to give that hit a value. Pitch moves in whole semitones; hold **Shift** for tenths.
+- With hits selected, dragging one stem moves them all.
+- **Shift+drag** (or the Draw tool) draws values across the stems. **Alt+drag** draws a straight ramp, for a tom
+  roll that climbs or hats that get darker across a bar.
+- The cells show the values too: **+3** on a tuned hit (a small corner mark when the cell is narrow), and a thin
+  bar along the top for timbre and pressure.
+- The **±12** button sets how far up and down the lane reaches: ±2 to ±48 semitones.
+- The inspector has **Pitch**, **Timbre** and **Pressure** rows for the selected hits, with the same chart as
+  velocity. Type a value such as **=+5** or **+2**. On drum tracks the note's own pitch row is called **Note**: it
+  picks the lane.
+
+A hit's value holds on the Drum Out until the lane's next hit. A hit with no value sends 0 V there, which means
+"as the drum is tuned".
+
+### Shaping a hit's curve
+
+A value can also change across the hit, like a falling tom.
+
+![The curve of one snare hit, zoomed to fill the lane](images/drum-hit-curve.png)
+
+- **Double-click** a stem. The lane zooms onto that hit, so its curve fills the width. Click to add a point, drag
+  points to move them, drag a hollow middle handle to arch a segment, and right-click or double-click a point to
+  delete it.
+- The curve plays across the hit's written length (shown at the right), even on a trigger lane, then holds.
+- Click **← Back** or press **Esc** to return to the stems.
+- A hit with a curve has a small wave by its stem and **~** after its number on the cell. Dragging its stem moves
+  the whole curve and keeps its shape.
+- Right-click a stem for **Shape curve…**, **Flatten to one value** and **Clear**.
+
 ## Lane settings
 
 Right-click a lane's name for its menu.
@@ -84,7 +122,7 @@ Right-click a lane's name for its menu.
 | **Steps** | The lane's own loop length, in steps. "Clip" follows the clip's loop. See [Polymeter](#polymeter). |
 | **Rate** | How long a step is for this lane: 1/4 to 1/32, triplets too. |
 | **Choke group** | 1 to 8, or none. When a lane in a group plays, it cuts the other lanes of the same group. In the kits, closed and open hats share group 1, so a closed hat cuts a ringing open hat. |
-| **Output length** | **Trigger** (1 ms, the default) or a gate of a fixed length in milliseconds. The note's own length doesn't matter. |
+| **Output length** | **Trigger** (1 ms, the default), a gate of a fixed length in milliseconds, or **Note length**: the gate is high for exactly as long as the hit's note, so notes of different lengths sound different. A letter before the output number in the lane header shows the mode: **T** trigger, **G** gate, **N** note length. |
 
 ### Pattern tools
 
@@ -148,9 +186,13 @@ The clip chip on the left of the header works as in the piano roll: rename, loop
 
 ## Wiring the Drum Out
 
-- Patch jacks **1** to **8** to your drum modules' trigger inputs. Each jack's light flashes on a hit.
-- **V1** to **V8** carry each lane's velocity, 0 to 10 V. Patch them to an accent or level input.
-- **TRIGS** and **VEL** carry all 16 outputs on poly cables, one channel per output.
-- **AUTO** carries the drum track's automation lanes.
+- Each strip is one drum output. Its chip has the lane's colour and number.
+- Patch the **TRIG** row to your drum modules' trigger inputs. The light above each strip flashes on a hit.
+- The **VEL** row carries each hit's velocity, 0 to 10 V. Patch it to an accent or level input.
+- The **PITCH** row carries each hit's tuning, 1 V per octave, 0 V for none. Patch it to a tune input.
+- The **TIMBRE** and **PRESS** rows carry each hit's timbre and pressure, 0 to 10 V. Patch them to a tone, decay or
+  level input.
+- The poly jacks at the bottom carry all 16 outputs, one channel per output. **AUTO** carries the drum track's
+  automation lanes.
 
 See [The modules](02-modules.md#drum-out).

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../model/ExpressionEdits.hpp"
+#include "../../model/NoteFields.hpp"
 #include "../editing/NoteGestures.hpp"
 #include "../editing/NoteHitTest.hpp"
 #include "TimelineView.hpp"
@@ -109,6 +110,9 @@ class NoteGrid : public TimelineView {
     void drawBadges(NVGcontext* vg, const Note& note, rack::math::Rect r, float labelRight);
     /// The note's expression curve, small, inside its body (EDITOR_UX §4.6).
     void drawCurveInside(NVGcontext* vg, const Note& note, rack::math::Rect r, expr::Curve curve);
+    /// Drum hits while the lower pane shows pitch, timbre or pressure: the hit's value on its cell, "+3" for pitch
+    /// (a corner mark when the cell is too small) or a thin bar for timbre and pressure.
+    void drawHitValue(NVGcontext* vg, const Note& note, rack::math::Rect r, fields::Field field);
     /// Every note's pitch curve, drawn at the pitch it plays, with its points while the Bend tool is on or the
     /// note is selected.
     void drawBends(NVGcontext* vg);

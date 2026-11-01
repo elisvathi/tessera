@@ -637,7 +637,7 @@ void Chain::humanize(const Message& m, const DeviceSlot& d, const Context& c, Ou
 
 // ---- Note Filter ----------------------------------------------------------------------------------------------
 
-void Chain::noteFilter(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
+void Chain::noteFilter(const Message& m, const DeviceSlot& d, const Context& /*c*/, Output& out) {
     if (m.kind != Kind::On) {
         forward(m, out);
         return;

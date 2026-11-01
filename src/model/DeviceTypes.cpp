@@ -53,7 +53,7 @@ std::vector<std::string> chordNames() {
 std::vector<TypeInfo> buildDevices() {
     std::vector<TypeInfo> t(kDeviceTypeCount);
     t[size_t(DeviceType::Transpose)] = {"Transpose",
-                                        {integer("Semitones", -48, 48, 0, "st"), integer("Octaves", -4, 4, 0, "oct"),
+                                        {integer("Semitones", -24, 24, 0, "st"), integer("Octaves", -4, 4, 0, "oct"),
                                          integer("Key steps", -14, 14, 0, "steps")}};
     t[size_t(DeviceType::Scale)] = {"Scale",
                                     {choice("Key from", {"Clip", "Song", "Fixed"}, 0), choice("Root", noteNames(), 0),

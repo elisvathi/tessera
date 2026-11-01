@@ -13,10 +13,11 @@ class NoteTarget;
 
 /// The right-hand panel of the detail pane (EDITOR_UX §4.7).
 ///
-/// NOTE: start, length, pitch, velocity, release and micro-timing as slider fields. Drag a field (any direction)
-/// to move all values together, click to type a value or an edit ("+10", "-5%", "*0.8", "=64"), double-click to
-/// reset. With several notes, clicking a field opens its chart (a histogram): how many notes sit at each value,
-/// with Mean (drag: move all), Spread (drag: narrow or widen around the mean) and Chaos (drag: scatter).
+/// NOTE: start, length, pitch, velocity, release and micro-timing as slider fields; drum hits add pitch, timbre and
+/// pressure (one value each; on a shaped curve the value is where it starts, and editing moves the whole curve). Drag a
+/// field (any direction) to move all values together, click to type a value or an edit ("+10", "-5%", "*0.8", "=64"),
+/// double-click to reset. With several notes, clicking a field opens its chart (a histogram): how many notes sit at
+/// each value, with Mean (drag: move all), Spread (drag: narrow or widen around the mean) and Chaos (drag: scatter).
 /// OPERATORS: one switch per operator (chance, repeats, occurrence, recurrence). An operator that is off leaves the
 /// note as written; switching it on gives a value you hear at once and shows its controls.
 /// Below, facts about the track and its clip. Toggle with I.
@@ -68,6 +69,10 @@ class Inspector : public InteractiveView {
     void openTyping(fields::Field field);
     /// The song's time signature, which note starts and lengths are written in (4/4 with no module).
     TimeSig timeSig() const;
+    /// The selected track is a drum track: hits get pitch, timbre and pressure rows.
+    bool drumTrack() const;
+    /// A field's row name: as the field calls itself, except a drum hit's own pitch, which is its "Note".
+    std::string fieldLabel(fields::Field f) const;
     /// Opens the field's chart, or closes it when it is the one open.
     void toggleChart(fields::Field field);
     /// How many of the selected notes have an operator on.

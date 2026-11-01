@@ -4,7 +4,9 @@
 Run it with an output folder: `demo_patch.py build/manual-rack`. It writes demo.vcv (a small song with its output
 modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the modules zoomed in), first.vcv
 (Tessera, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Tessera alone) and
-polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own).
+polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own) and hitvalues.vcv
+(the Drums track open on its Pitch lane: the snares tuned up step by step, the second a shaped curve, the hats with
+timbre).
 """
 
 import json
@@ -17,6 +19,10 @@ BAR = 4 * BEAT
 TESSERA_ID = 1001
 TRACK_IDS = {"Bass": 1, "Chords": 2, "Lead": 3, "Drums": 4}
 COLORS = {"Bass": 0x4498E8, "Chords": 0xDA743C, "Lead": 0x9B7FE2, "Drums": 0x1AAE74}
+
+# The model's 16 track colours (src/model/TrackColors.hpp); a kit lane takes colour (output * 5) % 16, as new kits do.
+TRACK_COLORS = [0xEF806F, 0xE88949, 0xD79628, 0xBDA422, 0x9AB140, 0x6DBA67, 0x2DC08E, 0x00C0B4,
+                0x00BBD5, 0x24B2ED, 0x65A7FA, 0x909BFB, 0xB28FEF, 0xCE85D8, 0xE17EB9, 0xED7C95]
 
 STANDARD_8 = [
     ("Kick", 36, 0, 0), ("Snare", 38, 1, 0), ("Clap", 39, 2, 0), ("Closed hat", 42, 3, 1),
@@ -104,7 +110,7 @@ def make_song():
     def track(name, kind, slots, arrangement, automation=()):
         """A track with its launcher slots (8 scenes) and timeline clips."""
         lanes = [{"name": n, "pitch": p, "output": o, "mute": False, "solo": False, "gateMs": 0.0, "choke": ch,
-                  "loop": 0, "step": 240, "color": 0} for n, p, o, ch in STANDARD_8] if kind == "drum" else []
+                  "loop": 0, "step": 240, "color": TRACK_COLORS[(o * 5) % 16]} for n, p, o, ch in STANDARD_8] if kind == "drum" else []
         return {"id": TRACK_IDS[name], "name": name, "color": COLORS[name], "type": kind, "polyphony": 0,
                 "mute": False, "solo": False, "armed": False, "monitor": True, "recordInput": "any",
                 "midiChannel": 0, "gateScale": 1.0, "transpose": 0, "drumLanes": lanes,
@@ -135,23 +141,26 @@ def make_song():
             "tracks": tracks, "groups": [], "scenes": scenes, "clips": clips, "markers": markers}, lead
 
 
-def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track="Lead"):
+def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track="Lead", note_lane=None):
     """The Tessera module with the song; params are play, reset, loop, tap, BPM, scene buttons, Plays, rec, fill."""
     params = [0.0] * 12
     params[4] = 112.0
     params[9] = 1.0 if plays_timeline else 0.0
     ui = {"selectedTrack": TRACK_IDS[selected_track], "selectedClip": selected_clip["id"], "panelHp": panel_hp,
           "overlay": {"openAutomation": [TRACK_IDS["Chords"]]}}
+    if note_lane:
+        ui["overlay"]["noteLane"] = note_lane
     return {"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera", "version": "2.0.0",
             "params": [{"value": v, "id": i} for i, v in enumerate(params)], "pos": [0, 0],
-            "data": {"schema": 5, "name": "Tessera", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
+            "data": {"schema": 6, "name": "Tessera", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
 
 
 def output_module(mid, model, track, x):
     """A Track Out, Drum Out or Auto Out bound to `track` of the demo Tessera."""
+    data = {"source": TESSERA_ID, "sourceName": "Tessera", "track": TRACK_IDS[track],
+            "followSelected": False}
     return {"id": mid, "plugin": "Tessera", "model": model, "version": "2.0.0", "params": [], "pos": [x, 0],
-            "data": {"source": TESSERA_ID, "sourceName": "Tessera", "track": TRACK_IDS[track],
-                     "followSelected": False}}
+            "data": data}
 
 
 def patch(modules, zoom=1.0):
@@ -170,7 +179,7 @@ def outputs(start):
             output_module(2002, "TesseraTrackOut", "Chords", start + 6),
             output_module(2003, "TesseraTrackOut", "Lead", start + 12),
             output_module(2004, "TesseraDrumOut", "Drums", start + 18),
-            output_module(2005, "TesseraAutoOut", "Chords", start + 28)]
+            output_module(2005, "TesseraAutoOut", "Chords", start + 38)]
 
 
 def polymeter_song():
@@ -183,6 +192,23 @@ def polymeter_song():
     verse = next(c for c in song["clips"] if c["name"] == "Verse beat")
     verse["notes"] = sorted([n for n in verse["notes"] if n[2] != 42] + [note(0, BEAT // 4, 42, 0.7)],
                             key=lambda n: (n[0], n[2]))
+    return song, verse
+
+
+def hit_values_song():
+    """The demo song with values on the verse beat's hits: the two snares at 0 and +3 semitones, the second with a
+    falling curve, the closed hats' timbre opening up across the bar. Returns the song and the verse beat."""
+    song, _ = make_song()
+    verse = next(c for c in song["clips"] if c["name"] == "Verse beat")
+    snares = [n for n in verse["notes"] if n[2] == 38]
+    hats = [n for n in verse["notes"] if n[2] == 42]
+    snares[1].append({"pitch": [[0.0, 7.0, 0.0], [0.6, 3.0, 0.3], [1.0, 3.0, 0.0]]})
+    for i, n in enumerate(hats):
+        n.append({"timbre": [[0.0, round(0.2 + 0.1 * i, 2), 0.0]]})
+    kicks = [n for n in verse["notes"] if n[2] == 36]
+    for n, st in zip(kicks, [0, -2, 2]):
+        if st:
+            n.append({"pitch": [[0.0, float(st), 0.0]]})
     return song, verse
 
 
@@ -200,6 +226,9 @@ def main():
     poly, verse = polymeter_song()
     (out / "polymeter.vcv").write_text(json.dumps(patch([tessera_module(poly, verse, 24, False, "Drums")] +
                                                         outputs(24))))
+    values, beat = hit_values_song()
+    (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, 24, False, "Drums", "pitch")] +
+                                                         outputs(24))))
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
 

@@ -32,9 +32,25 @@ struct Palette {
 };
 
 /// The editor's colour schemes. Follow Rack uses Plaster with light panels and Slate with dark ones.
-enum class Scheme { FollowRack, Plaster, Sand, Slate, Gruvbox, Nord, Catppuccin, OneDark, Monokai };
-constexpr Scheme kSchemes[] = {Scheme::FollowRack, Scheme::Plaster,    Scheme::Sand,    Scheme::Slate,  Scheme::Gruvbox,
-                               Scheme::Nord,       Scheme::Catppuccin, Scheme::OneDark, Scheme::Monokai};
+enum class Scheme {
+    FollowRack,
+    Plaster,
+    Sand,
+    Slate,
+    Gruvbox,
+    Nord,
+    Catppuccin,
+    OneDark,
+    Monokai,
+    Carbon,
+    TokyoNight,
+    RosePine,
+    Kanagawa
+};
+constexpr Scheme kSchemes[] = {Scheme::FollowRack, Scheme::Plaster, Scheme::Sand,       Scheme::Slate,
+                               Scheme::Carbon,     Scheme::Gruvbox, Scheme::Nord,       Scheme::Catppuccin,
+                               Scheme::OneDark,    Scheme::Monokai, Scheme::TokyoNight, Scheme::RosePine,
+                               Scheme::Kanagawa};
 
 Scheme scheme();
 void setScheme(Scheme s);

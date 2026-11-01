@@ -109,7 +109,8 @@ Toggle `Ctrl/Cmd+F` (button in transport). Modes: **Page** (jumps when the playh
 - Click in the ruler's lower half: move the playhead (snapped). Double-click: move and play from there.
 - Drag in the ruler's upper half (the loop strip): draw the loop region. Drag its body to move it, edges to resize. Double-click it to toggle loop on/off.
 - `Ctrl/Cmd+L`: set loop to selection.
-- Markers row above the ruler: double-click to add, drag to move, click a marker to jump.
+- Markers row above the ruler: double-click to add, drag to move, click a marker to jump, double-click a marker to
+  rename it, right-click a marker for Rename, Colour and Delete.
 
 ---
 
@@ -301,6 +302,13 @@ instead of pitch rows (DESIGN.md §9). Differences:
 - Lanes with their own loop (polymeter) show a line where it ends, then faded repeats until the clip loop ends (the
   clip's end when it doesn't loop).
 - The velocity lane edits the lane last clicked when nothing is selected; the others are faded.
+- Hit values (docs/DECISIONS.md §88): with the lower pane on Pitch, Timbre or Pressure, each hit is a stem (one
+  value per hit, the velocity lane's gestures, drags move from where the value was). Pitch snaps to semitones
+  (Shift: tenths) in a ±2 to ±48 window shared with the curve view. A shaped curve shows a wave by its stem and moves
+  as a whole. Cells show the value (+3, or a bar for timbre and pressure). Double-click a stem zooms the lane onto
+  that hit's curve (header with ← Back, Esc goes back); right-click a stem: Shape curve…, Flatten to one value,
+  Clear. Pitch curves aren't drawn on the grid rows, which are lanes. The inspector adds Pitch, Timbre and Pressure
+  rows and calls the note's own pitch "Note".
 - "Lanes | Keys" (G) switches to the plain piano roll of the same notes, on the keys, and back.
 - The header has Kit where the key chip is. The note menu adds the hit operators (velocity, chance, repeats,
   occurrence, recurrence).

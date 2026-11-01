@@ -154,7 +154,10 @@ int chordPitches(int root, const ChordStamp& stamp, const Scale& key, bool inKey
         notes[1] += 12;
     else if (n >= 3 && stamp.voicing == ChordVoicing::Drop2)
         notes[n - 2] -= 12;
-    std::sort(notes, notes + n);
+    // At most 8 notes: an insertion sort, which also avoids GCC's false out-of-bounds warning inside std::sort.
+    for (int i = 1; i < n; i++)
+        for (int j = i; j > 0 && notes[j - 1] > notes[j]; j--)
+            std::swap(notes[j - 1], notes[j]);
     int kept = 0;
     for (int i = 0; i < n && kept < capacity; i++) {
         if (notes[i] < 0 || notes[i] > 127 || (kept > 0 && out[kept - 1] == notes[i]))

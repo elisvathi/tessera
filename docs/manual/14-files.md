@@ -15,8 +15,8 @@ so you can use them without opening the editor.
 
 | Item | What it does |
 |---|---|
-| **New song** | Starts again: an empty song, the default tempo and loop, Plays set to Clips. One undo step brings the old song back. Your tools, snap and layout stay. |
-| **Open project…** | Opens a `.tessera` project file. |
+| **New song** | Starts again: an empty song, the default tempo and loop, Plays set to Clips. One undo step brings the old song back. Your tools, snap and layout stay. If the song has anything in it, Tessera asks first: click **OK** to replace it. |
+| **Open project…** | Opens a `.tessera` project file in place of the current song. It asks first in the same way. |
 | **Save project** | Saves to the project file you opened or saved last (its name shows in the menu). |
 | **Save project as…** | Saves a new `.tessera` file. |
 | **Import MIDI file as tracks…** | Adds a track for each part of a MIDI file. See [Importing MIDI](#importing-midi-files). |

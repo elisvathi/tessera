@@ -34,10 +34,16 @@ class StemGesture : public DragGesture {
     }
     void update(Vec pos, Modifiers mods) override {
         double delta = lane.valueAt(pos.y) - lane.valueAt(pressY);
+        // A hit's pitch, timbre or pressure moves from where it was, so the click of a double-click (which zooms
+        // onto the curve) changes nothing; other stems jump to the pointer.
+        bool relative =
+            field == fields::Field::Bend || field == fields::Field::Timbre || field == fields::Field::Pressure;
         if (ids.size() > 1)
             result = fields::offset(before, ids, field, delta * (mods.shift ? 0.1 : 1));
+        else if (mods.shift || relative)
+            result = fields::setAll(before, ids, field, start + delta * (mods.shift ? 0.1 : 1));
         else
-            result = fields::setAll(before, ids, field, mods.shift ? start + delta * 0.1 : lane.valueAt(pos.y));
+            result = fields::setAll(before, ids, field, lane.valueAt(pos.y));
         view.setPreview(result);
         for (const Note& n : result)
             if (n.id == grabbed)
@@ -164,6 +170,52 @@ class RampGesture : public DragGesture {
 
 } // namespace
 
+bool NoteValueLane::expressionField() const {
+    return field == fields::Field::Bend || field == fields::Field::Timbre || field == fields::Field::Pressure;
+}
+
+double NoteValueLane::low() const {
+    return field == fields::Field::Bend ? -double(owner.pitchWindow) : fields::info(field).min;
+}
+
+double NoteValueLane::high() const {
+    return field == fields::Field::Bend ? double(owner.pitchWindow) : fields::info(field).max;
+}
+
+rack::math::Rect NoteValueLane::rangeButton() const { return rack::math::Rect(box.size.x - 44, 3, 40, 14); }
+
+void NoteValueLane::openStemMenu(NoteId id) {
+    const Note* note = nullptr;
+    for (const Note& n : owner.committedNotes())
+        if (n.id == id)
+            note = &n;
+    if (!note)
+        return;
+    fields::Field f = field;
+    PianoRollView* view = &owner;
+    std::string name = fields::lowerName(f);
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(
+        rack::createMenuLabel(std::string(fields::info(f).name) + " " + fields::format(f, fields::get(*note, f))));
+    menu->addChild(rack::createMenuItem("Shape curve…", "double-click", [view, id] { view->focusCurve(id); }));
+    // Each item applies to the hit clicked and, when it is selected, to the whole selection.
+    IdSet ids = owner.isSelected(id) ? owner.selectedIds() : IdSet{id};
+    auto change = [view, ids, f](const std::string& undo, bool clear) {
+        NoteList before = view->committedNotes(), after = before;
+        for (Note& n : after)
+            if (ids.count(n.id)) {
+                double v = clear ? 0 : fields::get(n, f);
+                fields::curveOf(n, f)->clear(); // flat first, so set() gives one point rather than moving the shape
+                fields::set(n, f, v);
+            }
+        view->commit(undo, before, after);
+    };
+    menu->addChild(rack::createMenuItem(
+        "Flatten to one value", "", [change, name] { change("Flatten " + name, false); }, !fields::shaped(*note, f)));
+    menu->addChild(rack::createMenuItem(
+        "Clear", "", [change, name] { change("Clear " + name, true); }, fields::curveOf(*note, f)->empty()));
+}
+
 std::string NoteValueLane::describe(double value) const {
     return std::string(fields::info(field).name) + " " + fields::format(field, value);
 }
@@ -182,23 +234,19 @@ std::vector<std::pair<NoteId, float>> NoteValueLane::stemPositions(const NoteLis
 }
 
 double NoteValueLane::valueAt(float y) const {
-    const fields::Info& info = fields::info(field);
     float h = box.size.y - 2 * kPad;
     double x = std::clamp(1.0 - double(y - kPad) / std::max(1.0, double(h)), 0.0, 1.0);
-    double v = info.min + x * (info.max - info.min);
-    return info.integer ? std::round(v) : v;
+    double v = low() + x * (high() - low());
+    // Pitch lands on whole semitones; Shift-drag moves in tenths for fine tuning.
+    return fields::info(field).integer || field == fields::Field::Bend ? std::round(v) : v;
 }
 
 float NoteValueLane::yFor(double value) const {
-    const fields::Info& info = fields::info(field);
-    double x = (std::clamp(value, info.min, info.max) - info.min) / (info.max - info.min);
+    double x = (std::clamp(value, low(), high()) - low()) / (high() - low());
     return kPad + float(1.0 - x) * (box.size.y - 2 * kPad);
 }
 
-float NoteValueLane::baseY() const {
-    const fields::Info& info = fields::info(field);
-    return info.min < 0 ? yFor(0) : box.size.y - kPad;
-}
+float NoteValueLane::baseY() const { return low() < 0 ? yFor(0) : box.size.y - kPad; }
 
 IdSet NoteValueLane::editable() {
     IdSet selected = owner.selectedIds();
@@ -233,6 +281,10 @@ std::unique_ptr<DragGesture> NoteValueLane::startGesture(Vec pos, int button, Mo
     owner.automationFocus = false;
     if (button != GLFW_MOUSE_BUTTON_LEFT || !owner.clip())
         return nullptr;
+    if (field == fields::Field::Bend && rangeButton().contains(pos)) {
+        owner.openPitchWindowMenu();
+        return nullptr;
+    }
     if (mods.alt)
         return std::make_unique<RampGesture>(owner, *this, pos);
     if (mods.shift || ctx.state().tool == Tool::Draw)
@@ -241,6 +293,20 @@ std::unique_ptr<DragGesture> NoteValueLane::startGesture(Vec pos, int button, Mo
     if (id.valid())
         return std::make_unique<StemGesture>(owner, *this, id, pos.y);
     return std::make_unique<FreehandGesture>(owner, *this, pos);
+}
+
+void NoteValueLane::click(Vec pos, int button, Modifiers mods) {
+    if (button != GLFW_MOUSE_BUTTON_RIGHT || !expressionField())
+        return;
+    if (NoteId id = stemAt(pos); id.valid())
+        openStemMenu(id);
+}
+
+void NoteValueLane::doubleClick(Vec pos, Modifiers mods) {
+    if (!expressionField())
+        return;
+    if (NoteId id = stemAt(pos); id.valid())
+        owner.focusCurve(id);
 }
 
 void NoteValueLane::wheel(Vec pos, Vec delta, Modifiers mods) {
@@ -252,6 +318,8 @@ void NoteValueLane::wheel(Vec pos, Vec delta, Modifiers mods) {
 }
 
 CursorShape NoteValueLane::hoverCursor(Vec pos, Modifiers mods) {
+    if (field == fields::Field::Bend && rangeButton().contains(pos))
+        return CursorShape::Hand;
     if (mods.alt || mods.shift || ctx.state().tool == Tool::Draw)
         return CursorShape::Crosshair;
     return stemAt(pos).valid() ? CursorShape::ResizeV : CursorShape::Arrow;
@@ -283,7 +351,7 @@ void NoteValueLane::drawView(const DrawArgs& args) {
     const NoteList& notes = owner.notes();
     auto stems = stemPositions(notes);
     float bottom = baseY();
-    if (fields::info(field).min < 0) {
+    if (low() < 0) {
         nvgBeginPath(vg);
         nvgRect(vg, 0, bottom, box.size.x, 1);
         nvgFillColor(vg, c.line2);
@@ -310,6 +378,26 @@ void NoteValueLane::drawView(const DrawArgs& args) {
         nvgCircle(vg, x + 0.5f, y, kHandle);
         nvgFillColor(vg, color);
         nvgFill(vg);
+        if (fields::shaped(n, field)) {
+            // A shaped curve: a small wave beside the handle says dragging moves the whole shape.
+            float wx = x + kHandle + 2.5f, wy = std::max(y - kHandle - 1, kPad + 3);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, wx, wy);
+            nvgBezierTo(vg, wx + 1.5f, wy - 3, wx + 3, wy - 3, wx + 4.5f, wy);
+            nvgBezierTo(vg, wx + 6, wy + 3, wx + 7.5f, wy + 3, wx + 9, wy);
+            nvgStrokeColor(vg, color);
+            nvgStrokeWidth(vg, 1.2f);
+            nvgStroke(vg);
+        }
+    }
+    if (field == fields::Field::Bend) {
+        rack::math::Rect b = rangeButton();
+        draw::roundedRect(vg, b, 3, c.bg2);
+        draw::TextStyle style{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1,
+                              NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        char text[16];
+        snprintf(text, sizeof(text), "±%.0f", double(owner.pitchWindow));
+        draw::text(vg, style, b.getCenter().x, b.getCenter().y, text);
     }
     nvgRestore(vg);
 }

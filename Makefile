@@ -9,10 +9,13 @@ include $(RACK_DIR)/plugin.mk
 
 # Rack's compile.mk asks for C++11; Tessera needs C++17. The later flag wins.
 CXXFLAGS += -std=c++17
+# Brace-initializing a struct and leaving out its last members (which have default values) is normal here; GCC's
+# -Wextra would flag every such line.
+CXXFLAGS += -Wno-missing-field-initializers
 
 # Unit tests: the model and engine build without Rack, so tests are a plain native binary.
 TEST_CXX ?= c++
-TEST_FLAGS ?= -std=c++17 -O1 -g -Wall -Wextra -pthread -fsanitize=address,undefined
+TEST_FLAGS ?= -std=c++17 -O1 -g -Wall -Wextra -Wno-missing-field-initializers -pthread -fsanitize=address,undefined
 # The model uses jansson (Rack's JSON library); tests link a system copy (Arch: jansson, Debian: libjansson-dev,
 # Homebrew: jansson).
 TEST_LIBS ?= $(shell pkg-config --cflags --libs jansson 2>/dev/null || echo -ljansson)

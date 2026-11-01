@@ -166,6 +166,9 @@ struct EditorState {
     AutoSelection autoSelection;                // session only
     std::optional<autoEdits::Shape> stampShape; // armed: the next drag in a lane stamps this shape
     ArrangerRange range;                        // the arranger's time selection, session only
+    // The drum hit whose curve the lower pane is zoomed onto (double-click its stem), session only. Esc goes back.
+    ClipId curveFocusClip;
+    NoteId curveFocusNote;
     bool rangeTool = false;                     // drags in the arranger select time ranges
     bool ripple = false;                        // edit mode: deleting closes gaps (EDITOR_UX §6.4)
     bool stackClips = true;                     // overlapping clips on a track stack and play together

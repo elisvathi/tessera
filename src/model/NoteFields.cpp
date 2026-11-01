@@ -1,6 +1,7 @@
 #include "NoteFields.hpp"
 
 #include "ExpressionEdits.hpp"
+#include "NoteOperators.hpp"
 #include "Scale.hpp"
 
 #include <algorithm>
@@ -31,7 +32,43 @@ const Info kInfo[] = {
     {"Repeat gate", "%", 1, 100, 0.5, false},
     {"Timing spread", "% of 1/16", 0, 50, 0.5, false},
     {"Channel", "", 1, kMaxNoteChannel, 0.1, true},
+    {"Pitch", "st", -48, 48, 0.1, false},
+    {"Timbre", "%", 0, 100, 0.5, false},
+    {"Pressure", "%", 0, 100, 0.5, false},
 };
+static_assert(sizeof(kInfo) / sizeof(kInfo[0]) == size_t(Field::Count), "one Info per field");
+
+/// The curve behind an expression field, in its own units (semitones, 0..1), and how display units convert.
+std::vector<ExprPoint>* curve(Note& n, Field f) {
+    switch (f) {
+    case Field::Bend:
+        return &n.pitchExpr;
+    case Field::Timbre:
+        return &n.timbreExpr;
+    case Field::Pressure:
+        return &n.pressureExpr;
+    default:
+        return nullptr;
+    }
+}
+double displayScale(Field f) { return f == Field::Bend ? 1.0 : 100.0; }
+
+/// Gives a note's expression field the value `v` (display units): one point on an empty or flat curve (none at
+/// all for 0, so the note rests), or the whole shaped curve moved by the difference, each point kept in range.
+void setExpression(Note& n, Field f, double v) {
+    std::vector<ExprPoint>& points = *curve(n, f);
+    double scale = displayScale(f);
+    if (!shaped(n, f)) {
+        points.clear();
+        if (v != 0)
+            points.push_back({0, float(v / scale), 0});
+        return;
+    }
+    double delta = (v - get(n, f)) / scale;
+    const Info& i = info(f);
+    for (ExprPoint& p : points)
+        p.value = float(std::clamp(double(p.value) + delta, i.min / scale, i.max / scale));
+}
 
 double clampTo(Field f, double v) {
     const Info& i = info(f);
@@ -90,9 +127,27 @@ double get(const Note& n, Field f) {
         return n.ops.timingSpread * 100.0;
     case Field::Channel:
         return n.channel;
+    case Field::Bend:
+    case Field::Timbre:
+    case Field::Pressure:
+        return double(expressionAt(*curveOf(n, f), 0, 0)) * displayScale(f);
     default:
         return 0;
     }
+}
+
+const std::vector<ExprPoint>* curveOf(const Note& n, Field f) { return curve(const_cast<Note&>(n), f); }
+
+std::vector<ExprPoint>* curveOf(Note& n, Field f) { return curve(n, f); }
+
+bool shaped(const Note& n, Field f) {
+    const std::vector<ExprPoint>* points = curveOf(n, f);
+    if (!points)
+        return false;
+    for (const ExprPoint& p : *points)
+        if (p.value != points->front().value)
+            return true;
+    return false;
 }
 
 void set(Note& n, Field f, double value) {
@@ -142,6 +197,11 @@ void set(Note& n, Field f, double value) {
         break;
     case Field::Channel:
         n.channel = uint8_t(v);
+        break;
+    case Field::Bend:
+    case Field::Timbre:
+    case Field::Pressure:
+        setExpression(n, f, v);
         break;
     default:
         break;
@@ -335,6 +395,11 @@ std::string format(Field f, double v, TimeSig ts) {
         snprintf(text, sizeof(text), "%s%d", pitchClassName(p), p / 12 - 1);
         return text;
     }
+    case Field::Bend:
+        if (std::fabs(v) < 0.005)
+            return "0 st";
+        snprintf(text, sizeof(text), std::fabs(v - std::round(v)) < 0.005 ? "%+.0f st" : "%+.1f st", v);
+        return text;
     case Field::Repeats:
         if (v == 0)
             return "Off";

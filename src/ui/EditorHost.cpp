@@ -368,11 +368,15 @@ void EditorHost::runAction(Action action) {
             view.focus = Pane::Detail;
         return;
     case Action::Close:
-        // First Esc cancels a drag, then leaves step input or keyboard play, then disarms a shape stamp, then
-        // clears the selections (notes, clips, range, points); after that the surface decides (the overlay closes).
+        // First Esc cancels a drag, then leaves a hit's zoomed curve, then step input or keyboard play, then disarms
+        // a shape stamp, then clears the selections (notes, clips, range, points); after that the surface decides
+        // (the overlay closes).
         if (ctx.dragging)
             ctx.dragging->cancelGesture();
-        else if (ctx.mappingModulator || ctx.openModulator) {
+        else if (state.curveFocusNote.valid()) {
+            state.curveFocusNote = NoteId();
+            state.curveFocusClip = ClipId();
+        } else if (ctx.mappingModulator || ctx.openModulator) {
             ctx.mappingModulator = 0;
             ctx.openModulator = 0;
         } else if (state.stepInput || state.keyboardPlay) {

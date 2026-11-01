@@ -27,13 +27,16 @@ struct PanelScrew : rack::componentlibrary::ThemedScrew {
 /// labels sit exactly where the builder put the controls. Positions are in mm, like Rack's helpers.
 class PanelArt : public rack::widget::Widget {
   public:
-    enum class LabelKind { Control, Output, Section, Title };
+    /// RowName: a row's name at the left of a grid of jacks, right-aligned and centred on the row.
+    enum class LabelKind { Control, Output, Section, Title, RowName };
 
     explicit PanelArt(rack::math::Vec sizePx) { box.size = sizePx; }
 
     void addLabel(rack::math::Vec mm, const std::string& text, LabelKind kind);
     /// A raised area that groups outputs (Rack convention: outputs sit on a contrasting plate).
     void addPlate(rack::math::Rect mm);
+    /// A recessed tray inside a plate, such as one mixer-style strip of jacks per drum lane.
+    void addSunkPlate(rack::math::Rect mm);
 
     void draw(const DrawArgs& args) override;
     void step() override;
@@ -47,6 +50,7 @@ class PanelArt : public rack::widget::Widget {
     };
     std::vector<Label> labels;
     std::vector<rack::math::Rect> plates;
+    std::vector<rack::math::Rect> sunkPlates;
 };
 
 /// Builds a module panel: the cached artwork, screws, and controls with their labels in one call each.

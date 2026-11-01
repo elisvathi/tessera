@@ -255,6 +255,7 @@ void fillDrumLanes(TrackPlayback& tp, const Track& track) {
         p.pitch = lane.pitch;
         p.output = std::clamp(lane.outputIndex, 0, kMaxDrumLanes - 1);
         p.gateMs = lane.gateLengthMs;
+        p.gateNote = lane.gateFollowsNote;
         p.choke = lane.chokeGroup;
         p.audible = anySolo ? lane.solo : !lane.mute;
         tp.drumLanes.push_back(p);

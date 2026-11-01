@@ -1272,3 +1272,89 @@ Refines §78.
   repeats and the loop end are there when you scroll or play to them. Lanes of 3, 5 and 7 steps in a 1-bar clip
   loop 105 bars. Playback and drawing only visit the part that plays or shows, so a long cycle costs nothing extra.
   The panel's mini piano roll shows one clip length of the cycle at a time, the page the playhead is on.
+
+## 84. A muted track's automation holds, like its muted lanes (31 Oct)
+
+- **Muting a track silences its AUTO output the same way muting every lane would.** The engine takes no lanes
+  (track lanes, clip lanes, modulator routes) from a track that `isAudible` denies: a channel with nothing
+  playing holds its last value, and pitch bend and pressure rest at 0 V.
+- **Solo works through the same flag**, so a track left out by a solo holds just the same, as it already did
+  for notes. Knob lanes keep turning device knobs: they are the track's own device state, not its output.
+- **Listening tracks still get notes**, not automation: the "muted track still feeds its listeners, like a MIDI
+  send" rule is about notes only. A listener's own automation is its own.
+
+Why: muting a track while its automation kept driving the patch sounded half-muted. Reported on GitHub as
+issue #8.
+
+Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and automation sections say so.
+
+## 85. Drum lanes: note-length gates and expression outputs (31 Oct)
+
+- **A drum lane's output length is one of three modes.** "Trigger" (1 ms, the default), "Gate" of a fixed number of
+  milliseconds, and "Note length": the gate is high for the hit's note's own length, so long and short notes in a
+  lane sound different. The lane header shows a T / G / N letter before the output number. A held live note in
+  "Note length" mode stays high until its note-off cuts the lane.
+- **A drum hit's expression curves play on the lane's outputs, like a voice's.** Timbre and pressure play on Drum
+  Out (0-10 V). Curves span the written note; after it they hold their last value until the lane's next hit, and a
+  hit with no curve sets them back to 0 V. The engine keeps each lane's current values, so an edit (a snapshot
+  swap) never resets them, and a trigger lane's curve keeps playing after its 1 ms gate. Only while a curve moves
+  does the track run per sample.
+- **A note-off ends only a "Note length" gate.** Triggers and fixed gates run their own length, so letting a key
+  go early never shortens them.
+- **Drum Out is a fixed 20 HP console** (1 Nov, picked from three mockups: this, a 12 HP core with an expression
+  expander, and squeezing five rows into 18 HP). One mixer-style strip per lane output: a chip with the output's
+  number in its lane's colour (the track's when the lane has none), the hit light, then five jacks: TRIG, VEL,
+  PITCH, TIMBRE, PRESS. The rows are named once at the left instead of a letter in every strip. Jack tooltips name
+  the lanes on that output ("Snare pitch"). New kits give each lane its own colour so the chips tell the strips
+  apart. An expandable panel (a right-click toggle that resized the widget) was tried first and dropped: it rebuilt
+  the widget at runtime, which fought Rack's ModuleWidget panel ownership.
+- **Drum Out's PITCH is the hit's tuning, not the lane's note.** 0 V when the hit has no pitch, 1 V per octave away
+  from it, for a drum module's tune input. The lane's note (36 for a kick) would read as about -2 V and detune the
+  drum. The frame's `voct` keeps the lane's note plus the bend, for a drum track played through a Track Out;
+  `tune` carries the bend alone.
+- **The curves live in the snapshot**, so a snapshot swap re-finds a sounding lane's curves by clip and note ID,
+  the same re-attachment voices use.
+
+Why: drum clips allow any note length and pitch/timbre/pressure expressions, but until now the lane always fired a
+trigger or a fixed gate and the expressions reached no output, so writing them had no effect. Reported by a user.
+
+Impact: `DrumLane.gateFollowsNote` (saved as "gateNote"), `hitDrum` takes the chain note, `TrackFrame::tune`,
+Drum Out gains PITCH, TIMBRE and PRESS outputs (appended after the old ones, so saved patches keep their cables).
+
+## 86. Transpose's Semitones knob is ±24, and old songs keep their pitch (1 Nov)
+
+- **Semitones goes from -24 to +24** (it was ±48); the Octaves knob covers the rest.
+- **Knobs are saved as 0..1 of their range**, so the range change would have halved every saved transpose. Schema 6
+  rescales on load: the value keeps its pitch, whole octaves past ±24 move to the Octaves knob, and lanes and
+  modulations aimed at the knob are rescaled too (clamped to the new range).
+
+Impact: `Song::kSchemaVersion` 6, `narrowTransposeSemitones` in Serialize.cpp.
+
+## 87. Replacing the song asks in a dialog (2 Nov)
+
+- **New song and Open project… ask "OK / Cancel" in a dialog** when the song has anything in it, the way Rack asks
+  before it replaces a patch. With the untouched default song they act at once.
+- A submenu with "New song anyway" was tried first and dropped: it turned one click into a hunt through a submenu
+  every time, which the user found annoying.
+
+Impact: `confirmReplace` in ProjectFile.cpp.
+
+## 88. Drum hits take one value each, with curves on demand (1 Nov)
+
+- **A hit's pitch, timbre or pressure is one value by default.** It is stored as a curve with a single point, so
+  nothing new is saved and MIDI export already handles it. Read as one value, a curve gives its value where the hit
+  starts, which is what a drum is heard with; setting a value on a shaped curve moves the whole curve.
+- **On drum lanes the lower pane shows them as stems**, with the velocity lane's gestures. The drag is relative to
+  where the value was, so the first click of a double-click edits nothing. Instrument tracks keep their curve lanes.
+- **Double-clicking a stem zooms the lane onto that hit** (Back / Esc), where the curve editing of §63–66 works at
+  full width. A one-step hit was too narrow to shape in place, and a trigger lane's curve still spans the written
+  hit, which the header says.
+- **Drum rows are lanes, not pitches,** so the grid no longer draws pitch curves at the row they reach (a kick bent
+  +2 was drawn on the snare row), and grid presses never grab bend points there.
+- **One pitch window** (±2 to ±48) serves stems and curves, so zooming onto a hit keeps the scale.
+
+Why: a user asked for a quick way to set drum pitch, timbre and pressure as single values while keeping curves,
+and a better way to enter them for drums that are only triggers.
+
+Impact: `fields::Field::Bend / Timbre / Pressure`, `PianoRollView::drumValueField / curveFocus / pitchWindow`,
+`EditorState::curveFocusNote`, ExpressionLane's zoomed mode, NoteGrid::drawHitValue.

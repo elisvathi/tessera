@@ -27,7 +27,8 @@ constexpr float kBendRadius = 2.5f;
 constexpr float kMinBendSpan = 14; // px: narrower segments hide their bend handle
 constexpr float kSampleStep = 3;   // px between curve samples
 constexpr float kTensionPerPx = 1.f / 60;
-const float kPitchWindows[] = {2, 7, 12, 24, 48};
+constexpr float kFocusHeader = 24; // px: the zoomed hit's header above its curve
+constexpr float kFocusMargin = 16; // px left and right of the zoomed hit
 
 /// Adds, moves or bends one point of one note's curve. One undo step on release.
 class CurveGesture : public DragGesture {
@@ -58,8 +59,8 @@ class CurveGesture : public DragGesture {
             curve[index].tension = std::clamp(startTension + (press.y - pos.y) * kTensionPerPx * direction, -1.f, 1.f);
             value = curve[index].tension;
         } else {
-            float x0 = float(view.viewport.time.tickToX(double(n->start)));
-            float x1 = float(view.viewport.time.tickToX(double(n->end())));
+            float x0 = float(lane.axis().tickToX(double(n->start)));
+            float x1 = float(lane.axis().tickToX(double(n->end())));
             float p = x1 > x0 ? (pos.x - x0) / (x1 - x0) : 0;
             float v = lane.valueAt(pos.y);
             if (lane.curve == expr::Curve::Pitch && mods.shift)
@@ -118,22 +119,42 @@ class CurveGesture : public DragGesture {
 
 } // namespace
 
-float ExpressionLane::low() const { return curve == expr::Curve::Pitch ? -pitchWindow : expr::info(curve).min; }
+float ExpressionLane::low() const { return curve == expr::Curve::Pitch ? -owner.pitchWindow : expr::info(curve).min; }
 
-float ExpressionLane::high() const { return curve == expr::Curve::Pitch ? pitchWindow : expr::info(curve).max; }
+float ExpressionLane::high() const { return curve == expr::Curve::Pitch ? owner.pitchWindow : expr::info(curve).max; }
+
+void ExpressionLane::step() {
+    focus = owner.curveFocus();
+    if (focus.valid())
+        for (const Note& n : owner.committedNotes())
+            if (n.id == focus) {
+                focusAxis.setZoomLimits(1e-6, 1e6);
+                focusAxis.setViewWidth(std::max(1.f, box.size.x - 2 * kFocusMargin));
+                focusAxis.showRange(double(n.start), double(n.end()));
+                // showRange keeps its own small margin; the lane's margin goes in front of it.
+                focusAxis.scrollByPx(-kFocusMargin);
+            }
+    InteractiveView::step();
+}
+
+const TimeAxis& ExpressionLane::axis() const { return focus.valid() ? focusAxis : owner.viewport.time; }
+
+float ExpressionLane::top() const { return focus.valid() ? kFocusHeader : kPad; }
 
 float ExpressionLane::valueAt(float y) const {
-    float h = std::max(1.f, box.size.y - 2 * kPad);
-    float x = std::clamp(1.f - (y - kPad) / h, 0.f, 1.f);
+    float h = std::max(1.f, box.size.y - top() - kPad);
+    float x = std::clamp(1.f - (y - top()) / h, 0.f, 1.f);
     return low() + x * (high() - low());
 }
 
 float ExpressionLane::yFor(float value) const {
     float x = (std::clamp(value, low(), high()) - low()) / (high() - low());
-    return kPad + (1.f - x) * (box.size.y - 2 * kPad);
+    return top() + (1.f - x) * (box.size.y - top() - kPad);
 }
 
 IdSet ExpressionLane::editable() {
+    if (focus.valid())
+        return IdSet{focus};
     IdSet selected = owner.selectedIds();
     return selected.empty() ? edits::idsOf(owner.committedNotes()) : selected;
 }
@@ -147,13 +168,17 @@ std::string ExpressionLane::describe(float value) const {
     return text;
 }
 
-Rect ExpressionLane::rangeButton() const { return Rect(box.size.x - 44, 3, 40, 14); }
+Rect ExpressionLane::rangeButton() const {
+    return focus.valid() ? Rect(box.size.x - 44, 5, 40, 14) : Rect(box.size.x - 44, 3, 40, 14);
+}
+
+Rect ExpressionLane::backButton() const { return Rect(6, 4, 56, 16); }
 
 ExpressionLane::Hit ExpressionLane::hitTest(Vec pos) {
     Hit best;
     float bestDistance = kPointHit + 1;
     IdSet allowed = editable();
-    const TimeAxis& t = owner.viewport.time;
+    const TimeAxis& t = axis();
     float rest = expr::info(curve).rest;
     for (const Note& n : owner.committedNotes()) {
         if (!allowed.count(n.id))
@@ -210,13 +235,27 @@ std::unique_ptr<DragGesture> ExpressionLane::startGesture(Vec pos, int button, M
     if (!owner.clip())
         return nullptr;
     if (button == GLFW_MOUSE_BUTTON_LEFT && curve == expr::Curve::Pitch && rangeButton().contains(pos)) {
-        openRangeMenu();
+        owner.openPitchWindowMenu();
+        return nullptr;
+    }
+    if (focus.valid() && backButton().contains(pos)) {
+        owner.focusCurve(NoteId());
+        return nullptr;
+    }
+    if (focus.valid() && button == GLFW_MOUSE_BUTTON_RIGHT) {
+        doubleClick(pos, mods); // deletes the point under the pointer, if any
         return nullptr;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return nullptr;
     owner.curveLaneFocus = true;
     Hit hit = hitTest(pos);
+    // Zoomed onto one hit, a press away from its curve does nothing, and points move on this lane's own time.
+    if (focus.valid() && hit.kind == Hit::Kind::None)
+        return nullptr;
+    if (focus.valid() && hit.kind == Hit::Kind::Point)
+        return std::make_unique<CurveGesture>(owner, *this, hit.note, hit.index, CurveGesture::Mode::Move, pos, false,
+                                              owner.committedNotes());
     if (hit.kind == Hit::Kind::None) {
         IdSet allowed = editable();
         ExpressionLane* lane = this;
@@ -241,8 +280,8 @@ std::unique_ptr<DragGesture> ExpressionLane::startGesture(Vec pos, int button, M
     if (hit.kind == Hit::Kind::Span) {
         for (Note& n : notes)
             if (n.id == hit.note) {
-                float x0 = float(owner.viewport.time.tickToX(double(n.start)));
-                float x1 = float(owner.viewport.time.tickToX(double(n.end())));
+                float x0 = float(axis().tickToX(double(n.start)));
+                float x1 = float(axis().tickToX(double(n.end())));
                 float v = valueAt(pos.y);
                 if (curve == expr::Curve::Pitch && mods.shift)
                     v = std::round(v);
@@ -272,6 +311,8 @@ void ExpressionLane::doubleClick(Vec pos, Modifiers mods) {
 }
 
 void ExpressionLane::wheel(Vec pos, Vec delta, Modifiers mods) {
+    if (focus.valid())
+        return; // the zoomed hit always fills the lane
     ctx.touchNavigation();
     if (mods.ctrl)
         owner.viewport.time.animateZoomAt(pos.x, wheelZoomFactor(delta.y), kZoomAnimationSeconds);
@@ -280,6 +321,8 @@ void ExpressionLane::wheel(Vec pos, Vec delta, Modifiers mods) {
 }
 
 CursorShape ExpressionLane::hoverCursor(Vec pos, Modifiers mods) {
+    if (focus.valid() && backButton().contains(pos))
+        return CursorShape::Hand;
     if (curve == expr::Curve::Pitch && rangeButton().contains(pos))
         return CursorShape::Hand;
     switch (hitTest(pos).kind) {
@@ -291,17 +334,6 @@ CursorShape ExpressionLane::hoverCursor(Vec pos, Modifiers mods) {
         return CursorShape::AddPoint;
     default:
         return CursorShape::Arrow;
-    }
-}
-
-void ExpressionLane::openRangeMenu() {
-    rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Pitch bend shown"));
-    for (float w : kPitchWindows) {
-        char text[24];
-        snprintf(text, sizeof(text), "±%.0f semitones", double(w));
-        menu->addChild(rack::createCheckMenuItem(
-            text, "", [this, w] { return pitchWindow == w; }, [this, w] { pitchWindow = w; }));
     }
 }
 
@@ -322,7 +354,8 @@ void ExpressionLane::drawView(const DrawArgs& args) {
         return;
     nvgSave(vg);
     nvgScissor(vg, 0, 0, box.size.x, box.size.y);
-    timeline::drawGrid(vg, owner.viewport.time, owner.timeSig(), box.size.y, owner.snapStep());
+    if (!focus.valid())
+        timeline::drawGrid(vg, owner.viewport.time, owner.timeSig(), box.size.y, owner.snapStep());
     float rest = expr::info(curve).rest;
     if (curve == expr::Curve::Pitch) {
         // The no-bend line, and a faint line at each octave inside the window.
@@ -331,7 +364,7 @@ void ExpressionLane::drawView(const DrawArgs& args) {
         nvgFillColor(vg, c.line2);
         nvgFill(vg);
         nvgBeginPath(vg);
-        for (float st = 12; st < pitchWindow; st += 12) {
+        for (float st = 12; st < owner.pitchWindow; st += 12) {
             nvgRect(vg, 0, yFor(st), box.size.x, 1);
             nvgRect(vg, 0, yFor(-st), box.size.x, 1);
         }
@@ -342,19 +375,23 @@ void ExpressionLane::drawView(const DrawArgs& args) {
     const Track* track = owner.track();
     NVGcolor base = theme::track(track ? track->color : 0x9AA1AB);
     IdSet selected = owner.selectedIds();
-    const TimeAxis& t = owner.viewport.time;
+    const TimeAxis& t = axis();
     for (const Note& n : owner.notes()) {
+        if (focus.valid() && n.id != focus)
+            continue;
         float x0 = float(t.tickToX(double(n.start)));
         float x1 = float(t.tickToX(double(n.end())));
         if (x1 < 0)
             continue;
         if (x0 > box.size.x)
             break;
-        bool editableNote = selected.empty() || selected.count(n.id);
+        if (focus.valid())
+            drawFocusHeader(vg, n);
+        bool editableNote = focus.valid() || selected.empty() || selected.count(n.id);
         NVGcolor color = editableNote ? base : nvgTransRGBAf(base, 0.3f);
         // The note's span, so it is clear where a click adds a point.
         nvgBeginPath(vg);
-        nvgRect(vg, x0, kPad, std::max(1.f, x1 - x0 - 1), box.size.y - 2 * kPad);
+        nvgRect(vg, x0, top(), std::max(1.f, x1 - x0 - 1), box.size.y - top() - kPad);
         nvgFillColor(vg, nvgTransRGBAf(base, selected.count(n.id) ? 0.12f : 0.05f));
         nvgFill(vg);
 
@@ -399,10 +436,38 @@ void ExpressionLane::drawView(const DrawArgs& args) {
         draw::TextStyle style{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1,
                               NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
         char text[16];
-        snprintf(text, sizeof(text), "±%.0f", double(pitchWindow));
+        snprintf(text, sizeof(text), "±%.0f", double(owner.pitchWindow));
         draw::text(vg, style, b.getCenter().x, b.getCenter().y, text);
     }
     nvgRestore(vg);
+}
+
+void ExpressionLane::drawFocusHeader(NVGcontext* vg, const Note& note) {
+    const theme::Palette& c = theme::colors();
+    Rect back = backButton();
+    draw::roundedRect(vg, back, theme::metrics::kRadiusControl, c.bg2);
+    draw::TextStyle button{theme::fonts::ui(), theme::metrics::kTextUi, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, button, back.getCenter().x, back.getCenter().y, "← Back");
+
+    std::string what = expr::info(curve).name;
+    what[0] = char(std::tolower(static_cast<unsigned char>(what[0])));
+    const DrumLane* lane = owner.laneOf(note.pitch);
+    std::string title = (lane ? lane->name : std::string("Hit")) + "  ·  hit at " +
+                        fields::format(fields::Field::Start, double(note.start) / kPpq, owner.timeSig()) + "  ·  " +
+                        what;
+    draw::TextStyle titleStyle{theme::fonts::uiStrong(), theme::metrics::kTextUi, c.text0,
+                               NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    float x = back.getRight() + 10;
+    draw::text(vg, titleStyle, x, back.getCenter().y, title);
+    // A trigger is over in 1 ms, but the curve still plays across the written hit: say how long that is.
+    std::string hint = fields::format(fields::Field::Length, double(note.length) / kPpq, owner.timeSig()) +
+                       ", then holds until the next hit";
+    draw::TextStyle hintStyle{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2,
+                              NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+    float right = (curve == expr::Curve::Pitch ? rangeButton().pos.x : box.size.x) - 8;
+    float titleRight = x + draw::textWidth(vg, titleStyle, title) + 16;
+    if (right - titleRight > 60)
+        draw::text(vg, hintStyle, right, back.getCenter().y, draw::ellipsize(vg, hintStyle, hint, right - titleRight));
 }
 
 } // namespace tessera

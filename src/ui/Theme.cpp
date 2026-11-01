@@ -60,7 +60,7 @@ const Palette& gruvbox() {
 
 const Palette& nord() {
     static const Palette p =
-        make({0x2E3440, 0x3B4252, 0x434C5E, 0x353B49, 0x3B4252, 0x4C566A, 0xECEFF4, 0xD8DEE9, 0x9AA3B4, 0x88C0D0,
+        make({0x2E3440, 0x3B4252, 0x434C5E, 0x353B49, 0x464F62, 0x55607A, 0xECEFF4, 0xD8DEE9, 0x9AA3B4, 0x88C0D0,
               0xBF616A, 0xA3BE8C, 0xEBCB8B, 0x81A1C1, 0x272C36, 0x2E3440, 0x13151B},
              true);
     return p;
@@ -90,6 +90,39 @@ const Palette& monokai() {
     return p;
 }
 
+// Tessera's first look, before the schemes: near black with an orange accent.
+const Palette& carbon() {
+    static const Palette p =
+        make({0x121316, 0x1A1C20, 0x23262B, 0x1E2024, 0x2C3036, 0x3A3F47, 0xE8EAED, 0x9AA1AB, 0x737A85, 0xFF8A3D,
+              0xFF4D5E, 0x4BD18A, 0xF5C451, 0x7AA7FF, 0x0B0C0E, 0x131524, 0x13151B},
+             true);
+    return p;
+}
+
+const Palette& tokyoNight() {
+    static const Palette p =
+        make({0x1A1B26, 0x1F2335, 0x292E42, 0x1F2130, 0x2A2F45, 0x3B4261, 0xC0CAF5, 0xA9B1D6, 0x737AA2, 0x7AA2F7,
+              0xF7768E, 0x9ECE6A, 0xE0AF68, 0xBB9AF7, 0x16161E, 0x16161E, 0x13151B},
+             true);
+    return p;
+}
+
+const Palette& rosePine() {
+    static const Palette p =
+        make({0x191724, 0x1F1D2E, 0x26233A, 0x1E1C2B, 0x2C293F, 0x403D52, 0xE0DEF4, 0x908CAA, 0x6E6A86, 0xC4A7E7,
+              0xEB6F92, 0x9CCFD8, 0xF6C177, 0xEBBCBA, 0x131119, 0x191724, 0x13151B},
+             true);
+    return p;
+}
+
+const Palette& kanagawa() {
+    static const Palette p =
+        make({0x1F1F28, 0x2A2A37, 0x363646, 0x26262F, 0x363646, 0x54546D, 0xDCD7BA, 0xC8C093, 0x8A8980, 0x7E9CD8,
+              0xE46876, 0x98BB6C, 0xE6C384, 0x957FB8, 0x16161D, 0x16161D, 0x13151B},
+             true);
+    return p;
+}
+
 Scheme chosen = Scheme::FollowRack;
 
 Scheme resolved(Scheme s) {
@@ -114,6 +147,14 @@ const Palette& paletteOf(Scheme s) {
         return oneDark();
     case Scheme::Monokai:
         return monokai();
+    case Scheme::Carbon:
+        return carbon();
+    case Scheme::TokyoNight:
+        return tokyoNight();
+    case Scheme::RosePine:
+        return rosePine();
+    case Scheme::Kanagawa:
+        return kanagawa();
     case Scheme::Slate:
     default:
         return slate();
@@ -151,6 +192,14 @@ const char* schemeName(Scheme s) {
         return "One Dark";
     case Scheme::Monokai:
         return "Monokai";
+    case Scheme::Carbon:
+        return "Carbon";
+    case Scheme::TokyoNight:
+        return "Tokyo Night";
+    case Scheme::RosePine:
+        return "Ros\u00e9 Pine";
+    case Scheme::Kanagawa:
+        return "Kanagawa";
     case Scheme::FollowRack:
     default:
         return "Follow Rack (Plaster / Slate)";
@@ -175,6 +224,14 @@ const char* schemeId(Scheme s) {
         return "one-dark";
     case Scheme::Monokai:
         return "monokai";
+    case Scheme::Carbon:
+        return "carbon";
+    case Scheme::TokyoNight:
+        return "tokyo-night";
+    case Scheme::RosePine:
+        return "rose-pine";
+    case Scheme::Kanagawa:
+        return "kanagawa";
     case Scheme::FollowRack:
     default:
         return "follow-rack";

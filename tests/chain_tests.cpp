@@ -584,7 +584,7 @@ TEST_CASE("engine: an LFO on a knob moves the notes") {
     lfo.params = knobsOf(ModulatorType::Lfo, {{mods::knob::kSync, 1}, {mods::knob::kSyncedRate, 3}});
     Modulation route;
     route.target = {ParamRef::Kind::Device, t.id.value, chain::knob::kSemitones};
-    route.amount = 0.125f; // 12 of the knob's 96 semitones
+    route.amount = 0.25f; // 12 of the knob's 48 semitones
     lfo.routes.push_back(route);
     song.modulators.push_back(lfo);
     Harness h(song);
@@ -603,7 +603,7 @@ TEST_CASE("engine: an LFO on a knob moves the notes") {
             atPeak = h.engine.liveKnob(knob);
     }
     CHECK(pitches == std::vector<int>{60, 72, 60, 48});
-    CHECK(atPeak == doctest::Approx(0.625f).epsilon(0.001));
+    CHECK(atPeak == doctest::Approx(0.75f).epsilon(0.001));
 }
 
 TEST_CASE("engine: modulators drive AUTO outputs") {

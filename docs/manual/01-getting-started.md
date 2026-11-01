@@ -11,7 +11,7 @@ your patch.
 |---|---|---|
 | **Tessera** | 24 HP (or wider) | The sequencer. It holds the song, the transport (play, stop, tempo) and the editor. |
 | **Track Out** | 6 HP | The outputs of one instrument track: pitch, gate, velocity and more. |
-| **Drum Out** | 10 HP | The outputs of one drum track: a trigger and a velocity jack for each drum sound. |
+| **Drum Out** | 20 HP | The outputs of one drum track: a strip of trigger, velocity, pitch, timbre and pressure jacks for each drum sound. |
 | **Auto Out** | 8 HP | The automation curves of one track, on eight separate jacks. |
 
 The output modules don't need to sit next to Tessera. Put each one next to the modules it plays, anywhere in the

@@ -222,3 +222,53 @@ TEST_CASE("channel 1 keeps the track's colour; the 16 channels all differ, the f
     CHECK(channelColor(kTrackColors[0], 7) == channelColor(0xEF8070, 7)); // a custom colour uses its nearest
     CHECK(fields::format(Field::Channel, 3) == "3");
 }
+
+TEST_CASE("pitch, timbre and pressure as one value: a single point, or the whole curve moved") {
+    Note n;
+    CHECK(get(n, Field::Bend) == 0);
+    CHECK_FALSE(shaped(n, Field::Bend));
+
+    // One value is one point; 0 takes it away again, so the hit rests.
+    set(n, Field::Bend, 3);
+    REQUIRE(n.pitchExpr.size() == 1);
+    CHECK(n.pitchExpr[0].value == 3.f);
+    CHECK(get(n, Field::Bend) == 3);
+    set(n, Field::Bend, 0);
+    CHECK(n.pitchExpr.empty());
+    set(n, Field::Timbre, 40);
+    CHECK(n.timbreExpr[0].value == doctest::Approx(0.4f));
+    CHECK(format(Field::Timbre, 40) == "40%");
+    CHECK(format(Field::Bend, 3) == "+3 st");
+    CHECK(format(Field::Bend, -0.5) == "-0.5 st");
+
+    // A shaped curve is read where it starts, and setting it moves every point, keeping the shape.
+    n.pitchExpr = {{0, 7, 0}, {0.5f, 3, 0.2f}, {1, -2, 0}};
+    CHECK(shaped(n, Field::Bend));
+    CHECK(get(n, Field::Bend) == doctest::Approx(7));
+    set(n, Field::Bend, 9);
+    CHECK(n.pitchExpr[0].value == doctest::Approx(9));
+    CHECK(n.pitchExpr[1].value == doctest::Approx(5));
+    CHECK(n.pitchExpr[1].tension == doctest::Approx(0.2f));
+    CHECK(n.pitchExpr[2].value == doctest::Approx(0));
+    // Moving a shaped curve to 0 keeps it: only a flat one goes.
+    set(n, Field::Bend, 0);
+    CHECK(n.pitchExpr.size() == 3);
+    // Points stay in range: pressure can't go over 100%.
+    n.pressureExpr = {{0, 0.5f, 0}, {1, 0.9f, 0}};
+    set(n, Field::Pressure, 80);
+    CHECK(n.pressureExpr[0].value == doctest::Approx(0.8f));
+    CHECK(n.pressureExpr[1].value == doctest::Approx(1.f));
+}
+
+TEST_CASE("a ramp of pitch across hits gives each its own value") {
+    edits::NoteList notes = fourNotes();
+    edits::NoteList out = ramp(notes, all(notes), Field::Bend, 0, 6);
+    CHECK(get(out[0], Field::Bend) == doctest::Approx(0));
+    CHECK(out[0].pitchExpr.empty());
+    CHECK(get(out[1], Field::Bend) == doctest::Approx(2));
+    CHECK(get(out[3], Field::Bend) == doctest::Approx(6));
+    edits::NoteList typed;
+    REQUIRE(applyTyped(out, all(out), Field::Bend, "+1", typed));
+    CHECK(get(typed[0], Field::Bend) == doctest::Approx(1));
+    CHECK(get(typed[3], Field::Bend) == doctest::Approx(7));
+}

@@ -10,9 +10,10 @@ namespace tessera {
 namespace {
 
 constexpr float kPad = 1.5f * theme::metrics::kSpacing;
-constexpr float kSourceBaseline = 15;
-constexpr float kNumberBaseline = 50;
-constexpr float kNameBaseline = 68;
+// The display is 24 mm (~71 px) tall; keep the track name ~5 px off the bottom edge.
+constexpr float kSourceBaseline = 13.5f;
+constexpr float kNumberBaseline = 46;
+constexpr float kNameBaseline = 64;
 constexpr float kNumberSize = 28;
 
 } // namespace

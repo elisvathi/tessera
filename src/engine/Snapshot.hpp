@@ -111,6 +111,7 @@ struct DrumLanePlayback {
     int8_t pitch = 36;
     int output = 0;      // the channel on the Drum Out's poly outputs
     float gateMs = 0;    // 0 = a 1 ms trigger
+    bool gateNote = false; // the gate is high for the note's own length
     int choke = 0;       // 0 = none
     bool audible = true; // mute and solo already applied
 };
