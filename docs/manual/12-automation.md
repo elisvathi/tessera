@@ -127,7 +127,8 @@ When a clip lane and a track lane use the same AUTO channel, the lane menu decid
 - Stacked timeline clips: for each AUTO channel, the clip on top that has a lane there plays it.
 - A channel with nothing playing holds its last value. Pitch bend and pressure lanes go back to 0 instead, so a track
   never stays bent.
-- Muted lanes are left out.
+- Muted lanes are left out. So are all lanes of a muted track, and of a track left out by a solo: the track's
+  channels hold their last value and its pitch bend and pressure rest at 0.
 
 ## Moving clips takes their automation along
 

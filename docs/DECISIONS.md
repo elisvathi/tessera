@@ -1272,3 +1272,18 @@ Refines §78.
   repeats and the loop end are there when you scroll or play to them. Lanes of 3, 5 and 7 steps in a 1-bar clip
   loop 105 bars. Playback and drawing only visit the part that plays or shows, so a long cycle costs nothing extra.
   The panel's mini piano roll shows one clip length of the cycle at a time, the page the playhead is on.
+
+## 84. A muted track's automation holds, like its muted lanes (31 Oct)
+
+- **Muting a track silences its AUTO output the same way muting every lane would.** The engine takes no lanes
+  (track lanes, clip lanes, modulator routes) from a track that `isAudible` denies: a channel with nothing
+  playing holds its last value, and pitch bend and pressure rest at 0 V.
+- **Solo works through the same flag**, so a track left out by a solo holds just the same, as it already did
+  for notes. Knob lanes keep turning device knobs: they are the track's own device state, not its output.
+- **Listening tracks still get notes**, not automation: the "muted track still feeds its listeners, like a MIDI
+  send" rule is about notes only. A listener's own automation is its own.
+
+Why: muting a track while its automation kept driving the patch sounded half-muted. Reported on GitHub as
+issue #8.
+
+Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and automation sections say so.

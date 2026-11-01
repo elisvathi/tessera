@@ -1642,9 +1642,11 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
             }
         return;
     }
-    bool trackLanes = mode == PlayMode::Launcher || followsArrangement(state);
+    // A track silenced by mute or a solo contributes no lanes, exactly as its muted lanes would: channels with
+    // nothing playing hold their last value, pitch bend and pressure rest at 0 V.
+    bool trackLanes = tp.audible && (mode == PlayMode::Launcher || followsArrangement(state));
     LaneClips clips;
-    int clipCount = lanesClips(tp, state, songTick, playTick, clips);
+    int clipCount = tp.audible ? lanesClips(tp, state, songTick, playTick, clips) : 0;
     std::array<float, kMaxPlayedLanes> target;
     std::array<bool, kMaxPlayedLanes> have{};
     auto take = [&](const LanePlayback& lane, float value) {
@@ -1663,6 +1665,7 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
     if (trackLanes)
         for (size_t k = 0; k < tp.lanes.size() && k < kMaxPlayedLanes; k++)
             take(tp.lanes[k], evaluateAt(tp.lanes[k].points, songTick, state.trackLaneCursor[k], tp.lanes[k].rest));
+
     // Modulate moves around the track lane's value, whatever stacked clips below did.
     std::array<float, kMaxPlayedLanes> trackTarget = target;
     std::array<bool, kMaxPlayedLanes> haveTrack = have;
@@ -1681,7 +1684,7 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
     // Modulators add onto the lanes (docs/DEVICES.md §3 "CV out").
     std::array<float, kMaxAutomationLanes> added{};
     std::array<bool, kMaxAutomationLanes> modulated{};
-    if (state.chainInfo)
+    if (tp.audible && state.chainInfo)
         for (const AutoModulation& r : state.chainInfo->autoRoutes) {
             size_t o = size_t(r.channel) & (kMaxAutomationLanes - 1);
             added[o] += r.source.amount * (*modStates)[size_t(r.source.slot)].out;

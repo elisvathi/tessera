@@ -26,6 +26,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 ## Song, undo and saving
 - [ ] Tracks menu: mute and solo each track; Ctrl/Cmd+Z and redo restore exactly.
 - [ ] Muting while playing silences the track at once; unmuting brings it back on the next note.
+- [ ] With automation lanes playing, muting the track (or soloing another) stops the AUTO outputs following their
+      lanes: each channel holds its last value, pitch bend and pressure rest at 0. Unmuting resumes the lanes.
+- [ ] Muting the source track of a listener still feeds the listener (like a MIDI send).
 - [ ] Save, quit, reopen: the song (tracks, mute/solo, notes) is unchanged.
 - [ ] Rename Tessera, then undo past the rename: earlier song edits still undo correctly.
 - [ ] Initialize (Ctrl+I) resets the song; undo brings it back.
