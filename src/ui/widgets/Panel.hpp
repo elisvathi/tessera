@@ -63,7 +63,9 @@ class PanelBuilder {
     std::vector<rack::widget::Widget*> rightScrews() const { return rightScrewWidgets; }
 
     void input(rack::math::Vec mm, int inputId, const std::string& label);
-    void output(rack::math::Vec mm, int outputId, const std::string& label);
+    /// `labelAboveMm` overrides how far above the jack the label sits, for rows packed tighter than usual.
+    void output(rack::math::Vec mm, int outputId, const std::string& label,
+                float labelAboveMm = theme::metrics::kPanelLabelAboveJackMm);
 
     /// A param control with an optional label below it.
     template <typename TParamWidget>

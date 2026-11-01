@@ -103,10 +103,9 @@ void PanelBuilder::input(rack::math::Vec mm, int inputId, const std::string& lab
                    PanelArt::LabelKind::Control);
 }
 
-void PanelBuilder::output(rack::math::Vec mm, int outputId, const std::string& label) {
+void PanelBuilder::output(rack::math::Vec mm, int outputId, const std::string& label, float labelAboveMm) {
     mw->addOutput(rack::createOutputCentered<PanelJack>(rack::mm2px(mm), mw->getModule(), outputId));
-    art().addLabel(mm.minus(rack::math::Vec(0, theme::metrics::kPanelLabelAboveJackMm)), label,
-                   PanelArt::LabelKind::Output);
+    art().addLabel(mm.minus(rack::math::Vec(0, labelAboveMm)), label, PanelArt::LabelKind::Output);
 }
 
 } // namespace tessera

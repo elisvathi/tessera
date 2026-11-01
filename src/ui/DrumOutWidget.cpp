@@ -32,6 +32,7 @@ constexpr float kLaneX[8] = {8.2f, 18.75f, 29.3f, 39.85f, 50.4f, 60.95f, 71.5f, 
 constexpr float kPolyRow = 116;
 constexpr float kPolyX[5] = {11.2f, 28.5f, 45.7f, 63.f, 80.3f};
 constexpr float kLightAbove = 6.4f;
+constexpr float kHintAbove = 5.1f; // the V/T/P hint's distance from its own jack
 
 const DrumLane* laneOf(DrumOutModule* module, int lane) {
     if (!module)
@@ -88,9 +89,10 @@ struct DrumOutWidget : rack::app::ModuleWidget {
                              rack::mm2px(Vec(kStripW - 1.2f, kChipH)));
             addChild(chip);
             panel.output(Vec(x, kTrigRow), M::TRIG_OUTPUT + i, "");
-            panel.output(Vec(x, kVelRow), M::VEL_OUTPUT + i, "V");
-            panel.output(Vec(x, kTimbreRow), M::TIMBRE_OUTPUT + i, "T");
-            panel.output(Vec(x, kPressRow), M::PRESS_OUTPUT + i, "P");
+            // The V/T/P hints hug their own jack: the standard label offset would push them into the jack above.
+            panel.output(Vec(x, kVelRow), M::VEL_OUTPUT + i, "V", kHintAbove);
+            panel.output(Vec(x, kTimbreRow), M::TIMBRE_OUTPUT + i, "T", kHintAbove);
+            panel.output(Vec(x, kPressRow), M::PRESS_OUTPUT + i, "P", kHintAbove);
             addChild(rack::createLightCentered<rack::componentlibrary::SmallLight<PlayLight>>(
                 rack::mm2px(Vec(x - 3.4f, kTrigRow - kLightAbove)), module, M::TRIG_LIGHT + i));
         }
