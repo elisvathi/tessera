@@ -151,8 +151,6 @@ def output_module(mid, model, track, x):
     """A Track Out, Drum Out or Auto Out bound to `track` of the demo Tessera."""
     data = {"source": TESSERA_ID, "sourceName": "Tessera", "track": TRACK_IDS[track],
             "followSelected": False}
-    if model == "TesseraDrumOut":
-        data["expanded"] = True  # the manual's Drum Out shot shows the expression jacks
     return {"id": mid, "plugin": "Tessera", "model": model, "version": "2.0.0", "params": [], "pos": [x, 0],
             "data": data}
 

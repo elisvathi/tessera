@@ -21,22 +21,11 @@ DrumOutModule::DrumOutModule() : OutputModuleBase(TrackType::Drum) {
     for (int i = 0; i < kTrigJacks; i++) {
         std::string lane = std::to_string(i + 1);
         configOutput(TIMBRE_OUTPUT + i, "Lane " + lane + " timbre")->description =
-            "The hit's timbre curve on output " + lane + ", 0-10 V (shown when the module is expanded)";
+            "The hit's timbre curve on output " + lane + ", 0-10 V";
         configOutput(PRESS_OUTPUT + i, "Lane " + lane + " pressure")->description =
-            "The hit's pressure curve on output " + lane + ", 0-10 V (shown when the module is expanded)";
+            "The hit's pressure curve on output " + lane + ", 0-10 V";
     }
     lightDivider.setDivision(kLightDivision);
-}
-
-json_t* DrumOutModule::dataToJson() {
-    json_t* root = OutputModuleBase::dataToJson();
-    json_object_set_new(root, "expanded", json_boolean(expanded));
-    return root;
-}
-
-void DrumOutModule::dataFromJson(json_t* root) {
-    OutputModuleBase::dataFromJson(root);
-    expanded = json_is_true(json_object_get(root, "expanded"));
 }
 
 void DrumOutModule::writeFrame(const TrackFrame& frame) {

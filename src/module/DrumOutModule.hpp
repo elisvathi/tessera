@@ -5,10 +5,10 @@
 namespace tessera {
 
 /// "Tessera Drum Out": the outputs of one drum track, placed anywhere in the patch (DESIGN.md §6).
-/// Lane outputs 1-8 each have a trigger and a velocity jack; all 16 are on the poly outputs, channel = lane
-/// output. Timbre and pressure play each hit's expression curves (0-10 V); pitch bend adds onto the velocity
-/// jacks' pitch, as on the trigger poly channels. A right-click expands the module: then every lane also has its
-/// own timbre and pressure jack.
+/// Lane outputs 1-8 each have a trigger, velocity, timbre and pressure jack (the two expression jacks sit in a
+/// recessed tray on the panel); all 16 lanes are also on the poly outputs, channel = lane output. Timbre and
+/// pressure play each hit's expression curves (0-10 V); pitch bend adds onto the velocity jacks' pitch, as on
+/// the trigger poly channels.
 class DrumOutModule : public OutputModuleBase {
   public:
     static constexpr int kTrigJacks = 8;
@@ -31,11 +31,6 @@ class DrumOutModule : public OutputModuleBase {
     enum LightId { ENUMS(TRIG_LIGHT, kTrigJacks), LIGHTS_LEN };
 
     DrumOutModule();
-
-    json_t* dataToJson() override;
-    void dataFromJson(json_t* root) override;
-
-    bool expanded = false; // the expression jacks (TIMBRE/PRESS per lane) are on the panel
 
   protected:
     void writeFrame(const TrackFrame& frame) override;
