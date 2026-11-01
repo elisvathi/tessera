@@ -203,8 +203,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       different); the lane header shows T / G / N. Fixed gates and triggers are unchanged.
 - [ ] Drum Out: TIMBRE and PRESS poly outputs follow a hit's expression curves while it plays and hold after it;
       pitch expression bends the lane's pitch on the trigger outputs.
-- [ ] Drum Out: each lane strip shows the lane's name in its colour; TRIG/VEL sit on the raised plate and T/P
-      in the recessed tray; all jacks are inside the panel; renaming a lane in the editor updates the strip.
+- [ ] Drum Out: each lane strip shows a colour chip with the lane's number (the chip takes the lane's colour);
+      jacks read trigger, V, T, P top to bottom; recolouring a lane in the editor updates the chip.
 - [ ] Scale device: Root and Scale knobs hide unless Key from is Fixed; the card shrinks and grows back when the
       Key from knob is turned.
 - [ ] File menu: with a changed song, New song and Open project… open a submenu that says the current song is

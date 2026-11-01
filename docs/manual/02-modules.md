@@ -152,10 +152,10 @@ V/OCT.
 
 ![The Drum Out module](images/drum-out.png)
 
-Drum Out plays one **drum track**. Each drum sound (a "lane", such as Kick or Snare) is a vertical strip with its
-name in the lane's colour at the top: a trigger and velocity jack on the raised plate, and the lane's timbre and
-pressure jacks in a recessed tray below. Lanes 1 to 8 have their own strips; lanes 9 to 16 reach only the poly
-jacks.
+Drum Out plays one **drum track**. Each drum sound (a "lane") is a mixer-style strip: a colour chip with the
+lane's number on top (the chip takes the lane's colour), then the lane's trigger, velocity, timbre and pressure
+jacks, top to bottom — the small letters **V**, **T** and **P** mark the rows. Lanes 1 to 8 have their own strips;
+lanes 9 to 16 reach only the poly jacks.
 
 | Jack | What it sends |
 |---|---|

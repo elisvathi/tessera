@@ -1300,9 +1300,9 @@ Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and a
 - **Drum Out is a fixed 18 HP module.** Every lane has its own timbre and pressure jack next to its trigger and
   velocity. An expandable panel (a right-click toggle that resized the widget) was tried first and dropped: it
   rebuilt the widget at runtime, which fought Rack's ModuleWidget panel ownership — two crashes — for no musical
-  gain. The panel lays one vertical strip per lane — the lane's name in its colour above its four jacks — with
-  trigger and velocity on the raised plate and timbre and pressure in a recessed tray below, so the trigger and
-  velocity outputs stay the visual focus.
+  gain. The panel lays one mixer-style channel strip per lane: a colour chip with the lane's number on top (no
+  lane names on the panel — position, colour and number carry the identity), then its four jacks in fixed order
+  (trigger, velocity, timbre, pressure, with small V/T/P hints).
 - **The curves live in the snapshot**, so a snapshot swap re-finds a sounding lane's curves by clip and note ID,
   the same re-attachment voices use.
 
