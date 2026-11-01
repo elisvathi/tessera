@@ -20,7 +20,7 @@ constexpr int kHp = 18;
 
 // Layout in mm. The panel is 91.4 x 128.5.
 const Rect kDisplay(4, 12.5f, 83.4f, 24);
-constexpr float kButtonRow = 41.5f;
+constexpr float kButtonRow = 40.75f; // the arrows sit exactly halfway between the display and the plate
 const Vec kButtonSize(12, 6);
 const Rect kOutputPlate(2.5f, 45, 86.4f, 78);
 // One mixer-style channel strip per lane: a color chip with the lane's number on top, then its four jacks

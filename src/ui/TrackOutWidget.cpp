@@ -22,7 +22,7 @@ constexpr int kHp = 6;
 
 // Layout in mm. The panel is 30.48 x 128.5.
 const Rect kDisplay(3, 12.5f, 24.48f, 30);
-constexpr float kButtonRow = 48.5f;
+constexpr float kButtonRow = 49.25f; // the arrows sit exactly halfway between the display and the plate
 const Vec kButtonSize(9.5f, 6);
 const Rect kOutputPlate(2.5f, 56, 25.48f, 65);
 constexpr float kLeft = 9.f;
