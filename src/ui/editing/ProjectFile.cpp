@@ -93,7 +93,7 @@ void newSong(TesseraModule* m, Say say) {
 }
 
 /// Replacing the whole song loses what is there (undo brings it back), so a song that isn't the untouched default
-/// confirms inside the menu — one more click, never a blocking dialog (Trello, user feedback).
+/// confirms inside the menu — one more click, never a blocking dialog.
 void appendFileMenu(rack::ui::Menu* menu, TesseraModule* m, std::function<EditorContext*()> editor, Say say) {
     auto replaceItem = [&](const char* label, std::function<void()> run) {
         if (m->song() == makeDefaultSong()) {

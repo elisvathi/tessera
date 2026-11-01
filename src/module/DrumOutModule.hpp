@@ -5,10 +5,8 @@
 namespace tessera {
 
 /// "Tessera Drum Out": the outputs of one drum track, placed anywhere in the patch (DESIGN.md §6).
-/// Lane outputs 1-8 each have a trigger, velocity, timbre and pressure jack (the two expression jacks sit in a
-/// recessed tray on the panel); all 16 lanes are also on the poly outputs, channel = lane output. Timbre and
-/// pressure play each hit's expression curves (0-10 V); pitch bend adds onto the velocity jacks' pitch, as on
-/// the trigger poly channels.
+/// Lane outputs 1-8 each have a trigger, velocity, timbre and pressure jack; all 16 lanes are also on the poly
+/// outputs, channel = lane output. Timbre and pressure play each hit's expression curves (0-10 V).
 class DrumOutModule : public OutputModuleBase {
   public:
     static constexpr int kTrigJacks = 8;

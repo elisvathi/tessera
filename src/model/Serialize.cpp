@@ -736,11 +736,69 @@ bool migrateSong(json_t* songJ, int fromVersion) {
         json_array_foreach(tracks, i, t) json_object_set_new(t, "monitor", json_true());
     }
     // Version 5 added device chains and modulators. Older songs have none, and every new field loads as empty,
-    // so there is nothing to rewrite.
+    // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob; songFromJson rescales it.
     return fromVersion <= Song::kSchemaVersion;
 }
 
 namespace {
+
+/// Before schema 6 Transpose's Semitones knob went from -48 to +48; now it goes from -24 to +24. Knobs are saved as
+/// 0..1 of their range, so every saved value is rescaled to keep its pitch. Whole octaves past ±24 move to the
+/// Octaves knob. What points at the knob (lanes, modulations) is rescaled too, clamped to the new range.
+void narrowTransposeSemitones(Song& s) {
+    constexpr float kOldSpan = 96, kNewSpan = 48, kOctaveSpan = 8;
+    auto rescale = [](float v) {
+        return std::clamp((v * kOldSpan - kOldSpan / 2 + kNewSpan / 2) / kNewSpan, 0.f, 1.f);
+    };
+    std::vector<uint64_t> transposes;
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices) {
+            if (d.type != DeviceType::Transpose)
+                continue;
+            transposes.push_back(d.id.value);
+            if (d.params.size() <= size_t(chain::knob::kOctaves))
+                continue;
+            int semitones = int(std::lround(d.params[chain::knob::kSemitones] * kOldSpan - kOldSpan / 2));
+            int octaves = int(std::lround(d.params[chain::knob::kOctaves] * kOctaveSpan - kOctaveSpan / 2));
+            while (semitones > 24 && octaves < 4) {
+                semitones -= 12;
+                octaves++;
+            }
+            while (semitones < -24 && octaves > -4) {
+                semitones += 12;
+                octaves--;
+            }
+            d.params[chain::knob::kSemitones] = std::clamp((float(semitones) + kNewSpan / 2) / kNewSpan, 0.f, 1.f);
+            d.params[chain::knob::kOctaves] = (float(octaves) + kOctaveSpan / 2) / kOctaveSpan;
+        }
+    if (transposes.empty())
+        return;
+    auto aimsAtSemitones = [&](const ParamRef& r) {
+        return r.kind == ParamRef::Kind::Device && r.param == chain::knob::kSemitones &&
+               std::find(transposes.begin(), transposes.end(), r.owner) != transposes.end();
+    };
+    auto routes = [&](std::vector<Modulator>& list) {
+        for (Modulator& m : list)
+            for (Modulation& r : m.routes)
+                if (r.kind == Modulation::Kind::Param && aimsAtSemitones(r.target))
+                    r.amount = std::clamp(r.amount * kOldSpan / kNewSpan, -1.f, 1.f);
+    };
+    auto lanes = [&](std::vector<AutomationEnvelope>& list) {
+        for (AutomationEnvelope& lane : list)
+            if (aimsAtSemitones(lane.paramTarget))
+                for (AutoPoint& p : lane.points)
+                    p.value = rescale(p.value);
+    };
+    routes(s.modulators);
+    for (Track& t : s.tracks) {
+        routes(t.modulators);
+        for (Device& d : t.devices)
+            routes(d.modulators);
+        lanes(t.automation);
+    }
+    for (auto& [id, clip] : s.clips)
+        lanes(clip.automation);
+}
 
 /// Before 13 Oct 2026 Random also had velocity (knob 3) and timing (knob 4). Those moved to the Humanize device: a
 /// Random that used them gets a Humanize right after it with the same values, and what pointed at those knobs
@@ -866,6 +924,8 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
 
     // Before normalize, which trims each device's knobs to its type's list and would drop the old values.
     splitLegacyRandom(s);
+    if (schemaVersion < 6)
+        narrowTransposeSemitones(s);
     normalize(s);
     return s;
 }

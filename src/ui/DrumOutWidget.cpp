@@ -33,6 +33,7 @@ constexpr float kPolyRow = 116;
 constexpr float kPolyX[5] = {11.2f, 28.5f, 45.7f, 63.f, 80.3f};
 constexpr float kHintAbove = 5.1f; // the V/T/P hint's distance from its own jack
 
+/// The drum lane `lane` of the track this Drum Out plays, or nullptr when it has no source or no such lane.
 const DrumLane* laneOf(DrumOutModule* module, int lane) {
     if (!module)
         return nullptr;
@@ -52,7 +53,8 @@ struct LaneChip : rack::widget::Widget {
 
     void draw(const DrawArgs& args) override {
         const theme::Palette& c = theme::panelColors();
-        uint32_t color = laneOf(module, lane) ? laneOf(module, lane)->color : 0;
+        const DrumLane* l = laneOf(module, lane);
+        uint32_t color = l ? l->color : 0;
         NVGcolor chip = color ? theme::rgb(color) : c.bg2;
         draw::roundedRect(args.vg, Rect(Vec(), box.size), rack::mm2px(1.4f), chip);
         tessera::draw::TextStyle number{theme::fonts::uiStrong(), theme::metrics::kPanelLabel, c.ink,
@@ -84,8 +86,8 @@ struct DrumOutWidget : rack::app::ModuleWidget {
             float x = kLaneX[i];
             panel.art().addSunkPlate(Rect(x - kStripW / 2, 48.5f, kStripW, 57));
             auto* chip = new LaneChip(module, i);
-            chip->box = Rect(rack::mm2px(Vec(x - kStripW / 2 + 0.6f, kChipTop)),
-                             rack::mm2px(Vec(kStripW - 1.2f, kChipH)));
+            chip->box =
+                Rect(rack::mm2px(Vec(x - kStripW / 2 + 0.6f, kChipTop)), rack::mm2px(Vec(kStripW - 1.2f, kChipH)));
             addChild(chip);
             panel.output(Vec(x, kTrigRow), M::TRIG_OUTPUT + i, "");
             // The V/T/P hints hug their own jack: the standard label offset would push them into the jack above.

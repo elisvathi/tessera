@@ -170,9 +170,9 @@ lanes 9 to 16 reach only the poly jacks.
 | **AUTO** | The track's automation lanes, one channel per lane. |
 
 Lanes on outputs 9 to 16 reach only the poly jacks. A lane sends a short 1 ms trigger by default, a gate of a set
-length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings). A hit's pitch expression bends the
-pitch on the trigger outputs (1 V per octave), and its timbre and pressure curves come out of **T1–T8** and
-**P1–P8** (or the **TIMBRE** / **PRESS** poly jacks) while the hit plays, holding their last value afterwards.
+length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings). A hit's timbre and pressure curves
+come out of **T1–T8** and **P1–P8** (or the **TIMBRE** / **PRESS** poly jacks) while the hit plays. Afterwards they
+hold their last value until the lane's next hit. A hit with no curve sets them back to 0 V.
 
 The screen, arrows and menu work like Track Out's. A new Drum Out picks the first drum track with no output yet.
 

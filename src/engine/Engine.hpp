@@ -348,13 +348,16 @@ class Engine {
         // CCs with no lane yet, and the free AUTO channel each plays on until its take makes the lane.
         std::array<int8_t, 128> liveCcOutput;
         int liveCcCount = 0;
-        // Per drum lane: the expression curves of the hit it plays (for the Drum Out's pitch bend, timbre and
-        // pressure outputs), when the hit started and its note's length in play ticks. Clip and note ID values
-        // find the curves again in a new snapshot; 0 = none.
-        std::array<const NoteExtras*, kMaxDrumLanes> drumExtras{};
-        std::array<double, kMaxDrumLanes> drumCurveStart{}, drumCurveLength{};
-        std::array<uint64_t, kMaxDrumLanes> drumClip{}, drumNote{};
-        std::array<bool, kMaxDrumLanes> drumCurved{};
+        // Per drum lane: the expression curves of the hit it plays, for Drum Out's pitch, timbre and pressure
+        // outputs. A curve plays across its note; then its last values hold until the lane's next hit, without
+        // the curve, so a snapshot swap after it can't change them.
+        struct DrumCurve {
+            const NoteExtras* extras = nullptr;    // set only while the curve plays
+            double start = 0, length = 1;          // play ticks
+            uint64_t clip = 0, note = 0;           // find a playing curve again in a new snapshot
+            float bend = 0, timbre = 0, press = 0; // what the outputs send now: semitones, 0..1, 0..1
+        };
+        std::array<DrumCurve, kMaxDrumLanes> drumCurves{};
         int curvedLanes = 0; // lanes playing expression curves change their outputs every sample
         std::array<size_t, kMaxDrumLanes> laneCursor{}; // per own-loop lane of the playing clip
         // The device chain: what the snapshot says, and the runtime (an index into `chains`, -1 for none).
@@ -430,7 +433,7 @@ class Engine {
     double songTickAt(double at) const;
     double clipTimeAt(const TrackPlayback& track, const TrackState& state, double at) const;
     void pushCapture(const TrackPlayback& track, const TrackState& state, double at);
-    void pushCaptureStop(const TrackPlayback& track, const TrackState& state);
+    void pushCaptureStop(const TrackPlayback& track);
     void captureLoopWrap();
     static size_t arrangementIndex(const TrackPlayback& track, double songPos);
     void queueLaunch(const TrackPlayback& track, TrackState& state, int slot, bool immediate);
@@ -457,6 +460,13 @@ class Engine {
     void firePending(const TrackPlayback& track, TrackState& state, double until);
     static void clearPending(TrackState& state);
     void hitDrum(const TrackPlayback& track, TrackState& state, const chain::ChainNote& n);
+    /// A note-off for a drum pitch: it ends a held "note length" gate. Triggers and fixed gates run their own
+    /// length, so a key let go early doesn't shorten them.
+    static void releaseDrum(const TrackPlayback& track, TrackState& state, int pitch);
+    /// Moves every playing drum curve on to the play position; a curve past its note stops and holds.
+    void advanceDrumCurves(TrackState& state);
+    /// Stops every drum lane's curve where it is, so the outputs hold their values.
+    static void holdDrumCurves(TrackState& state);
     void seekTrack(const TrackPlayback& track, TrackState& state);
     void seekAll();
     void writeFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const;

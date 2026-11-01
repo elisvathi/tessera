@@ -1294,9 +1294,13 @@ Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and a
   milliseconds, and "Note length": the gate is high for the hit's note's own length, so long and short notes in a
   lane sound different. The lane header shows a T / G / N letter before the output number. A held live note in
   "Note length" mode stays high until its note-off cuts the lane.
-- **A drum hit's expression curves play on the lane's outputs, like a voice's.** Pitch expression bends the lane's
-  pitch (V/OCT), timbre and pressure play on Drum Out (0-10 V). Curves span the written note; after it they hold
-  their last value. While any lane plays a curve the track runs per sample, as a curved voice already does.
+- **A drum hit's expression curves play on the lane's outputs, like a voice's.** Timbre and pressure play on Drum
+  Out (0-10 V). Curves span the written note; after it they hold their last value until the lane's next hit, and a
+  hit with no curve sets them back to 0 V. The engine keeps each lane's current values, so an edit (a snapshot
+  swap) never resets them, and a trigger lane's curve keeps playing after its 1 ms gate. Only while a curve moves
+  does the track run per sample.
+- **A note-off ends only a "Note length" gate.** Triggers and fixed gates run their own length, so letting a key
+  go early never shortens them.
 - **Drum Out is a fixed 18 HP module.** Every lane has its own timbre and pressure jack next to its trigger and
   velocity. An expandable panel (a right-click toggle that resized the widget) was tried first and dropped: it
   rebuilt the widget at runtime, which fought Rack's ModuleWidget panel ownership — two crashes — for no musical
@@ -1311,3 +1315,12 @@ trigger or a fixed gate and the expressions reached no output, so writing them h
 
 Impact: `DrumLane.gateFollowsNote` (saved as "gateNote"), `hitDrum` takes the chain note, Drum Out gains TIMBRE
 and PRESS poly outputs (appended after the old ones, so saved patches keep their cables).
+
+## 86. Transpose's Semitones knob is ±24, and old songs keep their pitch (1 Nov)
+
+- **Semitones goes from -24 to +24** (it was ±48); the Octaves knob covers the rest.
+- **Knobs are saved as 0..1 of their range**, so the range change would have halved every saved transpose. Schema 6
+  rescales on load: the value keeps its pitch, whole octaves past ±24 move to the Octaves knob, and lanes and
+  modulations aimed at the knob are rescaled too (clamped to the new range).
+
+Impact: `Song::kSchemaVersion` 6, `narrowTransposeSemitones` in Serialize.cpp.

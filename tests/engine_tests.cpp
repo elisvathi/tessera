@@ -831,8 +831,8 @@ TEST_CASE("drum lanes: a note-length gate follows the hit's own length, a trigge
 TEST_CASE("drum lanes: a hit's expression curves play on the lane's timbre, pressure and pitch") {
     Song song = drumSong({{0, kStep, 36}});
     Note& n = song.clips.begin()->second.notes[0];
-    n.pitchExpr = {{0, 0, 0}, {1, 12, 0}};  // glides an octave up across the note
-    n.timbreExpr = {{0, 0, 0}, {1, 1, 0}};  // sweeps 0 to full
+    n.pitchExpr = {{0, 0, 0}, {1, 12, 0}};         // glides an octave up across the note
+    n.timbreExpr = {{0, 0, 0}, {1, 1, 0}};         // sweeps 0 to full
     n.pressureExpr = {{0, 0.5f, 0}, {1, 0.5f, 0}}; // constant half
     Harness h(song);
     h.step();
@@ -849,6 +849,52 @@ TEST_CASE("drum lanes: a hit's expression curves play on the lane's timbre, pres
     h.runTo(2 * kStepSamples);
     CHECK(h.frame().timbre[0] == doctest::Approx(10).epsilon(0.2));
     CHECK(h.frame().voct[0] == doctest::Approx(pitchToVolts(48)).epsilon(0.01));
+}
+
+TEST_CASE("drum lanes: a hit's curves keep playing through an edit, and hold after the note") {
+    Song song = drumSong({{0, kStep, 36}}); // a 1 ms trigger lane: the curve outlives the gate
+    song.clips.begin()->second.notes[0].timbreExpr = {{0, 0, 0}, {1, 1, 0}};
+    Harness h(song);
+    auto swap = [&] {
+        h.snapshot = buildSnapshot(h.song, h.slots);
+        h.engine.setSnapshot(h.snapshot.get());
+    };
+    h.runTo(kStepSamples / 4);
+    swap();
+    h.runTo(kStepSamples / 2);
+    CHECK(h.frame().timbre[0] == doctest::Approx(5).epsilon(0.2));
+    h.runTo(kStepSamples + 10);
+    swap();
+    h.step();
+    CHECK(h.frame().timbre[0] == doctest::Approx(10).epsilon(0.2)); // held, not back to 0
+
+    // A note deleted while its curve plays leaves the output where it was.
+    Harness d(song);
+    d.runTo(kStepSamples / 2);
+    float at = d.frame().timbre[0];
+    d.song.clips.begin()->second.notes.clear();
+    d.snapshot = buildSnapshot(d.song, d.slots);
+    d.engine.setSnapshot(d.snapshot.get());
+    d.runTo(kStepSamples);
+    CHECK(d.frame().timbre[0] == doctest::Approx(at));
+}
+
+TEST_CASE("drum lanes: a key let go ends a note-length gate, but never shortens a fixed gate") {
+    auto held = [](bool noteLength) {
+        Harness h(drumSong({}, [noteLength](std::vector<DrumLane>& l) {
+            l[0].gateLengthMs = 100; // about 4800 samples
+            l[0].gateFollowsNote = noteLength;
+        }));
+        uint64_t track = h.song.tracks[0].id.value;
+        h.engine.audition({track, 36, 0.8f, 0, true});
+        h.runTo(100);
+        REQUIRE(h.gate(0));
+        h.engine.audition({track, 36, 0, 0, false});
+        h.runTo(102);
+        return h.gate(0);
+    };
+    CHECK(held(false));
+    CHECK_FALSE(held(true));
 }
 
 TEST_CASE("drum lanes: a hit during a trigger drops low first, so it is a new edge") {

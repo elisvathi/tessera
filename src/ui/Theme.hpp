@@ -142,7 +142,6 @@ constexpr float kReadoutOffset = 16; // readout pill distance from the cursor
 // Module panels (panel px; 1 mm ≈ 2.95 px)
 constexpr float kPanelLabel = 7.5f;
 constexpr float kPanelLabelSpacing = 0.6f; // letter spacing for uppercase labels
-constexpr float kPanelLaneName = 6.2f; // a lane's name above its jacks: long names must fit a narrow strip
 constexpr float kPanelTitle = 12;
 constexpr float kPanelDisplayRadius = 3;
 constexpr float kPanelPlateRadius = 4;

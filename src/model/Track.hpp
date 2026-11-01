@@ -60,9 +60,8 @@ struct DrumLane {
 
     bool operator==(const DrumLane& o) const {
         return name == o.name && pitch == o.pitch && outputIndex == o.outputIndex && mute == o.mute && solo == o.solo &&
-               gateLengthMs == o.gateLengthMs && gateFollowsNote == o.gateFollowsNote &&
-               chokeGroup == o.chokeGroup && loopLength == o.loopLength &&
-               stepLength == o.stepLength && color == o.color;
+               gateLengthMs == o.gateLengthMs && gateFollowsNote == o.gateFollowsNote && chokeGroup == o.chokeGroup &&
+               loopLength == o.loopLength && stepLength == o.stepLength && color == o.color;
     }
 };
 

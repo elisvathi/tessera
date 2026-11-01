@@ -212,6 +212,46 @@ TEST_CASE("an old Random with velocity and timing loads as Random plus Humanize,
     CHECK(throughText(song).tracks[0].devices.size() == 1);
 }
 
+TEST_CASE("a Transpose saved with the old ±48 semitone knob keeps its pitch") {
+    // Before schema 6 Semitones went from -48 to +48, saved as 0..1 of that range.
+    Song song = makeDefaultSong();
+    auto transpose = [&](float semitones) {
+        Device d = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+        d.params[chain::knob::kSemitones] = (semitones + 48) / 96;
+        song.tracks[0].devices.push_back(d);
+        return d.id.value;
+    };
+    uint64_t up7 = transpose(7);
+    transpose(36);
+    Modulator lfo;
+    lfo.id = song.newId<ModulatorId>();
+    Modulation route;
+    route.target = ParamRef{ParamRef::Kind::Device, up7, chain::knob::kSemitones};
+    route.amount = 0.125f; // 12 of the old 96 semitones
+    lfo.routes.push_back(route);
+    song.modulators.push_back(lfo);
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.paramTarget = route.target;
+    lane.points = {AutoPoint{0, 0.5f}, AutoPoint{960, 0.625f}}; // 0 and +12 semitones
+    song.tracks[0].automation.push_back(lane);
+    json::Ref j(songToJson(song));
+
+    Song loaded = songFromJson(j.get(), 5);
+    const std::vector<Device>& d = loaded.tracks[0].devices;
+    CHECK(d[0].params[chain::knob::kSemitones] * 48 - 24 == doctest::Approx(7));
+    CHECK(d[0].params[chain::knob::kOctaves] * 8 - 4 == doctest::Approx(0));
+    // Past +24 whole octaves move to the Octaves knob: +36 becomes +24 and one octave up.
+    CHECK(d[1].params[chain::knob::kSemitones] * 48 - 24 == doctest::Approx(24));
+    CHECK(d[1].params[chain::knob::kOctaves] * 8 - 4 == doctest::Approx(1));
+    CHECK(loaded.modulators[0].routes[0].amount == doctest::Approx(0.25f));
+    CHECK(loaded.tracks[0].automation[0].points[0].value == doctest::Approx(0.5f));
+    CHECK(loaded.tracks[0].automation[0].points[1].value == doctest::Approx(0.75f));
+
+    // A song saved at the current schema loads as it is.
+    CHECK(songFromJson(j.get(), Song::kSchemaVersion).tracks[0].devices == song.tracks[0].devices);
+}
+
 TEST_CASE("what a track listens to is saved and loaded") {
     Song song = makeDefaultSong();
     REQUIRE(song.tracks.size() >= 2);

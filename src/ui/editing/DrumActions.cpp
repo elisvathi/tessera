@@ -220,9 +220,7 @@ void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
             snprintf(text, sizeof(text), "Gate %g ms", double(ms));
             sub->addChild(rack::createCheckMenuItem(
                 ms == 0 ? "Trigger (1 ms)" : text, "",
-                [current, ms] {
-                    return current() && !current()->gateFollowsNote && current()->gateLengthMs == ms;
-                },
+                [current, ms] { return current() && !current()->gateFollowsNote && current()->gateLengthMs == ms; },
                 set("Set lane output length", [ms](DrumLane& d) {
                     d.gateFollowsNote = false;
                     d.gateLengthMs = ms;
