@@ -34,6 +34,9 @@ class PanelArt : public rack::widget::Widget {
     void addLabel(rack::math::Vec mm, const std::string& text, LabelKind kind);
     /// A raised area that groups outputs (Rack convention: outputs sit on a contrasting plate).
     void addPlate(rack::math::Rect mm);
+    /// The opposite of a plate: a recessed tray that de-emphasises what's inside it, so the rest of the
+    /// plate reads as the primary area.
+    void addSunkPlate(rack::math::Rect mm);
 
     void draw(const DrawArgs& args) override;
     void step() override;
@@ -47,6 +50,7 @@ class PanelArt : public rack::widget::Widget {
     };
     std::vector<Label> labels;
     std::vector<rack::math::Rect> plates;
+    std::vector<rack::math::Rect> sunkPlates;
 };
 
 /// Builds a module panel: the cached artwork, screws, and controls with their labels in one call each.

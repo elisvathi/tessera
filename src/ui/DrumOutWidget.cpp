@@ -1,8 +1,10 @@
 #include "../module/DrumOutModule.hpp"
+#include "../module/TesseraModule.hpp"
 #include "../plugin.hpp"
 #include "ModuleUndo.hpp"
 #include "OutputMenus.hpp"
 #include "TrackOutDisplay.hpp"
+#include "widgets/Draw.hpp"
 #include "widgets/IconButton.hpp"
 #include "widgets/Lights.hpp"
 #include "widgets/Panel.hpp"
@@ -14,49 +16,95 @@ namespace {
 using rack::math::Rect;
 using rack::math::Vec;
 
-// Two layouts: the compact module is 10 HP (a trigger and a velocity jack per lane); expanded — the module
-// menu's "Expression outputs" — it is 18 HP and every lane also has its timbre and pressure jacks.
-constexpr int kCompactHp = 10;
-constexpr int kExpandedHp = 18;
+constexpr int kHp = 18;
 
-// Layout in mm. The compact panel is 50.8 x 128.5, the expanded 91.4 x 128.5.
-const Rect kDisplay(3, 12.5f, 44.8f, 24);
-const Rect kWideDisplay(23.3f, 12.5f, 44.8f, 24); // the same display, centred on the wide panel
+// Layout in mm. The panel is 91.4 x 128.5.
+const Rect kDisplay(23.3f, 12.5f, 44.8f, 24);
 constexpr float kButtonRow = 41.5f;
 const Vec kButtonSize(12, 6);
+const Rect kOutputPlate(2.5f, 45, 86.4f, 78);
+// One vertical strip per lane: the lane's name on top, then its four jacks. TRIG and VEL sit on the raised
+// plate; TIMBRE and PRESS recede into a tray below, so the trigger and velocity stay the visual focus.
+const Rect kExpressionTray(4.8f, 78.5f, 81.8f, 28);
+constexpr float kTrigRow = 61, kVelRow = 73.5f, kTimbreRow = 89.5f, kPressRow = 102;
+constexpr float kLaneX[8] = {8.2f, 18.75f, 29.3f, 39.85f, 50.4f, 60.95f, 71.5f, 82.05f};
+constexpr float kPolyRow = 115;
+constexpr float kPolyX[5] = {11.2f, 28.5f, 45.7f, 63.f, 80.3f};
 constexpr float kLightAbove = 6.4f;
 
-// Compact: two lanes per row, each a trigger jack and its velocity jack side by side.
-const Rect kCompactPlate(2.5f, 47, 45.8f, 75);
-constexpr float kCompactColumns[4] = {8.6f, 18.4f, 32.4f, 42.2f};
-constexpr float kCompactLaneRows[4] = {57, 70, 83, 96};
-constexpr float kCompactPolyRow = 112;
+/// The lane's name above its jack strip, in the lane's colour, so the panel mirrors the drum editor's lanes.
+struct LaneHeader : rack::widget::Widget {
+    LaneHeader(DrumOutModule* module, int lane) : module(module), lane(lane) {}
 
-// Expanded: every lane is a group of four jacks (TRIG, VEL, TIMBRE, PRESS); two lanes per row, a clear gap
-// between the left and the right lane.
-const Rect kExpandedPlate(2.5f, 45, 87, 78);
-constexpr float kExpandedLaneRows[4] = {56, 68.5f, 81, 93.5f};
-constexpr float kExpandedGroups[2][4] = {{10.5f, 21, 31.5f, 42}, {56, 66.5f, 77, 87.5f}};
-constexpr float kExpandedPolyRow = 107;
+    void draw(const DrawArgs& args) override {
+        const theme::Palette& c = theme::panelColors();
+        std::string name = "Lane " + std::to_string(lane + 1);
+        NVGcolor color = c.text2;
+        if (module) {
+            if (TesseraModule* src = module->source()) {
+                const Song& song = src->song();
+                int index = song.trackIndex(module->binding().track);
+                if (index >= 0 && lane < int(song.tracks[size_t(index)].drumLanes.size())) {
+                    const DrumLane& l = song.tracks[size_t(index)].drumLanes[size_t(lane)];
+                    if (!l.name.empty())
+                        name = l.name;
+                    if (l.color)
+                        color = theme::rgb(l.color);
+                }
+            }
+        }
+        // `draw` alone would find this class's draw() method; qualify the helpers' namespace.
+        tessera::draw::TextStyle style{theme::fonts::uiStrong(), theme::metrics::kPanelLaneName, color,
+                                       NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE, 0.f};
+        tessera::draw::text(args.vg, style, box.size.x / 2, box.size.y - 1.2f,
+                            tessera::draw::ellipsize(args.vg, style, name, box.size.x));
+    }
+
+    DrumOutModule* module;
+    int lane;
+};
 
 } // namespace
 
 struct DrumOutWidget : rack::app::ModuleWidget {
     explicit DrumOutWidget(DrumOutModule* module) {
+        using M = DrumOutModule;
         setModule(module);
-        // Rack (and modules like Deepcache) build the widget with no module to preview it: nothing to read then.
-        builtExpanded = module && module->expanded;
-        build(builtExpanded);
+        PanelBuilder panel(this, kHp, "DRUM OUT");
+
+        auto* display = new TrackOutDisplay(module);
+        display->box = Rect(rack::mm2px(kDisplay.pos), rack::mm2px(kDisplay.size));
+        addChild(display);
+
+        // The track stepper flanks the display.
+        addStepButton(IconButton::Icon::Previous, Vec(12.5f, kButtonRow), "Previous drum track", -1);
+        addStepButton(IconButton::Icon::Next, Vec(78.9f, kButtonRow), "Next drum track", +1);
+
+        panel.art().addPlate(kOutputPlate);
+        panel.art().addSunkPlate(kExpressionTray);
+        for (int i = 0; i < M::kTrigJacks; i++) {
+            std::string lane = std::to_string(i + 1);
+            float x = kLaneX[i];
+            panel.output(Vec(x, kTrigRow), M::TRIG_OUTPUT + i, lane);
+            panel.output(Vec(x, kVelRow), M::VEL_OUTPUT + i, "V" + lane);
+            panel.output(Vec(x, kTimbreRow), M::TIMBRE_OUTPUT + i, "T" + lane);
+            panel.output(Vec(x, kPressRow), M::PRESS_OUTPUT + i, "P" + lane);
+            addChild(rack::createLightCentered<rack::componentlibrary::SmallLight<PlayLight>>(
+                rack::mm2px(Vec(x - 4.2f, kTrigRow - kLightAbove)), module, M::TRIG_LIGHT + i));
+            auto* header = new LaneHeader(module, i);
+            header->box = Rect(rack::mm2px(Vec(x - 5.3f, 47.6f)), rack::mm2px(Vec(10.6f, 5.8f)));
+            addChild(header);
+        }
+        const char* polyLabels[5] = {"TRIGS", "VEL", "TIMBRE", "PRESS", "AUTO"};
+        const int polyOutputs[5] = {M::TRIG_POLY_OUTPUT, M::VEL_POLY_OUTPUT, M::TIMBRE_POLY_OUTPUT,
+                                    M::PRESS_POLY_OUTPUT, M::AUTO_OUTPUT};
+        for (int k = 0; k < 5; k++)
+            panel.output(Vec(kPolyX[k], kPolyRow), polyOutputs[k], polyLabels[k]);
     }
 
     void step() override {
-        if (auto* m = outputModule()) {
+        if (auto* m = outputModule())
             m->refreshBinding();
-            if (m->expanded != builtExpanded) {
-                builtExpanded = m->expanded;
-                build(builtExpanded);
-            }
-        }
         ModuleWidget::step();
     }
 
@@ -69,64 +117,9 @@ struct DrumOutWidget : rack::app::ModuleWidget {
                                                [m](rack::ui::Menu* sub) { appendSourceMenu(sub, m, "Drum Out"); }));
         menu->addChild(rack::createSubmenuItem(
             "Track", "", [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Drum Out"); }, m->source() == nullptr));
-        menu->addChild(rack::createBoolMenuItem("Expression outputs (TIMBRE / PRESS per lane)", "",
-                                                [m] { return m->expanded; }, [m](bool on) { m->expanded = on; }));
     }
 
   private:
-    bool builtExpanded = false;
-
-    /// (Re)builds the panel and its controls for the compact or the expanded layout.
-    void build(bool expand) {
-        using M = DrumOutModule;
-        DrumOutModule* module = outputModule();
-        int hp = expand ? kExpandedHp : kCompactHp;
-        box.size = rack::math::Vec(float(hp) * rack::RACK_GRID_WIDTH, rack::RACK_GRID_HEIGHT);
-        // Delete every child except the panel: the PanelBuilder's setPanel() removes, deletes and replaces the
-        // old panel itself, and asserts if clearChildren() got there first.
-        rack::widget::Widget* oldPanel = getPanel();
-        for (auto it = children.begin(); it != children.end();) {
-            rack::widget::Widget* child = *it++;
-            if (child != oldPanel) {
-                removeChild(child);
-                delete child;
-            }
-        }
-        PanelBuilder panel(this, hp, "DRUM OUT");
-
-        const Rect& displayRect = expand ? kWideDisplay : kDisplay;
-        auto* display = new TrackOutDisplay(module);
-        display->box = Rect(rack::mm2px(displayRect.pos), rack::mm2px(displayRect.size));
-        addChild(display);
-
-        float centerShift = expand ? kWideDisplay.pos.x - kDisplay.pos.x : 0;
-        addStepButton(IconButton::Icon::Previous, Vec(12 + centerShift, kButtonRow), "Previous drum track", -1);
-        addStepButton(IconButton::Icon::Next, Vec(38.8f + centerShift, kButtonRow), "Next drum track", +1);
-
-        panel.art().addPlate(expand ? kExpandedPlate : kCompactPlate);
-        for (int i = 0; i < M::kTrigJacks; i++) {
-            std::string lane = std::to_string(i + 1);
-            int row = i / 2, side = i % 2;
-            float y = expand ? kExpandedLaneRows[row] : kCompactLaneRows[row];
-            Vec trig(expand ? kExpandedGroups[side][0] : kCompactColumns[side * 2], y);
-            panel.output(trig, M::TRIG_OUTPUT + i, lane);
-            panel.output(Vec(expand ? kExpandedGroups[side][1] : kCompactColumns[side * 2 + 1], y), M::VEL_OUTPUT + i,
-                         "V" + lane);
-            if (expand) {
-                panel.output(Vec(kExpandedGroups[side][2], y), M::TIMBRE_OUTPUT + i, "T" + lane);
-                panel.output(Vec(kExpandedGroups[side][3], y), M::PRESS_OUTPUT + i, "P" + lane);
-            }
-            addChild(rack::createLightCentered<rack::componentlibrary::SmallLight<PlayLight>>(
-                rack::mm2px(trig.plus(Vec(-4.2f, -kLightAbove))), module, M::TRIG_LIGHT + i));
-        }
-        if (expand) {
-            panel.output(Vec(kExpandedGroups[0][0], kExpandedPolyRow), M::TRIG_POLY_OUTPUT, "TRIGS");
-            panel.output(Vec(kExpandedGroups[0][2], kExpandedPolyRow), M::VEL_POLY_OUTPUT, "VEL");
-            panel.output(Vec(kExpandedGroups[1][0], kExpandedPolyRow), M::TIMBRE_POLY_OUTPUT, "TIMBRE");
-            panel.output(Vec(kExpandedGroups[1][2], kExpandedPolyRow), M::PRESS_POLY_OUTPUT, "PRESS");
-            panel.output(Vec(kExpandedGroups[1][3], kExpandedPolyRow), M::AUTO_OUTPUT, "AUTO");
-        }
-    }
     DrumOutModule* outputModule() const { return static_cast<DrumOutModule*>(module); }
 
     void addStepButton(IconButton::Icon icon, Vec centerMm, const std::string& tooltip, int delta) {

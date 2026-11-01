@@ -34,6 +34,8 @@ void PanelArt::addLabel(rack::math::Vec mm, const std::string& text, LabelKind k
 
 void PanelArt::addPlate(rack::math::Rect mm) { plates.push_back(mm); }
 
+void PanelArt::addSunkPlate(rack::math::Rect mm) { sunkPlates.push_back(mm); }
+
 void PanelArt::step() {
     // The artwork is cached; repaint it when Rack's panel setting (or the scheme) changes.
     if (drawnGeneration != theme::generation()) {
@@ -57,6 +59,12 @@ void PanelArt::draw(const DrawArgs& args) {
     for (const rack::math::Rect& p : plates)
         draw::roundedRect(vg, rack::math::Rect(rack::mm2px(p.pos), rack::mm2px(p.size)),
                           theme::metrics::kPanelPlateRadius, c.bg2);
+
+    for (const rack::math::Rect& p : sunkPlates) {
+        rack::math::Rect r(rack::mm2px(p.pos), rack::mm2px(p.size));
+        draw::roundedRect(vg, r, theme::metrics::kPanelPlateRadius, c.bg1);
+        draw::roundedRectStroke(vg, r, theme::metrics::kPanelPlateRadius, c.line0, 0.75f);
+    }
 
     for (const Label& l : labels) {
         rack::math::Vec px = rack::mm2px(l.mm);

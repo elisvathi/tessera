@@ -1297,9 +1297,12 @@ Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and a
 - **A drum hit's expression curves play on the lane's outputs, like a voice's.** Pitch expression bends the lane's
   pitch (V/OCT), timbre and pressure play on Drum Out (0-10 V). Curves span the written note; after it they hold
   their last value. While any lane plays a curve the track runs per sample, as a curved voice already does.
-- **Drum Out stays 10 HP until you ask for more.** A right-click item, "Expression outputs", grows the module to
-  18 HP: every lane gains its own timbre and pressure jack next to its trigger and velocity. The poly TIMBRE and
-  PRESS jacks exist in both sizes, so patches and cables keep working either way.
+- **Drum Out is a fixed 18 HP module.** Every lane has its own timbre and pressure jack next to its trigger and
+  velocity. An expandable panel (a right-click toggle that resized the widget) was tried first and dropped: it
+  rebuilt the widget at runtime, which fought Rack's ModuleWidget panel ownership — two crashes — for no musical
+  gain. The panel lays one vertical strip per lane — the lane's name in its colour above its four jacks — with
+  trigger and velocity on the raised plate and timbre and pressure in a recessed tray below, so the trigger and
+  velocity outputs stay the visual focus.
 - **The curves live in the snapshot**, so a snapshot swap re-finds a sounding lane's curves by clip and note ID,
   the same re-attachment voices use.
 

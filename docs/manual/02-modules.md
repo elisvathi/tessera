@@ -152,25 +152,27 @@ V/OCT.
 
 ![The Drum Out module](images/drum-out.png)
 
-Drum Out plays one **drum track**. Each drum sound (a "lane", such as Kick or Snare) has an output number from 1 to
-16.
+Drum Out plays one **drum track**. Each drum sound (a "lane", such as Kick or Snare) is a vertical strip with its
+name in the lane's colour at the top: a trigger and velocity jack on the raised plate, and the lane's timbre and
+pressure jacks in a recessed tray below. Lanes 1 to 8 have their own strips; lanes 9 to 16 reach only the poly
+jacks.
 
 | Jack | What it sends |
 |---|---|
 | **1** to **8** | A trigger (or gate) for the lanes on outputs 1 to 8. The small light flashes on each hit. |
 | **V1** to **V8** | The velocity of the last hit on that output, 0 to 10 V. It holds until the next hit. |
+| **T1** to **T8** | The lane's timbre curve, 0 to 10 V: the expression curve of the hit now playing. |
+| **P1** to **P8** | The lane's pressure curve, 0 to 10 V. |
 | **TRIGS** | All 16 outputs on one poly cable, one channel per output. |
 | **VEL** | All 16 velocities on one poly cable. |
-| **TIMBRE** | All 16 lanes' timbre curves on one poly cable, 0 to 10 V: the expression curve of the hit now playing. |
-| **PRESS** | All 16 lanes' pressure curves on one poly cable, 0 to 10 V. |
+| **TIMBRE** | All 16 lanes' timbre curves on one poly cable. |
+| **PRESS** | All 16 lanes' pressure curves on one poly cable. |
 | **AUTO** | The track's automation lanes, one channel per lane. |
-| **T1–T8, P1–P8** | Each lane's timbre and pressure on its own jack, like **1–8** and **V1–V8**. Right-click the module and tick **Expression outputs** to grow the panel and show them; untick to shrink it back. |
 
 Lanes on outputs 9 to 16 reach only the poly jacks. A lane sends a short 1 ms trigger by default, a gate of a set
 length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings). A hit's pitch expression bends the
-pitch on the trigger outputs (1 V per octave), and its timbre and pressure curves come out of **TIMBRE** and
-**PRESS** (or the per-lane **T** / **P** jacks when the module is expanded) while the hit plays, holding their last
-value afterwards.
+pitch on the trigger outputs (1 V per octave), and its timbre and pressure curves come out of **T1–T8** and
+**P1–P8** (or the **TIMBRE** / **PRESS** poly jacks) while the hit plays, holding their last value afterwards.
 
 The screen, arrows and menu work like Track Out's. A new Drum Out picks the first drum track with no output yet.
 
