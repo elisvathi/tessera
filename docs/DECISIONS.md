@@ -1329,3 +1329,12 @@ Drum Out gains PITCH, TIMBRE and PRESS outputs (appended after the old ones, so 
   modulations aimed at the knob are rescaled too (clamped to the new range).
 
 Impact: `Song::kSchemaVersion` 6, `narrowTransposeSemitones` in Serialize.cpp.
+
+## 87. Replacing the song asks in a dialog (2 Nov)
+
+- **New song and Open project… ask "OK / Cancel" in a dialog** when the song has anything in it, the way Rack asks
+  before it replaces a patch. With the untouched default song they act at once.
+- A submenu with "New song anyway" was tried first and dropped: it turned one click into a hunt through a submenu
+  every time, which the user found annoying.
+
+Impact: `confirmReplace` in ProjectFile.cpp.

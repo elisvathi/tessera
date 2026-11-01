@@ -208,8 +208,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A drum track on a Track Out still sends the lane's note on V/OCT.
 - [ ] Scale device: Root and Scale knobs hide unless Key from is Fixed; the card shrinks and grows back when the
       Key from knob is turned.
-- [ ] File menu: with a changed song, New song and Open project… open a submenu that says the current song is
-      replaced; the item acts directly when the song is the untouched default.
+- [ ] File menu: with a changed song, New song and Open project… ask in a dialog first (Cancel keeps the song);
+      with the untouched default song they act at once. Undo brings a replaced song back.
 - [ ] In-panel editor: rows shrink to 16 px and the lanes clip inside the pane; the header fits.
 - [ ] Lane header: click the name to hear it, M / S work, double-click renames, right-click menu.
 - [ ] Lane menu: note, output, steps (12 against 16: faded repeats; it drifts against the bar while playing),

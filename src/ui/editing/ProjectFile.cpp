@@ -92,21 +92,24 @@ void newSong(TesseraModule* m, Say say) {
     say("New song  ·  undo brings the old one back", false);
 }
 
-/// Replacing the whole song loses what is there (undo brings it back), so a song that isn't the untouched default
-/// confirms inside the menu — one more click, never a blocking dialog.
+/// Whether to go on replacing the song: at once for the untouched default, else after an OK in a dialog, as Rack
+/// asks before it replaces a patch.
+bool confirmReplace(TesseraModule* m, const char* question) {
+    if (m->song() == makeDefaultSong())
+        return true;
+    std::string text = std::string(question) + "\n\nThe current song is replaced. Undo (Ctrl+Z) brings it back.";
+    return osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK_CANCEL, text.c_str()) == 1;
+}
+
 void appendFileMenu(rack::ui::Menu* menu, TesseraModule* m, std::function<EditorContext*()> editor, Say say) {
-    auto replaceItem = [&](const char* label, std::function<void()> run) {
-        if (m->song() == makeDefaultSong()) {
-            menu->addChild(rack::createMenuItem(label, "", run));
-            return;
-        }
-        menu->addChild(rack::createSubmenuItem(label, "", [label, run](rack::ui::Menu* sub) {
-            sub->addChild(rack::createMenuLabel("Replaces the current song. Undo brings it back."));
-            sub->addChild(rack::createMenuItem(std::string(label) + " anyway", "", run));
-        }));
-    };
-    replaceItem("New song", [m, say] { newSong(m, say); });
-    replaceItem("Open project…", [m, say] { open(m, say); });
+    menu->addChild(rack::createMenuItem("New song", "", [m, say] {
+        if (confirmReplace(m, "Start a new song?"))
+            newSong(m, say);
+    }));
+    menu->addChild(rack::createMenuItem("Open project…", "", [m, say] {
+        if (confirmReplace(m, "Open a project?"))
+            open(m, say);
+    }));
     std::string file = m->projectPath.empty() ? "" : rack::system::getFilename(m->projectPath);
     menu->addChild(rack::createMenuItem("Save project", file, [m, say] { save(m, false, say); }));
     menu->addChild(rack::createMenuItem("Save project as…", "", [m, say] { save(m, true, say); }));
