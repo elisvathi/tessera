@@ -18,7 +18,25 @@ DrumOutModule::DrumOutModule() : OutputModuleBase(TrackType::Drum) {
         "Each hit's timbre curve, 0-10 V, one channel per lane output; 0 V while no curve plays";
     configOutput(PRESS_POLY_OUTPUT, "Pressure")->description =
         "Each hit's pressure curve, 0-10 V, one channel per lane output; 0 V while no curve plays";
+    for (int i = 0; i < kTrigJacks; i++) {
+        std::string lane = std::to_string(i + 1);
+        configOutput(TIMBRE_OUTPUT + i, "Lane " + lane + " timbre")->description =
+            "The hit's timbre curve on output " + lane + ", 0-10 V (shown when the module is expanded)";
+        configOutput(PRESS_OUTPUT + i, "Lane " + lane + " pressure")->description =
+            "The hit's pressure curve on output " + lane + ", 0-10 V (shown when the module is expanded)";
+    }
     lightDivider.setDivision(kLightDivision);
+}
+
+json_t* DrumOutModule::dataToJson() {
+    json_t* root = OutputModuleBase::dataToJson();
+    json_object_set_new(root, "expanded", json_boolean(expanded));
+    return root;
+}
+
+void DrumOutModule::dataFromJson(json_t* root) {
+    OutputModuleBase::dataFromJson(root);
+    expanded = json_is_true(json_object_get(root, "expanded"));
 }
 
 void DrumOutModule::writeFrame(const TrackFrame& frame) {
@@ -26,6 +44,8 @@ void DrumOutModule::writeFrame(const TrackFrame& frame) {
         float gate = i < frame.channels ? frame.gate[i] : 0.f;
         outputs[TRIG_OUTPUT + i].setVoltage(gate);
         outputs[VEL_OUTPUT + i].setVoltage(i < frame.channels ? frame.vel[i] : 0.f);
+        outputs[TIMBRE_OUTPUT + i].setVoltage(i < frame.channels ? frame.timbre[i] : 0.f);
+        outputs[PRESS_OUTPUT + i].setVoltage(i < frame.channels ? frame.press[i] : 0.f);
         if (gate > 0)
             hits |= uint8_t(1 << i);
     }

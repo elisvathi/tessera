@@ -164,11 +164,13 @@ Drum Out plays one **drum track**. Each drum sound (a "lane", such as Kick or Sn
 | **TIMBRE** | All 16 lanes' timbre curves on one poly cable, 0 to 10 V: the expression curve of the hit now playing. |
 | **PRESS** | All 16 lanes' pressure curves on one poly cable, 0 to 10 V. |
 | **AUTO** | The track's automation lanes, one channel per lane. |
+| **T1–T8, P1–P8** | Each lane's timbre and pressure on its own jack, like **1–8** and **V1–V8**. Right-click the module and tick **Expression outputs** to grow the panel and show them; untick to shrink it back. |
 
 Lanes on outputs 9 to 16 reach only the poly jacks. A lane sends a short 1 ms trigger by default, a gate of a set
 length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings). A hit's pitch expression bends the
 pitch on the trigger outputs (1 V per octave), and its timbre and pressure curves come out of **TIMBRE** and
-**PRESS** while the hit plays, holding their last value afterwards.
+**PRESS** (or the per-lane **T** / **P** jacks when the module is expanded) while the hit plays, holding their last
+value afterwards.
 
 The screen, arrows and menu work like Track Out's. A new Drum Out picks the first drum track with no output yet.
 

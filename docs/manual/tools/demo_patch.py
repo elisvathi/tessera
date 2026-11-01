@@ -149,9 +149,12 @@ def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track
 
 def output_module(mid, model, track, x):
     """A Track Out, Drum Out or Auto Out bound to `track` of the demo Tessera."""
+    data = {"source": TESSERA_ID, "sourceName": "Tessera", "track": TRACK_IDS[track],
+            "followSelected": False}
+    if model == "TesseraDrumOut":
+        data["expanded"] = True  # the manual's Drum Out shot shows the expression jacks
     return {"id": mid, "plugin": "Tessera", "model": model, "version": "2.0.0", "params": [], "pos": [x, 0],
-            "data": {"source": TESSERA_ID, "sourceName": "Tessera", "track": TRACK_IDS[track],
-                     "followSelected": False}}
+            "data": data}
 
 
 def patch(modules, zoom=1.0):
@@ -170,7 +173,7 @@ def outputs(start):
             output_module(2002, "TesseraTrackOut", "Chords", start + 6),
             output_module(2003, "TesseraTrackOut", "Lead", start + 12),
             output_module(2004, "TesseraDrumOut", "Drums", start + 18),
-            output_module(2005, "TesseraAutoOut", "Chords", start + 28)]
+            output_module(2005, "TesseraAutoOut", "Chords", start + 38)]
 
 
 def polymeter_song():

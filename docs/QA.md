@@ -203,6 +203,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       different); the lane header shows T / G / N. Fixed gates and triggers are unchanged.
 - [ ] Drum Out: TIMBRE and PRESS poly outputs follow a hit's expression curves while it plays and hold after it;
       pitch expression bends the lane's pitch on the trigger outputs.
+- [ ] Drum Out: right-click, Expression outputs grows the panel to per-lane T/P jacks (cables on hidden jacks keep
+      working); unticking shrinks it; the state survives saving and reloading the patch.
 - [ ] Scale device: Root and Scale knobs hide unless Key from is Fixed; the card shrinks and grows back when the
       Key from knob is turned.
 - [ ] File menu: with a changed song, New song and Open project… open a submenu that says the current song is

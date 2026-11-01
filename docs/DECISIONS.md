@@ -1295,9 +1295,11 @@ Impact: `Engine::advanceAutomation` checks `tp.audible`; the manual's mute and a
   lane sound different. The lane header shows a T / G / N letter before the output number. A held live note in
   "Note length" mode stays high until its note-off cuts the lane.
 - **A drum hit's expression curves play on the lane's outputs, like a voice's.** Pitch expression bends the lane's
-  pitch (V/OCT), timbre and pressure play on two new poly outputs on Drum Out (0-10 V, one channel per output).
-  Curves span the written note; after it they hold their last value. While any lane plays a curve the track runs
-  per sample, as a curved voice already does.
+  pitch (V/OCT), timbre and pressure play on Drum Out (0-10 V). Curves span the written note; after it they hold
+  their last value. While any lane plays a curve the track runs per sample, as a curved voice already does.
+- **Drum Out stays 10 HP until you ask for more.** A right-click item, "Expression outputs", grows the module to
+  18 HP: every lane gains its own timbre and pressure jack next to its trigger and velocity. The poly TIMBRE and
+  PRESS jacks exist in both sizes, so patches and cables keep working either way.
 - **The curves live in the snapshot**, so a snapshot swap re-finds a sounding lane's curves by clip and note ID,
   the same re-attachment voices use.
 
