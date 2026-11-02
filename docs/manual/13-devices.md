@@ -175,11 +175,11 @@ own chance choices.
 
 **When a note plays.** Going forward, a playhead plays a note when it reaches the note's start. Going backward, it plays
 it when it reaches the note's end, so the order of the notes is reversed but each note still sounds normally. A
-playhead jumps when it goes back for a repeat, wraps to its segment's start, moves to the next step of an order,
-restarts, or steps along a drawn path (a ping-pong turn isn't a jump). What happens then is the playhead's **On a
-jump** setting, in its **⋯** menu: **Retrigger** (the default) stops the note it was playing and plays again any note
-it lands inside, for what is left of it, so a long note under a 1/16 repeat pulses in sixteenths; **Let ring** lets
-the note it was playing ring on and plays only notes that start where it lands.
+playhead jumps when it goes back for a repeat, moves to the next repeated piece, wraps to its segment's start, moves
+to the next step of an order, restarts, or steps along a drawn path (a ping-pong turn isn't a jump). What happens then
+is the playhead's **On a jump** setting, in its **⋯** menu: **Retrigger** (the default) stops the note it was playing
+and plays again any note it lands inside, for what is left of it, so a long note under a 1/16 repeat pulses in
+sixteenths; **Let ring** lets the note it was playing ring on and plays only notes that start where it lands.
 
 Every setting can also be moved by a modulator or an automation lane, as on any device. Moving **Rate** while it plays
 speeds the playhead up or slows it down from where it is.

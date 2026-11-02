@@ -1456,6 +1456,10 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change
   (a playhead added, removed or moved, an Echo needing more), each channel's sounding voices move to its new block
   with their note, and what the engine keeps per voice moves along.
+- **Repeated pieces all retrigger and get the same length** (2 Nov). Moving from one repeated piece to the next is a
+  retrigger boundary too, not only jumping back for another pass. Before, the last pass of a piece rang on into the
+  next piece, so it lasted twice as long and a straight bass line sounded swung (Trello). Each piece now has equal
+  timing.
 - **Timeline playheads read ahead** (30 Oct). On the timeline the playheads read on every sample, which made one track
   cost several percent of a core. They now read a control block ahead in song ticks and queue what they find, like a
   launched clip's playheads, never past the song loop's end; an edit (which clears the queue) or a jump reads again

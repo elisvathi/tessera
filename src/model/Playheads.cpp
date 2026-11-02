@@ -374,12 +374,14 @@ int sweeps(const Motion& m, double a, double b, Sweep* out, int max, double befo
     if (b <= a || m.regionLength <= 0 || m.rate <= 0 || m.direction == Direction::Freeze)
         return 0;
     int count = sweepsUnmarked(m, a, b, out, max);
-    // A jump is a sweep that starts away from where the playhead just was.
+    // A jump starts away from the previous place or begins another repeated piece, including a continuous advance.
     if (std::isnan(before))
         before = a > 0 ? positionAt(m, a - 1e-6) : NAN;
     for (int i = 0; i < count; i++) {
         double last = i > 0 ? out[i - 1].to : before;
-        out[i].jumped = std::isfinite(last) && std::abs(out[i].from - last) > 1e-3;
+        bool repeatBoundary =
+            repeats(m) && out[i].travelFrom == std::floor(out[i].travelFrom / m.repeatSize) * m.repeatSize;
+        out[i].jumped = std::isfinite(last) && (repeatBoundary || std::abs(out[i].from - last) > 1e-3);
     }
     return count;
 }
