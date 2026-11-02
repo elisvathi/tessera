@@ -534,3 +534,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       is Off. Click Direction's, Repeat's or Times' underlined name: the lower pane opens a curve for it; a point in
       bar 2 turns the playhead backward / starts repeating there, heard and drawn; the name takes the playhead's
       colour once it has a curve.
+- [ ] Feel cell: click it, the lower pane shows the Feel lined up with the bars. Pick Ease in: the cell and pane
+      show it, the line sits under the dashed one; with Repeat 1/16, Times 4 the repeats speed up, heard. Drag the line
+      up past the dashed line: Ease out. Drag a cycle bar's right grip: Cycle follows, snapped. Double-click: straight.
+      Each is one undo step. In the in-panel editor (pane's menu › Feel) it fits and clips.
