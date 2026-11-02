@@ -1,5 +1,9 @@
 # Review of the audio and mixer design (2 Nov 2026)
 
+> **History.** This review was applied in spec revision 4. Later revisions changed some of it: no FX tracks
+> (rev 6), and every source mixed within its track, so the "IN plays while armed" monitoring rule is gone (rev 7).
+> **Where this file and `AUDIO_MIXER.md` disagree, the spec wins** (its §12 lists every choice).
+
 Two independent reviews of `AUDIO_MIXER.md` (revision 3) and its mockups, one by a product designer and one by a
 UX specialist, merged here. Nothing is applied to the spec yet: the user picks first. "Both" means both
 reviewers raised it.
