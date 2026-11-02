@@ -55,15 +55,13 @@ void openMotionMenu(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& 
 /// The same choices, added to `menu` (a note's Motion › submenu).
 void appendMotionItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes,
                        DeviceId current);
-/// A playhead's menu: rename, channel, mute, solo, duplicate, delete.
+/// A playhead's menu: rename, channel, mute, solo, its rarer settings (Notes, On a jump, Length, Path...), duplicate,
+/// delete.
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
-/// The merged Direction dropdown (direction, or a step order with its step size), the Repeat dropdown (piece size and
-/// times) and the channel list, as one undo step each.
+/// The merged Direction dropdown (direction, or a step order with its step size), as one undo step.
 void openDirectionMenu(EditorContext& ctx, PlayheadId id);
-void openRepeatMenu(EditorContext& ctx, PlayheadId id);
-/// What the Direction and Repeat dropdowns show for a playhead ("Forward", "Outside in", "Off", "1/4 ×2").
+/// What the Direction dropdown shows for a playhead ("Forward", "Outside in").
 std::string directionText(const Playhead& p);
-std::string repeatText(const Playhead& p);
 /// Shows a Curve modulator's shape in the piano roll's lower pane.
 void showCurve(EditorContext& ctx, ModulatorId id);
 /// Shows the Curve modulator moving `target` in the lower pane; with none yet, an empty curve for it: the first point

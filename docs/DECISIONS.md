@@ -1456,6 +1456,11 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change
   (a playhead added, removed or moved, an Echo needing more), each channel's sounding voices move to its new block
   with their note, and what the engine keeps per voice moves along.
+- **Direction, Repeat and Times take curves; Notes moves to More** (2 Nov). Repeat was one dropdown for its piece
+  size and its times, so neither could have a curve; they are now two cells, Repeat (a choice) and Times (a number),
+  each with the underlined name that opens its curve. Direction keeps its dropdown (it also holds the step orders);
+  its name opens a curve on the direction alone, so a curve never picks a step order. Notes is set once per
+  playhead, so it moved into More and freed the cell (Trello).
 - **Repeated pieces all retrigger and get the same length** (2 Nov). Moving from one repeated piece to the next is a
   retrigger boundary too, not only jumping back for another pass. Before, the last pass of a piece rang on into the
   next piece, so it lasted twice as long and a straight bass line sounded swung (Trello). Each piece now has equal

@@ -104,9 +104,9 @@ settings for the shown playhead. A setting still at its default draws faint, so 
 |---|---|
 | **Rate** | Speed against the song, from 1/16x to 16x. |
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size. |
-| **Repeat** | Plays each piece a number of times, then moves on one piece: 1/4 ×2 plays beat 1, 1, 2, 2, 3, 3… |
-| **Notes** | All, or only the **Lowest** or **Highest** of the notes that start together. A bass and a melody out of one piano roll: one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest. |
-| **More** | Rarer settings: On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed), Path (from the settings, or drawn in the time map), and rename, channel, mute, solo, duplicate, delete. |
+| **Repeat** | The size of the piece it plays again (Off, or 1/32 up to bars). With **Times**, it plays each piece that many times, then moves on one piece: Repeat 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
+| **Times** | How many times each piece plays, 2 to 16. Faint while Repeat is off. |
+| **More** | Rarer settings: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed), Path (from the settings, or drawn in the time map), and rename, channel, mute, solo, duplicate, delete. |
 
 Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
 playhead's own chain, like any other note change. Songs made when a playhead had its own Octave, Steps and Velocity
@@ -126,9 +126,12 @@ playheads shows it: its launcher slot and timeline clips carry one small stripe 
 muted), and the piano roll's title adds "read by 3 playheads". For a round, move the second playhead's segment a
 beat later. The other playheads' segments show as thin lines in their colours.
 
-**Curves.** Any setting can move by itself, on this card or any device card. Click a knob's name and a curve for it
-opens in the piano roll's lower pane. Click to add a point: that makes a **Curve** modulator on the track (see
-[Modulators](#modulators)), named after the playhead and the setting, such as "Bass Rate".
+**Curves.** Any setting can move by itself, on this card or any device card. Click a setting's name (underlined) and
+a curve for it opens in the piano roll's lower pane. On this card that is Rate, Direction, Repeat and Times: a curve
+on Direction can turn the playhead round in bar 2, one on Repeat can start repeating halfway through. (The step
+orders in the Direction dropdown, such as Outside in, stay as you pick them.) Click to add a point: that makes a
+**Curve** modulator on the track (see [Modulators](#modulators)), named after the playhead and the setting, such as
+"Bass Rate".
 
 - **Up and down are the setting's own values.** For Octaves or Key steps each row is one value, labelled with what
   plays, and points snap to the rows (hold **Alt** to place them between rows). The rows cover everything the setting
