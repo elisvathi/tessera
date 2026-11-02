@@ -248,6 +248,11 @@ class Engine {
     double clipPosition(size_t i) const;
     /// Clip ticks played since the playing clip started (not wrapped by its loop). NaN when nothing plays.
     double clipElapsed(size_t i) const { return tracks[i].playing != kNoSlot ? playTick - tracks[i].launchTick : NAN; }
+    /// Where playhead `head` of track `i` has read its clip to (clip ticks), as its settings and their curves and
+    /// modulators moved it; NaN while it isn't reading. For the editor's playhead lines. Audio thread.
+    double playheadPosition(size_t i, size_t head) const {
+        return i < kMaxTracks && head < size_t(playheads::kMaxPlayheads) ? (*playheadClocks)[i][head].lastPos : NAN;
+    }
 
     /// A track's automation value (0..1) on an AUTO channel after this sample, for parameter mapping. Includes
     /// what modulators add to the channel.

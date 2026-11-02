@@ -1469,6 +1469,10 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   timing in the sound doesn't match what I see"). A curve now plays at the speed of the playhead that read the note,
   taken when the note starts, for voices and drum lanes alike. It still runs from the note's start to its end, also
   for a playhead going backwards.
+- **The editor draws playheads where the engine has them** (2 Nov). The piano roll worked each playhead's place out
+  from its saved settings, so a Curve or modulator on Rate (or Start) moved the sound but not the line (Trello). The
+  engine now hands each playhead's place to the editor with the clip's own status, a few times a millisecond; the
+  settings are only the fallback while it isn't reading. The time map still draws the planned path.
 - **Each playhead channel has its own voices** (30 Oct). Playheads shared one set of at most 16 voices, so a busy one
   (an Echo in its chain) took voices from the others and cut their notes. Now a track with playheads holds a block of
   voices per channel (Auto for that playhead, or the fixed count, up to 16 each; past 64 in all the biggest shrink, so every channel

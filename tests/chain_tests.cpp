@@ -2019,3 +2019,19 @@ TEST_CASE("engine: a note's pitch curve keeps pace with the playhead crossing it
     h.runTo(1900 * kSamplesPerTick);
     CHECK(h.frame().voct[0] * 12 == doctest::Approx(12 * 1900.0 / 1920).epsilon(0.05));
 }
+
+TEST_CASE("engine: it tells the editor where each playhead is, as a changed rate moved it") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(1000 * kSamplesPerTick);
+    CHECK(h.engine.playheadPosition(0, 0) == doctest::Approx(1000).epsilon(0.02));
+    h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kRate] =
+        devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10); // "2x" from here on
+    h.republish();
+    h.runTo(1480 * kSamplesPerTick);
+    // 1000 + 2 x 480, not 2 x 1480 as the new rate alone would say.
+    CHECK(h.engine.playheadPosition(0, 0) == doctest::Approx(1960).epsilon(0.02));
+}

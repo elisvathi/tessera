@@ -533,3 +533,5 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       shown playhead's pitch), not the written one.
 - [ ] A note with a pitch curve read by a ½× playhead bends across the whole time the playhead is on it (and twice
       as fast at 2×); the same for timbre and pressure, and for drum hits.
+- [ ] A Curve or LFO on a playhead's Rate: its line in the piano roll speeds up and slows down with the sound, and
+      the keys it lights follow it.
