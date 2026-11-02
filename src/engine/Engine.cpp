@@ -409,6 +409,7 @@ void Engine::moveVoiceState(TrackState& state, const std::array<int8_t, kMaxTrac
     move(state.voiceExtras, static_cast<const NoteExtras*>(nullptr));
     move(state.voiceStart, 0.0);
     move(state.voiceLength, 0.0);
+    move(state.voiceScale, 1.0);
     move(state.voicePart, uint8_t(0));
     move(state.voiceClip, uint64_t(0));
     move(state.voiceNote, uint64_t(0));
@@ -1638,7 +1639,7 @@ void Engine::reattachCurves(const TrackPlayback& tp, TrackState& state) {
         if (!hasCurves(found))
             continue;
         setVoiceCurves(state, v, found);
-        state.voiceLength[size_t(v)] = std::max(1.0, double(found->note.length) * found->stretch);
+        state.voiceLength[size_t(v)] = std::max(1.0, double(found->note.length) * state.voiceScale[size_t(v)]);
     }
     // A drum curve still playing finds its note again (edited or not); one whose note is gone holds where it is.
     state.curvedLanes = 0;
@@ -1652,7 +1653,7 @@ void Engine::reattachCurves(const TrackPlayback& tp, TrackState& state) {
         curve.extras = hasCurves(found) ? found : nullptr;
         if (!curve.extras)
             continue;
-        curve.length = std::max(1.0, double(found->note.length) * found->stretch);
+        curve.length = std::max(1.0, double(found->note.length) * curve.scale);
         state.curvedLanes++;
     }
 }
@@ -1756,8 +1757,11 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
     state.voiceStart[size_t(v)] = n.start - clockOffset();
     state.voicePart[size_t(v)] = n.channel;
     // Curves span the note as written, not the part that sounds: a note cut short by the song loop, the clip's
-    // loop or the gate length keeps its curve's timing, as the editor draws it.
-    double length = note ? double(note->length) * extras->stretch : n.open() ? double(kPpq) : double(n.end - n.start);
+    // loop or the gate length keeps its curve's timing, as the editor draws it. A playhead crosses the note at its
+    // own speed, so the curve keeps pace with it.
+    double scale = extras ? extras->stretch / playheadSpeed(state, n.lane) : 1;
+    double length = note ? double(note->length) * scale : n.open() ? double(kPpq) : double(n.end - n.start);
+    state.voiceScale[size_t(v)] = scale;
     state.voiceLength[size_t(v)] = std::max(1.0, length);
 }
 
@@ -2053,7 +2057,16 @@ void Engine::hitDrum(const TrackPlayback& track, TrackState& state, const chain:
     curve.clip = ex->clip;
     curve.note = ex->note.id.value;
     curve.start = n.start - clockOffset();
-    curve.length = std::max(1.0, std::isfinite(length) ? length : double(kPpq));
+    curve.scale = ex->stretch / playheadSpeed(state, n.lane);
+    curve.length = std::max(1.0, double(ex->note.length) * curve.scale);
+}
+
+double Engine::playheadSpeed(const TrackState& state, uint8_t lane) const {
+    size_t index = size_t(&state - tracks.data());
+    if (lane == 0 || lane > playheads::kMaxPlayheads || index >= tracks.size())
+        return 1;
+    double rate = std::abs((*playheadClocks)[index][size_t(lane) - 1].motion.rate);
+    return rate > 1e-3 ? rate : 1;
 }
 
 void Engine::releaseDrum(const TrackPlayback& track, TrackState& state, int pitch) {
