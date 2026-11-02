@@ -422,8 +422,9 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                 return;
                             double elapsed = playheads::timeAt(m, sweeps[i], pos);
                             double at = double(a.position) + (elapsed - begin) * stretch;
+                            double travel = sweeps[i].travelFrom + std::abs(pos - sweeps[i].from);
                             double len = playheads::noteLength(knobs.data(), m, rest >= 0 ? rest : n.end - n.start,
-                                                               song.timeSig) *
+                                                               song.timeSig, travel) *
                                          stretch * std::max(0.01, moved.lengthScale);
                             if (playheads::retriggers(knobs.data())) {
                                 // Retrigger: the note stops where the playhead next jumps, as in the engine.

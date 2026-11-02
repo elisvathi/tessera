@@ -1397,6 +1397,28 @@ TEST_CASE("engine: playheads read the clip each from its own segment") {
     }
 }
 
+TEST_CASE("engine: with a Feel, a note following the playhead lasts until the bent playhead leaves it") {
+    // A beat-long note read with Ease in at full strength over a 1-bar cycle: f^4, so the playhead crosses the first
+    // quarter of the bar in 0.25^(1/4) of it, as MIDI export says too.
+    Song song = songWith({{0, 960, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    const auto& info = devices::playheadInfo();
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.params[playheads::knob::kBendShape] =
+        devices::normalize(info.params[playheads::knob::kBendShape], float(playheads::Bend::EaseIn));
+    p.params[playheads::knob::kBendAmount] = devices::normalize(info.params[playheads::knob::kBendAmount], 100);
+    p.params[playheads::knob::kBendCycle] = devices::normalize(info.params[playheads::knob::kBendCycle], 4);
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    REQUIRE(h.gate());
+    int64_t s = 1;
+    while (s < 4 * 960 * kSamplesPerTick && h.gate())
+        h.step(), s++;
+    CHECK(double(s) / kSamplesPerTick == doctest::Approx(4 * 960 * std::pow(0.25, 0.25)).epsilon(0.01));
+}
+
 TEST_CASE("engine: a segment past the clip's end reads the notes written there, the piano roll is a canvas") {
     // A one-bar loop, and notes written in bar 2, outside it.
     Song song = songWith({{0, 240, 60}, {3840, 240, 67}, {4800, 240, 69}}, 4 * kPpq, kAutoVoices);
