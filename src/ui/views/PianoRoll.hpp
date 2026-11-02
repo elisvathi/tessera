@@ -26,6 +26,7 @@ class ExpressionLane;
 class ClipLaneView;
 class TimeMapView;
 class CurveView;
+class FeelView;
 class ToolButton;
 class LaneTabs;
 
@@ -188,6 +189,7 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ClipLaneView* clipLane;
     TimeMapView* timeMap;
     CurveView* curveView;
+    FeelView* feelView;
     ToolButton* lowerButton; // the lower lane's label, which picks what it shows: a note value, a curve, automation
     ToolButton* clipChip;    // "BASS · Verse · 8 bars ▾": the clip's menu (rename, length, loop, files)
     ToolSwitch tools;

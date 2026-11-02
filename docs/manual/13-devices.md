@@ -106,6 +106,7 @@ settings for the shown playhead. A setting still at its default draws faint, so 
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size. |
 | **Repeat** | The size of the piece it plays again (Off, or 1/32 up to bars). With **Times**, it plays each piece that many times, then moves on one piece: Repeat 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
 | **Times** | How many times each piece plays, 2 to 16. Faint while Repeat is off. |
+| **Feel** | How the playhead speeds up and slows down inside a short cycle: even (the default), or eased. The cell shows the shape; click it to edit it (see [Feel](#feel)). |
 | **More** | Rarer settings: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed), Path (from the settings, or drawn in the time map), and rename, channel, mute, solo, duplicate, delete. |
 
 Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
@@ -193,6 +194,30 @@ down. MIDI export with **Devices: Applied** writes what the playheads play, each
 writes the clips as written. Modulators on playhead settings go into the file when they follow the song alone: synced
 curves and LFOs, Steps, Random, Ramp and Macro. A free-running curve or LFO, an Envelope or a Note modulator plays live
 only.
+
+### Feel
+
+A playhead's **Feel** bends its time inside a repeating cycle: it can start slowly and catch up (**Ease in**), start
+fast and slow down (**Ease out**), do both (**Ease in-out**), linger on the first half (**Swing**) or move in four
+slow-fast steps (**Stairs**). The cycle's ends stay on the beat, so the playhead still lands where it would have; only
+the notes in between move. Under a Repeat of 1/16, Times 4, an Ease in makes the four repeats speed up like a
+bouncing ball.
+
+Click the **Feel** cell on the Playheads card (or pick **Feel (the shown playhead)** from the lower pane's menu). The
+lower pane shows the Feel under the notes: across is time, lined up with the bars above; up is how far through the
+cycle the playhead is. The dashed line is an even playhead; the line in the playhead's colour is its Feel.
+
+![The Feel of the Melody playhead: Ease in at 50% over a 1/2 cycle, under the notes, with the Feel cell on the card](images/playhead-feel.png)
+
+- **Shapes** in the pane's header pick the shape. **Straight** is even.
+- **Drag the line** up or down to bend it more or less. From straight, dragging up eases out and dragging down eases
+  in. The amount shows in the header, in whole percents (hold Alt for values in between).
+- **Cycle** sets how long one cycle is, from 1/16 to 4 bars. You can also drag the right end of a cycle's bar on the
+  pane's ruler.
+- **Double-click** the drawing to make it straight again.
+
+Each change is one undo step. With **Length → Follows playhead** (the default), a note lasts while the bent playhead
+is on it. A drawn path (More › Path › Drawn) replaces the Feel.
 
 ### The time map
 

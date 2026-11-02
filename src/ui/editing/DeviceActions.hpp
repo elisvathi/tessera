@@ -75,6 +75,12 @@ const Device* playheadsDevice(EditorContext& ctx);
 /// The playhead the editor shows (the Playheads card, the ruler's segment, the lower pane's curves): the one last
 /// picked on the selected track, else its first. nullptr when the track has no playheads.
 const Playhead* shownPlayhead(EditorContext& ctx);
+/// Sets several of a playhead's settings (in their display units) as one undo step. Each change is made on the song as
+/// the ones before left it: setting commands replace the whole chain.
+void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std::pair<int, float>>& values,
+                       const std::string& name);
+/// Shows playhead `id`'s Feel (its bend: how it speeds up and slows down in a cycle) in the piano roll's lower pane.
+void showFeel(EditorContext& ctx, PlayheadId id);
 /// Turns the shown playhead off or on (Shift+M, the dot on its chip); `solo` solos it instead (Alt-click).
 void togglePlayheadMute(EditorContext& ctx, bool solo = false);
 /// A choice knob's choices, the current one ticked.

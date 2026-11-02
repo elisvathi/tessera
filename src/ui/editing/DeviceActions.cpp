@@ -252,15 +252,6 @@ void togglePlayheadMute(EditorContext& ctx, bool solo) {
         m->perform(setPlayheadMute(m->song(), p->id, !p->mute));
 }
 
-namespace {
-
-/// A playhead setting's shown value (a choice's index, a number in its units).
-float playheadValue(const Playhead& p, int k) {
-    return devices::display(devices::playheadInfo().params[size_t(k)], p.params[size_t(k)]);
-}
-
-/// Sets several of a playhead's settings (in their display units) as one undo step. Each change is made on the song as
-/// the ones before left it: setting commands replace the whole chain.
 void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std::pair<int, float>>& values,
                        const std::string& name) {
     TesseraModule* m = ctx.module();
@@ -278,6 +269,14 @@ void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std:
     if (!all->empty())
         m->perform(std::move(all));
 }
+
+namespace {
+
+/// A playhead setting's shown value (a choice's index, a number in its units).
+float playheadValue(const Playhead& p, int k) {
+    return devices::display(devices::playheadInfo().params[size_t(k)], p.params[size_t(k)]);
+}
+
 
 const char* const kDirections[] = {"Forward", "Backward", "Ping-pong", "Freeze"};
 const char* const kOrders[] = {"In order", "Outside in", "Inside out", "Odd then even", "Shuffle"};
@@ -320,6 +319,11 @@ void openDirectionMenu(EditorContext& ctx, PlayheadId id) {
                             setPlayheadValues(*c, id, {{kOrder, float(o)}, {kOrderStep, float(s)}}, "Set order");
                         }));
             }));
+}
+
+void showFeel(EditorContext& ctx, PlayheadId id) {
+    ctx.selectedPlayhead = id.value;
+    ctx.view().lowerLane = kFeelLane;
 }
 
 void showCurve(EditorContext& ctx, ModulatorId id) {

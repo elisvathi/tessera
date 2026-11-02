@@ -6,6 +6,7 @@
 #include "../editing/DeviceActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../widgets/Draw.hpp"
+#include "FeelView.hpp"
 
 #include <cmath>
 
@@ -379,7 +380,7 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     const Playhead* shown = shownPlayhead(d);
     using namespace playheads::knob;
     // One row, the settings reached for every few seconds; the rest is behind the playhead's menu.
-    enum class Control { Knob, Direction, More };
+    enum class Control { Knob, Direction, Feel, More };
     struct Item {
         Control control;
         int param;
@@ -392,6 +393,7 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
                           {Control::Direction, kDirection, false},
                           {Control::Knob, kRepeatSize, false},
                           {Control::Knob, kRepeatTimes, false},
+                          {Control::Feel, -1, false},
                           {Control::More, -1, false}};
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
     float controls = float(std::size(items)) * kCell;
@@ -429,6 +431,9 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
                 parts.push_back({Kind::CurveLabel, Rect(kx, knobTop + 40, kCell, 12), index, it.param, id,
                                  ParamRef::Kind::Playhead});
                 parts.push_back({Kind::PlayheadDirection, cell, index, -1, id});
+                break;
+            case Control::Feel:
+                parts.push_back({Kind::PlayheadFeel, cell, index, -1, id});
                 break;
             case Control::More:
                 parts.push_back({Kind::PlayheadMore, Rect(kx + kCell / 2 - 13, knobTop + 6, 26, 26), index, -1, id});
@@ -698,6 +703,9 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         break;
     case Kind::PlayheadDirection:
         deviceActions::openDirectionMenu(ctx, PlayheadId(hit->id));
+        break;
+    case Kind::PlayheadFeel:
+        deviceActions::showFeel(ctx, PlayheadId(hit->id));
         break;
     case Kind::PlayheadMore:
         deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
@@ -1138,6 +1146,12 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             drawDropdown(vg, p, "Direction", deviceActions::directionText(*ph), hot, &ref);
             break;
         }
+        case Kind::PlayheadFeel: {
+            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
+            if (ph)
+                drawFeelCell(vg, p, *ph, hot);
+            break;
+        }
         case Kind::PlayheadMore: {
             Vec m = p.rect.getCenter();
             nvgBeginPath(vg);
@@ -1244,6 +1258,29 @@ void DeviceStrip::drawDropdown(NVGcontext* vg, const Part& part, const std::stri
         nvgFill(vg);
     }
     nvgRestore(vg);
+}
+
+void DeviceStrip::drawFeelCell(NVGcontext* vg, const Part& part, const Playhead& p, bool hot) {
+    const theme::Palette& c = theme::colors();
+    using namespace playheads::knob;
+    const auto& info = devices::playheadInfo().params;
+    auto bend = playheads::Bend(std::clamp(int(devices::display(info[kBendShape], p.params[kBendShape])), 0, 5));
+    float amount = devices::display(info[kBendAmount], p.params[kBendAmount]) / 100;
+    bool bent = bend != playheads::Bend::Straight && amount > 0 && !playheads::wantsDrawnPath(p.params.data());
+    NVGcolor color = theme::playheadColor(p.color);
+    float cx = part.rect.getCenter().x;
+    float top = part.rect.pos.y + 2;
+    Rect box(cx - 18, top + 7, 36, 24);
+    draw::roundedRect(vg, box, 4, hot ? c.line0 : c.bg2);
+    drawFeelShape(vg, box.shrink(Vec(7, 5)), bent ? bend : playheads::Bend::Straight, amount, bent ? color : c.text2,
+                  1.4f);
+    draw::TextStyle name{theme::fonts::ui(), 10, bent ? color : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, name, cx, top + 46, "Feel");
+    float w = draw::textWidth(vg, name, "Feel");
+    nvgBeginPath(vg);
+    nvgRect(vg, cx - w / 2, top + 52, w, 1);
+    nvgFillColor(vg, bent ? color : nvgTransRGBAf(c.text2, 0.4f));
+    nvgFill(vg);
 }
 
 void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot) {

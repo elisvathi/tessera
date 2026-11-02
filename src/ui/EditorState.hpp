@@ -68,6 +68,8 @@ struct ArrangerRange {
 constexpr uint64_t kTimeMapLane = ~uint64_t(0);
 /// EditorState's lowerLane value for a Curve modulator's shape (EditorContext::curveModulator, curveTarget).
 constexpr uint64_t kCurveLane = ~uint64_t(0) - 1;
+/// EditorState's lowerLane value for the shown playhead's Feel (EditorContext::selectedPlayhead).
+constexpr uint64_t kFeelLane = ~uint64_t(0) - 2;
 
 struct ViewState {
     float topFraction = 0.45f; // share of the height above the splitter

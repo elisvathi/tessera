@@ -1456,6 +1456,12 @@ Design: `docs/design/PLAYHEADS.md`.
   playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change
   (a playhead added, removed or moved, an Echo needing more), each channel's sounding voices move to its new block
   with their note, and what the engine keeps per voice moves along.
+- **Feel: the playhead's bend, edited where you can see it** (2 Nov). The bend (Ease in, Ease out, Ease in-out,
+  Swing, Stairs over a cycle) worked in the engine but had no control. A trial version used a dropdown, an Amount
+  knob and a cycle choice; the hidden amount ("weight") confused. Picked over a popup of drawn shapes: a **Feel** cell
+  on the card shows the shape, and opens it in the lower pane like a curve: shape buttons, a cycle bar on the pane's
+  ruler, and the line itself, dragged to bend it. The amount stays a knob in the model (0..100%), so modulators reach
+  it. With Follows playhead a note lasts until the bent playhead crosses it (engine and MIDI export).
 - **Direction, Repeat and Times take curves; Notes moves to More** (2 Nov). Repeat was one dropdown for its piece
   size and its times, so neither could have a curve; they are now two cells, Repeat (a choice) and Times (a number),
   each with the underlined name that opens its curve. Direction keeps its dropdown (it also holds the step orders);
