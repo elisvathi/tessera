@@ -61,7 +61,6 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
 /// times) and the channel list, as one undo step each.
 void openDirectionMenu(EditorContext& ctx, PlayheadId id);
 void openRepeatMenu(EditorContext& ctx, PlayheadId id);
-void openChannelMenu(EditorContext& ctx, PlayheadId id);
 /// What the Direction and Repeat dropdowns show for a playhead ("Forward", "Outside in", "Off", "1/4 ×2").
 std::string directionText(const Playhead& p);
 std::string repeatText(const Playhead& p);

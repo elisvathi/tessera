@@ -358,27 +358,6 @@ void openRepeatMenu(EditorContext& ctx, PlayheadId id) {
                                                }));
 }
 
-void openChannelMenu(EditorContext& ctx, PlayheadId id) {
-    TesseraModule* m = moduleOf(ctx);
-    const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
-    if (!p)
-        return;
-    EditorContext* c = &ctx;
-    int channel = p->channel;
-    rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Channel (pick it on a Track Out)"));
-    for (int ch = 1; ch <= 16; ch++)
-        menu->addChild(rack::createCheckMenuItem(
-            std::to_string(ch), "", [channel, ch] { return channel == ch; }, [c, id, ch] {
-                if (TesseraModule* mod = c->module())
-                    mod->perform(setPlayheadChannel(mod->song(), id, ch));
-            }));
-    menu->addChild(rack::createCheckMenuItem("Each note's own", "", [channel] { return channel == 0; }, [c, id] {
-        if (TesseraModule* mod = c->module())
-            mod->perform(setPlayheadChannel(mod->song(), id, 0));
-    }));
-}
-
 void showCurve(EditorContext& ctx, ModulatorId id) {
     ctx.curveModulator = id.value;
     ctx.curveTarget = ParamRef();
@@ -422,10 +401,11 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
     }));
     int channel = p->channel;
     menu->addChild(rack::createSubmenuItem(
-        "Channel", channel == 0 ? "As written" : std::to_string(channel), [run, id, channel](rack::ui::Menu* sub) {
+        "Channel", channel == 0 ? "Each note's own" : std::to_string(channel), [run, id, channel](rack::ui::Menu* sub) {
+            sub->addChild(rack::createMenuLabel("Pick it on a Track Out to give this playhead its own sound"));
             for (int ch = 0; ch <= 16; ch++)
                 sub->addChild(rack::createCheckMenuItem(
-                    ch == 0 ? "As written" : "Channel " + std::to_string(ch), "",
+                    ch == 0 ? "Each note's own" : "Channel " + std::to_string(ch), "",
                     [channel, ch] { return channel == ch; },
                     [run, id, ch] { run([&](const Song& s, TesseraModule*) { return setPlayheadChannel(s, id, ch); }); }));
         }));

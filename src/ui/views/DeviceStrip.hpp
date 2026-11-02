@@ -58,7 +58,6 @@ class DeviceStrip : public InteractiveView {
             BranchBand,        // behind the shown playhead's branch; `id` is the playhead
             PlayheadDirection, // the shown playhead's direction and order, one dropdown
             PlayheadRepeat,    // its repeat (size and times), one dropdown
-            PlayheadChannel,   // its channel
             PlayheadMore,      // its rarer settings
             CurveLabel,        // a playhead knob's label: shows its curve in the lower pane
             MotionNotes,       // a Motion card's "6 notes": selects them in the piano roll

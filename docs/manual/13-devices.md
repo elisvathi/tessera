@@ -96,7 +96,8 @@ with playheads, it doesn't say what plays.
 **The card.** The chips beside its name are the playheads: click one to show it (the card takes its colour), **+** adds
 one (up to 16). The dot at a chip's left end turns that playhead off and on without losing its settings: it is hollow
 while the playhead is off. Alt-click the dot to solo it, or press **Shift+M** to turn the shown playhead off and on.
-Right-click a chip to rename it, mute or solo it, duplicate or delete it. Under the chips, one row of
+Right-click a chip to rename it, pick its **Channel** (see [A sound for each playhead](#a-sound-for-each-playhead);
+the chip shows it), mute or solo it, duplicate or delete it. Under the chips, one row of
 settings for the shown playhead. A setting still at its default draws faint, so the ones you changed stand out:
 
 | Setting | What it does |
@@ -105,12 +106,11 @@ settings for the shown playhead. A setting still at its default draws faint, so 
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size. |
 | **Repeat** | Plays each piece a number of times, then moves on one piece: 1/4 ×2 plays beat 1, 1, 2, 2, 3, 3… |
 | **Notes** | All, or only the **Lowest** or **Highest** of the notes that start together. A bass and a melody out of one piano roll: one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest. |
-| **Channel** | The channel its notes go out on (see below). |
+| **More** | Rarer settings: On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed), Path (from the settings, or drawn in the time map), and rename, channel, mute, solo, duplicate, delete. |
 
 Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
 playhead's own chain, like any other note change. Songs made when a playhead had its own Octave, Steps and Velocity
 get those devices added for them, curves included.
-| **More** | Rarer settings: On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed), Path (from the settings, or drawn in the time map), and rename, mute, solo, duplicate, delete. |
 
 The card's **⋯** menu holds the settings every playhead shares: **Restart** (when the clip starts, or also every so
 many bars) and **Same note** (two playheads on the same note at the same moment play it once, or each).
@@ -220,6 +220,8 @@ track's 16 devices; their cards stay in their branch (they can't be dragged out)
 ### A sound for each playhead
 
 Each playhead puts its **channel** on the notes it plays: Playhead 1 on channel 1, Playhead 2 on channel 2, and so on.
+Right-click its chip and pick **Channel** to change it, or **Each note's own** to keep the channels the notes were
+written on.
 A Track Out plays **All channels** unless you pick one. To give Playhead 2 its own sound, add a second Track Out for the
 same track, click its screen and pick **Channel 2**, and patch it to another voice. See
 [Track Out](02-modules.md#track-out). On a drum track, Drum Out has the same picker: the reversed hats can go to one
