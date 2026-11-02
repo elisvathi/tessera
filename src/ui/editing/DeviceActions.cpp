@@ -321,11 +321,6 @@ void openDirectionMenu(EditorContext& ctx, PlayheadId id) {
             }));
 }
 
-void showFeel(EditorContext& ctx, PlayheadId id) {
-    ctx.selectedPlayhead = id.value;
-    ctx.view().lowerLane = kFeelLane;
-}
-
 void showCurve(EditorContext& ctx, ModulatorId id) {
     ctx.curveModulator = id.value;
     ctx.curveTarget = ParamRef();
@@ -708,6 +703,62 @@ void openModulatorMenu(EditorContext& ctx, ModulatorId id) {
     }));
 }
 
+void drawCurveIcon(NVGcontext* vg, rack::math::Rect r, int index, NVGcolor color, float width) {
+    auto [bend, strength] = playheads::curveShape(index);
+    nvgBeginPath(vg);
+    for (int i = 0; i <= 20; i++) {
+        double f = double(i) / 20;
+        float x = r.pos.x + float(f) * r.size.x;
+        float y = r.getBottom() - float(playheads::warp(bend, strength, f)) * r.size.y;
+        if (i == 0)
+            nvgMoveTo(vg, x, y);
+        else
+            nvgLineTo(vg, x, y);
+    }
+    nvgStrokeColor(vg, color);
+    nvgStrokeWidth(vg, width);
+    nvgLineJoin(vg, NVG_ROUND);
+    nvgStroke(vg);
+}
+
+namespace {
+
+/// One shape in the Curve list: its picture at the left, then its name.
+struct CurveMenuItem : rack::ui::MenuItem {
+    int curve = 0;
+    std::function<void()> pick;
+    void draw(const DrawArgs& args) override {
+        rack::ui::MenuItem::draw(args);
+        NVGcolor color = bndGetTheme()->menuItemTheme.textColor;
+        drawCurveIcon(args.vg, rack::math::Rect(9, 4, 22, box.size.y - 8), curve, color, 1.3f);
+    }
+    void onAction(const ActionEvent& e) override {
+        if (pick)
+            pick();
+    }
+};
+
+/// The Curve setting's list: each shape drawn beside its name, the families apart.
+void openCurveMenu(EditorContext& ctx, const ParamRef& ref, const devices::ParamInfo& info, int current) {
+    EditorContext* c = &ctx;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Curve: how the repeats are spaced"));
+    const std::vector<std::string>& names = playheads::curveNames();
+    for (int i = 0; i < int(names.size()); i++) {
+        if (i > 0 && playheads::curveShape(i).first != playheads::curveShape(i - 1).first)
+            menu->addChild(new rack::ui::MenuSeparator);
+        auto* item = new CurveMenuItem;
+        item->curve = i;
+        item->text = "         " + names[size_t(i)];
+        item->rightText = i == current ? CHECKMARK_STRING : "";
+        float n = devices::normalize(info, float(i));
+        item->pick = [c, ref, n] { setKnob(*c, ref, n); };
+        menu->addChild(item);
+    }
+}
+
+} // namespace
+
 void openChoiceMenu(EditorContext& ctx, const ParamRef& ref) {
     TesseraModule* m = moduleOf(ctx);
     if (!m)
@@ -718,6 +769,10 @@ void openChoiceMenu(EditorContext& ctx, const ParamRef& ref) {
         return;
     EditorContext* c = &ctx;
     int current = int(devices::display(*p, *value));
+    if (ref.kind == ParamRef::Kind::Playhead && ref.param == playheads::knob::kCurve) {
+        openCurveMenu(ctx, ref, *p, current);
+        return;
+    }
     rack::ui::Menu* menu = rack::createMenu();
     menu->addChild(rack::createMenuLabel(p->name));
     for (size_t i = 0; i < p->choices.size(); i++) {

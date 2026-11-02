@@ -62,6 +62,8 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
 void openDirectionMenu(EditorContext& ctx, PlayheadId id);
 /// What the Direction dropdown shows for a playhead ("Forward", "Outside in").
 std::string directionText(const Playhead& p);
+/// Draws Curve `index`'s shape in `r`: across is time through one repeat group, up how far the playhead has got.
+void drawCurveIcon(NVGcontext* vg, rack::math::Rect r, int index, NVGcolor color, float width);
 /// Shows a Curve modulator's shape in the piano roll's lower pane.
 void showCurve(EditorContext& ctx, ModulatorId id);
 /// Shows the Curve modulator moving `target` in the lower pane; with none yet, an empty curve for it: the first point
@@ -79,8 +81,6 @@ const Playhead* shownPlayhead(EditorContext& ctx);
 /// the ones before left it: setting commands replace the whole chain.
 void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std::pair<int, float>>& values,
                        const std::string& name);
-/// Shows playhead `id`'s Feel (its bend: how it speeds up and slows down in a cycle) in the piano roll's lower pane.
-void showFeel(EditorContext& ctx, PlayheadId id);
 /// Turns the shown playhead off or on (Shift+M, the dot on its chip); `solo` solos it instead (Alt-click).
 void togglePlayheadMute(EditorContext& ctx, bool solo = false);
 /// A choice knob's choices, the current one ticked.

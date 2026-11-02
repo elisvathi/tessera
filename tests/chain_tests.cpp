@@ -1397,26 +1397,29 @@ TEST_CASE("engine: playheads read the clip each from its own segment") {
     }
 }
 
-TEST_CASE("engine: with a Feel, a note following the playhead lasts until the bent playhead leaves it") {
-    // A beat-long note read with Ease in at full strength over a 1-bar cycle: f^4, so the playhead crosses the first
-    // quarter of the bar in 0.25^(1/4) of it, as MIDI export says too.
-    Song song = songWith({{0, 960, 60}}, 4 * kPpq, kAutoVoices);
+TEST_CASE("engine: a Curve speeds up a playhead's repeats, as MIDI export does") {
+    // A note held over the bar, Repeat 1/16, Times 4, Curve Ease in (t cubed): the second hit of the beat comes at the
+    // cube root of 1/4 of it, and the first note stops there (Retrigger).
+    Song song = songWith({{0, 4 * 960, 60}}, 4 * kPpq, kAutoVoices);
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
     const auto& info = devices::playheadInfo();
     Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-    p.params[playheads::knob::kBendShape] =
-        devices::normalize(info.params[playheads::knob::kBendShape], float(playheads::Bend::EaseIn));
-    p.params[playheads::knob::kBendAmount] = devices::normalize(info.params[playheads::knob::kBendAmount], 100);
-    p.params[playheads::knob::kBendCycle] = devices::normalize(info.params[playheads::knob::kBendCycle], 4);
+    const std::vector<std::string>& sizes = playheads::repeatNames();
+    const std::vector<std::string>& curves = playheads::curveNames();
+    p.params[playheads::knob::kRepeatSize] = devices::normalize(
+        info.params[playheads::knob::kRepeatSize], float(std::find(sizes.begin(), sizes.end(), "1/16") - sizes.begin()));
+    p.params[playheads::knob::kRepeatTimes] = devices::normalize(info.params[playheads::knob::kRepeatTimes], 4);
+    p.params[playheads::knob::kCurve] = devices::normalize(
+        info.params[playheads::knob::kCurve], float(std::find(curves.begin(), curves.end(), "Ease in") - curves.begin()));
     d.playheads.push_back(p);
     song.tracks[0].devices.push_back(d);
     Harness h(song);
     h.step();
     REQUIRE(h.gate());
     int64_t s = 1;
-    while (s < 4 * 960 * kSamplesPerTick && h.gate())
+    while (s < 960 * kSamplesPerTick && h.gate())
         h.step(), s++;
-    CHECK(double(s) / kSamplesPerTick == doctest::Approx(4 * 960 * std::pow(0.25, 0.25)).epsilon(0.01));
+    CHECK(double(s) / kSamplesPerTick == doctest::Approx(960 * std::cbrt(0.25)).epsilon(0.01));
 }
 
 TEST_CASE("engine: a segment past the clip's end reads the notes written there, the piano roll is a canvas") {

@@ -1116,17 +1116,16 @@ TEST_CASE("a curve can turn a playhead's Repeat and Direction, as it does its Ra
           std::vector<int>{60, 62, 64, 65, 65, 64, 62, 60});
 }
 
-TEST_CASE("with a Feel, a note following the playhead lasts until the bent playhead leaves it") {
-    // One beat-long note at the start of a one-bar clip, read with Ease in at full strength over a 1-bar cycle: the
-    // playhead starts slowly, so it takes longer than a beat to cross the note.
-    auto lengths = [] {
+TEST_CASE("a Curve respaces a playhead's repeats inside each repeat group, which keeps its length") {
+    // A note held over the whole clip, read with Repeat 1/16, Times 4: one repeat group per beat, four hits in it.
+    auto hits = [](int curve) {
         Song song = songWithTrack();
         Clip clip;
         clip.id = song.newId<ClipId>();
         clip.length = clip.loopEnd = 4 * kPpq;
         Note n;
         n.id = song.newId<NoteId>();
-        n.length = kPpq;
+        n.length = 4 * kPpq;
         n.pitch = 60;
         clip.notes.push_back(n);
         song.clips.emplace(clip.id, clip);
@@ -1143,16 +1142,66 @@ TEST_CASE("with a Feel, a note following the playhead lasts until the bent playh
             applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, id.value, uint16_t(k)},
                                          devices::normalize(info.params[size_t(k)], v)));
         };
-        set(playheads::knob::kBendShape, float(playheads::Bend::EaseIn));
-        set(playheads::knob::kBendAmount, 100);
-        set(playheads::knob::kBendCycle, 4); // 1 bar
-        std::vector<double> out;
+        const std::vector<std::string>& sizes = playheads::repeatNames();
+        set(playheads::knob::kRepeatSize, float(std::find(sizes.begin(), sizes.end(), "1/16") - sizes.begin()));
+        set(playheads::knob::kRepeatTimes, 4);
+        if (curve > 0)
+            set(playheads::knob::kCurve, float(curve));
+        std::vector<std::pair<double, double>> out; // start, length in the first beat
         for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
-            out.push_back(double(e.end - e.start));
+            if (e.start < kPpq)
+                out.push_back({double(e.start), double(e.end - e.start)});
         return out;
     };
-    // Ease in at full strength is f^4: a quarter of the bar's travel takes sqrt(sqrt(1/4)) of its time.
-    std::vector<double> got = lengths();
-    REQUIRE(got.size() == 1);
-    CHECK(got[0] == doctest::Approx(4 * kPpq * std::pow(0.25, 0.25)).epsilon(0.01));
+    const std::vector<std::string>& curves = playheads::curveNames();
+    int easeIn = int(std::find(curves.begin(), curves.end(), "Ease in") - curves.begin());
+    REQUIRE(easeIn < int(curves.size()));
+
+    std::vector<std::pair<double, double>> straight = hits(0);
+    REQUIRE(straight.size() == 4);
+    for (int k = 0; k < 4; k++)
+        CHECK(straight[size_t(k)].first == doctest::Approx(240 * k).epsilon(0.005));
+
+    // Ease in (t cubed): the k-th of four hits comes at the cube root of k/4 of the beat, so they speed up, and each
+    // note lasts until the next hit (Retrigger, following the playhead).
+    std::vector<std::pair<double, double>> eased = hits(easeIn);
+    REQUIRE(eased.size() == 4);
+    std::vector<double> at;
+    for (int k = 0; k <= 4; k++)
+        at.push_back(double(kPpq) * std::cbrt(k / 4.0));
+    for (int k = 0; k < 4; k++) {
+        CHECK(eased[size_t(k)].first == doctest::Approx(at[size_t(k)]).epsilon(0.005));
+        CHECK(eased[size_t(k)].second == doctest::Approx(at[size_t(k) + 1] - at[size_t(k)]).epsilon(0.01));
+    }
+}
+
+TEST_CASE("without Repeat, a Curve changes nothing") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    for (int b = 0; b < 4; b++) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = Tick(b) * kPpq;
+        n.length = 240;
+        n.pitch = 60;
+        clip.notes.push_back(n);
+    }
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId id = firstDevice(song).playheads[0].id;
+    const auto& info = devices::playheadInfo().params[playheads::knob::kCurve];
+    applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kCurve)},
+                                 devices::normalize(info, 3)));
+    std::vector<Tick> starts;
+    for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+        starts.push_back(Tick(e.start));
+    CHECK(starts == std::vector<Tick>{0, 960, 1920, 2880});
 }

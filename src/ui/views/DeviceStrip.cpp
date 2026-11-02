@@ -6,9 +6,9 @@
 #include "../editing/DeviceActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../widgets/Draw.hpp"
-#include "FeelView.hpp"
 
 #include <cmath>
+#include <cstring>
 
 namespace tessera {
 
@@ -54,6 +54,8 @@ constexpr float kMotionJoin = 64;   // a Motion card's "+ Selected"
 constexpr float kMotionLeave = 64;  // its "− Selected"
 constexpr float kMotionCount = 52;  // and its "6 notes"
 constexpr float kKnobGroupGap = 14; // between a playhead's settings and the device's own
+constexpr float kGroupGap = 10;     // between the groups of a Playheads card (MOVE, REPEAT, More)
+constexpr float kRepeatBlock = 224; // the REPEAT block: its hits, Piece × Times and Curve
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
 
@@ -379,24 +381,11 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     float h = box.size.y;
     const Playhead* shown = shownPlayhead(d);
     using namespace playheads::knob;
-    // One row, the settings reached for every few seconds; the rest is behind the playhead's menu.
-    enum class Control { Knob, Direction, Feel, More };
-    struct Item {
-        Control control;
-        int param;
-        bool dial;
-    };
-    // Pitch and loudness are devices in the playhead's own chain (Transpose, Velocity), like any other note change.
-    // Its channel is set once, so it lives in the chip's right-click menu; the chip shows it. Notes is set once too,
-    // so it lives in More. Repeat's piece and its times are a cell each, so each can have a curve.
-    const Item items[] = {{Control::Knob, kRate, true},
-                          {Control::Direction, kDirection, false},
-                          {Control::Knob, kRepeatSize, false},
-                          {Control::Knob, kRepeatTimes, false},
-                          {Control::Feel, -1, false},
-                          {Control::More, -1, false}};
+    // One row in two groups: MOVE (how it travels) and REPEAT (piece, times and how the repeats are spaced), then
+    // More. Pitch and loudness are devices in the playhead's own chain (Transpose, Velocity); its channel and Notes
+    // are set once, so they live in the chip's and More's menus.
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
-    float controls = float(std::size(items)) * kCell;
+    float controls = 2 * kCell + kGroupGap + kRepeatBlock + kGroupGap + kCell;
     Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);
     parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
     Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
@@ -413,42 +402,54 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
         parts.push_back({Kind::AddPlayhead, Rect(cx, kPad + 3, kChipHeight + 8, kChipHeight), index, -1, d.id.value});
     parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
 
-    float kx = card.pos.x + kCardPad;
-    if (shown)
-        for (const Item& it : items) {
-            uint64_t id = shown->id.value;
-            Rect cell(kx, knobTop - 2, kCell, 54);
-            switch (it.control) {
-            case Control::Knob:
-                parts.push_back({Kind::CurveLabel, Rect(kx, knobTop + 40, kCell, 12), index, it.param, id,
-                                 ParamRef::Kind::Playhead});
-                parts.push_back({Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, it.param, id,
-                                 ParamRef::Kind::Playhead});
-                parts.push_back({Kind::Knob, cell, index, it.param, id, ParamRef::Kind::Playhead, it.dial});
-                break;
-            case Control::Direction:
-                // Its name opens a curve for the direction; the dropdown also holds the step orders.
-                parts.push_back({Kind::CurveLabel, Rect(kx, knobTop + 40, kCell, 12), index, it.param, id,
-                                 ParamRef::Kind::Playhead});
-                parts.push_back({Kind::PlayheadDirection, cell, index, -1, id});
-                break;
-            case Control::Feel:
-                parts.push_back({Kind::PlayheadFeel, cell, index, -1, id});
-                break;
-            case Control::More:
-                parts.push_back({Kind::PlayheadMore, Rect(kx + kCell / 2 - 13, knobTop + 6, 26, 26), index, -1, id});
-                break;
-            }
-            kx += kCell;
-        }
+    if (shown) {
+        uint64_t id = shown->id.value;
+        auto label = [&](float lx, float width, int param) {
+            parts.push_back({Kind::CurveLabel, Rect(lx, knobTop + 40, width, 12), index, param, id,
+                             ParamRef::Kind::Playhead});
+        };
+        float kx = card.pos.x + kCardPad;
+        parts.push_back({Kind::GroupLabel, Rect(kx, knobTop - 12, 2 * kCell, 10), index, 0, id});
+        // Rate
+        label(kx, kCell, kRate);
+        parts.push_back({Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, kRate, id,
+                         ParamRef::Kind::Playhead});
+        parts.push_back({Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kRate, id, ParamRef::Kind::Playhead,
+                         true});
+        kx += kCell;
+        // Direction: its name opens a curve for the direction; the dropdown also holds the step orders.
+        label(kx, kCell, kDirection);
+        parts.push_back({Kind::PlayheadDirection, Rect(kx, knobTop - 2, kCell, 54), index, -1, id});
+        kx += kCell + kGroupGap;
+
+        // The REPEAT block: where its hits land on top, then Piece × Times and Curve, each name opening its curve.
+        float bx = kx;
+        parts.push_back({Kind::GroupLabel, Rect(bx, knobTop - 12, kRepeatBlock, 10), index, 1, id});
+        float boxTop = knobTop + 20;
+        Rect piece(bx + 6, boxTop, 54, 18), times(bx + 78, boxTop, 34, 18), curve(bx + 120, boxTop, 98, 18);
+        label(piece.pos.x, piece.size.x, kRepeatSize);
+        label(times.pos.x - 6, times.size.x + 12, kRepeatTimes);
+        label(curve.pos.x, curve.size.x, kCurve);
+        Part p{Kind::Knob, piece, index, kRepeatSize, id, ParamRef::Kind::Playhead};
+        p.compact = true;
+        parts.push_back(p);
+        parts.push_back({Kind::KnobValue, times, index, kRepeatTimes, id, ParamRef::Kind::Playhead});
+        p.rect = curve;
+        p.param = kCurve;
+        parts.push_back(p);
+        parts.push_back({Kind::RepeatBlock, Rect(bx, knobTop - 1, kRepeatBlock, 58), index, -1, id});
+        kx += kRepeatBlock + kGroupGap;
+
+        parts.push_back({Kind::PlayheadMore, Rect(kx + kCell / 2 - 13, knobTop + 6, 26, 26), index, -1, id});
+    }
     parts.push_back({Kind::Card, card, index, -1, d.id.value});
     return card.getRight();
 }
 
 const DeviceStrip::Part* DeviceStrip::partAt(Vec pos) const {
     for (const Part& p : parts) {
-        if (p.kind == Kind::BranchBand)
-            continue; // only drawn: the cards on it take the clicks
+        if (p.kind == Kind::BranchBand || p.kind == Kind::GroupLabel || p.kind == Kind::RepeatBlock)
+            continue; // only drawn: the parts on them take the clicks
         bool inChain = p.kind != Kind::AddModulator && p.kind != Kind::ModulatorRow && p.kind != Kind::ModulatorMap &&
                        p.kind != Kind::ClosedBar;
         if (inChain && pos.x < chainLeft)
@@ -703,9 +704,6 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         break;
     case Kind::PlayheadDirection:
         deviceActions::openDirectionMenu(ctx, PlayheadId(hit->id));
-        break;
-    case Kind::PlayheadFeel:
-        deviceActions::showFeel(ctx, PlayheadId(hit->id));
         break;
     case Kind::PlayheadMore:
         deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
@@ -1146,12 +1144,13 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             drawDropdown(vg, p, "Direction", deviceActions::directionText(*ph), hot, &ref);
             break;
         }
-        case Kind::PlayheadFeel: {
-            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
-            if (ph)
-                drawFeelCell(vg, p, *ph, hot);
+        case Kind::GroupLabel:
+            drawGroupLabel(vg, p);
             break;
-        }
+        case Kind::RepeatBlock:
+            if (const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id)))
+                drawRepeatBlock(vg, p, *ph);
+            break;
         case Kind::PlayheadMore: {
             Vec m = p.rect.getCenter();
             nvgBeginPath(vg);
@@ -1214,7 +1213,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
     if (!d.on)
         nvgGlobalAlpha(vg, 0.4f);
     for (const Part& p : parts)
-        if (p.kind == Kind::Knob && p.device == index)
+        if (p.kind == Kind::Knob && p.device == index && !p.compact)
             drawKnob(vg, p);
     nvgRestore(vg);
 }
@@ -1260,27 +1259,117 @@ void DeviceStrip::drawDropdown(NVGcontext* vg, const Part& part, const std::stri
     nvgRestore(vg);
 }
 
-void DeviceStrip::drawFeelCell(NVGcontext* vg, const Part& part, const Playhead& p, bool hot) {
+void DeviceStrip::drawGroupLabel(NVGcontext* vg, const Part& part) {
     const theme::Palette& c = theme::colors();
+    const char* name = part.param == 0 ? "MOVE" : "REPEAT";
+    draw::TextStyle text{theme::fonts::uiStrong(), 8.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    float y = part.rect.getCenter().y;
+    nvgSave(vg);
+    nvgTextLetterSpacing(vg, 1.2f);
+    draw::text(vg, text, part.rect.pos.x + 4, y, name);
+    float w = draw::textWidth(vg, text, name) + float(std::strlen(name)) * 1.2f;
+    nvgRestore(vg);
+    nvgBeginPath(vg);
+    nvgRect(vg, part.rect.pos.x + 10 + w, y, std::max(0.f, part.rect.size.x - 14 - w), 1);
+    nvgFillColor(vg, c.line2);
+    nvgFill(vg);
+}
+
+void DeviceStrip::drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhead& p) {
+    const theme::Palette& c = theme::colors();
+    const Song& song = ctx.module()->song();
     using namespace playheads::knob;
     const auto& info = devices::playheadInfo().params;
-    auto bend = playheads::Bend(std::clamp(int(devices::display(info[kBendShape], p.params[kBendShape])), 0, 5));
-    float amount = devices::display(info[kBendAmount], p.params[kBendAmount]) / 100;
-    bool bent = bend != playheads::Bend::Straight && amount > 0 && !playheads::wantsDrawnPath(p.params.data());
+    auto value = [&](int k) { return int(std::lround(devices::display(info[size_t(k)], p.params[size_t(k)]))); };
+    int size = value(kRepeatSize), times = value(kRepeatTimes), curve = value(kCurve);
+    bool on = size > 0;
+    auto [bend, strength] = playheads::curveShape(curve);
+    bool curved = on && bend != playheads::Bend::Straight;
     NVGcolor color = theme::playheadColor(p.color);
-    float cx = part.rect.getCenter().x;
-    float top = part.rect.pos.y + 2;
-    Rect box(cx - 18, top + 7, 36, 24);
-    draw::roundedRect(vg, box, 4, hot ? c.line0 : c.bg2);
-    drawFeelShape(vg, box.shrink(Vec(7, 5)), bent ? bend : playheads::Bend::Straight, amount, bent ? color : c.text2,
-                  1.4f);
-    draw::TextStyle name{theme::fonts::ui(), 10, bent ? color : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    draw::text(vg, name, cx, top + 46, "Feel");
-    float w = draw::textWidth(vg, name, "Feel");
-    nvgBeginPath(vg);
-    nvgRect(vg, cx - w / 2, top + 52, w, 1);
-    nvgFillColor(vg, bent ? color : nvgTransRGBAf(c.text2, 0.4f));
-    nvgFill(vg);
+    Rect r = part.rect;
+    draw::roundedRect(vg, r, 6, nvgLerpRGBA(c.bg0, c.bg1, 0.3f));
+    draw::roundedRectStroke(vg, r, 6, c.line1, 1);
+
+    // Where the repeats of one group land: bars in the playhead's colour, dots where they would land straight.
+    Rect strip(r.pos.x + 6, r.pos.y + 4, r.size.x - 12, 12);
+    draw::roundedRect(vg, strip, 3, c.bg1);
+    if (on) {
+        for (int k = 0; k < times; k++) {
+            float g = float(k) / float(times);
+            float f = curved ? float(playheads::unwarp(bend, strength, g)) : g;
+            if (curved) {
+                nvgBeginPath(vg);
+                nvgCircle(vg, strip.pos.x + 4 + g * (strip.size.x - 8), strip.getBottom() - 2, 1.2f);
+                nvgFillColor(vg, c.text2);
+                nvgFill(vg);
+            }
+            draw::roundedRect(vg, Rect(strip.pos.x + 3 + f * (strip.size.x - 8), strip.pos.y + 2, 2.5f, 7), 1, color);
+        }
+    } else {
+        draw::TextStyle hint{theme::fonts::ui(), 8.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        draw::text(vg, hint, strip.pos.x + 5, strip.getCenter().y, "Off: pick a piece to play again");
+    }
+
+    // The three controls and their names, from their parts.
+    auto hot = [&](const Part& q) { return hovered >= 0 && &parts[size_t(hovered)] == &q; };
+    draw::TextStyle mono{theme::fonts::mono(), 10, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle name{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    auto chevron = [&](float x, float y) {
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x - 3, y - 1.5f);
+        nvgLineTo(vg, x, y + 1.5f);
+        nvgLineTo(vg, x + 3, y - 1.5f);
+        nvgStrokeColor(vg, c.text1);
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+    };
+    for (const Part& q : parts) {
+        if (q.device != part.device || q.id != part.id || q.refKind != ParamRef::Kind::Playhead)
+            continue;
+        if (q.param != kRepeatSize && q.param != kRepeatTimes && q.param != kCurve)
+            continue;
+        if (q.rect.pos.x < r.pos.x || q.rect.getRight() > r.getRight())
+            continue; // not this block's
+        bool faint = !on && q.param != kRepeatSize;
+        nvgSave(vg);
+        if (faint)
+            nvgGlobalAlpha(vg, 0.4f);
+        ParamRef ref{ParamRef::Kind::Playhead, p.id.value, uint16_t(q.param)};
+        if (q.kind == Kind::CurveLabel) {
+            bool hasCurve = deviceActions::curveOn(song, ref).valid();
+            draw::TextStyle n = name;
+            if (hasCurve)
+                n.color = color;
+            const char* text = info[size_t(q.param)].name;
+            float cx = q.rect.getCenter().x;
+            draw::text(vg, n, cx, q.rect.getCenter().y, text);
+            float w = draw::textWidth(vg, n, text);
+            nvgBeginPath(vg);
+            nvgRect(vg, cx - w / 2, q.rect.getCenter().y + 6, w, 1);
+            nvgFillColor(vg, hasCurve ? color : nvgTransRGBAf(c.text2, 0.4f));
+            nvgFill(vg);
+        } else if (q.param == kRepeatSize) {
+            draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
+            draw::text(vg, mono, q.rect.getCenter().x - 4, q.rect.getCenter().y,
+                       on ? playheads::repeatNames()[size_t(size)] : "Off");
+            chevron(q.rect.getRight() - 8, q.rect.getCenter().y);
+        } else if (q.param == kRepeatTimes) {
+            draw::text(vg, mono, q.rect.pos.x - 6, q.rect.getCenter().y, "\u00d7");
+            draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
+            draw::text(vg, mono, q.rect.getCenter().x, q.rect.getCenter().y, std::to_string(times));
+        } else {
+            draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
+            if (curved)
+                draw::roundedRectStroke(vg, q.rect, 4, color, 1);
+            Rect icon(q.rect.pos.x + 5, q.rect.pos.y + 3, 18, q.rect.size.y - 6);
+            deviceActions::drawCurveIcon(vg, icon, curve, curved ? color : c.text1, 1.3f);
+            draw::TextStyle t{theme::fonts::ui(), 10, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+            draw::text(vg, t, icon.getRight() + 5, q.rect.getCenter().y,
+                       draw::ellipsize(vg, t, playheads::curveNames()[size_t(curve)], q.rect.getRight() - icon.getRight() - 18));
+            chevron(q.rect.getRight() - 8, q.rect.getCenter().y);
+        }
+        nvgRestore(vg);
+    }
 }
 
 void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot) {
@@ -1347,13 +1436,6 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
     nvgSave(vg);
     if (mapping && !lit)
         nvgGlobalAlpha(vg, 0.3f);
-    else if (ref.kind == ParamRef::Kind::Playhead && ref.param == playheads::knob::kRepeatTimes) {
-        // Times does nothing while Repeat is off, unless a curve turns Repeat on.
-        ParamRef size{ParamRef::Kind::Playhead, ref.owner, uint16_t(playheads::knob::kRepeatSize)};
-        const float* repeat = findParam(song, size);
-        if (repeat && *repeat <= 0 && !deviceActions::curveOn(song, size).valid())
-            nvgGlobalAlpha(vg, 0.4f);
-    }
 
     float cx = part.rect.getCenter().x;
     float top = part.rect.pos.y + 2;
