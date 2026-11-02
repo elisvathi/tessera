@@ -99,6 +99,8 @@ Grouped by phase (§11). "P1" ships first.
 - One strip per track: name and colour, where its sound comes from, sends, pan, mute / solo / arm, fader with a
   peak and loudness meter, output.
 - FX strips, then the Master strip, on the right.
+- **Sends on the faders**: one click on an FX strip turns every fader into its send to that FX track. FX strips
+  have an OUT meter for what goes into the effect module (§7.6).
 - Every mixer control can be automated with the same lanes as device knobs (DECISIONS §38).
 - **Volume and pan in each track row** of the song pane too (the user asked for both places). The volume slider
   shows the live level inside it, so the row needs no separate meter. They are the same values as the strip.
@@ -425,6 +427,9 @@ Strip width 64 px; 44 px narrow (sends become dots, pan a small arc) when the pa
 FX strips are tinted, after a gap; the Master strip is wider (88 px) at the far right, with a "MAIN not patched"
 note when nothing is on MAIN L/R.
 
+**FX strips differ in three places**: no send knobs (an FX track never sends; no feedback loops); a **Sends**
+button where the send knobs would be (§7.6); and **two meters** (§7.6).
+
 ### 7.3 Gestures
 
 Same modifier vocabulary as everywhere (EDITOR_UX §2): drag, Shift for fine, double-click to reset (0 dB,
@@ -479,6 +484,40 @@ Rules for any option:
 - **In-panel editor**: names stay first (DECISIONS §51). The level bar gets whatever width is left after the
   name and buttons, at least 40 px. Below that it becomes the 3 px strip.
 - **Colours** of the groove, the amber zone and the hatching go in `Theme.hpp`, shared with the mixer's meters.
+
+### 7.6 Setting what goes into an FX track (agreed 2 Nov 2026)
+
+How much of each track reaches an FX track is set by that track's **send** to it. There are four places to set
+it, all the same value, with the same undo:
+
+1. **The send knob** on each track's strip (§7.2), for a quick touch.
+2. **Sends on the faders**, for balancing everything that goes into one FX track (below).
+3. **The inspector's Sends section** for the selected track (below).
+4. **Automation lanes**: every send can be automated, like device knobs (DECISIONS §38).
+
+**Sends on the faders.** Click an FX strip's **Sends** button, or its name. Every other strip's fader, dB
+readout and meter then show that track's send to this FX track instead of its volume:
+- The faders and the band at the top of the pane take the FX track's colour. The band says "Faders show sends
+  to FX 1 · Reverb · Esc to go back". The chosen FX strip stays lit; the master and the other FX strips dim.
+- Each fader shows the send level (−∞ … +6 dB). The meter shows what that track sends, after the send.
+- A strip whose send is before the fader shows a small "pre" tag above its fader; a click on the tag switches
+  it to after the fader (one undo step).
+- Mute, solo, pan and arm keep working as usual. Send knobs are hidden while in this mode; they would show the
+  same values.
+- Click the Sends button again, click the band's close button, or press Esc to go back to volumes. Clicking
+  another FX strip's Sends button switches to that FX track. The mode is not saved with the song.
+- Track headers keep showing volume (layout A): the mode belongs to the mixer pane only.
+
+**Two meters on FX strips.** The normal meter shows the FX track's sound, what comes back on IN (or the sends'
+mix when IN is unpatched). A second, thinner meter on its left, labelled OUT, shows the mix of all sends as it
+leaves on Track Out OUT, before the FX fader. It uses the same scale and amber zone, so a reverb module that is
+fed too hot shows up there before you hear it distort. The OUT meter only appears when the FX track's Track Out
+OUT is patched.
+
+**Inspector Sends section.** With a track selected, the inspector's track section lists every FX track by name and
+colour, each with a horizontal level (the same level bar as the track headers, without the meter) and a
+before / after fader switch. FX tracks with no send yet are listed too, at −∞, dim. With no FX tracks, the
+section shows one line: "No FX tracks · + Add FX track".
 
 ---
 
@@ -750,5 +789,8 @@ Each phase is usable on its own.
    apply (§8.1).
 
 8. **Track headers: layout A**, the level bar under the name (§7.5).
+
+9. **Setting what goes into an FX track**: sends on the faders, an OUT meter on FX strips, and a Sends section
+   in the inspector (§7.6).
 
 Still open: the user's confirmation of the whole design. The level standard is decided by ear before release.
