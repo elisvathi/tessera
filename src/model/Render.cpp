@@ -973,6 +973,20 @@ bool Options::operator==(const Options& o) const {
 
 namespace {
 
+/// Every Motion device of a track: in its chain, and in each playhead's own devices (its branch).
+std::vector<const Device*> motionsOf(const Track& track) {
+    std::vector<const Device*> out;
+    for (const Device& d : track.devices) {
+        if (d.type == DeviceType::Motion)
+            out.push_back(&d);
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                if (b.type == DeviceType::Motion)
+                    out.push_back(&b);
+    }
+    return out;
+}
+
 /// The longest cycle of the modulators on Motion device `motion`: how many passes its Per pass Steps and Ramps take,
 /// and how many ticks the longest Curve segment lasts (0 when none).
 std::pair<int, Tick> motionCycle(const Song& song, const Track& track, const Device& motion) {
@@ -1000,8 +1014,12 @@ std::pair<int, Tick> motionCycle(const Song& song, const Track& track, const Dev
     };
     measure(song.modulators);
     measure(track.modulators);
-    for (const Device& d : track.devices)
+    for (const Device& d : track.devices) {
         measure(d.modulators);
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                measure(b.modulators);
+    }
     return {std::clamp(passes, 1, kMaxGhostPasses), ticks};
 }
 
@@ -1019,9 +1037,9 @@ MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, 
         return {};
     const Note& n = clip.notes[index];
     const Device* motion = nullptr;
-    for (const Device& d : track.devices)
-        if (d.type == DeviceType::Motion && d.id == n.motion)
-            motion = &d;
+    for (const Device* d : motionsOf(track))
+        if (d->id == n.motion)
+            motion = d;
     if (!motion || n.muted)
         return {};
     MovedBy moved = movedAt(song, track, *motion, pass, songTick);
@@ -1035,9 +1053,8 @@ std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& 
     std::vector<std::vector<MotionMove>> out(clip.notes.size());
     ClipSpan span = clipSpan(clip);
     double loop = std::max(1.0, double(span.length()));
-    for (const Device& motion : track.devices) {
-        if (motion.type != DeviceType::Motion)
-            continue;
+    for (const Device* m : motionsOf(track)) {
+        const Device& motion = *m;
         auto [passes, ticks] = motionCycle(song, track, motion);
         int cycle = std::clamp(std::max(passes, int(std::ceil(double(ticks) / loop))), 1, kMaxGhostPasses);
         for (size_t i = 0; i < clip.notes.size(); i++) {

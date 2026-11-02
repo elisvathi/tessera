@@ -529,3 +529,4 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       as fast at 2×); the same for timbre and pressure, and for drum hits.
 - [ ] A Curve or LFO on a playhead's Rate: its line in the piano roll speeds up and slows down with the sound, and
       the keys it lights follow it.
+- [ ] Two Motion devices, one in the chain and one in a playhead's own devices: both show ghosts for their notes.
