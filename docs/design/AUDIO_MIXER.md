@@ -444,10 +444,10 @@ release without touching anything else.
 ### 7.5 Levels in track headers
 
 The user wants volume and pan in the song pane's track headers as well as in the mixer. Track rows are already
-busy (name, A / ● / M / S, voices, lane arrow), so the layout matters. Three options are in the mockups; **A is
-proposed**.
+busy (name, A / ● / M / S, voices, lane arrow), so the layout matters. Three options were in the mockups; the
+user **picked A** (2 Nov 2026).
 
-**A. Level bar under the name (proposed).** The row's second line becomes a horizontal volume slider. Its groove
+**A. Level bar under the name (agreed).** The row's second line becomes a horizontal volume slider. Its groove
 shows the live level, green turning amber in the top 6 dB, so the slider is also the meter. The fader position
 is a thin bright line across it, with the dB value after it and a small pan knob at the end.
 - Reads like a fader and a meter at once, and it fits the rows' left-to-right reading.
@@ -749,4 +749,6 @@ Each phase is usable on its own.
 7. **One Track Out instead of Audio Out** (the user's idea): Track Out binds to any track and dims what doesn't
    apply (§8.1).
 
-Still open: which of the three track-header layouts in §7.5 (proposed: A).
+8. **Track headers: layout A**, the level bar under the name (§7.5).
+
+Still open: the user's confirmation of the whole design. The level standard is decided by ear before release.
