@@ -201,8 +201,8 @@ TEST_CASE("resampling a 1 kHz sine from 44.1 to 48 kHz stays clean (THD+N under 
     CHECK(10 * std::log10(rest / signal) < -90);
 }
 
-// Phase 0 finding (2 Nov): Rubber Band's finer engine puts clicks early as the stretch grows: about 2.5 ms at 1.33x,
-// 6 ms at 2x. Allowed to fail until the user picks the default library (AUDIO_MIXER.md §9.1).
+// Rubber Band's finer engine puts clicks early as the stretch grows: about 2.5 ms at 1.33x, 6 ms at 2x. It is the
+// optional engine, not the default (DECISIONS.md), so this check is allowed to fail for it.
 TEST_CASE("a stretched click track keeps its clicks on the beat within 1 ms" * doctest::may_fail()) {
     for (const auto& id : availableStretchers()) {
         CAPTURE(id);
