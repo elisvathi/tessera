@@ -349,9 +349,11 @@ class Engine {
         int pendingCount = 0;
         int64_t lastPass = -1;
         bool previousPlayed = true;
-        // Per voice: the expression curves of the note it plays, and when that note started and how long it is.
+        // Per voice: the expression curves of the note it plays, when that note started and how long it is, and
+        // the play ticks its curve takes per written tick (a timeline clip's stretch over the reading playhead's
+        // speed), so a curve found again in a new snapshot keeps its pace.
         std::array<const NoteExtras*, kMaxTrackVoices> voiceExtras{};
-        std::array<double, kMaxTrackVoices> voiceStart{}, voiceLength{};
+        std::array<double, kMaxTrackVoices> voiceStart{}, voiceLength{}, voiceScale{};
         std::array<uint8_t, kMaxTrackVoices> voicePart{}; // the channel of each voice's note
         std::array<uint8_t, kMaxDrumLanes> lanePart{};    // the channel of each drum lane's last hit
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
@@ -372,6 +374,7 @@ class Engine {
         struct DrumCurve {
             const NoteExtras* extras = nullptr;    // set only while the curve plays
             double start = 0, length = 1;          // play ticks
+            double scale = 1;                      // play ticks per written tick, as for voices
             uint64_t clip = 0, note = 0;           // find a playing curve again in a new snapshot
             float bend = 0, timbre = 0, press = 0; // what the outputs send now: semitones, 0..1, 0..1
         };
@@ -526,6 +529,9 @@ class Engine {
     void rewindPlayheads(TrackState& state);
     void clearPending(TrackState& state);
     void hitDrum(const TrackPlayback& track, TrackState& state, const chain::ChainNote& n);
+    /// How fast the playhead `lane` (1..16; 0 = none, 1x) of a track reads its clip now. A note's curves play at
+    /// that pace, so they keep up with the playhead crossing the note, as the editor draws it.
+    double playheadSpeed(const TrackState& state, uint8_t lane) const;
     /// A note-off for a drum pitch: it ends a held "note length" gate. Triggers and fixed gates run their own
     /// length, so a key let go early doesn't shorten them.
     static void releaseDrum(const TrackPlayback& track, TrackState& state, int pitch);

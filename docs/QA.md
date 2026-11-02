@@ -520,3 +520,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Swing on a song of 1/8s: turning it on picks the 1/8 grid and it is heard; notes it moves show a tick where they
       start, the piano roll's in-between grid lines swing; a Groove added to a 1/8 track starts on 1/8.
 - [ ] Swing menu › Show swing in the editor off: no ticks, straight grid, swing still heard; it stays off after saving.
+
+## Playheads feedback fixes (feature/multi-playhead)
+- [ ] Ghost notes appear only for notes a Motion device moves; a playhead's own pitch or a Transpose draws none.
+- [ ] While playing, the keyboard on the left lights the key a note really plays (moved by its Motion, or by the
+      shown playhead's pitch), not the written one.
+- [ ] A note with a pitch curve read by a ½× playhead bends across the whole time the playhead is on it (and twice
+      as fast at 2×); the same for timbre and pressure, and for drum hits.

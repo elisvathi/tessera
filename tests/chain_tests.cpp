@@ -2003,3 +2003,19 @@ TEST_CASE(
     CHECK(pitches == std::vector<int>{60, 61, 62}); // the same three passes the engine plays
     CHECK(moves[1].empty());                        // not in the Motion
 }
+
+TEST_CASE("engine: a note's pitch curve keeps pace with the playhead crossing it, at any speed") {
+    Song song = songWith({{0, 960, 60}}, 4 * kPpq, kAutoVoices);
+    song.clips.begin()->second.notes[0].pitchExpr = {{0, 0, 0}, {1, 12, 0}}; // an octave up across the note
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.params[playheads::knob::kRate] = devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 4);
+    d.playheads.push_back(p); // "1/2x": it takes 1920 ticks to cross the 960-tick note
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(960 * kSamplesPerTick);
+    REQUIRE(h.gate());
+    CHECK(h.frame().voct[0] * 12 == doctest::Approx(6).epsilon(0.05)); // half way across: half way up
+    h.runTo(1900 * kSamplesPerTick);
+    CHECK(h.frame().voct[0] * 12 == doctest::Approx(12 * 1900.0 / 1920).epsilon(0.05));
+}

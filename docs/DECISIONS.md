@@ -1462,7 +1462,13 @@ Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead`
   from the song's place. A Track Out with 16 voices or fewer on All copies them in one go again.
 - **A note lasts while its playhead is on it** (30 Oct). Length defaulted to "As written", so at ½× a note stopped
   halfway while the playhead still swept across it: the picture and the sound disagreed. "Follows playhead" is now the
-  default, and songs saved as schema 6 (only this branch wrote it) switch their As written playheads to it.
+  default, and songs saved as schema 6 (only this branch wrote it; 2.0.5 then released schema 6 for Transpose, §86, whose songs have
+  no playheads) switch their As written playheads to it. The Playheads device is schema 7.
+- **A note's curves keep pace with the playhead** (2 Nov). Pitch, timbre and pressure curves played over the note's
+  written length, so at ½× a bend finished halfway across the note while the playhead was still on it (Trello "the
+  timing in the sound doesn't match what I see"). A curve now plays at the speed of the playhead that read the note,
+  taken when the note starts, for voices and drum lanes alike. It still runs from the note's start to its end, also
+  for a playhead going backwards.
 - **Each playhead channel has its own voices** (30 Oct). Playheads shared one set of at most 16 voices, so a busy one
   (an Echo in its chain) took voices from the others and cut their notes. Now a track with playheads holds a block of
   voices per channel (Auto for that playhead, or the fixed count, up to 16 each; past 64 in all the biggest shrink, so every channel
