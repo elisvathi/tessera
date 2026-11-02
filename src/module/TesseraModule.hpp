@@ -36,6 +36,10 @@ struct LauncherStatus {
     double position = NAN;       // clip ticks of the playing clip
     bool overridden = false;     // Arranger mode: the launcher has taken the track over
     double elapsed = NAN;        // clip ticks since the playing clip started, for lanes with their own loop
+    // Where each playhead has read the clip to (clip ticks; NaN when it isn't reading), as the engine moves it.
+    std::array<double, playheads::kMaxPlayheads> heads;
+
+    LauncherStatus() { heads.fill(NAN); }
 };
 
 /// Transport requests from the UI thread, carried out on the next sample.
@@ -448,6 +452,7 @@ class TesseraModule : public rack::engine::Module {
         std::atomic<double> position{NAN};
         std::atomic<bool> overridden{false};
         std::atomic<double> elapsed{NAN};
+        std::array<std::atomic<double>, playheads::kMaxPlayheads> heads{};
     };
     std::array<LauncherSlot, kMaxTracks> launcherSlots; // by bus slot
 

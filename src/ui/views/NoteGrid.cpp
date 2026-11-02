@@ -1199,14 +1199,19 @@ void NoteGrid::updateHeads() {
     // The region is the whole span: a drum clip's lane cycle, as the engine reads it.
     ClipSpan span = clipSpan(*clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr);
     const Playhead* shownHead = deviceActions::shownPlayhead(ctx);
-    for (const Playhead& p : device->playheads) {
+    // Where the engine has each playhead: a curve or modulator on its rate or start moves it, which its saved
+    // settings alone can't tell.
+    LauncherStatus status = m->launcherStatus(track->id);
+    for (size_t k = 0; k < device->playheads.size(); k++) {
+        const Playhead& p = device->playheads[k];
         if (p.mute || (solo && !p.solo))
             continue;
         playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), double(span.start),
                                                          double(span.length()), owner.timeSig());
         if (playheads::wantsDrawnPath(p.params.data()))
             motion.path = &p.path;
-        double pos = playheads::positionAt(motion, elapsed);
+        double live = k < status.heads.size() ? status.heads[k] : NAN;
+        double pos = std::isfinite(live) ? live : playheads::positionAt(motion, elapsed);
         NVGcolor color = theme::playheadColor(p.color);
         bool shown = shownHead == &p;
         heads.push_back({pos, color, shown});
