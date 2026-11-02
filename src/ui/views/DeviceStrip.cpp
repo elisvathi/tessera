@@ -379,15 +379,19 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     const Playhead* shown = shownPlayhead(d);
     using namespace playheads::knob;
     // One row, the settings reached for every few seconds; the rest is behind the playhead's menu.
-    enum class Control { Knob, Direction, Repeat, Channel, More };
+    enum class Control { Knob, Direction, Repeat, More };
     struct Item {
         Control control;
         int param;
         bool dial;
     };
     // Pitch and loudness are devices in the playhead's own chain (Transpose, Velocity), like any other note change.
-    const Item items[] = {{Control::Knob, kRate, true},   {Control::Direction, -1, false}, {Control::Repeat, -1, false},
-                          {Control::Knob, kNotes, false}, {Control::Channel, -1, false},   {Control::More, -1, false}};
+    // Its channel is set once, so it lives in the chip's right-click menu; the chip shows it.
+    const Item items[] = {{Control::Knob, kRate, true},
+                          {Control::Direction, -1, false},
+                          {Control::Repeat, -1, false},
+                          {Control::Knob, kNotes, false},
+                          {Control::More, -1, false}};
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
     float controls = float(std::size(items)) * kCell;
     Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);
@@ -424,9 +428,6 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
                 break;
             case Control::Repeat:
                 parts.push_back({Kind::PlayheadRepeat, cell, index, -1, id});
-                break;
-            case Control::Channel:
-                parts.push_back({Kind::PlayheadChannel, cell, index, -1, id});
                 break;
             case Control::More:
                 parts.push_back({Kind::PlayheadMore, Rect(kx + kCell / 2 - 13, knobTop + 6, 26, 26), index, -1, id});
@@ -699,9 +700,6 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         break;
     case Kind::PlayheadRepeat:
         deviceActions::openRepeatMenu(ctx, PlayheadId(hit->id));
-        break;
-    case Kind::PlayheadChannel:
-        deviceActions::openChannelMenu(ctx, PlayheadId(hit->id));
         break;
     case Kind::PlayheadMore:
         deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
@@ -1135,8 +1133,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             drawPlayheadChip(vg, d, p, hot);
             break;
         case Kind::PlayheadDirection:
-        case Kind::PlayheadRepeat:
-        case Kind::PlayheadChannel: {
+        case Kind::PlayheadRepeat: {
             const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
             if (!ph)
                 break;
@@ -1144,12 +1141,9 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
             if (p.kind == Kind::PlayheadDirection) {
                 label = "Direction";
                 value = deviceActions::directionText(*ph);
-            } else if (p.kind == Kind::PlayheadRepeat) {
+            } else {
                 label = "Repeat";
                 value = deviceActions::repeatText(*ph);
-            } else {
-                label = "Channel";
-                value = ph->channel == 0 ? "Own" : std::to_string(ph->channel);
             }
             drawDropdown(vg, p, label, value, hot);
             break;
