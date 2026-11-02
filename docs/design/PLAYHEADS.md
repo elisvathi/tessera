@@ -1,6 +1,7 @@
 # PLAYHEADS.md — Several playheads reading one clip (design, for review)
 
-Status: design proposed, not agreed or built. Branch `feature/multi-playhead`.
+Status: built, with the changes recorded in DECISIONS §94 (the card, curves on any setting, the Motion device).
+Where this design and DECISIONS disagree, DECISIONS wins.
 Mockups: claude.ai canvas "Tessera Playheads proposals" (boards A–E and the final board "F · Final").
 
 ## 0. The idea in one paragraph
@@ -479,7 +480,11 @@ Each step builds, passes tests and can be used before the next.
    pass" rate for Steps and Ramp, "Drift per pass…", per-playhead passes.
 8. **Finish:** shortcuts, help overlay, tooltips, manual page and screenshots, QA steps, a DECISIONS.md entry.
 
-## 12. Redesign after trying it (30 Oct, proposed, not built)
+## 12. Redesign after trying it (30 Oct, dropped)
+
+> **Dropped 30 Oct 2026:** the rack of strips, presets and "Starts at" were turned down. The card kept one row of
+> uniform cells, segment bars on the ruler and a curve per setting in the lower pane (DECISIONS §94). Kept here as a
+> record.
 
 Mockups: canvas boards "G · Redesign: the playhead rack" and "H · Redesign: first use, presets, looping and one-shot
 clips". Feedback that led here: setting it up wasn't clear, and one row of mixed knobs was messy. The goal is to jam:
