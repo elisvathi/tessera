@@ -375,6 +375,7 @@ TEST_CASE("editor state survives a save and load, with separate overlay and pane
     s.snap.adaptive = false;
     s.snap.division = GridDivision::Eighth;
     s.snap.feel = GridFeel::Triplet;
+    s.showSwing = false;
     s.lastLength = 720;
     s.lastVelocity = 0.42f;
     s.audition = false;
@@ -386,6 +387,7 @@ TEST_CASE("editor state survives a save and load, with separate overlay and pane
 
     json::Ref j(s.toJson());
     EditorState t = EditorState::fromJson(j.get());
+    CHECK_FALSE(t.showSwing);
     CHECK(t.selectedTrack == s.selectedTrack);
     CHECK(t.selectedClip == s.selectedClip);
     CHECK(t.follow == s.follow);

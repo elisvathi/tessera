@@ -150,6 +150,7 @@ struct EditorState {
     bool audition = true;     // play notes as they are drawn or moved
     bool transformBox = true; // show the stretch frame around multi-note selections
     bool noteBadges = true;   // chance, repeats and conditions drawn on notes
+    bool showSwing = true;    // swing ticks on moved notes and swung grid lines in the piano roll
     GhostSource ghosts = GhostSource::None;
     std::vector<ClipId> layered;   // clips opened together (EDITOR_UX §4.9), session only
     render::Options exportOptions; // the MIDI export dialog's last settings

@@ -138,6 +138,7 @@ json_t* EditorState::toJson() const {
     setInt(j, "lastChannel", lastChannel);
     setBool(j, "audition", audition);
     setBool(j, "noteBadges", noteBadges);
+    setBool(j, "showSwing", showSwing);
     setBool(j, "stackClips", stackClips);
     set(j, "export", exportOptions.toJson());
     setString(j, "ghosts", kGhostNames[int(ghosts)]);
@@ -182,6 +183,7 @@ EditorState EditorState::fromJson(const json_t* j) {
     s.lastChannel = uint8_t(std::clamp<int64_t>(getInt(j, "lastChannel", s.lastChannel), 1, kMaxNoteChannel));
     s.audition = getBool(j, "audition", s.audition);
     s.noteBadges = getBool(j, "noteBadges", s.noteBadges);
+    s.showSwing = getBool(j, "showSwing", s.showSwing);
     s.stackClips = getBool(j, "stackClips", s.stackClips);
     s.exportOptions = render::Options::fromJson(get(j, "export"));
     s.ghosts = fromName(get(j, "ghosts"), kGhostNames, s.ghosts);

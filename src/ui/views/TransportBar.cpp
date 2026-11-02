@@ -340,6 +340,8 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
                                                           s == kPpq / 2 ? "Swing 1/8s" : "Swing 1/16s"));
                         }));
             }));
+        menu->addChild(rack::createBoolPtrMenuItem("Show swing in the editor", "ticks on moved notes, swung grid",
+                                                   &c->state().showSwing));
     });
     meter.caret = true;
     timeSigButton = button(meter, 56);

@@ -1416,3 +1416,6 @@ Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifac
   swing moves gets a tick where it really starts (joined to its written start), and the piano roll's grid lines between
   beats are drawn swung; the drum grid's cells stay straight, as they are the steps hits snap to. Turning song swing
   on, or adding a Groove, picks the grid the notes need (`swingStepFor`): 1/8 when none sit on an off-beat 1/16.
+- **The swing hints can be turned off** (2 Nov): "Show swing in the editor" in the swing menu (on by default) hides the
+  ticks and draws the grid straight; swing still plays. It is a view setting, saved with the editor's layout, not
+  with the song.

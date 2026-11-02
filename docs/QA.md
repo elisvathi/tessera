@@ -497,3 +497,4 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       old song keeps its feel. A Groove device swings its track alone; at 50% that track stays straight under song swing.
 - [ ] Swing on a song of 1/8s: turning it on picks the 1/8 grid and it is heard; notes it moves show a tick where they
       start, the piano roll's in-between grid lines swing; a Groove added to a 1/8 track starts on 1/8.
+- [ ] Swing menu › Show swing in the editor off: no ticks, straight grid, swing still heard; it stays off after saving.

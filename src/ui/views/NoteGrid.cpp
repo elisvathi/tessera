@@ -1319,7 +1319,9 @@ void NoteGrid::drawBadges(NVGcontext* vg, const Note& n, Rect r, float labelRigh
 SwingFeel NoteGrid::swingFeel() {
     TesseraModule* m = ctx.module();
     const Track* track = owner.track();
-    return m && track ? swingFeelOf(m->song(), *track) : SwingFeel{};
+    if (!m || !track || !ctx.state().showSwing)
+        return SwingFeel{}; // hints off: drawn straight, as written
+    return swingFeelOf(m->song(), *track);
 }
 
 void NoteGrid::drawSwingMark(NVGcontext* vg, const Note& n, Rect r, const SwingFeel& feel) {
