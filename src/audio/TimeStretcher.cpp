@@ -15,7 +15,7 @@ namespace tessera {
 
 namespace {
 
-// Until the Phase 0 listening test picks one, the MIT library is the default: it can ship in any product.
+// The user's pick after the Phase 0 blind listening test (3 Nov). Its MIT licence lets it ship in any product.
 constexpr const char* kDefaultStretcher = "signalsmith";
 
 /// Makes a stretcher by id, or returns null when this build doesn't include it.
