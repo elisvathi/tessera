@@ -1401,3 +1401,13 @@ Why: a user asked to move overlapping clips vertically to change their order (Tr
 
 Impact: `ArrangerClip::layer`, `arrange::stackOf / canMoveInStack / moveInStack`, `InstanceLanes::row`,
 `Engine::lanesClips` orders the clips under the playhead by row.
+
+## 92. Swing on the usual scale, a 1/8 grid, and a Groove device (2 Nov)
+
+- **Song swing shows as 50-75%** (50% straight, about 66% the triplet feel, 75% the hardest), typed or picked. The saved
+  0..1 value already spanned exactly that, so old songs keep their feel with nothing converted.
+- **Swing grid: 1/16 or 1/8** (saved as "swingGrid" when 1/8).
+- **Groove device** (Swing 50-75%, Grid): swings one track by where each note was written. A track with a Groove that is
+  on gets no song swing (`songSwingFor`), so it never swings twice; MIDI export with devices bypassed uses the song's.
+
+Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifact/BAoN2Kis449NbmfhjLoyq7, options A and B.

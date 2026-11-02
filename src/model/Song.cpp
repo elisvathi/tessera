@@ -371,6 +371,8 @@ void normalize(Song& song) {
     if (!validDenominator(song.timeSig.den))
         song.timeSig.den = 4;
     clampValue(song.swing, 0.f, 1.f);
+    if (song.swingStep != kPpq / 2)
+        song.swingStep = kPpq / 4;
     clampValue<int8_t>(song.scale.root, 0, 11);
     song.loopStart = std::max<Tick>(0, song.loopStart);
     if (song.loopEnd <= song.loopStart)
@@ -463,6 +465,13 @@ Clip makeDemoClip(Song& song, uint32_t color) {
 }
 
 } // namespace
+
+float songSwingFor(const Song& song, const Track& track) {
+    for (const Device& d : track.devices)
+        if (d.on && d.type == DeviceType::Groove)
+            return 0;
+    return song.swing;
+}
 
 Song makeDefaultSong() {
     Song song;

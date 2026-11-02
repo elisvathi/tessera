@@ -107,8 +107,10 @@ std::vector<Played> playedNotes(const Song& song, const Track& t, const Options&
         double start = double(n.start), end = double(n.end);
         if (o.timing == Timing::Played) {
             double micro = src ? operators::microTicks(*src) : 0;
-            start = swung(start, song.swing) + micro;
-            end = swung(end, song.swing) + micro;
+            // With devices bypassed a Groove device plays nothing, so the song's swing stands in for it.
+            float swing = o.devices == DeviceMode::Applied ? songSwingFor(song, t) : song.swing;
+            start = swung(start, swing, song.swingStep) + micro;
+            end = swung(end, swing, song.swingStep) + micro;
         }
         const Clip* clip = song.findClip(item.clip);
         uint8_t key = clip ? keyIndex(*clip) : 0;

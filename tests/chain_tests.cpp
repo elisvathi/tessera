@@ -1307,3 +1307,22 @@ TEST_CASE("engine: a launched clip restarts from a chosen point (seeking in the 
     CHECK(h.gate());
     CHECK(h.pitch() == 67); // and the clip carries on from there
 }
+
+TEST_CASE("Groove swings its track's off-beats in place of the song's swing") {
+    auto firstStartOfSecond = [](float songSwing, float groovePercent) {
+        Song song = songWith({{0, 120, 60}, {240, 120, 62}}, 4 * kPpq, kAutoVoices);
+        song.swing = songSwing;
+        if (groovePercent > 0)
+            addDevice(song, DeviceType::Groove, {{chain::knob::kGrooveSwing, groovePercent}});
+        Harness h(song);
+        for (int64_t s = 0; s < 600 * kSamplesPerTick; s++) {
+            h.step();
+            if (h.gate() && h.pitch() == 62)
+                return double(s) / kSamplesPerTick;
+        }
+        return -1.0;
+    };
+    CHECK(firstStartOfSecond(0, 75) == doctest::Approx(360).epsilon(0.01)); // half a 1/16 late
+    CHECK(firstStartOfSecond(1, 50) == doctest::Approx(240).epsilon(0.01)); // straight, though the song swings
+    CHECK(firstStartOfSecond(1, 0) == doctest::Approx(360).epsilon(0.01));  // no Groove: the song's swing
+}

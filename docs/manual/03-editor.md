@@ -19,7 +19,8 @@ There is also a smaller editor inside the panel itself. See [The editor inside t
 1. **Transport bar.** From the left: the **Tessera ▾** menu (files and colour schemes), play ▶, stop ■, record ●
    with its settings ▾, loop ⟳, the song position, the tempo, and **4/4 ▾** (time signature and swing). In its menu,
    **Beats per bar** (1 to 16) and **Beat unit** (1/2, 1/4, 1/8, 1/16) are picked on their own, so 7/8 or 11/16 is two
-   clicks away.
+   clicks away. **Swing** uses the usual scale: 50% is straight, 66% the triplet feel, 75% the hardest; type any value
+   or pick one, and choose the **Swing grid** (1/16 or 1/8). A **Groove** device swings one track its own way.
 2. **Plays switch.** What the tracks play: the **Clips** you launch or the **Timeline**. The half that plays is
    lit. See [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline).
 3. **Undo and redo**, **follow the playhead**, **show the inspector**, and **close**.

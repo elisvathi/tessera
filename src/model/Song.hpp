@@ -57,7 +57,8 @@ struct Song {
     static constexpr int kSchemaVersion = 6;
 
     TimeSig timeSig;
-    float swing = 0; // 0..1
+    float swing = 0;           // 0..1, shown as 50..75% (Swing.hpp)
+    Tick swingStep = kPpq / 4; // the swung grid: a 1/16 or a 1/8
     ScaleRef scale;
     std::vector<CustomScale> customScales;
     Tick loopStart = 0;
@@ -102,8 +103,8 @@ struct Song {
     bool isAudible(const Track& track) const;
 
     bool operator==(const Song& o) const {
-        return timeSig == o.timeSig && swing == o.swing && scale == o.scale && customScales == o.customScales &&
-               loopStart == o.loopStart && loopEnd == o.loopEnd && seed == o.seed &&
+        return timeSig == o.timeSig && swing == o.swing && swingStep == o.swingStep && scale == o.scale &&
+               customScales == o.customScales && loopStart == o.loopStart && loopEnd == o.loopEnd && seed == o.seed &&
                launchQuantize == o.launchQuantize && tracks == o.tracks && groups == o.groups && scenes == o.scenes &&
                clips == o.clips && markers == o.markers && modulators == o.modulators && nextId == o.nextId;
     }
@@ -119,6 +120,8 @@ Track makeTrack(Song& song, TrackType type, const std::string& name);
 
 /// The song a fresh Tessera starts with: 3 instrument tracks and 1 drum track, no clips.
 Song makeDefaultSong();
+/// The song's swing for one track's notes: none where a Groove device that is on swings them its own way.
+float songSwingFor(const Song& song, const Track& track);
 /// Puts a two-bar demo clip in track 1's first slot. Tests use it as a ready-made clip.
 void addDemoClip(Song& song);
 

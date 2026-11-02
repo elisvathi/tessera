@@ -3,6 +3,7 @@
 #include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
+#include "../src/model/Swing.hpp"
 #include "RandomSong.hpp"
 
 #include <cstdlib>
@@ -309,4 +310,11 @@ TEST_CASE("a timeline clip's stacking layer is saved and loaded") {
     a.layer = 2;
     song.tracks[0].arrangement.push_back(a);
     CHECK(throughText(song).tracks[0].arrangement[0].layer == 2);
+}
+
+TEST_CASE("the swing grid is saved, and swing on 1/8s moves the off-beat 1/8") {
+    Song song = makeDefaultSong();
+    song.swingStep = kPpq / 2;
+    CHECK(throughText(song).swingStep == kPpq / 2);
+    CHECK(swung(double(kPpq / 2), 1.f, kPpq / 2) == doctest::Approx(double(kPpq / 2 + kPpq / 4)));
 }

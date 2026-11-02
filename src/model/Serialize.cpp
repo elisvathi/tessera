@@ -39,8 +39,8 @@ const char* const kLoopModes[] = {"off", "loop"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
-const char* const kDeviceTypes[] = {"transpose",   "scale", "velocity", "noteLength", "chord",
-                                    "arpeggiator", "echo",  "random",   "noteFilter", "humanize"};
+const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord", "arpeggiator",
+                                    "echo",      "random", "noteFilter", "humanize",   "groove"};
 const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note"};
 const char* const kParamOwners[] = {"device", "modulator"};
 const char* const kModulationKinds[] = {"param", "auto", "knob"};
@@ -629,6 +629,8 @@ json_t* songToJson(const Song& s) {
     json_t* j = json_object();
     set(j, "timeSig", json_pack("[ii]", s.timeSig.num, s.timeSig.den));
     setNumber(j, "swing", s.swing);
+    if (s.swingStep != kPpq / 4)
+        setInt(j, "swingGrid", s.swingStep == kPpq / 2 ? 8 : 16);
     set(j, "scale", scaleToJson(s.scale));
     json_t* custom = json_array();
     for (const CustomScale& c : s.customScales) {
@@ -881,6 +883,7 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
     s.timeSig.num = saturate<int>(intAt(ts, 0, s.timeSig.num));
     s.timeSig.den = saturate<int>(intAt(ts, 1, s.timeSig.den));
     s.swing = getFloat(j, "swing", s.swing);
+    s.swingStep = getInt(j, "swingGrid", 16) == 8 ? kPpq / 2 : kPpq / 4;
     if (json_is_object(get(j, "scale")))
         s.scale = scaleFromJson(get(j, "scale"));
     forEach(get(j, "customScales"), [&](const json_t* cj) {

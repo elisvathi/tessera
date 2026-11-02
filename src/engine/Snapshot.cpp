@@ -82,11 +82,11 @@ bool hasExtras(const Note& n) {
 /// and early by the room timing spread needs. Inside a loop of [loopStart, loopStart + length) the moved start
 /// wraps around (a note pushed before the loop start plays at the end of the previous pass).
 /// The song's swing on one note (DESIGN.md §7), kept inside `limit` (a loop end).
-void swingEvent(NoteEvent& e, float swing, Tick limit) {
+void swingEvent(NoteEvent& e, float swing, Tick step, Tick limit) {
     if (swing <= 0)
         return;
-    Tick start = Tick(std::llround(swung(double(e.start), swing)));
-    Tick end = Tick(std::llround(swung(double(e.end), swing)));
+    Tick start = Tick(std::llround(swung(double(e.start), swing, step)));
+    Tick end = Tick(std::llround(swung(double(e.end), swing, step)));
     e.start = std::min(start, limit - 1);
     e.end = std::max(e.start + 1, std::min(end, limit));
 }
@@ -180,7 +180,7 @@ int channelsOf(const std::vector<LanePlayback>& lanes) {
     return n;
 }
 
-ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, uint8_t key) {
+ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick swingStep, uint8_t key) {
     ClipPlayback out;
     out.looping = clip.loopMode == LoopMode::Loop;
     out.loopStart = out.looping ? clip.loopStart : 0;
@@ -200,7 +200,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, uint
                 if (!note.muted && note.pitch == lane.pitch && note.start >= region.start &&
                     note.start < region.start + region.length) {
                     loop.notes.push_back(noteEvent(note, track, region.start + region.length));
-                    swingEvent(loop.notes.back(), swing, region.start + region.length);
+                    swingEvent(loop.notes.back(), swing, swingStep, region.start + region.length);
                     attachExtras(loop.notes.back(), note, out.extras, clip.id.value, region.start, region.length, true);
                 }
             sortEvents(loop.notes);
@@ -221,7 +221,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, uint
         if (std::find(ownLoopPitches.begin(), ownLoopPitches.end(), note.pitch) != ownLoopPitches.end())
             continue;
         out.notes.push_back(noteEvent(note, track, out.loopEnd));
-        swingEvent(out.notes.back(), swing, out.loopEnd);
+        swingEvent(out.notes.back(), swing, swingStep, out.loopEnd);
         attachExtras(out.notes.back(), note, out.extras, clip.id.value, out.loopStart, out.loopLength(), out.looping);
     }
     // With lanes of their own length the clip loops their whole cycle, so every pass plays the same; its other notes
@@ -312,7 +312,8 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
             if (it != built.end()) {
                 playback = it->second;
             } else {
-                auto flat = std::make_shared<ClipPlayback>(flattenClip(*clip, track, song.swing, keyIndex(*clip)));
+                auto flat = std::make_shared<ClipPlayback>(
+                    flattenClip(*clip, track, songSwingFor(song, track), song.swingStep, keyIndex(*clip)));
                 if (clip->launchQuantize)
                     flat->launchQuantize = launchQuantizeTicks(*clip->launchQuantize, song.timeSig);
                 if (flat->loopLength() > 0)
@@ -346,7 +347,8 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         std::shared_ptr<const ClipPlayback> playback =
             it != built.end() && it->second
                 ? it->second
-                : std::make_shared<ClipPlayback>(flattenClip(*clip, track, song.swing, keyIndex(*clip)));
+                : std::make_shared<ClipPlayback>(
+                      flattenClip(*clip, track, songSwingFor(song, track), song.swingStep, keyIndex(*clip)));
         built[a.clip] = playback;
         if (playback->lanes.empty() && playback->knobLanes.empty())
             continue;
@@ -384,7 +386,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
             e.pass = n.pass;
             e.key = key;
             e.channel = n.source ? n.source->channel : 1;
-            swingEvent(e, song.swing, instanceEnd(a));
+            swingEvent(e, songSwingFor(song, track), song.swingStep, instanceEnd(a));
             attachExtras(e, *n.source, tp->arrangementExtras, clip->id.value, 0, 0, false,
                          std::clamp(double(a.stretch), double(kMinStretch), double(kMaxStretch)));
             tp->arrangement.push_back(e);

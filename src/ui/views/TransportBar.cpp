@@ -8,8 +8,9 @@
 #include "../editing/RecordActions.hpp"
 #include "../interaction/Shortcuts.hpp"
 #include "../widgets/Draw.hpp"
-#include "../widgets/HoverTooltip.hpp"
 #include "../widgets/EditTools.hpp"
+#include "../widgets/HoverTooltip.hpp"
+#include "../widgets/MenuTextField.hpp"
 #include "../widgets/ToolButton.hpp"
 #include "TimelineDraw.hpp"
 
@@ -188,7 +189,11 @@ class PlaysSwitch : public rack::widget::OpaqueWidget {
     int hovered = -1;
 };
 
-constexpr int kSwingSteps[] = {0, 10, 20, 30, 40, 50, 66, 100};
+// Swing on the usual scale: 50% straight, about 66% the triplet feel, 75% the hardest (Swing.hpp).
+constexpr int kSwingPicks[] = {50, 54, 58, 62, 66, 70, 75};
+
+/// A swing amount (0..1) as the percent people know it.
+int swingPercent(float swing) { return int(std::lround(50 + 25 * swing)); }
 constexpr int kMaxBeatsShown = 16;
 const int kBeatUnits[] = {2, 4, 8, 16};
 
@@ -286,18 +291,43 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
                         [now, d, setTo] { setTo({now.num, d}); }));
             }));
         menu->addChild(new rack::ui::MenuSeparator);
-        menu->addChild(rack::createMenuLabel("Swing: off-beat 1/16s land later"));
-        for (int percent : kSwingSteps) {
-            float value = float(percent) / 100.f;
-            std::string label = percent == 0 ? "Off" : std::to_string(percent) + "%";
+        menu->addChild(rack::createMenuLabel("Swing: 50% straight, 66% triplet feel, 75% hardest"));
+        auto setSwing = [c](int percent) {
+            percent = std::clamp(percent, 50, 75);
+            if (TesseraModule* mod = c->module())
+                mod->perform(
+                    setSongField(mod->song(), &Song::swing, float(percent - 50) / 25,
+                                 percent > 50 ? "Set swing to " + std::to_string(percent) + "%" : "Swing off"));
+        };
+        // Type any value from 50 to 75; the picks below are the common ones.
+        menu->addChild(
+            new MenuTextField(std::to_string(swingPercent(m->song().swing)), [setSwing](const std::string& t) {
+                char* end = nullptr;
+                long v = std::strtol(t.c_str(), &end, 10);
+                if (end != t.c_str())
+                    setSwing(int(v));
+            }));
+        int nowPercent = swingPercent(m->song().swing);
+        for (int percent : kSwingPicks) {
+            std::string label = percent == 50   ? "Off (50%)"
+                                : percent == 66 ? "66% (triplet feel)"
+                                                : std::to_string(percent) + "%";
             menu->addChild(rack::createCheckMenuItem(
-                label, "", [c, value] { return c->module() && std::fabs(c->module()->song().swing - value) < 0.005f; },
-                [c, value, label] {
-                    if (TesseraModule* m = c->module())
-                        m->perform(setSongField(m->song(), &Song::swing, value,
-                                                value > 0 ? "Set swing to " + label : "Swing off"));
-                }));
+                label, "", [nowPercent, percent] { return nowPercent == percent; },
+                [setSwing, percent] { setSwing(percent); }));
         }
+        Tick step = m->song().swingStep;
+        menu->addChild(
+            rack::createSubmenuItem("Swing grid", step == kPpq / 2 ? "1/8" : "1/16", [c, step](rack::ui::Menu* sub) {
+                for (Tick s : {Tick(kPpq / 4), Tick(kPpq / 2)})
+                    sub->addChild(rack::createCheckMenuItem(
+                        s == kPpq / 2 ? "1/8" : "1/16", "", [step, s] { return step == s; },
+                        [c, s] {
+                            if (TesseraModule* mod = c->module())
+                                mod->perform(setSongField(mod->song(), &Song::swingStep, s,
+                                                          s == kPpq / 2 ? "Swing 1/8s" : "Swing 1/16s"));
+                        }));
+            }));
     });
     meter.caret = true;
     timeSigButton = button(meter, 56);
@@ -384,9 +414,10 @@ void TransportBar::step() {
         std::string meter = std::to_string(ts.num) + "/" + std::to_string(ts.den);
         float swing = m->song().swing;
         if (swing > 0.005f)
-            meter += "  ·  swing " + std::to_string(int(std::lround(swing * 100))) + "%";
+            meter += "  ·  swing " + std::to_string(swingPercent(swing)) + "%" +
+                     (m->song().swingStep == kPpq / 2 ? " 1/8" : "");
         timeSigButton->setText(meter);
-        timeSigButton->box.size.x = swing > 0.005f ? 132 : 56;
+        timeSigButton->box.size.x = swing <= 0.005f ? 56 : m->song().swingStep == kPpq / 2 ? 150 : 132;
         nameButton->setText(m->instanceName());
     }
     layout();

@@ -1,4 +1,5 @@
 #include "Devices.hpp"
+#include "Swing.hpp"
 
 #include "DeviceTypes.hpp"
 #include "NoteOperators.hpp"
@@ -171,6 +172,9 @@ void Chain::dispatch(const Message& m, const Context& c, Output& out) {
         break;
     case DeviceType::Humanize:
         humanize(m, d, c, out);
+        break;
+    case DeviceType::Groove:
+        groove(m, d, c, out);
         break;
     case DeviceType::NoteFilter:
         noteFilter(m, d, c, out);
@@ -632,6 +636,27 @@ void Chain::humanize(const Message& m, const DeviceSlot& d, const Context& c, Ou
         n.start += late;
         n.end += late;
     }
+    post(m.stage + 1, Kind::On, n, n.start, out);
+}
+
+// ---- Groove ---------------------------------------------------------------------------------------------------
+
+void Chain::groove(const Message& m, const DeviceSlot& d, const Context& /*c*/, Output& out) {
+    // A held key has no written place to swing from.
+    if (m.kind != Kind::On || m.note.open()) {
+        forward(m, out);
+        return;
+    }
+    ChainNote n = m.note;
+    float swing = (shown(d, knob::kGrooveSwing) - 50) / 25;
+    Tick step = choiceOf(d, knob::kGrooveGrid) == 1 ? kPpq / 2 : kPpq / 4;
+    // Where it was written decides how late it lands, as the song's swing does; the snapshot left this track's
+    // notes straight (songSwingFor).
+    double length = n.end - n.start;
+    double start = swung(n.origin, swing, step) - n.origin;
+    double end = swung(n.origin + length, swing, step) - (n.origin + length);
+    n.start += start;
+    n.end = std::max(n.start + 1, n.end + end);
     post(m.stage + 1, Kind::On, n, n.start, out);
 }
 
