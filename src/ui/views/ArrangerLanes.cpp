@@ -978,7 +978,7 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         return;
     Rect r(x0, top + 1, std::max(2.f, x1 - x0), h - 2);
     const Clip* clip = song.findClip(a.clip);
-    uint32_t color = track.color;
+    uint32_t color = clip ? clip->shownColor(track.color) : track.color;
     float alpha = (a.muted ? kMutedAlpha : 1.f) * (dim ? kOverriddenAlpha : 1.f);
     float radius = theme::metrics::kRadiusItem;
     float strip = std::min(headerHeight(h), r.size.y);

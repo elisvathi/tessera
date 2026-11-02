@@ -31,6 +31,9 @@ void rename(EditorContext& ctx, ClipId clip, const std::string& name);
 /// "Length ▸": makes the clip twice as long, half as long, or a typed percentage (notes, loop, automation and
 /// every timeline use), as one undo step.
 void appendScaleMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+/// "Colour": Track colour (the default, which follows the track) or one of the 16 colours, for every clip in `clips`
+/// as one undo step.
+void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips);
 /// Opens a name field for the clip under the mouse; Enter or closing it renames the clip (one undo step).
 void startRename(EditorContext& ctx, ClipId clip);
 

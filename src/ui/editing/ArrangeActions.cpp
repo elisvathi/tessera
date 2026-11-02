@@ -292,6 +292,15 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     }
     EditorContext* c = &lanes.context();
     menu->addChild(rack::createMenuItem("Rename", "", [c, clipId] { clipActions::startRename(*c, clipId); }));
+    {
+        // Every selected clip takes the colour, the one clicked too.
+        std::vector<ClipId> coloured{clipId};
+        for (const arrange::Placed& p : lanes.committed())
+            if (lanes.selection().count(p.clip.id) &&
+                std::find(coloured.begin(), coloured.end(), p.clip.clip) == coloured.end())
+                coloured.push_back(p.clip.clip);
+        clipActions::appendColorMenu(menu, *c, coloured);
+    }
     menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate), [l] { duplicateSelected(*l); }));
     {
         std::vector<std::pair<TrackId, ClipId>> clips;

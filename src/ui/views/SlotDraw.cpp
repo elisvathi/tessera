@@ -157,7 +157,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
         return;
     }
 
-    uint32_t color = track->color;
+    uint32_t color = clip->shownColor(track->color);
     bool selected = ctx.state().selectedTrack == trackId && clipActions::shownClip(ctx, *track) == clip->id;
     draw::roundedRect(vg, cell, theme::metrics::kRadiusItem, theme::track(color, selected ? 1.f : 0.82f));
 

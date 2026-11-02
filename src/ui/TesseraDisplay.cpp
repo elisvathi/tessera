@@ -356,7 +356,9 @@ void TesseraDisplay::drawClipGrid(NVGcontext* vg, Rect r) {
             }
             bool playing = status.playing == scene;
             bool queued = status.queued == scene;
-            draw::roundedRect(vg, cellRect, 1, rgb(t.color, (playing ? 1.f : 0.35f) * alpha));
+            const Clip* clip = s.findClip(*t.slots[size_t(scene)].clip);
+            uint32_t color = clip ? clip->shownColor(t.color) : t.color;
+            draw::roundedRect(vg, cellRect, 1, rgb(color, (playing ? 1.f : 0.35f) * alpha));
             if (queued && blinkOn)
                 draw::roundedRectStroke(vg, cellRect, 1, c.queue, 1);
         }

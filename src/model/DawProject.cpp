@@ -161,7 +161,7 @@ void arrangementClips(Xml& x, const Song& song, const Track& t, const Options& o
             attrs.push_back({"enable", "false"});
         if (clip) {
             attrs.push_back({"name", clip->name.empty() ? "Clip" : clip->name});
-            attrs.push_back({"color", color(clip->color ? clip->color : t.color)});
+            attrs.push_back({"color", color(clip->shownColor(t.color))});
         }
         x.open("Clip", attrs);
         notesElement(x, notes[i], start, channel, o.noteChannels);
@@ -275,7 +275,7 @@ std::string projectXml(const Song& song, const Options& o, const render::Context
                             {"duration", beats(double(span.end))},
                             {"playStart", "0.0"},
                             {"name", clip->name.empty() ? "Clip" : clip->name},
-                            {"color", color(clip->color ? clip->color : t->color)}};
+                            {"color", color(clip->shownColor(t->color))}};
             if (span.looping) {
                 clipAttrs.push_back({"loopStart", beats(double(span.start))});
                 clipAttrs.push_back({"loopEnd", beats(double(span.end))});

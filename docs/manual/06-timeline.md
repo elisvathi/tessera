@@ -70,6 +70,7 @@ Right-click a clip on the timeline:
 |---|---|
 | **Open in piano roll** | Shows the clip's notes below (same as double-click). |
 | **Rename**, **Duplicate**, **Delete** | As usual. |
+| **Colour** | **Track colour** or one of 16 colours, for every selected clip (and the clip's other copies and its slot). |
 | **Export as MIDI…** | Saves the clip (or the selected clips) as a MIDI file. |
 | **Split here**, **Glue**, **Make unique** | As above. |
 | **Mute** | Silences this tile. Muted tiles are drawn dim. |

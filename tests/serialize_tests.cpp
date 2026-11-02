@@ -266,3 +266,23 @@ TEST_CASE("what a track listens to is saved and loaded") {
     CHECK(loaded.tracks[0].listen == ListenSource::External);
     CHECK(loaded.tracks[2].listen == ListenSource::None); // left out of the file, and None on loading
 }
+
+TEST_CASE("a clip's picked colour is saved; the colour old songs stored with a clip stays unused") {
+    Song song = makeDefaultSong();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.ownColor = 0x65A7FA;
+    clip.color = 0xEF806F; // what clips stored before they showed their track's colour
+    song.clips.emplace(clip.id, clip);
+    Song loaded = throughText(song);
+    const Clip& back = loaded.clips.at(clip.id);
+    CHECK(back.ownColor == 0x65A7FA);
+    CHECK(back.shownColor(0x2DC08E) == 0x65A7FA);
+
+    // An older file has only "color": the clip shows its track's colour.
+    json::Ref j(songToJson(song));
+    json_t* clips = json_object_get(j.get(), "clips");
+    json_object_del(json_array_get(clips, json_array_size(clips) - 1), "ownColor");
+    Song old = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK(old.clips.at(clip.id).shownColor(0x2DC08E) == 0x2DC08E);
+}

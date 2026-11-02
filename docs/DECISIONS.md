@@ -587,7 +587,7 @@ stays for big work and opens from the strip's "Full editor" button.
 ## 34. Track colours and Alt+drag in the panel editor
 
 - **Clips always show their track's colour** (launcher slots, arranger clips, notes, lanes, ghost notes, the
-  clip strip). The clip colour menus are gone; a recoloured track recolours its clips at once. The colour stored
+  clip strip). Changed by §89: a clip can have a colour of its own again, picked on purpose. The clip colour menus are gone; a recoloured track recolours its clips at once. The colour stored
   with a clip is kept in the patch but no longer used.
 - **Alt+drag in the panel editor:** Rack scrolls the rack on Alt+drag, and its scroll view takes the press before
   modules see it. A small layer on top of Rack's scene hands Alt+clicks that land on a Tessera panel editor to the
@@ -1358,3 +1358,18 @@ and a better way to enter them for drums that are only triggers.
 
 Impact: `fields::Field::Bend / Timbre / Pressure`, `PianoRollView::drumValueField / curveFocus / pitchWindow`,
 `EditorState::curveFocusNote`, ExpressionLane's zoomed mode, NoteGrid::drawHitValue.
+
+## 89. A clip can have a colour of its own, picked on purpose (2 Nov)
+
+- **Clips follow their track's colour by default**, as before. Right-click a clip (in its slot or on the timeline)
+  for **Colour**: **Track colour** or one of the 16 colours. The colour belongs to the clip, so its slot and every
+  timeline copy show it; on the timeline it applies to every selected clip, as one undo step.
+- Notes, lanes and ghosts keep the track's colour: the clip colour marks the container, so takes (record, overdub,
+  play, erase) can be told apart at a glance without changing how a track reads.
+- **Stored as "ownColor"**, not in the old "color": every clip still carries the colour it had before §34 made clips
+  show their track's colour, and reusing that key would have brought those stale colours back in old songs.
+
+Why: a user live-looping wants to colour-code record / play / overdub / erase clips on the timeline (Trello "Selected
+USER FEEDBACK").
+
+Impact: `Clip::ownColor`, `Clip::shownColor`, `clipActions::appendColorMenu`; DAWproject export uses it.

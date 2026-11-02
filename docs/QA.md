@@ -485,3 +485,6 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 ## User feedback 2
 - [ ] Transport 4/4 ▾: Beats per bar and Beat unit change the time signature on their own (7/8, 11/16, 5/2); the
       chip, ruler and bar lines follow; one undo step each.
+- [ ] Right-click a clip (slot or timeline) › Colour: a colour shows on its slot and every timeline copy; Track
+      colour goes back to following the track; recolouring the track leaves coloured clips alone; several selected
+      timeline clips change together in one undo step; an old song shows no stray clip colours.

@@ -578,6 +578,8 @@ json_t* clipToJson(const Clip& c) {
     set(j, "id", idJson(c.id));
     setString(j, "name", c.name);
     setInt(j, "color", c.color);
+    if (c.ownColor)
+        setInt(j, "ownColor", c.ownColor);
     setInt(j, "length", c.length);
     set(j, "loop", json_pack("[II]", static_cast<json_int_t>(c.loopStart), static_cast<json_int_t>(c.loopEnd)));
     setString(j, "loopMode", enumName(c.loopMode, kLoopModes));
@@ -598,6 +600,7 @@ Clip clipFromJson(const json_t* j) {
     c.id = readId<ClipId>(get(j, "id"));
     c.name = getString(j, "name", c.name);
     c.color = saturate<uint32_t>(getInt(j, "color", c.color));
+    c.ownColor = saturate<uint32_t>(getInt(j, "ownColor", c.ownColor));
     c.length = getInt(j, "length", c.length);
     const json_t* loop = get(j, "loop");
     c.loopStart = intAt(loop, 0, c.loopStart);
