@@ -39,8 +39,8 @@ const char* const kLoopModes[] = {"off", "loop"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
-const char* const kDeviceTypes[] = {"transpose",   "scale", "velocity", "noteLength", "chord",
-                                    "arpeggiator", "echo",  "random",   "noteFilter", "humanize"};
+const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord", "arpeggiator",
+                                    "echo",      "random", "noteFilter", "humanize",   "groove"};
 const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note"};
 const char* const kParamOwners[] = {"device", "modulator"};
 const char* const kModulationKinds[] = {"param", "auto", "knob"};
@@ -356,6 +356,8 @@ json_t* arrangerClipToJson(const ArrangerClip& a) {
     setInt(j, "transpose", a.transpose);
     setNumber(j, "velScale", a.velocityScale);
     setNumber(j, "stretch", a.stretch);
+    if (a.layer != 0)
+        setInt(j, "layer", a.layer);
     return j;
 }
 
@@ -370,6 +372,7 @@ ArrangerClip arrangerClipFromJson(const json_t* j) {
     a.transpose = saturate<int8_t>(getInt(j, "transpose", a.transpose));
     a.velocityScale = getFloat(j, "velScale", a.velocityScale);
     a.stretch = getFloat(j, "stretch", a.stretch);
+    a.layer = int8_t(std::clamp<int64_t>(getInt(j, "layer", a.layer), 0, kMaxStackLayer));
     return a;
 }
 
@@ -517,7 +520,7 @@ json_t* trackToJson(const Track& t) {
 
     json_t* slots = json_array();
     for (const ClipSlot& s : t.slots)
-        json_array_append_new(slots, s.clip ? idJson(*s.clip) : json_null());
+        json_array_append_new(slots, s.clip ? idJson(*s.clip) : s.stop ? json_null() : json_false());
     set(j, "slots", slots);
 
     json_t* arrangement = json_array();
@@ -560,6 +563,7 @@ Track trackFromJson(const json_t* j) {
         ClipSlot slot;
         if (json_is_integer(s))
             slot.clip = readId<ClipId>(s);
+        slot.stop = !json_is_false(s); // an empty slot saved as false has no stop button
         t.slots.push_back(slot);
     });
     forEach(get(j, "arrangement"), [&](const json_t* a) { t.arrangement.push_back(arrangerClipFromJson(a)); });
@@ -578,6 +582,8 @@ json_t* clipToJson(const Clip& c) {
     set(j, "id", idJson(c.id));
     setString(j, "name", c.name);
     setInt(j, "color", c.color);
+    if (c.ownColor)
+        setInt(j, "ownColor", c.ownColor);
     setInt(j, "length", c.length);
     set(j, "loop", json_pack("[II]", static_cast<json_int_t>(c.loopStart), static_cast<json_int_t>(c.loopEnd)));
     setString(j, "loopMode", enumName(c.loopMode, kLoopModes));
@@ -598,6 +604,7 @@ Clip clipFromJson(const json_t* j) {
     c.id = readId<ClipId>(get(j, "id"));
     c.name = getString(j, "name", c.name);
     c.color = saturate<uint32_t>(getInt(j, "color", c.color));
+    c.ownColor = saturate<uint32_t>(getInt(j, "ownColor", c.ownColor));
     c.length = getInt(j, "length", c.length);
     const json_t* loop = get(j, "loop");
     c.loopStart = intAt(loop, 0, c.loopStart);
@@ -622,6 +629,8 @@ json_t* songToJson(const Song& s) {
     json_t* j = json_object();
     set(j, "timeSig", json_pack("[ii]", s.timeSig.num, s.timeSig.den));
     setNumber(j, "swing", s.swing);
+    if (s.swingStep != kPpq / 4)
+        setInt(j, "swingGrid", s.swingStep == kPpq / 2 ? 8 : 16);
     set(j, "scale", scaleToJson(s.scale));
     json_t* custom = json_array();
     for (const CustomScale& c : s.customScales) {
@@ -874,6 +883,7 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
     s.timeSig.num = saturate<int>(intAt(ts, 0, s.timeSig.num));
     s.timeSig.den = saturate<int>(intAt(ts, 1, s.timeSig.den));
     s.swing = getFloat(j, "swing", s.swing);
+    s.swingStep = getInt(j, "swingGrid", 16) == 8 ? kPpq / 2 : kPpq / 4;
     if (json_is_object(get(j, "scale")))
         s.scale = scaleFromJson(get(j, "scale"));
     forEach(get(j, "customScales"), [&](const json_t* cj) {

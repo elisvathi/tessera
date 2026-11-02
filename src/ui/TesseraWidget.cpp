@@ -56,16 +56,17 @@ struct PanelExtension : rack::widget::Widget {
     }
 };
 constexpr float kButtonCol[5] = {12, 25, 38, 51, 64};
-constexpr float kJackRow1 = 95;
-constexpr float kJackRow2 = 112;
-constexpr float kInputCol[4] = {8, 21.5f, 35, 48.5f};
-constexpr float kTopInputCol[5] = {6.5f, 17.5f, 28.5f, 40, 53}; // CLOCK joins the first row
-const Rect kRecordPlate(2, 101, 55, 19);
-const Rect kOutputPlate(62, 84, 54, 38);
-constexpr float kOutputCol[3] = {71, 88, 105};
+// All 16 jacks sit on one 8 x 2 grid: inputs, then the record inputs in their box, then the outputs on the plate.
+// The first three columns line up with the buttons above.
+constexpr float kJackRow1 = 95.5f;
+constexpr float kJackRow2 = 113;
+constexpr float kInputCol[3] = {12, 25, 38};
+constexpr float kRecordCol[2] = {53, 65.5f};
+constexpr float kOutputCol[3] = {84, 97, 110};
+const Rect kRecordBox(45.5f, 84, 27.5f, 37.5f);
+const Rect kOutputPlate(77, 84, 40, 37.5f);
 constexpr float kStopAllCol = 54; // its label is wide
 constexpr float kFillCol = 93;
-constexpr float kFillJackCol = 106;
 constexpr float kPlaysCol = 76;
 
 /// PLAYS: what the tracks play, the clips or the timeline. One switch with two halves; the lit half plays, and a
@@ -166,7 +167,6 @@ struct TesseraWidget : rack::app::ModuleWidget {
         panel.param<VCVButton>(Vec(kStopAllCol, kSceneRow), M::STOP_ALL_PARAM, "STOP ALL");
         panel.lightParam<VCVLightButton<MediumSimpleLight<QueueLight>>>(Vec(kFillCol, kSceneRow), M::FILL_PARAM,
                                                                         M::FILL_LIGHT, "FILL");
-        panel.input(Vec(kFillJackCol, kSceneRow + 1), M::FILL_INPUT, "");
         panel.param<PlaysSwitch>(Vec(kPlaysCol, kSceneRow), M::MODE_PARAM, "PLAYS");
 
         ToolButton::Options open;
@@ -180,17 +180,19 @@ struct TesseraWidget : rack::app::ModuleWidget {
         editorButton->box.pos = rack::mm2px(kEditorButton).minus(editorButton->box.size.div(2));
         addChild(editorButton);
 
-        panel.input(Vec(kTopInputCol[0], kJackRow1), M::CLOCK_INPUT, "CLOCK");
-        panel.input(Vec(kTopInputCol[1], kJackRow1), M::RESET_INPUT, "RESET");
-        panel.input(Vec(kTopInputCol[2], kJackRow1), M::RUN_INPUT, "RUN");
-        panel.input(Vec(kTopInputCol[3], kJackRow1), M::SCENE_INPUT, "SCENE");
-        panel.input(Vec(kTopInputCol[4], kJackRow1), M::LAUNCH_INPUT, "LAUNCH");
-        // The record inputs, on a plate of their own so they read as one group.
-        panel.art().addPlate(kRecordPlate);
-        panel.input(Vec(kInputCol[0], kJackRow2), M::REC_VOCT_INPUT, "V/OCT");
-        panel.input(Vec(kInputCol[1], kJackRow2), M::REC_GATE_INPUT, "GATE");
-        panel.input(Vec(kInputCol[2], kJackRow2), M::REC_VEL_INPUT, "VEL");
-        panel.input(Vec(kInputCol[3], kJackRow2), M::AUTO_REC_INPUT, "AUTO");
+        // The inputs mirror the outputs: transport on the top row, both sides.
+        panel.input(Vec(kInputCol[0], kJackRow1), M::CLOCK_INPUT, "CLOCK");
+        panel.input(Vec(kInputCol[1], kJackRow1), M::RESET_INPUT, "RESET");
+        panel.input(Vec(kInputCol[2], kJackRow1), M::RUN_INPUT, "RUN");
+        panel.input(Vec(kInputCol[0], kJackRow2), M::SCENE_INPUT, "SCENE");
+        panel.input(Vec(kInputCol[1], kJackRow2), M::LAUNCH_INPUT, "LAUNCH");
+        panel.input(Vec(kInputCol[2], kJackRow2), M::FILL_INPUT, "FILL");
+
+        panel.art().addGroupBox(kRecordBox, "RECORD");
+        panel.input(Vec(kRecordCol[0], kJackRow1), M::REC_VOCT_INPUT, "V/OCT");
+        panel.input(Vec(kRecordCol[1], kJackRow1), M::REC_GATE_INPUT, "GATE");
+        panel.input(Vec(kRecordCol[0], kJackRow2), M::REC_VEL_INPUT, "VEL");
+        panel.input(Vec(kRecordCol[1], kJackRow2), M::AUTO_REC_INPUT, "AUTO");
 
         panel.art().addPlate(kOutputPlate);
         panel.output(Vec(kOutputCol[0], kJackRow1), M::CLOCK_OUTPUT, "CLOCK");

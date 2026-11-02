@@ -70,6 +70,8 @@ Right-click a clip on the timeline:
 |---|---|
 | **Open in piano roll** | Shows the clip's notes below (same as double-click). |
 | **Rename**, **Duplicate**, **Delete** | As usual. |
+| **Colour** | **Track colour** or one of 16 colours, for every selected clip (and the clip's other copies and its slot). |
+| **Move up a row**, **Move down a row** | For overlapping clips: swaps the clip with the one in the row above or below. |
 | **Export as MIDI…** | Saves the clip (or the selected clips) as a MIDI file. |
 | **Split here**, **Glue**, **Make unique** | As above. |
 | **Mute** | Silences this tile. Muted tiles are drawn dim. |
@@ -98,7 +100,9 @@ Click the **▾** next to Select and Draw (top left of the song pane):
 - **Erase** (E), **Slice** (C), **Mute** (T) and **Range** (Alt+R).
 - **Ripple**: deleting clips or time closes the gap, so later clips move left. A **RIPPLE** tag shows while it is on.
 - **Stack** (on by default): clips may overlap on a track and all of them play. The row splits to show them. With
-  Stack off, a clip you drop on another trims or replaces it.
+  Stack off, a clip you drop on another trims or replaces it. Right-click a stacked clip for **Move up a row** and
+  **Move down a row** to change the order. Where stacked clips have automation on the same AUTO channel, the clip on
+  the lowest row plays it (a new take lands there).
 - **Automation follows clips** (on by default): moving or copying a clip takes the track's automation under it
   along.
 

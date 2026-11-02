@@ -101,6 +101,7 @@ struct InstanceLanes {
     bool looping = false;
     Tick spanStart = 0, spanEnd = 0; // the loop (looping) or the whole clip
     std::shared_ptr<const ClipPlayback> clip;
+    int row = 0; // its stacking row: where stacked clips share a lane, the lower row plays it
 
     /// Clip time at song tick `tick`, or NaN where the instance plays nothing.
     double clipTime(double tick) const;
@@ -137,6 +138,8 @@ struct TrackPlayback {
     std::vector<std::shared_ptr<const ClipPlayback>> slots;
     /// The clip each slot was built from, to know when to rebuild.
     std::vector<ClipId> slotClips;
+    /// Per slot: an empty slot without a stop button, whose scene leaves the track playing.
+    std::vector<bool> keepsPlaying;
     /// The arrangement as it plays, in song ticks, sorted by start (muted instances left out).
     std::vector<NoteEvent> arrangement;
     /// The clips the arrangement uses, to know when to rebuild.

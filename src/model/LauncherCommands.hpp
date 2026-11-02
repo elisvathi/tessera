@@ -68,6 +68,22 @@ class SetSlot : public Command {
     std::optional<ClipId> before, after;
 };
 
+/// Gives an empty launcher slot its stop button back, or takes it away so its scene leaves the track playing.
+class SetSlotStop : public Command {
+  public:
+    SetSlotStop(TrackId track, int slot, bool stop) : track(track), slot(slot), stop(stop) {}
+    void apply(Song& song) override { set(song, stop); }
+    void revert(Song& song) override { set(song, !stop); }
+    std::string name() const override { return stop ? "Add stop button" : "Remove stop button"; }
+    ChangeSet changes() const override { return ChangeSet::track(track); }
+
+  private:
+    void set(Song& song, bool on) const;
+    TrackId track;
+    int slot;
+    bool stop;
+};
+
 /// Puts a clip into the pool (no slot) / takes one out.
 class AddClip : public Command {
   public:

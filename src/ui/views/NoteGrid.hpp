@@ -113,6 +113,11 @@ class NoteGrid : public TimelineView {
     /// Drum hits while the lower pane shows pitch, timbre or pressure: the hit's value on its cell, "+3" for pitch
     /// (a corner mark when the cell is too small) or a thin bar for timbre and pressure.
     void drawHitValue(NVGcontext* vg, const Note& note, rack::math::Rect r, fields::Field field);
+    /// How the shown track's notes are swung as they play (its Groove device, else the song's swing); none while the
+    /// "Show swing in the editor" setting is off, so nothing swung is drawn.
+    SwingFeel swingFeel();
+    /// A note that swing moves: a tick where it really starts, joined to where it is written.
+    void drawSwingMark(NVGcontext* vg, const Note& note, rack::math::Rect r, const SwingFeel& feel);
     /// Every note's pitch curve, drawn at the pitch it plays, with its points while the Bend tool is on or the
     /// note is selected.
     void drawBends(NVGcontext* vg);

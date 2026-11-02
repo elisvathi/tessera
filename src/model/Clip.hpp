@@ -37,7 +37,8 @@ constexpr Tick launchQuantizeTicks(LaunchQuantize q, TimeSig ts) {
 struct Clip {
     ClipId id;
     std::string name;
-    uint32_t color = 0; // 0xRRGGBB
+    uint32_t color = 0;    // 0xRRGGBB, from before clips showed their track's colour: kept in files, unused
+    uint32_t ownColor = 0; // a colour picked for this clip (its slot and timeline copies); 0 = its track's
     Tick length = 0;    // content length
     Tick loopStart = 0;
     Tick loopEnd = 0;
@@ -58,9 +59,12 @@ struct Clip {
     Tick playEnd() const { return loopMode == LoopMode::Loop && loopEnd > loopStart ? loopEnd : contentEnd(); }
     /// Restores the noteOrder() invariant after notes were added or changed.
     void sortNotes();
+    /// The colour the clip is drawn in: its own when one was picked, else its track's `trackColor`.
+    uint32_t shownColor(uint32_t trackColor) const { return ownColor ? ownColor : trackColor; }
 
     bool operator==(const Clip& o) const {
-        return id == o.id && name == o.name && color == o.color && length == o.length && loopStart == o.loopStart &&
+        return id == o.id && name == o.name && color == o.color && ownColor == o.ownColor && length == o.length &&
+               loopStart == o.loopStart &&
                loopEnd == o.loopEnd && loopMode == o.loopMode && notes == o.notes && automation == o.automation &&
                scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize;
     }

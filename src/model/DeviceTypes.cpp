@@ -85,6 +85,7 @@ std::vector<TypeInfo> buildDevices() {
     t[size_t(DeviceType::Humanize)] = {"Humanize",
                                        {number("Timing", 0, 50, 0, "% of 1/16"), number("Velocity", 0, 100, 0, "%"),
                                         number("Length", 0, 100, 0, "%")}};
+    t[size_t(DeviceType::Groove)] = {"Groove", {number("Swing", 50, 75, 58, "%"), choice("Grid", {"1/16", "1/8"}, 0)}};
     t[size_t(DeviceType::NoteFilter)] = {
         "Note Filter",
         {integer("Lowest", 0, 127, 0), integer("Highest", 0, 127, 127), number("Min velocity", 0, 100, 0, "%"),
@@ -106,7 +107,9 @@ std::vector<TypeInfo> buildDevices() {
     about(DeviceType::NoteLength, "Rhythm", "shorter, longer or legato notes", "gate legato duration staccato");
     about(DeviceType::Velocity, "Feel", "softer, harder, or within a range", "dynamics accent compress loudness");
     about(DeviceType::Humanize, "Feel", "loosens timing, velocity and length a little on every pass",
-          "humanize groove loose feel timing velocity length");
+          "humanize loose feel timing velocity length");
+    about(DeviceType::Groove, "Feel", "swings this track its own way, in place of the song's swing",
+          "swing shuffle groove triplet feel");
     about(DeviceType::Random, "Feel", "changes pitches and drops notes on every pass", "variation chance random drop");
     about(DeviceType::NoteFilter, "Feel", "lets only some notes through", "filter range every skip thin channel part");
     return t;

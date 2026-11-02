@@ -1133,6 +1133,46 @@ TEST_CASE("stacked timeline clips: the clip on top plays the lanes it has, the o
     CHECK(rig.frames[slot].automation[1] == doctest::Approx(3)); // the clip below still plays AUTO 2
 }
 
+TEST_CASE("stacked timeline clips: the clip on the lower row plays a shared lane, so moving rows changes which") {
+    Song song = recordSong();
+    auto clipWith = [&](float value) {
+        Clip c;
+        c.id = song.newId<ClipId>();
+        c.length = c.loopEnd = 2 * kBar;
+        AutomationEnvelope lane = makeLane(song.newId<AutomationId>(), 0, 0);
+        lane.points.push_back({0, value, CurveType::Linear, 0});
+        c.automation.push_back(lane);
+        song.clips[c.id] = c;
+        return c.id;
+    };
+    auto place = [&](ClipId clip, Tick at, Tick length) {
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip;
+        a.position = at;
+        a.length = length;
+        song.tracks[1].arrangement.push_back(a);
+        return a.id;
+    };
+    place(clipWith(0.2f), 0, 4 * kBar);
+    ArrangementId take = place(clipWith(0.9f), kBar, kBar); // the later take, on the lower row
+    auto valueAt = [&](const Song& s) {
+        EngineRig rig(s);
+        rig.engine.setPlayMode(PlayMode::Arranger);
+        rig.engine.play();
+        rig.run(int(kBar * 1.5 * 32));
+        return rig.frames[size_t(rig.slots.slotOf(rig.song.tracks[1].id))].automation[0];
+    };
+    CHECK(valueAt(song) == doctest::Approx(9));
+    // The take moved up a row: the long clip is on the lower row now and plays AUTO 1.
+    arrange::Layout moved = arrange::moveInStack(arrange::layoutOf(song), take, -1);
+    for (const arrange::Placed& p : moved)
+        for (ArrangerClip& a : song.tracks[1].arrangement)
+            if (a.id == p.clip.id)
+                a = p.clip;
+    CHECK(valueAt(song) == doctest::Approx(2));
+}
+
 namespace {
 
 /// A song whose first track has a looping one-bar clip with one note, placed at bar 2 for two bars, starting half a

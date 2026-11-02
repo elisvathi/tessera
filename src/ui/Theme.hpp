@@ -145,6 +145,7 @@ constexpr float kPanelLabelSpacing = 0.6f; // letter spacing for uppercase label
 constexpr float kPanelTitle = 12;
 constexpr float kPanelDisplayRadius = 3;
 constexpr float kPanelPlateRadius = 4;
+constexpr float kPanelGroupTitlePad = 3;       // room on each side of a group box's title, cut into its top edge
 constexpr float kPanelLabelAboveJackMm = 6.4f; // label baseline offset above a jack's center
 constexpr float kDisplaySmall = 9;
 constexpr float kDisplayLarge = 22;

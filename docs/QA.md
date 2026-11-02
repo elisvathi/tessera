@@ -481,3 +481,20 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       same keys act on the song. Same in the panel editor.
 - [ ] Two notes touching on one row: just left of the seam a drag resizes the first note's end; just right of it,
       the second note's start. Both ways, both directions. Two touching arranger clips the same.
+
+## User feedback 2
+- [ ] Transport 4/4 ▾: Beats per bar and Beat unit change the time signature on their own (7/8, 11/16, 5/2); the
+      chip, ruler and bar lines follow; one undo step each.
+- [ ] Right-click a clip (slot or timeline) › Colour: a colour shows on its slot and every timeline copy; Track
+      colour goes back to following the track; recolouring the track leaves coloured clips alone; several selected
+      timeline clips change together in one undo step; an old song shows no stray clip colours.
+- [ ] Right-click an empty slot › Stop button off: the square goes, clicking it does nothing, and its scene leaves
+      that track playing; on again restores it; undo works; it survives saving.
+- [ ] Overlapping timeline clips: right-click › Move up a row / Move down a row swaps them (greyed out with nothing
+      to swap with); undo restores; a moved clip dragged away from the others goes back to the top row; with two
+      clips on the same AUTO channel, the one on the lower row is heard.
+- [ ] 4/4 menu swing: typed 58 and the picks set the swing (chip shows "swing 58%"), Swing grid 1/8 swings 1/8s; an
+      old song keeps its feel. A Groove device swings its track alone; at 50% that track stays straight under song swing.
+- [ ] Swing on a song of 1/8s: turning it on picks the 1/8 grid and it is heard; notes it moves show a tick where they
+      start, the piano roll's in-between grid lines swing; a Groove added to a 1/8 track starts on 1/8.
+- [ ] Swing menu › Show swing in the editor off: no ticks, straight grid, swing still heard; it stays off after saving.

@@ -1,6 +1,7 @@
 #include "DeviceCommands.hpp"
 
 #include "DeviceTypes.hpp"
+#include "Devices.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -158,6 +159,19 @@ CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int ind
     if (!existing || int(existing->devices.size()) >= kMaxDevices)
         return nullptr;
     Device device = devices::makeDevice(type, DeviceId(nextId()));
+    if (type == DeviceType::Groove) {
+        // Its grid suits the track's notes: a pattern of 1/8s wouldn't move at all on 1/16s.
+        std::vector<const Clip*> clips;
+        for (const ClipSlot& s : existing->slots)
+            if (const Clip* c = s.clip ? song.findClip(*s.clip) : nullptr)
+                clips.push_back(c);
+        for (const ArrangerClip& a : existing->arrangement)
+            if (const Clip* c = song.findClip(a.clip))
+                clips.push_back(c);
+        const devices::ParamInfo& grid = devices::deviceInfo(type).params[size_t(chain::knob::kGrooveGrid)];
+        device.params[size_t(chain::knob::kGrooveGrid)] =
+            devices::normalize(grid, swingStepFor(clips) == kPpq / 2 ? 1.f : 0.f);
+    }
     return chainEdit(song, "Add " + device.name, [&](Song& work) {
         Track& track = *work.findTrack(trackId);
         int at = index < 0 ? int(track.devices.size()) : std::min(index, int(track.devices.size()));

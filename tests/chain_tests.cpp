@@ -1307,3 +1307,52 @@ TEST_CASE("engine: a launched clip restarts from a chosen point (seeking in the 
     CHECK(h.gate());
     CHECK(h.pitch() == 67); // and the clip carries on from there
 }
+
+TEST_CASE("Groove swings its track's off-beats in place of the song's swing") {
+    auto firstStartOfSecond = [](float songSwing, float groovePercent) {
+        Song song = songWith({{0, 120, 60}, {240, 120, 62}}, 4 * kPpq, kAutoVoices);
+        song.swing = songSwing;
+        if (groovePercent > 0)
+            addDevice(song, DeviceType::Groove, {{chain::knob::kGrooveSwing, groovePercent}});
+        Harness h(song);
+        for (int64_t s = 0; s < 600 * kSamplesPerTick; s++) {
+            h.step();
+            if (h.gate() && h.pitch() == 62)
+                return double(s) / kSamplesPerTick;
+        }
+        return -1.0;
+    };
+    CHECK(firstStartOfSecond(0, 75) == doctest::Approx(360).epsilon(0.01)); // half a 1/16 late
+    CHECK(firstStartOfSecond(1, 50) == doctest::Approx(240).epsilon(0.01)); // straight, though the song swings
+    CHECK(firstStartOfSecond(1, 0) == doctest::Approx(360).epsilon(0.01));  // no Groove: the song's swing
+}
+
+TEST_CASE("engine: song swing plays on the timeline too, and an off-beat 1/8 swings only with the 1/8 grid") {
+    auto startOf = [](Tick at, Tick step, bool timeline) {
+        Song song = songWith({{0, 120, 60}, {at, 120, 62}}, 4 * kPpq, kAutoVoices);
+        song.swing = 1;
+        song.swingStep = step;
+        if (timeline) {
+            ArrangerClip a;
+            a.id = song.newId<ArrangementId>();
+            a.clip = song.clips.begin()->first;
+            a.length = 4 * kPpq;
+            song.tracks[0].arrangement.push_back(a);
+        }
+        Harness h(song, !timeline);
+        if (timeline) {
+            h.engine.setPlayMode(PlayMode::Arranger);
+            h.engine.reset();
+            h.engine.play();
+        }
+        for (int64_t s = 0; s < 1200 * kSamplesPerTick; s++) {
+            h.step();
+            if (h.gate() && h.pitch() == 62)
+                return double(s) / kSamplesPerTick;
+        }
+        return -1.0;
+    };
+    CHECK(startOf(240, kPpq / 4, true) == doctest::Approx(360).epsilon(0.01));
+    CHECK(startOf(480, kPpq / 4, false) == doctest::Approx(480).epsilon(0.01)); // an off-beat 1/8 doesn't move on 1/16s
+    CHECK(startOf(480, kPpq / 2, false) == doctest::Approx(720).epsilon(0.01)); // it does on 1/8s
+}

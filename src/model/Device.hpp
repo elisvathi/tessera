@@ -21,9 +21,10 @@ enum class DeviceType : uint8_t {
     Echo,
     Random,
     NoteFilter,
-    Humanize
+    Humanize,
+    Groove
 };
-constexpr int kDeviceTypeCount = 10;
+constexpr int kDeviceTypeCount = 11;
 
 enum class ModulatorType : uint8_t { Lfo, Envelope, Steps, Random, Ramp, Macro, Note };
 constexpr int kModulatorTypeCount = 7;

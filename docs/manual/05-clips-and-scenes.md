@@ -79,6 +79,7 @@ Right-click a clip in a slot:
 | **Launch** | Same as its ▶. |
 | **Edit this scene's clips together** | Shows the other clips of the scene dimmed in the piano roll, so you can write parts that fit. See [The piano roll](07-piano-roll.md#editing-several-clips-together). |
 | **Rename** | A new name for the clip. Every place that uses the clip shows it. |
+| **Colour** | **Track colour** (the default: it follows the track) or one of 16 colours, for the slot and every copy of the clip on the timeline. Handy to tell takes apart, such as record, overdub and play clips. Notes keep the track's colour. |
 | **Place in arrangement at playhead** | Puts a linked copy on the timeline at the playhead. |
 | **Duplicate**, **Delete** | As above. |
 | **Export as MIDI…** | Saves this clip as a MIDI file. |
@@ -87,8 +88,10 @@ Right-click a clip in a slot:
 | **Length** | **×2 longer** (half speed), **×½ shorter** (double speed), or a typed percentage. Notes, loop and automation all stretch, and every timeline use grows or shrinks with it. |
 | **Save as / Replace with Tessera clip file…** | A `.tessera-clip` file, to reuse a clip in another patch. |
 
-Right-click an **empty slot** for: **Create clip**, **Load a Tessera clip file…**, **Import MIDI file…** and **Stop
-track**.
+Right-click an **empty slot** for: **Create clip**, **Load a Tessera clip file…**, **Import MIDI file…**, **Stop
+track** and **Stop button**. An empty slot normally has a stop button (the small square): launching its scene stops
+that track. Turn **Stop button** off and the slot is blank: its scene leaves that track playing whatever it plays, and
+clicking the slot does nothing. Use it for a part that should keep going while other scenes change.
 
 ### Clip length and loop
 

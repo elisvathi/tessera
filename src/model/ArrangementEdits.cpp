@@ -105,20 +105,73 @@ Stacking stackOf(const Layout& layout, TrackId track) {
         if (p.track == track)
             mine.push_back(&p.clip);
     std::sort(mine.begin(), mine.end(), [](const ArrangerClip* a, const ArrangerClip* b) {
+        if (a->layer != b->layer)
+            return a->layer < b->layer;
         return a->position != b->position ? a->position < b->position : a->id.value < b->id.value;
     });
     Stacking out;
-    std::vector<Tick> rowEnds; // where each sub-row is free again
+    std::vector<std::vector<std::pair<Tick, Tick>>> taken; // the spans each sub-row holds
     for (const ArrangerClip* a : mine) {
+        Tick start = a->position, end = instanceEnd(*a);
+        auto fits = [&](size_t r) {
+            for (auto [s, e] : taken[r])
+                if (s < end && start < e)
+                    return false;
+            return true;
+        };
         size_t r = 0;
-        while (r < rowEnds.size() && rowEnds[r] > a->position)
+        while (r < taken.size() && !fits(r))
             r++;
-        if (r == rowEnds.size())
-            rowEnds.push_back(0);
-        rowEnds[r] = instanceEnd(*a);
+        if (r >= taken.size())
+            taken.resize(r + 1);
+        taken[r].push_back({start, end});
         out.row[a->id] = int(r);
     }
-    out.rows = std::max(1, int(rowEnds.size()));
+    out.rows = std::max(1, int(taken.size()));
+    return out;
+}
+
+namespace {
+
+/// The clips of instance `id`'s track in the sub-row `row`, overlapping it.
+std::vector<ArrangementId> overlapping(const Layout& layout, const Stacking& stack, const Placed& at, int row) {
+    std::vector<ArrangementId> out;
+    for (const Placed& p : layout)
+        if (p.track == at.track && p.clip.id != at.clip.id && stack.row.at(p.clip.id) == row &&
+            p.clip.position < instanceEnd(at.clip) && at.clip.position < instanceEnd(p.clip))
+            out.push_back(p.clip.id);
+    return out;
+}
+
+} // namespace
+
+bool canMoveInStack(const Layout& layout, ArrangementId id, int direction) {
+    const Placed* at = find(layout, id);
+    if (!at)
+        return false;
+    Stacking stack = stackOf(layout, at->track);
+    int row = stack.row.at(id) + direction;
+    return row >= 0 && row <= kMaxStackLayer && !overlapping(layout, stack, *at, row).empty();
+}
+
+Layout moveInStack(const Layout& layout, ArrangementId id, int direction) {
+    if (!canMoveInStack(layout, id, direction))
+        return layout;
+    const Placed* at = find(layout, id);
+    Stacking stack = stackOf(layout, at->track);
+    int row = stack.row.at(id);
+    std::vector<ArrangementId> others = overlapping(layout, stack, *at, row + direction);
+    Layout out = layout;
+    for (Placed& p : out) {
+        if (p.track != at->track)
+            continue;
+        int r = stack.row.at(p.clip.id);
+        if (p.clip.id == id)
+            r = row + direction;
+        else if (std::find(others.begin(), others.end(), p.clip.id) != others.end())
+            r = row;
+        p.clip.layer = int8_t(std::clamp(r, 0, kMaxStackLayer));
+    }
     return out;
 }
 

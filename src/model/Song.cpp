@@ -371,6 +371,8 @@ void normalize(Song& song) {
     if (!validDenominator(song.timeSig.den))
         song.timeSig.den = 4;
     clampValue(song.swing, 0.f, 1.f);
+    if (song.swingStep != kPpq / 2)
+        song.swingStep = kPpq / 4;
     clampValue<int8_t>(song.scale.root, 0, 11);
     song.loopStart = std::max<Tick>(0, song.loopStart);
     if (song.loopEnd <= song.loopStart)
@@ -463,6 +465,38 @@ Clip makeDemoClip(Song& song, uint32_t color) {
 }
 
 } // namespace
+
+float songSwingFor(const Song& song, const Track& track) {
+    for (const Device& d : track.devices)
+        if (d.on && d.type == DeviceType::Groove)
+            return 0;
+    return song.swing;
+}
+
+SwingFeel swingFeelOf(const Song& song, const Track& track) {
+    for (const Device& d : track.devices)
+        if (d.on && d.type == DeviceType::Groove) {
+            const std::vector<devices::ParamInfo>& info = devices::deviceInfo(DeviceType::Groove).params;
+            auto knob = [&](int k) {
+                return k < int(d.params.size()) ? devices::display(info[size_t(k)], d.params[size_t(k)]) : 0.f;
+            };
+            float percent = knob(chain::knob::kGrooveSwing);
+            return {std::clamp((percent - 50) / 25, 0.f, 1.f),
+                    std::lround(knob(chain::knob::kGrooveGrid)) == 1 ? kPpq / 2 : kPpq / 4};
+        }
+    return {song.swing, song.swingStep};
+}
+
+Tick swingStepFor(const std::vector<const Clip*>& clips) {
+    const Tick sixteenth = kPpq / 4, eighth = kPpq / 2;
+    int offSixteenths = 0, offEighths = 0;
+    for (const Clip* clip : clips)
+        for (const Note& n : clip->notes) {
+            offSixteenths += n.start % (2 * sixteenth) == sixteenth;
+            offEighths += n.start % (2 * eighth) == eighth;
+        }
+    return offSixteenths > offEighths ? sixteenth : eighth;
+}
 
 Song makeDefaultSong() {
     Song song;

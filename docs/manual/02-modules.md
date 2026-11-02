@@ -60,13 +60,21 @@ The same switch is in the editor's transport bar. See [Clips and scenes](05-clip
 
 ### 7. FILL
 
-Hold the **FILL** button, or send a high gate to the **FILL** input next to it, to turn "fill" on. Notes set to play
-"only in a fill" (or "only when not in a fill") follow it. This is handy for drum fills. In the editor, F1 does the
-same.
+Fill lets one clip hold both its normal pattern and a variation, such as a drum fill, and you choose when the
+variation plays. Hold the **FILL** button, or keep the **FILL** input high (see [Inputs](#8-inputs)), and fill is on.
+Let go and it is off again. In the editor, F1 does the same.
+
+What fill changes is up to you: set a note's **Only when…** to **Fill** and it plays only while fill is on, or to
+**Not fill** and it goes quiet while fill is on (see [Shaping notes](08-shaping-notes.md#operators-notes-that-change-from-pass-to-pass)).
+
+For example: add a tom roll to the last beat of a one-bar drum clip and set its notes to **Fill**. Set the hi-hats
+on that beat to **Not fill**. The clip plays its normal beat until you hold FILL; then the toms play instead of the
+hats.
 
 ### 8. Inputs
 
-The top row controls the transport. The box below it is for recording.
+The inputs sit on the left: the top row controls the transport, the row below it scenes and fill. The four jacks
+in the box named **RECORD** are for recording.
 
 | Input | What it does |
 |---|---|
@@ -75,6 +83,7 @@ The top row controls the transport. The box below it is for recording.
 | **RUN** | Starts and stops the transport. In the module menu choose **Toggle** (each trigger starts or stops) or **Gate** (plays while high). |
 | **SCENE** | Picks the scene that LAUNCH starts. In the menu choose **0.1 V per scene** or **1 semitone per scene** (so a keyboard can pick scenes). |
 | **LAUNCH** | A trigger launches the picked scene. |
+| **FILL** | Fill is on while the input is above 1 V, or while the FILL button is held. See [FILL](#7-fill). |
 | **V/OCT** | Record input: the pitch of each note, per poly channel. |
 | **GATE** | Record input: a note starts when the gate rises above 1 V and ends when it falls below 0.1 V. |
 | **VEL** | Record input: velocity, 0 to 10 V. Without a cable, notes get 80%. |
@@ -82,7 +91,8 @@ The top row controls the transport. The box below it is for recording.
 
 ### 9. Outputs
 
-All outputs line up exactly with the notes on the output modules.
+The outputs sit on the raised plate at the right. Its top row mirrors the transport inputs. All outputs line up
+exactly with the notes on the output modules.
 
 | Output | What it sends |
 |---|---|

@@ -11,7 +11,9 @@ namespace tessera::timeline {
 
 /// Vertical grid lines over `height`, in three strengths (bar, beat, subdivision). With a `snap` step the lines
 /// show that step, so they match where edits land; when its lines would be too dense the zoom picks them.
-void drawGrid(NVGcontext* vg, const TimeAxis& axis, TimeSig ts, float height, Tick snap = 0);
+/// With `swing`, the lines between beats are drawn where swing moves notes on them (`swingStep` the swung grid).
+void drawGrid(NVGcontext* vg, const TimeAxis& axis, TimeSig ts, float height, Tick snap = 0, float swing = 0,
+              Tick swingStep = kPpq / 4);
 
 /// The playhead line, plus a small triangle cap when `cap` is set (rulers).
 void drawPlayhead(NVGcontext* vg, float x, float height, bool cap = false);

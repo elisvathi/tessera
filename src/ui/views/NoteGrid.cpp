@@ -1,5 +1,7 @@
 #include "NoteGrid.hpp"
 
+#include "../../model/Swing.hpp"
+
 #include "../../model/Arrangement.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../model/NoteFields.hpp"
@@ -156,6 +158,8 @@ void NoteGrid::step() {
             for (int r = 0; r < owner.pitch.rowCount(); r++)
                 key = hashMix(key, double(owner.pitch.pitchAtRow(r)));
         key = hashMix(key, owner.drumMode() ? 1 : 0);
+        SwingFeel feel = swingFeel(); // the grid lines move with the swing
+        key = hashMix(key, double(feel.amount) * 1000 + double(feel.step));
         if (const Track* t = owner.track(); t && owner.drumMode())
             for (const DrumLane& l : t->drumLanes)
                 key = hashMix(key, double(l.stepLength));
@@ -825,10 +829,12 @@ void NoteGrid::paintGrid(NVGcontext* vg, Vec size) {
         nvgFillColor(vg, octave ? c.line1 : nvgTransRGBAf(c.line0, 0.6f));
         nvgFill(vg);
     }
-    if (drum)
+    if (drum) {
         paintDrumSteps(vg, size);
-    else
-        timeline::drawGrid(vg, time(), owner.timeSig(), size.y, owner.snapStep());
+    } else {
+        SwingFeel feel = swingFeel();
+        timeline::drawGrid(vg, time(), owner.timeSig(), size.y, owner.snapStep(), feel.amount, feel.step);
+    }
 
     // Content outside the clip loop is dimmed. Without a loop every note plays, so nothing is.
     if (!owner.source.loopOn())
@@ -965,6 +971,7 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
     bool badges = ctx.state().noteBadges;
     std::optional<expr::Curve> curve = owner.shownCurve();
     std::optional<fields::Field> hitValue = owner.drumValueField();
+    SwingFeel feel = swingFeel();
     // A sounding note glows for its whole length: a bright flash as it starts (150 ms), then a steady glow.
     TesseraModule* m = ctx.module();
     double playing = m && m->playing() ? playhead() : NAN;
@@ -1070,6 +1077,8 @@ void NoteGrid::drawNotes(NVGcontext* vg) {
         }
         if (curve && *curve != expr::Curve::Pitch)
             drawCurveInside(vg, n, r, *curve);
+        if (feel.any())
+            drawSwingMark(vg, n, r, feel);
         if (badges && row >= kMinBadgeRow)
             drawBadges(vg, n, r, labelRight);
         bool showVelocity = (n.id == hovered && !hasGesture()) || owner.velocityShown.count(n.id) > 0;
@@ -1305,6 +1314,31 @@ void NoteGrid::drawBadges(NVGcontext* vg, const Note& n, Rect r, float labelRigh
         nvgFillColor(vg, mark);
         nvgFill(vg);
     }
+}
+
+SwingFeel NoteGrid::swingFeel() {
+    TesseraModule* m = ctx.module();
+    const Track* track = owner.track();
+    if (!m || !track || !ctx.state().showSwing)
+        return SwingFeel{}; // hints off: drawn straight, as written
+    return swingFeelOf(m->song(), *track);
+}
+
+void NoteGrid::drawSwingMark(NVGcontext* vg, const Note& n, Rect r, const SwingFeel& feel) {
+    // Where swing makes the note start: a tick there, joined to the written start, so it is clear what moves.
+    double played = swung(double(n.start), feel.amount, feel.step);
+    float x = float(time().tickToX(played));
+    if (x - r.pos.x < 2.5f)
+        return;
+    const theme::Palette& c = theme::colors();
+    NVGcolor color = nvgTransRGBAf(c.text0, 0.85f);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, r.pos.x + 1, r.getCenter().y);
+    nvgLineTo(vg, x, r.getCenter().y);
+    nvgStrokeColor(vg, nvgTransRGBAf(c.text0, 0.45f));
+    nvgStrokeWidth(vg, 1);
+    nvgStroke(vg);
+    draw::roundedRect(vg, Rect(x - 1, r.pos.y + 1, 2, std::max(2.f, r.size.y - 2)), 1, color);
 }
 
 void NoteGrid::drawHitValue(NVGcontext* vg, const Note& n, Rect r, fields::Field field) {

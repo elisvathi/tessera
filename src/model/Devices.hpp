@@ -28,6 +28,7 @@ enum Arpeggiator { kPattern, kRate, kGate, kArpOctaves, kSwing, kArpVelocity, kH
 enum Echo { kTime, kRepeats, kDecay, kEchoPitch, kEchoGate };
 enum Random { kRandomPitch, kRandomInKey, kDrop };
 enum Humanize { kHumanizeTiming, kHumanizeVelocity, kHumanizeLength };
+enum Groove { kGrooveSwing, kGrooveGrid };
 enum NoteFilter { kLowest, kHighest, kMinVelocity, kMaxVelocity, kEvery, kOffset, kChannel };
 } // namespace knob
 
@@ -172,6 +173,8 @@ class Chain {
     void random(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     /// Velocity ±, a later start and a longer or shorter note, a little different on every pass but repeatable.
     void humanize(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
+    /// Swings this track's notes by where they were written, in place of the song's swing.
+    void groove(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     void noteFilter(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     /// An arpeggiator lets go of a note (it ended, or its time is up).
     void release(int stage, uint32_t id, bool hold);

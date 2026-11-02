@@ -565,7 +565,8 @@ stays for big work and opens from the strip's "Full editor" button.
   they overlap. Off, the old rule applies: the changed clip trims or replaces what it covers. Recording in
   Replace mode, "record from launcher" and range duplicates still replace on purpose.
 - Automatic voices add up the clips that overlap in time, so stacked chords don't steal each other's voices.
-- Where stacked clips both have clip automation on the same AUTO channel, the earlier one plays it.
+- Where stacked clips both have clip automation on the same AUTO channel, the earlier one plays it. (Changed by
+  §91: the clip on the lowest row plays it, which is the later one unless the order was changed.)
 - The corner tools wrap onto a second line when the header is too narrow for one (Automation follows clips was
   hidden before).
 
@@ -587,7 +588,7 @@ stays for big work and opens from the strip's "Full editor" button.
 ## 34. Track colours and Alt+drag in the panel editor
 
 - **Clips always show their track's colour** (launcher slots, arranger clips, notes, lanes, ghost notes, the
-  clip strip). The clip colour menus are gone; a recoloured track recolours its clips at once. The colour stored
+  clip strip). Changed by §89: a clip can have a colour of its own again, picked on purpose. The clip colour menus are gone; a recoloured track recolours its clips at once. The colour stored
   with a clip is kept in the patch but no longer used.
 - **Alt+drag in the panel editor:** Rack scrolls the rack on Alt+drag, and its scroll view takes the press before
   modules see it. A small layer on top of Rack's scene hands Alt+clicks that land on a Tessera panel editor to the
@@ -1358,3 +1359,75 @@ and a better way to enter them for drums that are only triggers.
 
 Impact: `fields::Field::Bend / Timbre / Pressure`, `PianoRollView::drumValueField / curveFocus / pitchWindow`,
 `EditorState::curveFocusNote`, ExpressionLane's zoomed mode, NoteGrid::drawHitValue.
+
+## 89. A clip can have a colour of its own, picked on purpose (2 Nov)
+
+- **Clips follow their track's colour by default**, as before. Right-click a clip (in its slot or on the timeline)
+  for **Colour**: **Track colour** or one of the 16 colours. The colour belongs to the clip, so its slot and every
+  timeline copy show it; on the timeline it applies to every selected clip, as one undo step.
+- Notes, lanes and ghosts keep the track's colour: the clip colour marks the container, so takes (record, overdub,
+  play, erase) can be told apart at a glance without changing how a track reads.
+- **Stored as "ownColor"**, not in the old "color": every clip still carries the colour it had before §34 made clips
+  show their track's colour, and reusing that key would have brought those stale colours back in old songs.
+
+Why: a user live-looping wants to colour-code record / play / overdub / erase clips on the timeline (Trello "Selected
+USER FEEDBACK").
+
+Impact: `Clip::ownColor`, `Clip::shownColor`, `clipActions::appendColorMenu`; DAWproject export uses it.
+
+## 90. An empty slot's stop button can be taken away (2 Nov)
+
+- **Each empty slot has a stop button by default**: launching its scene stops the track, as before. Right-click it,
+  **Stop button**, to take it away: the slot draws blank, a click does nothing, and its scene leaves that track
+  playing. A clip later put in the slot and taken out again keeps the choice.
+- Saved as `false` in the track's slot list instead of `null`, so older versions read it as a plain empty slot.
+
+Why: a user asked for the stop button on a slot to be optional (Trello "Selected USER FEEDBACK").
+
+Impact: `ClipSlot::stop`, `SetSlotStop`, `TrackPlayback::keepsPlaying`, the scene case in `Engine::launch`.
+
+## 91. Stacked timeline clips can change rows (2 Nov)
+
+- **Right-click a stacked clip: Move up a row / Move down a row.** It swaps rows with the clips it overlaps in that
+  row; every other clip on the track keeps the row it showed. One undo step.
+- **Each instance has a layer** (0 by default, saved only when set): a stacking order, not a fixed row. Instances
+  take the highest row free for their whole span, lower layers first, so with every layer at 0 the layout is the old
+  one, and a clip moved away from the others goes back to the top instead of leaving empty rows.
+- **The lowest row plays a shared AUTO channel.** The engine used to let the later clip win, which in the old layout
+  is always the lower one, so existing songs sound the same; now moving a clip down a row also hands it the shared
+  lanes. "Up" names the row on screen, not who wins, so the items say "a row".
+
+Why: a user asked to move overlapping clips vertically to change their order (Trello "Selected USER FEEDBACK").
+
+Impact: `ArrangerClip::layer`, `arrange::stackOf / canMoveInStack / moveInStack`, `InstanceLanes::row`,
+`Engine::lanesClips` orders the clips under the playhead by row.
+
+## 92. Swing on the usual scale, a 1/8 grid, and a Groove device (2 Nov)
+
+- **Song swing shows as 50-75%** (50% straight, about 66% the triplet feel, 75% the hardest), typed or picked. The saved
+  0..1 value already spanned exactly that, so old songs keep their feel with nothing converted.
+- **Swing grid: 1/16 or 1/8** (saved as "swingGrid" when 1/8).
+- **Groove device** (Swing 50-75%, Grid): swings one track by where each note was written. A track with a Groove that is
+  on gets no song swing (`songSwingFor`), so it never swings twice; MIDI export with devices bypassed uses the song's.
+
+Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifact/BAoN2Kis449NbmfhjLoyq7, options A and B.
+- **Swing shows in the editor** (2 Nov, after trying it: "I don't hear or see any difference"). The engine was right,
+  but the demo's beats are 1/8s, which don't move on the 1/16 grid, and nothing on screen showed swing. Now a note that
+  swing moves gets a tick where it really starts (joined to its written start), and the piano roll's grid lines between
+  beats are drawn swung; the drum grid's cells stay straight, as they are the steps hits snap to. Turning song swing
+  on, or adding a Groove, picks the grid the notes need (`swingStepFor`): the one most off-beat notes sit on (first tried as "1/16 if any
+  note is on an off-beat 1/16", but one busy hat part then kept a song of 1/8 beats from swinging at all).
+- **The swing hints can be turned off** (2 Nov): "Show swing in the editor" in the swing menu (on by default) hides the
+  ticks and draws the grid straight; swing still plays. It is a view setting, saved with the editor's layout, not
+  with the song.
+
+## 93. The Tessera panel's jacks on one 8 x 2 grid (2 Nov)
+
+- **All 16 jacks share two rows and even columns.** Left: CLOCK RESET RUN over SCENE LAUNCH FILL, lined up under
+  the buttons. Middle: V/OCT GATE over VEL AUTO in an outlined box titled RECORD. Right, on the output plate: CLOCK
+  RESET RUN over EOC BAR CLICK, so the transport row mirrors the inputs.
+- **The FILL jack moved** from under TEMPO, where it had no label and read as a tempo input, into the inputs.
+- **Record inputs get an outline, not a plate** (`PanelArt::addGroupBox`): a filled plate means outputs.
+- Jack IDs are unchanged, so saved cables stay on their jacks.
+
+Why: the user found the old jack area messy (two plates of different sizes, inputs on a plate, uneven spacing).

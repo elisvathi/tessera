@@ -3,6 +3,7 @@
 #include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
+#include "../src/model/Swing.hpp"
 #include "RandomSong.hpp"
 
 #include <cstdlib>
@@ -265,4 +266,55 @@ TEST_CASE("what a track listens to is saved and loaded") {
     CHECK(loaded.tracks[1].listenTrack == song.tracks[0].id);
     CHECK(loaded.tracks[0].listen == ListenSource::External);
     CHECK(loaded.tracks[2].listen == ListenSource::None); // left out of the file, and None on loading
+}
+
+TEST_CASE("a clip's picked colour is saved; the colour old songs stored with a clip stays unused") {
+    Song song = makeDefaultSong();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.ownColor = 0x65A7FA;
+    clip.color = 0xEF806F; // what clips stored before they showed their track's colour
+    song.clips.emplace(clip.id, clip);
+    Song loaded = throughText(song);
+    const Clip& back = loaded.clips.at(clip.id);
+    CHECK(back.ownColor == 0x65A7FA);
+    CHECK(back.shownColor(0x2DC08E) == 0x65A7FA);
+
+    // An older file has only "color": the clip shows its track's colour.
+    json::Ref j(songToJson(song));
+    json_t* clips = json_object_get(j.get(), "clips");
+    json_object_del(json_array_get(clips, json_array_size(clips) - 1), "ownColor");
+    Song old = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK(old.clips.at(clip.id).shownColor(0x2DC08E) == 0x2DC08E);
+}
+
+TEST_CASE("an empty slot without a stop button is saved and loaded") {
+    Song song = makeDefaultSong();
+    REQUIRE(song.tracks[0].slots.size() >= 2);
+    song.tracks[0].slots[1].stop = false;
+    Song loaded = throughText(song);
+    CHECK_FALSE(loaded.tracks[0].slots[1].stop);
+    CHECK(loaded.tracks[0].slots[0].stop);
+    CHECK(loaded == song);
+}
+
+TEST_CASE("a timeline clip's stacking layer is saved and loaded") {
+    Song song = makeDefaultSong();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = kPpq * 4;
+    a.layer = 2;
+    song.tracks[0].arrangement.push_back(a);
+    CHECK(throughText(song).tracks[0].arrangement[0].layer == 2);
+}
+
+TEST_CASE("the swing grid is saved, and swing on 1/8s moves the off-beat 1/8") {
+    Song song = makeDefaultSong();
+    song.swingStep = kPpq / 2;
+    CHECK(throughText(song).swingStep == kPpq / 2);
+    CHECK(swung(double(kPpq / 2), 1.f, kPpq / 2) == doctest::Approx(double(kPpq / 2 + kPpq / 4)));
 }

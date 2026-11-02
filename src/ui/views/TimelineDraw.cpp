@@ -1,12 +1,14 @@
 #include "TimelineDraw.hpp"
 
+#include "../../model/Swing.hpp"
+
 #include "../Theme.hpp"
 
 #include <cmath>
 
 namespace tessera::timeline {
 
-void drawGrid(NVGcontext* vg, const TimeAxis& axis, TimeSig ts, float height, Tick snap) {
+void drawGrid(NVGcontext* vg, const TimeAxis& axis, TimeSig ts, float height, Tick snap, float swing, Tick swingStep) {
     constexpr double kMinSnapLinePx = 4;
     const theme::Palette& c = theme::colors();
     Tick line = gridSpacing(axis.pxPerTick(), ts).line;
@@ -21,7 +23,8 @@ void drawGrid(NVGcontext* vg, const TimeAxis& axis, TimeSig ts, float height, Ti
         for (Tick t = first; t <= axis.right(); t += line) {
             if (int(lineStrength(t, ts)) != strength)
                 continue;
-            float x = std::round(float(axis.tickToX(double(t)))) + 0.5f;
+            double at = strength == 0 ? swung(double(t), swing, swingStep) : double(t);
+            float x = std::round(float(axis.tickToX(at))) + 0.5f;
             nvgMoveTo(vg, x, 0);
             nvgLineTo(vg, x, height);
         }

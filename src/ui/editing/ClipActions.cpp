@@ -200,6 +200,37 @@ void rename(EditorContext& ctx, ClipId clip, const std::string& name) {
     m->perform(setClipField(m->song(), clip, &Clip::name, name, "Rename clip"));
 }
 
+void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips) {
+    TesseraModule* m = ctx.module();
+    std::optional<uint32_t> shared; // the clips' colour when they all have the same one
+    for (size_t i = 0; i < clips.size(); i++)
+        if (const Clip* clip = m->song().findClip(clips[i]))
+            shared = i == 0 || (shared && *shared == clip->ownColor) ? std::optional<uint32_t>(clip->ownColor)
+                                                                     : std::nullopt;
+    EditorContext* c = &ctx;
+    auto setColor = [c, clips](uint32_t color) {
+        TesseraModule* mod = c->module();
+        std::string name = clips.size() == 1 ? "Change clip colour" : "Change colour of " +
+                                                                          std::to_string(clips.size()) + " clips";
+        auto all = std::make_unique<CompoundCommand>(name);
+        for (ClipId id : clips)
+            all->add(setClipField(mod->song(), id, &Clip::ownColor, color, name));
+        if (!all->empty())
+            mod->perform(std::move(all));
+    };
+    menu->addChild(rack::createSubmenuItem(
+        "Colour", shared && *shared == 0 ? "Track colour" : "", [shared, setColor](rack::ui::Menu* sub) {
+            sub->addChild(rack::createCheckMenuItem(
+                "Track colour", "follows the track", [shared] { return shared && *shared == 0; },
+                [setColor] { setColor(0); }));
+            for (int i = 0; i < 16; i++) {
+                uint32_t color = kTrackColors[i];
+                sub->addChild(new ColorMenuItem("Colour " + std::to_string(i + 1), color, shared && *shared == color,
+                                                [setColor, color] { setColor(color); }));
+            }
+        }));
+}
+
 void appendScaleMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip) {
     EditorContext* c = &ctx;
     auto scale = [c, clip](double factor) {
@@ -440,6 +471,7 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         menu->addChild(rack::createMenuItem("Edit this scene's clips together", "",
                                             [c, scene, track, id] { editTogether(*c, scene, track, id); }));
     menu->addChild(rack::createMenuItem("Rename", "", [c, id] { startRename(*c, id); }));
+    appendColorMenu(menu, ctx, {id});
     appendScaleMenu(menu, ctx, id);
     menu->addChild(rack::createMenuItem("Place in arrangement at playhead", "", [c, track, id] {
         TesseraModule* mod = c->module();
@@ -499,6 +531,12 @@ void appendEmptySlotMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track
     menu->addChild(
         rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
     menu->addChild(rack::createMenuItem("Stop track", "", [c, track] { c->module()->stopTrack(track); }));
+    const Track* t = c->module()->song().findTrack(track);
+    bool stop = !t || slot < 0 || slot >= int(t->slots.size()) || t->slots[size_t(slot)].stop;
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createCheckMenuItem(
+        "Stop button", "its scene stops the track", [stop] { return stop; },
+        [c, track, slot, stop] { c->module()->perform(std::make_unique<SetSlotStop>(track, slot, !stop)); }));
 }
 
 void appendSceneMenu(rack::ui::Menu* menu, EditorContext& ctx, int scene, std::function<void()> startRename) {

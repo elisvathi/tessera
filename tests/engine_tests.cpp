@@ -450,6 +450,21 @@ TEST_CASE("scene launch: empty slots stop their track, and a scene tempo comes w
     CHECK(h.engine.queuedSlot(0) == kNothingQueued);
 }
 
+TEST_CASE("scene launch: an empty slot without a stop button leaves its track playing") {
+    Song song = songWithSlots({{{0, 100, 60}}, {}}, 4 * kPpq);
+    song.tracks[0].slots[1].stop = false;
+    Harness h(song);
+    h.runTo(1000);
+    h.engine.launch({LaunchEvent::Kind::Scene, 0, 1});
+    CHECK(h.engine.queuedSlot(0) == kNothingQueued);
+    h.engine.stop();
+    h.engine.play();
+    CHECK(h.engine.playingSlot(0) == 0); // still its clip: nothing was queued to stop it
+    // Stopping the track by hand still works.
+    h.engine.launch({LaunchEvent::Kind::StopTrack, h.song.tracks[0].id.value, 0});
+    CHECK(h.engine.queuedSlot(0) == kNoSlot);
+}
+
 TEST_CASE("the playing clip is found again after slots move, and stops when its clip is gone") {
     Song song = songWithSlots({{{0, 100, 60}}, {{0, 100, 72}}}, 4 * kPpq);
     Harness h(song);
