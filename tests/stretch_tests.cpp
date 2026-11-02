@@ -1,10 +1,12 @@
 #include "doctest.h"
 
+#include "../src/audio/Resample.hpp"
 #include "../src/audio/TimeStretcher.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace tessera;
@@ -146,19 +148,57 @@ TEST_CASE("a stretched sine keeps its pitch within 1 cent") {
     }
 }
 
-// Phase 0 finding (2 Nov): Signalsmith Stretch tunes low notes up to ~25 cents sharp when it changes pitch (a 440 Hz
-// sine up 3 semitones lands 4.5 cents sharp). Allowed to fail until the user picks a fix (AUDIO_MIXER.md §9.1).
-TEST_CASE("a pitch change lands within 1 cent and leaves the length alone" * doctest::may_fail()) {
+// Low notes matter most: Signalsmith's own pitch shifting tuned a 110 Hz tone 20 cents sharp, which is why pitch is
+// done by resampling after the stretch, the same for every library.
+TEST_CASE("a pitch change lands within 1 cent, on low notes too, and leaves the length alone") {
     for (const auto& id : availableStretchers()) {
         CAPTURE(id);
-        for (double semitones : {-3.0, 3.0}) {
-            CAPTURE(semitones);
-            Sound out = stretch(id, sine(440, 2.0), 1.0, semitones, SoundType::Melody);
-            size_t n = out[0].size();
-            CHECK(n == size_t(2.0 * kRate));
-            CHECK(std::fabs(cents(pitchHz(out[0], n / 4, 3 * n / 4), 440 * std::pow(2, semitones / 12))) < 1.0);
-        }
+        for (double hz : {55.0, 110.0, 440.0})
+            for (double semitones : {-3.0, 3.0, 7.0}) {
+                CAPTURE(hz);
+                CAPTURE(semitones);
+                for (SoundType type : {SoundType::Melody, SoundType::Voice}) {
+                    Sound out = stretch(id, sine(hz, 2.0), 1.1, semitones, type);
+                    size_t n = out[0].size();
+                    CHECK(n == size_t(stretchedFrames(int64_t(2.0 * kRate), 1.1)));
+                    double expected = hz * std::pow(2, semitones / 12);
+                    CHECK(std::fabs(cents(pitchHz(out[0], n / 4, 3 * n / 4), expected)) < 1.0);
+                }
+            }
     }
+}
+
+TEST_CASE("resampling a 1 kHz sine from 44.1 to 48 kHz stays clean (THD+N under -90 dB)") {
+    const double from = 44100;
+    std::vector<float> s(size_t(2 * from));
+    for (size_t i = 0; i < s.size(); i++)
+        s[i] = 0.5f * float(std::sin(2 * kPi * 1000 * double(i) / from));
+    std::vector<float> out(size_t(2 * kRate));
+    const float* in[1] = {s.data()};
+    float* dst[1] = {out.data()};
+    REQUIRE(resampleBest(in, 1, int64_t(s.size()), dst, int64_t(out.size())));
+    // Fit the ideal 1 kHz sine to the middle of the output; whatever is left over is distortion and noise.
+    size_t a = out.size() / 4, b = 3 * out.size() / 4;
+    double sc = 0, ss = 0, cc = 0, xs = 0, xc = 0;
+    for (size_t i = a; i < b; i++) {
+        double t = 2 * kPi * 1000 * double(i) / kRate;
+        xs += out[i] * std::sin(t);
+        xc += out[i] * std::cos(t);
+        ss += std::sin(t) * std::sin(t);
+        cc += std::cos(t) * std::cos(t);
+        sc += std::sin(t) * std::cos(t);
+    }
+    double det = ss * cc - sc * sc;
+    double ks = (xs * cc - xc * sc) / det, kc = (xc * ss - xs * sc) / det;
+    double signal = 0, rest = 0;
+    for (size_t i = a; i < b; i++) {
+        double t = 2 * kPi * 1000 * double(i) / kRate;
+        double ideal = ks * std::sin(t) + kc * std::cos(t);
+        signal += ideal * ideal;
+        rest += (out[i] - ideal) * (out[i] - ideal);
+    }
+    CHECK(std::sqrt(ks * ks + kc * kc) == doctest::Approx(0.5).epsilon(0.001));
+    CHECK(10 * std::log10(rest / signal) < -90);
 }
 
 // Phase 0 finding (2 Nov): Rubber Band's finer engine puts clicks early as the stretch grows: about 2.5 ms at 1.33x,
@@ -166,10 +206,11 @@ TEST_CASE("a pitch change lands within 1 cent and leaves the length alone" * doc
 TEST_CASE("a stretched click track keeps its clicks on the beat within 1 ms" * doctest::may_fail()) {
     for (const auto& id : availableStretchers()) {
         CAPTURE(id);
-        for (double ratio : {0.75, 1.33}) {
+        for (auto [ratio, semitones] : {std::pair{0.75, 0.0}, {1.33, 0.0}, {1.1, 3.0}}) {
             CAPTURE(ratio);
+            CAPTURE(semitones);
             Sound in = clickTrack(4.0);
-            Sound out = stretch(id, in, ratio, 0, SoundType::Drums);
+            Sound out = stretch(id, in, ratio, semitones, SoundType::Drums);
             for (double beat = 0.25; beat < 3.6; beat += 0.5) {
                 CAPTURE(beat);
                 // Measured the same way on the input, so the measure's own bias cancels out.

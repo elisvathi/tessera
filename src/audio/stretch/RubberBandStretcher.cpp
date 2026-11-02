@@ -19,16 +19,19 @@ class RubberBandAdapter final : public TimeStretcher {
   public:
     const char* id() const override { return "rubberband"; }
 
+  protected:
     /// Studies the whole sound first (offline mode needs it), then processes it and collects the output.
-    bool render(const StretchJob& job, float* const* out, int64_t outFrames,
-                const std::function<bool(double)>& progress) override {
+    bool stretchLength(const LengthJob& job, float* const* out, int64_t outFrames,
+                       const RenderProgress& progress) override {
         for (int c = 0; c < job.channels; c++)
             std::fill(out[c], out[c] + outFrames, 0.f);
         if (job.inFrames <= 0 || outFrames <= 0)
             return true;
 
         RubberBandStretcher stretcher(size_t(std::lround(job.sampleRate)), size_t(job.channels), options(job.sound),
-                                      double(outFrames) / double(job.inFrames), std::pow(2.0, job.semitones / 12));
+                                      double(outFrames) / double(job.inFrames), 1.0);
+        if (job.formantFactor != 1)
+            stretcher.setFormantScale(job.formantFactor);
         stretcher.setExpectedInputDuration(size_t(job.inFrames));
         stretcher.setMaxProcessSize(kBlock);
 
