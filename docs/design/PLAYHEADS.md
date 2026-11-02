@@ -295,7 +295,7 @@ Notes can move while the clip plays. A few notes rise one scale step each pass a
 and later in the bar. Velocities swell over eight bars. The written notes never change: the motion is played on
 top of them, the same way on every play and every export. It works with or without playheads.
 
-> **Changed 30 Oct 2026:** motion groups became the **Motion device** (see DECISIONS §84). Notes join a Motion device
+> **Changed 30 Oct 2026:** motion groups became the **Motion device** (see DECISIONS §94). Notes join a Motion device
 > instead of a clip's group; it can sit before Playheads (notes move inside the clip, playheads read them there),
 > after them, or in one playhead's own devices. What follows is the original group design.
 
