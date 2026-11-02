@@ -107,7 +107,7 @@ std::vector<TypeInfo> buildDevices() {
     about(DeviceType::NoteLength, "Rhythm", "shorter, longer or legato notes", "gate legato duration staccato");
     about(DeviceType::Velocity, "Feel", "softer, harder, or within a range", "dynamics accent compress loudness");
     about(DeviceType::Humanize, "Feel", "loosens timing, velocity and length a little on every pass",
-          "humanize groove loose feel timing velocity length");
+          "humanize loose feel timing velocity length");
     about(DeviceType::Groove, "Feel", "swings this track its own way, in place of the song's swing",
           "swing shuffle groove triplet feel");
     about(DeviceType::Random, "Feel", "changes pitches and drops notes on every pass", "variation chance random drop");
