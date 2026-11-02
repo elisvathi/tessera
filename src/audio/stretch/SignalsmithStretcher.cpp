@@ -19,9 +19,10 @@ class SignalsmithStretcher final : public TimeStretcher {
 
     const char* id() const override { return "signalsmith"; }
 
+  protected:
     /// Renders like the library's exact() call, but in pieces, so progress and cancel work on long files.
-    bool render(const StretchJob& job, float* const* out, int64_t outFrames,
-                const std::function<bool(double)>& progress) override {
+    bool stretchLength(const LengthJob& job, float* const* out, int64_t outFrames,
+                       const RenderProgress& progress) override {
         Stretch stretch(kSeed);
         configure(stretch, job);
         double rate = double(job.inFrames) / double(std::max<int64_t>(outFrames, 1));
@@ -59,41 +60,37 @@ class SignalsmithStretcher final : public TimeStretcher {
     }
 
   private:
-    /// Picks block sizes, pitch and formant handling from the sound type.
-    static void configure(Stretch& stretch, const StretchJob& job) {
+    /// Picks block sizes from the sound type, and moves formants when asked.
+    static void configure(Stretch& stretch, const LengthJob& job) {
         float rate = float(job.sampleRate);
         if (job.sound == SoundType::Drums)
             // Shorter blocks smear attacks less, at some cost to low notes.
             stretch.configure(job.channels, int(rate * 0.06f), int(rate * 0.015f));
         else
             stretch.presetDefault(job.channels, rate);
-        if (job.sound == SoundType::Voice) {
-            stretch.setTransposeSemitones(float(job.semitones), 8000 / rate);
-            stretch.setFormantFactor(1, true);
-        } else {
-            stretch.setTransposeSemitones(float(job.semitones));
-        }
+        if (job.formantFactor != 1)
+            stretch.setFormantFactor(float(job.formantFactor));
     }
 
     /// A sound shorter than the stretcher's window: render it with silence after it, then keep the front.
-    bool renderPadded(const StretchJob& job, float* const* out, int64_t outFrames, int64_t paddedFrames,
-                      const std::function<bool(double)>& progress) {
+    bool renderPadded(const LengthJob& job, float* const* out, int64_t outFrames, int64_t paddedFrames,
+                      const RenderProgress& progress) {
         std::vector<std::vector<float>> padded(job.channels, std::vector<float>(paddedFrames, 0.f));
         std::vector<const float*> in(job.channels);
         for (int c = 0; c < job.channels; c++) {
             std::copy(job.in[c], job.in[c] + job.inFrames, padded[c].begin());
             in[c] = padded[c].data();
         }
-        int64_t paddedOut = std::max(stretchedFrames(paddedFrames, job.ratio), outFrames);
+        double ratio = double(outFrames) / double(std::max<int64_t>(job.inFrames, 1));
+        int64_t paddedOut = std::max(stretchedFrames(paddedFrames, ratio), outFrames);
         std::vector<std::vector<float>> result(job.channels, std::vector<float>(paddedOut));
         std::vector<float*> dst(job.channels);
         for (int c = 0; c < job.channels; c++)
             dst[c] = result[c].data();
-        StretchJob longer = job;
+        LengthJob longer = job;
         longer.in = in.data();
         longer.inFrames = paddedFrames;
-        longer.ratio = double(paddedOut) / double(paddedFrames);
-        if (!render(longer, dst.data(), paddedOut, progress))
+        if (!stretchLength(longer, dst.data(), paddedOut, progress))
             return false;
         for (int c = 0; c < job.channels; c++)
             std::copy(result[c].begin(), result[c].begin() + outFrames, out[c]);

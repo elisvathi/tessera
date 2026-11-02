@@ -45,12 +45,15 @@ TEST_FLAGS ?= -std=c++17 -O1 -g -Wall -Wextra -Wno-missing-field-initializers -p
 # The model uses jansson (Rack's JSON library); tests link a system copy (Arch: jansson, Debian: libjansson-dev,
 # Homebrew: jansson).
 TEST_LIBS ?= $(shell pkg-config --cflags --libs jansson 2>/dev/null || echo -ljansson)
+# The audio code resamples with libsamplerate, which Rack ships; tests link a system copy (Arch: libsamplerate,
+# Debian: libsamplerate0-dev, Homebrew: libsamplerate).
+TEST_LIBS += $(shell pkg-config --libs samplerate 2>/dev/null || echo -lsamplerate)
 # The UI's pure parts (axes, keymap, editor state) are tested too. They only borrow GLFW's key codes from Rack.
 TEST_SOURCES := $(wildcard tests/*.cpp src/model/*.cpp src/engine/*.cpp) \
 	src/ui/interaction/Axes.cpp src/ui/interaction/Shortcuts.cpp src/ui/interaction/Snap.cpp \
 	src/ui/editing/NoteHitTest.cpp src/ui/interaction/TrackRows.cpp src/ui/EditorState.cpp \
 	src/ui/interaction/Search.cpp \
-	src/audio/TimeStretcher.cpp $(filter src/audio/stretch/%,$(SOURCES)) $(STRETCH_SOURCES)
+	src/audio/TimeStretcher.cpp src/audio/Resample.cpp $(filter src/audio/stretch/%,$(SOURCES)) $(STRETCH_SOURCES)
 TEST_HEADERS := $(wildcard tests/*.h tests/*.hpp src/model/*.hpp src/engine/*.hpp) \
 	src/ui/interaction/Axes.hpp src/ui/interaction/Navigation.hpp src/ui/interaction/Shortcuts.hpp \
 	src/ui/interaction/Snap.hpp src/ui/editing/NoteHitTest.hpp src/ui/interaction/TrackRows.hpp \
