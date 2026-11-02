@@ -1434,7 +1434,7 @@ Why: the user found the old jack area messy (two plates of different sizes, inpu
 
 ## 94. Playheads: a source device, channels and a Track Out picker (29 Oct, first version)
 
-Design: `docs/design/PLAYHEADS.md`. On the local branch `feature/multi-playhead` only.
+Design: `docs/design/PLAYHEADS.md`.
 
 - **One Playheads device per track, always first.** It holds the playheads; each is a set of knobs (ParamRef kind
   Playhead), so modulators and lanes reach them like device knobs. The chain doesn't run it: the engine reads the

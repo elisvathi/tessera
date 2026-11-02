@@ -521,7 +521,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       start, the piano roll's in-between grid lines swing; a Groove added to a 1/8 track starts on 1/8.
 - [ ] Swing menu › Show swing in the editor off: no ticks, straight grid, swing still heard; it stays off after saving.
 
-## Playheads feedback fixes (feature/multi-playhead)
+## Playheads feedback fixes
 - [ ] Ghost notes appear only for notes a Motion device moves; a playhead's own pitch or a Transpose draws none.
 - [ ] While playing, the keyboard on the left lights the key a note really plays (moved by its Motion, or by the
       shown playhead's pitch), not the written one.

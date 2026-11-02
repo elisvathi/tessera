@@ -963,10 +963,10 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob (songFromJson rescales it), and
     // version 7 added the Playheads device.
     if (fromVersion == 6) {
-        // Before it was released as Transpose's version, this branch saved version 6 with playheads that played
-        // their notes for the written length by default, so at half speed a note stopped halfway while the playhead
-        // was still on it. Its notes now last while the playhead is on them. Released version 6 songs have no
-        // playheads, so this leaves them alone.
+        // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
+        // notes for the written length by default, so at half speed a note stopped halfway while the playhead was
+        // still on it. Its notes now last while the playhead is on them. Released version 6 songs have no playheads,
+        // so this leaves them alone.
         const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
         float asWritten = devices::normalize(length, float(playheads::LengthMode::AsWritten));
         float follows = devices::normalize(length, float(playheads::LengthMode::FollowsPlayhead));
