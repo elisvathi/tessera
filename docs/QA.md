@@ -538,3 +538,6 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       four even bars on the block's top. Curve list shows a picture beside each name; Ease in: the bars bunch up at
       the end with dots where they were, heard on a long note (four retriggers speeding up each beat); Ease out the
       other way. Each name opens its curve. Each change is one undo step.
+- [ ] A curve stepping a playhead's Rate and Times at bar 4: playing past bar 4, the Rate knob reads the new rate,
+      Times and the hits change with what is heard, and the moved boxes are outlined in the playhead's colour.
+      MIDI export plays the same notes after the step as the engine (no jump back to the clip's start).

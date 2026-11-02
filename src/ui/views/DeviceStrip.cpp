@@ -1277,10 +1277,21 @@ void DeviceStrip::drawGroupLabel(NVGcontext* vg, const Part& part) {
 
 void DeviceStrip::drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhead& p) {
     const theme::Palette& c = theme::colors();
-    const Song& song = ctx.module()->song();
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
     using namespace playheads::knob;
     const auto& info = devices::playheadInfo().params;
-    auto value = [&](int k) { return int(std::lround(devices::display(info[size_t(k)], p.params[size_t(k)]))); };
+    auto refOf = [&](int k) { return ParamRef{ParamRef::Kind::Playhead, p.id.value, uint16_t(k)}; };
+    // Whether a modulator or a lane moves a setting: then the block shows it as it plays now, marked, so what is
+    // drawn is what is heard.
+    auto moved = [&](int k) { return modulationsOn(song, refOf(k)) > 0 || m->automated(refOf(k)); };
+    auto value = [&](int k) {
+        ParamRef ref = refOf(k);
+        float v = knobPreview && knobPreview->first == ref ? knobPreview->second
+                  : moved(k)                                ? m->liveKnob(ref)
+                                                            : p.params[size_t(k)];
+        return int(std::lround(devices::display(info[size_t(k)], v)));
+    };
     int size = value(kRepeatSize), times = value(kRepeatTimes), curve = value(kCurve);
     bool on = size > 0;
     auto [bend, strength] = playheads::curveShape(curve);
@@ -1334,9 +1345,10 @@ void DeviceStrip::drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhe
         nvgSave(vg);
         if (faint)
             nvgGlobalAlpha(vg, 0.4f);
-        ParamRef ref{ParamRef::Kind::Playhead, p.id.value, uint16_t(q.param)};
+        ParamRef ref = refOf(q.param);
+        bool live = moved(q.param);
         if (q.kind == Kind::CurveLabel) {
-            bool hasCurve = deviceActions::curveOn(song, ref).valid();
+            bool hasCurve = live || deviceActions::curveOn(song, ref).valid();
             draw::TextStyle n = name;
             if (hasCurve)
                 n.color = color;
@@ -1350,16 +1362,20 @@ void DeviceStrip::drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhe
             nvgFill(vg);
         } else if (q.param == kRepeatSize) {
             draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
+            if (live)
+                draw::roundedRectStroke(vg, q.rect, 4, color, 1);
             draw::text(vg, mono, q.rect.getCenter().x - 4, q.rect.getCenter().y,
                        on ? playheads::repeatNames()[size_t(size)] : "Off");
             chevron(q.rect.getRight() - 8, q.rect.getCenter().y);
         } else if (q.param == kRepeatTimes) {
             draw::text(vg, mono, q.rect.pos.x - 6, q.rect.getCenter().y, "\u00d7");
             draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
+            if (live)
+                draw::roundedRectStroke(vg, q.rect, 4, color, 1);
             draw::text(vg, mono, q.rect.getCenter().x, q.rect.getCenter().y, std::to_string(times));
         } else {
             draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
-            if (curved)
+            if (curved || live)
                 draw::roundedRectStroke(vg, q.rect, 4, color, 1);
             Rect icon(q.rect.pos.x + 5, q.rect.pos.y + 3, 18, q.rect.size.y - 6);
             deviceActions::drawCurveIcon(vg, icon, curve, curved ? color : c.text1, 1.3f);
@@ -1464,6 +1480,9 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
     });
     if (amountPreview && amountPreview->first == ref && !mappedHere)
         rings.push_back({deviceActions::colorOf(ModulatorId(ctx.mappingModulator)), amountPreview->second});
+    // A modulated knob reads what plays now; its arc still shows where it is set.
+    if (!rings.empty() && !(knobPreview && knobPreview->first == ref))
+        shown = devices::format(*info, m->liveKnob(ref));
 
     devices::ParamInfo::Kind kind = part.dial ? devices::ParamInfo::Kind::Number : info->kind;
     switch (kind) {
