@@ -473,6 +473,29 @@ float songSwingFor(const Song& song, const Track& track) {
     return song.swing;
 }
 
+SwingFeel swingFeelOf(const Song& song, const Track& track) {
+    for (const Device& d : track.devices)
+        if (d.on && d.type == DeviceType::Groove) {
+            const std::vector<devices::ParamInfo>& info = devices::deviceInfo(DeviceType::Groove).params;
+            auto knob = [&](int k) {
+                return k < int(d.params.size()) ? devices::display(info[size_t(k)], d.params[size_t(k)]) : 0.f;
+            };
+            float percent = knob(chain::knob::kGrooveSwing);
+            return {std::clamp((percent - 50) / 25, 0.f, 1.f),
+                    std::lround(knob(chain::knob::kGrooveGrid)) == 1 ? kPpq / 2 : kPpq / 4};
+        }
+    return {song.swing, song.swingStep};
+}
+
+Tick swingStepFor(const std::vector<const Clip*>& clips) {
+    const Tick sixteenth = kPpq / 4;
+    for (const Clip* clip : clips)
+        for (const Note& n : clip->notes)
+            if (n.start % sixteenth == 0 && (n.start / sixteenth) % 2 == 1)
+                return sixteenth;
+    return kPpq / 2;
+}
+
 Song makeDefaultSong() {
     Song song;
     song.scenes.resize(kDefaultScenes);

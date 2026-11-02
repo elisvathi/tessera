@@ -122,6 +122,16 @@ Track makeTrack(Song& song, TrackType type, const std::string& name);
 Song makeDefaultSong();
 /// The song's swing for one track's notes: none where a Groove device that is on swings them its own way.
 float songSwingFor(const Song& song, const Track& track);
+/// How one track's notes are swung as they play: by its Groove device that is on (the first), else by the song.
+struct SwingFeel {
+    float amount = 0;     // 0..1, shown as 50..75%
+    Tick step = kPpq / 4; // the swung grid
+    bool any() const { return amount > 0; }
+};
+SwingFeel swingFeelOf(const Song& song, const Track& track);
+/// The swing grid that suits `notes`: a 1/16 when any starts on an off-beat 1/16, else a 1/8 (a pattern of 1/8s
+/// would not move at all on 1/16s).
+Tick swingStepFor(const std::vector<const Clip*>& clips);
 /// Puts a two-bar demo clip in track 1's first slot. Tests use it as a ready-made clip.
 void addDemoClip(Song& song);
 

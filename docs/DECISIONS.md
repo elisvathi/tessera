@@ -1411,3 +1411,8 @@ Impact: `ArrangerClip::layer`, `arrange::stackOf / canMoveInStack / moveInStack`
   on gets no song swing (`songSwingFor`), so it never swings twice; MIDI export with devices bypassed uses the song's.
 
 Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifact/BAoN2Kis449NbmfhjLoyq7, options A and B.
+- **Swing shows in the editor** (2 Nov, after trying it: "I don't hear or see any difference"). The engine was right,
+  but the demo's beats are 1/8s, which don't move on the 1/16 grid, and nothing on screen showed swing. Now a note that
+  swing moves gets a tick where it really starts (joined to its written start), and the piano roll's grid lines between
+  beats are drawn swung; the drum grid's cells stay straight, as they are the steps hits snap to. Turning song swing
+  on, or adding a Groove, picks the grid the notes need (`swingStepFor`): 1/8 when none sit on an off-beat 1/16.

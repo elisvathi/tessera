@@ -554,3 +554,32 @@ TEST_CASE("copying a device to another place makes an independent copy") {
     applyChecked(song, std::move(dup));
     CHECK(song.tracks[0].devices[1].type == DeviceType::Arpeggiator);
 }
+
+TEST_CASE("swing picks the grid the notes need, and a track's swing comes from its Groove, else the song") {
+    Song song = makeDefaultSong();
+    Clip eighths;
+    eighths.id = song.newId<ClipId>();
+    for (Tick t : {Tick(0), Tick(480), Tick(960)}) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = t;
+        eighths.notes.push_back(n);
+    }
+    CHECK(swingStepFor({&eighths}) == kPpq / 2); // nothing on an off-beat 1/16: swing 1/8s
+    Clip sixteenths = eighths;
+    sixteenths.notes[1].start = 240;
+    CHECK(swingStepFor({&eighths, &sixteenths}) == kPpq / 4);
+
+    // A Groove added to a track of 1/8s starts on the 1/8 grid.
+    song.clips.emplace(eighths.id, eighths);
+    song.tracks[0].slots[0].clip = eighths.id;
+    song.swing = 0.4f;
+    CHECK(swingFeelOf(song, song.tracks[0]).amount == doctest::Approx(0.4f));
+    auto ids = [&song] { return song.newId<DeviceId>().value; };
+    CommandPtr add = addDevice(song, song.tracks[0].id, DeviceType::Groove, -1, ids);
+    REQUIRE(add);
+    add->apply(song);
+    SwingFeel feel = swingFeelOf(song, song.tracks[0]);
+    CHECK(feel.step == kPpq / 2);
+    CHECK(feel.amount == doctest::Approx(0.32f)); // its own 58%, not the song's
+}

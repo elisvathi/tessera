@@ -20,7 +20,10 @@ There is also a smaller editor inside the panel itself. See [The editor inside t
    with its settings ▾, loop ⟳, the song position, the tempo, and **4/4 ▾** (time signature and swing). In its menu,
    **Beats per bar** (1 to 16) and **Beat unit** (1/2, 1/4, 1/8, 1/16) are picked on their own, so 7/8 or 11/16 is two
    clicks away. **Swing** uses the usual scale: 50% is straight, 66% the triplet feel, 75% the hardest; type any value
-   or pick one, and choose the **Swing grid** (1/16 or 1/8). A **Groove** device swings one track its own way.
+   or pick one, and choose the **Swing grid** (1/16 or 1/8). Turning swing on picks the grid for you: 1/8 when no note
+   sits on an off-beat 1/16, since a pattern of 1/8s wouldn't move on 1/16s. A **Groove** device swings one track its
+   own way. Notes stay where you wrote them; in the piano roll and drum editor a note that swing moves gets a small
+   tick where it really starts, and the grid lines between beats are drawn swung.
 2. **Plays switch.** What the tracks play: the **Clips** you launch or the **Timeline**. The half that plays is
    lit. See [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline).
 3. **Undo and redo**, **follow the playhead**, **show the inspector**, and **close**.

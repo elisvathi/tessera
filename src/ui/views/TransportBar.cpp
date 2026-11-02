@@ -294,10 +294,22 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
         menu->addChild(rack::createMenuLabel("Swing: 50% straight, 66% triplet feel, 75% hardest"));
         auto setSwing = [c](int percent) {
             percent = std::clamp(percent, 50, 75);
-            if (TesseraModule* mod = c->module())
-                mod->perform(
-                    setSongField(mod->song(), &Song::swing, float(percent - 50) / 25,
-                                 percent > 50 ? "Set swing to " + std::to_string(percent) + "%" : "Swing off"));
+            TesseraModule* mod = c->module();
+            if (!mod)
+                return;
+            const Song& song = mod->song();
+            std::string name = percent > 50 ? "Set swing to " + std::to_string(percent) + "%" : "Swing off";
+            auto edit = std::make_unique<CompoundCommand>(name);
+            edit->add(setSongField(song, &Song::swing, float(percent - 50) / 25, name));
+            if (song.swing <= 0 && percent > 50) {
+                // Turning swing on picks the grid the song's notes need: 1/8s when none sit on an off-beat 1/16.
+                std::vector<const Clip*> clips;
+                for (const auto& [id, clip] : song.clips)
+                    clips.push_back(&clip);
+                edit->add(setSongField(song, &Song::swingStep, swingStepFor(clips), name));
+            }
+            if (!edit->empty())
+                mod->perform(std::move(edit));
         };
         // Type any value from 50 to 75; the picks below are the common ones.
         menu->addChild(

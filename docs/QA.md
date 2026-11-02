@@ -495,3 +495,5 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       clips on the same AUTO channel, the one on the lower row is heard.
 - [ ] 4/4 menu swing: typed 58 and the picks set the swing (chip shows "swing 58%"), Swing grid 1/8 swings 1/8s; an
       old song keeps its feel. A Groove device swings its track alone; at 50% that track stays straight under song swing.
+- [ ] Swing on a song of 1/8s: turning it on picks the 1/8 grid and it is heard; notes it moves show a tick where they
+      start, the piano roll's in-between grid lines swing; a Groove added to a 1/8 track starts on 1/8.
