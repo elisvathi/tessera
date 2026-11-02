@@ -75,7 +75,7 @@ time.
 - Choices (like Pattern) are small menus. Switches (like Hold) flip on a click.
 
 A knob draws an orange arc for its value. Each modulation adds a ring in the modulator's colour, showing how far it can
-push the knob, and a white dot shows where the knob is right now.
+push the knob, a white dot shows where the knob is right now, and the value under it reads what plays now.
 
 ## Playheads
 
@@ -205,6 +205,9 @@ The top of the REPEAT block shows where the repeats of one group land: Piece 1/1
 a second when the Curve is **Straight**; with **Ease in** they start far apart and bunch up at the end, like a
 bouncing ball; with **Ease out** they start bunched up and slow down. The first hit of each group stays where it was,
 so the next group still lands on time. Dots under the hits show where they would land straight.
+
+When a curve, another modulator or a lane moves Piece, Times or Curve, the block shows them as they play now: their
+boxes and names take the playhead's colour, and the hits follow.
 
 Click the Curve for its list; each shape is drawn beside its name. **Ease in** and **Ease out** come soft, medium and
 hard; then **Ease in-out** (slow, fast, slow), **Swing light** and **Swing heavy** (the first half lingers) and
