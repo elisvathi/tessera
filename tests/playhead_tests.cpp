@@ -1068,3 +1068,50 @@ TEST_CASE("MIDI export reads the notes of a Motion device before the playheads w
     REQUIRE(!got.empty());
     CHECK(got[0] == std::pair<Tick, int>{kPpq / 2, up});
 }
+
+TEST_CASE("a curve can turn a playhead's Repeat and Direction, as it does its Rate") {
+    // A clip of four beats, C D E F, played for two bars on the timeline by one playhead.
+    auto pitchesWith = [](int k, float bar2Value) {
+        Song song = songWithTrack();
+        Clip clip;
+        clip.id = song.newId<ClipId>();
+        clip.length = clip.loopEnd = 4 * kPpq;
+        int pitch[] = {60, 62, 64, 65};
+        for (int b = 0; b < 4; b++) {
+            Note n;
+            n.id = song.newId<NoteId>();
+            n.start = Tick(b) * kPpq;
+            n.length = 240;
+            n.pitch = int8_t(pitch[b]);
+            clip.notes.push_back(n);
+        }
+        song.clips.emplace(clip.id, clip);
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip.id;
+        a.length = 8 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+        applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+        PlayheadId id = firstDevice(song).playheads[0].id;
+        const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
+        // A point's height adds to the setting: 0.5 leaves it as set.
+        float up = 0.5f + devices::normalize(info, bar2Value) / 2;
+        applyUndoable(song, animateWithCurve(song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(k)},
+                                             info.name,
+                                             {8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}},
+                                              0, 8 * kPpq},
+                                             idsOf(song)));
+        std::vector<int> pitches;
+        for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+            pitches.push_back(e.pitch);
+        return pitches;
+    };
+    const std::vector<std::string>& sizes = playheads::repeatNames();
+    float quarter = float(std::find(sizes.begin(), sizes.end(), "1/4") - sizes.begin());
+    // Bar 1 as written; bar 2 plays each beat twice (Times is 2), from beat 3, where its travel is by then.
+    CHECK(pitchesWith(playheads::knob::kRepeatSize, quarter) == std::vector<int>{60, 62, 64, 65, 64, 64, 65, 65});
+    // Bar 2 backward.
+    CHECK(pitchesWith(playheads::knob::kDirection, float(playheads::Direction::Reverse)) ==
+          std::vector<int>{60, 62, 64, 65, 65, 64, 62, 60});
+}

@@ -379,18 +379,19 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     const Playhead* shown = shownPlayhead(d);
     using namespace playheads::knob;
     // One row, the settings reached for every few seconds; the rest is behind the playhead's menu.
-    enum class Control { Knob, Direction, Repeat, More };
+    enum class Control { Knob, Direction, More };
     struct Item {
         Control control;
         int param;
         bool dial;
     };
     // Pitch and loudness are devices in the playhead's own chain (Transpose, Velocity), like any other note change.
-    // Its channel is set once, so it lives in the chip's right-click menu; the chip shows it.
+    // Its channel is set once, so it lives in the chip's right-click menu; the chip shows it. Notes is set once too,
+    // so it lives in More. Repeat's piece and its times are a cell each, so each can have a curve.
     const Item items[] = {{Control::Knob, kRate, true},
-                          {Control::Direction, -1, false},
-                          {Control::Repeat, -1, false},
-                          {Control::Knob, kNotes, false},
+                          {Control::Direction, kDirection, false},
+                          {Control::Knob, kRepeatSize, false},
+                          {Control::Knob, kRepeatTimes, false},
                           {Control::More, -1, false}};
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
     float controls = float(std::size(items)) * kCell;
@@ -424,10 +425,10 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
                 parts.push_back({Kind::Knob, cell, index, it.param, id, ParamRef::Kind::Playhead, it.dial});
                 break;
             case Control::Direction:
+                // Its name opens a curve for the direction; the dropdown also holds the step orders.
+                parts.push_back({Kind::CurveLabel, Rect(kx, knobTop + 40, kCell, 12), index, it.param, id,
+                                 ParamRef::Kind::Playhead});
                 parts.push_back({Kind::PlayheadDirection, cell, index, -1, id});
-                break;
-            case Control::Repeat:
-                parts.push_back({Kind::PlayheadRepeat, cell, index, -1, id});
                 break;
             case Control::More:
                 parts.push_back({Kind::PlayheadMore, Rect(kx + kCell / 2 - 13, knobTop + 6, 26, 26), index, -1, id});
@@ -697,9 +698,6 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         break;
     case Kind::PlayheadDirection:
         deviceActions::openDirectionMenu(ctx, PlayheadId(hit->id));
-        break;
-    case Kind::PlayheadRepeat:
-        deviceActions::openRepeatMenu(ctx, PlayheadId(hit->id));
         break;
     case Kind::PlayheadMore:
         deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
@@ -1132,20 +1130,12 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
         case Kind::PlayheadChip:
             drawPlayheadChip(vg, d, p, hot);
             break;
-        case Kind::PlayheadDirection:
-        case Kind::PlayheadRepeat: {
+        case Kind::PlayheadDirection: {
             const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
             if (!ph)
                 break;
-            std::string label, value;
-            if (p.kind == Kind::PlayheadDirection) {
-                label = "Direction";
-                value = deviceActions::directionText(*ph);
-            } else {
-                label = "Repeat";
-                value = deviceActions::repeatText(*ph);
-            }
-            drawDropdown(vg, p, label, value, hot);
+            ParamRef ref{ParamRef::Kind::Playhead, ph->id.value, uint16_t(playheads::knob::kDirection)};
+            drawDropdown(vg, p, "Direction", deviceActions::directionText(*ph), hot, &ref);
             break;
         }
         case Kind::PlayheadMore: {
@@ -1216,7 +1206,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
 }
 
 void DeviceStrip::drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value,
-                               bool hot) {
+                               bool hot, const ParamRef* curveOf) {
     const theme::Palette& c = theme::colors();
     nvgSave(vg);
     float cx = part.rect.getCenter().x;
@@ -1234,7 +1224,25 @@ void DeviceStrip::drawDropdown(NVGcontext* vg, const Part& part, const std::stri
     nvgStrokeWidth(vg, 1.2f);
     nvgStroke(vg);
     draw::TextStyle name{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    bool curved = false;
+    NVGcolor color = c.text1;
+    if (curveOf) {
+        // Like a knob's name: it opens the setting's curve, and takes the playhead's colour when there is one.
+        const Song& song = ctx.module()->song();
+        curved = deviceActions::curveOn(song, *curveOf).valid();
+        if (const Playhead* ph = findPlayhead(song, PlayheadId(curveOf->owner)))
+            color = theme::playheadColor(ph->color);
+        if (curved)
+            name.color = color;
+    }
     draw::text(vg, name, cx, top + 46, label);
+    if (curveOf) {
+        float w = draw::textWidth(vg, name, label);
+        nvgBeginPath(vg);
+        nvgRect(vg, cx - w / 2, top + 52, w, 1);
+        nvgFillColor(vg, curved ? color : nvgTransRGBAf(c.text2, 0.4f));
+        nvgFill(vg);
+    }
     nvgRestore(vg);
 }
 
@@ -1302,6 +1310,13 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
     nvgSave(vg);
     if (mapping && !lit)
         nvgGlobalAlpha(vg, 0.3f);
+    else if (ref.kind == ParamRef::Kind::Playhead && ref.param == playheads::knob::kRepeatTimes) {
+        // Times does nothing while Repeat is off, unless a curve turns Repeat on.
+        ParamRef size{ParamRef::Kind::Playhead, ref.owner, uint16_t(playheads::knob::kRepeatSize)};
+        const float* repeat = findParam(song, size);
+        if (repeat && *repeat <= 0 && !deviceActions::curveOn(song, size).valid())
+            nvgGlobalAlpha(vg, 0.4f);
+    }
 
     float cx = part.rect.getCenter().x;
     float top = part.rect.pos.y + 2;

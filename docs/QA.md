@@ -530,3 +530,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A Curve or LFO on a playhead's Rate: its line in the piano roll speeds up and slows down with the sound, and
       the keys it lights follow it.
 - [ ] Two Motion devices, one in the chain and one in a playhead's own devices: both show ghosts for their notes.
+- [ ] Playheads card row reads Rate, Direction, Repeat, Times, More; Notes is in More. Times is faint while Repeat
+      is Off. Click Direction's, Repeat's or Times' underlined name: the lower pane opens a curve for it; a point in
+      bar 2 turns the playhead backward / starts repeating there, heard and drawn; the name takes the playhead's
+      colour once it has a curve.

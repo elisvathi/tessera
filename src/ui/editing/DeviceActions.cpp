@@ -292,14 +292,6 @@ std::string directionText(const Playhead& p) {
     return kDirections[std::clamp(int(playheadValue(p, kDirection)), 0, 3)];
 }
 
-std::string repeatText(const Playhead& p) {
-    using namespace playheads::knob;
-    int size = int(playheadValue(p, kRepeatSize));
-    if (size == 0)
-        return "Off";
-    return playheads::repeatNames()[size_t(size)] + " ×" + std::to_string(int(playheadValue(p, kRepeatTimes)));
-}
-
 void openDirectionMenu(EditorContext& ctx, PlayheadId id) {
     TesseraModule* m = moduleOf(ctx);
     const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
@@ -328,34 +320,6 @@ void openDirectionMenu(EditorContext& ctx, PlayheadId id) {
                             setPlayheadValues(*c, id, {{kOrder, float(o)}, {kOrderStep, float(s)}}, "Set order");
                         }));
             }));
-}
-
-void openRepeatMenu(EditorContext& ctx, PlayheadId id) {
-    TesseraModule* m = moduleOf(ctx);
-    const Playhead* p = m ? findPlayhead(m->song(), id) : nullptr;
-    if (!p)
-        return;
-    using namespace playheads::knob;
-    int size = int(playheadValue(*p, kRepeatSize)), times = int(playheadValue(*p, kRepeatTimes));
-    EditorContext* c = &ctx;
-    rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Repeat each piece"));
-    menu->addChild(rack::createCheckMenuItem("Off", "", [size] { return size == 0; },
-                                             [c, id] { setPlayheadValues(*c, id, {{kRepeatSize, 0}}, "Stop repeating"); }));
-    const std::vector<std::string>& sizes = playheads::repeatNames();
-    for (int s = 1; s < int(sizes.size()); s++)
-        menu->addChild(rack::createSubmenuItem(sizes[size_t(s)], size == s ? "×" + std::to_string(times) : "",
-                                               [=](rack::ui::Menu* sub) {
-                                                   for (int t = 2; t <= 8; t++)
-                                                       sub->addChild(rack::createCheckMenuItem(
-                                                           "×" + std::to_string(t), "",
-                                                           [=] { return size == s && times == t; }, [c, id, s, t] {
-                                                               setPlayheadValues(*c, id,
-                                                                                 {{kRepeatSize, float(s)},
-                                                                                  {kRepeatTimes, float(t)}},
-                                                                                 "Set repeat");
-                                                           }));
-                                               }));
 }
 
 void showCurve(EditorContext& ctx, ModulatorId id) {
@@ -419,7 +383,7 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
     // The rarer settings, each its own choice list.
     menu->addChild(new rack::ui::MenuSeparator);
     using namespace playheads::knob;
-    for (int k : {kOnJump, kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
+    for (int k : {kNotes, kOnJump, kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
         const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
         float now = playheadValue(*p, k);
         std::vector<std::string> choices =

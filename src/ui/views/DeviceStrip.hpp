@@ -57,7 +57,6 @@ class DeviceStrip : public InteractiveView {
             AddPlayhead,
             BranchBand,        // behind the shown playhead's branch; `id` is the playhead
             PlayheadDirection, // the shown playhead's direction and order, one dropdown
-            PlayheadRepeat,    // its repeat (size and times), one dropdown
             PlayheadMore,      // its rarer settings
             CurveLabel,        // a playhead knob's label: shows its curve in the lower pane
             MotionNotes,       // a Motion card's "6 notes": selects them in the piano roll
@@ -111,7 +110,8 @@ class DeviceStrip : public InteractiveView {
     const Playhead* shownPlayhead(const Device& d) const;
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     /// A dropdown in a knob's place (a playhead's direction, repeat, channel), with its label under it.
-    void drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value, bool hot);
+    void drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value, bool hot,
+                      const ParamRef* curveOf = nullptr);
     /// While mapping: whether the mapped modulator may reach this knob.
     bool reachableNow(const ParamRef& ref);
     void drawClosed(NVGcontext* vg);
