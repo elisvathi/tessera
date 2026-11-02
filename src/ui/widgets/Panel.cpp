@@ -39,6 +39,8 @@ void PanelArt::addPlate(rack::math::Rect mm) { plates.push_back(mm); }
 
 void PanelArt::addSunkPlate(rack::math::Rect mm) { sunkPlates.push_back(mm); }
 
+void PanelArt::addGroupBox(rack::math::Rect mm, const std::string& title) { groupBoxes.push_back({mm, title}); }
+
 void PanelArt::step() {
     // The artwork is cached; repaint it when Rack's panel setting (or the scheme) changes.
     if (drawnGeneration != theme::generation()) {
@@ -67,6 +69,18 @@ void PanelArt::draw(const DrawArgs& args) {
         rack::math::Rect r(rack::mm2px(p.pos), rack::mm2px(p.size));
         draw::roundedRect(vg, r, theme::metrics::kPanelPlateRadius, c.bg1);
         draw::roundedRectStroke(vg, r, theme::metrics::kPanelPlateRadius, c.line0, 0.75f);
+    }
+
+    for (const GroupBox& g : groupBoxes) {
+        rack::math::Rect r(rack::mm2px(g.mm.pos), rack::mm2px(g.mm.size));
+        draw::roundedRectStroke(vg, r, theme::metrics::kPanelPlateRadius, c.line2, 1.f);
+        draw::TextStyle style = labelStyle(LabelKind::Section);
+        style.align = NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE;
+        // The panel colour behind the title cuts a gap into the top edge.
+        float gap = draw::textWidth(vg, style, g.title) + 2 * theme::metrics::kPanelGroupTitlePad;
+        float x = r.getCenter().x;
+        draw::roundedRect(vg, rack::math::Rect(x - gap / 2, r.pos.y - 2, gap, 4), 0, c.bg1);
+        draw::text(vg, style, x, r.pos.y + 0.5f, g.title);
     }
 
     for (const Label& l : labels) {

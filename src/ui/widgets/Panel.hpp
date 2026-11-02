@@ -37,6 +37,9 @@ class PanelArt : public rack::widget::Widget {
     void addPlate(rack::math::Rect mm);
     /// A recessed tray inside a plate, such as one mixer-style strip of jacks per drum lane.
     void addSunkPlate(rack::math::Rect mm);
+    /// A thin outline with its title set into the top edge, naming a group of inputs. Not a plate: plates mean
+    /// outputs.
+    void addGroupBox(rack::math::Rect mm, const std::string& title);
 
     void draw(const DrawArgs& args) override;
     void step() override;
@@ -51,6 +54,11 @@ class PanelArt : public rack::widget::Widget {
     std::vector<Label> labels;
     std::vector<rack::math::Rect> plates;
     std::vector<rack::math::Rect> sunkPlates;
+    struct GroupBox {
+        rack::math::Rect mm;
+        std::string title;
+    };
+    std::vector<GroupBox> groupBoxes;
 };
 
 /// Builds a module panel: the cached artwork, screws, and controls with their labels in one call each.

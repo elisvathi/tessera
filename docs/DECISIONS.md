@@ -1420,3 +1420,14 @@ Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifac
 - **The swing hints can be turned off** (2 Nov): "Show swing in the editor" in the swing menu (on by default) hides the
   ticks and draws the grid straight; swing still plays. It is a view setting, saved with the editor's layout, not
   with the song.
+
+## 93. The Tessera panel's jacks on one 8 x 2 grid (2 Nov)
+
+- **All 16 jacks share two rows and even columns.** Left: CLOCK RESET RUN over SCENE LAUNCH FILL, lined up under
+  the buttons. Middle: V/OCT GATE over VEL AUTO in an outlined box titled RECORD. Right, on the output plate: CLOCK
+  RESET RUN over EOC BAR CLICK, so the transport row mirrors the inputs.
+- **The FILL jack moved** from under TEMPO, where it had no label and read as a tempo input, into the inputs.
+- **Record inputs get an outline, not a plate** (`PanelArt::addGroupBox`): a filled plate means outputs.
+- Jack IDs are unchanged, so saved cables stay on their jacks.
+
+Why: the user found the old jack area messy (two plates of different sizes, inputs on a plate, uneven spacing).
