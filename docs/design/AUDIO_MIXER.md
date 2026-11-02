@@ -1,11 +1,11 @@
 # Audio tracks and the mixer
 
-Status: **proposal, revision 4 (2 Nov 2026). Not confirmed yet.** Mockups:
+Status: **proposal, revision 5 (2 Nov 2026). Not confirmed yet.** Mockups:
 https://claude.ai/artifact/WNtGof3EbafDF7yptw5w5i (private; source HTML is not in the repo). Trello:
 https://trello.com/c/RiahbPgS. Nothing here is built.
 
 Revision 4 takes in everything from the product and UX review (`AUDIO_MIXER_REVIEW.md`), all as recommended by
-the user. The user's answers so far are in §12. When the build starts, each choice gets a DECISIONS.md entry and
+the user. Revision 5 adds **sources** (§7.8): what happens when several Track Outs feed one track. The user's answers so far are in §12. When the build starts, each choice gets a DECISIONS.md entry and
 the build follows the phases in §11.
 
 **This branch stays local: no push and no pull request.** The user hasn't decided yet whether this feature will
@@ -55,19 +55,26 @@ Every track has a **sound**: what you hear from it in the mixer.
   (§8.1). Drum Out stays as the per-lane drum console, with a stereo kit IN; Auto Out doesn't change.
 - **OUT sends the track's own audio into the rack**, always before the fader: an audio track's clips, an FX
   track's sends, the master's mix. Instrument and drum tracks have no audio of their own, so their OUT is dim.
-- **IN is how the rack's sound comes back.** What a track's sound is depends on the kind of track:
+- **IN is how the rack's sound comes back.** Each patched IN is a **source** of its track. A track may have
+  several (several Track Outs, or a Drum Out's kit IN plus a Track Out); they add up, each at its own level
+  (§7.8). Each source's **job** comes from its own cables:
+
+| Job | When | What it does |
+|---|---|---|
+| **Voice** | IN patched, on an instrument or drum track | Part of the track's sound. |
+| **Effect loop** | IN patched on an audio track, and a cable path runs from any OUT of the same track to this IN (§7.8) | Its return replaces the dry clips. |
+| **Return** | IN patched on an FX track or the master | Its return replaces the send mix (FX) or the mix (master insert). |
+| **Live input** | IN patched on an audio track, with no cable path from the track's OUT | Heard only **while the track is armed** and "Monitor while armed" is on, so you hear what you record. |
 
 | Track | Its sound in the mixer |
 |---|---|
-| Instrument / drum | Its IN (the voice coming back). Nothing patched: no sound, and the strip says how to fix it. |
-| Audio, OUT and IN both patched | IN: an effect loop on the clips. |
-| Audio, only IN patched | Its clips, **except while the track is armed** and "Monitor while armed" is on: then IN, so you hear what you record. |
-| Audio, IN not patched | Its clips. |
-| FX | Its IN (the effect's return). IN not patched: **silent**, the strip says "No effect". |
-| Master | Its IN when patched (a master insert), else the mix. |
+| Instrument / drum | Its voices. None: no sound, and the strip says how to fix it. |
+| Audio | Its effect loops if it has any, else its clips. Plus its live inputs while armed. |
+| FX | Its returns (the effect's return). None: **silent**, the strip says "No effect". |
+| Master | Its returns (a master insert), else the mix. |
 
-- **Recording and bouncing capture what reaches IN**, before the fader. Bounces of instrument tracks take the
-  voice; recordings take the source.
+- **Recording captures the live inputs; bouncing captures the whole sound**, both before the fader and at each
+  source's level. Bounces of instrument tracks take the voices.
 - **The mixer then does the rest**: fader, pan, mute, solo, sends, into the master. The master leaves Tessera at
   **MAIN L/R** on the Tessera panel.
 
@@ -487,7 +494,7 @@ The same marks show on launcher slots.
 
 1. **Colour bar and name**, with the FX badge on FX tracks. A click selects the track (same selection as the
    song pane). Right-click: Rename, Colour, Latency…, Delete track.
-2. **Source chip**, in words: "IN · Track Out", "IN · Drum Out", "IN · 2 Track Outs", "Clips",
+2. **Source chip**, in words: "IN · Track Out", "IN · Drum Out", "2 sources ▾" (§7.8), "Clips",
    "Clips · IN when armed", "IN · effect loop ⟲", "No effect" (FX, dim), "Not patched" (dim, tooltip "Patch your
    voice's output into this track's Track Out IN"), "Missing file", "Track Out bypassed", "Bad signal on IN".
    Its menu: **Add a Track Out for this track** (P2) and **Show in the rack** (P2).
@@ -598,6 +605,63 @@ Whatever pane is under the mouse: **cancel a drag → leave Show sends → clear
 One press does one step; an Esc that left Show sends never also closes the editor. Esc never cancels a bounce or
 an export: their progress strip has a **Cancel** button, and Stop also cancels.
 
+### 7.8 Several sources on one track (rev 5)
+
+Several Track Outs may play one track (DESIGN §6: "one next to the VCO, one next to the filter"). Revision 4 only
+said "summed", which broke real patches: a Track Out duplicated with its cables played the voice twice as loud; a
+mic for recording and a delay loop on the same audio track had no defined meaning; a loop from one Track Out's OUT
+into another's IN looked like a live input. Sources fix this.
+
+**What the musician sees.** Bass plays a synth through Track Out 1. They add Track Out 2 on Bass and patch a
+second synth into its IN. Bass now has two sources, and the strip's chip reads "2 sources ▾". Clicking it opens:
+
+```
+ Bass · sources
+ ☑  Track Out 1   VOICE   ▮▮▮▮▯   ───●───   0.0 dB   ⌖
+ ☑  Track Out 2   VOICE   ▮▮▯▯▯   ──●────  −6.0 dB   ⌖
+```
+
+- **Use** (the check box) takes a source out of the sound without pulling a cable.
+- **Level** (−∞ to +6 dB, default 0 dB) balances layers. Same gestures as a fader (§7.3): relative drag, Shift
+  or Ctrl for fine, double-click resets to 0 dB, one undo step per drag. Not automatable for now.
+- A small live meter, the job, and **⌖ Show in the rack** (P2, §8.2).
+- Names: "Track Out 1, 2…" numbered by place in the rack (left to right, then top to bottom), "Drum Out" for a
+  kit IN.
+
+**Levels show only when they are needed** (the user's choice, 2 Nov). With one source, in use, at 0 dB, nothing
+extra appears and the chip reads as before ("IN · Track Out"); the track fader does the job. The list and the
+"N sources ▾" chip appear when a track has two or more sources, **or** when a source is off or not at 0 dB, so a
+level never hides once it changes the sound. The same Level and Use also sit in the Track Out's right-click menu
+(a slider), for people working in the rack. They are one value shown in two places, like M and S in rows and
+strips.
+
+**Jobs come from the cables** (table in §2). Tessera works them out on the UI thread whenever cables change,
+never on the audio thread. "A cable path from the track's OUT" means: follow cables from module to module,
+starting at any OUT of any Tessera output module bound to that track, and see if one reaches this IN. It doesn't
+look inside modules; if a path exists, the clips can reach that IN. This also fixes a single-module case: OUT to
+a scope only, and a mic on IN, is a live input, not an effect loop.
+
+The Track Out display shows the job: **VOICE**, **LOOP**, **LIVE IN**, **RETURN**, or **IN OFF** when Use is off.
+
+**Rules:**
+- **The same signal never counts twice.** One output port cabled into two INs of the same track counts once.
+  The second row reads "Same cable as Track Out 1 · counted once", with no level.
+- Turning every source off is allowed: the chip reads "No source in use" (dim), the track is silent.
+- A Drum Out's kit IN and a Track Out on the same drum track are two sources, the same way.
+- Removing a Track Out removes its source and level with it; undoing the removal brings both back.
+- Mute and solo stay per track. There is no solo per source.
+- Sources reach Tessera a few samples apart when their cable paths differ in length. Per-track latency (§8.6)
+  covers the track, not each source.
+
+**Saved in the Track Out**, not in the song: Level and Use are that module's patch data, changed as a Rack undo
+step. They follow the module when it is moved or duplicated, and a deleted module takes them along.
+
+**Still open:**
+1. **A new second source**: both play at once, with a toast "Bass has 2 sources now. Both play. · Use only the
+   new one · Show sources" (recommended); or the new source starts with Use off.
+2. **"Follow the selected track"**: its IN joins the selected track as a normal source (recommended, it is the
+   audition use); or it plays only on tracks with no source of their own.
+
 ---
 
 ## 8. The rack side
@@ -607,7 +671,7 @@ an export: their progress strip has a **Cancel** button, and Stop also cancels.
 | Module | Change |
 |---|---|
 | **Tessera** | MAIN L / MAIN R outputs with a small level meter. The panel has no free row for them today, so the panel gets a new layout, shown as a mockup for approval before building (P1a). Tooltip on MAIN: "Master after its fader: −6.2 dB peak". An amber dot beside MAIN while the master has signal but MAIN has no cable. |
-| **Track Out** | Binds to **any** track and to the master. Gains OUT L/R and IN L/R (R follows L when unpatched), and an **IN level** light: green while audio comes back, red above 0 dB, off when nothing arrives. Stays 6 HP: the display gets shorter and the jacks are laid out again. |
+| **Track Out** | Binds to **any** track and to the master. Gains OUT L/R and IN L/R (R follows L when unpatched), and an **IN level** light: green while audio comes back, red above 0 dB, off when nothing arrives. The display shows its IN's job (VOICE, LOOP, LIVE IN, RETURN, IN OFF, §7.8); the right-click menu has its source Level and Use. Stays 6 HP: the display gets shorter and the jacks are laid out again. |
 | **Drum Out** | A stereo kit IN (L/R) under the lane rows. |
 | **Auto Out** | No change. |
 
@@ -653,7 +717,7 @@ Each is one Rack undo step:
   sample. Keep `TrackFrame` as it is (rewritten only when voices change, DECISIONS §31).
 - **Modules → Tessera (the return bus)**: each output module gets **its own return slot**, handed out on the UI
   thread when its binding resolves (several modules may share a track, so they never write one slot). The module
-  writes `{sample, trackId, patched, L, R}` into buffer `n & 1`; Tessera reads buffer `(n − 1) & 1` and uses a slot
+  writes `{sample, trackId, patched, use, levelGain, L, R}` into buffer `n & 1`; Tessera reads buffer `(n − 1) & 1` and uses a slot
   only when its stamp is `n − 1` and its trackId matches. A missing, bypassed or removed module drops out. NaN or
   infinity counts as silence and sets the "Bad signal on IN" flag.
 - Copy the OutputBus tests for the return bus: shuffled module order, several threads, module removed mid-stream,
@@ -664,7 +728,8 @@ Each is one Rack undo step:
 1. The sequencer, as today.
 2. Audio clip playback (prepared or rendered buffers; varispeed reader when needed).
 3. Read the return bus.
-4. Each track's sound, by the table in §2 (arm and Monitor while armed decide for audio tracks with only IN).
+4. Each track's sound, by the tables in §2: sum its sources by job, each smoothed to its level, skipping sources
+   not in use and duplicates of one output port (§7.8). Jobs arrive from the UI thread in the parameter block.
 5. Recording taps (§8.6).
 6. Each strip: gain (smoothed), pan (−3 dB centre, constant power; balance for stereo), mute/solo (§4.5), sends.
 7. FX tracks: OUT = the sum of what was sent to them this sample; sound = IN, or silence when IN is unpatched.
@@ -885,6 +950,7 @@ Each phase is usable on its own.
 
 **Phase 2: the rack round trip**
 - Track Out for every track kind (OUT, IN, dimming, IN light, states); kit IN; the return bus; the sound rules.
+- Sources (§7.8): jobs from cable paths, the sources list with Use and Level, the Track Out menu slider.
 - Strips and track-header levels for every track; FX tracks; sends; Show sends; OUT meter; inspector Sends.
 - Mute/solo rules; mixer automation; Add a Track Out / Show in the rack.
 
@@ -915,4 +981,7 @@ Each phase is usable on its own.
     effect (§2), the first loop sets the tempo (§5.5), setup helpers (§8.2), a metronome (§8.5), Phase 1 split in
     two (§11), and every other fix in `AUDIO_MIXER_REVIEW.md`.
 
-Still open: the user's confirmation of the whole design, and the import level (decided by ear before release).
+12. **Several sources on one track: a level per source** that shows only when needed (§7.8).
+
+Still open: the user's confirmation of the whole design, the import level (decided by ear before release), and
+the two sources questions at the end of §7.8.
