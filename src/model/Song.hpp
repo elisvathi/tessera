@@ -129,8 +129,8 @@ struct SwingFeel {
     bool any() const { return amount > 0; }
 };
 SwingFeel swingFeelOf(const Song& song, const Track& track);
-/// The swing grid that suits `notes`: a 1/16 when any starts on an off-beat 1/16, else a 1/8 (a pattern of 1/8s
-/// would not move at all on 1/16s).
+/// The swing grid that suits `clips`: the one most of their off-beat notes sit on, a 1/16 or a 1/8 (a 1/8 on a tie).
+/// A pattern of 1/8s would not move at all on 1/16s, and one busy 1/16 hat part shouldn't decide for a whole song.
 Tick swingStepFor(const std::vector<const Clip*>& clips);
 /// Puts a two-bar demo clip in track 1's first slot. Tests use it as a ready-made clip.
 void addDemoClip(Song& song);

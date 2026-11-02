@@ -567,8 +567,11 @@ TEST_CASE("swing picks the grid the notes need, and a track's swing comes from i
     }
     CHECK(swingStepFor({&eighths}) == kPpq / 2); // nothing on an off-beat 1/16: swing 1/8s
     Clip sixteenths = eighths;
-    sixteenths.notes[1].start = 240;
-    CHECK(swingStepFor({&eighths, &sixteenths}) == kPpq / 4);
+    sixteenths.notes[0].start = 240;
+    sixteenths.notes[1].start = 720;
+    CHECK(swingStepFor({&sixteenths}) == kPpq / 4);
+    // Mostly 1/8s with one busy 1/16 part: the 1/8s decide.
+    CHECK(swingStepFor({&eighths, &eighths, &sixteenths}) == kPpq / 2);
 
     // A Groove added to a track of 1/8s starts on the 1/8 grid.
     song.clips.emplace(eighths.id, eighths);

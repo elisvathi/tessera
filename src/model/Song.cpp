@@ -488,12 +488,14 @@ SwingFeel swingFeelOf(const Song& song, const Track& track) {
 }
 
 Tick swingStepFor(const std::vector<const Clip*>& clips) {
-    const Tick sixteenth = kPpq / 4;
+    const Tick sixteenth = kPpq / 4, eighth = kPpq / 2;
+    int offSixteenths = 0, offEighths = 0;
     for (const Clip* clip : clips)
-        for (const Note& n : clip->notes)
-            if (n.start % sixteenth == 0 && (n.start / sixteenth) % 2 == 1)
-                return sixteenth;
-    return kPpq / 2;
+        for (const Note& n : clip->notes) {
+            offSixteenths += n.start % (2 * sixteenth) == sixteenth;
+            offEighths += n.start % (2 * eighth) == eighth;
+        }
+    return offSixteenths > offEighths ? sixteenth : eighth;
 }
 
 Song makeDefaultSong() {
