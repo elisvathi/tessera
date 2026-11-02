@@ -1205,3 +1205,45 @@ TEST_CASE("without Repeat, a Curve changes nothing") {
         starts.push_back(Tick(e.start));
     CHECK(starts == std::vector<Tick>{0, 960, 1920, 2880});
 }
+
+TEST_CASE("MIDI export keeps a playhead's place when a curve changes its Rate, as the engine does") {
+    // C D E F a beat apart; a curve doubles Rate from beat 3. The playhead carries on from E at twice the speed:
+    // E, F half a beat later, then round to C and D. It must not jump to where 2x from the start would be.
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    int pitches[] = {60, 62, 64, 65};
+    for (int b = 0; b < 4; b++) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = Tick(b) * kPpq;
+        n.length = 240;
+        n.pitch = int8_t(pitches[b]);
+        clip.notes.push_back(n);
+    }
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId id = firstDevice(song).playheads[0].id;
+    const devices::ParamInfo& rate = devices::playheadInfo().params[playheads::knob::kRate];
+    const std::vector<std::string>& rates = playheads::rateNames();
+    float twice = devices::normalize(rate, float(std::find(rates.begin(), rates.end(), "2x") - rates.begin()));
+    float once = devices::normalize(rate, float(std::find(rates.begin(), rates.end(), "1x") - rates.begin()));
+    // A point's height adds to the knob: 0.5 leaves it as set, 0.5 + d / 2 turns it by d.
+    float up = 0.5f + (twice - once) / 2;
+    applyUndoable(
+        song,
+        animateWithCurve(
+            song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kRate)}, "Rate",
+            {8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {2 * kPpq, up, CurveType::Hold, 0}}, 0, 8 * kPpq}, idsOf(song)));
+    std::vector<std::pair<Tick, int>> got;
+    for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+        got.push_back({e.start, e.pitch});
+    CHECK(got == std::vector<std::pair<Tick, int>>{{0, 60}, {960, 62}, {1920, 64}, {2400, 65}, {2880, 60}, {3360, 62}});
+}

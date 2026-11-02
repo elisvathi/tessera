@@ -399,6 +399,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             // Small steps, so no window needs more sweeps than one call gives; each step reads the modulators anew.
             constexpr double kStep = double(kPpq) / 8;
             std::vector<float> knobs(p.params.size());
+            double ownTime = NAN, lastRestart = NAN, lastPos = NAN;
             for (double e = begin; e < begin + length; e += kStep) {
                 double to = std::min(begin + length, e + kStep);
                 playheadKnobsAt(song, t, device, p, double(a.position) + (e - begin) * stretch, knobs.data(),
@@ -408,60 +409,86 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 if (playheads::wantsDrawnPath(knobs.data()))
                     m.path = &p.path;
                 playheads::NoteShape shape = playheads::noteShapeFrom(knobs.data());
-                playheads::Sweep sweeps[playheads::kMaxSweeps];
-                int count = playheads::sweeps(m, e, to, sweeps);
-                for (int i = 0; i < count; i++)
-                    for (const Group& g : groups) {
-                        MovedBy moved;
-                        if (g.motion) // its pass is the clip's
-                            moved = movedAt(song, t, *g.motion,
-                                            int64_t(std::floor(e / std::max(1.0, playEnd - playStart))));
-                        // `rest`: how much of the note is left to play, when a jump landed inside it.
-                        auto onHit = [&](const Readable& n, double pos, double rest = -1) {
-                            if (!playheads::picked(shape.pick, n.role))
-                                return;
-                            double elapsed = playheads::timeAt(m, sweeps[i], pos);
-                            double at = double(a.position) + (elapsed - begin) * stretch;
-                            double travel = sweeps[i].travelFrom + std::abs(pos - sweeps[i].from);
-                            double len = playheads::noteLength(knobs.data(), m, rest >= 0 ? rest : n.end - n.start,
-                                                               song.timeSig, travel) *
-                                         stretch * std::max(0.01, moved.lengthScale);
-                            if (playheads::retriggers(knobs.data())) {
-                                // Retrigger: the note stops where the playhead next jumps, as in the engine.
-                                double jump = playheads::nextJump(m, elapsed, len / stretch + 1);
-                                if (std::isfinite(jump))
-                                    len = std::min(len, (jump - elapsed) * stretch);
-                            }
-                            // The pass as the engine counts it: the playhead's own time over its region, its place
-                            // mixed in.
-                            double own = m.rate * (m.restartEvery > 0 ? std::fmod(elapsed, m.restartEvery) : elapsed);
-                            int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
-                            Tick start = Tick(std::llround(at));
-                            int written = n.pitch;
-                            if (moved.steps != 0)
-                                written = std::clamp(
-                                    moved.inKey ? scale.stepBy(written, moved.steps) : written + moved.steps, 0, 127);
-                            int pitch = playheads::shapedPitch(shape, written, lowest, highest, scale);
-                            TimedNote note{start,
-                                           std::max(start + 1, Tick(std::llround(at + len))),
-                                           int8_t(pitch),
-                                           std::clamp(n.source->velocity + shape.velocity + moved.velocity, 0.f, 1.f),
-                                           n.source->releaseVelocity,
-                                           n.source,
-                                           pass};
-                            items.push_back({note, a.clip, key, p.channel, uint8_t(index + 1)});
-                        };
-                        if (g.repeats)
-                            playheads::crossedRepeating(sweeps[i], playStart, g.base - moved.delay, g.period, g.notes,
-                                                        g.byEnd, onHit);
-                        else
-                            playheads::crossedShifted(sweeps[i], moved.delay, g.notes, g.byEnd, onHit);
-                        // Retrigger: a jump plays again the notes it lands inside (on the canvas, unmoved).
-                        if (sweeps[i].jumped && !g.repeats && !g.motion && playheads::retriggers(knobs.data()))
-                            playheads::landedIn(sweeps[i], g.notes, [&](const Readable& n, double rest) {
-                                onHit(n, sweeps[i].from, rest);
-                            });
+                // The playhead's own time is counted step by step, as the engine counts it, so a Rate a curve moves
+                // carries on from where the playhead is instead of jumping to where the new Rate would have taken it
+                // from the clip's start.
+                double rate = m.rate, restartEvery = m.restartEvery;
+                playheads::Motion ownM = m;
+                ownM.rate = 1;
+                ownM.restartEvery = 0;
+                playheads::Motion timed = ownM;
+                timed.rate = rate;
+                for (double segA = e; segA < to;) {
+                    double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
+                    double segB = restartEvery > 0 ? std::min(to, restart + restartEvery) : to;
+                    if (std::isnan(ownTime) || restart != lastRestart) {
+                        ownTime = rate * (segA - restart);
+                        lastPos = NAN;
                     }
+                    lastRestart = restart;
+                    double ownA = ownTime;
+                    ownTime += rate * (segB - segA);
+                    playheads::Sweep sweeps[playheads::kMaxSweeps];
+                    int count = playheads::sweeps(ownM, ownA, ownTime, sweeps, playheads::kMaxSweeps, lastPos);
+                    if (count > 0)
+                        lastPos = sweeps[count - 1].to;
+                    for (int i = 0; i < count; i++)
+                        for (const Group& g : groups) {
+                            MovedBy moved;
+                            if (g.motion) // its pass is the clip's
+                                moved = movedAt(song, t, *g.motion,
+                                                int64_t(std::floor(e / std::max(1.0, playEnd - playStart))));
+                            // `rest`: how much of the note is left to play, when a jump landed inside it.
+                            auto onHit = [&](const Readable& n, double pos, double rest = -1) {
+                                if (!playheads::picked(shape.pick, n.role))
+                                    return;
+                                double own = playheads::timeAt(ownM, sweeps[i], pos);
+                                double elapsed = segA + (own - ownA) / rate;
+                                double at = double(a.position) + (elapsed - begin) * stretch;
+                                double travel = sweeps[i].travelFrom + std::abs(pos - sweeps[i].from);
+                                double len =
+                                    playheads::noteLength(knobs.data(), timed, rest >= 0 ? rest : n.end - n.start,
+                                                          song.timeSig, travel) *
+                                    stretch * std::max(0.01, moved.lengthScale);
+                                if (playheads::retriggers(knobs.data())) {
+                                    // Retrigger: the note stops where the playhead next jumps, as in the engine.
+                                    double jump = playheads::nextJump(ownM, own, len / stretch * rate + 1);
+                                    if (std::isfinite(jump))
+                                        len = std::min(len, (jump - own) / rate * stretch);
+                                }
+                                // The pass as the engine counts it: the playhead's own time over its region, its place
+                                // mixed in.
+                                int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
+                                Tick start = Tick(std::llround(at));
+                                int written = n.pitch;
+                                if (moved.steps != 0)
+                                    written = std::clamp(moved.inKey ? scale.stepBy(written, moved.steps)
+                                                                     : written + moved.steps,
+                                                         0, 127);
+                                int pitch = playheads::shapedPitch(shape, written, lowest, highest, scale);
+                                TimedNote note{
+                                    start,
+                                    std::max(start + 1, Tick(std::llround(at + len))),
+                                    int8_t(pitch),
+                                    std::clamp(n.source->velocity + shape.velocity + moved.velocity, 0.f, 1.f),
+                                    n.source->releaseVelocity,
+                                    n.source,
+                                    pass};
+                                items.push_back({note, a.clip, key, p.channel, uint8_t(index + 1)});
+                            };
+                            if (g.repeats)
+                                playheads::crossedRepeating(sweeps[i], playStart, g.base - moved.delay, g.period,
+                                                            g.notes, g.byEnd, onHit);
+                            else
+                                playheads::crossedShifted(sweeps[i], moved.delay, g.notes, g.byEnd, onHit);
+                            // Retrigger: a jump plays again the notes it lands inside (on the canvas, unmoved).
+                            if (sweeps[i].jumped && !g.repeats && !g.motion && playheads::retriggers(knobs.data()))
+                                playheads::landedIn(sweeps[i], g.notes, [&](const Readable& n, double rest) {
+                                    onHit(n, sweeps[i].from, rest);
+                                });
+                        }
+                    segA = segB;
+                }
             }
         }
     }
