@@ -392,6 +392,32 @@ TEST_CASE("stacked clips: overlapping instances take the lowest free sub-row") {
     CHECK(stackOf(layoutOf(f.song), f.t1).rows == 1);
 }
 
+TEST_CASE("stacked clips: a clip moves up or down a row, swapping with the clip there") {
+    Fixture f;
+    ArrangementId a = f.add(f.t0, 0, 4 * kBeat);
+    ArrangementId b = f.add(f.t0, kBeat, 2 * kBeat);
+    ArrangementId c = f.add(f.t0, 2 * kBeat, 4 * kBeat);
+    Layout before = layoutOf(f.song);
+    CHECK_FALSE(canMoveInStack(before, a, -1)); // already on top
+    CHECK(canMoveInStack(before, b, -1));
+    Layout up = moveInStack(before, b, -1);
+    Stacking s = stackOf(up, f.t0);
+    CHECK(s.row[b] == 0);
+    CHECK(s.row[a] == 1);
+    CHECK(s.row[c] == 2); // untouched
+    // Down again restores the first layout.
+    Stacking back = stackOf(moveInStack(up, b, +1), f.t0);
+    CHECK(back.row[a] == 0);
+    CHECK(back.row[b] == 1);
+
+    // A clip that asked for a lower row, moved away from the others, sits on top again: no empty rows.
+    Layout alone = up;
+    for (Placed& p : alone)
+        if (p.clip.id == a)
+            p.clip.position = 20 * kBeat;
+    CHECK(stackOf(alone, f.t0).row[a] == 0);
+}
+
 TEST_CASE("stacked clips: placing over another clip keeps both, and both play") {
     Fixture f;
     f.add(f.t0, 0, 2 * kBeat);

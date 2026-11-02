@@ -490,3 +490,6 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       timeline clips change together in one undo step; an old song shows no stray clip colours.
 - [ ] Right-click an empty slot › Stop button off: the square goes, clicking it does nothing, and its scene leaves
       that track playing; on again restores it; undo works; it survives saving.
+- [ ] Overlapping timeline clips: right-click › Move up a row / Move down a row swaps them (greyed out with nothing
+      to swap with); undo restores; a moved clip dragged away from the others goes back to the top row; with two
+      clips on the same AUTO channel, the one on the lower row is heard.

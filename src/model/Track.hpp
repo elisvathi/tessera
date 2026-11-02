@@ -30,6 +30,8 @@ struct ClipSlot {
     bool operator==(const ClipSlot& o) const { return clip == o.clip && stop == o.stop; }
 };
 
+constexpr int kMaxStackLayer = 63;
+
 /// An instance of a clip on the timeline. It references the clip, so editing the clip changes every instance.
 struct ArrangerClip {
     ArrangementId id;
@@ -41,10 +43,12 @@ struct ArrangerClip {
     int8_t transpose = 0;    // non-destructive, per instance
     float velocityScale = 1; // non-destructive, per instance
     float stretch = 1;       // time-stretch factor
+    int8_t layer = 0;        // stacking order among overlapping clips: a lower layer takes a higher sub-row first
 
     bool operator==(const ArrangerClip& o) const {
         return id == o.id && clip == o.clip && position == o.position && length == o.length && offset == o.offset &&
-               muted == o.muted && transpose == o.transpose && velocityScale == o.velocityScale && stretch == o.stretch;
+               muted == o.muted && transpose == o.transpose && velocityScale == o.velocityScale &&
+               stretch == o.stretch && layer == o.layer;
     }
 };
 

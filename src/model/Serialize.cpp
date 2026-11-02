@@ -356,6 +356,8 @@ json_t* arrangerClipToJson(const ArrangerClip& a) {
     setInt(j, "transpose", a.transpose);
     setNumber(j, "velScale", a.velocityScale);
     setNumber(j, "stretch", a.stretch);
+    if (a.layer != 0)
+        setInt(j, "layer", a.layer);
     return j;
 }
 
@@ -370,6 +372,7 @@ ArrangerClip arrangerClipFromJson(const json_t* j) {
     a.transpose = saturate<int8_t>(getInt(j, "transpose", a.transpose));
     a.velocityScale = getFloat(j, "velScale", a.velocityScale);
     a.stretch = getFloat(j, "stretch", a.stretch);
+    a.layer = int8_t(std::clamp<int64_t>(getInt(j, "layer", a.layer), 0, kMaxStackLayer));
     return a;
 }
 

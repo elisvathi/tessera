@@ -1648,17 +1648,27 @@ int Engine::lanesClips(const TrackPlayback& tp, const TrackState& state, double 
     }
     if (!followsArrangement(state) || replacing(tp))
         return 0;
-    // Sorted by position: the clips under the playhead come bottom to top, so a later one (a newer take on top)
-    // overrides the lanes it shares with the ones below.
+    // The clips under the playhead, ordered by stacking row, so the one on the lower row (a newer take lands there,
+    // or the user moved it down) comes last and overrides the lanes it shares with the ones above.
     int n = 0;
+    std::array<int, std::tuple_size<LaneClips>::value> rows{};
     for (const InstanceLanes& inst : tp.arrangementLanes) {
         if (double(inst.position) > song || n == int(out.size()))
             break;
         if (double(inst.end) <= song)
             continue;
         double t = inst.clipTime(song);
-        if (std::isfinite(t))
-            out[size_t(n++)] = {inst.clip.get(), t};
+        if (!std::isfinite(t))
+            continue;
+        // Insertion keeps them sorted by row; equal rows stay in start order.
+        int k = n++;
+        while (k > 0 && rows[size_t(k - 1)] > inst.row) {
+            out[size_t(k)] = out[size_t(k - 1)];
+            rows[size_t(k)] = rows[size_t(k - 1)];
+            k--;
+        }
+        out[size_t(k)] = {inst.clip.get(), t};
+        rows[size_t(k)] = inst.row;
     }
     return n;
 }

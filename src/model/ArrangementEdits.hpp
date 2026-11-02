@@ -31,13 +31,21 @@ Layout layoutOf(const Song& song);
 Layout pick(const Layout& layout, const IdSet& ids);
 IdSet idsOf(const Layout& layout);
 const Placed* find(const Layout& layout, ArrangementId id);
-/// Clips that overlap on one track play together and are drawn stacked: each instance gets the lowest sub-row
-/// free at its start (instances taken by start, then by ID, so the layout is stable). `rows` is at least 1.
+/// Clips that overlap on one track play together and are drawn stacked: each instance gets the highest sub-row free
+/// for its whole span. Instances are taken by layer (ArrangerClip::layer, 0 by default, so a lower layer claims its
+/// row first), then start, then ID, so the layout is stable and a clip with nothing overlapping sits on top. `rows`
+/// is at least 1. Where stacked clips share an AUTO
+/// channel, the clip on the lower row plays it.
 struct Stacking {
     std::unordered_map<ArrangementId, int> row;
     int rows = 1;
 };
 Stacking stackOf(const Layout& layout, TrackId track);
+/// Whether instance `id` overlaps a clip in the sub-row above (`direction` -1) or below (+1), to swap rows with.
+bool canMoveInStack(const Layout& layout, ArrangementId id, int direction);
+/// Swaps instance `id` with the overlapping clips in the sub-row above (-1) or below (+1). Every clip on the track
+/// keeps the row it showed, so only those two places change.
+Layout moveInStack(const Layout& layout, ArrangementId id, int direction);
 
 /// The time span [first start, last end) of `ids`; {0, 0} when there are none.
 std::pair<Tick, Tick> span(const Layout& layout, const IdSet& ids);

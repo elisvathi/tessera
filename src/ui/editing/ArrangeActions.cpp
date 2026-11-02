@@ -320,6 +320,18 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
         "Make unique", shortcutLabel(Action::MakeUnique), [l] { makeUniqueSelected(*l); }, uses <= 1));
     bool muted = placed->clip.muted;
     menu->addChild(rack::createMenuItem(muted ? "Unmute" : "Mute", "", [l, muted] { setMuted(*l, !muted); }));
+    // Overlapping clips stack in rows; these swap it with the clip in the row above or below. Where they share an
+    // AUTO channel the clip on the lowest row plays it, as a newer take lands there.
+    auto moveInStack = [l, clicked](int direction, const char* name) {
+        const arrange::Layout& before = l->committed();
+        l->commit(name, before, arrange::moveInStack(before, clicked, direction), arrange::IdSet{clicked});
+    };
+    menu->addChild(rack::createMenuItem(
+        "Move up a row", "", [moveInStack] { moveInStack(-1, "Move clip up a row"); },
+        !arrange::canMoveInStack(lanes.committed(), clicked, -1)));
+    menu->addChild(rack::createMenuItem(
+        "Move down a row", "", [moveInStack] { moveInStack(+1, "Move clip down a row"); },
+        !arrange::canMoveInStack(lanes.committed(), clicked, +1)));
 
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(

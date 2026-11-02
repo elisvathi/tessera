@@ -101,6 +101,7 @@ struct InstanceLanes {
     bool looping = false;
     Tick spanStart = 0, spanEnd = 0; // the loop (looping) or the whole clip
     std::shared_ptr<const ClipPlayback> clip;
+    int row = 0; // its stacking row: where stacked clips share a lane, the lower row plays it
 
     /// Clip time at song tick `tick`, or NaN where the instance plays nothing.
     double clipTime(double tick) const;

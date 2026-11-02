@@ -565,7 +565,8 @@ stays for big work and opens from the strip's "Full editor" button.
   they overlap. Off, the old rule applies: the changed clip trims or replaces what it covers. Recording in
   Replace mode, "record from launcher" and range duplicates still replace on purpose.
 - Automatic voices add up the clips that overlap in time, so stacked chords don't steal each other's voices.
-- Where stacked clips both have clip automation on the same AUTO channel, the earlier one plays it.
+- Where stacked clips both have clip automation on the same AUTO channel, the earlier one plays it. (Changed by
+  §91: the clip on the lowest row plays it, which is the later one unless the order was changed.)
 - The corner tools wrap onto a second line when the header is too narrow for one (Automation follows clips was
   hidden before).
 
@@ -1384,3 +1385,19 @@ Impact: `Clip::ownColor`, `Clip::shownColor`, `clipActions::appendColorMenu`; DA
 Why: a user asked for the stop button on a slot to be optional (Trello "Selected USER FEEDBACK").
 
 Impact: `ClipSlot::stop`, `SetSlotStop`, `TrackPlayback::keepsPlaying`, the scene case in `Engine::launch`.
+
+## 91. Stacked timeline clips can change rows (2 Nov)
+
+- **Right-click a stacked clip: Move up a row / Move down a row.** It swaps rows with the clips it overlaps in that
+  row; every other clip on the track keeps the row it showed. One undo step.
+- **Each instance has a layer** (0 by default, saved only when set): a stacking order, not a fixed row. Instances
+  take the highest row free for their whole span, lower layers first, so with every layer at 0 the layout is the old
+  one, and a clip moved away from the others goes back to the top instead of leaving empty rows.
+- **The lowest row plays a shared AUTO channel.** The engine used to let the later clip win, which in the old layout
+  is always the lower one, so existing songs sound the same; now moving a clip down a row also hands it the shared
+  lanes. "Up" names the row on screen, not who wins, so the items say "a row".
+
+Why: a user asked to move overlapping clips vertically to change their order (Trello "Selected USER FEEDBACK").
+
+Impact: `ArrangerClip::layer`, `arrange::stackOf / canMoveInStack / moveInStack`, `InstanceLanes::row`,
+`Engine::lanesClips` orders the clips under the playhead by row.

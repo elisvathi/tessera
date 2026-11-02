@@ -296,3 +296,17 @@ TEST_CASE("an empty slot without a stop button is saved and loaded") {
     CHECK(loaded.tracks[0].slots[0].stop);
     CHECK(loaded == song);
 }
+
+TEST_CASE("a timeline clip's stacking layer is saved and loaded") {
+    Song song = makeDefaultSong();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = kPpq * 4;
+    a.layer = 2;
+    song.tracks[0].arrangement.push_back(a);
+    CHECK(throughText(song).tracks[0].arrangement[0].layer == 2);
+}

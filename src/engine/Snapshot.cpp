@@ -1,6 +1,7 @@
 #include "Snapshot.hpp"
 
 #include "../model/Arrangement.hpp"
+#include "../model/ArrangementEdits.hpp"
 #include "../model/DeviceLookup.hpp"
 #include "../model/Devices.hpp"
 #include "../model/DrumKit.hpp"
@@ -333,6 +334,10 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         }
     if (tp->armed || tp->listen == ListenSource::External)
         findLiveControls(song, track, *tp);
+    arrange::Layout mine;
+    for (const ArrangerClip& a : track.arrangement)
+        mine.push_back({track.id, a});
+    arrange::Stacking stack = arrange::stackOf(mine, track.id);
     for (const ArrangerClip& a : track.arrangement) {
         const Clip* clip = song.findClip(a.clip);
         if (!clip || a.muted || clip->automation.empty())
@@ -355,6 +360,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         inst.spanStart = span.start;
         inst.spanEnd = span.end;
         inst.clip = playback;
+        inst.row = stack.row.count(a.id) ? stack.row.at(a.id) : 0;
         tp->arrangementLanes.push_back(inst);
         tp->autoChannels = std::max(tp->autoChannels, channelsOf(playback->lanes));
         tp->voiceLanes |= playsIntoVoices(playback->lanes);
