@@ -481,3 +481,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       same keys act on the song. Same in the panel editor.
 - [ ] Two notes touching on one row: just left of the seam a drag resizes the first note's end; just right of it,
       the second note's start. Both ways, both directions. Two touching arranger clips the same.
+
+## User feedback 2
+- [ ] Transport 4/4 ▾: Beats per bar and Beat unit change the time signature on their own (7/8, 11/16, 5/2); the
+      chip, ruler and bar lines follow; one undo step each.

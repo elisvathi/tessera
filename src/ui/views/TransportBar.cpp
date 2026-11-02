@@ -189,7 +189,8 @@ class PlaysSwitch : public rack::widget::OpaqueWidget {
 };
 
 constexpr int kSwingSteps[] = {0, 10, 20, 30, 40, 50, 66, 100};
-const TimeSig kTimeSigs[] = {{2, 4}, {3, 4}, {4, 4}, {5, 4}, {6, 8}, {7, 8}, {9, 8}, {12, 8}};
+constexpr int kMaxBeatsShown = 16;
+const int kBeatUnits[] = {2, 4, 8, 16};
 
 } // namespace
 
@@ -263,16 +264,27 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
         if (!m)
             return;
         rack::ui::Menu* menu = rack::createMenu();
+        // Beats and the beat's length are picked on their own, so any meter (7/8, 11/16, 5/2) is two clicks away.
+        TimeSig now = m->song().timeSig;
+        auto setTo = [c](TimeSig ts) {
+            if (TesseraModule* mod = c->module())
+                mod->perform(setSongField(mod->song(), &Song::timeSig, ts,
+                                          "Set time signature to " + std::to_string(ts.num) + "/" +
+                                              std::to_string(ts.den)));
+        };
         menu->addChild(rack::createMenuLabel("Time signature"));
-        for (TimeSig ts : kTimeSigs) {
-            std::string label = std::to_string(ts.num) + "/" + std::to_string(ts.den);
-            menu->addChild(rack::createCheckMenuItem(
-                label, "", [c, ts] { return c->module() && c->module()->song().timeSig == ts; },
-                [c, ts, label] {
-                    if (TesseraModule* m = c->module())
-                        m->perform(setSongField(m->song(), &Song::timeSig, ts, "Set time signature to " + label));
-                }));
-        }
+        menu->addChild(rack::createSubmenuItem("Beats per bar", std::to_string(now.num), [now, setTo](rack::ui::Menu* sub) {
+            for (int n = 1; n <= kMaxBeatsShown; n++)
+                sub->addChild(rack::createCheckMenuItem(
+                    std::to_string(n), "", [now, n] { return now.num == n; }, [now, n, setTo] { setTo({n, now.den}); }));
+        }));
+        menu->addChild(
+            rack::createSubmenuItem("Beat unit", "1/" + std::to_string(now.den), [now, setTo](rack::ui::Menu* sub) {
+                for (int d : kBeatUnits)
+                    sub->addChild(rack::createCheckMenuItem(
+                        "1/" + std::to_string(d), "", [now, d] { return now.den == d; },
+                        [now, d, setTo] { setTo({now.num, d}); }));
+            }));
         menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createMenuLabel("Swing: off-beat 1/16s land later"));
         for (int percent : kSwingSteps) {
