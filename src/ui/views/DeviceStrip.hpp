@@ -57,7 +57,8 @@ class DeviceStrip : public InteractiveView {
             AddPlayhead,
             BranchBand,        // behind the shown playhead's branch; `id` is the playhead
             PlayheadDirection, // the shown playhead's direction and order, one dropdown
-            PlayheadFeel,      // its Feel (bend): a picture of the shape; opens it in the lower pane
+            GroupLabel,        // a Playheads card's MOVE (param 0) or REPEAT (param 1) heading; only drawn
+            RepeatBlock,       // the REPEAT block's box and its hits; only drawn (its controls take the clicks)
             PlayheadMore,      // its rarer settings
             CurveLabel,        // a playhead knob's label: shows its curve in the lower pane
             MotionNotes,       // a Motion card's "6 notes": selects them in the piano roll
@@ -71,6 +72,7 @@ class DeviceStrip : public InteractiveView {
         uint64_t id = 0; // device, modulator or (playhead knobs and chips) playhead ID
         ParamRef::Kind refKind = ParamRef::Kind::Device; // what a knob's `id` is
         bool dial = false;                               // a choice drawn as a knob (a playhead's rate)
+        bool compact = false; // a choice drawn inside the REPEAT block (drawRepeatBlock), not as a knob cell
     };
 
     // What running gestures show before they are committed.
@@ -113,8 +115,12 @@ class DeviceStrip : public InteractiveView {
     /// A dropdown in a knob's place (a playhead's direction, repeat, channel), with its label under it.
     void drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value, bool hot,
                       const ParamRef* curveOf = nullptr);
-    /// The Feel cell: the shape in small, in the playhead's colour when it bends, and its underlined name.
-    void drawFeelCell(NVGcontext* vg, const Part& part, const Playhead& p, bool hot);
+    /// A Playheads card's REPEAT block: where the repeats of one group land (and, with a Curve, where they would land
+    /// straight), then Piece × Times and Curve with their underlined names. Times and Curve are faint while Repeat is
+    /// off.
+    void drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhead& p);
+    /// A Playheads card's group heading: small capitals and a line across the group.
+    void drawGroupLabel(NVGcontext* vg, const Part& part);
     /// While mapping: whether the mapped modulator may reach this knob.
     bool reachableNow(const ParamRef& ref);
     void drawClosed(NVGcontext* vg);

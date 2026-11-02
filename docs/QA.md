@@ -536,11 +536,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A Curve or LFO on a playhead's Rate: its line in the piano roll speeds up and slows down with the sound, and
       the keys it lights follow it.
 - [ ] Two Motion devices, one in the chain and one in a playhead's own devices: both show ghosts for their notes.
-- [ ] Playheads card row reads Rate, Direction, Repeat, Times, More; Notes is in More. Times is faint while Repeat
-      is Off. Click Direction's, Repeat's or Times' underlined name: the lower pane opens a curve for it; a point in
+- [ ] Playheads card reads MOVE (Rate, Direction), REPEAT (Piece × Times, Curve), More; Notes is in More. Click
+      Direction's, Piece's or Times' underlined name: the lower pane opens a curve for it; a point in
       bar 2 turns the playhead backward / starts repeating there, heard and drawn; the name takes the playhead's
       colour once it has a curve.
-- [ ] Feel cell: click it, the lower pane shows the Feel lined up with the bars. Pick Ease in: the cell and pane
-      show it, the line sits under the dashed one; with Repeat 1/16, Times 4 the repeats speed up, heard. Drag the line
-      up past the dashed line: Ease out. Drag a cycle bar's right grip: Cycle follows, snapped. Double-click: straight.
-      Each is one undo step. In the in-panel editor (pane's menu › Feel) it fits and clips.
+- [ ] REPEAT block: Piece Off shows "Off: pick a piece to play again", Times and Curve faint. Piece 1/16, Times 4:
+      four even bars on the block's top. Curve list shows a picture beside each name; Ease in: the bars bunch up at
+      the end with dots where they were, heard on a long note (four retriggers speeding up each beat); Ease out the
+      other way. Each name opens its curve. Each change is one undo step.

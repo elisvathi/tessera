@@ -17,7 +17,6 @@
 #include "../widgets/ToolButton.hpp"
 #include "ClipLaneView.hpp"
 #include "CurveView.hpp"
-#include "FeelView.hpp"
 #include "DrumLaneHeaders.hpp"
 #include "ExpressionLane.hpp"
 #include "LaneTabs.hpp"
@@ -253,8 +252,6 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     timeMap->visible = false;
     curveView = new CurveView(ctx, *this);
     curveView->visible = false;
-    feelView = new FeelView(ctx, *this);
-    feelView->visible = false;
     addChild(grid);
     addChild(keys);
     addChild(lanes);
@@ -264,7 +261,6 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     addChild(clipLane);
     addChild(timeMap);
     addChild(curveView);
-    addChild(feelView);
 
     EditorContext* c = &ctx;
     ToolButton::Options lower;
@@ -470,8 +466,7 @@ void PianoRollView::layout() {
     float rulerHeight = std::min(Ruler::heightFor(source, ctx.surface), rest);
     rest -= rulerHeight;
     float lane = ctx.surface == Surface::Panel ? kLaneHeightPanel : kLaneHeightOverlay;
-    if ((ctx.view().lowerLane == kCurveLane && curveView->hasCurve()) ||
-        (ctx.view().lowerLane == kFeelLane && feelView->hasFeel()))
+    if (ctx.view().lowerLane == kCurveLane && curveView->hasCurve())
         lane = ctx.view().curveHeight > 0                ? float(ctx.view().curveHeight)
                : ctx.surface == Surface::Panel ? kCurveLaneHeightPanel
                                                : kCurveLaneHeightOverlay;
@@ -484,8 +479,7 @@ void PianoRollView::layout() {
         lane = tabs = 0;
     lowerButton->visible = lowerRoom;
     if (!lowerRoom)
-        values->visible = expression->visible = clipLane->visible = timeMap->visible = curveView->visible =
-            feelView->visible = false;
+        values->visible = expression->visible = clipLane->visible = timeMap->visible = curveView->visible = false;
     float body = header + rulerHeight;
     float gridHeight = std::max(0.f, rest - lane - tabs);
     bool drum = drumMode();
@@ -504,8 +498,6 @@ void PianoRollView::layout() {
     // The curve's row labels sit under the lower pane's button, where the keys are above.
     curveView->box = rack::math::Rect(0, values->box.pos.y, box.size.x, lane);
     curveView->left = side;
-    feelView->box = curveView->box;
-    feelView->left = side;
     expression->box = values->box;
     // The label stays inside the lane, however short the lane gets (the in-panel editor).
     lowerButton->box =
@@ -565,8 +557,7 @@ void PianoRollView::step() {
         clipLane->lane = lowerLane ? lowerLane->id : AutomationId();
         clipLane->visible = lowerLane != nullptr;
         bool curveShown = ctx.view().lowerLane == kCurveLane && curveView->hasCurve();
-        bool feelShown = ctx.view().lowerLane == kFeelLane && feelView->hasFeel();
-        bool mapShown = curveShown || feelShown || (ctx.view().lowerLane == kTimeMapLane && timeMap->device());
+        bool mapShown = curveShown || (ctx.view().lowerLane == kTimeMapLane && timeMap->device());
         if (source.clip != pointsClip || state.tool != pointsTool) {
             curvePoints.clear();
             pointsClip = source.clip;
@@ -581,14 +572,12 @@ void PianoRollView::step() {
             focusCurve(NoteId()); // the hit, its clip or the lane went away
         expression->visible = !clipLane->visible && !mapShown && curve && (!drumValues || focused);
         values->visible = !clipLane->visible && !mapShown && (!curve || (drumValues && !focused));
-        timeMap->visible = mapShown && !curveShown && !feelShown;
+        timeMap->visible = mapShown && !curveShown;
         curveView->visible = curveShown;
-        feelView->visible = feelShown;
         if (curve)
             expression->curve = *curve;
         values->field = drumValues ? *drumValues : fieldOf(noteLane);
         lowerButton->setText(curveShown  ? curveView->title()
-                             : feelShown ? feelView->title()
                              : mapShown  ? "Time map"
                              : lowerLane ? lowerLane->name
                                          : noteLaneName(noteLane));
@@ -913,9 +902,7 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
         menu->addChild(rack::createCheckMenuItem(
             "Time map (playheads)", "", [c] { return c->view().lowerLane == kTimeMapLane; },
             [c] { c->view().lowerLane = kTimeMapLane; }));
-        menu->addChild(rack::createCheckMenuItem(
-            "Feel (the shown playhead)", "", [c] { return c->view().lowerLane == kFeelLane; },
-            [c] { c->view().lowerLane = kFeelLane; }));
+
     }
     // Curve modulators this track hears (its own, its devices', the song's); a new one starts from a knob's label or
     // the modulator list.

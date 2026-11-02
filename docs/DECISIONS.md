@@ -1456,14 +1456,19 @@ Design: `docs/design/PLAYHEADS.md`.
   playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change
   (a playhead added, removed or moved, an Echo needing more), each channel's sounding voices move to its new block
   with their note, and what the engine keeps per voice moves along.
-- **Feel: the playhead's bend, edited where you can see it** (2 Nov). The bend (Ease in, Ease out, Ease in-out,
-  Swing, Stairs over a cycle) worked in the engine but had no control. A trial version used a dropdown, an Amount
-  knob and a cycle choice; the hidden amount ("weight") confused. Picked over a popup of drawn shapes: a **Feel** cell
-  on the card shows the shape, and opens it in the lower pane like a curve: shape buttons, a cycle bar on the pane's
-  ruler, and the line itself, dragged to bend it. The amount stays a knob in the model (0..100%), so modulators reach
-  it. With Follows playhead a note lasts until the bent playhead crosses it (engine and MIDI export).
+- **Curve spaces the repeats; one REPEAT block** (2 Nov). The bend (Ease in, Ease out, Ease in-out, Swing, Stairs)
+  worked in the engine with no control. A trial used a dropdown, an Amount knob and a cycle; a second a "Feel" cell
+  with its own lower-pane editor. Both were dropped: the amount ("weight") confused, and a separate editor was too
+  much for one setting. The user's rule: 8 repeats over 8 seconds come one a second when straight; the Curve changes
+  that spacing and nothing else. So the Curve always spans one repeat group (Piece × Times), keeping the group's
+  length and its first hit, and does nothing without Repeat. It is one list of ready shapes with the strength in
+  the name (Ease in soft / Ease in / Ease in hard = t², t³, t⁴), each drawn beside its name; no amount, no cycle.
+  The card groups its settings as MOVE (Rate, Direction) and REPEAT, a block that draws where one group's hits land
+  (dots where they would land straight) over Piece × Times and Curve (picked from three mockups: Curve beside Rate
+  with its own rate, Curve as a third Repeat cell, this block). "Repeat" became **Piece** inside it. The old Bend
+  amount and cycle knobs stay in the list, unread. With Follows playhead a note lasts until the next repeat.
 - **Direction, Repeat and Times take curves; Notes moves to More** (2 Nov). Repeat was one dropdown for its piece
-  size and its times, so neither could have a curve; they are now two cells, Repeat (a choice) and Times (a number),
+  size and its times, so neither could have a curve; they are now two controls, Piece (a choice) and Times (a number),
   each with the underlined name that opens its curve. Direction keeps its dropdown (it also holds the step orders);
   its name opens a curve on the direction alone, so a curve never picks a step order. Notes is set once per
   playhead, so it moved into More and freed the cell (Trello).

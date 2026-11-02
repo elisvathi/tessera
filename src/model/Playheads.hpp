@@ -32,9 +32,9 @@ enum Playhead {
     kRegionLength,
     kRepeatSize,
     kRepeatTimes,
-    kBendShape,
-    kBendAmount,
-    kBendCycle,
+    kCurve,      // how the repeats in each repeat group are spaced: Straight or a ready shape (curveNames())
+    kBendAmount, // kept for saved songs; not read: each Curve has its strength built in
+    kBendCycle,  // kept for saved songs; not read: a Curve spans one repeat group
     kOffset,
     kLength,
     kFixedLength,
@@ -76,7 +76,7 @@ struct Motion {
     int repeatTimes = 1;
     Bend bend = Bend::Straight;
     double bendAmount = 0;   // 0..1
-    double bendCycle = 0;    // the playhead's own ticks (elapsed times rate); 0 = no bend
+    double bendCycle = 0;    // the playhead's own ticks (elapsed times rate); 0 = no bend. One repeat group.
     double restartEvery = 0; // elapsed ticks; 0 = only when the clip starts
     /// A drawn path, when the Path knob says Drawn and the playhead has points (set by the caller, which owns them):
     /// over each cycle of the playhead's own time it goes where the points say; rate still applies, the other
@@ -239,6 +239,14 @@ double fixedLengthTicks(int index, TimeSig ts);
 
 /// The bend shape: maps 0..1 of a cycle onto 0..1, always rising, with both ends fixed.
 double warp(Bend shape, double amount, double f);
+/// Where in a cycle (0..1) the bent playhead reaches `g` (0..1) of it: warp's inverse.
+double unwarp(Bend shape, double amount, double g);
+
+/// The Curve setting's ready shapes, each a bend shape at a set strength ("Ease in soft", "Ease in", "Ease in hard"…).
+/// The first is Straight: repeats evenly spaced.
+const std::vector<std::string>& curveNames();
+/// The bend shape and strength (0..1) of Curve `index`.
+std::pair<Bend, double> curveShape(int index);
 
 /// Whether a playhead's Path knob says Drawn.
 bool wantsDrawnPath(const float* knobs);

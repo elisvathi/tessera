@@ -308,6 +308,48 @@ const std::vector<std::string>& pathCycleNames() {
 }
 double pathCycleTicks(int index, TimeSig ts) { return ticksAt(kPathCycles, index, ts); }
 
+namespace {
+
+struct CurvePreset {
+    const char* name;
+    Bend bend;
+    double amount;
+};
+// Strengths are picked so soft, medium and hard ease as t^2, t^3 and t^4 (warp's power is 1 + 3 * amount).
+const CurvePreset kCurvePresets[] = {
+    {"Straight", Bend::Straight, 0},        {"Ease in soft", Bend::EaseIn, 1.0 / 3},
+    {"Ease in", Bend::EaseIn, 2.0 / 3},     {"Ease in hard", Bend::EaseIn, 1},
+    {"Ease out soft", Bend::EaseOut, 1.0 / 3}, {"Ease out", Bend::EaseOut, 2.0 / 3},
+    {"Ease out hard", Bend::EaseOut, 1},    {"Ease in-out", Bend::EaseInOut, 2.0 / 3},
+    {"Swing light", Bend::Swing, 0.4},      {"Swing heavy", Bend::Swing, 1},
+    {"Stairs", Bend::Stairs, 1}};
+
+} // namespace
+
+const std::vector<std::string>& curveNames() {
+    static const std::vector<std::string> names = [] {
+        std::vector<std::string> out;
+        for (const CurvePreset& c : kCurvePresets)
+            out.push_back(c.name);
+        return out;
+    }();
+    return names;
+}
+
+std::pair<Bend, double> curveShape(int index) {
+    const CurvePreset& c = kCurvePresets[std::clamp(index, 0, int(std::size(kCurvePresets)) - 1)];
+    return {c.bend, c.amount};
+}
+
+double unwarp(Bend shape, double amount, double g) {
+    double lo = 0, hi = 1;
+    for (int i = 0; i < 48; i++) {
+        double mid = (lo + hi) / 2;
+        (warp(shape, amount, mid) < g ? lo : hi) = mid;
+    }
+    return (lo + hi) / 2;
+}
+
 double warp(Bend shape, double amount, double f) {
     f = std::clamp(f, 0.0, 1.0);
     amount = std::clamp(amount, 0.0, 1.0);
@@ -523,9 +565,14 @@ Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart
     // Start and Offset are no longer read: a playhead begins where its segment begins, and the segment says where.
     m.repeatSize = repeatTicks(index(knob::kRepeatSize), ts);
     m.repeatTimes = index(knob::kRepeatTimes);
-    m.bend = Bend(index(knob::kBendShape));
-    m.bendAmount = shown(knob::kBendAmount) / 100;
-    m.bendCycle = cycleTicks(index(knob::kBendCycle), ts);
+    // The Curve respaces the repeats inside each repeat group (Repeat's piece times Times), so a group keeps its
+    // length and lands where it would; without Repeat there is nothing to respace.
+    auto [bend, strength] = curveShape(index(knob::kCurve));
+    if (repeats(m)) {
+        m.bend = bend;
+        m.bendAmount = strength;
+        m.bendCycle = m.repeatSize * m.repeatTimes;
+    }
     m.pathCycle = pathCycleTicks(index(knob::kPathCycle), ts);
     m.order = Order(index(knob::kOrder));
     m.orderStep = orderStepTicks(index(knob::kOrderStep), ts);
