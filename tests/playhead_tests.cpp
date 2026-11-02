@@ -1247,3 +1247,49 @@ TEST_CASE("MIDI export keeps a playhead's place when a curve changes its Rate, a
         got.push_back({e.start, e.pitch});
     CHECK(got == std::vector<std::pair<Tick, int>>{{0, 60}, {960, 62}, {1920, 64}, {2400, 65}, {2880, 60}, {3360, 62}});
 }
+
+TEST_CASE("a playhead without a segment of its own keeps it when a note is added past the clip's notes") {
+    // A clip that doesn't loop, its loop range one bar, a note on each beat; a second bar on the timeline.
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = 2 * 4 * kPpq;
+    clip.loopStart = 0;
+    clip.loopEnd = 4 * kPpq;
+    clip.loopMode = LoopMode::Off;
+    for (int b = 0; b < 4; b++) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = Tick(b) * kPpq;
+        n.length = 240;
+        n.pitch = 60;
+        clip.notes.push_back(n);
+    }
+    ClipId id = clip.id;
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 2 * 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    auto starts = [&] {
+        std::vector<Tick> out;
+        for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+            out.push_back(e.start);
+        return out;
+    };
+    std::vector<Tick> before = starts();
+    CHECK(before == std::vector<Tick>{0, 960, 1920, 2880, 3840, 4800, 5760, 6720});
+
+    // A note drawn after the bar: the segment (the loop range) stays, so what plays doesn't move.
+    Note late;
+    late.id = song.newId<NoteId>();
+    late.start = 4 * kPpq + 240;
+    late.length = 240;
+    late.pitch = 72;
+    song.clips.at(id).notes.push_back(late);
+    song.clips.at(id).sortNotes();
+    CHECK(starts() == before);
+}

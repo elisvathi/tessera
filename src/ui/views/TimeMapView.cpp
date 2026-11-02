@@ -232,8 +232,9 @@ void TimeMapView::openMenu(const Row& row) {
         if (!clip || !t)
             return;
         ClipSpan span = clipSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
-        playheads::Motion motion = playheads::motionFrom(p.params.data(), d->params.data(), double(span.start),
-                                                         double(span.length()), owner.timeSig());
+        auto [segStart, segLength] = playheadSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
+        playheads::Motion motion = playheads::motionFrom(p.params.data(), d->params.data(), double(segStart),
+                                                         double(segLength), owner.timeSig());
         // The cycle covers the clip (the shortest one that does), so the drawn path is the whole clip's.
         const std::vector<std::string>& cycles = playheads::pathCycleNames();
         int cycleIndex = int(cycles.size()) - 1;
@@ -316,9 +317,9 @@ void TimeMapView::drawRow(NVGcontext* vg, const Row& row) {
     nvgFillColor(vg, c.line0);
     nvgFill(vg);
 
-    ClipSpan span = clipSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
-    playheads::Motion motion = playheads::motionFrom(p.params.data(), d->params.data(), double(span.start),
-                                                     double(span.length()), owner.timeSig());
+    auto [segStart, segLength] = playheadSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
+    playheads::Motion motion = playheads::motionFrom(p.params.data(), d->params.data(), double(segStart),
+                                                     double(segLength), owner.timeSig());
     bool drawn = playheads::wantsDrawnPath(p.params.data());
     if (drawn)
         motion.path = &pointsOf(p);

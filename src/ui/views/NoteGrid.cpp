@@ -1198,6 +1198,8 @@ void NoteGrid::updateHeads() {
                             [](const Playhead& p) { return p.solo && !p.mute; });
     // The region is the whole span: a drum clip's lane cycle, as the engine reads it.
     ClipSpan span = clipSpan(*clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr);
+    std::pair<Tick, Tick> segment =
+        playheadSpan(*clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr);
     const Playhead* shownHead = deviceActions::shownPlayhead(ctx);
     // Where the engine has each playhead: a curve or modulator on its rate or start moves it, which its saved
     // settings alone can't tell.
@@ -1206,8 +1208,8 @@ void NoteGrid::updateHeads() {
         const Playhead& p = device->playheads[k];
         if (p.mute || (solo && !p.solo))
             continue;
-        playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), double(span.start),
-                                                         double(span.length()), owner.timeSig());
+        playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), double(segment.first),
+                                                         double(segment.second), owner.timeSig());
         if (playheads::wantsDrawnPath(p.params.data()))
             motion.path = &p.path;
         double live = k < status.heads.size() ? status.heads[k] : NAN;

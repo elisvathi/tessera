@@ -28,6 +28,13 @@ ClipSpan clipSpan(const Clip& clip, const std::vector<DrumLane>* lanes) {
     return {false, 0, end, end};
 }
 
+std::pair<Tick, Tick> playheadSpan(const Clip& clip, const std::vector<DrumLane>* lanes) {
+    ClipSpan span = clipSpan(clip, lanes);
+    if (!span.looping && clip.loopEnd > clip.loopStart)
+        return {clip.loopStart, clip.loopEnd - clip.loopStart};
+    return {span.start, span.length()};
+}
+
 double ClipSpan::patternTime(double u) const {
     if (!cycles() || pattern <= 0)
         return u;
