@@ -2060,3 +2060,126 @@ TEST_CASE("the piano roll finds the moves of a Motion inside a playhead's own de
     CHECK(moves[0][0].pitch == 62);
     CHECK(moves[1][0].pitch == 69);
 }
+
+namespace {
+/// Rising edges of `pitch` on any voice over `samples`.
+int countStarts(Harness& h, int pitch, int64_t samples) {
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = 0; s < samples; s++) {
+        h.step();
+        bool now = false;
+        for (int v = 0; v < 48; v++)
+            now |= h.frame().gate[v] > 5.f && int(std::lround(h.frame().voct[v] * 12)) + 60 == pitch;
+        starts += now && !was;
+        was = now;
+    }
+    return starts;
+}
+} // namespace
+
+TEST_CASE("engine: playheads play a clip's first note on every pass, at any speed and tempo") {
+    for (double tempo : {1.0, 1.37, 0.91, 1.113}) {
+        for (int rate : {7, 4, 6, 8, 10}) { // 1x, 1/2x, 3/4x, 4/3x, 2x
+            // Launcher loop.
+            Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
+            song.clips.begin()->second.loopMode = LoopMode::Loop;
+            Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+            Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+            p.params[playheads::knob::kRate] =
+                devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], float(rate));
+            d.playheads.push_back(p);
+            song.tracks[0].devices.push_back(d);
+            Harness h(song);
+            h.engine.setTempo(kBpm * tempo);
+            double speed[] = {0, 0, 0, 0, 0.5, 0, 0.75, 1, 4.0 / 3, 0, 2};
+            int64_t bars = 12;
+            int starts = countStarts(h, 60, int64_t(bars * 4 * kPpq * kSamplesPerTick / tempo) - 50);
+            int expected = int(std::ceil(bars * speed[rate] - 1e-9));
+            if (starts != expected)
+                MESSAGE("launcher tempo " << tempo << " rate " << rate << ": " << starts << " of " << expected);
+            CHECK(starts == expected);
+        }
+    }
+}
+
+TEST_CASE("engine: timeline playheads play the first note again after the song loop") {
+    for (double tempo : {1.0, 1.37, 0.91, 1.113}) {
+        Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
+        song.clips.begin()->second.loopMode = LoopMode::Loop;
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = song.clips.begin()->first;
+        a.length = 8 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        song.loopStart = 0;
+        song.loopEnd = 8 * kPpq;
+        Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+        d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+        song.tracks[0].devices.push_back(d);
+        Harness h(song, false);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.setLoopEnabled(true);
+        h.engine.reset();
+        h.engine.play();
+        h.engine.setTempo(kBpm * tempo);
+        int starts = countStarts(h, 60, int64_t(3 * 8 * kPpq * kSamplesPerTick / tempo) - 50);
+        if (starts != 6)
+            MESSAGE("timeline tempo " << tempo << ": " << starts << " of 6");
+        CHECK(starts == 6);
+    }
+}
+
+TEST_CASE("engine: back-to-back notes of one pitch start again each time, across the loop, with or without playheads") {
+    for (bool heads : {false, true}) {
+        for (int rate : {7, 4, 10}) {
+            Song song =
+                songWith({{0, 960, 60}, {960, 960, 60}, {1920, 960, 60}, {2880, 960, 60}}, 4 * kPpq, kAutoVoices);
+            song.clips.begin()->second.loopMode = LoopMode::Loop;
+            if (heads) {
+                Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+                Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+                p.params[playheads::knob::kRate] =
+                    devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], float(rate));
+                d.playheads.push_back(p);
+                song.tracks[0].devices.push_back(d);
+            } else if (rate != 7) {
+                continue;
+            }
+            Harness h(song);
+            double speed = rate == 4 ? 0.5 : rate == 10 ? 2 : 1;
+            int starts = countStarts(h, 60, int64_t(3 * 4 * kPpq * kSamplesPerTick) - 50);
+            int expected = int(std::ceil(12 * speed - 1e-9));
+            if (starts != expected)
+                MESSAGE("heads " << heads << " rate " << rate << ": " << starts << " of " << expected);
+            CHECK(starts == expected);
+        }
+    }
+}
+
+TEST_CASE("engine: one to three playheads at any speed start the first note on the first sample") {
+    for (int r = 0; r < 15; r++) {
+        for (int heads = 1; heads <= 3; heads++) {
+            Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
+            Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+            for (int k = 0; k < heads; k++) {
+                Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), k);
+                p.params[playheads::knob::kRate] =
+                    devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], float((r + k * 3) % 15));
+                d.playheads.push_back(p);
+            }
+            song.tracks[0].devices.push_back(d);
+            Harness h(song);
+            int64_t first = -1;
+            for (int64_t s = 0; s < 200 && first < 0; s++) {
+                h.step();
+                for (int v = 0; v < 48; v++)
+                    if (h.frame().gate[v] > 5.f)
+                        first = s;
+            }
+            if (first != 0)
+                MESSAGE("rate index " << r << " heads " << heads << ": first gate at sample " << first);
+            CHECK(first == 0);
+        }
+    }
+}
