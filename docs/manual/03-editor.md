@@ -25,6 +25,9 @@ There is also a smaller editor inside the panel itself. See [The editor inside t
    own way. Notes stay where you wrote them; in the piano roll and drum editor a note that swing moves gets a small
    tick where it really starts, and the grid lines between beats are drawn swung. Turn **Show swing in the editor**
    off in the same menu to see everything straight; swing still plays.
+
+   ![The time signature and swing menu](images/time-signature-menu.png)
+
 2. **Plays switch.** What the tracks play: the **Clips** you launch or the **Timeline**. The half that plays is
    lit. See [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline).
 3. **Undo and redo**, **follow the playhead**, **show the inspector**, and **close**.
