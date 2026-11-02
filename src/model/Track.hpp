@@ -23,8 +23,11 @@ constexpr int kMaxDrumLanes = 16;
 
 struct ClipSlot {
     std::optional<ClipId> clip;
+    // An empty slot's stop button: its scene's launch stops the track. Without it the scene leaves the track
+    // playing (docs/DECISIONS.md §90).
+    bool stop = true;
 
-    bool operator==(const ClipSlot& o) const { return clip == o.clip; }
+    bool operator==(const ClipSlot& o) const { return clip == o.clip && stop == o.stop; }
 };
 
 /// An instance of a clip on the timeline. It references the clip, so editing the clip changes every instance.

@@ -286,3 +286,13 @@ TEST_CASE("a clip's picked colour is saved; the colour old songs stored with a c
     Song old = songFromJson(j.get(), Song::kSchemaVersion);
     CHECK(old.clips.at(clip.id).shownColor(0x2DC08E) == 0x2DC08E);
 }
+
+TEST_CASE("an empty slot without a stop button is saved and loaded") {
+    Song song = makeDefaultSong();
+    REQUIRE(song.tracks[0].slots.size() >= 2);
+    song.tracks[0].slots[1].stop = false;
+    Song loaded = throughText(song);
+    CHECK_FALSE(loaded.tracks[0].slots[1].stop);
+    CHECK(loaded.tracks[0].slots[0].stop);
+    CHECK(loaded == song);
+}

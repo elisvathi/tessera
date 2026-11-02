@@ -286,6 +286,8 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     tp->listen = track.listen;
     tp->listenTrack = track.listenTrack;
     tp->slotClips = slotClipsOf(track);
+    for (const ClipSlot& s : track.slots)
+        tp->keepsPlaying.push_back(!s.clip && !s.stop);
     fillDrumLanes(*tp, track);
     // Clips with their own key get an entry in the track's key list, for devices that work in a key.
     std::map<ClipId, uint8_t> keyOf;

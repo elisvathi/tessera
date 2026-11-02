@@ -275,7 +275,7 @@ void LauncherPanel::click(Vec pos, int button, Modifiers mods) {
     if (h.part == Hit::Part::Launch) {
         if (clip)
             m->launchSlot(h.track, h.scene);
-        else
+        else if (t && h.scene < int(t->slots.size()) && t->slots[size_t(h.scene)].stop)
             m->stopTrack(h.track, h.scene);
         return;
     }

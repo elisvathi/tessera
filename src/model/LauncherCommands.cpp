@@ -80,6 +80,12 @@ void SetSlot::set(Song& song, std::optional<ClipId> clip) const {
         t->slots[size_t(slot)].clip = clip;
 }
 
+void SetSlotStop::set(Song& song, bool on) const {
+    Track* t = song.findTrack(track);
+    if (t && slot >= 0 && slot < int(t->slots.size()))
+        t->slots[size_t(slot)].stop = on;
+}
+
 Clip copyClip(const Clip& clip, const NextId& nextId) {
     Clip copy = clip;
     copy.id = ClipId(nextId());

@@ -531,6 +531,12 @@ void appendEmptySlotMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track
     menu->addChild(
         rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
     menu->addChild(rack::createMenuItem("Stop track", "", [c, track] { c->module()->stopTrack(track); }));
+    const Track* t = c->module()->song().findTrack(track);
+    bool stop = !t || slot < 0 || slot >= int(t->slots.size()) || t->slots[size_t(slot)].stop;
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createCheckMenuItem(
+        "Stop button", "its scene stops the track", [stop] { return stop; },
+        [c, track, slot, stop] { c->module()->perform(std::make_unique<SetSlotStop>(track, slot, !stop)); }));
 }
 
 void appendSceneMenu(rack::ui::Menu* menu, EditorContext& ctx, int scene, std::function<void()> startRename) {

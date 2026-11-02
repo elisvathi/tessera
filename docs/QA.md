@@ -488,3 +488,5 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Right-click a clip (slot or timeline) › Colour: a colour shows on its slot and every timeline copy; Track
       colour goes back to following the track; recolouring the track leaves coloured clips alone; several selected
       timeline clips change together in one undo step; an old song shows no stray clip colours.
+- [ ] Right-click an empty slot › Stop button off: the square goes, clicking it does nothing, and its scene leaves
+      that track playing; on again restores it; undo works; it survives saving.

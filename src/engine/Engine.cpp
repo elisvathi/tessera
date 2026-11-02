@@ -734,6 +734,8 @@ void Engine::launch(const LaunchEvent& e) {
                 queueLaunch(tp, state, kNoSlot, e.immediate);
             break;
         case LaunchEvent::Kind::Scene:
+            if (e.index >= 0 && size_t(e.index) < tp.keepsPlaying.size() && tp.keepsPlaying[size_t(e.index)])
+                break; // an empty slot without a stop button leaves the track as it is
             queueLaunch(tp, state, e.index, e.immediate);
             startsSomething |= tp.slot(e.index) != nullptr;
             break;

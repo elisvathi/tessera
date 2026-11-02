@@ -1373,3 +1373,14 @@ Why: a user live-looping wants to colour-code record / play / overdub / erase cl
 USER FEEDBACK").
 
 Impact: `Clip::ownColor`, `Clip::shownColor`, `clipActions::appendColorMenu`; DAWproject export uses it.
+
+## 90. An empty slot's stop button can be taken away (2 Nov)
+
+- **Each empty slot has a stop button by default**: launching its scene stops the track, as before. Right-click it,
+  **Stop button**, to take it away: the slot draws blank, a click does nothing, and its scene leaves that track
+  playing. A clip later put in the slot and taken out again keeps the choice.
+- Saved as `false` in the track's slot list instead of `null`, so older versions read it as a plain empty slot.
+
+Why: a user asked for the stop button on a slot to be optional (Trello "Selected USER FEEDBACK").
+
+Impact: `ClipSlot::stop`, `SetSlotStop`, `TrackPlayback::keepsPlaying`, the scene case in `Engine::launch`.

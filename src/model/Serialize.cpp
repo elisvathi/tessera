@@ -517,7 +517,7 @@ json_t* trackToJson(const Track& t) {
 
     json_t* slots = json_array();
     for (const ClipSlot& s : t.slots)
-        json_array_append_new(slots, s.clip ? idJson(*s.clip) : json_null());
+        json_array_append_new(slots, s.clip ? idJson(*s.clip) : s.stop ? json_null() : json_false());
     set(j, "slots", slots);
 
     json_t* arrangement = json_array();
@@ -560,6 +560,7 @@ Track trackFromJson(const json_t* j) {
         ClipSlot slot;
         if (json_is_integer(s))
             slot.clip = readId<ClipId>(s);
+        slot.stop = !json_is_false(s); // an empty slot saved as false has no stop button
         t.slots.push_back(slot);
     });
     forEach(get(j, "arrangement"), [&](const json_t* a) { t.arrangement.push_back(arrangerClipFromJson(a)); });

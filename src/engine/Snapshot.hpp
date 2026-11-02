@@ -137,6 +137,8 @@ struct TrackPlayback {
     std::vector<std::shared_ptr<const ClipPlayback>> slots;
     /// The clip each slot was built from, to know when to rebuild.
     std::vector<ClipId> slotClips;
+    /// Per slot: an empty slot without a stop button, whose scene leaves the track playing.
+    std::vector<bool> keepsPlaying;
     /// The arrangement as it plays, in song ticks, sorted by start (muted instances left out).
     std::vector<NoteEvent> arrangement;
     /// The clips the arrangement uses, to know when to rebuild.

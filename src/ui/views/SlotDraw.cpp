@@ -146,6 +146,8 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
         // A recessed well, so an empty slot never reads as content.
         NVGcolor fill = hovered ? nvgLerpRGBA(c.bg0, c.bg1, 1.f) : nvgLerpRGBA(c.bg0, c.ground, 0.45f);
         draw::roundedRect(vg, cell, theme::metrics::kRadiusItem, fill);
+        if (track && scene >= 0 && scene < int(track->slots.size()) && !track->slots[size_t(scene)].stop)
+            return; // no stop button: its scene leaves the track playing
         // The stop square is faint until stopping matters: while the track plays a clip, or under the mouse.
         // A stop waiting for the launch quantize blinks, so a scene launch never looks ignored (Trello, 13 Oct).
         bool stopWaiting = status->queued == kNoSlot && scene == ctx.module()->queuedStopScene();
