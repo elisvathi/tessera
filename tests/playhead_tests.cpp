@@ -1115,3 +1115,44 @@ TEST_CASE("a curve can turn a playhead's Repeat and Direction, as it does its Ra
     CHECK(pitchesWith(playheads::knob::kDirection, float(playheads::Direction::Reverse)) ==
           std::vector<int>{60, 62, 64, 65, 65, 64, 62, 60});
 }
+
+TEST_CASE("with a Feel, a note following the playhead lasts until the bent playhead leaves it") {
+    // One beat-long note at the start of a one-bar clip, read with Ease in at full strength over a 1-bar cycle: the
+    // playhead starts slowly, so it takes longer than a beat to cross the note.
+    auto lengths = [] {
+        Song song = songWithTrack();
+        Clip clip;
+        clip.id = song.newId<ClipId>();
+        clip.length = clip.loopEnd = 4 * kPpq;
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.length = kPpq;
+        n.pitch = 60;
+        clip.notes.push_back(n);
+        song.clips.emplace(clip.id, clip);
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip.id;
+        a.length = 4 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+        applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+        PlayheadId id = firstDevice(song).playheads[0].id;
+        const auto& info = devices::playheadInfo();
+        auto set = [&](int k, float v) {
+            applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, id.value, uint16_t(k)},
+                                         devices::normalize(info.params[size_t(k)], v)));
+        };
+        set(playheads::knob::kBendShape, float(playheads::Bend::EaseIn));
+        set(playheads::knob::kBendAmount, 100);
+        set(playheads::knob::kBendCycle, 4); // 1 bar
+        std::vector<double> out;
+        for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+            out.push_back(double(e.end - e.start));
+        return out;
+    };
+    // Ease in at full strength is f^4: a quarter of the bar's travel takes sqrt(sqrt(1/4)) of its time.
+    std::vector<double> got = lengths();
+    REQUIRE(got.size() == 1);
+    CHECK(got[0] == doctest::Approx(4 * kPpq * std::pow(0.25, 0.25)).epsilon(0.01));
+}

@@ -1438,9 +1438,9 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         }
                         playheads::Motion timed = m;
                         timed.rate = rate;
-                        double length =
-                            playheads::noteLength(knobs, timed, written >= 0 ? written : double(e.end - e.start), ts) *
-                            stretch;
+                        double length = playheads::noteLength(knobs, timed, written >= 0 ? written : double(e.end - e.start),
+                                                              ts, sweep.travelFrom + std::abs(pos - sweep.from)) *
+                                        stretch;
                         if (playheads::retriggers(knobs)) {
                             // Retrigger: the note stops where the playhead next jumps.
                             double own = playheads::timeAt(m, sweep, pos);

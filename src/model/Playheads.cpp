@@ -26,8 +26,12 @@ double bent(const Motion& m, double elapsed) {
 double unbent(const Motion& m, double b) {
     if (m.bendCycle <= 0 || m.bendAmount <= 0 || m.bend == Bend::Straight)
         return b;
-    double k = std::floor(b / m.bendCycle);
-    double g = b / m.bendCycle - k;
+    double cycles = b / m.bendCycle;
+    double nearest = std::round(cycles);
+    if (std::abs(cycles - nearest) < 1e-12)
+        return nearest * m.bendCycle; // on a cycle's edge, where rounding would land a hair inside the cycle before
+    double k = std::floor(cycles);
+    double g = cycles - k;
     double lo = 0, hi = 1;
     for (int i = 0; i < 48; i++) {
         double mid = (lo + hi) / 2;
@@ -534,12 +538,18 @@ Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart
     return m;
 }
 
-double noteLength(const float* knobs, const Motion& m, double written, TimeSig ts) {
+double noteLength(const float* knobs, const Motion& m, double written, TimeSig ts, double travel) {
     const devices::ParamInfo& mode = devices::playheadInfo().params[knob::kLength];
     double longest = 4 * double(ticksPerBar(ts)); // a frozen or crawling playhead never holds a note forever
     switch (LengthMode(std::lround(devices::display(mode, knobs[knob::kLength])))) {
-    case LengthMode::FollowsPlayhead:
-        return std::min(longest, written / std::max(m.rate, 1e-3));
+    case LengthMode::FollowsPlayhead: {
+        double rate = std::max(m.rate, 1e-3);
+        bool bentTime = m.bendCycle > 0 && m.bendAmount > 0 && m.bend != Bend::Straight;
+        if (!bentTime || m.drawn() || !std::isfinite(travel))
+            return std::min(longest, written / rate);
+        // Travel and the clip move together inside a piece; a jump out of the note ends it anyway (Retrigger).
+        return std::min(longest, (unbent(m, travel + written) - unbent(m, travel)) / rate);
+    }
     case LengthMode::Fixed: {
         const devices::ParamInfo& fixed = devices::playheadInfo().params[knob::kFixedLength];
         return fixedLengthTicks(int(std::lround(devices::display(fixed, knobs[knob::kFixedLength]))), ts);

@@ -294,6 +294,8 @@ std::pair<double, double> regionFrom(double startSteps, double lengthSteps, doub
 Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts);
 
 /// How long a note the playhead plays lasts, in song ticks: as written, stretched by the playhead's speed, or fixed.
-double noteLength(const float* knobs, const Motion& m, double written, TimeSig ts);
+/// `travel` is where the playhead's travel is when the note starts (Sweep::travelFrom plus how far into the sweep):
+/// with it, a note following a bent playhead lasts until the playhead has really crossed it.
+double noteLength(const float* knobs, const Motion& m, double written, TimeSig ts, double travel = NAN);
 
 } // namespace tessera::playheads
