@@ -21,9 +21,9 @@ class VoicePicker {
         int voices = frame.channels;
         out.fill(-1);
         if (!frame.byChannel) {
-            int n = std::min(voices, kMaxVoices);
-            for (int v = 0; v < n; v++)
-                out[size_t(v)] = int8_t(v);
+            int n = 0;
+            for (; n < kMaxVoices && n < voices; n++)
+                out[size_t(n)] = int8_t(n);
             return n;
         }
         if (channel > 0) {

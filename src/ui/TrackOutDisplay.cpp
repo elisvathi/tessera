@@ -16,6 +16,9 @@ constexpr float kSourceBaseline = 13.5f;
 constexpr float kNumberBaseline = 46;
 constexpr float kNameBaseline = 64;
 constexpr float kNumberSize = 28;
+// A short screen (Drum Out's, 24 mm) with a channel line too: everything moves up a little, so the channel sits
+// centred under the name as on Track Out.
+constexpr float kShortNumberBaseline = 36, kShortNumberSize = 22, kShortNameBaseline = 51, kShortChannelBaseline = 64;
 
 } // namespace
 
@@ -98,27 +101,24 @@ void TrackOutDisplay::drawBound(NVGcontext* vg) {
     draw::TextStyle source{fonts::ui(), metrics::kDisplaySmall, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
     draw::text(vg, source, cx, kSourceBaseline, draw::ellipsize(vg, source, sourceName, maxWidth));
 
-    draw::TextStyle number{fonts::mono(), kNumberSize, color, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
-    draw::text(vg, number, cx, kNumberBaseline, std::to_string(trackNumber));
+    bool tall = box.size.y >= kNameBaseline + 16;
+    bool compact = channels && !tall;
+    draw::TextStyle number{fonts::mono(), compact ? kShortNumberSize : kNumberSize, color,
+                           NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
+    draw::text(vg, number, cx, compact ? kShortNumberBaseline : kNumberBaseline, std::to_string(trackNumber));
 
     draw::TextStyle name{fonts::uiStrong(), metrics::kDisplaySmall, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
-    draw::text(vg, name, cx, kNameBaseline, draw::ellipsize(vg, name, trackName, maxWidth));
+    float nameBaseline = compact ? kShortNameBaseline : kNameBaseline;
+    draw::text(vg, name, cx, nameBaseline, draw::ellipsize(vg, name, trackName, maxWidth));
 
     if (channels) {
-        // Always shown, so it reads as something to click.
+        // Always shown, centred under the name, so it reads as something to click.
         std::string label = part == 0 ? "All channels"
                                       : "Ch " + std::to_string(part) + (partPlayers.empty() ? "" : " · " + partPlayers);
         draw::TextStyle ch{fonts::ui(), metrics::kDisplaySmall, part == 0 ? c.text2 : c.text1,
                            NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
-        if (box.size.y >= kNameBaseline + 16) {
-            draw::text(vg, ch, cx, kNameBaseline + 13, draw::ellipsize(vg, ch, label, maxWidth));
-        } else {
-            // A short, wide screen (Drum Out): beside the track number, at the right.
-            ch.align = NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE;
-            std::string compact = part == 0 ? "Ch: all" : label;
-            draw::text(vg, ch, box.size.x - kPad, kNumberBaseline - 8,
-                       draw::ellipsize(vg, ch, compact, box.size.x / 2 - kPad - 12));
-        }
+        draw::text(vg, ch, cx, tall ? kNameBaseline + 13 : kShortChannelBaseline,
+                   draw::ellipsize(vg, ch, label, maxWidth));
     }
 }
 
