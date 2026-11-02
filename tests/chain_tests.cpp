@@ -1455,8 +1455,7 @@ TEST_CASE("engine: a playhead that jumps into a note plays it again, and cuts th
         return starts;
     };
     int most = 0;
-    CHECK(run(0, &most) == 3); // Retrigger: the jumps back at 1/16, 2/16 and 3/16 into beat 2 (at its start it
-                               // moves on to the next sixteenth without jumping)
+    CHECK(run(0, &most) == 4); // Retrigger: one at each sixteenth, including the move to the next sixteenth
     CHECK(most == 1);          // each repeat cuts the one before
     CHECK(run(1, &most) == 0); // Let ring: no note starts where it lands, so nothing new plays
     CHECK(most >= 1);          // the notes from beat 1 still ring
