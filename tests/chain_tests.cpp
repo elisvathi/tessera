@@ -2035,3 +2035,28 @@ TEST_CASE("engine: it tells the editor where each playhead is, as a changed rate
     // 1000 + 2 x 480, not 2 x 1480 as the new rate alone would say.
     CHECK(h.engine.playheadPosition(0, 0) == doctest::Approx(1960).epsilon(0.02));
 }
+
+TEST_CASE("the piano roll finds the moves of a Motion inside a playhead's own devices, as of one in the chain") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    auto motion = [&](float semitones) {
+        Device m = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+        m.params[chain::knob::kMotionInKey] = 0;
+        m.params[chain::knob::kMotionPitch] =
+            devices::normalize(devices::motionInfo().params[chain::knob::kMotionPitch], semitones);
+        return m;
+    };
+    Device inChain = motion(2), inBranch = motion(5);
+    Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.branch.push_back(inBranch);
+    heads.playheads.push_back(p);
+    song.tracks[0].devices = {inChain, heads};
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = inChain.id;
+    clip.notes[1].motion = inBranch.id;
+    std::vector<std::vector<render::MotionMove>> moves = render::motionMoves(song, song.tracks[0], clip);
+    REQUIRE(moves[0].size() >= 1);
+    REQUIRE(moves[1].size() >= 1);
+    CHECK(moves[0][0].pitch == 62);
+    CHECK(moves[1][0].pitch == 69);
+}
