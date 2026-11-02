@@ -186,6 +186,8 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
     out.looping = clip.loopMode == LoopMode::Loop;
     out.loopStart = out.looping ? clip.loopStart : 0;
     out.loopEnd = out.looping ? clip.loopEnd : clip.contentEnd();
+    std::tie(out.segmentStart, out.segmentLength) =
+        playheadSpan(clip, track.type == TrackType::Drum ? &track.drumLanes : nullptr);
 
     // Drum lanes with their own loop length get their own list (polymeter).
     std::vector<int> ownLoopPitches;

@@ -1456,6 +1456,11 @@ Design: `docs/design/PLAYHEADS.md`.
   playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change
   (a playhead added, removed or moved, an Echo needing more), each channel's sounding voices move to its new block
   with their note, and what the engine keeps per voice moves along.
+- **A segment no longer moves when a note is added** (2 Nov). A playhead without a segment of its own read a clip
+  that doesn't loop up to its last note, so drawing a note past it stretched the segment (and a last note ending
+  before the bar line made the segment end there too). It now reads the clip's loop range, which notes don't move;
+  only a clip with no loop range at all falls back to its last note. Looping clips are unchanged. One rule,
+  `playheadSpan`, serves the engine, MIDI export, the ruler's segments and the piano roll.
 - **Curve spaces the repeats; one REPEAT block** (2 Nov). The bend (Ease in, Ease out, Ease in-out, Swing, Stairs)
   worked in the engine with no control. A trial used a dropdown, an Amount knob and a cycle; a second a "Feel" cell
   with its own lower-pane editor. Both were dropped: the amount ("weight") confused, and a separate editor was too

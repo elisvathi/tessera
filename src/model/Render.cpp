@@ -320,6 +320,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
         // The region is the whole span (a drum clip's lane cycle); the pattern and each lane with its own length
         // repeat inside it, as in the engine.
         ClipSpan span = clipSpan(*clip, drumLanes);
+        std::pair<Tick, Tick> segment = playheadSpan(*clip, drumLanes);
         double playStart = double(span.start), playEnd = double(span.end);
         double patternEnd = playStart + double(span.pattern);
         int transpose = t.type == TrackType::Drum ? 0 : t.transpose + a.transpose;
@@ -404,8 +405,8 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 double to = std::min(begin + length, e + kStep);
                 playheadKnobsAt(song, t, device, p, double(a.position) + (e - begin) * stretch, knobs.data(),
                                 (e - begin) * stretch);
-                playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), playStart,
-                                                            playEnd - playStart, song.timeSig);
+                playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), double(segment.first),
+                                                            double(segment.second), song.timeSig);
                 if (playheads::wantsDrawnPath(knobs.data()))
                     m.path = &p.path;
                 playheads::NoteShape shape = playheads::noteShapeFrom(knobs.data());
@@ -763,6 +764,7 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
     };
     std::vector<int> heard(clip.notes.size(), -1);
     double playStart = double(clip.playStart()), playEnd = double(clip.playEnd());
+    std::pair<Tick, Tick> segment = playheadSpan(clip, track.type == TrackType::Drum ? &track.drumLanes : nullptr);
     if (playEnd <= playStart)
         return heard;
     std::vector<Readable> notes;
@@ -785,8 +787,8 @@ std::vector<int> heardPitches(const Song& song, const Track& track, const Device
     double from = double(std::max<int64_t>(0, pass)) * (playEnd - playStart);
     for (double e = from; e < from + (playEnd - playStart); e += kStep) {
         playheadKnobsAt(song, track, device, p, e, knobs.data());
-        playheads::Motion m =
-            playheads::motionFrom(knobs.data(), device.params.data(), playStart, playEnd - playStart, song.timeSig);
+        playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), double(segment.first),
+                                                    double(segment.second), song.timeSig);
         if (playheads::wantsDrawnPath(knobs.data()))
             m.path = &p.path;
         playheads::NoteShape shape = playheads::noteShapeFrom(knobs.data());

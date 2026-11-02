@@ -337,12 +337,12 @@ void ClipSource::setInstanceEnd(double end) {
 namespace {
 
 /// Where on the piano roll a playhead's region starts and how long it is, from its knobs, as the engine reads them.
-std::pair<double, double> regionOf(const Playhead& p, const ClipSpan& span) {
+std::pair<double, double> regionOf(const Playhead& p, std::pair<Tick, Tick> span) {
     const devices::TypeInfo& info = devices::playheadInfo();
     return playheads::regionFrom(
         devices::display(info.params[playheads::knob::kRegionStart], p.params[playheads::knob::kRegionStart]),
         devices::display(info.params[playheads::knob::kRegionLength], p.params[playheads::knob::kRegionLength]),
-        double(span.start), double(span.length()));
+        double(span.first), double(span.second));
 }
 
 } // namespace
@@ -355,7 +355,7 @@ std::vector<TimelineSource::PlayheadSegment> ClipSource::playheadSegments() {
     if (!device)
         return {};
     const Playhead* shown = deviceActions::shownPlayhead(ctx);
-    ClipSpan span = clipSpan(*c, lanes());
+    std::pair<Tick, Tick> span = playheadSpan(*c, lanes());
     std::vector<PlayheadSegment> segments;
     for (const Playhead& p : device->playheads) {
         auto [regionStart, regionLength] = regionOf(p, span);

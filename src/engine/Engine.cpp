@@ -1364,7 +1364,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         std::equal(deviceKnobs, deviceKnobs + deviceCount, clock.builtDevice.begin());
             if (!same) {
                 clock.motion =
-                    playheads::motionFrom(knobs, deviceKnobs, double(clip.loopStart), double(clip.loopLength()), ts);
+                    playheads::motionFrom(knobs, deviceKnobs, double(clip.segmentStart), double(clip.segmentLength), ts);
                 if (playheads::wantsDrawnPath(knobs))
                     clock.motion.path = &p.path;
                 clock.shape = playheads::noteShapeFrom(knobs);

@@ -97,6 +97,9 @@ struct ClipPlayback {
     std::vector<MotionNotes> motions;
 
     Tick loopLength() const { return loopEnd - loopStart; }
+    // Where a playhead without a segment of its own reads (playheadSpan()).
+    Tick segmentStart = 0;
+    Tick segmentLength = 0;
     Tick patternLength() const { return pattern > 0 ? pattern : loopLength(); }
     /// Clip time `t` inside the loop brought into the pattern, for what repeats on it (the automation).
     double patternTime(double t) const {
