@@ -67,6 +67,65 @@ void AudioPlayer::holdSend(uint64_t track, uint64_t to, float gain) {
     }
 }
 
+void AudioPlayer::armTap(int n, const TapSpec& spec) {
+    Tap& t = taps[size_t(n)];
+    t.state.store(int(TapState::Idle), std::memory_order_release);
+    t.track.store(spec.track.value, std::memory_order_relaxed);
+    t.kind.store(int(spec.kind), std::memory_order_relaxed);
+    t.from.store(spec.from, std::memory_order_relaxed);
+    t.to.store(spec.to, std::memory_order_relaxed);
+    t.whileRecording.store(spec.whileRecording, std::memory_order_relaxed);
+    t.firstTick.store(-1, std::memory_order_relaxed);
+    t.ring.store(spec.ring, std::memory_order_relaxed);
+    t.state.store(int(TapState::Armed), std::memory_order_release);
+    anyTap.store(true, std::memory_order_release);
+}
+
+void AudioPlayer::disarmTap(int n) {
+    taps[size_t(n)].state.store(int(TapState::Idle), std::memory_order_release);
+    taps[size_t(n)].ring.store(nullptr, std::memory_order_release);
+}
+
+void AudioPlayer::runTaps(const Engine& engine, double song, float masterL, float masterR) {
+    bool playing = engine.isPlaying();
+    bool recording = engine.recording() && !engine.countingIn();
+    bool jumpedBack = song < tapLastSong - 1e-6;
+    tapLastSong = song;
+    bool any = false;
+    for (Tap& t : taps) {
+        int state = t.state.load(std::memory_order_acquire);
+        if (state != int(TapState::Armed) && state != int(TapState::Running))
+            continue;
+        any = true;
+        bool rec = t.whileRecording.load(std::memory_order_relaxed);
+        double from = t.from.load(std::memory_order_relaxed), to = t.to.load(std::memory_order_relaxed);
+        if (state == int(TapState::Armed)) {
+            if (!playing || (rec && !recording) || (from >= 0 && song < from))
+                continue;
+            t.firstTick.store(song, std::memory_order_relaxed);
+            t.state.store(int(TapState::Running), std::memory_order_release);
+        } else if (!playing || (rec && !recording) || (to >= 0 && song >= to) || jumpedBack) {
+            t.state.store(int(TapState::Done), std::memory_order_release);
+            continue;
+        }
+        float l = 0, r = 0;
+        auto kind = TapKind(t.kind.load(std::memory_order_relaxed));
+        if (kind == TapKind::Master) {
+            l = masterL;
+            r = masterR;
+        } else if (t.run >= 0) {
+            const TrackRun& run = runs[size_t(t.run)];
+            l = kind == TapKind::In ? run.inL : kind == TapKind::Sound ? run.soundL : run.stemL;
+            r = kind == TapKind::In ? run.inR : kind == TapKind::Sound ? run.soundR : run.stemR;
+        }
+        t.peak = std::max(t.peak, std::max(std::abs(l), std::abs(r)));
+        if (FrameRing* ring = t.ring.load(std::memory_order_acquire))
+            ring->push(l, r);
+    }
+    if (!any)
+        anyTap.store(false, std::memory_order_relaxed);
+}
+
 bool AudioPlayer::heldSend(uint64_t track, uint64_t to, float& gain) const {
     for (const Hold& h : holds)
         if (h.track.load(std::memory_order_acquire) == track && (h.parts.load(std::memory_order_relaxed) & kHoldSend) &&
@@ -270,6 +329,17 @@ void AudioPlayer::startBlock(const Engine& engine) {
         for (size_t k = 0; k < size_t(kMaxSendsPerTrack); k++)
             run.sendStep[k] = (sendTarget[k] - run.sendGain[k]) / kBlock;
     }
+    // Each tap finds the run it reads; its level is the last block's peak.
+    if (anyTap.load(std::memory_order_acquire))
+        for (Tap& t : taps) {
+            t.level.store(t.peak, std::memory_order_relaxed);
+            t.peak = 0;
+            t.run = -1;
+            uint64_t id = t.track.load(std::memory_order_relaxed);
+            for (size_t i = 0; i < count; i++)
+                if (snapshot->tracks[i].id.value == id)
+                    t.run = int(i);
+        }
     // Tracks deleted while they sounded fade out at the gains they had: nothing ramps them further.
     for (size_t i = count; i < count + ghosts && i < size_t(kMaxTracks); i++) {
         TrackRun& run = runs[i];
@@ -382,14 +452,17 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             sr *= run.clipsGain;
             // The track's own sources join its clips; OUT carries them before the fader; what comes back on IN joins
             // after OUT, so an effect loop never feeds back (§2, §8.4).
+            float srcL = 0, srcR = 0;
             if (rack.returns)
                 for (int slot : tp.sources) {
                     float rl, rr;
                     if (rack.returns->read(rack.frame, slot, tp.id, rl, rr)) {
-                        sl += rl;
-                        sr += rr;
+                        srcL += rl;
+                        srcR += rr;
                     }
                 }
+            sl += srcL;
+            sr += srcR;
             // A muted (or soloed-away) track's own sound stops, in OUT too; what other tracks send to it still
             // goes out on OUT, so an effect's tail is ready on unmute (§4.5).
             run.outGain += run.outStep;
@@ -414,6 +487,10 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                 }
             sl += retL;
             sr += retR;
+            run.inL = srcL + retL;
+            run.inR = srcR + retR;
+            run.soundL = sl;
+            run.soundR = sr;
             run.gainL += run.stepL;
             run.gainR += run.stepR;
             float postL = sl * run.gainL, postR = sr * run.gainR;
@@ -438,6 +515,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             sl *= run.gainL * run.heardOwnGain;
             sr *= run.gainR * run.heardOwnGain;
         }
+        run.stemL = sl;
+        run.stemR = sr;
         run.peakL = std::max(run.peakL, std::abs(sl));
         run.peakR = std::max(run.peakR, std::abs(sr));
         masterL += sl;
@@ -462,6 +541,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
     masterGain += masterStep;
     left = masterL * masterGain;
     right = masterR * masterGain;
+    if (anyTap.load(std::memory_order_relaxed))
+        runTaps(engine, song, left, right);
     masterPeakL = std::max(masterPeakL, std::abs(left));
     masterPeakR = std::max(masterPeakR, std::abs(right));
     sounding = any;

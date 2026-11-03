@@ -1,11 +1,13 @@
 #pragma once
 
 #include "../audio/AudioStore.hpp"
+#include "../audio/CaptureWriter.hpp"
 #include "../engine/ArrangementCapture.hpp"
 #include "../engine/AudioPlayer.hpp"
 #include "../engine/ClockSync.hpp"
 #include "../engine/CvNoteInput.hpp"
 #include "../engine/Engine.hpp"
+#include "../engine/Metronome.hpp"
 #include "../engine/Recorder.hpp"
 #include "../engine/SnapshotExchange.hpp"
 #include "../engine/SpscQueue.hpp"
@@ -320,6 +322,19 @@ class TesseraModule : public rack::engine::Module {
         int64_t module = -1; // the module that came in
     };
     const NewSource& newSource() const { return sourceNews; }
+
+    // ---- Capture (§8.6): audio recording, bounce and export, written by a writer thread.
+
+    /// A take being recorded now, for drawing it as it grows.
+    struct LiveTake {
+        TrackId track;
+        double startTick = 0;
+        double lengthTicks = 0;
+        std::vector<float> peaks; // one per 512 frames, 0..1 of full scale
+    };
+    std::vector<LiveTake> liveTakes() const;
+    /// Why the last take stopped early, once ("The disk is full: the take was kept up to there"); empty when not.
+    std::string takeProblem;
     /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
     /// False when the file isn't audio Tessera reads.
     bool replaceAudioFile(ClipId clip, const std::string& path);
@@ -462,8 +477,36 @@ class TesseraModule : public rack::engine::Module {
     Recorder recorder{recorderHost};
     UnlinkedControls unlinked;
     NewSource sourceNews;
+    struct Capture {
+        enum class Kind { Take, Bounce, Export } kind = Kind::Take;
+        int tap = -1;
+        std::shared_ptr<FrameRing> ring;
+        int writer = -1;
+        std::string path;
+        TrackId track;
+        bool finishing = false;
+        double startTick = -1;
+    };
+    std::vector<Capture> captures;
+    std::unique_ptr<CaptureWriter> captureWriter;
+    int takeCounter = 0;
+    /// A tap no capture uses, or -1.
+    int freeTap() const;
+    /// Arms a tap on each armed audio track's IN, and turns finished takes into clips (one undo step). Each UI frame.
+    void captureStep();
+    /// A recorded file into the song: on the track's timeline at `at`, or in its first empty slot.
+    struct Take {
+        std::string path;
+        TrackId track;
+        Tick at = 0;
+        bool slot = false;
+    };
+    void importTakes(const std::vector<Take>& takes);
+    /// Ticks per sample at the tempo now: for latency and lengths.
+    double ticksPerSampleNow() const;
     std::map<uint64_t, std::vector<int64_t>> sourcesSeen; // per track: its source modules last frame
     bool sourcesSeeded = false;
+    double sourcesSeededAt = 0;
     /// Marks sources counted once and reports a new second source. Each UI frame.
     void sourcesStep();
     // A knob held by a drag: kind, parameter and owner packed into one word (0 = none), then its value.
@@ -530,6 +573,9 @@ class TesseraModule : public rack::engine::Module {
     std::atomic<double> seekTarget{0};
     std::atomic<bool> seekPending{false};
     std::atomic<int> countInBars{0};
+    std::atomic<int> metronomeMode{0};
+    std::atomic<float> metronomeGain{0.25f};
+    Metronome metronome;
     std::atomic<bool> editorFill{false};
     std::array<std::atomic<float>, kMaxAutomationLanes> autoRecVolts{};
     std::atomic<int> autoRecChannels{0};

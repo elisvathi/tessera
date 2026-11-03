@@ -1,6 +1,13 @@
 #include "doctest.h"
 
 #include "../src/audio/AudioDecode.hpp"
+#include "../src/audio/CaptureWriter.hpp"
+
+#include <dr_wav.h>
+
+#include <chrono>
+#include <filesystem>
+#include <thread>
 #include "../src/model/AudioAnalysis.hpp"
 
 #include <cmath>
@@ -209,4 +216,43 @@ TEST_CASE("splits move to the nearest zero crossing") {
     CHECK(std::abs(z - 520) <= 48);
     std::vector<std::vector<float>> flat(1, std::vector<float>(100, 1.f));
     CHECK(nearestZeroCrossing(flat, 50, 10) == 50);
+}
+
+TEST_CASE("the capture writer writes what the ring gets to a WAV file, at 10 V full scale") {
+    std::string path = (std::filesystem::temp_directory_path() / "tessera-capture-test.wav").string();
+    auto ring = std::make_shared<FrameRing>(4096);
+    {
+        CaptureWriter writer;
+        int id = writer.start(ring, path, 48000, CaptureWriter::Format::Float32);
+        for (int i = 0; i < 1000; i++)
+            ring->push(5.f, -5.f);
+        while (!writer.finish(id))
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    drwav wav;
+    REQUIRE(drwav_init_file(&wav, path.c_str(), nullptr));
+    CHECK(wav.totalPCMFrameCount == 1000);
+    std::vector<float> data(2000);
+    drwav_read_pcm_frames_f32(&wav, 1000, data.data());
+    drwav_uninit(&wav);
+    CHECK(data[0] == doctest::Approx(0.5f));
+    CHECK(data[1] == doctest::Approx(-0.5f));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("a capture that never got sound leaves no file, and a cancelled one is deleted") {
+    std::string path = (std::filesystem::temp_directory_path() / "tessera-capture-empty.wav").string();
+    std::filesystem::remove(path);
+    auto ring = std::make_shared<FrameRing>(1024);
+    CaptureWriter writer;
+    int id = writer.start(ring, path, 48000, CaptureWriter::Format::Pcm24);
+    while (!writer.finish(id))
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    CHECK_FALSE(std::filesystem::exists(path));
+    int id2 = writer.start(ring, path, 48000, CaptureWriter::Format::Pcm24);
+    ring->push(1, 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    writer.cancel(id2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK_FALSE(std::filesystem::exists(path));
 }

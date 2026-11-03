@@ -52,6 +52,7 @@ Click the **▾** next to the record button.
 | Setting | Choices |
 |---|---|
 | **Count-in** | **Off**, **1 bar** or **2 bars**. The record button blinks and the **CLICK** output clicks during the count-in. |
+| **Metronome** | **Off**, **Count-in only**, **While recording** or **Always** (whenever the song plays), and a **Level**. A soft click, higher on the first beat of the bar, on **MAIN** only: never on a Track Out's OUT, in bounces, exports or stems. The **CLICK** output keeps its trigger either way. |
 | **New launcher clips** | **As long as played** (rounded up to whole bars when you stop), or a fixed **1, 2, 4 or 8 bars**. A fixed-length clip is finished when full; then it loops and the next passes are added to it. |
 | **Recording over arranger clips** | **Merge** (the default: the take is added to the clip that is there), **Stack** (the take is a new clip on top, and the old one stays as it was) or **Replace** (the take replaces what was there). See below. |
 | **Input quantize** | **Off**, or a grid from 1/4 to 1/32, with a strength from 50% to 100%. |

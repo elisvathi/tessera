@@ -570,6 +570,12 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Right-click Lead's send knob ▸ Automate in the timeline: a "Send to Reverb" lane opens; draw a dip and play: the
       knob follows (with a ring) and the reverb dips. In Show sends the strip meters show the send levels. The
       inspector's SENDS lists Lead's send (click: the same menu), "Send to +", and on Reverb "Gets sends from: Lead".
+- [ ] Record ▾ Metronome While recording: record with a count-in: clicks on MAIN during the count-in and the take,
+      higher on the bar; Track Out OUT has none. Always: clicks whenever playing.
+- [ ] Arm an audio track with a synth on its Track Out IN; record 4 bars and stop: a red box grows with the waveform,
+      then a clip "<track> take N" lies where recording started and plays back at the same level. Undo removes it.
+      Loop on: each pass is a clip. Playing clips: the take lands in the first empty slot. Two armed tracks: two
+      clips, one undo step.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

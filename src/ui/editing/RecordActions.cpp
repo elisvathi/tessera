@@ -49,6 +49,17 @@ void openMenu(EditorContext& ctx) {
             for (int b = 1; b <= RecordSettings::kMaxCountInBars; b++)
                 sub->addChild(settingItem(c, bars(b), &RecordSettings::countInBars, b));
         }));
+    static const char* const kMetronome[] = {"Off", "Count-in only", "While recording", "Always"};
+    menu->addChild(rack::createSubmenuItem(
+        "Metronome", kMetronome[int(s.metronome)], [c](rack::ui::Menu* sub) {
+            sub->addChild(rack::createMenuLabel("A click on MAIN only, never on OUT or in exports"));
+            for (int i = 0; i < 4; i++)
+                sub->addChild(settingItem(c, kMetronome[i], &RecordSettings::metronome, MetronomeMode(i)));
+            sub->addChild(new rack::ui::MenuSeparator);
+            sub->addChild(rack::createMenuLabel("Level"));
+            for (float db : {-24.f, -18.f, -12.f, -6.f, 0.f})
+                sub->addChild(settingItem(c, std::to_string(int(db)) + " dB", &RecordSettings::metronomeDb, db));
+        }));
     menu->addChild(rack::createSubmenuItem(
         "New launcher clips", s.clipBars == 0 ? "As long as played" : bars(s.clipBars), [c](rack::ui::Menu* sub) {
             sub->addChild(settingItem(c, "As long as played (rounded up to the bar)", &RecordSettings::clipBars, 0));

@@ -2,6 +2,7 @@
 
 #include "../src/engine/AudioPlayer.hpp"
 #include "../src/engine/AudioSnapshotBuilder.hpp"
+#include "../src/engine/FrameRing.hpp"
 #include "../src/engine/Snapshot.hpp"
 #include "../src/model/AudioEdits.hpp"
 #include "../src/model/Sends.hpp"
@@ -749,4 +750,33 @@ TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, 
     CHECK(player.sendAutomated(0, 0, db));
     CHECK(db == doctest::Approx(-6.02f).epsilon(1e-2));
     CHECK(player.sendLevel(0, 0) > 0.9f);
+}
+
+TEST_CASE("a tap copies a track's sound from a song tick to another, then is done") {
+    Rig rig(4.0, dc);
+    rig.audioTrack().channel.volumeDb = -6.0206f;
+    rig.rebuild();
+    FrameRing sound(48000), stem(48000);
+    AudioPlayer::TapSpec a;
+    a.track = rig.track;
+    a.kind = AudioPlayer::TapKind::Sound;
+    a.from = kPpq;
+    a.to = 2 * kPpq;
+    a.ring = &sound;
+    rig.player->armTap(0, a);
+    AudioPlayer::TapSpec b = a;
+    b.kind = AudioPlayer::TapKind::Stem;
+    b.ring = &stem;
+    rig.player->armTap(1, b);
+    rig.engine->play();
+    rig.run(50000); // two beats at 120 BPM are 48000 samples: a little more is past the end
+    CHECK(rig.player->tapState(0) == AudioPlayer::TapState::Done);
+    CHECK(rig.player->tapStart(0) >= kPpq);
+    // One beat at 120 BPM: half a second.
+    CHECK(std::abs(double(sound.available()) - 24000) < 100);
+    std::vector<float> frames(2 * 100);
+    sound.pop(frames.data(), 100);
+    CHECK(frames[0] == doctest::Approx(kVolts).epsilon(1e-3)); // before the fader
+    stem.pop(frames.data(), 100);
+    CHECK(frames[0] == doctest::Approx(kVolts / 2).epsilon(1e-3)); // after it
 }

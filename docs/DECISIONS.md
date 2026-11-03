@@ -1803,3 +1803,21 @@ Why: built to the spec; these are the places it left open or where the code sugg
   folded tab, its height drag, its own maximise and `Pane::Mixer` as a focus or maximised pane (older saves load
   into the lower pane). While the mixer shows, only keys that work everywhere act (no note keys).
 - Leaving the mixer (Notes, F4) leaves Show sends.
+
+## 119. Phase 3: the metronome and audio recording (3 Nov)
+
+- **Metronome** (spec §8.5): Record ▾ Metronome Off / Count-in only / While recording / Always, and a level
+  (-24..0 dB, default -12). A 25 ms sine click (1760 Hz on the bar, 1320 Hz otherwise) added to MAIN after the
+  player, so it never reaches OUT, taps, bounces or exports.
+- **Capture path**: the audio player has 24 **taps** (a track's IN, its sound before the fader, its stem after the
+  fader as heard, or the master). A tap waits for its start (playing, recording for takes, a song tick), copies into
+  a `FrameRing` (5 s, sized on the UI thread), and ends on its end tick, a stop, recording ending or a jump back (a
+  loop wrap). A `CaptureWriter` thread writes the rings to WAV (32-bit float, or 24-bit with TPDF dither for
+  exports) at V/10, keeps a coarse waveform, and makes no file for a capture that got no sound.
+- **Recording**: each armed audio track keeps a tap on its IN. A finished pass becomes a clip through the import
+  path (source at 10 V per full scale, clip tempo = song tempo, Stretch, no loop): on the timeline at the take's
+  start, moved earlier by 2 samples (Tessera's own delay) + the recording offset + the track's latency, or in the
+  first empty slot while the launcher plays. Takes finishing together are one undo step. A loop wrap ends a pass,
+  so each pass is a clip and the overlap rules settle them. The live take draws as a red box with its waveform.
+- An armed audio track no longer takes notes into the note recorder.
+- A loaded patch's output modules find their Tessera over the first frames: the "N sources now" toast waits 1.5 s.

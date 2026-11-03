@@ -175,6 +175,8 @@ void TesseraModule::setRecordArrangement(bool on) {
 void TesseraModule::setRecordSettings(const RecordSettings& settings) {
     recorder.settings = settings;
     countInBars.store(settings.countInBars);
+    metronomeMode.store(int(settings.metronome));
+    metronomeGain.store(dbToGain(settings.metronomeDb));
     liveToKey.store(settings.toKey);
     newControlLanes.store(settings.newControlLanes);
     replaceTakes.store(settings.arranger == ArrangerRecordMode::Replace);
@@ -274,6 +276,7 @@ void TesseraModule::uiStep() {
     snapshots.collect();
     sourcesStep();
     audioStep();
+    captureStep();
     syncMappings();
     if (learning()) {
         learnMovedControl();
@@ -463,8 +466,12 @@ void TesseraModule::sourcesStep() {
         if (!counted.empty())
             seen[track.value] = counted;
     }
-    // A new second source plays at once, with a toast. Clips count as the first source of an audio track.
-    if (sourcesSeeded)
+    // A new second source plays at once, with a toast. Clips count as the first source of an audio track. Output
+    // modules of a patch that just loaded find their Tessera over the first frames: that is no news.
+    double now = rack::system::getTime();
+    if (!sourcesSeeded)
+        sourcesSeededAt = now;
+    if (sourcesSeeded && now - sourcesSeededAt > 1.5)
         for (const auto& [track, mods] : seen) {
             const Track* t = songData.findTrack(TrackId(track));
             int clips = t && t->type == TrackType::Audio ? 1 : 0;
@@ -1116,6 +1123,19 @@ void TesseraModule::process(const ProcessArgs& args) {
         AudioPlayer::Rack rack{&bus->returns(), bus->beginAudioWrite(args.frame), args.frame};
         player->process(engine, mainL, mainR, rack);
         bus->publishAudio(args.frame);
+    }
+    // The metronome sounds on MAIN only: never on OUT, in bounces, exports or stems (§8.5).
+    auto mode = MetronomeMode(metronomeMode.load(std::memory_order_relaxed));
+    bool clicking = mode == MetronomeMode::Always    ? engine.isPlaying() || engine.countingIn()
+                    : mode == MetronomeMode::Recording ? engine.recording() || engine.countingIn()
+                    : mode == MetronomeMode::CountIn   ? engine.countingIn()
+                                                       : false;
+    if (clicking && lastEvents.beat)
+        metronome.trigger(lastEvents.bar);
+    if (mode != MetronomeMode::Off) {
+        float click = metronome.next(args.sampleRate) * metronomeGain.load(std::memory_order_relaxed);
+        mainL += click;
+        mainR += click;
     }
     outputs[MAIN_L_OUTPUT].setVoltage(mainL);
     outputs[MAIN_R_OUTPUT].setVoltage(mainR);
