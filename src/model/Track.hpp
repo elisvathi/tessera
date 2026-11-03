@@ -4,6 +4,7 @@
 #include "Automation.hpp"
 #include "Device.hpp"
 
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -78,6 +79,9 @@ struct DrumLane {
 /// Track::polyphony value meaning "as many voices as the track's clips ever play at once".
 constexpr int kAutoVoices = 0;
 
+/// Drum Out lane outputs with their own jacks, and so their own audio IN.
+constexpr int kDrumInputs = 8;
+
 struct Track {
     TrackId id; // stable for the track's lifetime; output modules bind to this, not to the index
     std::string name;
@@ -101,15 +105,18 @@ struct Track {
     std::vector<Device> devices;                // the MIDI effect chain, in the order notes flow
     std::vector<Modulator> modulators;          // track level
     Channel channel;                            // its mixer strip
+    // Drum tracks: the level and pan of what comes in on each Drum Out lane IN (outputs 1-8), before the track's own
+    // fader (docs/design/AUDIO_MIXER.md §8.1, DECISIONS §112).
+    std::array<Channel, kDrumInputs> drumInputs{};
 
     bool operator==(const Track& o) const {
         return id == o.id && name == o.name && color == o.color && type == o.type && polyphony == o.polyphony &&
                mute == o.mute && solo == o.solo && armed == o.armed && monitor == o.monitor &&
                recordInput == o.recordInput && midiChannel == o.midiChannel && listen == o.listen &&
-               listenTrack == o.listenTrack && gateLengthScale == o.gateLengthScale &&
-               transpose == o.transpose && drumLanes == o.drumLanes && slots == o.slots &&
-               arrangement == o.arrangement && automation == o.automation && devices == o.devices &&
-               modulators == o.modulators && channel == o.channel;
+               listenTrack == o.listenTrack && gateLengthScale == o.gateLengthScale && transpose == o.transpose &&
+               drumLanes == o.drumLanes && slots == o.slots && arrangement == o.arrangement &&
+               automation == o.automation && devices == o.devices && modulators == o.modulators &&
+               channel == o.channel && drumInputs == o.drumInputs;
     }
 };
 

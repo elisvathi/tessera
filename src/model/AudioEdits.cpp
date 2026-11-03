@@ -245,6 +245,17 @@ CommandPtr nudgeVolumes(const Song& song, const std::vector<SetChannels::Change>
     return std::make_unique<SetChannels>(name, std::move(list));
 }
 
+CommandPtr setDrumInput(const Song& song, TrackId track, int lane, Channel channel, const std::string& name) {
+    const Track* t = song.findTrack(track);
+    if (!t || lane < 0 || lane >= kDrumInputs)
+        return nullptr;
+    channel.volumeDb = std::clamp(channel.volumeDb, kSilentDb, kMaxFaderDb);
+    channel.pan = std::clamp(channel.pan, -1.f, 1.f);
+    std::array<Channel, kDrumInputs> inputs = t->drumInputs;
+    inputs[size_t(lane)] = channel;
+    return setTrackField(song, track, &Track::drumInputs, inputs, name);
+}
+
 CommandPtr setMasterVolume(const Song& song, float db) {
     MasterChannel m = song.master;
     m.volumeDb = std::clamp(db, kSilentDb, kMaxFaderDb);

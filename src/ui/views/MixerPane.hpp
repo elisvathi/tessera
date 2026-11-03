@@ -29,6 +29,7 @@ class MixerPane : public InteractiveView {
     bool hasSound() const;
 
     void step() override;
+    EditorContext& context() { return ctx; }
     void onButton(const ButtonEvent& e) override;
     void draw(const DrawArgs& args) override;
 
@@ -45,6 +46,7 @@ class MixerPane : public InteractiveView {
     struct Strip {
         TrackId track;
         bool master = false;
+        int lane = -1; // a drum track's lane IN (Drum Out output 0..7): a narrow strip after its track's
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
         int playerIndex = -1; // its index among the player's tracks
     };
@@ -66,7 +68,13 @@ class MixerPane : public InteractiveView {
     /// The colour of the strip's fader (`pan` false) or pan lane, when it has one: the control draws a ring in it.
     std::optional<NVGcolor> laneColor(const Strip& s, bool pan) const;
     void showHeld(TrackId track, float volumeDb, float pan) { held[track.value] = {volumeDb, pan}; }
-    void clearHeld() { held.clear(); }
+    void clearHeld() {
+        held.clear();
+        heldLanes.clear();
+    }
+    /// A lane strip's level and pan: plays at once while a drag holds it, and commits one undo step.
+    void holdLane(const Strip& s, Channel c);
+    void setLane(const Strip& s, Channel c, const std::string& name);
     /// The menu to type a level or reset it (right-click, or a double-click on the readout).
     void openTyping(const Strip& s);
 
@@ -74,6 +82,8 @@ class MixerPane : public InteractiveView {
     void layout();
     void drawTab(NVGcontext* vg);
     void drawStrip(NVGcontext* vg, const Strip& s);
+    /// A drum lane IN's narrow strip: the lane's name and colour, pan, fader, meter and level.
+    void drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t);
     void drawMeter(NVGcontext* vg, rack::math::Rect r, float left, float right);
     /// The peaks the meters hold for 1.5 s, by strip key.
     float heldPeak(uint64_t key, float level);
@@ -84,6 +94,7 @@ class MixerPane : public InteractiveView {
     rack::math::Rect tab;
     ToolButton* maximizeButton;
     std::map<uint64_t, std::pair<float, float>> held; // drags in progress: volume dB, pan
+    std::map<std::pair<uint64_t, int>, Channel> heldLanes; // lane strip drags in progress
     struct Peak {
         float level = 0;
         double at = 0;

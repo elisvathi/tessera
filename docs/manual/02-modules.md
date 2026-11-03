@@ -195,7 +195,7 @@ jack to see which drum it is, for example "Snare pitch".
 | **PITCH** row | How far the hit is tuned away from normal, 1 V per octave: +12 semitones is +1 V. 0 V when the hit has no pitch. Patch it to a drum module's tune input. |
 | **TIMBRE** row | The hit's timbre, 0 to 10 V. 0 V when it has none. |
 | **PRESS** row | The hit's pressure, 0 to 10 V. 0 V when it has none. |
-| **IN** row (inputs) | The sound of the drum on that lane: patch the drum module's output here. It is mixed into the drum track, in the middle. A poly cable is summed. |
+| **IN** row (inputs) | The sound of the drum on that lane: patch the drum module's output here. It is mixed into the drum track at the lane's own level and pan, set in the [mixer](18-mixer.md#drum-lanes). A poly cable is summed. |
 | **TRIGS**, **VEL**, **PITCH**, **TIMBRE**, **PRESS** | The same for all 16 outputs, on poly cables, one channel per output. |
 | **AUTO** | The track's automation lanes, one channel per lane. |
 
