@@ -107,6 +107,40 @@ std::string titleMarks(const Clip& clip, const ClipState& state, float gainDb) {
     return out;
 }
 
+std::string bigTitleMarks(const Clip& clip, const ClipState& state, float gainDb, TimeSig timeSig) {
+    if (!clip.audio)
+        return "";
+    const AudioContent& a = *clip.audio;
+    char buf[64];
+    if (a.follow == TempoFollow::Off) {
+        snprintf(buf, sizeof buf, "own speed \xC2\xB7 %.1f s", double(clip.length) * secondsPerTick(a.sourceTempo));
+    } else {
+        double bars = double(clip.length) / double(ticksPerBar(timeSig));
+        double beats = double(clip.length) / double(ticksPerBeat(timeSig));
+        char length[24];
+        if (bars >= 1)
+            snprintf(length, sizeof length, std::abs(bars - std::round(bars)) < 0.01 ? "%.0f bar%s" : "%.2g bar%s",
+                     bars, bars == 1 ? "" : "s");
+        else
+            snprintf(length, sizeof length, "%.2g beat%s", beats, beats == 1 ? "" : "s");
+        static const char* const kFollow[] = {"Stretch", "Repitch", "Off"};
+        double t = a.sourceTempo;
+        snprintf(buf, sizeof buf,
+                 std::abs(t - std::round(t)) < 0.05 ? "%.0f BPM \xC2\xB7 %s \xC2\xB7 %s \xE2\x96\xBE"
+                                                    : "%.1f BPM \xC2\xB7 %s \xC2\xB7 %s \xE2\x96\xBE",
+                 t, length, kFollow[int(a.follow)]);
+    }
+    std::string out = buf;
+    if (a.reverse)
+        out = "\xE2\x97\x80 " + out;
+    if (std::abs(gainDb) >= 0.05f)
+        out += "  " + dbText(gainDb);
+    if (state.source && state.source->fileChannels > state.source->channels)
+        out +=
+            "  " + std::to_string(state.source->fileChannels) + "\xE2\x86\x92" + std::to_string(state.source->channels);
+    return out;
+}
+
 std::string stateText(const ClipState& state) {
     switch (state.status.state) {
     case SourceState::Loading:

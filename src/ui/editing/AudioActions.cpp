@@ -265,6 +265,7 @@ void dropAudio(EditorContext& ctx, const std::vector<std::string>& paths, const 
         ctx.state().clipSelection.clear();
         for (ArrangementId id : r.made.instances)
             ctx.state().clipSelection.insert(id);
+        ctx.state().freshAudio = ctx.state().clipSelection;
     }
     if (!r.made.tracks.empty())
         ctx.state().selectedTrack = r.made.tracks.front();

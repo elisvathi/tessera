@@ -64,3 +64,9 @@ and a small pan knob.
 - **Scroll** over the bar to move 0.5 dB at a time.
 
 Rows too short for a second line don't show it; make the row taller (drag its bottom edge) to see it.
+
+## The Master row
+
+Under **+ Add track**, a thin **Master** row shows the Master's level bar and its volume in dB. It works like a
+track's level bar: drag it sideways, double-click it for 0 dB, scroll over it to move 0.5 dB at a time. Click the
+word **Master** to open the mixer. Like the mixer, it appears once the song has an audio track.

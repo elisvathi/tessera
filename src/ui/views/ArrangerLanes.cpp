@@ -951,6 +951,7 @@ uint64_t ArrangerLanes::clipsKey() {
     for (ArrangementId id : selection())
         selected += id.value * 0x9E3779B97F4A7C15ull; // order-independent
     key = hashMix(key, double(selected));
+    key = hashMix(key, double(ctx.state().freshAudio.size()));
     uint64_t overridden = 0;
     const Song& song = m->song();
     for (size_t i = 0; i < song.tracks.size(); i++) {
@@ -963,6 +964,10 @@ uint64_t ArrangerLanes::clipsKey() {
 }
 
 void ArrangerLanes::step() {
+    // A just-dropped clip keeps its big title form only until the selection moves on (§5.5).
+    EditorState& state = ctx.state();
+    if (!state.freshAudio.empty() && state.freshAudio != state.clipSelection)
+        state.freshAudio.clear();
     grid->setSize(box.size);
     clips->setSize(box.size);
     if (TesseraModule* m = ctx.module()) {
@@ -1147,6 +1152,13 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         std::string extras;
         if (clip->audio) {
             extras = audioDraw::titleMarks(*clip, audioState, gainDb);
+            if (ctx.state().freshAudio.count(a.id)) {
+                // The big form only where it still leaves room for the name.
+                std::string big = audioDraw::bigTitleMarks(*clip, audioState, gainDb, song.timeSig);
+                draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.onTile, NVG_ALIGN_LEFT};
+                if (draw::textWidth(vg, mono, big) < r.size.x - 70)
+                    extras = big;
+            }
             std::string state = audioDraw::stateText(audioState);
             if (!state.empty())
                 extras = state + "  " + extras;

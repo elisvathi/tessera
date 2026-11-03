@@ -1601,7 +1601,11 @@ Choices made while building the first audio phase (docs/design/AUDIO_MIXER.md §
 - **No mixer at all when nothing makes sound.** The spec folds the mixer to a tab; with no audio tracks it is hidden, so
   Tessera looks and behaves as before audio, and no existing screenshot changed.
 - **The tempo badge for Off clips reads "own speed"**: the UI fonts have no lock symbol.
-- **Not yet in 1a**: the Master row in the song pane, the big badge on a just-dropped clip (the toast says it, with
-  Keep 120 BPM), Tab cycling to the mixer, crossfade handles and curve dots (Phase 1b), the audio editor (1b).
+- **The Master row sits under "+ Add track"**, in the scrolled list, not pinned to the bottom: pinned, it would hide
+  the last track's header while that track's lane still showed beside it. A click on its name opens the mixer.
+- **The big badge is text only**: "92 BPM · 2 bars · Stretch ▾" on just-dropped timeline clips, for as long as they
+  are what is selected, and only where the clip is wide enough. "Keep 120 BPM" stays in the toast, which already
+  has a button for it. Launcher slots are too small for it and keep the short form.
+- **Not yet in 1a**: Tab cycling to the mixer, crossfade handles and curve dots (Phase 1b), the audio editor (1b).
 
 Why: built to the spec; these are the places it left open or where the code suggested a simpler way.

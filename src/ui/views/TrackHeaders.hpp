@@ -34,6 +34,9 @@ class TrackHeaders : public InteractiveView {
     DropTarget dropTargetAt(float y);
     /// Opens the inline name field over a row.
     void startRename(int row);
+    /// The thin Master row under the add row: shown once the song has something that reaches the master.
+    static constexpr float kMasterRowHeight = 22;
+    bool showsMaster() const;
 
   protected:
     void step() override;
@@ -63,7 +66,9 @@ class TrackHeaders : public InteractiveView {
         LaneState, // the mark that says whether the lane records: not a button
         AddLane,
         Level, // an audio track's level bar: its fader and meter in one (docs/design/AUDIO_MIXER.md §7.5)
-        Pan
+        Pan,
+        Master,     // the Master row, outside its level bar
+        MasterLevel // the Master row's level bar
     };
     struct Hit {
         int row = -1;
@@ -95,6 +100,9 @@ class TrackHeaders : public InteractiveView {
     void drawLaneRow(NVGcontext* vg, int row, float top, float height);
     void drawAddLaneRow(NVGcontext* vg, int row, float top, float height);
     void drawAddRow(NVGcontext* vg);
+    rack::math::Rect masterRowRect();
+    rack::math::Rect masterLevelRect();
+    void drawMasterRow(NVGcontext* vg);
     /// The "+ Add track" row right after the last track.
     rack::math::Rect addRowRect();
     void openAddMenu();

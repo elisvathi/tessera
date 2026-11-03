@@ -167,6 +167,9 @@ struct EditorState {
     ChordStamp chord;                           // Draw places this chord
     NoteSelection selection;                    // session only
     arrange::IdSet clipSelection;               // arranger instances, session only
+    // The timeline clips the last audio drop made. Their title bars show the big form ("92 BPM · 2 bars ·
+    // Stretch") for as long as they are what is selected. Session only.
+    arrange::IdSet freshAudio;
     AutoSelection autoSelection;                // session only
     std::optional<autoEdits::Shape> stampShape; // armed: the next drag in a lane stamps this shape
     ArrangerRange range;                        // the arranger's time selection, session only
