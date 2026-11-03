@@ -493,7 +493,8 @@ class HeaderPanGesture : public DragGesture {
 } // namespace
 
 Rect TrackHeaders::levelRect(const Track& t, int row, float top, float h) {
-    if (t.type != TrackType::Audio || h < kLevelLineMinHeight)
+    // Every track that makes sound has the second line (§7.9): audio tracks, and tracks whose IN brings audio back.
+    if (h < kLevelLineMinHeight || !ctx.module() || ctx.module()->soundIndex(t.id) < 0)
         return Rect();
     float x = indentOf(owner.rows[size_t(row)]) + (compact() ? kTileWidthCompact : kTileWidth) + kNameGap;
     float right = box.size.x - kPad - kPanSize - 4 - kDbTextWidth;
