@@ -4,6 +4,7 @@
 #include "../src/engine/AudioSnapshotBuilder.hpp"
 #include "../src/engine/Snapshot.hpp"
 #include "../src/model/AudioEdits.hpp"
+#include "../src/model/Sends.hpp"
 #include "../src/module/OutputBus.hpp"
 
 #include <chrono>
@@ -670,3 +671,68 @@ TEST_CASE("performance: playing and mixing audio tracks stays inside its budget 
 #endif
 }
 
+
+TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, and follows mute and solo") {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId bass = song.tracks[0].id, reverb = song.tracks[1].id;
+    song.tracks[0].channel.volumeDb = -6.0206f;
+    addSend(song, bass, reverb, 0)->apply(song);
+    MixPlan plan;
+    plan.returns = {{bass, 0}, {reverb, 1}};
+    plan.busSlots = {{bass, 0}, {reverb, 1}};
+    Engine engine;
+    engine.setSampleRate(kRate);
+    AudioPlayer player;
+    player.setSampleRate(kRate);
+    std::vector<std::unique_ptr<AudioSnapshot>> kept;
+    ReturnBus returns;
+    std::array<AudioOutFrame, kMaxTracks + 1> out{};
+    std::array<TrackFrame, kMaxTracks> frames{};
+    TransportEvents events;
+    int64_t n = 0;
+    float left = 0, right = 0;
+    // Bass's voice comes back at 2 V; the reverb's effect at 0.3 V.
+    auto play = [&] {
+        kept.push_back(buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot);
+        player.setSnapshot(kept.back().get());
+        for (int i = 0; i < 2000; i++, n++) {
+            returns.write(n, 0, bass, 2.f, 2.f);
+            returns.write(n, 1, reverb, 0.3f, 0.3f);
+            engine.process(frames.data(), events);
+            player.process(engine, left, right, {&returns, out.data(), n});
+        }
+    };
+    play();
+    REQUIRE(kept.back()->tracks.size() == 2);
+    CHECK(kept.back()->tracks[0].id == bass); // the sender comes first
+    CHECK(out[1].l == doctest::Approx(1.f).epsilon(1e-3)); // after the fader: 2 V at -6 dB
+    CHECK(left == doctest::Approx(1.3f).epsilon(1e-3));     // the send never joins the reverb's sound directly
+    CHECK(player.outLevel(1) > 0.9f);
+
+    setSend(song, bass, {reverb, 0, true}, "pre")->apply(song);
+    play();
+    CHECK(out[1].l == doctest::Approx(2.f).epsilon(1e-3));
+
+    song.tracks[0].mute = true; // a muted track's sends stop
+    play();
+    CHECK(std::abs(out[1].l) < 1e-4f);
+    CHECK(left == doctest::Approx(0.3f).epsilon(1e-3));
+
+    song.tracks[0].mute = false;
+    song.tracks[1].mute = true; // a muted receiver keeps feeding its effect, but isn't heard
+    play();
+    CHECK(out[1].l == doctest::Approx(2.f).epsilon(1e-3));
+    CHECK(left == doctest::Approx(1.f).epsilon(1e-3));
+
+    song.tracks[1].mute = false;
+    song.tracks[0].solo = true; // solo follows the sends: the reverb stays on
+    play();
+    CHECK(left == doctest::Approx(1.3f).epsilon(1e-3));
+
+    song.tracks[0].solo = false;
+    song.tracks[1].solo = true; // solo the reverb: Bass keeps feeding it, but Bass itself is silent
+    play();
+    CHECK(out[1].l == doctest::Approx(2.f).epsilon(1e-3));
+    CHECK(left == doctest::Approx(0.3f).epsilon(1e-3));
+}

@@ -7,6 +7,8 @@
 #include "../Theme.hpp"
 #include "../editing/AudioActions.hpp"
 #include "../editing/Sources.hpp"
+#include "../widgets/ColorMenuItem.hpp"
+#include "../../model/Sends.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../widgets/Draw.hpp"
@@ -65,6 +67,14 @@ ChipText chipText(TesseraModule& m, const Track* t) {
     for (OutputModuleBase* o : m.sourceModules(t->id))
         if (o->isBypassed())
             return {"Bypassed", true};
+    // Sends reach a track only through its OUT and the effect patched there (§7.6).
+    if (!sendersTo(song, t->id).empty()) {
+        bool out = false;
+        for (OutputModuleBase* o : audioActions::outputsFor(&m, t->id))
+            out |= o->outPatched();
+        if (!out)
+            return {"No OUT cable", true};
+    }
     std::vector<sources::Row> rows = sources::rowsOf(m, t->id);
     if (sources::needsList(rows)) {
         int counted = 0, inUse = 0;
@@ -296,6 +306,54 @@ class PanGesture : public DragGesture {
     float start = 0, now = 0, volume = 0;
 };
 
+/// Drags a send: a send knob up/down, or in Show sends a strip's fader. Relative; Shift or Ctrl/Cmd for fine; a soft
+/// detent at 0 dB. It plays at once and is one undo step on release; a fader dragged up from -inf adds the send.
+class SendGesture : public DragGesture {
+  public:
+    SendGesture(MixerPane& pane, EditorContext& ctx, const MixerPane::Strip& s, TrackId to, Vec press, float travel)
+        : pane(pane), ctx(ctx), from(s.track), to(to), press(press), travel(travel) {
+        start = now = pane.shownSend(s, to);
+    }
+    void update(Vec pos, Modifiers mods) override {
+        float scale = mods.shift || mods.ctrl ? kFine : 1.f;
+        float p = MixerPane::faderPos(start) - (pos.y - press.y) / travel * scale;
+        now = MixerPane::faderDb(std::clamp(p, 0.f, 1.f));
+        if (!mods.alt && std::abs(MixerPane::faderPos(now) - kZeroDbPos) * travel < kFaderSnapPx)
+            now = 0;
+        ctx.module()->audioPlayer().holdSend(from.value, to.value, dbToGain(now));
+        pane.showHeldSend(from, to, now);
+    }
+    void commit() override {
+        TesseraModule* m = ctx.module();
+        const Song& song = m->song();
+        if (now != start) {
+            if (const Send* s = findSend(song, from, to))
+                m->perform(setSend(song, from, {to, now, s->preFader}, "Send " + audioDraw::dbText(now)));
+            else if (now > kSilentDb)
+                m->perform(addSend(song, from, to, now));
+        }
+        m->releaseChannelHolds();
+        pane.clearHeld();
+    }
+    void cancel() override {
+        ctx.module()->audioPlayer().releaseHolds();
+        pane.clearHeld();
+    }
+    std::string readout() const override {
+        const Track* t = ctx.module()->song().findTrack(to);
+        return "Send to " + (t ? t->name : std::string("track")) + " " + audioDraw::dbText(now);
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeV; }
+
+  private:
+    MixerPane& pane;
+    EditorContext& ctx;
+    TrackId from, to;
+    Vec press;
+    float travel;
+    float start = kSilentDb, now = kSilentDb;
+};
+
 /// Drags the tab: the mixer's height, from the bottom of the editor up to the pointer.
 class TabGesture : public DragGesture {
   public:
@@ -394,6 +452,29 @@ float MixerPane::shownPan(const Strip& s) const {
     return t ? t->channel.pan : 0;
 }
 
+float MixerPane::shownSend(const Strip& s, TrackId to) const {
+    auto it = heldSends.find({s.track.value, to.value});
+    if (it != heldSends.end())
+        return it->second;
+    const Send* send = ctx.module() ? findSend(ctx.module()->song(), s.track, to) : nullptr;
+    return send ? send->db : kSilentDb;
+}
+
+float MixerPane::capPos(const Strip& s) const {
+    const ViewState& v = ctx.view();
+    auto posFor = [&](TrackId mode) {
+        if (!mode.valid() || s.master || s.lane >= 0 || s.track == mode)
+            return faderPos(shownVolume(s));
+        return faderPos(shownSend(s, mode));
+    };
+    float to = posFor(v.showSends);
+    double t = (EditorContext::now() - v.sendsSince) / 0.12;
+    if (v.sendsSince < 0 || t >= 1)
+        return to;
+    float from = posFor(v.sendsFrom);
+    return from + (to - from) * float(std::max(0.0, t));
+}
+
 std::optional<NVGcolor> MixerPane::laneColor(const Strip& s, bool pan) const {
     // The ring shows whenever the track has the lane, playing or not: the control belongs to it.
     const Song& song = ctx.module()->song();
@@ -417,16 +498,47 @@ void MixerPane::layout() {
     if (!m)
         return;
     float top = tabH + kGap, bottom = box.size.y - kGap;
+    // Show sends: a band across the top says so; a target that lost its strip ends the mode.
+    ViewState& view = ctx.view();
+    if (view.showSends.valid() && m->soundIndex(view.showSends) < 0)
+        view.setShowSends(TrackId(), EditorContext::now());
+    band = bandClose = Rect();
+    if (view.showSends.valid()) {
+        band = Rect(kGap, top, box.size.x - 2 * kGap, 16);
+        bandClose = Rect(band.getRight() - 18, band.pos.y, 18, 16);
+        top += 20;
+    }
     float h = bottom - top;
     bool roomy = h >= 190; // short panes drop the source chip and pan, keeping the fader usable
+    // Every strip keeps the same room for sends, so the faders stay level.
+    bool anyReceives = false;
+    int sendRows = 0;
+    for (const Track& t : m->song().tracks) {
+        if (m->soundIndex(t.id) < 0)
+            continue;
+        anyReceives |= !sendersTo(m->song(), t.id).empty();
+        sendRows = std::max(sendRows, int(std::min<size_t>(t.sends.size(), kMaxSendsPerTrack) + 1) / 2);
+    }
     auto partsOf = [&](Strip& s, float x, float w) {
         s.box = Rect(x, top, w, h);
         float y = top + 3;
         s.name = Rect(x, y, w, 16);
         y += 18;
+        if (anyReceives && roomy) {
+            s.receives = Rect(x + 4, y - 3, w - 8, 12);
+            y += 10;
+        }
         if (roomy) {
             s.chip = Rect(x + 3, y, w - 6, 14);
             y += 18;
+            if (!s.master && s.lane < 0) {
+                const Track* t = m->song().findTrack(s.track);
+                size_t n = t ? std::min<size_t>(t->sends.size(), kMaxSendsPerTrack) : 0;
+                for (size_t k = 0; k < n; k++)
+                    s.sendKnobs.push_back(Rect(x + 6 + float(k % 2) * (w / 2), y + float(k / 2) * 28, 20, 20));
+                s.addSend = Rect(x + w / 2 - 9, y + float(sendRows) * 28, 18, 12);
+            }
+            y += float(sendRows) * 28 + 16;
             s.pan = Rect(x + w / 2 - 12, y, 24, 24);
             y += 28;
         }
@@ -441,6 +553,12 @@ void MixerPane::layout() {
         s.fader = Rect(x + w / 2 - 14, y + 4, 12, std::max(20.f, faderBottom - y - 8));
         s.meter = Rect(x + w / 2 + 2, y + 4, 9, s.fader.size.y);
         s.readout = Rect(x + 2, faderBottom, w - 4, 14);
+        if (!s.master && s.lane < 0) {
+            if (!sendersTo(m->song(), s.track).empty())
+                s.outMeter = Rect(s.fader.pos.x - 8, s.fader.pos.y, 3, s.fader.size.y);
+            if (view.showSends.valid() && view.showSends != s.track && findSend(m->song(), s.track, view.showSends))
+                s.pre = Rect(x + 2, s.fader.pos.y, 18, 11);
+        }
     };
     float x = kGap;
     for (const Track& t : m->song().tracks) {
@@ -483,6 +601,10 @@ void MixerPane::layout() {
 }
 
 void MixerPane::step() {
+    // Folding the mixer leaves Show sends; maximise and restore keep it.
+    ViewState& v = ctx.view();
+    if (v.showSends.valid() && !v.mixerOpen && v.maximized != Pane::Mixer)
+        v.setShowSends(TrackId(), EditorContext::now());
     layout();
     // Once a loaded patch has settled, say if files are missing (§8.7): one toast, with Find… for the first.
     if (TesseraModule* m = ctx.module())
@@ -508,16 +630,35 @@ MixerPane::Hit MixerPane::hitTest(Vec pos) const {
         hit.part = Part::Tab;
         return hit;
     }
+    if (bandClose.contains(pos)) {
+        hit.part = Part::BandClose;
+        return hit;
+    }
     for (size_t i = 0; i < strips.size(); i++) {
         const Strip& s = strips[i];
         if (!s.box.contains(pos) && !s.connect.contains(pos))
             continue;
         hit.strip = int(i);
         Rect faderZone(s.fader.pos.x - 6, s.fader.pos.y - 6, s.fader.size.x + s.meter.size.x + 18, s.fader.size.y + 12);
+        bool sendsMode = ctx.view().showSends.valid();
+        if (!sendsMode)
+            for (size_t k = 0; k < s.sendKnobs.size(); k++)
+                if (s.sendKnobs[k].grow(Vec(3, 3)).contains(pos)) {
+                    hit.part = Part::SendKnob;
+                    hit.send = int(k);
+                    return hit;
+                }
         if (s.connect.size.x > 0 && s.connect.contains(pos))
             hit.part = Part::Connect;
         else if (s.name.contains(pos))
             hit.part = Part::Name;
+        else if (s.receives.size.x > 0 && s.receives.contains(pos) && ctx.module() &&
+                 !sendersTo(ctx.module()->song(), s.track).empty())
+            hit.part = Part::Receives;
+        else if (!sendsMode && s.addSend.size.x > 0 && s.addSend.grow(Vec(2, 2)).contains(pos))
+            hit.part = Part::AddSend;
+        else if (s.pre.size.x > 0 && s.pre.contains(pos))
+            hit.part = Part::Pre;
         else if (s.chip.size.x > 0 && s.chip.contains(pos))
             hit.part = Part::Chip;
         else if (s.pan.size.x > 0 && s.pan.grow(Vec(4, 4)).contains(pos))
@@ -552,10 +693,32 @@ std::unique_ptr<DragGesture> MixerPane::startGesture(Vec pos, int button, Modifi
                 v.maximized.reset();
         });
     }
-    case Part::Fader:
-        if (strips[size_t(h.strip)].lane >= 0)
+    case Part::SendKnob: {
+        const Strip& s = strips[size_t(h.strip)];
+        const Track* t = ctx.module()->song().findTrack(s.track);
+        if (!t || h.send >= int(t->sends.size()))
+            return nullptr;
+        return std::make_unique<SendGesture>(*this, ctx, s, t->sends[size_t(h.send)].to, pos, 100);
+    }
+    case Part::Fader: {
+        const Strip& s = strips[size_t(h.strip)];
+        TrackId target = ctx.view().showSends;
+        if (target.valid()) {
+            // Show sends: the faders of other tracks are their sends; the master and tracks that would make a
+            // loop don't move.
+            if (s.master || s.lane >= 0 || s.track == target)
+                return s.track == target && !s.master && s.lane < 0
+                           ? std::make_unique<FaderGesture>(*this, ctx, h.strip, pos)
+                           : nullptr;
+            const Song& song = ctx.module()->song();
+            if (!findSend(song, s.track, target) && !whyNoSend(song, s.track, target).empty())
+                return nullptr;
+            return std::make_unique<SendGesture>(*this, ctx, s, target, pos, std::max(10.f, s.fader.size.y));
+        }
+        if (s.lane >= 0)
             return std::make_unique<LaneFaderGesture>(*this, h.strip, pos);
         return std::make_unique<FaderGesture>(*this, ctx, h.strip, pos);
+    }
     case Part::Pan:
         return std::make_unique<PanGesture>(*this, ctx, h.strip, pos);
     default:
@@ -627,6 +790,75 @@ void MixerPane::openChipMenu(const Strip& s) {
     }
 }
 
+void MixerPane::openAddSend(TrackId from) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const Song& song = m->song();
+    EditorContext* c = &ctx;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Send to"));
+    menu->addChild(rack::createMenuLabel("Sends made here follow the fader and mute; cables in the rack don't"));
+    int offered = 0;
+    for (const Track& t : song.tracks) {
+        if (t.id == from || findSend(song, from, t.id))
+            continue;
+        std::string why = whyNoSend(song, from, t.id);
+        if (!why.empty()) {
+            menu->addChild(rack::createMenuLabel(t.name + ": " + why));
+            continue;
+        }
+        TrackId to = t.id;
+        menu->addChild(new ColorMenuItem(t.name, t.color, false, [c, m, from, to] {
+            if (CommandPtr add = addSend(m->song(), from, to))
+                m->perform(std::move(add));
+            // The next move is turning it up: the faders show the sends to that track.
+            c->view().setShowSends(to, EditorContext::now());
+        }));
+        offered++;
+    }
+    if (offered == 0)
+        menu->addChild(rack::createMenuLabel("No other track to send to"));
+}
+
+void MixerPane::openSendMenu(TrackId from, TrackId to) {
+    TesseraModule* m = ctx.module();
+    const Send* send = m ? findSend(m->song(), from, to) : nullptr;
+    const Track* target = m ? m->song().findTrack(to) : nullptr;
+    if (!send || !target)
+        return;
+    Send now = *send;
+    EditorContext* c = &ctx;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Send to " + target->name));
+    menu->addChild(rack::createMenuItem("Show sends to " + target->name, "", [c, to] {
+        c->view().setShowSends(to, EditorContext::now());
+    }));
+    menu->addChild(rack::createCheckMenuItem("Before the fader", "", [pre = now.preFader] { return pre; }, [m, from, now] {
+        m->perform(setSend(m->song(), from, {now.to, now.db, true}, "Send before the fader"));
+    }));
+    menu->addChild(rack::createCheckMenuItem("After the fader", "", [pre = now.preFader] { return !pre; }, [m, from, now] {
+        m->perform(setSend(m->song(), from, {now.to, now.db, false}, "Send after the fader"));
+    }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Send level (dB)"));
+    menu->addChild(new MenuTextField(audioDraw::dbText(now.db), [m, from, now](const std::string& text) {
+        char* end = nullptr;
+        float db = std::strtof(text.c_str(), &end);
+        if (end == text.c_str())
+            db = kSilentDb;
+        m->perform(setSend(m->song(), from, {now.to, db, now.preFader}, "Send " + audioDraw::dbText(db)));
+    }));
+    menu->addChild(rack::createMenuItem("-inf", "double-click", [m, from, now] {
+        m->perform(setSend(m->song(), from, {now.to, kSilentDb, now.preFader}, "Send -inf"));
+    }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuItem("Remove send", "", [m, from, to] {
+        if (CommandPtr r = removeSend(m->song(), from, to))
+            m->perform(std::move(r));
+    }));
+}
+
 void MixerPane::click(Vec pos, int button, Modifiers mods) {
     TesseraModule* m = ctx.module();
     if (!m)
@@ -635,6 +867,42 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
     const Strip* s = h.strip >= 0 ? &strips[size_t(h.strip)] : nullptr;
     if (s && h.part == Part::Chip && s->lane < 0) {
         openChipMenu(*s);
+        return;
+    }
+    ViewState& view = ctx.view();
+    if (h.part == Part::BandClose) {
+        view.setShowSends(TrackId(), EditorContext::now());
+        return;
+    }
+    if (s && h.part == Part::SendKnob) {
+        const Track* t = m->song().findTrack(s->track);
+        if (t && h.send < int(t->sends.size()) && button == GLFW_MOUSE_BUTTON_RIGHT)
+            openSendMenu(s->track, t->sends[size_t(h.send)].to);
+        return;
+    }
+    if (s && h.part == Part::AddSend) {
+        openAddSend(s->track);
+        return;
+    }
+    if (s && h.part == Part::Receives && button == GLFW_MOUSE_BUTTON_LEFT) {
+        view.setShowSends(view.showSends == s->track ? TrackId() : s->track, EditorContext::now());
+        return;
+    }
+    if (s && h.part == Part::Pre && button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (const Send* send = findSend(m->song(), s->track, view.showSends)) {
+            Send next = *send;
+            next.preFader = !next.preFader;
+            m->perform(setSend(m->song(), s->track, next, next.preFader ? "Send before the fader" : "Send after the fader"));
+        }
+        return;
+    }
+    if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && !s->master && s->lane < 0) {
+        TrackId track = s->track;
+        EditorContext* c = &ctx;
+        rack::ui::Menu* menu = rack::createMenu();
+        menu->addChild(rack::createMenuItem("Show sends to this track", "", [c, track] {
+            c->view().setShowSends(track, EditorContext::now());
+        }));
         return;
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
@@ -704,6 +972,20 @@ void MixerPane::doubleClick(Vec pos, Modifiers mods) {
     if (h.strip < 0)
         return;
     const Strip& s = strips[size_t(h.strip)];
+    // A double-click on a send sets it to -inf (§7.3).
+    TrackId sendTo;
+    if (h.part == Part::SendKnob) {
+        const Track* t = m->song().findTrack(s.track);
+        if (t && h.send < int(t->sends.size()))
+            sendTo = t->sends[size_t(h.send)].to;
+    } else if (h.part == Part::Fader && ctx.view().showSends.valid() && ctx.view().showSends != s.track && !s.master) {
+        sendTo = ctx.view().showSends;
+    }
+    if (sendTo.valid()) {
+        if (const Send* send = findSend(m->song(), s.track, sendTo))
+            m->perform(setSend(m->song(), s.track, {sendTo, kSilentDb, send->preFader}, "Send -inf"));
+        return;
+    }
     if (s.lane >= 0) {
         if (h.part == Part::Fader)
             setLane(s, {0, shownPan(s)}, "Lane " + std::to_string(s.lane + 1) + " volume 0 dB");
@@ -726,7 +1008,18 @@ void MixerPane::doubleClick(Vec pos, Modifiers mods) {
 void MixerPane::wheel(Vec pos, Vec delta, Modifiers mods) {
     TesseraModule* m = ctx.module();
     Hit h = hitTest(pos);
-    if (!m || h.part != Part::Fader || delta.y == 0)
+    if (m && h.part == Part::SendKnob && delta.y != 0) {
+        const Strip& s = strips[size_t(h.strip)];
+        const Track* t = m->song().findTrack(s.track);
+        if (!t || h.send >= int(t->sends.size()))
+            return;
+        Send send = t->sends[size_t(h.send)];
+        float step = (mods.shift ? kFine : kWheelDb) * (delta.y > 0 ? 1.f : -1.f);
+        send.db = send.db <= kSilentDb ? (delta.y > 0 ? -60.f : kSilentDb) : std::clamp(send.db + step, kSilentDb, kMaxFaderDb);
+        m->perform(setSend(m->song(), s.track, send, "Send " + audioDraw::dbText(send.db)));
+        return;
+    }
+    if (!m || h.part != Part::Fader || delta.y == 0 || ctx.view().showSends.valid())
         return;
     const Strip& s = strips[size_t(h.strip)];
     float step = (mods.shift ? kFine * 1 : kWheelDb) * (delta.y > 0 ? 1.f : -1.f);
@@ -746,7 +1039,13 @@ CursorShape MixerPane::hoverCursor(Vec pos, Modifiers mods) {
         return CursorShape::ResizeV;
     case Part::Fader:
     case Part::Pan:
+    case Part::SendKnob:
         return CursorShape::ResizeV;
+    case Part::Receives:
+    case Part::AddSend:
+    case Part::Pre:
+    case Part::BandClose:
+        return CursorShape::Hand;
     case Part::Mute:
     case Part::Solo:
     case Part::Name:
@@ -906,6 +1205,11 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
     const Track* t = s.master ? nullptr : song.findTrack(s.track);
+    // Show sends: other strips' faders are their sends to the target (§7.6).
+    TrackId target = ctx.view().showSends;
+    const Track* targetTrack = target.valid() ? song.findTrack(target) : nullptr;
+    bool showsSend = targetTrack && !s.master && s.track != target;
+    bool cantSend = showsSend && !findSend(song, s.track, target) && !whyNoSend(song, s.track, target).empty();
     if (!s.master && !t)
         return;
     bool selected = t && ctx.state().selectedTrack == t->id;
@@ -942,6 +1246,51 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         small.color = chipColor;
         draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y, draw::ellipsize(vg, small, chip, s.chip.size.x - 4));
         small.color = c.text1;
+    }
+    // "← 3": this track gets sends from 3 tracks; a click shows them on the faders.
+    if (s.receives.size.x > 0 && !s.master) {
+        size_t senders = sendersTo(song, s.track).size();
+        if (senders > 0) {
+            bool on = target == s.track;
+            small.color = on ? c.accent : c.text1;
+            draw::text(vg, small, s.receives.getCenter().x, s.receives.getCenter().y,
+                       "\xE2\x86\x90 " + std::to_string(senders));
+            small.color = c.text1;
+        }
+    }
+    // Send knobs: two letters of the receiving track's name in its colour; "pre" when before the fader.
+    if (t && !targetTrack) {
+        for (size_t k = 0; k < s.sendKnobs.size() && k < t->sends.size(); k++) {
+            const Send& send = t->sends[k];
+            const Track* to = song.findTrack(send.to);
+            Rect r = s.sendKnobs[k];
+            Vec cc = r.getCenter();
+            float radius = r.size.y / 2 - 2;
+            float db = heldSends.count({t->id.value, send.to.value}) ? heldSends.at({t->id.value, send.to.value}) : send.db;
+            float a0 = 0.75f * float(M_PI), a1 = a0 + 1.5f * float(M_PI) * faderPos(db);
+            nvgBeginPath(vg);
+            nvgArc(vg, cc.x, cc.y, radius, a0, 2.25f * float(M_PI), NVG_CW);
+            nvgStrokeColor(vg, theme::recessed(c, c.bg0, 0.6f));
+            nvgStrokeWidth(vg, 2);
+            nvgStroke(vg);
+            if (db > kSilentDb) {
+                nvgBeginPath(vg);
+                nvgArc(vg, cc.x, cc.y, radius, a0, a1, NVG_CW);
+                nvgStrokeColor(vg, to ? theme::track(to->color) : c.text1);
+                nvgStroke(vg);
+            }
+            std::string label = to ? to->name.substr(0, 2) : "?";
+            if (send.preFader)
+                label += " pre";
+            small.color = to ? theme::track(to->color) : c.text2;
+            draw::text(vg, small, cc.x, r.getBottom() + 4, label);
+        }
+        small.color = c.text1;
+        if (s.addSend.size.x > 0) {
+            small.color = c.text2;
+            draw::text(vg, small, s.addSend.getCenter().x, s.addSend.getCenter().y, "+");
+            small.color = c.text1;
+        }
     }
     // Pan knob: an arc from the centre to where it points.
     if (s.pan.size.x > 0 && !s.master) {
@@ -998,7 +1347,7 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         small.color = c.text1;
     }
     // Fader: a groove with the 0 dB mark, and the cap.
-    float volume = shownVolume(s);
+    float volume = showsSend ? shownSend(s, target) : shownVolume(s);
     Rect groove(s.fader.getCenter().x - 1.5f, s.fader.pos.y, 3, s.fader.size.y);
     draw::roundedRect(vg, groove, 1.5f, theme::recessed(c, c.bg0, 0.6f));
     float zeroY = s.fader.getBottom() - kZeroDbPos * s.fader.size.y;
@@ -1006,12 +1355,45 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     nvgRect(vg, s.fader.pos.x - 2, zeroY, s.fader.size.x + 4, 1);
     nvgFillColor(vg, volume == 0 ? c.text0 : c.text2);
     nvgFill(vg);
-    float capY = s.fader.getBottom() - faderPos(volume) * s.fader.size.y;
+    float capY = s.fader.getBottom() - capPos(s) * s.fader.size.y;
     bool heldNow = held.count(s.master ? song.master.id.value : s.track.value) > 0;
     Rect cap(s.fader.pos.x - 2, capY - 5, s.fader.size.x + 4, 10);
-    draw::roundedRect(vg, cap, 2, heldNow ? c.accent : c.text1);
-    if (std::optional<NVGcolor> ring = laneColor(s, false))
-        draw::roundedRectStroke(vg, cap.grow(Vec(2, 2)), 3, *ring, 1.5f);
+    if (showsSend) {
+        // A send's cap is hollow, in the receiving track's colour: colour is never the only sign.
+        bool heldSend = heldSends.count({s.track.value, target.value}) > 0;
+        draw::roundedRect(vg, cap, 2, c.bg1);
+        draw::roundedRectStroke(vg, cap, 2, heldSend ? c.accent : theme::track(targetTrack->color), 1.5f);
+    } else {
+        draw::roundedRect(vg, cap, 2, heldNow ? c.accent : c.text1);
+        if (std::optional<NVGcolor> ring = laneColor(s, false))
+            draw::roundedRectStroke(vg, cap.grow(Vec(2, 2)), 3, *ring, 1.5f);
+    }
+    if (s.pre.size.x > 0) {
+        const Send* send = findSend(song, s.track, target);
+        draw::TextStyle pre{theme::fonts::ui(), theme::metrics::kTextRuler - 2, send && send->preFader ? c.text0 : c.text2,
+                            NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::roundedRect(vg, s.pre, 2, send && send->preFader ? c.bg2 : theme::recessed(c, c.bg1, 0.3f));
+        draw::text(vg, pre, s.pre.getCenter().x, s.pre.getCenter().y, "pre");
+    }
+    // The OUT meter of a track that receives sends: what leaves for its effect, dim while OUT has no cable.
+    if (s.outMeter.size.x > 0) {
+        float out = m->audioPlayer().outLevel(s.playerIndex);
+        bool patched = false;
+        for (OutputModuleBase* o : audioActions::outputsFor(m, s.track))
+            patched |= o->outPatched();
+        draw::roundedRect(vg, s.outMeter, 1, theme::recessed(c, c.bg0, 0.5f));
+        float db = voltsDb(out), p = meterPos(db);
+        if (p > 0) {
+            NVGcolor fill = db > 0 ? c.record : db > -6 ? c.queue : c.play;
+            if (!patched)
+                fill = nvgTransRGBAf(fill, 0.35f);
+            nvgBeginPath(vg);
+            nvgRect(vg, s.outMeter.pos.x, s.outMeter.getBottom() - p * s.outMeter.size.y, s.outMeter.size.x,
+                    p * s.outMeter.size.y);
+            nvgFillColor(vg, fill);
+            nvgFill(vg);
+        }
+    }
     // Meter beside it, with peak-hold ticks.
     const AudioPlayer& player = m->audioPlayer();
     float l = s.master ? player.masterLevel(0) : player.level(s.playerIndex, 0);
@@ -1028,7 +1410,8 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     }
     // The level as text; under it where the strip goes.
     draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y, audioDraw::dbText(volume));
+    draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y,
+               showsSend ? "send " + audioDraw::dbText(volume) : audioDraw::dbText(volume));
     small.color = c.text2;
     if (!s.master)
         draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8, "\xE2\x86\x92 Master");
@@ -1041,6 +1424,9 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         snprintf(mem, sizeof mem, "audio %.0f MB", double(store->memoryBytes()) / (1 << 20));
         draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8, mem);
     }
+    // Show sends: the master, and strips that would make a loop, step back.
+    if (targetTrack && (s.master || cantSend))
+        draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl, nvgTransRGBAf(c.bg0, 0.6f));
 }
 
 void MixerPane::drawView(const DrawArgs& args) {
@@ -1063,12 +1449,21 @@ void MixerPane::drawView(const DrawArgs& args) {
     }
     for (const Strip& s : strips)
         drawStrip(vg, s);
+    if (band.size.x > 0)
+        if (const Track* to = ctx.module()->song().findTrack(ctx.view().showSends)) {
+            draw::roundedRect(vg, band, theme::metrics::kRadiusControl, nvgLerpRGBA(c.bg1, theme::track(to->color), 0.18f));
+            draw::TextStyle text{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+            draw::text(vg, text, band.pos.x + 8, band.getCenter().y,
+                       "Faders show sends to " + to->name + "  \xC2\xB7  Esc to go back");
+            text.align = NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE;
+            draw::text(vg, text, bandClose.getCenter().x, bandClose.getCenter().y, "\xC3\x97");
+        }
     if (notesOnly > 0) {
         draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         float x = strips.size() > 1 ? strips[strips.size() - 2].box.getRight() + 12 : 12;
         std::string text = std::to_string(notesOnly) + (notesOnly == 1 ? " track plays" : " tracks play") +
                            " notes only";
-        draw::text(vg, hint, x, tab.size.y + 14, text);
+        draw::text(vg, hint, x, (band.size.x > 0 ? band.getBottom() : tab.size.y) + 14, text);
     }
     nvgRestore(vg);
 }

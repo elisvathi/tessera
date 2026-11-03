@@ -253,6 +253,17 @@ CommandPtr removeTracks(const Song& song, const std::vector<TrackId>& ids) {
     if (doomed.empty() || doomed.size() >= song.tracks.size())
         return nullptr;
     auto compound = std::make_unique<CompoundCommand>("Delete " + countTracks(doomed.size()));
+    // Sends to a deleted track go in the same undo step (§4.4).
+    for (const Track& t : song.tracks) {
+        if (std::find(doomed.begin(), doomed.end(), t.id) != doomed.end())
+            continue;
+        std::vector<Send> kept;
+        for (const Send& s : t.sends)
+            if (std::find(doomed.begin(), doomed.end(), s.to) == doomed.end())
+                kept.push_back(s);
+        if (CommandPtr c = setTrackField(song, t.id, &Track::sends, kept, "Remove sends"))
+            compound->add(std::move(c));
+    }
     for (TrackId id : doomed)
         compound->add(std::make_unique<RemoveTrack>(id));
     return compound;

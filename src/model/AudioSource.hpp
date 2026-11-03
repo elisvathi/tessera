@@ -146,6 +146,17 @@ struct Channel {
     bool operator!=(const Channel& o) const { return !(*this == o); }
 };
 
+/// A send: some of a track's sound going to another track's OUT, for an effect patched there (§7.6). Before the
+/// fader, or after its fader and pan.
+struct Send {
+    TrackId to;
+    float db = kSilentDb;
+    bool preFader = false;
+
+    bool operator==(const Send& o) const { return to == o.to && db == o.db && preFader == o.preFader; }
+    bool operator!=(const Send& o) const { return !(*this == o); }
+};
+
 /// How much of one source a track hears (§7.8): its level and whether it is in use. An audio track's clips and the
 /// master's mix are sources kept in the song; a Track Out's or Drum Out's is kept in that module.
 struct SourceLevel {

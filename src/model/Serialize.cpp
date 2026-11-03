@@ -660,6 +660,18 @@ json_t* trackToJson(const Track& t) {
     }
     if (t.clips != SourceLevel{})
         set(j, "clips", sourceLevelToJson(t.clips));
+    if (!t.sends.empty()) {
+        json_t* sends = json_array();
+        for (const Send& send : t.sends) {
+            json_t* sj = json_object();
+            set(sj, "to", idJson(send.to));
+            setNumber(sj, "volume", send.db);
+            if (send.preFader)
+                setBool(sj, "pre", true);
+            json_array_append_new(sends, sj);
+        }
+        set(j, "sends", sends);
+    }
     return j;
 }
 
@@ -701,6 +713,13 @@ Track trackFromJson(const json_t* j) {
             t.drumInputs[k].pan = getFloat(c, "pan", 0);
         }
     t.clips = sourceLevelFromJson(get(j, "clips"));
+    forEach(get(j, "sends"), [&](const json_t* sj) {
+        Send send;
+        send.to = readId<TrackId>(get(sj, "to"));
+        send.db = getFloat(sj, "volume", send.db);
+        send.preFader = getBool(sj, "pre", false);
+        t.sends.push_back(send);
+    });
     return t;
 }
 

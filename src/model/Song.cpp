@@ -2,6 +2,7 @@
 
 #include "Chord.hpp"
 #include "DeviceLookup.hpp"
+#include "Sends.hpp"
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
 
@@ -504,6 +505,7 @@ void normalize(Song& song) {
                                ? std::clamp(song.master.volumeDb, kSilentDb, kMaxFaderDb)
                                : 0.f;
     normalizeSourceLevel(song.master.mix);
+    normalizeSends(song);
     // The master plays only a Volume lane.
     auto& masterLanes = song.master.automation;
     masterLanes.erase(std::remove_if(masterLanes.begin(), masterLanes.end(),

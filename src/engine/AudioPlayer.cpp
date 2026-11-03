@@ -54,6 +54,19 @@ void AudioPlayer::holdClips(uint64_t track, float gain) {
     }
 }
 
+void AudioPlayer::holdSend(uint64_t track, uint64_t to, float gain) {
+    for (Hold& h : holds) {
+        uint64_t id = h.track.load(std::memory_order_relaxed);
+        if (id == track || id == 0) {
+            h.send.store(gain, std::memory_order_relaxed);
+            h.sendTo.store(to, std::memory_order_relaxed);
+            h.parts.store(kHoldSend, std::memory_order_relaxed);
+            h.track.store(track, std::memory_order_release);
+            return;
+        }
+    }
+}
+
 bool AudioPlayer::held(uint64_t track, bool pan, float& value) const {
     for (const Hold& h : holds)
         if (h.track.load(std::memory_order_acquire) == track) {
@@ -196,24 +209,51 @@ void AudioPlayer::startBlock(const Engine& engine) {
         float clips = t.clipsGain;
         held(t.id.value, volume, pan, clips);
         float l = 0, r = 0;
-        if (t.audible) {
-            balanceGains(pan, l, r);
-            l *= volume;
-            r *= volume;
-        }
+        balanceGains(pan, l, r);
+        l *= volume;
+        r *= volume;
         TrackRun& run = runs[i];
-        float out = t.audible ? 1.f : 0.f;
+        float own = t.own ? 1.f : 0.f;
+        float heard = t.audible ? 1.f : 0.f;
+        float heardOwn = t.audible && t.own ? 1.f : 0.f;
+        // A drag on one send holds it where the hand is.
+        uint64_t heldTo = 0;
+        float heldSend = 0;
+        if (anyHold)
+            for (const Hold& h : holds)
+                if (h.track.load(std::memory_order_acquire) == t.id.value &&
+                    (h.parts.load(std::memory_order_relaxed) & kHoldSend)) {
+                    heldTo = h.sendTo.load(std::memory_order_relaxed);
+                    heldSend = h.send.load(std::memory_order_relaxed);
+                }
+        std::array<float, kMaxSendsPerTrack> sendTarget{};
+        size_t sendCount = std::min<size_t>(t.sends.size(), kMaxSendsPerTrack);
+        for (size_t k = 0; k < sendCount; k++)
+            sendTarget[k] = !t.sending ? 0.f : t.sends[k].toId == heldTo ? heldSend : t.sends[k].gain;
         if (run.fresh) {
             run.gainL = l;
             run.gainR = r;
-            run.outGain = out;
+            run.outGain = own;
+            run.heardGain = heard;
+            run.heardOwnGain = heardOwn;
             run.clipsGain = clips;
+            run.sendGain = sendTarget;
             run.fresh = false;
         }
         run.stepL = (l - run.gainL) / kBlock;
         run.stepR = (r - run.gainR) / kBlock;
-        run.outStep = (out - run.outGain) / kBlock;
+        run.outStep = (own - run.outGain) / kBlock;
+        run.heardStep = (heard - run.heardGain) / kBlock;
+        run.heardOwnStep = (heardOwn - run.heardOwnGain) / kBlock;
         run.clipsStep = (clips - run.clipsGain) / kBlock;
+        for (size_t k = 0; k < size_t(kMaxSendsPerTrack); k++)
+            run.sendStep[k] = (sendTarget[k] - run.sendGain[k]) / kBlock;
+    }
+    // Tracks deleted while they sounded fade out at the gains they had: nothing ramps them further.
+    for (size_t i = count; i < count + ghosts && i < size_t(kMaxTracks); i++) {
+        TrackRun& run = runs[i];
+        run.stepL = run.stepR = run.outStep = run.heardStep = run.heardOwnStep = run.clipsStep = 0;
+        run.sendStep = {};
     }
     float master = snapshot ? snapshot->masterVolume : 0;
     float masterPan = 0;
@@ -329,23 +369,52 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                         sr += rr;
                     }
                 }
-            // A muted (or soloed-away) track's own clips stop feeding its effect too.
+            // A muted (or soloed-away) track's own sound stops, in OUT too; what other tracks send to it still
+            // goes out on OUT, so an effect's tail is ready on unmute (§4.5).
             run.outGain += run.outStep;
+            run.heardGain += run.heardStep;
+            run.heardOwnGain += run.heardOwnStep;
+            float ownL = sl, ownR = sr;
+            sl *= run.outGain;
+            sr *= run.outGain;
+            float outL = sl + sendBus[i][0], outR = sr + sendBus[i][1];
+            sendBus[i] = {0.f, 0.f};
+            run.outPeak = std::max(run.outPeak, std::max(std::abs(outL), std::abs(outR)));
             if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
-                rack.out[tp.busSlot] = {tp.id.value, sl * run.outGain, sr * run.outGain};
+                rack.out[tp.busSlot] = {tp.id.value, outL, outR};
+            float retL = 0, retR = 0;
             if (rack.returns)
                 for (int slot : tp.returns) {
                     float rl, rr;
                     if (rack.returns->read(rack.frame, slot, tp.id, rl, rr)) {
-                        sl += rl;
-                        sr += rr;
+                        retL += rl;
+                        retR += rr;
                     }
                 }
+            sl += retL;
+            sr += retR;
+            run.gainL += run.stepL;
+            run.gainR += run.stepR;
+            float postL = sl * run.gainL, postR = sr * run.gainR;
+            // Sends go to tracks later in the order, so they reach those tracks' OUT this same sample.
+            size_t sendCount = std::min<size_t>(tp.sends.size(), kMaxSendsPerTrack);
+            for (size_t k = 0; k < sendCount; k++) {
+                const SendPlay& s = tp.sends[k];
+                run.sendGain[k] += run.sendStep[k];
+                if (s.to < 0 || s.to >= int(kMaxTracks))
+                    continue;
+                float g = run.sendGain[k];
+                sendBus[size_t(s.to)][0] += (s.preFader ? sl : postL) * g;
+                sendBus[size_t(s.to)][1] += (s.preFader ? sr : postR) * g;
+            }
+            sl = (ownL * run.heardOwnGain + retL * run.heardGain) * run.gainL;
+            sr = (ownR * run.heardOwnGain + retR * run.heardGain) * run.gainR;
+        } else {
+            run.gainL += run.stepL;
+            run.gainR += run.stepR;
+            sl *= run.gainL * run.heardOwnGain;
+            sr *= run.gainR * run.heardOwnGain;
         }
-        run.gainL += run.stepL;
-        run.gainR += run.stepR;
-        sl *= run.gainL;
-        sr *= run.gainR;
         run.peakL = std::max(run.peakL, std::abs(sl));
         run.peakR = std::max(run.peakR, std::abs(sr));
         masterL += sl;
@@ -386,7 +455,10 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             std::array<std::atomic<float>, 2>& m = meters[i];
             m[0].store(std::max(run.peakL, m[0].load(std::memory_order_relaxed) * fall), std::memory_order_relaxed);
             m[1].store(std::max(run.peakR, m[1].load(std::memory_order_relaxed) * fall), std::memory_order_relaxed);
+            outMeters[i].store(std::max(run.outPeak, outMeters[i].load(std::memory_order_relaxed) * fall),
+                               std::memory_order_relaxed);
             run.peakL = run.peakR = 0;
+            run.outPeak = 0;
         }
         masterMeter[0].store(std::max(masterPeakL, masterMeter[0].load(std::memory_order_relaxed) * fall),
                              std::memory_order_relaxed);

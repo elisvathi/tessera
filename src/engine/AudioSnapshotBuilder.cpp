@@ -1,5 +1,7 @@
 #include "AudioSnapshotBuilder.hpp"
 
+#include "../model/Sends.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -98,8 +100,26 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         return int(snap.clips.size()) - 1;
     };
 
-    for (const Track& t : song.tracks) {
-        if (!makesSound(t, plan))
+    // Who is heard (§4.5): mute silences a track and its sends; solo follows the sends, so a soloed track's effect
+    // tracks stay on (carrying only its sends) and the tracks feeding a soloed effect keep feeding it.
+    bool anySolo = song.anySolo();
+    auto soloed = [&](const Track& t) { return t.solo && !t.mute; };
+    auto downstream = [&](const Track& t) {
+        for (const Track& s : song.tracks)
+            if (soloed(s) && s.id != t.id && sendsReach(song, s.id, t.id))
+                return true;
+        return false;
+    };
+    auto upstream = [&](const Track& t) {
+        for (const Track& s : song.tracks)
+            if (soloed(s) && s.id != t.id && sendsReach(song, t.id, s.id))
+                return true;
+        return false;
+    };
+    std::vector<TrackId> order = sendOrder(song);
+    for (TrackId id : order) {
+        const Track& t = *song.findTrack(id);
+        if (!makesSound(t, plan) && sendersTo(song, t.id).empty())
             continue;
         AudioTrackPlay tp;
         tp.id = t.id;
@@ -112,7 +132,13 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         tp.volume = dbToGain(t.channel.volumeDb);
         tp.clipsGain = t.clips.use ? dbToGain(t.clips.db) : 0.f;
         tp.pan = t.channel.pan;
-        tp.audible = song.isAudible(t);
+        tp.audible = tp.own = tp.sending = !t.mute;
+        if (!t.mute && anySolo && !soloed(t)) {
+            bool down = downstream(t), up = upstream(t);
+            tp.own = up && !down;
+            tp.audible = down;
+            tp.sending = down || up;
+        }
         for (const ClipSlot& s : t.slots)
             tp.slots.push_back(s.clip ? clipIndex(*s.clip) : -1);
         for (const ArrangerClip& a : t.arrangement) {
@@ -147,6 +173,14 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             }
         }
         snap.tracks.push_back(std::move(tp));
+    }
+    // Each send by the index of its receiving track, which comes later in the order.
+    for (size_t i = 0; i < snap.tracks.size(); i++) {
+        const Track* t = song.findTrack(snap.tracks[i].id);
+        for (const Send& send : t->sends)
+            for (size_t j = i + 1; j < snap.tracks.size(); j++)
+                if (snap.tracks[j].id == send.to && snap.tracks[i].sends.size() < size_t(kMaxSendsPerTrack))
+                    snap.tracks[i].sends.push_back({int(j), dbToGain(send.db), send.preFader, send.to.value});
     }
     return out;
 }

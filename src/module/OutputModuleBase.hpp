@@ -89,6 +89,11 @@ class OutputModuleBase : public rack::engine::Module {
     /// the Tessera it follows. UI thread.
     void setCountedOnce(bool on) { countedOnce = on; }
     bool isCountedOnce() const { return countedOnce; }
+    /// Whether its OUT has a cable, so what a track gets sent can reach an effect (§7.6 "Sends go nowhere").
+    bool outPatched() const {
+        return audioPorts.outL >= 0 &&
+               (outputs[size_t(audioPorts.outL)].channels > 0 || outputs[size_t(audioPorts.outR)].channels > 0);
+    }
     /// Makes its screen flash for a moment, so the user finds it in the rack (Show in the rack). UI thread.
     void flash() { flashUntil = rack::system::getTime() + 1.2; }
     /// How strongly its screen flashes now, 0 when it does not. UI thread.

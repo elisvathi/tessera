@@ -69,12 +69,18 @@ class AudioPlayer {
     void clearClip() { clipPeak.store(0, std::memory_order_relaxed); }
 
     /// Which control a hold is for: only that one wins over its lane, and only that one records (§7.3).
-    static constexpr uint8_t kHoldVolume = 1, kHoldPan = 2, kHoldClips = 4;
+    static constexpr uint8_t kHoldVolume = 1, kHoldPan = 2, kHoldClips = 4, kHoldSend = 8;
     /// Holds a fader or pan (`parts`) at these values while the user drags it, before the edit is committed (§8.4:
     /// a drag never rebuilds the snapshot). `track` is the TrackId value; the master's ID holds the master's volume.
     void hold(uint64_t track, float volumeGain, float pan, uint8_t parts);
     /// Holds an audio track's clips (or, for the master's ID, its mix) at `gain` while a source Level drag runs.
     void holdClips(uint64_t track, float gain);
+    /// Holds the send from `track` to `to` at `gain` while a drag moves it (Show sends, a send knob).
+    void holdSend(uint64_t track, uint64_t to, float gain);
+    /// What leaves a track's OUT now (its index in the snapshot), in volts, a peak falling 20 dB a second (§7.6).
+    float outLevel(int track) const {
+        return track >= 0 && track < kMaxTracks ? outMeters[size_t(track)].load(std::memory_order_relaxed) : 0.f;
+    }
     void releaseHolds();
     /// The fader (`pan` false, as a gain) or pan a drag holds on `track` now, for recording it into its lane. UI thread.
     bool held(uint64_t track, bool pan, float& value) const;
@@ -132,6 +138,12 @@ class AudioPlayer {
         float gainL = 0, gainR = 0, stepL = 0, stepR = 0; // fader and pan, ramping
         float outGain = 0, outStep = 0; // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
         float clipsGain = 1, clipsStep = 0; // the clips' source Level
+        // Into the master: what came back on IN (heard), and its own sound (heard and own). One ramp per signal, so a
+        // mute never multiplies two ramps into a click.
+        float heardGain = 0, heardStep = 0;
+        float heardOwnGain = 0, heardOwnStep = 0;
+        std::array<float, kMaxSendsPerTrack> sendGain{}, sendStep{};
+        float outPeak = 0;
         bool fresh = true; // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
         bool steady = false; // its voices step on unchanged for the rest of this block
         int slot = -1;       // the launched slot a steady block plays, or -1 on the timeline
@@ -196,13 +208,16 @@ class AudioPlayer {
     float masterPeakL = 0, masterPeakR = 0;
 
     std::array<std::array<std::atomic<float>, 2>, kMaxTracks> meters{};
+    std::array<std::atomic<float>, kMaxTracks> outMeters{};
+    std::array<std::array<float, 2>, kMaxTracks> sendBus{}; // what senders put into each track's OUT this sample
     std::array<std::atomic<uint8_t>, kMaxTracks> autoFlags{};
     std::array<std::atomic<float>, kMaxTracks> autoVolume{}, autoPan{};
     std::array<std::atomic<float>, 2> masterMeter{};
     std::atomic<float> clipPeak{0};
     struct Hold {
         std::atomic<uint64_t> track{0};
-        std::atomic<float> volume{1}, pan{0}, clips{1};
+        std::atomic<float> volume{1}, pan{0}, clips{1}, send{0};
+        std::atomic<uint64_t> sendTo{0};
         std::atomic<uint8_t> parts{0};
     };
     std::array<Hold, kMaxTracks + 1> holds{};

@@ -61,6 +61,17 @@ struct AudioInstancePlay {
     double overlapIn = 0, overlapOut = 0;
 };
 
+/// The most sends one track plays; more are kept in the song but not heard.
+constexpr int kMaxSendsPerTrack = 16;
+
+/// One send as the player works it out: into the OUT of the track at index `to` of the snapshot.
+struct SendPlay {
+    int to = -1;
+    float gain = 0;
+    bool preFader = false;
+    uint64_t toId = 0; // the receiving TrackId value, for a drag that holds this send
+};
+
 /// One track that makes sound: an audio track's clips, and for any track the return slots its output modules' IN
 /// jacks fill, with its mixer strip.
 struct AudioTrackPlay {
@@ -73,7 +84,10 @@ struct AudioTrackPlay {
     float clipsGain = 1;                       // the clips as a source (§7.8): their Level, 0 when not in use
     float volume = 1;                          // the fader as a gain
     float pan = 0;
-    bool audible = true; // mute and solo already applied
+    bool audible = true; // heard: its fader output reaches the master (mute and solo applied)
+    bool own = true;     // its own sound (clips, lane INs) plays; off when muted or soloed away (§4.5)
+    bool sending = true; // its sends play
+    std::vector<SendPlay> sends; // receivers always come later in `tracks`
 };
 
 /// Everything the audio thread plays, for one Tessera.
