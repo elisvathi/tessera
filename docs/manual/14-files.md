@@ -2,8 +2,8 @@
 
 ## Saving with the patch
 
-Roll saves everything inside your Rack patch: the song, the transport settings, the editor layout and the output
-modules' tracks. Save the patch as usual. Rack's module presets (right-click → **Preset**) also save and load the
+Tessera saves everything inside your Rack patch: the song, the transport settings, the editor layout, the output
+modules' tracks and the audio files your audio clips play. Save the patch as usual. Rack's module presets (right-click → **Preset**) also save and load the
 whole song.
 
 ## The File menu
@@ -20,6 +20,8 @@ so you can use them without opening the editor.
 | **Save project** | Saves to the project file you opened or saved last (its name shows in the menu). |
 | **Save project as…** | Saves a new `.tessera` file. |
 | **Import MIDI file as tracks…** | Adds a track for each part of a MIDI file. See [Importing MIDI](#importing-midi-files). |
+| **Import audio…** | Ctrl+Shift+O. Adds an audio file on a new audio track. See [Audio](17-audio.md). |
+| **Remove unused audio** | Removes the audio files no clip plays. See [Audio](17-audio.md#removing-audio-you-dont-use). |
 | **Export MIDI…** | Ctrl+Shift+E. See [Exporting MIDI](#exporting-midi). |
 | **Export DAWproject…** | For other music programs that read DAWproject. See [Exporting DAWproject](#exporting-dawproject). |
 | **Colour scheme** | See [The editor](03-editor.md#colour-schemes). |
@@ -31,6 +33,9 @@ tempo, loop, Plays, the instance name and the editor layout. Use it to keep song
 another patch.
 
 It doesn't hold what belongs to the patch: the MIDI device, the panel's width and the editor size.
+
+A song with audio keeps its files in a folder next to the project file: saving "Song.tessera" also writes
+"Song audio". Keep the two together. Opening the project copies the files from that folder into the patch.
 
 Opening a project is one undo step. Output modules in the same patch keep their tracks.
 

@@ -40,7 +40,7 @@ Rack is not a DAW host, so a few things need deliberate handling:
 | **Ctrl/Cmd + drag** | Duplicate the dragged items |
 | **Ctrl/Cmd + click** | Toggle item in selection |
 | **Shift + click** | Add to selection (range-extend where order is meaningful, e.g. tracks) |
-| **Alt + drag on a note or clip body** | Edit its primary value (note velocity, clip instance velocity scale) |
+| **Alt + drag on a note body** | Its velocity. On a clip body: slip the content inside the clip (the title strip's up/down drag scales a note clip's velocity, or sets an audio clip's gain) |
 | **Double-click** | Open / edit (note → inspector focus, clip → detail editor, empty space → create) |
 | **Right-click** | Context menu. In the Draw tool, right-click (and right-drag) deletes. A setting switches this to "always context menu" |
 | **Esc during a drag** | Cancel the gesture and revert to the pre-drag state |

@@ -36,10 +36,12 @@ void PaneStack::layout() {
     using rack::math::Rect;
     ViewState& view = ctx.view();
     rack::math::Vec size = box.size;
-    // The mixer takes the bottom: its tab, the height it was opened to, or everything when maximised. With nothing
-    // that makes sound it stays a tab.
-    if (mixer) {
-        bool sound = mixer->hasSound();
+    // The mixer takes the bottom: its tab, the height it was opened to, or everything when maximised. A song with
+    // nothing that makes sound shows no mixer at all, so Tessera looks as it did before audio (DECISIONS §106).
+    if (mixer && !mixer->hasSound())
+        mixer->visible = false;
+    if (mixer && mixer->hasSound()) {
+        bool sound = true;
         float tab = mixer->tabHeight();
         bool max = sound && view.mixerMax;
         float h = max ? size.y

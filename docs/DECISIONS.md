@@ -1567,3 +1567,40 @@ Why: the user's answers.
   benchmark test that fails above budget (`AUDIO_MIXER.md` §8.8).
 
 Why: the user: "PAY ATTENTION TO PERFORMANCE". Tessera shares Rack's audio thread with every other module.
+
+## 106. Audio Phase 1a as built (3 Nov)
+
+Choices made while building the first audio phase (docs/design/AUDIO_MIXER.md §11, Phase 1a):
+
+- **An audio clip is a `Clip` with an `audio` part** (`std::optional<AudioContent>`), not a separate kind field: one
+  source of truth. Audio clips have no notes. Normalize keeps clips on tracks of their kind.
+- **Off clips store their length in clip ticks at the clip tempo.** That is the same as a length in source frames (the
+  clip tempo is fixed for the clip), and keeps one representation for every audio clip. The timeline draws and
+  hit-tests an Off clip at `length × song tempo ÷ clip tempo`; the engine plays it at its own speed.
+- **Decoding**: dr_wav (WAV and AIFF, with the "acid" tempo chunk), dr_flac, dr_mp3, vendored in `dep/dr_libs`. Files up
+  to a minute are decoded at drop time, so their full tempo guess (onsets, one-shot, sound type) is ready before the
+  first sound; longer files load on a worker.
+- **Tempo guess**: the onset curve is 30 ms windows every 5 ms, loudness and brightness rises; an onset counts from
+  about 5 dB (a steady chord's ripple stays below). The tempo comes from autocorrelation, then a straight-line fit
+  through the onsets; a loop's length tempo wins when the onsets agree with it within 4% (or its double or half).
+- **Playback**: the player reads prepared buffers (the file at Rack's rate) or a whole-file stretched render. Exact
+  speeds copy samples; other speeds use the 16-tap sinc reader. Every jump inside a clip (loop seam, seek, render
+  switch) crossfades; a seam with no audio after it dips 2 ms each side instead. Where an edge fade and a seam dip
+  meet, the lower counts. A block of 32 samples with nothing happening skips the per-sample bookkeeping: 16 playing
+  tracks cost about 1.5% of a core.
+- **Pan is a constant-power balance** on the track's stereo sound: centre leaves both sides at 1.
+- **Renders are kept per (source, length factor, pitch, sound type)** at Rack's rate; the nearest ready one stands in.
+  Spare renders above 512 MB go, least recently wanted first.
+- **Buffers a snapshot drops stay one more second** in the next snapshots, so fades reading them finish; a voice whose
+  buffer a new snapshot doesn't hold is dropped (only after a long audio stall).
+- **Patch storage**: files are stored as `audio/<8 hex of hash>-<name>`. Loading a patch removes unreferenced files only
+  when there is nothing to undo, so undoing a delete or a paste never loses audio.
+- **Project files carry audio in a folder beside them** ("Song audio" for "Song.tessera"); opening copies the files
+  back. The project file stays plain JSON.
+- **No mixer at all when nothing makes sound.** The spec folds the mixer to a tab; with no audio tracks it is hidden, so
+  Tessera looks and behaves as before audio, and no existing screenshot changed.
+- **The tempo badge for Off clips reads "own speed"**: the UI fonts have no lock symbol.
+- **Not yet in 1a**: the Master row in the song pane, the big badge on a just-dropped clip (the toast says it, with
+  Keep 120 BPM), Tab cycling to the mixer, crossfade handles and curve dots (Phase 1b), the audio editor (1b).
+
+Why: built to the spec; these are the places it left open or where the code suggested a simpler way.

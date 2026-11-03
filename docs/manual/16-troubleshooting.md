@@ -13,7 +13,11 @@ Check these in order:
    the playhead.
 4. **Is the track muted, or another track soloed?** Look at **M** and **S** in the track headers.
 5. **Is a note muted?** Muted notes are hatched. Right-click them and choose **Mute / unmute**.
-6. **Is Roll bypassed?** A bypassed Roll sends no gates.
+6. **Is Tessera bypassed?** A bypassed Tessera sends no gates.
+7. **An audio track?** Audio comes out of **MAIN L** and **MAIN R** on the Tessera panel: patch them into the Audio
+   module (right-click Tessera: **Connect MAIN to Audio module**). An amber dot beside MAIN, and **MAIN not patched**
+   in the mixer, mean nothing is patched there. A clip marked **Missing file** has lost its file: right-click it,
+   **Find file…**.
 
 ## The output module says "No source" or "Track missing"
 
@@ -119,3 +123,6 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Automating a rack knob | **Add automation lane → Automate a knob: touch it in the rack** |
 | A sustain, mod wheel or other CC lane | **Add automation lane → MIDI control** |
 | Every shortcut | Press **?** in the editor |
+| The mixer | The **Mixer** bar under the notes pane (only when the song has an audio track), or **F4** |
+| Where audio comes out | **MAIN L** and **MAIN R** on the Tessera panel |
+| A clip's tempo, follow tempo, sound type | Right-click the audio clip, or the inspector |
