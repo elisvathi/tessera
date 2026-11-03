@@ -4,6 +4,7 @@
 #include "../Theme.hpp"
 #include "../widgets/Splitter.hpp"
 #include "EditorPane.hpp"
+#include "MixerPane.hpp"
 
 namespace tessera {
 
@@ -24,12 +25,36 @@ PaneStack::PaneStack(EditorContext& ctx, EditorPane* top, rack::widget::Widget* 
     addChild(splitter);
 }
 
+void PaneStack::setMixer(MixerPane* m) {
+    mixer = m;
+    addChild(mixer);
+}
+
 bool PaneStack::splitterActive() const { return splitter->visible && splitter->active(); }
 
 void PaneStack::layout() {
     using rack::math::Rect;
     ViewState& view = ctx.view();
     rack::math::Vec size = box.size;
+    // The mixer takes the bottom: its tab, the height it was opened to, or everything when maximised. With nothing
+    // that makes sound it stays a tab.
+    if (mixer) {
+        bool sound = mixer->hasSound();
+        float tab = mixer->tabHeight();
+        bool max = sound && view.mixerMax;
+        float h = max ? size.y
+                      : sound && view.mixerOpen
+                            ? rack::math::clamp(view.mixerHeight, tab + 40, size.y - 2 * minPaneHeight - theme::metrics::kSplitter)
+                            : tab;
+        h = std::max(tab, std::min(h, size.y));
+        mixer->box = Rect(0, size.y - h, size.x, h);
+        mixer->visible = true;
+        if (max) {
+            top->visible = bottom->visible = splitter->visible = false;
+            return;
+        }
+        size.y -= h;
+    }
 
     if (view.maximized == Pane::Top) {
         top->box = Rect(0, 0, size.x, size.y);

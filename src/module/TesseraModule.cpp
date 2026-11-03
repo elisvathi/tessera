@@ -344,8 +344,13 @@ void TesseraModule::audioStep() {
     }
     bool settled = now - tempoSettleAt >= 0.5;
     bool tempoMoved = settled && std::abs(t - audioTempo) > 1e-6;
-    if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved)
+    if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved) {
+        if (releaseHolds) {
+            player->releaseHolds();
+            releaseHolds = false;
+        }
         return;
+    }
     audioRevision = revision;
     audioChanges = audio->changes();
     if (tempoMoved || audioTempo <= 0)
@@ -369,6 +374,10 @@ void TesseraModule::audioStep() {
             build.snapshot->buffers.push_back(r.first);
     audio->want(build.wanted);
     audioSnapshots.publish(std::move(build.snapshot));
+    if (releaseHolds) {
+        player->releaseHolds();
+        releaseHolds = false;
+    }
 }
 
 TesseraModule::AudioDropResult TesseraModule::importAudioFiles(const std::vector<std::string>& paths,
