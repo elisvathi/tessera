@@ -560,3 +560,32 @@ TEST_CASE("the audio window sets what part of the file a clip plays; a whole-win
     CHECK(song.findClip(id)->loopStart == 2 * kPpq);
     CHECK(song.findClip(id)->loopEnd == 4 * kPpq);
 }
+
+TEST_CASE("glue joins the split parts of one audio clip back into one, and leaves other audio alone") {
+    AudioLanes f;
+    arrange::Placed whole = f.at(0, 8);
+    whole.clip.fadeIn.length = kPpq / 4;
+    whole.clip.fadeOut.length = kPpq / 2;
+    f.song.findTrack(f.track)->arrangement = {whole.clip};
+    arrange::IdSet right;
+    arrange::Layout parts =
+        arrange::split(arrange::layoutOf(f.song), {whole.clip.id}, 3 * kPpq, f.song.clips, f.ids(), &right);
+    arrange::replaceArrangement(f.song, "split", arrange::layoutOf(f.song), parts)->apply(f.song);
+    REQUIRE(f.song.findTrack(f.track)->arrangement.size() == 2);
+    arrange::IdSet both = arrange::idsOf(parts);
+    CommandPtr cmd = arrange::glue(f.song, both, [&] { return f.song.nextId++; });
+    REQUIRE(cmd);
+    applyAndCheckUndo(f.song, *cmd);
+    const auto& arr = f.song.findTrack(f.track)->arrangement;
+    REQUIRE(arr.size() == 1);
+    CHECK(arr[0].clip == f.clip);
+    CHECK(arr[0].position == 0);
+    CHECK(arr[0].length == 8 * kPpq);
+    CHECK(arr[0].fadeIn.length == kPpq / 4);
+    CHECK(arr[0].fadeOut.length == kPpq / 2);
+
+    // Two copies that don't play on from each other stay apart.
+    arrange::Placed a = f.at(0, 4), b = f.at(4, 8);
+    f.song.findTrack(f.track)->arrangement = {a.clip, b.clip};
+    CHECK_FALSE(arrange::glue(f.song, {a.clip.id, b.clip.id}, [&] { return f.song.nextId++; }));
+}

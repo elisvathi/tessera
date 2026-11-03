@@ -123,7 +123,8 @@ CommandPtr drawClip(const Song& song, TrackId track, Tick position, Tick length,
 CommandPtr placeNewClip(const Song& song, TrackId track, Tick position, Clip clip, ArrangementId instance,
                         const IdSource& newId, bool stack, const std::string& name);
 /// Joins the instances in `ids` (all on one track) into one new clip and one instance spanning them
-/// (Ctrl/Cmd+J). Loops, offsets, stretch, transpose and velocity scale are baked into the new clip.
+/// (Ctrl/Cmd+J). Loops, offsets, stretch, transpose and velocity scale are baked into the new clip. Audio instances
+/// join only when they are pieces of one clip end to end (they become one instance of it); otherwise null.
 CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId);
 /// Gives each instance in `ids` whose clip is also used elsewhere its own copy of the clip (Ctrl/Cmd+U).
 CommandPtr makeUnique(const Song& song, const IdSet& ids, const NextId& nextId);
