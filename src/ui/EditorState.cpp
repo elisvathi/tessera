@@ -82,9 +82,13 @@ ViewState viewFromJson(const json_t* j, ViewState v = ViewState()) {
     v.clipsWide = getBool(j, "clipsWide", v.clipsWide);
     v.mixerOpen = getBool(j, "mixerOpen", v.mixerOpen);
     v.mixerHeight = std::clamp(getFloat(j, "mixerHeight", v.mixerHeight), 40.f, 4000.f);
-    // Before the mixer was a pane like the others, it had its own maximised flag.
-    if (getBool(j, "mixerMax", false))
-        v.maximized = Pane::Mixer;
+    // The mixer used to be a pane of its own, under the notes; it now shares the notes' pane.
+    if (getBool(j, "mixerMax", false) || v.maximized == Pane::Mixer) {
+        v.maximized = Pane::Detail;
+        v.mixerOpen = true;
+    }
+    if (v.focus == Pane::Mixer)
+        v.focus = Pane::Detail;
     v.deviceStrip = getBool(j, "deviceStrip", v.deviceStrip);
     v.launcherPanelWidth = std::clamp(getFloat(j, "launcherPanelWidth", v.launcherPanelWidth), 40.f, 4000.f);
     v.launcherScrollX = std::max(0.0, numberAt(get(j, "launcherScroll"), 0, 0));

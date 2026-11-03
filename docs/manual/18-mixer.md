@@ -1,24 +1,21 @@
 # 18. The mixer
 
-The mixer sets how loud each audio track plays and where it sits from left to right, and shows the levels as they
+The mixer sets how loud each track that makes sound plays and where it sits from left to right, and shows the levels as they
 play. It appears as soon as the song has an audio track.
 
-![The mixer with one audio track and the Master](images/mixer.png)
+![The mixer in the lower pane, with one audio track and the Master](images/mixer.png)
 
 ## Opening it
 
-The mixer is the third pane, under the notes pane, folded to a thin bar named **Mixer**:
+The mixer shares the lower pane with the notes (or the audio editor). Its header starts with **Notes | Mixer**:
+click **Mixer** to show the mixer there, **Notes** to go back, or press **F4** to switch. The switch appears once
+something in the song makes sound.
 
-- **Click** the bar to open the mixer or fold it again.
-- **Drag** the bar up or down to set its height.
-- The **maximize** button at the bar's right end is the same one the song and notes panes have: it fills the editor
-  with the mixer, and restores the panes. **Double-click** the bar or press **F4** to do the same.
-- Like the other panes, a click in the mixer gives it the keys (a thin ring shows it), **Tab** reaches it while it is
-  open, and **Shift+Tab** maximizes it. In the panel editor, the maximized mixer's bar also holds the transport and
-  the Full editor button.
-
-Folded, the bar still shows a small live meter for each track that makes sound, the Master's peak level, and **MAIN not
-patched** in amber when the Master plays but nothing is patched into MAIN.
+- It is the same pane: the line between the panes resizes it, its **maximize** button in the top-right corner
+  fills the editor with it and restores the panes, and **Tab**, **Shift+Tab** and the focus ring work as for the
+  notes.
+- The header shows a small live meter for each track that makes sound, the Master's peak level, and **MAIN not
+  patched** in amber when the Master plays but nothing is patched into MAIN.
 
 ## A strip
 

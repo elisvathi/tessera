@@ -517,7 +517,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Drag an audio clip's title bar up and down: the waveform scales live; the readout says the gain; 0 dB catches.
 - [ ] Drag a fade handle (top corner of the body): the fade shades the waveform and is heard.
 - [ ] Alt+drag an audio clip's right edge: the readout says "112 → 56 BPM"; every linked copy follows.
-- [ ] The mixer bar appears only once the song has an audio track. Click opens it, drag sets its height, F4 maximises.
+- [ ] The lower pane's "Notes | Mixer" switch appears only once something makes sound. Mixer shows the mixer in the
+      same pane (no pane under the notes); Notes and F4 switch back.
 - [ ] Mixer: drag a fader (no jump on click), Shift for fine, double-click for 0 dB, scroll ±0.5 dB, right-click to
       type. With several audio tracks selected, one fader moves them all by the same dB.
 - [ ] Track header of an audio track: the level line shows the live level; drag it sideways; double-click resets.
@@ -560,8 +561,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Reverb's OUT: its chip reads "No OUT cable" in amber. Mute Lead: the reverb stops getting it. Solo Lead: Lead
       and the reverb are heard. Solo Reverb: only the wet sound. Reverb can't send back to Lead ("Would feed back").
       Delete Reverb: Lead's send goes; undo brings both back.
-- [ ] In the in-panel editor, maximize the mixer: the transport and Full editor sit in its bar, clear of "Mixer" and
-      the peak readout.
+- [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
+      its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level
       line; the kick plays through MAIN. Kit OUT carries the lane INs; patch it through an effect into kit IN: the
       effect is heard, the light goes green, and there is no feedback (kit IN never reaches OUT). Hover lane 1's IN:
@@ -582,8 +583,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       file), its edges (they catch beat lines; Alt frees), and a beat line in the ruler ("112 → 103 BPM"). Ctrl+scroll
       zooms, double-click fits. Maximize and restore the pane: the waveform stays in view. Click the ruler between
       beat lines: the song plays from there and a green line moves through the file.
-- [ ] The mixer's maximize button is the one the other panes have. Click in the mixer: a focus ring. Tab cycles song,
-      notes, mixer (while open); Shift+Tab maximizes the mixer; F4 too; the button restores.
+- [ ] With the mixer showing, the lower pane keeps its maximize button, splitter and focus ring; Tab goes song ↔
+      lower pane; Shift+Tab maximizes it; F4 switches notes/mixer and keeps it maximized. Note keys (Delete,
+      Ctrl+A) do nothing while the mixer shows.
 - [ ] Ctrl+drop a file on an audio clip (timeline and slot): the clip keeps place, length, gain and fades, and plays
       the new file. Replace file… in the menu does the same.
 - [ ] Save the patch, reload: the audio plays. Copy and paste the Tessera: the copy plays its audio too.
@@ -591,5 +593,5 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       "Missing file", a toast says so; Find file… puts it back.
 - [ ] Save project as …: a "<name> audio" folder appears beside it; open the project in a new Tessera: it plays.
 - [ ] File → Remove unused audio after deleting an audio track: one undo step; undo brings the clips back.
-- [ ] In the in-panel editor (80 HP), the mixer tab is 16 px and the mixer opens and plays the same.
-- [ ] A song without audio: no mixer bar, no change in Rack's CPU meter against the previous version.
+- [ ] In the in-panel editor (80 HP), the mixer shows in the lower pane and plays the same.
+- [ ] A song without audio: no Notes | Mixer switch, no change in Rack's CPU meter against the previous version.

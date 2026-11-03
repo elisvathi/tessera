@@ -95,7 +95,7 @@ enum class Action {
     MaximizePane,
     WidenClips,
     ToggleDevices,
-    MaximizeMixer,
+    ToggleMixer,
     ToggleDrumView,
     // Tracks
     AddInstrumentTrack,

@@ -517,7 +517,8 @@ void PianoRollView::layout() {
     // The clip chip first, sized to its words, then Devices; the toolbar fills from the right. A narrow header
     // shortens the chip to the track's name, so snap and key keep their room.
     auto placeChip = [this](bool shortText) {
-        placeClipChip(ctx, clipChip, source.clip, shortText, box.size.x);
+        placeClipChip(ctx, clipChip, source.clip, shortText, box.size.x - headerLeft);
+        clipChip->box.pos.x += headerLeft;
         devicesToggle->box = rack::math::Rect(clipChip->box.getRight() + 4, 3, kDevicesToggleWidth, kPaneHeader - 6);
     };
     placeChip(false);

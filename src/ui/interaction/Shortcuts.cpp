@@ -109,7 +109,7 @@ std::vector<ActionInfo> buildTable() {
         {Ac::MaximizePane, "View", "Maximize pane", {K(GLFW_KEY_TAB, S)}},
         {Ac::WidenClips, "View", "Widen / narrow the clips beside the timeline", {K(GLFW_KEY_F2)}},
         {Ac::ToggleDevices, "View", "Device strip above the notes", {K(GLFW_KEY_F3)}},
-        {Ac::MaximizeMixer, "View", "Maximise / restore the mixer", {K(GLFW_KEY_F4)}},
+        {Ac::ToggleMixer, "View", "Show the mixer or the notes in the lower pane", {K(GLFW_KEY_F4)}},
         {Ac::ToggleDrumView, "View", "Drum lanes / keys", {C("g")}, Sc::DetailPane},
 
         {Ac::AddInstrumentTrack, "Tracks", "Add instrument track", {C("t", Ctl)}},

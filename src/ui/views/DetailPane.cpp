@@ -2,7 +2,10 @@
 
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
+#include "../interaction/Shortcuts.hpp"
+#include "../widgets/ToolButton.hpp"
 #include "DeviceStrip.hpp"
+#include "MixerPane.hpp"
 #include "ModulatorPopover.hpp"
 #include "PianoRoll.hpp"
 
@@ -17,7 +20,37 @@ DetailPane::DetailPane(EditorContext& ctx) : EditorPane(ctx, Pane::Detail) {
     addChild(popover); // last: it floats over the notes
 }
 
-void DetailPane::reserveHeader(float px) { roll->headerReserve = px; }
+void DetailPane::reserveHeader(float px) {
+    roll->headerReserve = px;
+    rightReserve = px;
+}
+
+namespace {
+constexpr float kSwitchWidth = 46;
+} // namespace
+
+void DetailPane::setMixer(MixerPane* m) {
+    mixer = m;
+    addChild(mixer);
+    // The switch: the same pane shows the notes or the mixer, never both (one window language).
+    EditorContext* c = &ctx;
+    for (bool toMixer : {false, true}) {
+        ToolButton::Options o;
+        o.text = toMixer ? "Mixer" : "Notes";
+        o.tooltip = withShortcut(toMixer ? "Show the mixer in this pane" : "Show the notes in this pane",
+                                 Action::ToggleMixer);
+        o.action = [c, toMixer] {
+            c->view().mixerOpen = toMixer;
+            c->view().focus = Pane::Detail;
+        };
+        o.active = [c, toMixer] { return c->view().mixerOpen == toMixer; };
+        auto* b = new ToolButton(o);
+        addChild(b);
+        (toMixer ? mixerTab : notesTab) = b;
+    }
+}
+
+bool DetailPane::showsMixer() const { return mixer && mixer->hasSound() && ctx.view().mixerOpen; }
 
 void DetailPane::onButton(const ButtonEvent& e) {
     // Delete and Ctrl+D act on the device cards only right after a click in the strip.
@@ -29,6 +62,8 @@ void DetailPane::onButton(const ButtonEvent& e) {
 NoteTarget* DetailPane::noteTarget() { return roll; }
 
 bool DetailPane::handleAction(Action action) {
+    if (showsMixer())
+        return false;
     if (stripFocus && strip->handleAction(action))
         return true;
     return roll->handleAction(action);
@@ -57,7 +92,28 @@ void DetailPane::layout() {
     float x = y < below ? DeviceStrip::kListRight + 6 : 8;
     popover->visible = height > 40;
     popover->box = rack::math::Rect(x, y, ModulatorPopover::kWidth, height);
+    // With something that makes sound, the header starts with the Notes | Mixer switch.
+    bool sound = mixer && mixer->hasSound();
+    float switchRoom = sound ? 2 * kSwitchWidth + 8 : 0;
+    roll->headerLeft = switchRoom;
+    if (notesTab) {
+        float h = theme::metrics::kPaneHeader - 6;
+        notesTab->box = rack::math::Rect(4, 3, kSwitchWidth, h);
+        mixerTab->box = rack::math::Rect(4 + kSwitchWidth + 2, 3, kSwitchWidth, h);
+        notesTab->visible = mixerTab->visible = sound;
+    }
     roll->layout();
+    if (mixer) {
+        bool show = showsMixer();
+        mixer->visible = show;
+        mixer->reserveTab(switchRoom, rightReserve);
+        if (show) {
+            roll->visible = strip->visible = popover->visible = false;
+            mixer->box = rack::math::Rect(rack::math::Vec(), box.size);
+        } else {
+            roll->visible = true;
+        }
+    }
 }
 
 void DetailPane::step() {

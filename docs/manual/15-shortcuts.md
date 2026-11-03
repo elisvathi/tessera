@@ -83,11 +83,11 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Ctrl+4 | Snap on / off |
 | Ctrl+Shift+F | Fold to the key's rows (*notes pane*) |
 | I | Inspector |
-| Tab | Switch pane (song, notes, the mixer while it is open) |
+| Tab | Switch pane (song, lower pane) |
 | Shift+Tab | Maximize the pane, or restore the panes |
 | F2 | Widen / narrow the clips beside the timeline |
 | F3 | Device strip above the notes |
-| F4 | Maximise the mixer, or restore it |
+| F4 | Show the mixer or the notes in the lower pane |
 | G | Drum lanes / keys (*notes pane*) |
 
 ## Tracks
