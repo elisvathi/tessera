@@ -1,5 +1,8 @@
 #include "Inspector.hpp"
 
+#include "../editing/AudioActions.hpp"
+#include "AudioClipDraw.hpp"
+
 #include "../../model/Arrangement.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/Registry.hpp"
@@ -518,6 +521,8 @@ void Inspector::openSetting(Setting which) {
     if (which == Setting::Voices) {
         menu->addChild(rack::createMenuLabel("Voices"));
         trackActions::appendVoicesItems(menu, ctx, {t->id});
+    } else if (which == Setting::Audio) {
+        audioActions::appendAudioClipMenu(menu, ctx, clipActions::shownClip(ctx, *t));
     } else if (which == Setting::Input) {
         trackActions::appendInputItems(menu, ctx, t->id);
     } else {
@@ -784,6 +789,71 @@ void Inspector::drawView(const DrawArgs& args) {
     nvgRestore(vg);
 }
 
+void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    const Clip* clip = song.findClip(clipActions::shownClip(ctx, t));
+    y = section(vg, y, "CLIP");
+    if (!clip || !clip->audio) {
+        row(vg, y, "No clip", "");
+        return;
+    }
+    const AudioContent& a = *clip->audio;
+    int uses = song.clipUses(clip->id);
+    y = row(vg, y, "Name", clip->name.empty() ? "Untitled" : clip->name);
+    if (uses > 1)
+        y = row(vg, y, "Settings", "all " + std::to_string(uses) + " copies");
+    static const char* const kFollow[] = {"Stretch", "Repitch", "Off (own speed)"};
+    static const char* const kSound[] = {"Drums", "Melody", "Voice", "Full mix"};
+    char tempo[32];
+    snprintf(tempo, sizeof tempo, "%.4g BPM", a.sourceTempo);
+    y = settingRow(vg, y, "Gain", audioDraw::dbText(a.gainDb), Setting::Audio);
+    y = settingRow(vg, y, "Follow tempo", kFollow[int(a.follow)], Setting::Audio);
+    y = settingRow(vg, y, "Sound type", kSound[int(a.sound)], Setting::Audio);
+    y = settingRow(vg, y, "Clip tempo", tempo, Setting::Audio);
+    y = row(vg, y, "Length", bars(clip->length, song.timeSig));
+    y = row(vg, y, "Loop", clip->loopMode == LoopMode::Loop ? "On" : "Off");
+    audioDraw::ClipState state = audioDraw::stateOf(*m, *clip);
+    if (const AudioSource* src = state.source) {
+        char file[96];
+        snprintf(file, sizeof file, "%.1f s · %.1f kHz · %s", src->seconds(), src->sampleRate / 1000,
+                 src->channels == 1 ? "mono" : "stereo");
+        y = row(vg, y, "File", src->name);
+        y = row(vg, y, "", file);
+        if (src->fileChannels > src->channels)
+            y = row(vg, y, "", std::to_string(src->fileChannels) + " channels mixed down to " +
+                                   std::to_string(src->channels));
+    }
+    std::string st = audioDraw::stateText(state);
+    if (!st.empty())
+        y = row(vg, y, "State", st == "!" ? "Couldn't make the stretched version" : st);
+
+    const ArrangerClip* instance = nullptr;
+    if (ctx.state().clipSelection.size() == 1)
+        for (const ArrangerClip& i : t.arrangement)
+            if (ctx.state().clipSelection.count(i.id) && i.clip == clip->id)
+                instance = &i;
+    if (instance) {
+        y += kSectionGap;
+        y = section(vg, y, "INSTANCE");
+        y = row(vg, y, "Start", timeline::positionText(double(instance->position), song.timeSig));
+        y = row(vg, y, "Length", bars(instance->length, song.timeSig));
+        y = row(vg, y, "Offset", bars(instance->offset, song.timeSig));
+        double bpm = m->tempo() > 0 ? m->tempo() : 120;
+        auto fade = [&](const Fade& f) {
+            if (f.length == 0)
+                return std::string("None");
+            char text[48];
+            snprintf(text, sizeof text, "%.0f ms · curve %+.0f%%", double(f.length) * secondsPerTick(bpm) * 1000,
+                     double(f.curve) * 100);
+            return std::string(text);
+        };
+        y = row(vg, y, "Fade in", fade(instance->fadeIn));
+        y = row(vg, y, "Fade out", fade(instance->fadeOut));
+        y = row(vg, y, "Muted", instance->muted ? "Yes" : "No");
+    }
+}
+
 void Inspector::drawFacts(NVGcontext* vg, float y) {
     settingRows.clear();
     TesseraModule* m = ctx.module();
@@ -796,6 +866,18 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     // The track's settings you can change here, instead of only from its right-click menu.
     y = section(vg, y, "TRACK");
     y = row(vg, y, "Name", t->name);
+    if (t->type == TrackType::Audio) {
+        // An audio track plays through the mixer to MAIN: no voices, inputs or output modules yet (Phase 2).
+        y = row(vg, y, "Volume", audioDraw::dbText(t->channel.volumeDb));
+        char pan[24];
+        snprintf(pan, sizeof pan, t->channel.pan == 0 ? "Centre" : t->channel.pan < 0 ? "%.0f%% left" : "%.0f%% right",
+                 double(std::abs(t->channel.pan) * 100));
+        y = row(vg, y, "Pan", pan);
+        y = row(vg, y, "Output", m->mainPatched() ? "MAIN" : "MAIN (not patched)");
+        y += kSectionGap;
+        drawAudioClipFacts(vg, y, *t);
+        return;
+    }
     if (t->type == TrackType::Instrument)
         y = settingRow(vg, y, "Voices", trackActions::voicesLabel(song, *t), Setting::Voices);
     y = settingRow(vg, y, "Input", trackActions::inputLabel(song, *t), Setting::Input);

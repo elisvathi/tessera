@@ -57,13 +57,15 @@ class Inspector : public InteractiveView {
     float section(NVGcontext* vg, float y, const char* title);
     float row(NVGcontext* vg, float y, const std::string& label, const std::string& value);
     /// A track setting you can change: the value is a chip with a caret, and a click opens its menu.
-    enum class Setting { Voices, Input, Recording };
+    enum class Setting { Voices, Input, Recording, Audio };
     float settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value, Setting which);
     /// Opens the menu for a setting row of the selected track.
     void openSetting(Setting which);
     void drawRegion(NVGcontext* vg, const Region& r, bool hot);
     void drawChart(NVGcontext* vg, const Region& r);
     void drawFacts(NVGcontext* vg, float y);
+    /// The clip and instance facts of an audio track: gain, tempo, sound type, the file, fades.
+    void drawAudioClipFacts(NVGcontext* vg, float y, const Track& track);
     void layoutRegions();
     const Region* regionAt(rack::math::Vec pos) const;
     void openTyping(fields::Field field);
