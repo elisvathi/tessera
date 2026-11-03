@@ -1656,7 +1656,8 @@ Why: built to the spec; these are the places it left open or where the code sugg
   samples where the audio player ran: without audio, OUT reads silence instead of a stale sample.
 - **The player writes OUT and mixes returns** at the point §8.4 gives: a track's OUT is its clips before the fader;
   its returns join before the fader at 0 dB; the master's OUT is the mix before the master fader, then the master's
-  own returns join. One sample of latency each way.
+  own returns join. One sample of latency each way. A muted (or soloed-away) track's clips fade out of OUT over the
+  same 32 samples as its fader, so its effect stops too without a click (§4.5).
 - **The mix plan** (`MixPlan`) says which return slots feed which track and each track's bus slot; any track with a
   return makes sound and joins the audio snapshot (`makesSound`). The mixer and the track headers find a track's
   meter by its place in the last snapshot (`soundIndex`). A change of plan rebuilds the snapshot.

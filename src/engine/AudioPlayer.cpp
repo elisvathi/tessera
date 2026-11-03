@@ -171,13 +171,16 @@ void AudioPlayer::startBlock(const Engine& engine) {
             r *= volume;
         }
         TrackRun& run = runs[i];
+        float out = t.audible ? 1.f : 0.f;
         if (run.fresh) {
             run.gainL = l;
             run.gainR = r;
+            run.outGain = out;
             run.fresh = false;
         }
         run.stepL = (l - run.gainL) / kBlock;
         run.stepR = (r - run.gainR) / kBlock;
+        run.outStep = (out - run.outGain) / kBlock;
     }
     float master = snapshot ? snapshot->masterVolume : 0;
     float masterPan = 0;
@@ -270,8 +273,10 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         if (i < count) {
             const AudioTrackPlay& tp = snapshot->tracks[i];
             // OUT carries the track's clips before its fader; what comes back on IN joins them (§2, §8.4).
+            // A muted (or soloed-away) track's own clips stop feeding its effect too.
+            run.outGain += run.outStep;
             if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
-                rack.out[tp.busSlot] = {tp.id.value, sl, sr};
+                rack.out[tp.busSlot] = {tp.id.value, sl * run.outGain, sr * run.outGain};
             if (rack.returns)
                 for (int slot : tp.returns) {
                     float rl, rr;
