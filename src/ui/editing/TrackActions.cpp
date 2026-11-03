@@ -3,6 +3,7 @@
 #include "../widgets/MenuTextField.hpp"
 #include "../Theme.hpp"
 #include "AudioActions.hpp"
+#include "BounceActions.hpp"
 
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -575,6 +576,9 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
         menu->addChild(rack::createMenuItem(
             track->type == TrackType::Drum ? "Add a Drum Out for this track" : "Add a Track Out for this track", "",
             [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
+        if (m->soundIndex(id) >= 0)
+            menu->addChild(rack::createMenuItem("Bounce to a new audio track…", shortcutLabel(Action::Bounce),
+                                                [c, id] { bounceActions::openDialog(*c, id); }));
     }
     menu->addChild(
         rack::createSubmenuItem("Input", inputLabel(song, *track),

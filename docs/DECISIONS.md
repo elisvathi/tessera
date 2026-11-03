@@ -1822,3 +1822,17 @@ Why: built to the spec; these are the places it left open or where the code sugg
   so each pass is a clip and the overlap rules settle them. The live take draws as a red box with its waveform.
 - An armed audio track no longer takes notes into the note recorder.
 - A loaded patch's output modules find their Tessera over the first frames: the "N sources now" toast waits 1.5 s.
+
+## 120. Bounce as built (3 Nov)
+
+- **The dialog is a menu** (Rack's own): Length choices as check items that keep it open, Mute the original
+  afterwards, an estimate that follows the choice, Bounce. From the track menu, an audio or note clip's menu on
+  the timeline, and Ctrl+B (the selected track). Only tracks that make sound offer it.
+- **It runs on the timeline**: Plays switches to Timeline for the bounce and back after. The playhead jumps a bar
+  early and plays; the tap (the track's sound before its fader) is armed once the jump happened, and the result is
+  placed by the tick the tap really started at, moved back by Tessera's 2 samples and the track's latency.
+- **Until silent** watches the tap's level once past the end: below -60 dB for a second, or 8 bars on.
+- **Progress** is a toast with Cancel, renewed each frame, in both editors (there is no progress strip in the panel
+  editor's transport). Stop before the end cancels.
+- The result is one undo step: the new track (named "<track> (bounce)", a looping clip unless until silent) and
+  the original's mute.

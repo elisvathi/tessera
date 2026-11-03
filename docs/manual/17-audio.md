@@ -196,6 +196,22 @@ the level they came in.
 
 Several armed audio tracks record at once. An armed audio track never records notes.
 
+## Bouncing a track to audio
+
+**Bounce** records a track's sound, with the effects patched on its Track Out, onto a new audio track: a synth part
+becomes audio you can cut and move, and the rack is free for something else. Right-click the track (or one of its
+clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B** with the track selected.
+
+- **Length**: **Selected clips** (from the first selected clip's start to the last one's end), **Selected area**
+  (the timeline range you drew), or **Until silent** (from the selection or the playhead, on past the end until the
+  sound stays quiet for a second, at most 8 bars: for endings and reverb tails). Only the choices that apply are
+  listed; what you selected is picked for you.
+- **Mute the original afterwards** (on by default).
+- It plays in real time, from a bar before the start so delays and reverbs are already sounding, and records the
+  track's sound before its fader. A message says how far it is ("Bouncing Bass · bar 3 of 8") with **Cancel**;
+  **Stop** cancels too, and a cancelled bounce leaves nothing behind.
+- The result is a new audio track under the original, "Bass (bounce)", in one undo step.
+
 ## Removing audio you don't use
 
 **File → Remove unused audio** removes the files no clip plays any more. It is one undo step; the files themselves

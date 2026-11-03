@@ -331,6 +331,14 @@ class TesseraModule : public rack::engine::Module {
         std::vector<float> peaks; // one per 512 frames, 0..1 of full scale
     };
     std::vector<LiveTake> liveTakes() const;
+    /// Bounce (§8.6): plays `track` from a bar before `from` and records its sound at IN, before the fader, onto a
+    /// new audio track under it. It stops at `to`; with `untilSilent`, once past `to` the sound stays below -60 dB
+    /// for a second (at most 8 bars on). False when a bounce or export already runs.
+    bool startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal);
+    /// Stops a bounce or export and leaves nothing behind.
+    void cancelCapture();
+    /// What runs now, for the progress line: "Bouncing Bass · bar 3 of 8". Empty when nothing does.
+    std::string captureStatus() const;
     /// Why the last take stopped early, once ("The disk is full: the take was kept up to there"); empty when not.
     std::string takeProblem;
     /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
@@ -484,6 +492,20 @@ class TesseraModule : public rack::engine::Module {
         double startTick = -1;
     };
     std::vector<Capture> captures;
+    struct BounceJob {
+        TrackId track;
+        Tick from = 0, to = 0;
+        bool untilSilent = false, muteOriginal = false;
+        int capture = -1; // index into captures
+        double quietSince = -1;
+        bool restoreLauncher = false;
+        bool started = false; // the transport has been seen playing
+        bool armed = false;   // its tap is armed (after the jump to the start)
+        bool keep = false;    // it reached its end: keep the file
+    };
+    std::optional<BounceJob> bounce;
+    /// Works a running bounce: its end, until silent, a stop that cancels it; then its new track. Each UI frame.
+    void bounceStep();
     std::unique_ptr<CaptureWriter> captureWriter;
     int takeCounter = 0;
     /// A tap no capture uses, or -1.

@@ -1,5 +1,6 @@
 #include "EditorHost.hpp"
 #include "../module/OutputModuleBase.hpp"
+#include "editing/BounceActions.hpp"
 #include "editing/Sources.hpp"
 
 #include "editing/AudioActions.hpp"
@@ -172,6 +173,14 @@ void EditorHost::showNotices() {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
+    // A bounce or export in progress: what it does, with Cancel (Stop cancels too).
+    std::string status = m->captureStatus();
+    if (!status.empty())
+        ctx.toast(status, "Cancel", [m] { m->cancelCapture(); });
+    else if (!m->takeProblem.empty()) {
+        ctx.toast(m->takeProblem);
+        m->takeProblem.clear();
+    }
     // A new second source plays at once, mixed with the first (§7.8).
     const TesseraModule::NewSource& news = m->newSource();
     bool freshSource = noticesSeen && news.serial != sourceNewsSeen;
@@ -388,6 +397,9 @@ void EditorHost::runAction(Action action) {
             return;
         view.mixerOpen = !view.mixerOpen;
         view.focus = Pane::Detail;
+        return;
+    case Action::Bounce:
+        bounceActions::openDialog(ctx, ctx.state().selectedTrack);
         return;
     case Action::ImportAudio:
         audioActions::importDialog(ctx);

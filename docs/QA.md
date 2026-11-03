@@ -570,6 +570,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       then a clip "<track> take N" lies where recording started and plays back at the same level. Undo removes it.
       Loop on: each pass is a clip. Playing clips: the take lands in the first empty slot. Two armed tracks: two
       clips, one undo step.
+- [ ] Bounce: select a note track's clips (voice on its Track Out IN, through an effect), Ctrl+B: the dialog lists
+      Selected clips and Until silent; Bounce plays from a bar before with "Bouncing … · bar n of m" and Cancel. At
+      the end a "… (bounce)" track sits under it, in time with the original, which is muted. Undo removes both
+      changes. Stop during a bounce: nothing is left. Until silent on a reverb tail: it stops a second after quiet.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level
