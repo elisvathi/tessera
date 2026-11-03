@@ -2,9 +2,12 @@
 
 #include "../src/audio/AudioDecode.hpp"
 #include "../src/audio/CaptureWriter.hpp"
+#include "../src/audio/FlacWriter.hpp"
 
+#include <dr_flac.h>
 #include <dr_wav.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <thread>
@@ -272,4 +275,61 @@ TEST_CASE("transients are found where hits start, and not in a steady tone") {
     for (size_t i = 0; i < tone[0].size(); i++)
         tone[0][i] = float(0.5 * std::sin(double(i) * 0.05));
     CHECK(findTransients(tone, rate).size() <= 1); // at most the start
+}
+
+TEST_CASE("the FLAC writer is lossless at 24 bits: dr_flac reads back every sample") {
+    std::string path = (std::filesystem::temp_directory_path() / "tessera-flac-test.flac").string();
+    const int frames = 4096 * 3 + 123; // several full blocks and a short last one
+    std::vector<float> in(size_t(frames) * 2);
+    uint32_t noise = 1;
+    for (int i = 0; i < frames; i++) {
+        noise = noise * 1664525u + 1013904223u;
+        in[size_t(i) * 2] = float(0.8 * std::sin(i * 0.01));
+        in[size_t(i) * 2 + 1] = float(int32_t(noise) / 4294967296.0); // loud noise: big residuals
+    }
+    {
+        FlacWriter w;
+        REQUIRE(w.open(path, 2, 48000));
+        REQUIRE(w.write(in.data(), size_t(frames)));
+        REQUIRE(w.close());
+    }
+    drflac* f = drflac_open_file(path.c_str(), nullptr);
+    REQUIRE(f);
+    CHECK(f->totalPCMFrameCount == uint64_t(frames));
+    CHECK(f->bitsPerSample == 24);
+    CHECK(f->sampleRate == 48000);
+    std::vector<int32_t> out(size_t(frames) * 2);
+    CHECK(drflac_read_pcm_frames_s32(f, uint64_t(frames), out.data()) == uint64_t(frames));
+    drflac_close(f);
+    int wrong = 0;
+    for (size_t i = 0; i < out.size(); i++) {
+        int32_t expected = int32_t(std::lround(std::clamp(double(in[i]), -1.0, 1.0) * 8388607.0));
+        wrong += (out[i] >> 8) != expected;
+    }
+    CHECK(wrong == 0);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("the capture writer writes FLAC exports too") {
+    std::string path = (std::filesystem::temp_directory_path() / "tessera-capture-test.flac").string();
+    auto ring = std::make_shared<FrameRing>(16384);
+    {
+        CaptureWriter writer;
+        int id = writer.start(ring, path, 44100, CaptureWriter::Format::Flac24);
+        for (int i = 0; i < 10000; i++)
+            ring->push(float(5 * std::sin(i * 0.02)), -2.5f);
+        int64_t frames = 0;
+        while (!writer.finish(id, &frames))
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        CHECK(frames == 10000);
+    }
+    drflac* f = drflac_open_file(path.c_str(), nullptr);
+    REQUIRE(f);
+    CHECK(f->totalPCMFrameCount == 10000);
+    std::vector<float> out(20000);
+    drflac_read_pcm_frames_f32(f, 10000, out.data());
+    drflac_close(f);
+    CHECK(out[1] == doctest::Approx(-0.25f).epsilon(1e-5));
+    CHECK(out[200] == doctest::Approx(0.5 * std::sin(100 * 0.02)).epsilon(1e-4));
+    std::filesystem::remove(path);
 }

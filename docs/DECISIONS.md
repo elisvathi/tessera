@@ -1877,3 +1877,10 @@ Why: built to the spec; these are the places it left open or where the code sugg
   "Hits" lane (pitch 36, output 1) when it has none, and one clip spanning the instance with a 1/32 note per hit;
   velocity from the waveform's peak in the 20 ms after the hit against the loudest hit (at least 20%). One undo step.
   Only from the timeline for now (no slot version).
+
+## 124. FLAC export (3 Nov)
+
+- Rack ships no FLAC encoder, so Tessera has a small one (`FlacWriter`): 24-bit, 4096-frame blocks, fixed
+  second-order prediction, Rice codes with 5-bit parameters in one partition, frame CRCs, no MD5 (allowed by the
+  format). Tested lossless by reading back with dr_flac. Exports offer "24-bit FLAC" beside the two WAV formats,
+  with the same dither as 24-bit WAV; stems take the export's extension. Recordings stay 32-bit float WAV.

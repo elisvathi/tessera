@@ -1,5 +1,7 @@
 #include "CaptureWriter.hpp"
 
+#include "FlacWriter.hpp"
+
 #include <dr_wav.h>
 
 #include <algorithm>
@@ -18,6 +20,7 @@ struct CaptureWriter::Job {
     double sampleRate = 48000;
     Format format = Format::Float32;
     drwav wav{};
+    FlacWriter flac;
     bool open = false;
     bool finishing = false;
     bool cancelled = false;
@@ -117,6 +120,11 @@ bool CaptureWriter::drain(Job& job) {
         if (n == 0)
             break;
         any = true;
+        if (!job.open && !job.failed && job.format == Format::Flac24) {
+            job.open = job.flac.open(job.path, 2, int(std::lround(job.sampleRate)));
+            if (!job.open)
+                job.failed = true;
+        }
         if (!job.open && !job.failed) {
             drwav_data_format f{};
             f.container = drwav_container_riff;
@@ -143,7 +151,13 @@ bool CaptureWriter::drain(Job& job) {
         if (!job.open)
             continue;
         drwav_uint64 wrote = 0;
-        if (job.format == Format::Float32) {
+        if (job.format == Format::Flac24) {
+            // The same triangular dither as 24-bit WAV, one 24-bit step wide.
+            std::uniform_real_distribution<float> u(-0.5f / 8388607.f, 0.5f / 8388607.f);
+            for (size_t i = 0; i < n * 2; i++)
+                buffer[i] += u(job.noise) + u(job.noise);
+            wrote = job.flac.write(buffer, n) ? n : 0;
+        } else if (job.format == Format::Float32) {
             wrote = drwav_write_pcm_frames(&job.wav, n, buffer);
         } else {
             // 24 bits with triangular dither, little-endian.
@@ -188,14 +202,18 @@ void CaptureWriter::run() {
             std::lock_guard<std::mutex> lock(mutex);
             if (job->cancelled) {
                 // Only this thread touches the file, so only it closes and deletes it.
-                if (job->open)
+                if (job->open && job->format == Format::Flac24)
+                    job->flac.close();
+                else if (job->open)
                     drwav_uninit(&job->wav);
                 std::remove(job->path.c_str());
                 jobs.erase(std::find_if(jobs.begin(), jobs.end(), [&](const auto& j) { return j.get() == job; }));
                 continue;
             }
             if (job->finishing && job->ring->available() == 0) {
-                if (job->open)
+                if (job->open && job->format == Format::Flac24)
+                    job->flac.close();
+                else if (job->open)
                     drwav_uninit(&job->wav);
                 job->open = false;
                 job->done = true;

@@ -341,7 +341,7 @@ class TesseraModule : public rack::engine::Module {
     /// Export audio (§8.6): the master, and with `stems` every heard track after its fader, into WAV files at
     /// `path` (stems beside it, "<name> - <track>.wav"). It follows Plays: on the timeline, the song (or the loop)
     /// from its start; with the clips, from now until Stop. False when a bounce or export already runs.
-    bool startExport(const std::string& path, bool stems, bool float32);
+    bool startExport(const std::string& path, bool stems, CaptureWriter::Format format);
     /// Where the song ends on the timeline: the last clip's end, rounded up to the bar.
     Tick songEnd() const;
     /// What the last export made, once, for a toast ("Exported Song.wav and 4 stems"); then empty.
