@@ -392,7 +392,7 @@ class LevelGesture : public DragGesture {
         now = MixerPane::faderDb(std::clamp(p, 0.f, 1.f));
         if (!mods.alt && std::abs(MixerPane::faderPos(now) - 0.75f) * width < 6)
             now = 0;
-        ctx.module()->holdChannel(track, now, start.pan);
+        ctx.module()->holdChannel(track, now, start.pan, false);
         shown = now;
         shownId = track.value;
     }
@@ -465,7 +465,7 @@ class HeaderPanGesture : public DragGesture {
         now = std::clamp(start.pan + ((pos.x - press.x) - (pos.y - press.y)) / 100 * scale, -1.f, 1.f);
         if (!mods.alt && std::abs(now) < 0.03f)
             now = 0;
-        ctx.module()->holdChannel(track, start.volumeDb, now);
+        ctx.module()->holdChannel(track, start.volumeDb, now, true);
     }
     void commit() override {
         TesseraModule* m = ctx.module();

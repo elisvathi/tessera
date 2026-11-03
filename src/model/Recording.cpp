@@ -225,6 +225,9 @@ LaneRecordState laneRecordState(const Song& song, LaneOwner owner, const Automat
         return LaneRecordState::Kept;
     if (lane.midi.valid() || lane.paramTarget.valid())
         return LaneRecordState::Records;
+    // A fader or pan lane records the track's own control, moved in the mixer or the track row.
+    if (lane.drive == LaneDrive::Volume || lane.drive == LaneDrive::Pan)
+        return owner.track.valid() ? LaneRecordState::Records : LaneRecordState::Off;
     // A clip lane records what its track's lane on the same output reads.
     const AutomationEnvelope* source = &lane;
     if (owner.clip.valid()) {

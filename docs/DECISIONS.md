@@ -1730,3 +1730,12 @@ Why: built to the spec; these are the places it left open or where the code sugg
   strip, so the chip menu names the bypassed module.
 - **The panel editor's transport and Full editor** sit in the maximised mixer's tab, which grows to 22 px there and
   keeps room for them; before, they were drawn over its label and readout.
+
+## 114. Recording fader and pan moves (3 Nov)
+
+- **A Volume or Pan lane records the track's own control** (§7.3): on an armed, recording track, a drag of the fader
+  (mixer or level bar) or pan writes into the lane through the same take as knob lanes (§73-74), in the lane's
+  record mode (Touch by default). It reads the control only while the mouse holds it; let go, and the lane plays.
+- **A hold names the control it holds** (`AudioPlayer::kHoldVolume` / `kHoldPan`). Before, a pan drag also held the
+  fader at its strip value, which froze a playing Volume lane during the drag.
+- Master automation is still to come (§109).

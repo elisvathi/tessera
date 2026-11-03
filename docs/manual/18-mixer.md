@@ -93,11 +93,15 @@ Right-click a fader, a level bar or a pan knob and choose **Automate in the time
 - Draw the lane like any other: its scale reads in dB (from **-inf** up to **+6 dB**) or in pan.
 - While the song plays, the fader, the level bar and the pan knob follow the lane, in the mixer and in the track
   rows. A control with a lane has a ring in the lane's colour.
-- Drag the control while it plays and your hand wins for as long as you hold it.
+- Drag the control while it plays and your hand wins for as long as you hold it. Dragging the pan leaves the
+  Volume lane playing, and the other way round.
+- **Record a move**: arm the track and record. While you drag the fader (or pan), its lane records your hand, like a
+  knob lane (see [Recording](11-recording.md)): by default it writes while you move and stops half a second after you
+  hold still or let go. The whole take is one undo step. Stopped, a drag only moves the control.
 - Mute the lane (its **M**) to give the control back to the strip.
 
 ## The Master row
 
 Under **+ Add track**, a thin **Master** row shows the Master's level bar and its volume in dB. It works like a
 track's level bar: drag it sideways, double-click it for 0 dB, scroll over it to move 0.5 dB at a time. Click the
-word **Master** to open the mixer. Like the mixer, it appears once the song has an audio track.
+word **Master** to open the mixer. Like the mixer, it appears once a track makes sound.
