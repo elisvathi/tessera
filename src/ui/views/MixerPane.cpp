@@ -6,6 +6,7 @@
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/AudioActions.hpp"
+#include "../editing/SendActions.hpp"
 #include "../editing/Sources.hpp"
 #include "../widgets/ColorMenuItem.hpp"
 #include "../../model/Sends.hpp"
@@ -438,8 +439,19 @@ float MixerPane::shownSend(const Strip& s, TrackId to) const {
     auto it = heldSends.find({s.track.value, to.value});
     if (it != heldSends.end())
         return it->second;
-    const Send* send = ctx.module() ? findSend(ctx.module()->song(), s.track, to) : nullptr;
-    return send ? send->db : kSilentDb;
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(s.track) : nullptr;
+    if (!t)
+        return kSilentDb;
+    for (size_t k = 0; k < t->sends.size(); k++)
+        if (t->sends[k].to == to) {
+            // A Send lane playing moves the send with it.
+            float db;
+            if (m->audioPlayer().sendAutomated(s.playerIndex, int(k), db))
+                return db;
+            return t->sends[k].db;
+        }
+    return kSilentDb;
 }
 
 float MixerPane::capPos(const Strip& s) const {
@@ -762,74 +774,9 @@ void MixerPane::openChipMenu(const Strip& s) {
     }
 }
 
-void MixerPane::openAddSend(TrackId from) {
-    TesseraModule* m = ctx.module();
-    if (!m)
-        return;
-    const Song& song = m->song();
-    EditorContext* c = &ctx;
-    rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Send to"));
-    menu->addChild(rack::createMenuLabel("Sends made here follow the fader and mute; cables in the rack don't"));
-    int offered = 0;
-    for (const Track& t : song.tracks) {
-        if (t.id == from || findSend(song, from, t.id))
-            continue;
-        std::string why = whyNoSend(song, from, t.id);
-        if (!why.empty()) {
-            menu->addChild(rack::createMenuLabel(t.name + ": " + why));
-            continue;
-        }
-        TrackId to = t.id;
-        menu->addChild(new ColorMenuItem(t.name, t.color, false, [c, m, from, to] {
-            if (CommandPtr add = addSend(m->song(), from, to))
-                m->perform(std::move(add));
-            // The next move is turning it up: the faders show the sends to that track.
-            c->view().setShowSends(to, EditorContext::now());
-        }));
-        offered++;
-    }
-    if (offered == 0)
-        menu->addChild(rack::createMenuLabel("No other track to send to"));
-}
+void MixerPane::openAddSend(TrackId from) { sendActions::appendAddSendItems(rack::createMenu(), ctx, from); }
 
-void MixerPane::openSendMenu(TrackId from, TrackId to) {
-    TesseraModule* m = ctx.module();
-    const Send* send = m ? findSend(m->song(), from, to) : nullptr;
-    const Track* target = m ? m->song().findTrack(to) : nullptr;
-    if (!send || !target)
-        return;
-    Send now = *send;
-    EditorContext* c = &ctx;
-    rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Send to " + target->name));
-    menu->addChild(rack::createMenuItem("Show sends to " + target->name, "", [c, to] {
-        c->view().setShowSends(to, EditorContext::now());
-    }));
-    menu->addChild(rack::createCheckMenuItem("Before the fader", "", [pre = now.preFader] { return pre; }, [m, from, now] {
-        m->perform(setSend(m->song(), from, {now.to, now.db, true}, "Send before the fader"));
-    }));
-    menu->addChild(rack::createCheckMenuItem("After the fader", "", [pre = now.preFader] { return !pre; }, [m, from, now] {
-        m->perform(setSend(m->song(), from, {now.to, now.db, false}, "Send after the fader"));
-    }));
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createMenuLabel("Send level (dB)"));
-    menu->addChild(new MenuTextField(audioDraw::dbText(now.db), [m, from, now](const std::string& text) {
-        char* end = nullptr;
-        float db = std::strtof(text.c_str(), &end);
-        if (end == text.c_str())
-            db = kSilentDb;
-        m->perform(setSend(m->song(), from, {now.to, db, now.preFader}, "Send " + audioDraw::dbText(db)));
-    }));
-    menu->addChild(rack::createMenuItem("-inf", "double-click", [m, from, now] {
-        m->perform(setSend(m->song(), from, {now.to, kSilentDb, now.preFader}, "Send -inf"));
-    }));
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createMenuItem("Remove send", "", [m, from, to] {
-        if (CommandPtr r = removeSend(m->song(), from, to))
-            m->perform(std::move(r));
-    }));
-}
+void MixerPane::openSendMenu(TrackId from, TrackId to) { sendActions::appendSendItems(rack::createMenu(), ctx, from, to); }
 
 void MixerPane::click(Vec pos, int button, Modifiers mods) {
     TesseraModule* m = ctx.module();
@@ -1224,7 +1171,7 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
             Rect r = s.sendKnobs[k];
             Vec cc = r.getCenter();
             float radius = r.size.y / 2 - 2;
-            float db = heldSends.count({t->id.value, send.to.value}) ? heldSends.at({t->id.value, send.to.value}) : send.db;
+            float db = shownSend(s, send.to);
             float a0 = 0.75f * float(M_PI), a1 = a0 + 1.5f * float(M_PI) * faderPos(db);
             nvgBeginPath(vg);
             nvgArc(vg, cc.x, cc.y, radius, a0, 2.25f * float(M_PI), NVG_CW);
@@ -1237,6 +1184,15 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
                 nvgStrokeColor(vg, to ? theme::track(to->color) : c.text1);
                 nvgStroke(vg);
             }
+            // A lane on the send: a ring in its colour, as on faders and pan knobs.
+            for (const AutomationEnvelope& l : t->automation)
+                if (l.drive == LaneDrive::Send && l.sendTo == send.to && !l.mute) {
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, cc.x, cc.y, radius + 3);
+                    nvgStrokeColor(vg, theme::track(l.color ? l.color : t->color));
+                    nvgStrokeWidth(vg, 1);
+                    nvgStroke(vg);
+                }
             std::string label = to ? to->name.substr(0, 2) : "?";
             if (send.preFader)
                 label += " pre";
@@ -1356,6 +1312,13 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     const AudioPlayer& player = m->audioPlayer();
     float l = s.master ? player.masterLevel(0) : player.level(s.playerIndex, 0);
     float r = s.master ? player.masterLevel(1) : player.level(s.playerIndex, 1);
+    // Show sends: the meter shows what this track sends to the target.
+    if (showsSend && t) {
+        l = r = 0;
+        for (size_t k = 0; k < t->sends.size(); k++)
+            if (t->sends[k].to == target)
+                l = r = player.sendLevel(s.playerIndex, int(k));
+    }
     drawMeter(vg, s.meter, l, r);
     uint64_t key = s.master ? 0 : s.track.value;
     float hold = heldPeak(key, std::max(l, r));

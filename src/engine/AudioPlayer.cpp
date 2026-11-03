@@ -67,6 +67,16 @@ void AudioPlayer::holdSend(uint64_t track, uint64_t to, float gain) {
     }
 }
 
+bool AudioPlayer::heldSend(uint64_t track, uint64_t to, float& gain) const {
+    for (const Hold& h : holds)
+        if (h.track.load(std::memory_order_acquire) == track && (h.parts.load(std::memory_order_relaxed) & kHoldSend) &&
+            h.sendTo.load(std::memory_order_relaxed) == to) {
+            gain = h.send.load(std::memory_order_relaxed);
+            return true;
+        }
+    return false;
+}
+
 bool AudioPlayer::held(uint64_t track, bool pan, float& value) const {
     for (const Hold& h : holds)
         if (h.track.load(std::memory_order_acquire) == track) {
@@ -228,8 +238,19 @@ void AudioPlayer::startBlock(const Engine& engine) {
                 }
         std::array<float, kMaxSendsPerTrack> sendTarget{};
         size_t sendCount = std::min<size_t>(t.sends.size(), kMaxSendsPerTrack);
-        for (size_t k = 0; k < sendCount; k++)
-            sendTarget[k] = !t.sending ? 0.f : t.sends[k].toId == heldTo ? heldSend : t.sends[k].gain;
+        // A Send lane runs along the song and moves its send; a drag on the send wins (§7.3).
+        uint32_t sendAuto = 0;
+        for (size_t k = 0; k < sendCount; k++) {
+            float g = t.sends[k].gain;
+            if (!t.sends[k].lane.empty()) {
+                float db = faderDbOfPos(evaluateAt(t.sends[k].lane, engine.position(), run.sendCursor[k], 0));
+                g = dbToGain(db);
+                sendAutoDb[i][k].store(db, std::memory_order_relaxed);
+                sendAuto |= 1u << k;
+            }
+            sendTarget[k] = !t.sending ? 0.f : t.sends[k].toId == heldTo ? heldSend : g;
+        }
+        sendAutoFlags[i].store(sendAuto, std::memory_order_relaxed);
         if (run.fresh) {
             run.gainL = l;
             run.gainR = r;
@@ -404,8 +425,10 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                 if (s.to < 0 || s.to >= int(kMaxTracks))
                     continue;
                 float g = run.sendGain[k];
-                sendBus[size_t(s.to)][0] += (s.preFader ? sl : postL) * g;
-                sendBus[size_t(s.to)][1] += (s.preFader ? sr : postR) * g;
+                float xl = (s.preFader ? sl : postL) * g, xr = (s.preFader ? sr : postR) * g;
+                sendBus[size_t(s.to)][0] += xl;
+                sendBus[size_t(s.to)][1] += xr;
+                run.sendPeak[k] = std::max(run.sendPeak[k], std::max(std::abs(xl), std::abs(xr)));
             }
             sl = (ownL * run.heardOwnGain + retL * run.heardGain) * run.gainL;
             sr = (ownR * run.heardOwnGain + retR * run.heardGain) * run.gainR;
@@ -457,6 +480,11 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             m[1].store(std::max(run.peakR, m[1].load(std::memory_order_relaxed) * fall), std::memory_order_relaxed);
             outMeters[i].store(std::max(run.outPeak, outMeters[i].load(std::memory_order_relaxed) * fall),
                                std::memory_order_relaxed);
+            for (size_t k = 0; k < size_t(kMaxSendsPerTrack); k++) {
+                sendMeters[i][k].store(std::max(run.sendPeak[k], sendMeters[i][k].load(std::memory_order_relaxed) * fall),
+                                       std::memory_order_relaxed);
+                run.sendPeak[k] = 0;
+            }
             run.peakL = run.peakR = 0;
             run.outPeak = 0;
         }

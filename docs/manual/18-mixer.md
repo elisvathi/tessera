@@ -89,6 +89,13 @@ it.
   you hear the reverb, still fed by the tracks that send to it, but not their dry sound.
 - Sends you make in the rack with cables (a mult into the reverb) also work, but they don't follow the fader, mute
   or solo.
+- In Show sends, each strip's meter shows what it sends to that track.
+- **Automate a send**: right-click its knob ▸ **Automate in the timeline**. A **Send to Reverb** lane opens under the
+  track; draw it like a Volume lane. While it plays, the knob follows it and has a ring in the lane's colour. Arm
+  the track and record to write a knob move into it.
+- **The inspector** lists the selected track's sends under **SENDS**: each with its level and whether it is before
+  or after the fader (click for the same menu as the knob), then **Send to +**, and **Gets sends from** with the
+  tracks that send to it.
 - Deleting a track removes the sends to it, in the same undo step.
 
 ## Drum lanes

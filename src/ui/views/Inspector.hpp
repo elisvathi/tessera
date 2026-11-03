@@ -57,10 +57,13 @@ class Inspector : public InteractiveView {
     float section(NVGcontext* vg, float y, const char* title);
     float row(NVGcontext* vg, float y, const std::string& label, const std::string& value);
     /// A track setting you can change: the value is a chip with a caret, and a click opens its menu.
-    enum class Setting { Voices, Input, Recording, Audio };
-    float settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value, Setting which);
-    /// Opens the menu for a setting row of the selected track.
-    void openSetting(Setting which);
+    enum class Setting { Voices, Input, Recording, Audio, Send, AddSend };
+    float settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value, Setting which,
+                     uint64_t target = 0);
+    /// Opens the menu for a setting row of the selected track (`target`: the track a Send row sends to).
+    void openSetting(Setting which, uint64_t target = 0);
+    /// The selected track's sends, each with its level and place, then + Send to…, and who sends to it (§7.6).
+    float drawSends(NVGcontext* vg, float y, const Track& t);
     void drawRegion(NVGcontext* vg, const Region& r, bool hot);
     void drawChart(NVGcontext* vg, const Region& r);
     void drawFacts(NVGcontext* vg, float y);
@@ -93,6 +96,7 @@ class Inspector : public InteractiveView {
     struct SettingRow {
         rack::math::Rect rect; // in content coordinates (before scrolling)
         Setting which;
+        uint64_t target = 0;
     };
     std::vector<SettingRow> settingRows; // laid out while drawing the facts
     int hoveredSetting = -1;

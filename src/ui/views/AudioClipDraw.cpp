@@ -151,7 +151,7 @@ std::string pitchText(const AudioContent& a) {
 }
 
 std::string mixLaneText(const AutomationEnvelope& lane, float value) {
-    if (lane.drive == LaneDrive::Volume)
+    if (lane.drive == LaneDrive::Volume || lane.drive == LaneDrive::Send)
         return dbText(faderDbOfPos(value));
     if (lane.drive != LaneDrive::Pan)
         return "";

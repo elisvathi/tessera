@@ -38,7 +38,7 @@ const char* const kRecordInputs[] = {"any", "cv", "midi"};
 const char* const kListenSources[] = {"none", "external", "trackAfter", "trackBefore"};
 const char* const kAutoSources[] = {"knob", "cv"};
 const char* const kAutoRecordModes[] = {"touch", "latch", "write"};
-const char* const kLaneDrives[] = {"auto", "pitch", "pressure", "volume", "pan"};
+const char* const kLaneDrives[] = {"auto", "pitch", "pressure", "volume", "pan", "send"};
 const char* const kMidiControls[] = {"none", "bend", "pressure", "cc"};
 const char* const kLoopModes[] = {"off", "loop"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
@@ -126,6 +126,8 @@ json_t* automationToJson(const AutomationEnvelope& a) {
     // Written only when set, so older patches load unchanged.
     if (a.drive != LaneDrive::Auto)
         setString(j, "drive", enumName(a.drive, kLaneDrives));
+    if (a.sendTo.valid())
+        set(j, "sendTo", idJson(a.sendTo));
     if (a.midi.valid()) {
         json_t* midi = json_array();
         json_array_append_new(midi, json_string(enumName(a.midi.kind, kMidiControls)));
@@ -172,6 +174,8 @@ AutomationEnvelope automationFromJson(const json_t* j) {
     });
     a.paramTarget = paramRefFromJson(get(j, "paramTarget"));
     a.drive = enumFromName(get(j, "drive"), kLaneDrives, a.drive);
+    if (get(j, "sendTo"))
+        a.sendTo = readId<TrackId>(get(j, "sendTo"));
     if (const json_t* midi = get(j, "midi"); json_is_array(midi)) {
         a.midi.kind = enumFromName(json_array_get(midi, 0), kMidiControls, a.midi.kind);
         a.midi.cc = uint8_t(std::clamp<int64_t>(intAt(midi, 1, 0), 0, 127));

@@ -48,7 +48,7 @@ enum class AutoRecordMode : uint8_t { Touch, Latch, Write };
 /// pressure on PRESS where it is above the note's own).
 /// What a lane plays: an AUTO channel, the voices' pitch bend or pressure, or the track's fader or pan (a lane value
 /// of 0..1 is the fader's travel, or pan from hard left to hard right).
-enum class LaneDrive : uint8_t { Auto, Pitch, Pressure, Volume, Pan };
+enum class LaneDrive : uint8_t { Auto, Pitch, Pressure, Volume, Pan, Send };
 
 /// The MIDI control a lane records from (docs/design/EXPRESSION_INPUT.md).
 struct MidiControl {
@@ -83,13 +83,15 @@ struct AutomationEnvelope {
     MidiControl midi;      // the MIDI control a take records into this lane; set, it is the lane's source
     int recInput = -1;     // the AUTO REC channel a CV lane records, 0..7; -1 = its own AUTO channel
     bool noRecord = false; // "Don't record this lane": takes leave it as it is
+    TrackId sendTo;        // a Send lane: the level of the track's send to this track, as a fader position
 
     bool operator==(const AutomationEnvelope& o) const {
         return id == o.id && name == o.name && color == o.color && outputIndex == o.outputIndex &&
                rangeMin == o.rangeMin && rangeMax == o.rangeMax && bipolar == o.bipolar && mute == o.mute &&
                slewMs == o.slewMs && combine == o.combine && source == o.source && recInput == o.recInput &&
                recordMode == o.recordMode && targets == o.targets && points == o.points &&
-               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && noRecord == o.noRecord;
+               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && noRecord == o.noRecord &&
+               sendTo == o.sendTo;
     }
 };
 
@@ -103,6 +105,8 @@ inline bool sameTarget(const AutomationEnvelope& a, const AutomationEnvelope& b)
         return a.paramTarget == b.paramTarget;
     if (a.drive != b.drive)
         return false;
+    if (a.drive == LaneDrive::Send)
+        return a.sendTo == b.sendTo;
     return a.drive != LaneDrive::Auto || a.outputIndex == b.outputIndex;
 }
 

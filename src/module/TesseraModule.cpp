@@ -710,6 +710,19 @@ void TesseraModule::learnMovedControl() {
 }
 
 bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& value) const {
+    if (lane.drive == LaneDrive::Send) {
+        // A send knob or a Show sends fader, only while the mouse drags it.
+        for (const Track& t : songData.tracks)
+            for (const AutomationEnvelope& l : t.automation)
+                if (l.id == lane.id) {
+                    float gain;
+                    if (!player->heldSend(t.id.value, lane.sendTo.value, gain))
+                        return false;
+                    value = faderPosOfDb(gainToDb(gain));
+                    return true;
+                }
+        return false;
+    }
     if (lane.drive == LaneDrive::Volume || lane.drive == LaneDrive::Pan) {
         // The track's own fader or pan, only while the mouse drags it: let go, and the lane plays again.
         bool pan = lane.drive == LaneDrive::Pan;

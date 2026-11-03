@@ -70,6 +70,7 @@ struct SendPlay {
     float gain = 0;
     bool preFader = false;
     uint64_t toId = 0; // the receiving TrackId value, for a drag that holds this send
+    std::vector<AutoPoint> lane; // its Send lane as fader positions over song ticks; empty when none plays
 };
 
 /// One track that makes sound: an audio track's clips, and for any track the return slots its output modules' IN
