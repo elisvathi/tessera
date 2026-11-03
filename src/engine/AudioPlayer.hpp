@@ -68,10 +68,14 @@ class AudioPlayer {
     float masterClipPeak() const { return clipPeak.load(std::memory_order_relaxed); }
     void clearClip() { clipPeak.store(0, std::memory_order_relaxed); }
 
-    /// Holds a fader and pan at these values while the user drags them, before the edit is committed (§8.4: a drag
-    /// never rebuilds the snapshot). `track` is the TrackId value; the master's ID holds the master's volume.
-    void hold(uint64_t track, float volumeGain, float pan);
+    /// Which control a hold is for: only that one wins over its lane, and only that one records (§7.3).
+    static constexpr uint8_t kHoldVolume = 1, kHoldPan = 2;
+    /// Holds a fader or pan (`parts`) at these values while the user drags it, before the edit is committed (§8.4:
+    /// a drag never rebuilds the snapshot). `track` is the TrackId value; the master's ID holds the master's volume.
+    void hold(uint64_t track, float volumeGain, float pan, uint8_t parts);
     void releaseHolds();
+    /// The fader (`pan` false, as a gain) or pan a drag holds on `track` now, for recording it into its lane. UI thread.
+    bool held(uint64_t track, bool pan, float& value) const;
 
     /// Whether a fader (`pan` false) or pan lane moves track `track` (its index in the snapshot) now, and to what:
     /// dB for the fader, -1..1 for pan. The mixer and the headers show it and ring the control (§7.3).
@@ -185,6 +189,7 @@ class AudioPlayer {
     struct Hold {
         std::atomic<uint64_t> track{0};
         std::atomic<float> volume{1}, pan{0};
+        std::atomic<uint8_t> parts{0};
     };
     std::array<Hold, kMaxTracks + 1> holds{};
 };

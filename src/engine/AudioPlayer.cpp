@@ -28,16 +28,28 @@ float fadeShape(float x, float curve, bool crossfade) {
     return crossfade ? float(std::sin(double(y) * kPi / 2)) : y;
 }
 
-void AudioPlayer::hold(uint64_t track, float volumeGain, float pan) {
+void AudioPlayer::hold(uint64_t track, float volumeGain, float pan, uint8_t parts) {
     for (Hold& h : holds) {
         uint64_t id = h.track.load(std::memory_order_relaxed);
         if (id == track || id == 0) {
             h.volume.store(volumeGain, std::memory_order_relaxed);
             h.pan.store(pan, std::memory_order_relaxed);
+            h.parts.store(parts, std::memory_order_relaxed);
             h.track.store(track, std::memory_order_release);
             return;
         }
     }
+}
+
+bool AudioPlayer::held(uint64_t track, bool pan, float& value) const {
+    for (const Hold& h : holds)
+        if (h.track.load(std::memory_order_acquire) == track) {
+            if (!(h.parts.load(std::memory_order_relaxed) & (pan ? kHoldPan : kHoldVolume)))
+                return false;
+            value = (pan ? h.pan : h.volume).load(std::memory_order_relaxed);
+            return true;
+        }
+    return false;
 }
 
 void AudioPlayer::releaseHolds() {
@@ -127,8 +139,11 @@ void AudioPlayer::startBlock(const Engine& engine) {
             return;
         for (const Hold& h : holds)
             if (h.track.load(std::memory_order_acquire) == id) {
-                volume = h.volume.load(std::memory_order_relaxed);
-                pan = h.pan.load(std::memory_order_relaxed);
+                uint8_t parts = h.parts.load(std::memory_order_relaxed);
+                if (parts & kHoldVolume)
+                    volume = h.volume.load(std::memory_order_relaxed);
+                if (parts & kHoldPan)
+                    pan = h.pan.load(std::memory_order_relaxed);
                 return;
             }
     };

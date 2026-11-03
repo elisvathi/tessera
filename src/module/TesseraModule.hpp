@@ -317,9 +317,12 @@ class TesseraModule : public rack::engine::Module {
     AudioStore* audioStore() const { return audio.get(); }
     const AudioPlayer& audioPlayer() const { return *player; }
     AudioPlayer& audioPlayer() { return *player; }
-    /// Plays a fader or pan at once while the mouse drags it, before the edit lands (§8.4: no snapshot rebuild).
+    /// Plays a fader (`pan` false) or pan at once while the mouse drags it, before the edit lands (§8.4: no
+    /// snapshot rebuild). Only the dragged control wins over its lane, and records into it while the track is armed.
     /// `track` may be the master's ID.
-    void holdChannel(TrackId track, float volumeDb, float pan) { player->hold(track.value, dbToGain(volumeDb), pan); }
+    void holdChannel(TrackId track, float volumeDb, float pan, bool panHeld) {
+        player->hold(track.value, dbToGain(volumeDb), pan, panHeld ? AudioPlayer::kHoldPan : AudioPlayer::kHoldVolume);
+    }
     /// Plays a drum lane IN's level and pan at once while the mixer drags it (its Drum Out reads the hold).
     void holdDrumInput(TrackId track, int lane, Channel channel) { drumInputHolds[{track.value, lane}] = channel; }
     void releaseDrumInputHolds() { drumInputHolds.clear(); }

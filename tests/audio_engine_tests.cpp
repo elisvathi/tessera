@@ -291,7 +291,7 @@ TEST_CASE("a fader held during a drag plays at once, without a new snapshot") {
     Rig rig(4.0, dc);
     rig.engine->play();
     rig.run(4800);
-    rig.player->hold(rig.track.value, 0.5f, 0);
+    rig.player->hold(rig.track.value, 0.5f, 0, AudioPlayer::kHoldVolume);
     CHECK(rig.run(100).back() == doctest::Approx(kVolts / 2).epsilon(1e-3));
     rig.player->releaseHolds();
     CHECK(rig.run(100).back() == doctest::Approx(kVolts).epsilon(1e-3));
@@ -566,8 +566,18 @@ TEST_CASE("a fader lane moves an audio track's level and a pan lane its pan; a h
     REQUIRE(rig.player->automated(0, true, p));
     CHECK(p == doctest::Approx(-1));
 
-    // While the user holds the fader in a drag, it plays where the hand is.
-    rig.player->hold(rig.track.value, 1.f, 0.f);
+    // While the user drags the pan, only the pan plays where the hand is: the fader lane goes on.
+    rig.player->hold(rig.track.value, 1.f, 0.f, AudioPlayer::kHoldPan);
+    for (int i = 0; i < 480; i++)
+        left = rig.step(&right);
+    CHECK(left == doctest::Approx(kVolts * 0.5).epsilon(1e-3));
+    CHECK(right == doctest::Approx(kVolts * 0.5).epsilon(1e-3));
+    float held = 0;
+    CHECK(rig.player->held(rig.track.value, true, held));
+    CHECK_FALSE(rig.player->held(rig.track.value, false, held));
+
+    // Holding both, both play where the hand is.
+    rig.player->hold(rig.track.value, 1.f, 0.f, AudioPlayer::kHoldVolume | AudioPlayer::kHoldPan);
     for (int i = 0; i < 480; i++)
         left = rig.step(&right);
     CHECK(left == doctest::Approx(kVolts).epsilon(1e-3));

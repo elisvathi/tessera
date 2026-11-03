@@ -635,6 +635,20 @@ void TesseraModule::learnMovedControl() {
 }
 
 bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& value) const {
+    if (lane.drive == LaneDrive::Volume || lane.drive == LaneDrive::Pan) {
+        // The track's own fader or pan, only while the mouse drags it: let go, and the lane plays again.
+        bool pan = lane.drive == LaneDrive::Pan;
+        TrackId track;
+        for (const Track& t : songData.tracks)
+            for (const AutomationEnvelope& l : t.automation)
+                if (l.id == lane.id)
+                    track = t.id;
+        float held;
+        if (!track.valid() || !player->held(track.value, pan, held))
+            return false;
+        value = pan ? (held + 1) / 2 : faderPosOfDb(gainToDb(held));
+        return true;
+    }
     if (lane.paramTarget.valid()) {
         // A device knob: where the mouse holds it; let go, it stays where the hand left it. Write mode also
         // records a knob nobody has touched yet, at the value it plays.

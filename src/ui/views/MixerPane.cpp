@@ -139,13 +139,13 @@ class FaderGesture : public DragGesture {
         now = db;
         TesseraModule* m = ctx.module();
         if (master) {
-            m->holdChannel(track, now, 0);
+            m->holdChannel(track, now, 0, false);
             pane.showHeld(track, now, 0);
             return;
         }
         for (const SetChannels::Change& g : group) {
             float v = g.track == track ? now : afterDelta(g.before.volumeDb);
-            m->holdChannel(g.track, v, g.before.pan);
+            m->holdChannel(g.track, v, g.before.pan, false);
             pane.showHeld(g.track, v, g.before.pan);
         }
     }
@@ -251,7 +251,7 @@ class PanGesture : public DragGesture {
             pane.holdLane(laneStrip, {volume, now});
             return;
         }
-        ctx.module()->holdChannel(track, volume, now);
+        ctx.module()->holdChannel(track, volume, now, true);
         pane.showHeld(track, volume, now);
     }
     void commit() override {
