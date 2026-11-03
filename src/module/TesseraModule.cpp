@@ -447,6 +447,22 @@ TesseraModule::AudioDropResult TesseraModule::importAudioFiles(const std::vector
     return result;
 }
 
+bool TesseraModule::replaceAudioFile(ClipId clip, const std::string& path) {
+    setupAudioFolder();
+    if (!audio)
+        return false;
+    double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
+    if (!imp.ok)
+        return false;
+    ImportedAudio f;
+    f.source = imp.source;
+    f.tempo = imp.guess.bpm > 0 ? imp.guess.bpm : 0;
+    perform(tessera::replaceAudioFile(songData, clip, f, ids()));
+    audio->sync(songData);
+    return true;
+}
+
 void TesseraModule::drainCapture() {
     CaptureEvent e;
     while (captureEvents.pop(e))

@@ -175,13 +175,14 @@ void ArrangerView::appendSongMenu(rack::ui::Menu* menu) {
         [c] { return c->module() && c->state().rangeTool; }, [c] { c->state().rangeTool = !c->state().rangeTool; }));
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Timeline"));
-    auto flag = [c, menu](std::string text, bool EditorState::* field) {
+    auto flag = [c, menu](std::string text, bool EditorState::* field, std::string right = "") {
         menu->addChild(rack::createCheckMenuItem(
-            text, "", [c, field] { return c->module() && c->state().*field; },
+            text, right, [c, field] { return c->module() && c->state().*field; },
             [c, field] { c->state().*field = !(c->state().*field); }));
     };
     flag("Ripple: deleting clips or time closes the gap", &EditorState::ripple);
-    flag("Stack: overlapping clips play together", &EditorState::stackClips);
+    // Audio tracks never stack: there an overlap is a crossfade, whatever this says.
+    flag("Stack: overlapping clips play together", &EditorState::stackClips, "audio crossfades");
     flag("Automation follows clips", &EditorState::automationFollowsClips);
     if (quantizeButton->visible)
         return;
@@ -231,7 +232,8 @@ void ArrangerView::syncFromState() {
             break;
         default: {
             // Stacked clips need room: the track grows for as long as they overlap, without changing its setting.
-            int stacks = arrange::stackOf(lanes->committed(), row.track).rows;
+            const Track* t = ctx.module() ? ctx.module()->song().findTrack(row.track) : nullptr;
+            int stacks = arrange::stackOf(lanes->committed(), row.track, t && t->type == TrackType::Audio).rows;
             heights.push_back(std::max(state.trackHeight(row.track), stacks > 1 ? stacks * kMinStackRow : 0.0));
             break;
         }

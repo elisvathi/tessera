@@ -95,6 +95,31 @@ CommandPtr editAudio(const Song& song, ClipId clip, const std::function<void(Aud
     return std::make_unique<SetAudioContent>(name, clip, *c->audio, after);
 }
 
+float clipPeak(const Clip& clip, const AudioSource& source, const PeakCache& peaks) {
+    if (!clip.audio || peaks.empty())
+        return 0;
+    double from = double(clip.audio->sourceStart);
+    double to = from + double(clip.length) * framesPerTick(*clip.audio, source.sampleRate);
+    float peak = 0;
+    for (int ch = 0; ch < peaks.channels(); ch++) {
+        float lo = 0, hi = 0;
+        peaks.range(ch, from, to, lo, hi);
+        peak = std::max({peak, std::abs(lo), std::abs(hi)});
+    }
+    return peak;
+}
+
+CommandPtr normaliseClip(const Song& song, ClipId clip, float peak) {
+    if (!(peak > 0))
+        return nullptr;
+    float db = std::clamp(-gainToDb(peak), kSilentDb, kMaxClipGainDb);
+    // Within a hundredth of a dB is already there: a second Normalise changes nothing.
+    const Clip* c = song.findClip(clip);
+    if (!c || !c->audio || std::abs(c->audio->gainDb - db) < 0.01f)
+        return nullptr;
+    return editAudio(song, clip, [db](AudioContent& a) { a.gainDb = db; }, "Normalise");
+}
+
 CommandPtr nudgeClipGain(const Song& song, const std::vector<ClipId>& clips, float deltaDb) {
     auto out = std::make_unique<CompoundCommand>("Clip gain");
     std::set<ClipId> seen;
@@ -247,6 +272,21 @@ Clip makeAudioClip(const ImportedAudio& file, ClipId id) {
     c.loopMode = file.loop ? LoopMode::Loop : LoopMode::Off;
     c.audio = a;
     return c;
+}
+
+CommandPtr replaceAudioFile(const Song& song, ClipId clip, ImportedAudio file, const NextId& nextId) {
+    const Clip* c = song.findClip(clip);
+    if (!c || !c->audio)
+        return nullptr;
+    file.source.id = AudioSourceId(nextId());
+    AudioContent after = *c->audio;
+    after.source = file.source.id;
+    after.sourceStart = 0;
+    after.sourceTempo = file.tempo > 0 ? file.tempo : c->audio->sourceTempo;
+    auto out = std::make_unique<CompoundCommand>("Replace file with " + file.source.name);
+    out->add(std::make_unique<AddAudioSources>(std::vector<AudioSource>{file.source}));
+    out->add(std::make_unique<SetAudioContent>(out->name(), clip, *c->audio, after));
+    return out;
 }
 
 CommandPtr importAudio(const Song& song, std::vector<ImportedAudio> files, const AudioDropTarget& target,

@@ -26,6 +26,21 @@ size_t bytesOf(const AudioBuffer* b) {
 }
 
 /// A buffer holding `d`'s samples, resampled to `rate`. Null when memory runs out or `cancel` stops it.
+/// `in` back to front: what a reversed clip plays. Null when memory runs out.
+std::shared_ptr<AudioBuffer> reversedCopy(const AudioBuffer& in) {
+    auto out = std::make_shared<AudioBuffer>();
+    out->channels = in.channels;
+    out->frames = in.frames;
+    out->rate = in.rate;
+    try {
+        for (int c = 0; c < in.channels; c++)
+            out->data[size_t(c)].assign(in.data[size_t(c)].rbegin(), in.data[size_t(c)].rend());
+    } catch (const std::bad_alloc&) {
+        return nullptr;
+    }
+    return out;
+}
+
 std::shared_ptr<AudioBuffer> prepare(DecodedAudio& d, double rate, const RenderProgress& progress) {
     auto b = std::make_shared<AudioBuffer>();
     b->channels = int(d.channels.size());
@@ -217,6 +232,16 @@ void AudioStore::sync(const Song& song) {
         queueLoad(placed);
         changed = true;
     }
+    // Reversed copies only live while a reversed clip plays them.
+    std::vector<uint64_t> reversedUsed;
+    for (const auto& [id, c] : song.clips)
+        if (c.audio && c.audio->reverse)
+            reversedUsed.push_back(c.audio->source.value);
+    for (auto& [id, s] : sources)
+        if (s.reversed && std::find(reversedUsed.begin(), reversedUsed.end(), id) == reversedUsed.end()) {
+            s.reversed.reset();
+            changed = true;
+        }
     for (auto it = sources.begin(); it != sources.end();) {
         if (!song.findSource(AudioSourceId(it->first))) {
             AudioSourceId gone(it->first);
@@ -384,7 +409,7 @@ size_t AudioStore::memoryBytes() const {
     std::lock_guard<std::mutex> lock(mutex);
     size_t n = 0;
     for (const auto& [id, s] : sources)
-        n += bytesOf(s.buffer.get()) + (s.status.peaks ? s.status.peaks->bytes() : 0);
+        n += bytesOf(s.buffer.get()) + bytesOf(s.reversed.get()) + (s.status.peaks ? s.status.peaks->bytes() : 0);
     for (const Render& r : renders)
         n += bytesOf(r.buffer.get());
     return n;
@@ -408,18 +433,29 @@ void AudioStore::waitIdle() {
     });
 }
 
-std::shared_ptr<const AudioBuffer> AudioStore::prepared(AudioSourceId source) {
+std::shared_ptr<const AudioBuffer> AudioStore::prepared(AudioSourceId source, bool reversed) {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = sources.find(source.value);
-    return it == sources.end() ? nullptr : it->second.buffer;
+    if (it == sources.end())
+        return nullptr;
+    Source& s = it->second;
+    if (!reversed)
+        return s.buffer;
+    if (!s.reversed && s.buffer && s.status.state == SourceState::Ready && !s.reverseQueued) {
+        s.reverseQueued = true;
+        loads.push_back({source, rate, true});
+        wake.notify_all();
+    }
+    return s.reversed;
 }
 
 std::shared_ptr<const AudioBuffer> AudioStore::render(const RenderKey& key, RenderKey& found) {
     std::lock_guard<std::mutex> lock(mutex);
     const Render* best = nullptr;
     for (const Render& r : renders) {
-        if (r.status.state != RenderState::Ready || !r.buffer || r.bufferRate != rate || !(r.key.source == key.source) ||
-            r.key.semitones != key.semitones || r.key.sound != key.sound)
+        if (r.status.state != RenderState::Ready || !r.buffer || r.bufferRate != rate ||
+            !(r.key.source == key.source) || r.key.semitones != key.semitones || r.key.sound != key.sound ||
+            r.key.reverse != key.reverse)
             continue;
         if (r.key == key) {
             best = &r;
@@ -446,7 +482,10 @@ void AudioStore::loadLoop() {
         loads.pop_front();
         busy++;
         lock.unlock();
-        load(job);
+        if (job.reverse)
+            reverseOne(job);
+        else
+            load(job);
         lock.lock();
         busy--;
         settled.notify_all();
@@ -522,12 +561,36 @@ void AudioStore::load(const LoadJob& job) {
     Source& s = it->second;
     s.buffer = std::move(buffer);
     s.bufferRate = job.rate;
+    s.reversed.reset(); // made again from the new buffer when a reversed clip asks
+    s.reverseQueued = false;
     s.status.state = SourceState::Ready;
     s.status.progress = 1;
     s.status.peaks = std::move(peaks);
     s.status.sampleRate = fileRate;
     s.status.guess = guess;
     bump();
+}
+
+void AudioStore::reverseOne(const LoadJob& job) {
+    std::shared_ptr<const AudioBuffer> in;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = sources.find(job.id.value);
+        if (it == sources.end())
+            return;
+        it->second.reverseQueued = false;
+        if (it->second.reversed || !it->second.buffer)
+            return;
+        in = it->second.buffer;
+    }
+    std::shared_ptr<AudioBuffer> out = reversedCopy(*in);
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = sources.find(job.id.value);
+    // Only if the buffer it came from is still the one the source plays (a rate change replaces it).
+    if (out && it != sources.end() && it->second.buffer == in) {
+        it->second.reversed = std::move(out);
+        bump();
+    }
 }
 
 void AudioStore::renderLoop() {
@@ -575,6 +638,19 @@ void AudioStore::renderOne(const RenderKey& key) {
         inRate = it->second.bufferRate;
         r->status = {RenderState::Rendering, 0};
         bump();
+    }
+    if (key.reverse) {
+        // Stretched from the reversed source, so the render plays the clip's window forwards like the prepared one.
+        std::shared_ptr<const AudioBuffer> flipped = reversedCopy(*in);
+        if (!flipped) {
+            std::lock_guard<std::mutex> lock(mutex);
+            auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });
+            if (r != renders.end())
+                r->status = {RenderState::Failed, 0};
+            bump();
+            return;
+        }
+        in = std::move(flipped);
     }
     auto out = std::make_shared<AudioBuffer>();
     out->channels = in->channels;

@@ -102,7 +102,8 @@ Click the **▾** next to Select and Draw (top left of the song pane):
 - **Stack** (on by default): clips may overlap on a track and all of them play. The row splits to show them. With
   Stack off, a clip you drop on another trims or replaces it. Right-click a stacked clip for **Move up a row** and
   **Move down a row** to change the order. Where stacked clips have automation on the same AUTO channel, the clip on
-  the lowest row plays it (a new take lands there).
+  the lowest row plays it (a new take lands there). Audio tracks never stack: there an overlap is a crossfade (see
+  [Audio](17-audio.md#overlaps-are-crossfades)).
 - **Automation follows clips** (on by default): moving or copying a clip takes the track's automation under it
   along.
 

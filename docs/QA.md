@@ -522,6 +522,15 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Under "+ Add track", the Master row shows the master's live level and dB once there is an audio track. Drag
       its bar sideways, double-click for 0 dB, scroll ±0.5 dB; click "Master" to open the mixer.
 - [ ] Drop a loop on the timeline: its title bar reads "92 BPM · 2 bars · Stretch ▾" until you click elsewhere.
+- [ ] Reverse an audio clip from its menu: it plays back to front, the waveform mirrors, ◀ shows; turn it off again.
+      Reverse a Stretch clip at another song tempo: the stretched version also plays back to front.
+- [ ] Normalise a quiet clip: its gain rises so the loudest sample hits full scale; a second Normalise says "Already
+      normalised".
+- [ ] Pitch +7 st on a Stretch loop: it sounds a fifth higher at the same speed.
+- [ ] Drag an audio clip so it overlaps another: both stay on one row and crossfade; with Stack on or off alike.
+      Drop a short clip inside a long one: the long one splits around it. Make three overlap: the earliest stops.
+- [ ] Ctrl+drop a file on an audio clip (timeline and slot): the clip keeps place, length, gain and fades, and plays
+      the new file. Replace file… in the menu does the same.
 - [ ] Save the patch, reload: the audio plays. Copy and paste the Tessera: the copy plays its audio too.
 - [ ] Delete the stored file from patch storage (autosave/modules/<id>/audio) and reload: the clip shows stripes and
       "Missing file", a toast says so; Find file… puts it back.

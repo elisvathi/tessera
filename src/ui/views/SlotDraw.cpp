@@ -191,8 +191,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                                     nvgTransRGBAf(c.onTile, kPreviewAlpha), [&](float x, double& f0, double& f1) {
                                         double u0 = from + span * double(x - preview.pos.x) / double(preview.size.x);
                                         double u1 = u0 + span / double(preview.size.x);
-                                        f0 = audioDraw::frameOfTick(a, *state.source, u0);
-                                        f1 = audioDraw::frameOfTick(a, *state.source, u1);
+                                        audioDraw::framesOfTicks(*clip, *state.source, u0, u1, f0, f1);
                                         return true;
                                     });
         }

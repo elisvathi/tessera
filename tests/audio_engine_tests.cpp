@@ -37,9 +37,16 @@ class FakeBuffers : public AudioBuffers {
     std::map<uint64_t, std::shared_ptr<const AudioBuffer>> sources;
     std::vector<std::pair<RenderKey, std::shared_ptr<const AudioBuffer>>> renders;
 
-    std::shared_ptr<const AudioBuffer> prepared(AudioSourceId s) override {
+    std::shared_ptr<const AudioBuffer> prepared(AudioSourceId s, bool reversed = false) override {
         auto it = sources.find(s.value);
-        return it == sources.end() ? nullptr : it->second;
+        if (it == sources.end())
+            return nullptr;
+        if (!reversed)
+            return it->second;
+        auto flipped = std::make_shared<AudioBuffer>(*it->second);
+        for (auto& ch : flipped->data)
+            std::reverse(ch.begin(), ch.end());
+        return flipped;
     }
     std::shared_ptr<const AudioBuffer> render(const RenderKey& key, RenderKey& found) override {
         for (auto& [k, b] : renders)
@@ -161,6 +168,23 @@ TEST_CASE("an audio clip on the timeline plays its file from the right place, in
     CHECK(out[12000] == doctest::Approx(kVolts * 12000 / kRate).epsilon(1e-4));
     CHECK(out[23999] == doctest::Approx(kVolts * 23999 / kRate).epsilon(1e-4));
     CHECK(rig.player->active());
+}
+
+TEST_CASE("a reversed clip plays its window of the file back to front") {
+    Rig rig(2.0, ramp);
+    Clip& c = rig.audioClip();
+    c.audio->reverse = true;
+    // The clip's window: the file's second half-second to its first second (clip tick 0 is frame 24000).
+    c.audio->sourceStart = 24000;
+    c.length = kPpq; // one beat: half a second at 120 BPM
+    rig.audioTrack().arrangement[0].length = kPpq;
+    rig.rebuild();
+    rig.engine->play();
+    std::vector<float> out = rig.run(24000);
+    // Back to front: it starts near the window's end (frame 48000) and runs down to its start.
+    CHECK(out[1000] == doctest::Approx(kVolts * (48000 - 1000 - 1) / kRate).epsilon(1e-3));
+    CHECK(out[12000] == doctest::Approx(kVolts * (48000 - 12000 - 1) / kRate).epsilon(1e-3));
+    CHECK(out[12000] < out[1000]);
 }
 
 TEST_CASE("a song without audio tracks costs the player nothing") {

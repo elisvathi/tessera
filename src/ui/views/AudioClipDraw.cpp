@@ -141,6 +141,15 @@ std::string bigTitleMarks(const Clip& clip, const ClipState& state, float gainDb
     return out;
 }
 
+std::string pitchText(const AudioContent& a) {
+    char buf[32];
+    if (a.cents == 0)
+        snprintf(buf, sizeof buf, a.semitones == 0 ? "0 st" : "%+d st", int(a.semitones));
+    else
+        snprintf(buf, sizeof buf, "%+d st %+.0f ct", int(a.semitones), double(a.cents));
+    return buf;
+}
+
 std::string stateText(const ClipState& state) {
     switch (state.status.state) {
     case SourceState::Loading:

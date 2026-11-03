@@ -14,6 +14,7 @@ Drag one or more files from your computer and drop them:
 | The Tessera panel | One new audio track per file. With **Plays = Timeline** the clip goes on the timeline at bar 1; with **Plays = Clips** it goes in the new track's first slot. |
 | An audio track in the timeline | At the drop point, snapped to the beat. Several files go end to end. |
 | A launcher slot of an audio track | Into that slot. Several files fill the slots below it. |
+| An audio clip, holding **Ctrl** (**Cmd** on a Mac) | Replaces the clip's file (see [Replacing a file](#replacing-a-file)). |
 | A note track | A new audio track just below it. |
 | Empty space in the timeline or the launcher | New audio tracks at the end, at the bar you dropped on (timeline) or in their first slot (launcher). |
 
@@ -59,6 +60,11 @@ has:
     shows **own speed** instead of a tempo.
 - **Sound type**: what the clip holds, so stretching treats it right: **Drums** keeps attacks sharp, **Melody** is
   smooth for one instrument, **Voice** keeps a voice's character, **Full mix** balances for finished music.
+- **Pitch** (Stretch clips only): moves the pitch in semitones without changing the speed. Pick a step, or type one
+  such as **-3** or **2.5** (two and a half semitones).
+
+The same menu has **Reverse** (the clip plays back to front; its title shows ◀), **Normalise** (sets the clip's gain
+so its loudest sample reaches full scale) and **Replace file…** (see below).
 
 ![The audio part of a clip's menu](images/audio-clip-menu.png)
 
@@ -85,13 +91,30 @@ Audio clips move, copy, trim, loop and split with the same gestures as note clip
 The clip's settings (gain, follow tempo, sound type, tempo) belong to the clip, so every linked copy of it changes
 together. The inspector says **all 3 copies** when there are several.
 
-Where two clips on one audio track overlap, they crossfade over the overlap. Every clip edge gets a tiny fade, so a
-cut never clicks.
+### Overlaps are crossfades
+
+An audio track always has one row of clips: its clips never stack. Where two clips overlap, the overlap is a
+crossfade: one fades out while the other fades in. Drag a clip over another, or drag an edge into its neighbour, to
+make one; move them apart and it is gone.
+
+- **Drop a clip inside another** and the outer clip splits around it, crossfading at each end.
+- **At most two clips sound at once.** Move a clip so a third would join in, and the earliest of the three stops
+  where the third begins.
+- **A clip that covers another completely** replaces it.
+- Clips that only touch get no crossfade. Every clip edge gets a tiny fade, so a cut never clicks.
+
+These rules hold for audio tracks whatever the **Stack** setting says (Stack is for note clips).
+
+### Replacing a file
+
+To give a clip another file, hold **Ctrl** (**Cmd** on a Mac) while you drop the file on the clip, or choose
+**Replace file…** in its menu. The clip keeps its place, length, gain and fades and plays the new file from its
+start at the new file's tempo. The old file stays in the patch until **Remove unused audio**.
 
 ## The inspector
 
-With an audio clip selected, the inspector shows its **Gain**, **Follow tempo**, **Sound type** and **Clip tempo**
-(click one to change it), its length and loop, and its file: name, length, sample rate, mono or stereo. With a
+With an audio clip selected, the inspector shows its **Gain**, **Follow tempo**, **Sound type**, **Clip tempo**,
+**Pitch** (Stretch clips) and **Reverse** (click one to change it), its length and loop, and its file: name, length, sample rate, mono or stereo. With a
 timeline copy selected, it shows that copy's fade in and fade out too.
 
 For the track, it shows its **Volume**, **Pan** and **Output** (MAIN).

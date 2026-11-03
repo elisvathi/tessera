@@ -103,7 +103,7 @@ class AudioStore : public AudioBuffers {
     void waitIdle();
 
     // ---- AudioBuffers (UI thread) -----------------------------------------------------------------------------
-    std::shared_ptr<const AudioBuffer> prepared(AudioSourceId source) override;
+    std::shared_ptr<const AudioBuffer> prepared(AudioSourceId source, bool reversed = false) override;
     std::shared_ptr<const AudioBuffer> render(const RenderKey& key, RenderKey& found) override;
 
   private:
@@ -112,6 +112,8 @@ class AudioStore : public AudioBuffers {
         SourceStatus status;
         std::shared_ptr<const AudioBuffer> buffer; // at `bufferRate`
         double bufferRate = 0;
+        std::shared_ptr<const AudioBuffer> reversed; // `buffer` back to front, while a reversed clip plays it
+        bool reverseQueued = false;
         std::shared_ptr<DecodedAudio> decoded; // handed over by an import; used once
         bool queued = false;
     };
@@ -125,11 +127,13 @@ class AudioStore : public AudioBuffers {
     struct LoadJob {
         AudioSourceId id;
         double rate;
+        bool reverse = false; // only make the reversed copy of a ready buffer
     };
 
     void loadLoop();
     void renderLoop();
     void load(const LoadJob& job);
+    void reverseOne(const LoadJob& job);
     void renderOne(const RenderKey& key);
     void bump() { changeCount.fetch_add(1, std::memory_order_acq_rel); }
     void queueLoad(Source& s);

@@ -19,6 +19,7 @@ bool wantsRender(const AudioContent& clip, double tempo, RenderKey& key) {
     key.factor = roundFactor(clip.sourceTempo / tempo);
     key.semitones = clip.semitones + double(clip.cents) / 100;
     key.sound = clip.sound;
+    key.reverse = clip.reverse;
     return key.factor != 1 || key.semitones != 0;
 }
 
@@ -55,7 +56,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         c.length = double(clip->length);
         if (const AudioSource* src = song.findSource(a.source)) {
             c.gain = dbToGain(a.gainDb) * src->volts;
-            std::shared_ptr<const AudioBuffer> prepared = buffers.prepared(a.source);
+            std::shared_ptr<const AudioBuffer> prepared = buffers.prepared(a.source, a.reverse);
             hold(prepared);
             c.prepared = prepared.get();
             // Positions are in the buffer's own frames: right after a rate change it may still be at the old rate.
@@ -64,6 +65,9 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             c.startFrame = engineFrames(double(a.sourceStart), src->sampleRate, bufferRate);
             double frames = prepared ? double(prepared->frames)
                                      : engineFrames(double(src->frames), src->sampleRate, bufferRate);
+            // A reversed clip plays its window of the reversed buffer forwards: the window's end comes first.
+            if (a.reverse)
+                c.startFrame = frames - (c.startFrame + double(clip->length) * c.framesPerTick);
             double after = frames - (c.startFrame + c.loopEnd * c.framesPerTick);
             c.seamDip = after < 0.006 * engineRate;
             RenderKey key;
