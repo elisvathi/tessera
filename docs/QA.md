@@ -580,6 +580,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Selected clips and Until silent; Bounce plays from a bar before with "Bouncing … · bar n of m" and Cancel. At
       the end a "… (bounce)" track sits under it, in time with the original, which is muted. Undo removes both
       changes. Stop during a bounce: nothing is left. Until silent on a reverb tail: it stops a second after quiet.
+- [ ] Export audio (Ctrl+Alt+E), master and stems, 24-bit: pick a file; it plays from the start with "Exporting ·
+      bar n of m"; at the end the master file and a stem per sounding track are there, as long as the song (or
+      the loop), no metronome. A muted track has no stem. Clips mode: it records until Stop. Stop early on the
+      timeline: no files.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

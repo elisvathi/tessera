@@ -1,6 +1,7 @@
 #include "EditorHost.hpp"
 #include "../module/OutputModuleBase.hpp"
 #include "editing/BounceActions.hpp"
+#include "editing/ExportAudio.hpp"
 #include "editing/Sources.hpp"
 
 #include "editing/AudioActions.hpp"
@@ -180,6 +181,9 @@ void EditorHost::showNotices() {
     else if (!m->takeProblem.empty()) {
         ctx.toast(m->takeProblem);
         m->takeProblem.clear();
+    } else if (!m->exportResult.empty()) {
+        ctx.toast(m->exportResult);
+        m->exportResult.clear();
     }
     // A new second source plays at once, mixed with the first (§7.8).
     const TesseraModule::NewSource& news = m->newSource();
@@ -397,6 +401,9 @@ void EditorHost::runAction(Action action) {
             return;
         view.mixerOpen = !view.mixerOpen;
         view.focus = Pane::Detail;
+        return;
+    case Action::ExportAudio:
+        exportAudio::openDialog(ctx);
         return;
     case Action::Bounce:
         bounceActions::openDialog(ctx, ctx.state().selectedTrack);

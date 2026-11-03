@@ -1,4 +1,5 @@
 #include "ProjectFile.hpp"
+#include "ExportAudio.hpp"
 #include "ImportMidi.hpp"
 
 #include "../../module/TesseraModule.hpp"
@@ -143,6 +144,10 @@ void appendFileMenu(rack::ui::Menu* menu, TesseraModule* m, std::function<Editor
         if (EditorContext* c = editor())
             exportMidi::openSong(*c);
     }));
+    menu->addChild(rack::createMenuItem("Export audio…", shortcutLabel(Action::ExportAudio), [editor] {
+        if (EditorContext* c = editor())
+            exportAudio::openDialog(*c);
+    }, !m->makesSound()));
     menu->addChild(rack::createMenuItem("Export DAWproject…", "For other DAWs", [editor] {
         if (EditorContext* c = editor())
             exportMidi::openDawProject(*c);

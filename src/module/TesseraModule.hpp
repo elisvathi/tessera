@@ -337,6 +337,14 @@ class TesseraModule : public rack::engine::Module {
     /// new audio track under it. It stops at `to`; with `untilSilent`, once past `to` the sound stays below -60 dB
     /// for a second (at most 8 bars on). False when a bounce or export already runs.
     bool startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal);
+    /// Export audio (§8.6): the master, and with `stems` every heard track after its fader, into WAV files at
+    /// `path` (stems beside it, "<name> - <track>.wav"). It follows Plays: on the timeline, the song (or the loop)
+    /// from its start; with the clips, from now until Stop. False when a bounce or export already runs.
+    bool startExport(const std::string& path, bool stems, bool float32);
+    /// Where the song ends on the timeline: the last clip's end, rounded up to the bar.
+    Tick songEnd() const;
+    /// What the last export made, once, for a toast ("Exported Song.wav and 4 stems"); then empty.
+    std::string exportResult;
     /// Stops a bounce or export and leaves nothing behind.
     void cancelCapture();
     /// What runs now, for the progress line: "Bouncing Bass · bar 3 of 8". Empty when nothing does.
@@ -508,6 +516,18 @@ class TesseraModule : public rack::engine::Module {
         bool keep = false;    // it reached its end: keep the file
     };
     std::optional<BounceJob> bounce;
+    struct ExportJob {
+        std::vector<int> captures; // the master first, then the stems
+        std::vector<std::string> skipped; // muted tracks, left out of the stems
+        Tick from = 0, to = 0;
+        bool timeline = true;
+        bool started = false, armed = false, finishing = false;
+        std::string name;
+    };
+    std::optional<ExportJob> exporting;
+    /// Works a running export: arms its taps after the jump to the start, ends it, reports. Each UI frame.
+    void exportStep();
+
     /// Works a running bounce: its end, until silent, a stop that cancels it; then its new track. Each UI frame.
     void bounceStep();
     std::unique_ptr<CaptureWriter> captureWriter;

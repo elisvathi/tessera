@@ -110,6 +110,7 @@ enum class Action {
     // General
     Help,
     ExportMidi,
+    ExportAudio,
     ImportAudio,
     Close,
     Count

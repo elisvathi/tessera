@@ -75,6 +75,7 @@ void AudioPlayer::armTap(int n, const TapSpec& spec) {
     t.from.store(spec.from, std::memory_order_relaxed);
     t.to.store(spec.to, std::memory_order_relaxed);
     t.whileRecording.store(spec.whileRecording, std::memory_order_relaxed);
+    t.startWithin.store(spec.startWithin, std::memory_order_relaxed);
     t.firstTick.store(-1, std::memory_order_relaxed);
     t.ring.store(spec.ring, std::memory_order_relaxed);
     t.state.store(int(TapState::Armed), std::memory_order_release);
@@ -100,7 +101,9 @@ void AudioPlayer::runTaps(const Engine& engine, double song, float masterL, floa
         bool rec = t.whileRecording.load(std::memory_order_relaxed);
         double from = t.from.load(std::memory_order_relaxed), to = t.to.load(std::memory_order_relaxed);
         if (state == int(TapState::Armed)) {
-            if (!playing || (rec && !recording) || (from >= 0 && song < from))
+            double within = t.startWithin.load(std::memory_order_relaxed);
+            if (!playing || (rec && !recording) || (from >= 0 && song < from) ||
+                (from >= 0 && within >= 0 && song > from + within))
                 continue;
             t.firstTick.store(song, std::memory_order_relaxed);
             t.state.store(int(TapState::Running), std::memory_order_release);
