@@ -67,6 +67,18 @@ and a small pan knob.
 
 Rows too short for a second line don't show it; make the row taller (drag its bottom edge) to see it.
 
+## Automating the fader and pan
+
+Right-click a fader, a level bar or a pan knob and choose **Automate in the timeline**. The track gets a **Volume**
+(or **Pan**) lane, starting at the control's value, and its lanes open in the timeline. You can also add one from
+**+ Add automation lane**.
+
+- Draw the lane like any other: its scale reads in dB (from **-inf** up to **+6 dB**) or in pan.
+- While the song plays, the fader, the level bar and the pan knob follow the lane, in the mixer and in the track
+  rows. A control with a lane has a ring in the lane's colour.
+- Drag the control while it plays and your hand wins for as long as you hold it.
+- Mute the lane (its **M**) to give the control back to the strip.
+
 ## The Master row
 
 Under **+ Add track**, a thin **Master** row shows the Master's level bar and its volume in dB. It works like a

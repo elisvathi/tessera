@@ -30,6 +30,11 @@ void duplicateSelected(EditorContext& ctx);
 void deleteSelected(EditorContext& ctx);
 void groupSelected(EditorContext& ctx);
 
+/// "Automate in the timeline" on a fader or pan (docs/design/AUDIO_MIXER.md §7.3): adds the track's fader lane
+/// (`pan` false) or pan lane, starting at the strip's current value, and opens its lanes. A track that has one already
+/// just opens it.
+void automateMix(EditorContext& ctx, TrackId track, bool pan);
+
 void toggleMute(EditorContext& ctx, TrackId clicked);
 /// Toggles solo, keeping the other soloed tracks with `additive` (a click on S) or un-soloing them (Shift+click).
 void toggleSolo(EditorContext& ctx, TrackId clicked, bool additive);

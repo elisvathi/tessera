@@ -16,7 +16,10 @@ constexpr int kMaxKnobLanes = 16; // lanes that turn device knobs, per track and
 // engine keeps them after the AUTO channels, at these slots.
 constexpr int kPitchLaneSlot = kMaxAutomationLanes;
 constexpr int kPressureLaneSlot = kMaxAutomationLanes + 1;
-constexpr int kMaxPlayedLanes = kMaxAutomationLanes + 2;
+// Lanes that move a track's mixer strip (docs/design/AUDIO_MIXER.md §7.3): its fader and its pan.
+constexpr int kVolumeLaneSlot = kMaxAutomationLanes + 2;
+constexpr int kPanLaneSlot = kMaxAutomationLanes + 3;
+constexpr int kMaxPlayedLanes = kMaxAutomationLanes + 4;
 
 /// A strongly typed ID. The Tag keeps a TrackId from being passed where a ClipId is expected.
 /// Value 0 means "no ID".

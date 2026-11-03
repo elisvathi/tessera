@@ -236,6 +236,14 @@ class Engine {
     TrackId trackAt(size_t i) const { return tracks[i].id; }
     int busSlotAt(size_t i) const { return snapshot->tracks[i]->busSlot; }
     int playingSlot(size_t i) const { return tracks[i].playing; }
+    /// Track `i`'s fader lane (`pan` false) or pan lane value (0..1) while one plays now; false when the strip's
+    /// own setting applies (§7.3).
+    bool mixLane(size_t i, bool pan, float& value) const {
+        if (!tracks[i].mixAutomated[pan ? 1 : 0])
+            return false;
+        value = tracks[i].autoValue[size_t(pan ? kPanLaneSlot : kVolumeLaneSlot)];
+        return true;
+    }
     /// kNothingQueued, kNoSlot (a stop is queued) or the queued slot.
     int queuedSlot(size_t i) const { return tracks[i].queued; }
     /// The clip time a queued jump inside the playing clip lands on (a click on its ruler); NaN for a plain launch.
@@ -322,6 +330,7 @@ class Engine {
         std::array<float, kMaxPlayedLanes> autoOut{}; // with modulators added
         int autoChannels = 0;                         // the lanes' channels and the modulated ones
         std::array<float, kMaxPlayedLanes> autoVolts{};
+        std::array<bool, 2> mixAutomated{}; // a fader lane, a pan lane plays now (their values are in autoValue)
         std::array<float, kMaxPlayedLanes> autoLow{}, autoHigh{};
         std::array<float, kMaxPlayedLanes> slewMs{}, slewAlpha{};
         std::array<size_t, kMaxPlayedLanes> trackLaneCursor{}, clipLaneCursor{};

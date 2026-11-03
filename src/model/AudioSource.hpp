@@ -3,6 +3,7 @@
 #include "SoundType.hpp"
 #include "Types.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -81,6 +82,29 @@ struct AudioContent {
                reverse == o.reverse;
     }
 };
+
+/// Where 0 dB sits on a fader's travel (0..1).
+constexpr float kZeroDbFaderPos = 0.75f;
+
+/// A fader's position (0..1) for a level: below 0 dB the travel follows the fourth root of the gain, so -12 dB sits
+/// about half way and the useful range gets most of the fader; above it, up to kMaxFaderDb in the last quarter. The
+/// mixer, the track headers and fader automation lanes share it.
+inline float faderPosOfDb(float db) {
+    if (db <= kSilentDb)
+        return 0;
+    if (db >= 0)
+        return kZeroDbFaderPos + (1 - kZeroDbFaderPos) * std::min(db, kMaxFaderDb) / kMaxFaderDb;
+    return kZeroDbFaderPos * std::pow(dbToGain(db), 0.25f);
+}
+
+/// The level at a fader position (0..1); the inverse of faderPosOfDb().
+inline float faderDbOfPos(float pos) {
+    if (pos <= 0.001f)
+        return kSilentDb;
+    if (pos >= kZeroDbFaderPos)
+        return (pos - kZeroDbFaderPos) / (1 - kZeroDbFaderPos) * kMaxFaderDb;
+    return gainToDb(std::pow(pos / kZeroDbFaderPos, 4.f));
+}
 
 /// Seconds of one tick at `bpm`.
 inline double secondsPerTick(double bpm) { return 60.0 / (bpm * double(kPpq)); }

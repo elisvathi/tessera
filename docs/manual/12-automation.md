@@ -27,6 +27,8 @@ A track and a clip can each have up to 8 lanes.
      or any CC by typing its number. The lane is named, records that control when the track records, and plays
      where it belongs: pitch bend on **V/OCT**, pressure on **PRESS**, a CC on the next free AUTO channel. If the
      lane is already there, it is shown instead.
+   - **Volume (the fader)** and **Pan**, on audio tracks: the lane moves the track's own fader or pan. See
+     [The mixer](18-mixer.md#automating-the-fader-and-pan).
 
 ![Adding a lane for a MIDI control](images/add-lane-menu.png)
 

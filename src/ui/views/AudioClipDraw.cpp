@@ -150,6 +150,19 @@ std::string pitchText(const AudioContent& a) {
     return buf;
 }
 
+std::string mixLaneText(const AutomationEnvelope& lane, float value) {
+    if (lane.drive == LaneDrive::Volume)
+        return dbText(faderDbOfPos(value));
+    if (lane.drive != LaneDrive::Pan)
+        return "";
+    float pan = value * 2 - 1;
+    if (std::abs(pan) < 0.005f)
+        return "Centre";
+    char text[24];
+    snprintf(text, sizeof text, "%.0f%% %s", double(std::abs(pan) * 100), pan < 0 ? "L" : "R");
+    return text;
+}
+
 std::string stateText(const ClipState& state) {
     switch (state.status.state) {
     case SourceState::Loading:

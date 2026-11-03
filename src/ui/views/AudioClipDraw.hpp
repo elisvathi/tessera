@@ -68,6 +68,9 @@ inline void framesOfTicks(const Clip& clip, const AudioSource& s, double u0, dou
 /// A Stretch clip's pitch: "0 st", "+2 st", "−3 st 25 ct".
 std::string pitchText(const AudioContent& a);
 
+/// A fader or pan lane's value (0..1) in the strip's own units: "−3.0 dB", "Centre", "40% L". Empty for other lanes.
+std::string mixLaneText(const AutomationEnvelope& lane, float value);
+
 /// "−3.0 dB", "+2.5 dB", "−inf dB".
 std::string dbText(float db);
 

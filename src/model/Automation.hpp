@@ -46,7 +46,9 @@ enum class AutoRecordMode : uint8_t { Touch, Latch, Write };
 
 /// Where a lane's value goes: an AUTO channel, or into every voice of the track (pitch bend added to V/OCT,
 /// pressure on PRESS where it is above the note's own).
-enum class LaneDrive : uint8_t { Auto, Pitch, Pressure };
+/// What a lane plays: an AUTO channel, the voices' pitch bend or pressure, or the track's fader or pan (a lane value
+/// of 0..1 is the fader's travel, or pan from hard left to hard right).
+enum class LaneDrive : uint8_t { Auto, Pitch, Pressure, Volume, Pan };
 
 /// The MIDI control a lane records from (docs/design/EXPRESSION_INPUT.md).
 struct MidiControl {

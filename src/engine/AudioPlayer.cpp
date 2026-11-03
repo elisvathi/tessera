@@ -119,7 +119,6 @@ void AudioPlayer::retire(Voice& v, float samples) {
 }
 
 void AudioPlayer::startBlock(const Engine& engine) {
-    (void)engine;
     bool anyHold = false;
     for (const Hold& h : holds)
         anyHold |= h.track.load(std::memory_order_relaxed) != 0;
@@ -137,6 +136,33 @@ void AudioPlayer::startBlock(const Engine& engine) {
     for (size_t i = 0; i < count; i++) {
         const AudioTrackPlay& t = snapshot->tracks[i];
         float volume = t.volume, pan = t.pan;
+        // A fader or pan lane playing now moves the strip; a control held in a drag wins over it (§7.3).
+        TrackRun& found = runs[i];
+        size_t engineTracks = engine.trackCountNow();
+        if (found.engineIndex < 0 || size_t(found.engineIndex) >= engineTracks ||
+            engine.trackAt(size_t(found.engineIndex)) != t.id) {
+            found.engineIndex = -1;
+            for (size_t k = 0; k < engineTracks; k++)
+                if (engine.trackAt(k) == t.id) {
+                    found.engineIndex = int(k);
+                    break;
+                }
+        }
+        uint8_t automated = 0;
+        if (found.engineIndex >= 0) {
+            float value;
+            if (engine.mixLane(size_t(found.engineIndex), false, value)) {
+                volume = dbToGain(faderDbOfPos(value));
+                automated |= 1;
+                autoVolume[i].store(faderDbOfPos(value), std::memory_order_relaxed);
+            }
+            if (engine.mixLane(size_t(found.engineIndex), true, value)) {
+                pan = std::clamp(value * 2 - 1, -1.f, 1.f);
+                automated |= 2;
+                autoPan[i].store(pan, std::memory_order_relaxed);
+            }
+        }
+        autoFlags[i].store(automated, std::memory_order_relaxed);
         held(t.id.value, volume, pan);
         float l = 0, r = 0;
         if (t.audible) {

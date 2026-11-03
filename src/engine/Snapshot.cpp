@@ -61,6 +61,8 @@ std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& la
         LanePlayback p;
         p.output = l.drive == LaneDrive::Pitch      ? kPitchLaneSlot
                    : l.drive == LaneDrive::Pressure ? kPressureLaneSlot
+                   : l.drive == LaneDrive::Volume   ? kVolumeLaneSlot
+                   : l.drive == LaneDrive::Pan      ? kPanLaneSlot
                                                     : std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1);
         p.rangeMin = l.rangeMin;
         p.rangeMax = l.rangeMax;
