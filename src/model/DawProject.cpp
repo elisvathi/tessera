@@ -1,12 +1,14 @@
 #include "DawProject.hpp"
 
 #include "Arrangement.hpp"
+#include "AudioSource.hpp"
 #include "AutomationEdits.hpp"
 #include "Zip.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 
 namespace tessera::dawproject {
@@ -170,6 +172,56 @@ void arrangementClips(Xml& x, const Song& song, const Track& t, const Options& o
     x.close("Clips");
 }
 
+/// The clips of an audio track's timeline: each instance a clip with the part of its file it plays, warped from
+/// the clip's beats to the file's seconds at the clip tempo (an Off clip keeps its own speed).
+void audioClips(Xml& x, const Song& song, const Track& t, const Options& o, double songTempo) {
+    std::map<uint64_t, std::string> paths = audioPaths(song);
+    x.open("Clips", {{"id", x.id()}});
+    for (const ArrangerClip& a : t.arrangement) {
+        if (a.muted && !o.includeMuted)
+            continue;
+        const Clip* clip = song.findClip(a.clip);
+        const AudioSource* src = clip && clip->audio ? song.findSource(clip->audio->source) : nullptr;
+        if (!src)
+            continue;
+        const AudioContent& c = *clip->audio;
+        double k = songTicksPerClipTick(c, songTempo);
+        double secondsPerClipTick = secondsPerTick(c.sourceTempo);
+        double fileStart = double(c.sourceStart) / src->sampleRate;
+        bool looping = clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart;
+        Attrs attrs{{"time", beats(double(a.position))},
+                    {"duration", beats(double(a.length) * k)},
+                    {"playStart", beats(double(a.offset))},
+                    {"name", clip->name.empty() ? src->name : clip->name},
+                    {"color", color(clip->shownColor(t.color))},
+                    {"fadeTimeUnit", "beats"},
+                    {"fadeInTime", beats(double(a.fadeIn.length) * k)},
+                    {"fadeOutTime", beats(double(a.fadeOut.length) * k)}};
+        if (looping) {
+            attrs.push_back({"loopStart", beats(double(clip->loopStart))});
+            attrs.push_back({"loopEnd", beats(double(clip->loopEnd))});
+        }
+        if (a.muted)
+            attrs.push_back({"enable", "false"});
+        x.open("Clip", attrs);
+        x.open("Warps", {{"id", x.id()}, {"timeUnit", "beats"}, {"contentTimeUnit", "seconds"}});
+        x.open("Audio", {{"id", x.id()},
+                         {"algorithm", c.follow == TempoFollow::Repitch ? "repitch" : "stretch"},
+                         {"channels", std::to_string(src->channels)},
+                         {"duration", num(src->seconds())},
+                         {"sampleRate", std::to_string(int(src->sampleRate))},
+                         {"timeUnit", "seconds"}});
+        x.leaf("File", {{"path", paths[src->id.value]}});
+        x.close("Audio");
+        x.leaf("Warp", {{"time", "0.0"}, {"contentTime", num(fileStart)}});
+        x.leaf("Warp", {{"time", beats(double(clip->length))},
+                        {"contentTime", num(fileStart + double(clip->length) * secondsPerClipTick)}});
+        x.close("Warps");
+        x.close("Clip");
+    }
+    x.close("Clips");
+}
+
 /// AUTO lanes as controller automation, sampled as in MIDI export and thinned.
 void automationPoints(Xml& x, const Song& song, const Track& t, const Options& o, int channel) {
     if (o.automation == render::AutomationMode::Off)
@@ -224,11 +276,20 @@ std::string projectXml(const Song& song, const Options& o, const render::Context
     for (const Track* t : tracks) {
         std::string id = x.id();
         trackIds[t->id.value] = id;
-        x.open(
-            "Track",
-            {{"id", id}, {"name", t->name}, {"color", color(t->color)}, {"contentType", "notes"}, {"loaded", "true"}});
+        bool audio = t->type == TrackType::Audio;
+        x.open("Track", {{"id", id},
+                         {"name", t->name},
+                         {"color", color(t->color)},
+                         {"contentType", audio ? "audio" : "notes"},
+                         {"loaded", "true"}});
         x.open("Channel", {{"id", x.id()}, {"role", "regular"}, {"solo", t->solo ? "true" : "false"}});
         x.leaf("Mute", {{"id", x.id()}, {"name", "Mute"}, {"value", t->mute ? "true" : "false"}});
+        if (audio) {
+            x.leaf("Volume", {{"id", x.id()}, {"name", "Volume"}, {"unit", "linear"},
+                              {"value", num(dbToGain(t->channel.volumeDb))}});
+            x.leaf("Pan", {{"id", x.id()}, {"name", "Pan"}, {"unit", "normalized"},
+                           {"value", num((t->channel.pan + 1) / 2)}});
+        }
         x.close("Channel");
         x.close("Track");
     }
@@ -239,7 +300,10 @@ std::string projectXml(const Song& song, const Options& o, const render::Context
     for (const Track* t : tracks) {
         int channel = render::channelOf(song, o, t->id) - 1;
         x.open("Lanes", {{"id", x.id()}, {"track", trackIds[t->id.value]}});
-        arrangementClips(x, song, *t, o, ctx, channel);
+        if (t->type == TrackType::Audio)
+            audioClips(x, song, *t, o, ctx.tempo);
+        else
+            arrangementClips(x, song, *t, o, ctx, channel);
         automationPoints(x, song, *t, o, channel);
         x.close("Lanes");
     }
@@ -266,7 +330,7 @@ std::string projectXml(const Song& song, const Options& o, const render::Context
         x.open("Lanes", {{"id", x.id()}, {"timeUnit", "beats"}});
         for (const Track* t : tracks) {
             const Clip* clip = s < t->slots.size() && t->slots[s].clip ? song.findClip(*t->slots[s].clip) : nullptr;
-            if (!clip)
+            if (!clip || clip->audio)
                 continue;
             ClipSpan span = clipSpan(*clip);
             int channel = render::channelOf(song, o, t->id) - 1;
@@ -299,8 +363,31 @@ std::string metadataXml(const render::Context& ctx) {
            "</Title>\n</MetaData>\n";
 }
 
-std::string build(const Song& song, const Options& o, const render::Context& ctx, const std::string& version) {
-    return zip::store({{"project.xml", projectXml(song, o, ctx, version)}, {"metadata.xml", metadataXml(ctx)}});
+std::map<uint64_t, std::string> audioPaths(const Song& song) {
+    std::map<uint64_t, std::string> out;
+    std::map<std::string, int> taken;
+    for (const AudioSource& s : song.audioSources) {
+        std::string name = s.name.empty() ? "audio.wav" : s.name;
+        for (char& ch : name)
+            if (std::strchr("/\\:*?\"<>|", ch))
+                ch = '_';
+        // Two files with one name get "name 2", "name 3" before the extension.
+        if (int n = taken[name]++; n > 0) {
+            size_t dot = name.rfind('.');
+            name = dot == std::string::npos ? name + " " + std::to_string(n + 1)
+                                            : name.substr(0, dot) + " " + std::to_string(n + 1) + name.substr(dot);
+        }
+        out[s.id.value] = "audio/" + name;
+    }
+    return out;
+}
+
+std::string build(const Song& song, const Options& o, const render::Context& ctx, const std::string& version,
+                  const std::vector<std::pair<std::string, std::string>>& audioFiles) {
+    std::vector<std::pair<std::string, std::string>> files{{"project.xml", projectXml(song, o, ctx, version)},
+                                                           {"metadata.xml", metadataXml(ctx)}};
+    files.insert(files.end(), audioFiles.begin(), audioFiles.end());
+    return zip::store(files);
 }
 
 } // namespace tessera::dawproject

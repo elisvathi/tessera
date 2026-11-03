@@ -21,8 +21,10 @@ so you can use them without opening the editor.
 | **Save project as…** | Saves a new `.tessera` file. |
 | **Import MIDI file as tracks…** | Adds a track for each part of a MIDI file. See [Importing MIDI](#importing-midi-files). |
 | **Import audio…** | Ctrl+Shift+O. Adds an audio file on a new audio track. See [Audio](17-audio.md). |
+| **Audio files…** | Lists the audio files the song holds. See [Audio](17-audio.md#the-audio-files-list). |
 | **Remove unused audio** | Removes the audio files no clip plays. See [Audio](17-audio.md#removing-audio-you-dont-use). |
 | **Export MIDI…** | Ctrl+Shift+E. See [Exporting MIDI](#exporting-midi). |
+| **Export audio…** | Ctrl+Alt+E. The song as WAV or FLAC, with stems if you like. See [Audio](17-audio.md#exporting-audio). |
 | **Export DAWproject…** | For other music programs that read DAWproject. See [Exporting DAWproject](#exporting-dawproject). |
 | **Colour scheme** | See [The editor](03-editor.md#colour-schemes). |
 
@@ -86,7 +88,10 @@ writes:
   operators and Devices choices);
 - the clips panel's clips as scenes (looping);
 - tempo, time signature and markers;
-- AUTO lanes as automation (with Automation set to As CC).
+- AUTO lanes as automation (with Automation set to As CC);
+- audio tracks as audio tracks, with their volume and pan: each timeline clip plays its part of its file at the
+  clip's tempo, with its fades and loop, and every audio file goes inside the project so it opens with its sound.
+  Audio clips in the clips panel, reversed clips, clip gain and pitch don't go across yet.
 
 Per-note bends, timbre and pressure, and the devices themselves, don't go across (with Devices applied, their notes
 do).
