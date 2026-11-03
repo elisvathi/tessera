@@ -4,6 +4,7 @@
 #include "../src/engine/AudioSnapshotBuilder.hpp"
 #include "../src/engine/Snapshot.hpp"
 #include "../src/model/AudioEdits.hpp"
+#include "../src/module/OutputBus.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -406,6 +407,72 @@ TEST_CASE("a new snapshot keeps playing voices, and a deleted track fades out") 
     a.insert(a.end(), b.begin(), b.end());
     a.insert(a.end(), c.begin(), c.end());
     CHECK(biggestStep(a) < 0.1f);
+}
+
+TEST_CASE("OUT carries a track's clips before its fader; what comes back on IN joins the track before its fader") {
+    Rig rig(4.0, dc);
+    rig.audioTrack().channel.volumeDb = -6.0206f; // half
+    MixPlan plan;
+    plan.busSlots = {{rig.track, 5}};
+    plan.returns = {{rig.track, 2}};
+    rig.old.push_back(std::move(rig.audio)); // the player still plays it until the swap
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    OutputBus bus;
+    ReturnBus& returns = bus.returns();
+    rig.engine->play();
+    float left = 0, right = 0;
+    for (int64_t n = 0; n < 24000; n++) {
+        returns.write(n, 2, rig.track, 1.f, 1.f); // an effect sends 1 V back on IN
+        rig.engine->setPlayMode(rig.mode);
+        rig.engine->process(rig.frames.data(), rig.events);
+        AudioPlayer::Rack rack{&returns, bus.beginAudioWrite(n), n};
+        rig.player->process(*rig.engine, left, right, rack);
+        bus.publishAudio(n);
+    }
+    const AudioOutFrame* out = bus.readAudio(24000, 5, rig.track);
+    REQUIRE(out);
+    CHECK(out->l == doctest::Approx(kVolts)); // the clips at full level: OUT is before the fader
+    // MAIN: (clips + IN) through the half fader.
+    CHECK(left == doctest::Approx((kVolts + 1) * 0.5).epsilon(1e-3));
+    const AudioOutFrame* master = bus.readAudio(24000, OutputBus::kMasterSlot, TrackId(rig.audio->masterId));
+    REQUIRE(master);
+    CHECK(master->l == doctest::Approx(left).epsilon(1e-3));
+}
+
+TEST_CASE("a note track whose output module brings audio back on IN makes sound; the master's IN comes after its OUT") {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId notes = song.tracks.front().id;
+    MixPlan plan;
+    plan.returns = {{notes, 0}, {song.master.id, 1}};
+    CHECK(makesSound(song.tracks.front(), plan));
+    CHECK_FALSE(makesSound(song.tracks[1], plan));
+    auto snap = buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot;
+    REQUIRE(snap->tracks.size() == 1);
+    CHECK(snap->tracks[0].id == notes);
+    CHECK(snap->masterReturns == std::vector<int>{1});
+
+    AudioPlayer player;
+    player.setSampleRate(kRate);
+    player.setSnapshot(snap.get());
+    REQUIRE(player.active());
+    Engine engine;
+    engine.setSampleRate(kRate);
+    ReturnBus returns;
+    std::array<AudioOutFrame, kMaxTracks + 1> out{};
+    float left = 0, right = 0;
+    std::array<TrackFrame, kMaxTracks> frames{};
+    TransportEvents events;
+    for (int64_t n = 0; n < 2000; n++) {
+        returns.write(n, 0, notes, 2.f, 2.f);
+        returns.write(n, 1, song.master.id, 0.5f, 0.5f);
+        engine.process(frames.data(), events);
+        player.process(engine, left, right, {&returns, out.data(), n});
+    }
+    CHECK(left == doctest::Approx(2.5f));
+    CHECK(out[kMaxTracks].l == doctest::Approx(2.f)); // the master's OUT is its mix, before its own IN
+    CHECK(player.level(0, 0) > 1.9f);
 }
 
 TEST_CASE("a missing file plays silence") {

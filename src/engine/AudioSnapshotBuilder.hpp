@@ -40,6 +40,30 @@ inline double engineFrames(double frames, double sourceRate, double engineRate) 
     return sourceRate > 0 ? frames * engineRate / sourceRate : frames;
 }
 
+/// What the rack adds to the mix, from the output modules on the UI thread (§8.3): which return slots feed which
+/// track, and each track's output bus slot. A return for the master uses the master's ID.
+struct MixPlan {
+    struct Return {
+        TrackId track;
+        int slot = -1;
+    };
+    std::vector<Return> returns;
+    std::vector<std::pair<TrackId, int>> busSlots;
+
+    bool feeds(TrackId track) const {
+        for (const Return& r : returns)
+            if (r.track == track)
+                return true;
+        return false;
+    }
+};
+
+/// Whether `track` makes sound and so has a mixer strip and plays through the audio player: an audio track, or any
+/// track whose output module brings audio back on IN (§7.9).
+inline bool makesSound(const Track& track, const MixPlan& plan) {
+    return track.type == TrackType::Audio || plan.feeds(track.id);
+}
+
 /// What the builder found missing: renders the store should make for the tempo now.
 struct AudioBuild {
     std::unique_ptr<AudioSnapshot> snapshot;
@@ -50,7 +74,8 @@ struct AudioBuild {
 /// crossfade overlaps, and the mixer settings. Cheap (a few audio tracks), so it is rebuilt whole when the song,
 /// a buffer or the tempo changes. `keep` holds buffers that must stay alive for fades already under way.
 AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double engineRate, double tempo,
-                              const std::vector<std::shared_ptr<const AudioBuffer>>& keep = {});
+                              const std::vector<std::shared_ptr<const AudioBuffer>>& keep = {},
+                              const MixPlan& plan = {});
 
 /// The render a Stretch clip wants at `tempo`: none (factor 1, no pitch) when the prepared buffer already plays
 /// it right.

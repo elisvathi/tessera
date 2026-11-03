@@ -258,7 +258,7 @@ void EditorHost::runAction(Action action) {
         if (!arrangerPane())
             return;
         // Song, notes, then the mixer while it is open.
-        bool mixer = ctx.module() && hasAudio(ctx.module()->song()) && view.mixerOpen;
+        bool mixer = ctx.module() && ctx.module()->makesSound() && view.mixerOpen;
         view.focus = view.focus == Pane::Top      ? Pane::Detail
                      : view.focus == Pane::Detail ? (mixer ? Pane::Mixer : Pane::Top)
                                                   : Pane::Top;

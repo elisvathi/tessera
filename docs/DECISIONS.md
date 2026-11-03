@@ -1633,7 +1633,8 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **The audio editor has one ruler**, the clip's beats and bars: for Stretch and Repitch clips the song's bars fall on
   the same lines. Beat 1's flag drags like the window (a slip). A click in the ruler plays the song from that point of
   the clip's selected (or first) timeline copy; a launcher-only clip says so instead. Not built yet: the Slice tool,
-  dim copies of a loop's repeats, fades and gain in the editor.
+  fades and gain in the editor. Dropped: dim copies of a loop's repeats after the window. In file time the file's
+  own audio sits there, so copies would cover it, and the timeline already shows the repeats.
 - **Glue on audio** joins only the parts of one clip that lie end to end, each playing on from the last (a split
   undone); they become one instance of that clip. Anything else says why and does nothing: gluing other audio needs
   rendering (Phase 3).
@@ -1642,3 +1643,21 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **The mixer is a pane** (`Pane::Mixer`) like the song and notes: the same maximize button, focus ring, Tab (while it
   is open) and Shift+Tab. F4 stays as a direct key. With the mixer focused only keys that work everywhere act. A
   patch saved with the old mixer-only maximise flag opens with the mixer maximized.
+
+## 108. Audio Phase 2a: the buses first (3 Nov)
+
+- **The return bus** (`ReturnBus`, in `src/engine/AudioBus.hpp`) lives inside the output bus, so output modules reach
+  it through the handoff they already have. 128 slots, one per module, claimed on the UI thread. A module writes
+  {sample, track, L, R} into buffer n & 1; Tessera reads (n − 1) & 1 and uses a slot only when its sample and track
+  match, so module order never matters and a missing, bypassed or removed module drops out. NaN or infinity reads as
+  silence.
+- **Audio OUT** is an array on the output bus, one stereo sample per track slot plus the master's, stamped only on
+  samples where the audio player ran: without audio, OUT reads silence instead of a stale sample.
+- **The player writes OUT and mixes returns** at the point §8.4 gives: a track's OUT is its clips before the fader;
+  its returns join before the fader at 0 dB; the master's OUT is the mix before the master fader, then the master's
+  own returns join. One sample of latency each way.
+- **The mix plan** (`MixPlan`) says which return slots feed which track and each track's bus slot; any track with a
+  return makes sound and joins the audio snapshot (`makesSound`). The mixer and the track headers find a track's
+  meter by its place in the last snapshot (`soundIndex`). A change of plan rebuilds the snapshot.
+- **Not wired yet**: output modules have no IN or OUT jacks, so no plan has returns. The Track Out panel waits for a
+  mockup the user agrees to (the Tessera panel went the same way, §103).
