@@ -1632,8 +1632,9 @@ Why: built to the spec; these are the places it left open or where the code sugg
   beyond one step. The X's curve dot bends both sides together.
 - **Trims of a clip that doesn't loop stop at the file's start and end**, saying so in the readout. No bright tick.
 - **The audio editor has one ruler**, the clip's beats and bars: for Stretch and Repitch clips the song's bars fall on
-  the same lines. Beat 1's flag drags like the window (a slip). Not built yet: the Slice tool, click in the ruler to
-  play, dim copies of a loop's repeats, fades and gain in the editor.
+  the same lines. Beat 1's flag drags like the window (a slip). A click in the ruler plays the song from that point of
+  the clip's selected (or first) timeline copy; a launcher-only clip says so instead. Not built yet: the Slice tool,
+  dim copies of a loop's repeats, fades and gain in the editor.
 - **Glue on audio** joins only the parts of one clip that lie end to end, each playing on from the last (a split
   undone); they become one instance of that clip. Anything else says why and does nothing: gluing other audio needs
   rendering (Phase 3).
