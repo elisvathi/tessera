@@ -83,6 +83,11 @@ double tempoFromOnsets(const OnsetCurve& curve, double* firstBeat = nullptr);
 AudioGuess fullGuess(const AudioGuess& quick, const std::vector<std::vector<float>>& channels, double sampleRate,
                      double songTempo);
 
+/// Where new sounds start (transients, §3.5): peaks of the onset curve that stand out from their surroundings, at
+/// least 60 ms apart, as frames of `channels`. `sensitivity` 0..1: higher finds softer hits.
+std::vector<int64_t> findTransients(const std::vector<std::vector<float>>& channels, double sampleRate,
+                                    float sensitivity = 0.5f);
+
 /// The frame nearest `at` (within `radius` frames) where the sound crosses zero on every channel's average, so a
 /// split there doesn't click. `at` itself when there is none.
 int64_t nearestZeroCrossing(const std::vector<std::vector<float>>& channels, int64_t at, int64_t radius);

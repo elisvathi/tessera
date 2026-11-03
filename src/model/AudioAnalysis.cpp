@@ -434,4 +434,53 @@ int64_t nearestZeroCrossing(const std::vector<std::vector<float>>& channels, int
     return at;
 }
 
+std::vector<int64_t> findTransients(const std::vector<std::vector<float>>& channels, double sampleRate,
+                                    float sensitivity) {
+    std::vector<int64_t> out;
+    if (channels.empty() || channels[0].empty() || sampleRate <= 0)
+        return out;
+    // The curve's windows look ahead kOnsetWindow hops, so a hit shows that much early, and one at the very start
+    // not at all: padding the start with that much silence puts each hit at its own hop.
+    int64_t hopFrames = std::max<int64_t>(1, std::llround(sampleRate * OnsetCurve::kHopSeconds));
+    int64_t pad = kOnsetWindow * hopFrames;
+    std::vector<std::vector<float>> padded(channels.size());
+    for (size_t c = 0; c < channels.size(); c++) {
+        padded[c].assign(size_t(pad), 0.f);
+        padded[c].insert(padded[c].end(), channels[c].begin(), channels[c].end());
+    }
+    OnsetCurve curve = onsetCurve(padded, sampleRate);
+    const std::vector<float>& x = curve.strength;
+    if (x.size() < 3)
+        return out;
+    float top = *std::max_element(x.begin(), x.end());
+    if (top <= 0)
+        return out;
+    // A hit stands above the average around it (0.1 s each side) and above a floor set by the loudest hit.
+    float floorShare = 0.35f - 0.3f * std::clamp(sensitivity, 0.f, 1.f);
+    float lift = 1.8f - 0.8f * std::clamp(sensitivity, 0.f, 1.f);
+    int around = std::max(1, int(std::lround(0.1 / curve.hop)));
+    int apart = std::max(1, int(std::lround(0.06 / curve.hop)));
+    int near = std::max(1, int(std::lround(0.02 / curve.hop)));
+    int last = -apart;
+    double sum = 0;
+    int lo = 0, hi = -1;
+    for (int i = 0; i < int(x.size()); i++) {
+        while (hi + 1 < int(x.size()) && hi + 1 <= i + around)
+            sum += x[size_t(++hi)];
+        while (lo < i - around)
+            sum -= x[size_t(lo++)];
+        float mean = float(sum / double(hi - lo + 1));
+        if (x[size_t(i)] < top * floorShare || x[size_t(i)] < mean * lift || i - last < apart)
+            continue;
+        bool peak = true;
+        for (int k = std::max(0, i - near); k <= std::min(int(x.size()) - 1, i + near) && peak; k++)
+            peak = x[size_t(k)] <= x[size_t(i)] && (k >= i || x[size_t(k)] < x[size_t(i)]);
+        if (!peak)
+            continue;
+        out.push_back(std::max<int64_t>(0, int64_t(i) * hopFrames));
+        last = i;
+    }
+    return out;
+}
+
 } // namespace tessera

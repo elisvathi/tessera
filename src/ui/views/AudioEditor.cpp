@@ -453,6 +453,23 @@ void AudioEditor::drawView(const DrawArgs& args) {
             nvgFill(vg);
         }
     }
+    // Transients: a small mark under the waveform where each hit starts (Split at transients cuts there).
+    if (AudioStore* store = m->audioStore())
+        if (SourceStatus st = store->status(cl->audio->source); st.transients) {
+            nvgBeginPath(vg);
+            for (int64_t f : *st.transients) {
+                float x = float(frameToX(double(f)));
+                if (x < 0 || x > box.size.x)
+                    continue;
+                float y = wave.getBottom();
+                nvgMoveTo(vg, x, y - 6);
+                nvgLineTo(vg, x - 3, y);
+                nvgLineTo(vg, x + 3, y);
+                nvgClosePath(vg);
+            }
+            nvgFillColor(vg, nvgTransRGBAf(c.text0, 0.6f));
+            nvgFill(vg);
+        }
     // The window's edges, with grips to show they move.
     for (float x : {xs, xe}) {
         nvgBeginPath(vg);

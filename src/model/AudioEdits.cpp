@@ -274,6 +274,39 @@ CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, con
     return setTrackField(song, track, &Track::clips, level, name);
 }
 
+std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,
+                           double fileRate, double songTempo) {
+    std::vector<Tick> out;
+    if (!clip.audio || clip.audio->reverse)
+        return out;
+    const AudioContent& a = *clip.audio;
+    double perTick = framesPerTick(a, fileRate);
+    if (perTick <= 0)
+        return out;
+    double k = songTicksPerClipTick(a, songTempo);
+    bool looping = clip.loopMode == LoopMode::Loop && clip.loopEnd > clip.loopStart;
+    double start = double(clip.playStart()), period = double(clip.loopEnd - clip.loopStart);
+    double from = double(at.offset), to = double(at.offset + at.length);
+    for (int64_t f : transients) {
+        double t = double(f - a.sourceStart) / perTick; // clip ticks
+        if (t < 0 || t >= double(clip.length))
+            continue;
+        // Play position u (clip ticks since the clip's play start) for each time it comes round.
+        if (!looping) {
+            if (t >= from && t < to)
+                out.push_back(at.position + Tick(std::llround((t - from) * k)));
+            continue;
+        }
+        if (t < double(clip.loopStart) || t >= double(clip.loopEnd))
+            continue;
+        for (double u = t - start; u < to; u += period)
+            if (u >= from)
+                out.push_back(at.position + Tick(std::llround((u - from) * k)));
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 std::vector<AudioSourceId> unusedSources(const Song& song) {
     std::set<AudioSourceId> used;
     for (const auto& [id, clip] : song.clips)

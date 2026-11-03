@@ -1864,3 +1864,17 @@ Why: built to the spec; these are the places it left open or where the code sugg
   clips only, at 0 dB, no fader, sends or lanes) by a private engine and player on a worker thread into one WAV,
   imported in their place: the old instances go and the new clip lands at the first one's start, one undo step.
   Stretched clips render through the render cache when ready, else the varispeed reader.
+
+## 123. Phase 4: transients, Split at transients, Make triggers (3 Nov)
+
+- **Transients** (`findTransients`) are the onset curve's peaks: above a floor (35% of the loudest at the default
+  sensitivity) and 1.8 times the 0.2 s average around them, local maxima within 20 ms, at least 60 ms apart. The
+  start is padded with the curve's window so a hit at frame 0 is found and none shows early. Computed with the
+  waveform when a file loads (`SourceStatus::transients`, file frames).
+- **`hitTicks`** puts them on the timeline for one instance: its window, offset, loop passes (a looping clip plays
+  its loop from its start) and an Off clip's speed. Reversed clips have none yet.
+- **Split at transients** splits left to right, each time the right part, skipping a 1/128 note at the start.
+- **Make triggers from audio**: a new drum track right under the audio track, named "<track> triggers", given a
+  "Hits" lane (pitch 36, output 1) when it has none, and one clip spanning the instance with a 1/32 note per hit;
+  velocity from the waveform's peak in the 20 ms after the hit against the loudest hit (at least 20%). One undo step.
+  Only from the timeline for now (no slot version).
