@@ -1464,6 +1464,28 @@ void ArrangerLanes::drawRecording(NVGcontext* vg) {
     const theme::Palette& c = theme::colors();
     double now = m->playheadTicks();
     drawTakes(vg, now);
+    // Audio being recorded: a red box growing from where the take started, with its waveform.
+    for (const TesseraModule::LiveTake& take : m->liveTakes()) {
+        int row = rowOf(take.track);
+        if (row < 0 || take.lengthTicks <= 0)
+            continue;
+        float x0 = float(time().tickToX(take.startTick));
+        float x1 = float(time().tickToX(take.startTick + take.lengthTicks));
+        Rect r(x0, rowTop(row) + 1, std::max(1.f, x1 - x0), rowHeight(row) - 2);
+        draw::roundedRect(vg, r, theme::metrics::kRadiusItem, nvgTransRGBAf(c.record, 0.25f));
+        if (!take.peaks.empty()) {
+            float mid = r.getCenter().y, half = r.size.y / 2 - 2;
+            float step = r.size.x / float(take.peaks.size());
+            nvgBeginPath(vg);
+            for (size_t i = 0; i < take.peaks.size(); i++) {
+                float h = std::min(1.f, take.peaks[i]) * half;
+                nvgRect(vg, r.pos.x + float(i) * step, mid - h, std::max(1.f, step), 2 * h);
+            }
+            nvgFillColor(vg, nvgTransRGBAf(c.record, 0.8f));
+            nvgFill(vg);
+        }
+        draw::roundedRectStroke(vg, r, theme::metrics::kRadiusItem, c.record, 1);
+    }
     if (!m->recordingArrangement())
         return;
     for (const auto& [track, segment] : m->capture().active()) {

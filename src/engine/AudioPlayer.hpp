@@ -2,6 +2,7 @@
 
 #include "AudioBus.hpp"
 #include "AudioPlayback.hpp"
+#include "FrameRing.hpp"
 #include "Engine.hpp"
 #include "Varispeed.hpp"
 
@@ -93,6 +94,31 @@ class AudioPlayer {
                    ? sendMeters[size_t(track)][size_t(k)].load(std::memory_order_relaxed)
                    : 0.f;
     }
+    // ---- Capture (§8.6): recordings, bounces and exports copy a signal into a ring, sample by sample.
+
+    /// What a tap copies: what comes in on a track's IN (recording), its sound before the fader (bounce), its sound
+    /// after the fader as heard (a stem), or the master after its fader (export).
+    enum class TapKind : uint8_t { In, Sound, Stem, Master };
+    static constexpr int kMaxTaps = 24;
+    /// A tap waits until the song plays (and records, with `whileRecording`) from song tick `from`, then copies
+    /// until `to`, the transport stops, recording ends, or the song jumps back (a loop wrap): then it is done.
+    struct TapSpec {
+        TrackId track;
+        TapKind kind = TapKind::In;
+        double from = -1, to = -1; // song ticks; -1: at once, open-ended
+        bool whileRecording = false;
+        FrameRing* ring = nullptr; // owned by the caller, alive until disarmTap() and a block more
+    };
+    enum class TapState : int { Idle, Armed, Running, Done };
+    /// UI thread.
+    void armTap(int n, const TapSpec& spec);
+    void disarmTap(int n);
+    TapState tapState(int n) const { return TapState(taps[size_t(n)].state.load(std::memory_order_acquire)); }
+    /// The song tick of the first frame a tap copied.
+    double tapStart(int n) const { return taps[size_t(n)].firstTick.load(std::memory_order_relaxed); }
+    /// The level of a running tap's signal now (volts, the last block's peak), for "until silent".
+    float tapLevel(int n) const { return taps[size_t(n)].level.load(std::memory_order_relaxed); }
+
     /// What leaves a track's OUT now (its index in the snapshot), in volts, a peak falling 20 dB a second (§7.6).
     float outLevel(int track) const {
         return track >= 0 && track < kMaxTracks ? outMeters[size_t(track)].load(std::memory_order_relaxed) : 0.f;
@@ -162,6 +188,8 @@ class AudioPlayer {
         std::array<size_t, kMaxSendsPerTrack> sendCursor{};
         std::array<float, kMaxSendsPerTrack> sendPeak{};
         float outPeak = 0;
+        // This sample's signals, for the taps.
+        float inL = 0, inR = 0, soundL = 0, soundR = 0, stemL = 0, stemR = 0;
         bool fresh = true; // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
         bool steady = false; // its voices step on unchanged for the rest of this block
         int slot = -1;       // the launched slot a steady block plays, or -1 on the timeline
@@ -227,6 +255,22 @@ class AudioPlayer {
 
     std::array<std::array<std::atomic<float>, 2>, kMaxTracks> meters{};
     std::array<std::atomic<float>, kMaxTracks> outMeters{};
+    struct Tap {
+        std::atomic<int> state{0};
+        std::atomic<uint64_t> track{0};
+        std::atomic<int> kind{0};
+        std::atomic<double> from{-1}, to{-1}, firstTick{-1};
+        std::atomic<bool> whileRecording{false};
+        std::atomic<FrameRing*> ring{nullptr};
+        std::atomic<float> level{0};
+        int run = -1; // audio thread: the run it reads, found at each block
+        float peak = 0;
+    };
+    std::array<Tap, kMaxTaps> taps{};
+    std::atomic<bool> anyTap{false};
+    double tapLastSong = 0;
+    /// Audio thread: copies this sample's signals into the running taps, starting and ending them.
+    void runTaps(const Engine& engine, double song, float masterL, float masterR);
     std::array<std::atomic<uint32_t>, kMaxTracks> sendAutoFlags{};
     std::array<std::array<std::atomic<float>, kMaxSendsPerTrack>, kMaxTracks> sendMeters{};
     std::array<std::array<std::atomic<float>, kMaxSendsPerTrack>, kMaxTracks> sendAutoDb{};

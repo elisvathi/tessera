@@ -180,6 +180,22 @@ into the Audio module's first two inputs, as one undo step. If those inputs are 
 Full scale (0 dB) is 10 V, the level Rack's Audio module sends to your sound card at full volume. A file comes in at
 5 V (−6 dB), the level of most rack oscillators.
 
+## Recording audio
+
+An audio track records what comes in on its Track Out's **IN**: a microphone or an instrument through Rack's Audio
+module, or any module's output. Its clips are never recorded into the take.
+
+1. Patch the sound into the **IN** of a Track Out bound to the audio track.
+2. **Arm** the track (the ring in its header turns red).
+3. Press **record**, then play (or set a count-in, see [Recording](11-recording.md)).
+
+While it records, a red box grows on the track with the sound's waveform. When you stop, or each time a loop goes
+round, the take becomes an audio clip: on the timeline where the take started, or, playing clips, in the track's
+first empty slot. Each take is one undo step. Takes are stored in the patch, like imported files, and play back at
+the level they came in.
+
+Several armed audio tracks record at once. An armed audio track never records notes.
+
 ## Removing audio you don't use
 
 **File → Remove unused audio** removes the files no clip plays any more. It is one undo step; the files themselves

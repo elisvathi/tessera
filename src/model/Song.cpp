@@ -376,6 +376,7 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
         track.drumLanes.clear();
     normalizeChannel(track.channel);
     normalizeSourceLevel(track.clips);
+    clampValue(track.latencySamples, 0, 96000);
     for (Channel& c : track.drumInputs)
         normalizeChannel(c);
 

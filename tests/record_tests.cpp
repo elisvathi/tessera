@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/engine/Metronome.hpp"
 #include "../src/engine/Recorder.hpp"
 #include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Json.hpp"
@@ -1368,4 +1369,22 @@ TEST_CASE("recorder: a take of only a track lane's control makes no clip") {
     rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
     CHECK(!slotClip(host.song_, 0, 0));
     CHECK(host.song_.tracks[0].automation[0].points.size() == 2);
+}
+
+TEST_CASE("the metronome clicks on a trigger, louder at first, higher on the bar, and dies away") {
+    Metronome click;
+    CHECK(click.next(48000) == 0);
+    click.trigger(true);
+    float peak = 0;
+    for (int i = 0; i < 200; i++)
+        peak = std::max(peak, std::abs(click.next(48000)));
+    CHECK(peak > 5.f);
+    for (int i = 0; i < 4800; i++)
+        click.next(48000);
+    CHECK(std::abs(click.next(48000)) < 1e-3f);
+    RecordSettings s;
+    s.metronome = MetronomeMode::Recording;
+    s.metronomeDb = -6;
+    json::Ref j(s.toJson());
+    CHECK(RecordSettings::fromJson(j.get()) == s);
 }

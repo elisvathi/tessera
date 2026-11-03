@@ -27,6 +27,10 @@ json_t* RecordSettings::toJson() const {
     setBool(j, "toKey", toKey);
     setBool(j, "mpe", mpe);
     setBool(j, "newControlLanes", newControlLanes);
+    static const char* const kMetronome[] = {"off", "countIn", "recording", "always"};
+    setString(j, "metronome", kMetronome[int(metronome)]);
+    setNumber(j, "metronomeDb", metronomeDb);
+    setInt(j, "recordOffset", recordOffsetSamples);
     return j;
 }
 
@@ -46,6 +50,13 @@ RecordSettings RecordSettings::fromJson(const json_t* j) {
     s.toKey = getBool(j, "toKey", s.toKey);
     s.mpe = getBool(j, "mpe", s.mpe);
     s.newControlLanes = getBool(j, "newControlLanes", s.newControlLanes);
+    std::string metronome = getString(j, "metronome", "off");
+    s.metronome = metronome == "countIn"     ? MetronomeMode::CountIn
+                  : metronome == "recording" ? MetronomeMode::Recording
+                  : metronome == "always"    ? MetronomeMode::Always
+                                             : MetronomeMode::Off;
+    s.metronomeDb = std::clamp(getFloat(j, "metronomeDb", s.metronomeDb), -60.f, 0.f);
+    s.recordOffsetSamples = int(std::clamp<int64_t>(getInt(j, "recordOffset", 0), 0, 96000));
     return s;
 }
 

@@ -283,7 +283,8 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     tp->busSlot = slots.slotOf(track.id);
     tp->polyphony = song.voicesOf(track);
     tp->audible = song.isAudible(track);
-    tp->armed = track.armed;
+    // An armed audio track records audio from its IN, never notes (§8.6).
+    tp->armed = track.armed && track.type != TrackType::Audio;
     tp->monitor = track.monitor;
     tp->input = track.recordInput;
     tp->midiChannel = track.midiChannel;
