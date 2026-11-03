@@ -1,5 +1,7 @@
 #include "AudioSnapshotBuilder.hpp"
 
+#include "AudioPlayer.hpp"
+
 #include "../model/Sends.hpp"
 
 #include <algorithm>
@@ -174,6 +176,14 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         }
         snap.tracks.push_back(std::move(tp));
     }
+    // Delay compensation: every track waits as long as the latest one is late, less its own lateness.
+    int latest = 0;
+    for (const AudioTrackPlay& tp : snap.tracks)
+        if (const Track* t = song.findTrack(tp.id))
+            latest = std::max(latest, t->latencySamples);
+    for (AudioTrackPlay& tp : snap.tracks)
+        if (const Track* t = song.findTrack(tp.id))
+            tp.delay = std::min(latest - t->latencySamples, AudioPlayer::kMaxDelay - 1);
     // Each send by the index of its receiving track, which comes later in the order.
     for (size_t i = 0; i < snap.tracks.size(); i++) {
         const Track* t = song.findTrack(snap.tracks[i].id);

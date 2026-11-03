@@ -518,6 +518,21 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             sl *= run.gainL * run.heardOwnGain;
             sr *= run.gainR * run.heardOwnGain;
         }
+        // Delay compensation: this track waits for the latest one (by its bus slot, which never moves).
+        if (i < count) {
+            const AudioTrackPlay& tp = snapshot->tracks[i];
+            float* mem = delays.load(std::memory_order_acquire);
+            if (mem && tp.busSlot >= 0 && tp.busSlot < kMaxTracks) {
+                float* line = mem + size_t(tp.busSlot) * 2 * kMaxDelay;
+                line[delayPos * 2] = sl;
+                line[delayPos * 2 + 1] = sr;
+                if (tp.delay > 0) {
+                    size_t r = (delayPos + size_t(kMaxDelay) - size_t(tp.delay)) % size_t(kMaxDelay);
+                    sl = line[r * 2];
+                    sr = line[r * 2 + 1];
+                }
+            }
+        }
         run.stemL = sl;
         run.stemR = sr;
         run.peakL = std::max(run.peakL, std::abs(sl));
@@ -525,6 +540,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         masterL += sl;
         masterR += sr;
     }
+    delayPos = (delayPos + 1) % size_t(kMaxDelay);
     mixGain += mixStep;
     masterL *= mixGain;
     masterR *= mixGain;

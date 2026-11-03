@@ -780,3 +780,38 @@ TEST_CASE("a tap copies a track's sound from a song tick to another, then is don
     stem.pop(frames.data(), 100);
     CHECK(frames[0] == doctest::Approx(kVolts / 2).epsilon(1e-3)); // after it
 }
+
+TEST_CASE("delay compensation: the other tracks wait for a track's latency, so they meet at the master") {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId late = song.tracks[0].id, onTime = song.tracks[1].id;
+    song.tracks[0].latencySamples = 100;
+    MixPlan plan;
+    plan.returns = {{late, 0}, {onTime, 1}};
+    plan.busSlots = {{late, 0}, {onTime, 1}};
+    auto snap = buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot;
+    REQUIRE(snap->tracks.size() == 2);
+    AudioPlayer player;
+    player.setSampleRate(kRate);
+    player.ensureDelays();
+    player.setSnapshot(snap.get());
+    Engine engine;
+    engine.setSampleRate(kRate);
+    ReturnBus returns;
+    std::array<AudioOutFrame, kMaxTracks + 1> out{};
+    std::array<TrackFrame, kMaxTracks> frames{};
+    TransportEvents events;
+    // The same click: on time on one track, 100 samples late on the other (its latency).
+    std::vector<float> master;
+    for (int64_t n = 0; n < 2000; n++) {
+        returns.write(n, 0, late, n == 1100 ? 1.f : 0.f, 0.f);
+        returns.write(n, 1, onTime, n == 1000 ? 1.f : 0.f, 0.f);
+        engine.process(frames.data(), events);
+        float l = 0, r = 0;
+        player.process(engine, l, r, {&returns, out.data(), n});
+        master.push_back(l);
+    }
+    // Both arrive in the same sample: one click of 2 V, not two of 1 V.
+    float peak = *std::max_element(master.begin(), master.end());
+    CHECK(peak == doctest::Approx(2.f).epsilon(1e-3));
+}

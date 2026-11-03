@@ -252,7 +252,8 @@ in. Tessera moves every take earlier by that much, so it lines up with the song.
   milliseconds.
 - **A track's latency**: when one track's sound is late for its own reason (an effect that delays, a long path of
   modules), right-click its name in the mixer and type its **Latency** in samples. Its takes and bounces move earlier
-  by that much too.
+  by that much too, and while the song plays every other track waits that long on its way to the Master, so they all
+  line up (delay compensation, up to about 170 ms).
 
 ## The Audio files list
 
