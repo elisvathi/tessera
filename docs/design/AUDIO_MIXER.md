@@ -1,7 +1,7 @@
 # Audio tracks and the mixer
 
 Status: **revision 7, confirmed by the user on 3 Nov 2026. Phase 0 is done (DECISIONS §94–105). Phase 1a is built
-(DECISIONS §106).** Mockups:
+(DECISIONS §106); Phase 1b is built (DECISIONS §107, with the gaps listed there).** Mockups:
 https://claude.ai/artifact/WNtGof3EbafDF7yptw5w5i (private; source HTML is not in the repo). The mockups predate
 revisions 5–7 (they still show FX tracks): **where they disagree, this spec wins.** Trello:
 https://trello.com/c/RiahbPgS.
@@ -1133,10 +1133,11 @@ spec are the record: where `AUDIO_MIXER_REVIEW.md` disagrees with the spec, the 
 
 Still open: the import level (decided by ear before release).
 
-### Open: an ordered effect chain inside a track (the user, 3 Nov)
+### Agreed: an ordered effect chain inside a track (the user, 3 Nov)
 
 The user: within a track, its inputs are mixed in any order, but aux/effect loops (sound out to a rack effect and back)
 must sit in an order the user sets, in a chain. To design with Phase 2: sources summed → effect slots in order (each a
 loop through the rack: OUT n → effect → IN n, before the fader, each adding about 2 samples) → fader and pan → sends.
-Open: whether a slot is a Track Out in an "effect slot" role or a small module of its own.
+The user agreed this shape on 3 Nov. Still open for Phase 2: whether a slot is a Track Out in an "effect slot" role
+or a small module of its own.
 

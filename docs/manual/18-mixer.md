@@ -7,12 +7,14 @@ play. It appears as soon as the song has an audio track.
 
 ## Opening it
 
-The mixer lives under the notes pane, folded to a thin bar named **Mixer**:
+The mixer is the third pane, under the notes pane, folded to a thin bar named **Mixer**:
 
 - **Click** the bar to open the mixer or fold it again.
 - **Drag** the bar up or down to set its height.
-- **Double-click** the bar, click the square at its right end, or press **F4** to fill the editor with the mixer.
-  Do it again to go back.
+- The **maximize** button at the bar's right end is the same one the song and notes panes have: it fills the editor
+  with the mixer, and restores the panes. **Double-click** the bar or press **F4** to do the same.
+- Like the other panes, a click in the mixer gives it the keys (a thin ring shows it), **Tab** reaches it while it is
+  open, and **Shift+Tab** maximizes it.
 
 Folded, the bar still shows a small live meter for each audio track, the Master's peak level, and **MAIN not
 patched** in amber when the Master plays but nothing is patched into MAIN.

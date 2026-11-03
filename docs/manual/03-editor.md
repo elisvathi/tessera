@@ -54,9 +54,10 @@ more room.
 - **Keys act on the pane under the mouse.** Over the notes, Ctrl+A selects all notes. Over the song pane, it
   selects all clips or tracks. A thin ring shows which pane has the keys.
 - With the mouse outside both panes (on the transport or the inspector), the pane you clicked last keeps the keys.
-- **Tab** switches the pane. **Shift+Tab** maximizes the pane under the mouse, or restores both.
-- Each pane has a **maximize** button in its top-right corner. Double-clicking the line between the panes does the
-  same.
+- **Tab** switches the pane: song, notes, then the mixer while it is open. **Shift+Tab** maximizes the pane under
+  the mouse, or restores the panes.
+- Each pane has a **maximize** button in its top-right corner, the mixer too. Double-clicking the line between the
+  panes does the same.
 - **F2** widens the clips beside the timeline (handy when performing). Press it again to narrow them.
 - **F3** opens the device strip above the notes. See [Devices](13-devices.md).
 

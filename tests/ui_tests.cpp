@@ -441,6 +441,21 @@ TEST_CASE("an editor layout saved by milestone 3 loads as the overlay view") {
     CHECK(s.panelHp == EditorState::kPanelMaxHp);
 }
 
+TEST_CASE("the mixer is a pane: its focus and maximise save, and the old mixer-only flag still loads") {
+    EditorState s;
+    s.overlay.focus = Pane::Mixer;
+    s.overlay.maximized = Pane::Mixer;
+    json::Ref j(s.toJson());
+    EditorState t = EditorState::fromJson(j.get());
+    CHECK(t.overlay.focus == Pane::Mixer);
+    CHECK(t.overlay.maximized == Pane::Mixer);
+
+    json::Ref old(json_loads(R"({"overlay": {"mixerOpen": true, "mixerMax": true}})", 0, nullptr));
+    EditorState o = EditorState::fromJson(old.get());
+    CHECK(o.overlay.mixerOpen);
+    CHECK(o.overlay.maximized == Pane::Mixer);
+}
+
 TEST_CASE("the device browser finds devices by name and by what they do") {
     auto found = [](const std::string& query) {
         std::vector<std::string> names;

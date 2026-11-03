@@ -302,9 +302,10 @@ ToolButton* makeMaximizeButton(EditorContext& ctx, Pane pane) {
     EditorContext* c = &ctx;
     ToolButton::Options o;
     o.icon = Icon::Maximize;
-    o.tooltip = withShortcut(pane == Pane::Top ? "Maximize the song, or restore both panes"
-                                               : "Maximize the notes, or restore both panes",
-                             Action::MaximizePane);
+    o.tooltip = pane == Pane::Mixer ? withShortcut("Maximize the mixer, or restore the panes", Action::MaximizeMixer)
+                                    : withShortcut(pane == Pane::Top ? "Maximize the song, or restore both panes"
+                                                                     : "Maximize the notes, or restore both panes",
+                                                   Action::MaximizePane);
     o.action = [c, pane] {
         ViewState& v = c->view();
         if (v.maximized)

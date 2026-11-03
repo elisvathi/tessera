@@ -120,6 +120,27 @@ To give a clip another file, hold **Ctrl** (**Cmd** on a Mac) while you drop the
 **Replace file…** in its menu. The clip keeps its place, length, gain and fades and plays the new file from its
 start at the new file's tempo. The old file stays in the patch until **Remove unused audio**.
 
+## The audio editor
+
+Select an audio clip and the notes pane becomes the **audio editor**. It has the same header as the piano roll: the
+clip's name and menu on the left, the maximize button on the right.
+
+![The audio editor with a drum loop](images/audio-editor.png)
+
+- **Across the pane runs the whole file.** The part the clip plays (its window) is bright, the rest dim. Its edges
+  have small grips.
+- **Drag the window** sideways to play another part of the file, just as long. The readout says where it starts:
+  "Start in file 0:01.250". **Shift** moves finely.
+- **Drag an edge** of the window to start or end the clip elsewhere in the file. Edges catch the beat lines; **Alt**
+  moves freely.
+- **The ruler on top shows the clip's beats and bars.** Beat 1 has a **1** flag where the clip starts. **Drag any
+  other beat line** to set the clip tempo: the beats stretch from beat 1 so that the beat you hold lands where you
+  let go ("112 → 103 BPM"). Use it to line the grid up with the drum hits.
+- A loop over part of the clip shows as two amber lines.
+- **Scroll** to move through the file, **Ctrl+scroll** to zoom, **double-click** empty space to see the whole file.
+
+Like the clip menu, these change the clip, so every linked copy follows.
+
 ## The inspector
 
 With an audio clip selected, the inspector shows its **Gain**, **Follow tempo**, **Sound type**, **Clip tempo**,
