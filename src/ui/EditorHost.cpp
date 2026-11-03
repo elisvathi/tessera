@@ -123,7 +123,10 @@ bool EditorHost::handleKey(const rack::widget::Widget::KeyBaseEvent& e) {
     // clicked pane, Ctrl+A then Ctrl+D over the notes selected and copied every track.
     if (EditorPane* hovered = paneUnderMouse())
         ctx.view().focus = hovered->pane();
-    Scope scope = ctx.view().focus == Pane::Top && arrangerPane() ? Scope::TopPane : Scope::DetailPane;
+    // The mixer has no keys of its own yet: with it focused, only the keys that work everywhere act.
+    Scope scope = ctx.view().focus == Pane::Top && arrangerPane() ? Scope::TopPane
+                  : ctx.view().focus == Pane::Mixer               ? Scope::Everywhere
+                                                                  : Scope::DetailPane;
     std::optional<Action> action = findAction({e.key, e.keyName, mods}, scope);
     if (!action)
         return false;
@@ -251,13 +254,18 @@ void EditorHost::runAction(Action action) {
     case Action::Redo:
         APP->history->redo();
         return;
-    case Action::SwitchPane:
+    case Action::SwitchPane: {
         if (!arrangerPane())
             return;
-        view.focus = view.focus == Pane::Top ? Pane::Detail : Pane::Top;
+        // Song, notes, then the mixer while it is open.
+        bool mixer = ctx.module() && hasAudio(ctx.module()->song()) && view.mixerOpen;
+        view.focus = view.focus == Pane::Top      ? Pane::Detail
+                     : view.focus == Pane::Detail ? (mixer ? Pane::Mixer : Pane::Top)
+                                                  : Pane::Top;
         if (view.maximized)
             view.maximized = view.focus;
         return;
+    }
     case Action::WidenClips:
         if (!arrangerPane())
             return;
@@ -360,8 +368,13 @@ void EditorHost::runAction(Action action) {
         exportMidi::openSong(ctx);
         return;
     case Action::MaximizeMixer:
-        view.mixerMax = !view.mixerMax;
-        view.mixerOpen = true;
+        if (view.maximized == Pane::Mixer) {
+            view.maximized.reset();
+        } else {
+            view.maximized = Pane::Mixer;
+            view.mixerOpen = true;
+        }
+        view.focus = Pane::Mixer;
         return;
     case Action::ImportAudio:
         audioActions::importDialog(ctx);

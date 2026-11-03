@@ -97,6 +97,11 @@ float clipPeak(const Clip& clip, const AudioSource& source, const PeakCache& pea
 /// every copy of the clip. Null when the clip is silent or already there.
 CommandPtr normaliseClip(const Song& song, ClipId clip, float peak);
 
+/// Which part of its file an audio clip plays: source frames [start, end) (the audio editor's window edges, §6.4).
+/// The clip's length follows at its tempo. Its loop keeps its place in the file: a loop over the whole window still
+/// covers the whole new window. One undo step; null when nothing changes.
+CommandPtr setAudioWindow(const Song& song, ClipId clip, int64_t start, int64_t end);
+
 /// Sets an audio clip's tempo, the one place its speed is set (§5.1). A Stretch clip keeps the same audio, so its
 /// length in ticks, its loop and every timeline copy scale with the tempo. One undo step; null when unchanged.
 CommandPtr setClipTempo(const Song& song, ClipId clip, double bpm);

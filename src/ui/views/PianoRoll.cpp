@@ -1,5 +1,7 @@
 #include "PianoRoll.hpp"
 
+#include "AudioEditor.hpp"
+
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
@@ -241,6 +243,8 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     expression->visible = false;
     clipLane = new ClipLaneView(ctx, *this);
     clipLane->visible = false;
+    audioEditor = new AudioEditor(ctx);
+    audioEditor->visible = false;
     addChild(grid);
     addChild(keys);
     addChild(lanes);
@@ -248,6 +252,7 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     addChild(values);
     addChild(expression);
     addChild(clipLane);
+    addChild(audioEditor);
 
     EditorContext* c = &ctx;
     ToolButton::Options lower;
@@ -388,6 +393,24 @@ bool PianoRollView::layoutToolbar(float header) {
     maximizeButton->box.pos = rack::math::Vec(right - kMaximizeButton, (header - kMaximizeButton) / 2);
     right -= kMaximizeButton + 6;
     right -= headerReserve;
+    // The audio editor has no notes to draw, hear, transform or key: its header is the clip chip and the pane's own
+    // buttons, the same as for notes.
+    if (audioMode()) {
+        for (rack::widget::Widget* w :
+             {(rack::widget::Widget*)hearButton, (rack::widget::Widget*)overflowButton,
+              (rack::widget::Widget*)viewButton, (rack::widget::Widget*)notesButton, (rack::widget::Widget*)kitButton,
+              (rack::widget::Widget*)keyButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,
+              (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select,
+              (rack::widget::Widget*)drumSwitch.first, (rack::widget::Widget*)drumSwitch.second,
+              (rack::widget::Widget*)devicesToggle})
+            w->visible = false;
+        toolbarLeft = right;
+        return false;
+    }
+    for (rack::widget::Widget* w :
+         {(rack::widget::Widget*)hearButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,
+          (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select})
+        w->visible = true;
     const Track* t = track();
     bool drum = t && t->type == TrackType::Drum;
     float limit = devicesToggle->box.getRight() + 6;
@@ -481,6 +504,16 @@ void PianoRollView::layout() {
     // The label stays inside the lane, however short the lane gets (the in-panel editor).
     lowerButton->box =
         rack::math::Rect(2, body + gridHeight + tabs + 2, std::min(kKeyboardWidth, side) - 4, std::min(30.f, lane - 4));
+    bool audio = audioMode();
+    audioEditor->visible = audio;
+    if (audio) {
+        keys->visible = lanes->visible = ruler->visible = grid->visible = false;
+        values->visible = expression->visible = clipLane->visible = lowerButton->visible = false;
+        audioEditor->box = rack::math::Rect(0, header, box.size.x, std::max(0.f, box.size.y - header));
+        audioEditor->clip = source.clip;
+    } else {
+        ruler->visible = grid->visible = true;
+    }
     // The clip chip first, sized to its words, then Devices; the toolbar fills from the right. A narrow header
     // shortens the chip to the track's name, so snap and key keep their room.
     auto placeChip = [this](bool shortText) {
@@ -492,6 +525,11 @@ void PianoRollView::layout() {
         placeChip(true);
         layoutToolbar(kPaneHeader);
     }
+}
+
+bool PianoRollView::audioMode() {
+    const Clip* c = clip();
+    return c && c->audio;
 }
 
 bool PianoRollView::anyNoteInView() {

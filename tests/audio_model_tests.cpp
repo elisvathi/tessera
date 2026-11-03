@@ -534,3 +534,29 @@ TEST_CASE("Replace file keeps the clip's place, length, gain and fades, and play
     CHECK(a.fadeOut.length == kPpq / 4);
     CHECK(unusedSources(song).size() == 1);
 }
+
+TEST_CASE("the audio window sets what part of the file a clip plays; a whole-window loop follows it") {
+    Song song = makeDefaultSong();
+    ImportResult made;
+    importAudio(song, {loop()}, {}, idsOf(song), &made)->apply(song); // 8 beats, 192000 frames, looping
+    ClipId id = made.clips[0];
+    REQUIRE(song.findClip(id)->loopEnd == 8 * kPpq);
+    // Start one beat (24000 frames) in, end two beats before the file's end.
+    CommandPtr cmd = setAudioWindow(song, id, 24000, 144000);
+    REQUIRE(cmd);
+    applyAndCheckUndo(song, *cmd);
+    const Clip* c = song.findClip(id);
+    CHECK(c->audio->sourceStart == 24000);
+    CHECK(c->length == 5 * kPpq);
+    CHECK(c->loopStart == 0);
+    CHECK(c->loopEnd == 5 * kPpq);
+    CHECK_FALSE(setAudioWindow(song, id, 24000, 144000));
+
+    // A loop over part of the window keeps its place in the file.
+    Clip& edit = *song.findClip(id);
+    edit.loopStart = kPpq;
+    edit.loopEnd = 3 * kPpq;
+    setAudioWindow(song, id, 0, 144000)->apply(song);
+    CHECK(song.findClip(id)->loopStart == 2 * kPpq);
+    CHECK(song.findClip(id)->loopEnd == 4 * kPpq);
+}

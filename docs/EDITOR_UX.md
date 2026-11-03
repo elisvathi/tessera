@@ -468,8 +468,8 @@ Shortcuts are active only while the editor overlay is focused. They are defined 
 | | Narrow / widen grid, triplet, snap | Ctrl/Cmd+1 / 2 / 3 / 4 |
 | | Scale fold | Ctrl/Cmd+Shift+F |
 | | Inspector | I |
-| | Switch focus arranger ↔ detail | Tab |
-| | Maximize focused pane | Shift+Tab or double-click splitter |
+| | Switch focus arranger → detail → mixer (while open) | Tab |
+| | Maximize focused pane (the mixer too) | Shift+Tab or double-click splitter |
 | | Widen / narrow the clips beside the timeline | F2 |
 | Tracks | Add instrument / drum track | Ctrl/Cmd+T, Ctrl/Cmd+Shift+T |
 | | Select next/prev track | Ctrl/Cmd+Up/Down |

@@ -533,6 +533,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       grows or shrinks evenly ("Crossfade 1/8 · 163 ms"). Drag the dot: "Curve +40%"; it is heard. Fades get a
       curve dot too.
 - [ ] Drag the right edge of a one-shot audio clip past its file: it stops, "End of file".
+- [ ] Select an audio clip: the notes pane becomes the audio editor under the same header. Drag the window (Start in
+      file), its edges (they catch beat lines; Alt frees), and a beat line in the ruler ("112 → 103 BPM"). Ctrl+scroll
+      zooms, double-click fits. Maximize and restore the pane: the waveform stays in view.
+- [ ] The mixer's maximize button is the one the other panes have. Click in the mixer: a focus ring. Tab cycles song,
+      notes, mixer (while open); Shift+Tab maximizes the mixer; F4 too; the button restores.
 - [ ] Ctrl+drop a file on an audio clip (timeline and slot): the clip keeps place, length, gain and fades, and plays
       the new file. Replace file… in the menu does the same.
 - [ ] Save the patch, reload: the audio plays. Copy and paste the Tessera: the copy plays its audio too.

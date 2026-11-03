@@ -95,6 +95,35 @@ CommandPtr editAudio(const Song& song, ClipId clip, const std::function<void(Aud
     return std::make_unique<SetAudioContent>(name, clip, *c->audio, after);
 }
 
+CommandPtr setAudioWindow(const Song& song, ClipId clip, int64_t start, int64_t end) {
+    const Clip* c = song.findClip(clip);
+    const AudioSource* src = c ? song.sourceOf(*c) : nullptr;
+    if (!c || !c->audio || !src)
+        return nullptr;
+    start = std::clamp<int64_t>(start, 0, std::max<int64_t>(0, src->frames - 1));
+    end = std::clamp<int64_t>(end, start + 1, std::max<int64_t>(start + 1, src->frames));
+    AudioContent audio = *c->audio;
+    Tick shift = ticksForFrames(audio, start - audio.sourceStart, src->sampleRate);
+    audio.sourceStart = start;
+    Tick length = std::max<Tick>(1, ticksForFrames(audio, end - start, src->sampleRate));
+    Tick loopStart = c->loopStart, loopEnd = c->loopEnd;
+    if (c->loopStart == 0 && c->loopEnd >= c->length) {
+        loopStart = 0;
+        loopEnd = length;
+    } else {
+        loopStart = std::clamp<Tick>(loopStart - shift, 0, length - 1);
+        loopEnd = std::clamp<Tick>(loopEnd - shift, loopStart + 1, length);
+    }
+    auto out = std::make_unique<CompoundCommand>("Audio window");
+    out->add(setClipField(song, clip, &Clip::audio, std::optional<AudioContent>(audio), "Audio window"));
+    out->add(setClipField(song, clip, &Clip::length, length, "Audio window"));
+    out->add(setClipField(song, clip, &Clip::loopStart, loopStart, "Audio window"));
+    out->add(setClipField(song, clip, &Clip::loopEnd, loopEnd, "Audio window"));
+    if (out->empty())
+        return nullptr;
+    return out;
+}
+
 float clipPeak(const Clip& clip, const AudioSource& source, const PeakCache& peaks) {
     if (!clip.audio || peaks.empty())
         return 0;

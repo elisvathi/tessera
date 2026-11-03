@@ -1599,13 +1599,41 @@ Choices made while building the first audio phase (docs/design/AUDIO_MIXER.md §
 - **Project files carry audio in a folder beside them** ("Song audio" for "Song.tessera"); opening copies the files
   back. The project file stays plain JSON.
 - **No mixer at all when nothing makes sound.** The spec folds the mixer to a tab; with no audio tracks it is hidden, so
-  Tessera looks and behaves as before audio, and no existing screenshot changed.
+  Tessera looks and behaves as before audio, and no existing screenshot changed. The user agreed (3 Nov): with no
+  audio tracks and no inputs, a mixer makes no sense.
 - **The tempo badge for Off clips reads "own speed"**: the UI fonts have no lock symbol.
 - **The Master row sits under "+ Add track"**, in the scrolled list, not pinned to the bottom: pinned, it would hide
   the last track's header while that track's lane still showed beside it. A click on its name opens the mixer.
 - **The big badge is text only**: "92 BPM · 2 bars · Stretch ▾" on just-dropped timeline clips, for as long as they
   are what is selected, and only where the clip is wide enough. "Keep 120 BPM" stays in the toast, which already
   has a button for it. Launcher slots are too small for it and keep the short form.
-- **Not yet in 1a**: Tab cycling to the mixer, crossfade handles and curve dots (Phase 1b), the audio editor (1b).
+- **Not yet in 1a**: Tab cycling to the mixer, crossfade handles and curve dots, the audio editor: all built in
+  Phase 1b (§107).
 
 Why: built to the spec; these are the places it left open or where the code suggested a simpler way.
+
+## 107. Audio Phase 1b as built (3 Nov)
+
+- **Reverse plays a reversed copy of the file.** The store makes it on its loader thread the first time a reversed
+  clip asks, and drops it when no clip plays that file reversed. The player reads it forwards like any buffer, so
+  seams, loops and crossfades need no second code path. A reversed Stretch clip is stretched from the reversed file.
+  Cost: the file's memory twice while a clip plays it reversed.
+- **Normalise** sets the clip gain so the loudest sample of the clip's window reaches the file's full scale (the
+  import level, 5 V), read from the waveform cache.
+- **Pitch** (semitones and cents) shows only for Stretch clips: Repitch and Off clips change pitch with their speed.
+- **Replace file** keeps place, length, gain, follow tempo, sound type and fades; the clip plays the new file from its
+  start at the new file's guessed tempo. The old file stays until Remove unused audio.
+- **The audio overlap rule** (`arrange::settleAudio`) runs whether Stack is on or off; audio tracks never stack and
+  always draw on one row. A clip dropped inside another splits it; each part reaches 1/32 note (at most a quarter of
+  the dropped clip) into it, so both seams crossfade. Where three would sound, the earliest stops where the third
+  starts; if the earliest is the one being dragged, the third starts later instead. The rule works on stored lengths,
+  so an Off clip at a song tempo other than its own can still overlap a third clip a little (one-shots rarely do).
+- **Crossfade handle**: dragging right makes it longer, left shorter, both clips moving evenly; it snaps to the grid
+  beyond one step. The X's curve dot bends both sides together.
+- **Trims of a clip that doesn't loop stop at the file's start and end**, saying so in the readout. No bright tick.
+- **The audio editor has one ruler**, the clip's beats and bars: for Stretch and Repitch clips the song's bars fall on
+  the same lines. Beat 1's flag drags like the window (a slip). Not built yet: the Slice tool, click in the ruler to
+  play, dim copies of a loop's repeats, fades and gain in the editor.
+- **The mixer is a pane** (`Pane::Mixer`) like the song and notes: the same maximize button, focus ring, Tab (while it
+  is open) and Shift+Tab. F4 stays as a direct key. With the mixer focused only keys that work everywhere act. A
+  patch saved with the old mixer-only maximise flag opens with the mixer maximized.

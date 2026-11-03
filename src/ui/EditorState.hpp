@@ -19,7 +19,7 @@
 
 namespace tessera {
 
-enum class Pane { Top, Detail };
+enum class Pane { Top, Detail, Mixer };
 
 /// Where an editor is shown: the full-window overlay, or inside the widened Tessera panel.
 enum class Surface { Overlay, Panel };
@@ -76,7 +76,6 @@ struct ViewState {
     bool clipsWide = false;         // performing: the clips take the width, the timeline folds to a strip (F2)
     bool mixerOpen = false;         // the mixer pane under the notes pane; folded to its tab by default
     float mixerHeight = 260;        // px when open
-    bool mixerMax = false;          // the mixer fills the editor (F4)
 
     // A zero zoom means "not set yet": the view fits its content the first time it opens.
     TimeAxis::State arranger{0, 0};

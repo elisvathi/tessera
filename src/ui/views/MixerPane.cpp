@@ -7,6 +7,7 @@
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../widgets/Draw.hpp"
+#include "../widgets/EditTools.hpp"
 #include "../widgets/MenuTextField.hpp"
 #include "AudioClipDraw.hpp"
 
@@ -228,6 +229,23 @@ float MixerPane::faderDb(float pos) {
 
 float MixerPane::tabHeight() const { return panel ? 16.f : 22.f; }
 
+MixerPane::MixerPane(EditorContext& ctx, bool panel) : InteractiveView(ctx), panel(panel) {
+    maximizeButton = makeMaximizeButton(ctx, Pane::Mixer);
+    addChild(maximizeButton);
+}
+
+void MixerPane::onButton(const ButtonEvent& e) {
+    if (e.action == GLFW_PRESS && ctx.module())
+        ctx.view().focus = Pane::Mixer; // clicking anywhere in a pane focuses it, as in the others
+    InteractiveView::onButton(e);
+}
+
+void MixerPane::draw(const DrawArgs& args) {
+    InteractiveView::draw(args);
+    if (ctx.module() && ctx.view().focus == Pane::Mixer && box.size.y > tab.size.y + 20)
+        draw::roundedRectStroke(args.vg, Rect(Vec(), box.size), 0, nvgTransRGBAf(theme::colors().accent, 0.5f), 1);
+}
+
 bool MixerPane::hasSound() const {
     TesseraModule* m = ctx.module();
     return m && hasAudio(m->song());
@@ -259,7 +277,8 @@ void MixerPane::layout() {
     TesseraModule* m = ctx.module();
     float tabH = tabHeight();
     tab = Rect(0, 0, box.size.x, tabH);
-    maximize = Rect(box.size.x - tabH - 2, 1, tabH, tabH - 2);
+    float button = std::min(kMaximizeButton, tabH - 2);
+    maximizeButton->box = Rect(box.size.x - button - 3, (tabH - button) / 2, button, button);
     if (!m)
         return;
     float top = tabH + kGap, bottom = box.size.y - kGap;
@@ -332,10 +351,6 @@ void MixerPane::step() {
 
 MixerPane::Hit MixerPane::hitTest(Vec pos) const {
     Hit hit;
-    if (maximize.contains(pos)) {
-        hit.part = Part::Maximize;
-        return hit;
-    }
     if (tab.contains(pos)) {
         hit.part = Part::Tab;
         return hit;
@@ -376,8 +391,10 @@ std::unique_ptr<DragGesture> MixerPane::startGesture(Vec pos, int button, Modifi
         // A click opens or folds the mixer; only a real drag sets its height.
         EditorContext* c = &ctx;
         return std::make_unique<ClickOrDrag>(std::make_unique<TabGesture>(*this, ctx, pos), pos, [c] {
-            c->view().mixerOpen = !c->view().mixerOpen;
-            c->view().mixerMax = false;
+            ViewState& v = c->view();
+            v.mixerOpen = !v.mixerOpen;
+            if (v.maximized == Pane::Mixer)
+                v.maximized.reset();
         });
     }
     case Part::Fader:
@@ -424,12 +441,7 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return;
-    ViewState& v = ctx.view();
     switch (h.part) {
-    case Part::Maximize:
-        v.mixerMax = !v.mixerMax;
-        v.mixerOpen = true;
-        break;
     case Part::Name:
         if (s && !s->master)
             ctx.state().selectedTrack = s->track;
@@ -457,8 +469,13 @@ void MixerPane::doubleClick(Vec pos, Modifiers mods) {
         return;
     Hit h = hitTest(pos);
     if (h.part == Part::Tab) {
-        ctx.view().mixerMax = !ctx.view().mixerMax;
-        ctx.view().mixerOpen = true;
+        ViewState& v = ctx.view();
+        if (v.maximized == Pane::Mixer) {
+            v.maximized.reset();
+        } else {
+            v.maximized = Pane::Mixer;
+            v.mixerOpen = true;
+        }
         return;
     }
     if (h.strip < 0)
@@ -503,7 +520,6 @@ CursorShape MixerPane::hoverCursor(Vec pos, Modifiers mods) {
     case Part::Name:
     case Part::ClipLight:
     case Part::Connect:
-    case Part::Maximize:
         return CursorShape::Hand;
     default:
         return CursorShape::Arrow;
@@ -583,7 +599,7 @@ void MixerPane::drawTab(NVGcontext* vg) {
         if (x > box.size.x - 260)
             break;
     }
-    float right = maximize.pos.x - 8;
+    float right = maximizeButton->box.pos.x - 8;
     draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
     float peak = std::max(player.masterLevel(0), player.masterLevel(1));
     char text[32];
@@ -594,15 +610,6 @@ void MixerPane::drawTab(NVGcontext* vg) {
         small.color = c.queue;
         draw::text(vg, small, right, cy, "MAIN not patched");
     }
-    // Maximise / restore: a square, or two when maximised.
-    nvgBeginPath(vg);
-    Rect b = maximize.shrink(Vec(5, 4));
-    nvgRect(vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
-    if (ctx.view().mixerMax)
-        nvgRect(vg, b.pos.x + 2, b.pos.y - 2, b.size.x, b.size.y);
-    nvgStrokeColor(vg, c.text1);
-    nvgStrokeWidth(vg, 1);
-    nvgStroke(vg);
 }
 
 void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
