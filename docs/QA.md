@@ -525,6 +525,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Mixer: drag a fader (no jump on click), Shift for fine, double-click for 0 dB, scroll ±0.5 dB, right-click to
       type. With several audio tracks selected, one fader moves them all by the same dB.
 - [ ] Track header of an audio track: the level line shows the live level; drag it sideways; double-click resets.
+- [ ] Under "+ Add track", the Master row shows the master's live level and dB once there is an audio track. Drag
+      its bar sideways, double-click for 0 dB, scroll ±0.5 dB; click "Master" to open the mixer.
+- [ ] Drop a loop on the timeline: its title bar reads "92 BPM · 2 bars · Stretch ▾" until you click elsewhere.
 - [ ] Save the patch, reload: the audio plays. Copy and paste the Tessera: the copy plays its audio too.
 - [ ] Delete the stored file from patch storage (autosave/modules/<id>/audio) and reload: the clip shows stripes and
       "Missing file", a toast says so; Find file… puts it back.

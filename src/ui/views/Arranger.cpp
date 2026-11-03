@@ -239,7 +239,8 @@ void ArrangerView::syncFromState() {
     }
     syncedHeights = heights;
     tracks.setViewHeight(lanes->box.size.y);
-    tracks.setFooter(36); // room to scroll the "+ Add track" row into view
+    // Room to scroll the "+ Add track" row, and the Master row under it, into view.
+    tracks.setFooter(36 + (headers->showsMaster() ? TrackHeaders::kMasterRowHeight + 2 : 0));
     tracks.setHeights(std::move(heights));
     tracks.scrollTo(state.trackScroll);
 

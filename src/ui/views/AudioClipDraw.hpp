@@ -40,6 +40,10 @@ void drawWaveform(NVGcontext* vg, rack::math::Rect body, float left, float right
 /// the gain when it isn't 0 dB, and "6→2" for mixed-down files.
 std::string titleMarks(const Clip& clip, const ClipState& state, float gainDb);
 
+/// The big form of the title-bar marks, for a clip just dropped: "92 BPM · 2 bars · Stretch ▾", or "own speed · 1.2 s"
+/// for clips that ignore the tempo, then the same gain and mix-down marks as titleMarks (§5.5).
+std::string bigTitleMarks(const Clip& clip, const ClipState& state, float gainDb, TimeSig timeSig);
+
 /// A short word for a state worth seeing ("Loading 40%", "Missing file", "40%"), or empty when it just plays.
 std::string stateText(const ClipState& state);
 

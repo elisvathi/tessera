@@ -1,7 +1,7 @@
 # Audio tracks and the mixer
 
 Status: **revision 7, confirmed by the user on 3 Nov 2026. Phase 0 is done (DECISIONS §94–105). Phase 1a is built
-(DECISIONS §106), except the Master row in the song pane and the big badge on a just-dropped clip.** Mockups:
+(DECISIONS §106).** Mockups:
 https://claude.ai/artifact/WNtGof3EbafDF7yptw5w5i (private; source HTML is not in the repo). The mockups predate
 revisions 5–7 (they still show FX tracks): **where they disagree, this spec wins.** Trello:
 https://trello.com/c/RiahbPgS.

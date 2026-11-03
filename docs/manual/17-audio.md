@@ -47,7 +47,9 @@ A short single hit (a kick, a clap) is a **one-shot**: it plays once, at its own
 tempo, so the loop plays exactly as it was made. The message offers **Keep 120 BPM** (or whatever the tempo was) to
 put the song tempo back.
 
-Every audio clip shows its tempo after its name, like **92 ▾**. Its menu (right-click the clip) has:
+Every audio clip shows its tempo after its name, like **92 ▾**. Right after a drop, the clips you dropped on the
+timeline say more, like **92 BPM · 2 bars · Stretch ▾**, until you click elsewhere. A clip's menu (right-click it)
+has:
 
 - **Clip tempo**: the guess, double, half, or a tempo you type. This is the one place a clip's speed is set.
 - **Follow tempo**: how the clip meets the song tempo.
