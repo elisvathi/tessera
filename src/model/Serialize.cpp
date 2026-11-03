@@ -822,6 +822,10 @@ json_t* songToJson(const Song& s) {
         for (TrackId id : g.tracks)
             json_array_append_new(members, idJson(id));
         set(gj, "tracks", members);
+        if (g.channel != Channel{})
+            set(gj, "channel", channelToJson(g.channel.volumeDb, g.channel.pan));
+        if (g.mute)
+            setBool(gj, "mute", true);
         json_array_append_new(groups, gj);
     }
     set(j, "groups", groups);
@@ -1088,6 +1092,9 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
         g.name = getString(gj, "name", g.name);
         g.color = saturate<uint32_t>(getInt(gj, "color", g.color));
         forEach(get(gj, "tracks"), [&](const json_t* id) { g.tracks.push_back(readId<TrackId>(id)); });
+        g.channel.volumeDb = getFloat(get(gj, "channel"), "volume", 0);
+        g.channel.pan = getFloat(get(gj, "channel"), "pan", 0);
+        g.mute = getBool(gj, "mute", false);
         s.groups.push_back(g);
     });
     forEach(get(j, "scenes"), [&](const json_t* sj) {

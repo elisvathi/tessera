@@ -377,6 +377,9 @@ void TesseraModule::audioStep() {
     AudioBuild build = buildAudioSnapshot(songData, *audio, double(audioRate.load()) > 0 ? audioRate.load() : 48000,
                                           audioTempo, {}, plan);
     soundTracks.clear();
+    soundGroups.clear();
+    for (const GroupPlay& gp : build.snapshot->groups)
+        soundGroups.push_back(GroupId(gp.id));
     for (const AudioTrackPlay& tp : build.snapshot->tracks)
         soundTracks.push_back(tp.id);
     if (last)

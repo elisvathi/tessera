@@ -310,6 +310,13 @@ class TesseraModule : public rack::engine::Module {
     MixPlan currentMixPlan() const;
     /// A track's index among the tracks that make sound (the player's meters), or -1. UI thread.
     int soundIndex(TrackId track) const;
+    /// A group strip's index among the player's groups (its meters), or -1 when it has none. UI thread.
+    int groupIndex(GroupId group) const {
+        for (size_t i = 0; i < soundGroups.size(); i++)
+            if (soundGroups[i] == group)
+                return int(i);
+        return -1;
+    }
     /// Whether anything in the song makes sound: an audio track, or audio coming back on an output module's IN.
     bool makesSound() const;
     /// The output modules whose audio inputs bring sound to `track` (or the master) now, by place in the rack: left
@@ -481,6 +488,7 @@ class TesseraModule : public rack::engine::Module {
     uint64_t revision = 0;
     std::map<std::pair<uint64_t, int>, Channel> drumInputHolds; // mixer drags on lane strips (UI thread)
     std::vector<TrackId> soundTracks; // the tracks of the last audio snapshot, in its order (UI thread)
+    std::vector<GroupId> soundGroups; // its group strips, in its order
     uint64_t audioPlanKey = 0;        // the mix plan the last audio snapshot was built from
     std::shared_ptr<OutputBus> bus = std::make_shared<OutputBus>();
 

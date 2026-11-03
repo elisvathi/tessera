@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <optional>
 #include <set>
 
 namespace tessera {
@@ -260,6 +262,34 @@ CommandPtr setMasterVolume(const Song& song, float db) {
     MasterChannel m = song.master;
     m.volumeDb = std::clamp(db, kSilentDb, kMaxFaderDb);
     return setSongField(song, &Song::master, m, "Master volume " + dbText(m.volumeDb));
+}
+
+namespace {
+
+/// The song's groups with `group` changed by `change`; nullopt when it isn't there.
+std::optional<std::vector<TrackGroup>> withGroup(const Song& song, GroupId group,
+                                                 const std::function<void(TrackGroup&)>& change) {
+    std::vector<TrackGroup> groups = song.groups;
+    for (TrackGroup& g : groups)
+        if (g.id == group) {
+            change(g);
+            return groups;
+        }
+    return std::nullopt;
+}
+
+} // namespace
+
+CommandPtr setGroupChannel(const Song& song, GroupId group, Channel channel, const std::string& name) {
+    channel.volumeDb = std::clamp(channel.volumeDb, kSilentDb, kMaxFaderDb);
+    channel.pan = std::clamp(channel.pan, -1.f, 1.f);
+    auto groups = withGroup(song, group, [&](TrackGroup& g) { g.channel = channel; });
+    return groups ? setSongField(song, &Song::groups, *groups, name) : nullptr;
+}
+
+CommandPtr setGroupMute(const Song& song, GroupId group, bool mute) {
+    auto groups = withGroup(song, group, [&](TrackGroup& g) { g.mute = mute; });
+    return groups ? setSongField(song, &Song::groups, *groups, mute ? "Mute group" : "Unmute group") : nullptr;
 }
 
 CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, const std::string& name) {

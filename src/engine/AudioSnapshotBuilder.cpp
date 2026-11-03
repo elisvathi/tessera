@@ -176,6 +176,18 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         }
         snap.tracks.push_back(std::move(tp));
     }
+    // Group strips: a group with a track that makes sound gets one, and its tracks go through it.
+    for (const TrackGroup& g : song.groups) {
+        int index = -1;
+        for (AudioTrackPlay& tp : snap.tracks)
+            if (std::find(g.tracks.begin(), g.tracks.end(), tp.id) != g.tracks.end()) {
+                if (index < 0 && snap.groups.size() < size_t(kMaxTracks)) {
+                    snap.groups.push_back({g.id.value, dbToGain(g.channel.volumeDb), g.channel.pan, !g.mute});
+                    index = int(snap.groups.size()) - 1;
+                }
+                tp.group = index;
+            }
+    }
     // Delay compensation: every track waits as long as the latest one is late, less its own lateness.
     int latest = 0;
     for (const AudioTrackPlay& tp : snap.tracks)

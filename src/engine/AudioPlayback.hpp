@@ -90,6 +90,14 @@ struct AudioTrackPlay {
     bool sending = true; // its sends play
     std::vector<SendPlay> sends; // receivers always come later in `tracks`
     int delay = 0; // samples it waits on its way to the master, so tracks with latency line up (§3.5)
+    int group = -1; // its group strip (index into AudioSnapshot::groups), which it goes through to the master
+};
+
+/// A group's strip: its tracks are summed into it, then its fader and pan, then the master.
+struct GroupPlay {
+    uint64_t id = 0; // GroupId value
+    float volume = 1, pan = 0;
+    bool audible = true;
 };
 
 /// Everything the audio thread plays, for one Tessera.
@@ -97,6 +105,7 @@ struct AudioSnapshot {
     uint64_t generation = 0;
     std::vector<AudioClipPlay> clips;
     std::vector<AudioTrackPlay> tracks;
+    std::vector<GroupPlay> groups;
     float masterVolume = 1;
     float masterMixGain = 1; // the mix as a source of the master (§7.8)
     uint64_t masterId = 0; // the master's TrackId value

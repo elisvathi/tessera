@@ -122,6 +122,12 @@ class AudioPlayer {
     /// The level of a running tap's signal now (volts, the last block's peak), for "until silent".
     float tapLevel(int n) const { return taps[size_t(n)].level.load(std::memory_order_relaxed); }
 
+    /// A group strip's (its index in the snapshot) level in volts, peaks falling 20 dB a second.
+    float groupLevel(int group, int side) const {
+        return group >= 0 && group < kMaxTracks ? groupMeters[size_t(group)][size_t(side & 1)].load(std::memory_order_relaxed)
+                                                : 0.f;
+    }
+
     /// The longest delay compensation can add, in samples (about 170 ms at 48 kHz).
     static constexpr int kMaxDelay = 8192;
     /// Makes room for delay compensation, once: call on the UI thread before a snapshot with delays plays.
@@ -291,6 +297,14 @@ class AudioPlayer {
         float peak = 0;
     };
     std::array<Tap, kMaxTaps> taps{};
+    struct GroupRun {
+        uint64_t id = 0;
+        float gainL = 0, gainR = 0, stepL = 0, stepR = 0;
+        float busL = 0, busR = 0, peakL = 0, peakR = 0;
+        bool fresh = true;
+    };
+    std::array<GroupRun, kMaxTracks> groupRuns{};
+    std::array<std::array<std::atomic<float>, 2>, kMaxTracks> groupMeters{};
     std::unique_ptr<float[]> delayMemory; // per bus slot, two channels of kMaxDelay; made once, never freed early
     std::atomic<float*> delays{nullptr};
     size_t delayPos = 0;

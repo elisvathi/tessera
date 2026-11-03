@@ -815,3 +815,46 @@ TEST_CASE("delay compensation: the other tracks wait for a track's latency, so t
     float peak = *std::max_element(master.begin(), master.end());
     CHECK(peak == doctest::Approx(2.f).epsilon(1e-3));
 }
+
+TEST_CASE("a group strip sums its tracks through its own fader and mute on the way to the master") {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId a = song.tracks[0].id, b = song.tracks[1].id;
+    TrackGroup g;
+    g.id = song.newId<GroupId>();
+    g.name = "Keys";
+    g.tracks = {a, b};
+    g.channel.volumeDb = -6.0206f;
+    song.groups.push_back(g);
+    MixPlan plan;
+    plan.returns = {{a, 0}, {b, 1}, {song.tracks[2].id, 2}};
+    Engine engine;
+    engine.setSampleRate(kRate);
+    ReturnBus returns;
+    std::array<AudioOutFrame, kMaxTracks + 1> out{};
+    std::array<TrackFrame, kMaxTracks> frames{};
+    TransportEvents events;
+    std::vector<std::unique_ptr<AudioSnapshot>> kept;
+    AudioPlayer player;
+    player.setSampleRate(kRate);
+    int64_t n = 0;
+    float left = 0, right = 0;
+    auto play = [&] {
+        kept.push_back(buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot);
+        player.setSnapshot(kept.back().get());
+        for (int i = 0; i < 2000; i++, n++) {
+            returns.write(n, 0, a, 1.f, 1.f);
+            returns.write(n, 1, b, 1.f, 1.f);
+            returns.write(n, 2, song.tracks[2].id, 0.25f, 0.25f); // not in the group
+            engine.process(frames.data(), events);
+            player.process(engine, left, right, {&returns, out.data(), n});
+        }
+    };
+    play();
+    REQUIRE(kept.back()->groups.size() == 1);
+    CHECK(left == doctest::Approx(1.25f).epsilon(1e-3)); // (1 + 1) at -6 dB, and the other track as it is
+    CHECK(player.groupLevel(0, 0) > 0.9f);
+    song.groups[0].mute = true;
+    play();
+    CHECK(left == doctest::Approx(0.25f).epsilon(1e-3));
+}
