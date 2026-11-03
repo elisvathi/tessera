@@ -2,21 +2,8 @@ RACK_DIR ?= ../..
 
 SOURCES += $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 
-# The time stretch libraries to build (docs/design/AUDIO_MIXER.md §9.1). A release can leave one out with no code
-# change, e.g. `make STRETCHERS=signalsmith`. Rubber Band is GPL; Signalsmith Stretch is MIT.
-STRETCHERS ?= signalsmith rubberband
-ifneq ($(filter signalsmith,$(STRETCHERS)),)
-    STRETCH_FLAGS += -DTESSERA_STRETCH_SIGNALSMITH -isystem dep/signalsmith-stretch -isystem dep/signalsmith-linear/include
-else
-    SOURCES := $(filter-out src/audio/stretch/SignalsmithStretcher.cpp,$(SOURCES))
-endif
-ifneq ($(filter rubberband,$(STRETCHERS)),)
-    STRETCH_FLAGS += -DTESSERA_STRETCH_RUBBERBAND -isystem dep/rubberband
-    STRETCH_SOURCES += dep/rubberband/single/RubberBandSingle.cpp
-else
-    SOURCES := $(filter-out src/audio/stretch/RubberBandStretcher.cpp,$(SOURCES))
-endif
-SOURCES += $(STRETCH_SOURCES)
+# The time stretch library, Signalsmith Stretch (MIT, header only; docs/design/AUDIO_MIXER.md §9.1).
+STRETCH_FLAGS := -isystem dep/signalsmith-stretch -isystem dep/signalsmith-linear/include
 FLAGS += $(STRETCH_FLAGS)
 
 DISTRIBUTABLES += res
@@ -24,14 +11,6 @@ DISTRIBUTABLES += $(wildcard LICENSE*)
 
 include $(RACK_DIR)/plugin.mk
 
-# Vendored library code is not ours to clean up: build it without warnings.
-build/dep/%.cpp.o: CXXFLAGS += -w
-# Rubber Band's single-file build uses Apple's FFT on macOS.
-ifdef ARCH_MAC
-ifneq ($(filter rubberband,$(STRETCHERS)),)
-LDFLAGS += -framework Accelerate
-endif
-endif
 
 # Rack's compile.mk asks for C++11; Tessera needs C++17. The later flag wins.
 CXXFLAGS += -std=c++17
@@ -53,7 +32,7 @@ TEST_SOURCES := $(wildcard tests/*.cpp src/model/*.cpp src/engine/*.cpp) \
 	src/ui/interaction/Axes.cpp src/ui/interaction/Shortcuts.cpp src/ui/interaction/Snap.cpp \
 	src/ui/editing/NoteHitTest.cpp src/ui/interaction/TrackRows.cpp src/ui/EditorState.cpp \
 	src/ui/interaction/Search.cpp \
-	src/audio/TimeStretcher.cpp src/audio/Resample.cpp $(filter src/audio/stretch/%,$(SOURCES)) $(STRETCH_SOURCES)
+	src/audio/TimeStretcher.cpp src/audio/Resample.cpp $(wildcard src/audio/stretch/*.cpp)
 TEST_HEADERS := $(wildcard tests/*.h tests/*.hpp src/model/*.hpp src/engine/*.hpp) \
 	src/ui/interaction/Axes.hpp src/ui/interaction/Navigation.hpp src/ui/interaction/Shortcuts.hpp \
 	src/ui/interaction/Snap.hpp src/ui/editing/NoteHitTest.hpp src/ui/interaction/TrackRows.hpp \
@@ -81,8 +60,7 @@ $(TEST_OBJ_DIR)/%.o: %.cpp | $(TEST_INCLUDE)/GLFW
 	$(TEST_CXX) $(TEST_FLAGS) -MMD -MP -isystem $(TEST_INCLUDE) $(shell pkg-config --cflags jansson 2>/dev/null) \
 		$(STRETCH_FLAGS) -c -o $@ $<
 
-# Vendored library code builds without warnings, and optimised: stretching is slow without it.
-$(TEST_OBJ_DIR)/dep/%.o: TEST_FLAGS += -w -O2
+# Stretching is slow without optimisation.
 $(TEST_OBJ_DIR)/src/audio/stretch/%.o: TEST_FLAGS += -O2
 
 $(TEST_BIN): $(TEST_OBJECTS)

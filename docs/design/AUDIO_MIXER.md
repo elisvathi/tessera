@@ -923,11 +923,11 @@ with no sound, 16 tracks and 64 tracks, and while repatching during playback.
 |---|---|---|---|
 | Decode WAV, FLAC, MP3 | dr_wav, dr_flac, dr_mp3 (single headers) | public domain / MIT-0 | AIFF via dr_wav; verify, else a small reader in `model/` |
 | Resample | libsamplerate | BSD-2 | Ships with the Rack SDK (`samplerate.h`); verify the symbols are exported on all three platforms |
-| Time stretch | **swappable**: Signalsmith Stretch and Rubber Band (v4, R3 "finer") | MIT / GPL-2.0-or-later | |
+| Time stretch | Signalsmith Stretch (Rubber Band was tried in Phase 0 and removed) | MIT | Header only, vendored |
 | FFT (analysis, Signalsmith) | pffft | BSD | Ships with the Rack SDK |
 
-**The time stretcher is swappable (agreed).** Signalsmith Stretch (MIT) and Rubber Band (GPL) sit behind one
-interface.
+**One time stretcher, behind an interface.** Signalsmith Stretch (MIT) can ship in any product. Rubber Band lost the
+listening test and was removed (DECISIONS §101); the interface stays so a library could replace it later.
 
 ```cpp
 // src/audio/TimeStretcher.hpp: used only on worker threads. As built in Phase 0 (DECISIONS §101).
@@ -950,15 +950,12 @@ std::unique_ptr<TimeStretcher> makeStretcher(const std::string& id);   // falls 
 std::vector<std::string> availableStretchers();                        // the default ("signalsmith") first
 ```
 
-- One adapter per library in `src/audio/stretch/`, each library vendored under `dep/<name>/` with its licence
-  file. Nothing outside the adapter includes a library header.
-- The Makefile picks the adapters (`STRETCHERS ?= signalsmith rubberband`). A release can leave Rubber Band out with
-  no code change.
-- With more than one built, Settings ▸ Audio ▸ "Time stretch engine" picks one; changing it re-renders in the
-  background. The song never stores the engine.
+- The adapter lives in `src/audio/stretch/`, the library under `dep/signalsmith-stretch/` and
+  `dep/signalsmith-linear/` with their licence files. Nothing outside the adapter includes a library header.
+- There is no engine setting: one library ships.
 - The varispeed reader is Tessera's own code, not part of the interface.
-- A conformance test runs every adapter through the same checks: output length; a stretched click track keeps its
-  clicks on the beat within 1 ms; a stretched sine keeps its pitch within 1 cent; cancel works.
+- A conformance test checks the stretcher: output length; a stretched click track keeps its clicks on the beat
+  within 1 ms; a stretched sine keeps its pitch within 1 cent; cancel works.
 
 **Phase 0 blind listening test**, run just before implementation starts (the user's choice). Ask the user for their
 own test files first. 8 kinds of material (drum loop, break, bass, vocal, piano, pad, full mix, speech) at 0.75×,
@@ -1125,7 +1122,8 @@ spec are the record: where `AUDIO_MIXER_REVIEW.md` disagrees with the spec, the 
 
 21. **The whole design is confirmed** (3 Nov: "let's start").
 22. **Pitch: stretch, then resample**, so every library lands in tune (2 Nov, DECISIONS §101).
-23. **Signalsmith Stretch is the default engine** after the blind listening test (3 Nov, DECISIONS §101).
+23. **Signalsmith Stretch is the default engine** after the blind listening test (3 Nov, DECISIONS §101). Later the
+    same day: **keep only Signalsmith**; Rubber Band is removed.
 24. **Lost audio files: as the spec says**, copy from the source module after a paste, otherwise "Missing file"; no
     shared cache (3 Nov, DECISIONS §102).
 25. **MAIN on the panel: option A**, 26 HP with a ninth jack column (3 Nov, DECISIONS §103).
