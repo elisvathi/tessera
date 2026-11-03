@@ -263,6 +263,10 @@ void normalizeFade(Fade& fade, Tick most) {
     fade.curve = std::isfinite(fade.curve) ? std::clamp(fade.curve, -1.f, 1.f) : 0.f;
 }
 
+void normalizeSourceLevel(SourceLevel& l) {
+    l.db = std::isfinite(l.db) ? std::clamp(l.db, kSilentDb, kMaxFaderDb) : 0.f;
+}
+
 void normalizeChannel(Channel& c) {
     c.volumeDb = std::isfinite(c.volumeDb) ? std::clamp(c.volumeDb, kSilentDb, kMaxFaderDb) : 0.f;
     c.pan = std::isfinite(c.pan) ? std::clamp(c.pan, -1.f, 1.f) : 0.f;
@@ -370,6 +374,7 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
     if (track.type == TrackType::Audio)
         track.drumLanes.clear();
     normalizeChannel(track.channel);
+    normalizeSourceLevel(track.clips);
     for (Channel& c : track.drumInputs)
         normalizeChannel(c);
 
@@ -498,6 +503,7 @@ void normalize(Song& song) {
     song.master.volumeDb = std::isfinite(song.master.volumeDb)
                                ? std::clamp(song.master.volumeDb, kSilentDb, kMaxFaderDb)
                                : 0.f;
+    normalizeSourceLevel(song.master.mix);
     // The master plays only a Volume lane.
     auto& masterLanes = song.master.automation;
     masterLanes.erase(std::remove_if(masterLanes.begin(), masterLanes.end(),

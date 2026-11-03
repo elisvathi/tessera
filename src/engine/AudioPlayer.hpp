@@ -69,10 +69,12 @@ class AudioPlayer {
     void clearClip() { clipPeak.store(0, std::memory_order_relaxed); }
 
     /// Which control a hold is for: only that one wins over its lane, and only that one records (§7.3).
-    static constexpr uint8_t kHoldVolume = 1, kHoldPan = 2;
+    static constexpr uint8_t kHoldVolume = 1, kHoldPan = 2, kHoldClips = 4;
     /// Holds a fader or pan (`parts`) at these values while the user drags it, before the edit is committed (§8.4:
     /// a drag never rebuilds the snapshot). `track` is the TrackId value; the master's ID holds the master's volume.
     void hold(uint64_t track, float volumeGain, float pan, uint8_t parts);
+    /// Holds an audio track's clips (or, for the master's ID, its mix) at `gain` while a source Level drag runs.
+    void holdClips(uint64_t track, float gain);
     void releaseHolds();
     /// The fader (`pan` false, as a gain) or pan a drag holds on `track` now, for recording it into its lane. UI thread.
     bool held(uint64_t track, bool pan, float& value) const;
@@ -129,6 +131,7 @@ class AudioPlayer {
         int engineIndex = -1;
         float gainL = 0, gainR = 0, stepL = 0, stepR = 0; // fader and pan, ramping
         float outGain = 0, outStep = 0; // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
+        float clipsGain = 1, clipsStep = 0; // the clips' source Level
         bool fresh = true; // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
         bool steady = false; // its voices step on unchanged for the rest of this block
         int slot = -1;       // the launched slot a steady block plays, or -1 on the timeline
@@ -185,6 +188,7 @@ class AudioPlayer {
     bool sounding = false;
     int blockPos = 0;
     float masterGain = 0, masterStep = 0;
+    float mixGain = 1, mixStep = 0; // the master's mix as a source
     bool masterFresh = true;
     size_t masterLaneCursor = 0;
     std::atomic<bool> masterAuto{false};
@@ -198,7 +202,7 @@ class AudioPlayer {
     std::atomic<float> clipPeak{0};
     struct Hold {
         std::atomic<uint64_t> track{0};
-        std::atomic<float> volume{1}, pan{0};
+        std::atomic<float> volume{1}, pan{0}, clips{1};
         std::atomic<uint8_t> parts{0};
     };
     std::array<Hold, kMaxTracks + 1> holds{};

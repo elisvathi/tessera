@@ -3,6 +3,7 @@
 #include "../model/TrackColors.hpp"
 #include "../module/TesseraModule.hpp"
 #include "Theme.hpp"
+#include "views/AudioClipDraw.hpp"
 #include "widgets/Draw.hpp"
 
 namespace tessera {
@@ -34,6 +35,13 @@ void TrackOutDisplay::gather() {
     sourceName = src ? src->instanceName() : module->binding().sourceName;
     if (module->binding().followSelected)
         sourceName += " · follows editor";
+    // Its Level and Use as a source of the track, when they change the sound (§7.8). The screen is narrow, so they
+    // take the place of the Tessera's name.
+    SourceLevel level = module->sourceSetting();
+    if (!level.use)
+        sourceName = "IN OFF";
+    else if (level.db != 0)
+        sourceName = "IN " + audioDraw::dbText(level.db);
     if (status != BindingStatus::Bound)
         return;
     const Song& song = src->song();

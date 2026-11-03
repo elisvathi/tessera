@@ -262,6 +262,18 @@ CommandPtr setMasterVolume(const Song& song, float db) {
     return setSongField(song, &Song::master, m, "Master volume " + dbText(m.volumeDb));
 }
 
+CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, const std::string& name) {
+    level.db = std::clamp(level.db, kSilentDb, kMaxFaderDb);
+    if (track == song.master.id) {
+        MasterChannel m = song.master;
+        m.mix = level;
+        return setSongField(song, &Song::master, m, name);
+    }
+    if (!song.findTrack(track))
+        return nullptr;
+    return setTrackField(song, track, &Track::clips, level, name);
+}
+
 std::vector<AudioSourceId> unusedSources(const Song& song) {
     std::set<AudioSourceId> used;
     for (const auto& [id, clip] : song.clips)

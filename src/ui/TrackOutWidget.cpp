@@ -6,6 +6,7 @@
 #include "OutputMenus.hpp"
 #include "Theme.hpp"
 #include "TrackOutDisplay.hpp"
+#include "editing/Sources.hpp"
 #include "widgets/Draw.hpp"
 #include "widgets/IconButton.hpp"
 #include "widgets/Panel.hpp"
@@ -124,6 +125,7 @@ struct TrackOutWidget : rack::app::ModuleWidget {
                                                [m](rack::ui::Menu* sub) { appendSourceMenu(sub, m, "Track Out"); }));
         menu->addChild(rack::createSubmenuItem(
             "Track", "", [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Track Out"); }, m->source() == nullptr));
+        sources::appendModuleItems(menu, m);
     }
 
   private:

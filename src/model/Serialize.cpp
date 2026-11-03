@@ -436,6 +436,21 @@ json_t* channelToJson(float volumeDb, float pan) {
     return j;
 }
 
+json_t* sourceLevelToJson(const SourceLevel& l) {
+    json_t* j = json_object();
+    setNumber(j, "volume", l.db);
+    if (!l.use)
+        set(j, "use", json_false());
+    return j;
+}
+
+SourceLevel sourceLevelFromJson(const json_t* j) {
+    SourceLevel l;
+    l.db = getFloat(j, "volume", l.db);
+    l.use = getBool(j, "use", l.use);
+    return l;
+}
+
 json_t* arrangerClipToJson(const ArrangerClip& a) {
     json_t* j = json_object();
     set(j, "id", idJson(a.id));
@@ -643,6 +658,8 @@ json_t* trackToJson(const Track& t) {
             json_array_append_new(inputs, channelToJson(c.volumeDb, c.pan));
         set(j, "drumInputs", inputs);
     }
+    if (t.clips != SourceLevel{})
+        set(j, "clips", sourceLevelToJson(t.clips));
     return j;
 }
 
@@ -683,6 +700,7 @@ Track trackFromJson(const json_t* j) {
             t.drumInputs[k].volumeDb = getFloat(c, "volume", 0);
             t.drumInputs[k].pan = getFloat(c, "pan", 0);
         }
+    t.clips = sourceLevelFromJson(get(j, "clips"));
     return t;
 }
 
@@ -820,6 +838,8 @@ json_t* songToJson(const Song& s) {
     set(master, "id", idJson(s.master.id));
     if (!s.master.automation.empty())
         set(master, "automation", automationListToJson(s.master.automation));
+    if (s.master.mix != SourceLevel{})
+        set(master, "mix", sourceLevelToJson(s.master.mix));
     set(j, "master", master);
     return j;
 }
@@ -1065,6 +1085,7 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
     s.master.id = readId<TrackId>(get(get(j, "master"), "id"));
     s.master.volumeDb = getFloat(get(j, "master"), "volume", s.master.volumeDb);
     s.master.automation = automationListFromJson(get(get(j, "master"), "automation"));
+    s.master.mix = sourceLevelFromJson(get(get(j, "master"), "mix"));
 
     // Before normalize, which trims each device's knobs to its type's list and would drop the old values.
     splitLegacyRandom(s);

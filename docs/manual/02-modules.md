@@ -154,6 +154,9 @@ of channels follows the track's **Voices** setting (by default, as many as the t
 the track's sound together with what comes back, through the track's fader in the [mixer](18-mixer.md). The light
 between IN L and IN R is green while audio comes back, red above 0 dB. A cable into IN of a note track gives that
 track a strip in the mixer: plug a synth's output in, and the track has a fader, pan and meter like an audio track.
+Several Track Outs can bring sound to one track; each is a source with its own **Use** and **Level** in the
+right-click menu (see [Several sources on one track](18-mixer.md#several-sources-on-one-track)). The screen shows
+**IN OFF** or the level while they change the sound.
 
 **Jacks that do nothing for the track are dim**: the note jacks on an audio track or the master, and OUT on an
 instrument track (for now; on a drum track OUT carries what its Drum Out's lane INs bring in). Hover a dim jack and its tooltip says why; a cable on a dim jack gets an amber ring. **AUTO** works

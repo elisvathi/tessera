@@ -41,6 +41,19 @@ void AudioPlayer::hold(uint64_t track, float volumeGain, float pan, uint8_t part
     }
 }
 
+void AudioPlayer::holdClips(uint64_t track, float gain) {
+    for (Hold& h : holds) {
+        uint64_t id = h.track.load(std::memory_order_relaxed);
+        if (id == track || id == 0) {
+            h.clips.store(gain, std::memory_order_relaxed);
+            h.parts.store(id == track ? uint8_t(h.parts.load(std::memory_order_relaxed) | kHoldClips) : kHoldClips,
+                          std::memory_order_relaxed);
+            h.track.store(track, std::memory_order_release);
+            return;
+        }
+    }
+}
+
 bool AudioPlayer::held(uint64_t track, bool pan, float& value) const {
     for (const Hold& h : holds)
         if (h.track.load(std::memory_order_acquire) == track) {
@@ -134,7 +147,7 @@ void AudioPlayer::startBlock(const Engine& engine) {
     bool anyHold = false;
     for (const Hold& h : holds)
         anyHold |= h.track.load(std::memory_order_relaxed) != 0;
-    auto held = [&](uint64_t id, float& volume, float& pan) {
+    auto held = [&](uint64_t id, float& volume, float& pan, float& clips) {
         if (!anyHold)
             return;
         for (const Hold& h : holds)
@@ -144,6 +157,8 @@ void AudioPlayer::startBlock(const Engine& engine) {
                     volume = h.volume.load(std::memory_order_relaxed);
                 if (parts & kHoldPan)
                     pan = h.pan.load(std::memory_order_relaxed);
+                if (parts & kHoldClips)
+                    clips = h.clips.load(std::memory_order_relaxed);
                 return;
             }
     };
@@ -178,7 +193,8 @@ void AudioPlayer::startBlock(const Engine& engine) {
             }
         }
         autoFlags[i].store(automated, std::memory_order_relaxed);
-        held(t.id.value, volume, pan);
+        float clips = t.clipsGain;
+        held(t.id.value, volume, pan, clips);
         float l = 0, r = 0;
         if (t.audible) {
             balanceGains(pan, l, r);
@@ -191,11 +207,13 @@ void AudioPlayer::startBlock(const Engine& engine) {
             run.gainL = l;
             run.gainR = r;
             run.outGain = out;
+            run.clipsGain = clips;
             run.fresh = false;
         }
         run.stepL = (l - run.gainL) / kBlock;
         run.stepR = (r - run.gainR) / kBlock;
         run.outStep = (out - run.outGain) / kBlock;
+        run.clipsStep = (clips - run.clipsGain) / kBlock;
     }
     float master = snapshot ? snapshot->masterVolume : 0;
     float masterPan = 0;
@@ -207,13 +225,16 @@ void AudioPlayer::startBlock(const Engine& engine) {
         masterAutoDb.store(db, std::memory_order_relaxed);
     }
     masterAuto.store(masterLane, std::memory_order_relaxed);
+    float mix = snapshot ? snapshot->masterMixGain : 1.f;
     if (snapshot)
-        held(snapshot->masterId, master, masterPan);
+        held(snapshot->masterId, master, masterPan, mix);
     if (masterFresh && snapshot) {
         masterGain = master;
+        mixGain = mix;
         masterFresh = false;
     }
     masterStep = (master - masterGain) / kBlock;
+    mixStep = (mix - mixGain) / kBlock;
 }
 
 void AudioPlayer::process(const Engine& engine, float& left, float& right) { process(engine, left, right, Rack()); }
@@ -295,6 +316,9 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         }
         if (i < count) {
             const AudioTrackPlay& tp = snapshot->tracks[i];
+            run.clipsGain += run.clipsStep;
+            sl *= run.clipsGain;
+            sr *= run.clipsGain;
             // The track's own sources join its clips; OUT carries them before the fader; what comes back on IN joins
             // after OUT, so an effect loop never feeds back (§2, §8.4).
             if (rack.returns)
@@ -327,6 +351,9 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         masterL += sl;
         masterR += sr;
     }
+    mixGain += mixStep;
+    masterL *= mixGain;
+    masterR *= mixGain;
     if (snapshot) {
         TrackId master(snapshot->masterId);
         if (rack.out)

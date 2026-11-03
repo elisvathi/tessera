@@ -115,6 +115,9 @@ CommandPtr setChannel(const Song& song, TrackId track, Channel channel, const st
 /// Strips at -inf stay at -inf.
 CommandPtr nudgeVolumes(const Song& song, const std::vector<SetChannels::Change>& start, float deltaDb);
 CommandPtr setMasterVolume(const Song& song, float db);
+/// The Level and Use of an audio track's clips, or of the master's mix when `track` is the master (§7.8). Null when
+/// nothing changed or the track isn't there.
+CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, const std::string& name);
 /// A drum track's lane IN level and pan (`lane` 0..7, the Drum Out output). Null when nothing changed.
 CommandPtr setDrumInput(const Song& song, TrackId track, int lane, Channel channel, const std::string& name);
 

@@ -4,6 +4,7 @@
 #include "ModuleUndo.hpp"
 #include "OutputMenus.hpp"
 #include "TrackOutDisplay.hpp"
+#include "editing/Sources.hpp"
 #include "widgets/Draw.hpp"
 #include "widgets/IconButton.hpp"
 #include "widgets/Lights.hpp"
@@ -160,6 +161,7 @@ struct DrumOutWidget : rack::app::ModuleWidget {
                                                [m](rack::ui::Menu* sub) { appendSourceMenu(sub, m, "Drum Out"); }));
         menu->addChild(rack::createSubmenuItem(
             "Track", "", [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Drum Out"); }, m->source() == nullptr));
+        sources::appendModuleItems(menu, m);
     }
 
   private:

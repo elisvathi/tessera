@@ -1,4 +1,6 @@
 #include "EditorHost.hpp"
+#include "../module/OutputModuleBase.hpp"
+#include "editing/Sources.hpp"
 
 #include "editing/AudioActions.hpp"
 
@@ -169,6 +171,22 @@ void EditorHost::showNotices() {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
+    // A new second source plays at once, mixed with the first (§7.8).
+    const TesseraModule::NewSource& news = m->newSource();
+    bool freshSource = noticesSeen && news.serial != sourceNewsSeen;
+    sourceNewsSeen = news.serial;
+    if (freshSource)
+        if (const Track* t = m->song().findTrack(news.track); t || news.track == m->song().master.id) {
+            std::string name = t ? t->name : "Master";
+            TrackId track = news.track;
+            int64_t newest = news.module;
+            ctx.toast(name + " has " + std::to_string(news.count) + " sources now. " + (news.count == 2 ? "Both play" : "All play"), "Use only the new one",
+                      [m, track, newest] {
+                          for (const sources::Row& r : sources::rowsOf(*m, track))
+                              if (!r.countedOnce && (!r.module || r.module->id != newest) && r.level.use)
+                                  sources::set(*m, track, r, {r.level.db, false}, "Use only the new source");
+                      });
+        }
     const TesseraModule::UnlinkedControls& u = m->unlinkedControls();
     // An editor opened after a report doesn't bring up the old news.
     bool fresh = noticesSeen && u.serial != unlinkedSeen;

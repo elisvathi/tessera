@@ -108,6 +108,8 @@ struct Track {
     // Drum tracks: the level and pan of what comes in on each Drum Out lane IN (outputs 1-8), before the track's own
     // fader (docs/design/AUDIO_MIXER.md §8.1, DECISIONS §112).
     std::array<Channel, kDrumInputs> drumInputs{};
+    // Audio tracks: the clips as a source of the track, beside what comes back on its Track Out's IN (§7.8).
+    SourceLevel clips;
 
     bool operator==(const Track& o) const {
         return id == o.id && name == o.name && color == o.color && type == o.type && polyphony == o.polyphony &&
@@ -116,7 +118,7 @@ struct Track {
                listenTrack == o.listenTrack && gateLengthScale == o.gateLengthScale && transpose == o.transpose &&
                drumLanes == o.drumLanes && slots == o.slots && arrangement == o.arrangement &&
                automation == o.automation && devices == o.devices && modulators == o.modulators &&
-               channel == o.channel && drumInputs == o.drumInputs;
+               channel == o.channel && drumInputs == o.drumInputs && clips == o.clips;
     }
 };
 

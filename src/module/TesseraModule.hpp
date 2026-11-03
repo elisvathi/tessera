@@ -28,6 +28,8 @@
 
 namespace tessera {
 
+class OutputModuleBase;
+
 enum class RunInputMode { Toggle, Gate };
 /// How the SCENE input picks a scene: 0.1 V apart, or one semitone (1/12 V) apart like a keyboard.
 enum class SceneCvMode { TenthVolt, Semitone };
@@ -305,6 +307,17 @@ class TesseraModule : public rack::engine::Module {
     int soundIndex(TrackId track) const;
     /// Whether anything in the song makes sound: an audio track, or audio coming back on an output module's IN.
     bool makesSound() const;
+    /// The output modules whose audio inputs bring sound to `track` (or the master) now, by place in the rack: left
+    /// to right, then top to bottom (§7.8). UI thread; the pointers are good for this frame only.
+    std::vector<OutputModuleBase*> sourceModules(TrackId track) const;
+    /// A track that just got a second source: the editors toast it once (§7.8, "A new second source plays at once").
+    struct NewSource {
+        uint64_t serial = 0;
+        TrackId track;
+        int count = 0;
+        int64_t module = -1; // the module that came in
+    };
+    const NewSource& newSource() const { return sourceNews; }
     /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
     /// False when the file isn't audio Tessera reads.
     bool replaceAudioFile(ClipId clip, const std::string& path);
@@ -444,6 +457,11 @@ class TesseraModule : public rack::engine::Module {
     Host recorderHost{*this};
     Recorder recorder{recorderHost};
     UnlinkedControls unlinked;
+    NewSource sourceNews;
+    std::map<uint64_t, std::vector<int64_t>> sourcesSeen; // per track: its source modules last frame
+    bool sourcesSeeded = false;
+    /// Marks sources counted once and reports a new second source. Each UI frame.
+    void sourcesStep();
     // A knob held by a drag: kind, parameter and owner packed into one word (0 = none), then its value.
     std::atomic<uint64_t> heldKnobKey{0};
     std::atomic<float> heldKnobValue{0};

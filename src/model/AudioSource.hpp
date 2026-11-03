@@ -146,6 +146,16 @@ struct Channel {
     bool operator!=(const Channel& o) const { return !(*this == o); }
 };
 
+/// How much of one source a track hears (§7.8): its level and whether it is in use. An audio track's clips and the
+/// master's mix are sources kept in the song; a Track Out's or Drum Out's is kept in that module.
+struct SourceLevel {
+    float db = 0; // kSilentDb..kMaxFaderDb
+    bool use = true;
+
+    bool operator==(const SourceLevel& o) const { return db == o.db && use == o.use; }
+    bool operator!=(const SourceLevel& o) const { return !(*this == o); }
+};
+
 /// The master: the sum of every track, out through MAIN. Not a Track: it has no clips, voices or export. It has its
 /// own ID from the song's counter, so output modules and mixer automation can point at it like at a track.
 struct MasterChannel {
@@ -153,9 +163,11 @@ struct MasterChannel {
     float volumeDb = 0;
     /// Its automation: only a Volume lane (the master has no pan), shown under the Master row.
     std::vector<AutomationEnvelope> automation;
+    /// The mix of every track as a source of the master, beside what comes back on its Track Out's IN (§7.8).
+    SourceLevel mix;
 
     bool operator==(const MasterChannel& o) const {
-        return id == o.id && volumeDb == o.volumeDb && automation == o.automation;
+        return id == o.id && volumeDb == o.volumeDb && automation == o.automation && mix == o.mix;
     }
     bool operator!=(const MasterChannel& o) const { return !(*this == o); }
 };

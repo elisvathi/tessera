@@ -27,11 +27,11 @@ comes back on a Track Out's or Drum Out's IN. From top to bottom:
 
 1. **The name**, under a bar in the track's colour. Click it to select the track.
 2. **The source**: where the sound comes from. **Clips** for an audio track's clips; **IN · Track Out** or
-   **IN · Drum Out** for a note track whose voice comes back on that module's IN; **2 sources** when an audio track
-   also has audio on IN. In amber: **Missing file** when a clip's file is gone, **Bypassed** when a module that
-   brings the sound is bypassed. Click it for a menu: **Add a Track Out for this track** places a new Track Out (a
-   Drum Out for a drum track) bound to it, right of Tessera; **Show Track Out in the rack** scrolls the rack to the
-   module and makes its screen flash.
+   **IN · Drum Out** for a note track whose voice comes back on that module's IN; **2 sources** when the track has
+   more than one (see [Several sources on one track](#several-sources-on-one-track)). In amber: **Missing file** when
+   a clip's file is gone, **Bypassed** when a module that brings the sound is bypassed. Click it for a menu: **Add a
+   Track Out for this track** places a new Track Out (a Drum Out for a drum track) bound to it, right of Tessera;
+   **Show Track Out in the rack** scrolls the rack to the module and makes its screen flash.
 3. **Pan**: drag it to move the sound left or right. Double-click centres it.
 4. **M** and **S**: mute and solo, the same switches as in the track rows.
 5. **The fader and the meter**. The fader sets the volume; the meter beside it shows the level as it plays.
@@ -41,6 +41,29 @@ The **Master** strip sits at the right. It sets the level of everything together
 the top turns red and shows the peak (like **+2.3**) when the sound went over full scale; click it to clear it.
 Under its fader it says how much memory the song's audio uses. When MAIN has no cable and the patch has an Audio
 module, it offers **Connect to Audio**.
+
+## Several sources on one track
+
+A track can hear more than one thing at once: an audio track's clips and a synth on its Track Out's IN, or two
+Track Outs on one track, each with its own synth, to layer them. Each is a **source**, and every source plays.
+When you patch a second source, a message says so: "Lead has 2 sources now. Both play", with **Use only the new
+one** to switch the others off.
+
+With two or more sources (or one you turned down or off), the strip's source reads **2 sources**. Click it for the
+list, with one entry per source: **Clips** first on an audio track (**Mix** on the Master), then each module by its
+place in the rack, **Track Out 1**, **Track Out 2**, **Drum Out**.
+
+- **Click a source's name** to use it or not (the tick). A source not in use is silent, without pulling a cable.
+- **Level** sets how loud that source is, from -inf to +6 dB. Drag it; double-click for 0 dB. Each change is one
+  undo step.
+- A small meter shows what each source brings in, and **Show … in the rack** finds its module.
+- **Counted once**: when one cable feeds the INs of two Track Outs on the same track, the second adds nothing. The
+  list says "same cable as another source · counted once".
+- With every source off, the strip reads **No source in use** and the track is silent.
+
+A Track Out's **Use** and **Level** are kept in the module and also sit in its right-click menu, under **As a source
+of its track**. Its screen shows **IN OFF** or the level (like **IN -6.0 dB**) while they change the sound. They go
+with the module when you move, duplicate or delete it.
 
 ## Drum lanes
 

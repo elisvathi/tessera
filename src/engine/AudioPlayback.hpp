@@ -70,6 +70,7 @@ struct AudioTrackPlay {
     std::vector<int> returns; // return bus slots mixed in after OUT (an effect coming back), at 0 dB (§2)
     std::vector<AudioInstancePlay> instances; // sorted by position
     std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
+    float clipsGain = 1;                       // the clips as a source (§7.8): their Level, 0 when not in use
     float volume = 1;                          // the fader as a gain
     float pan = 0;
     bool audible = true; // mute and solo already applied
@@ -81,6 +82,7 @@ struct AudioSnapshot {
     std::vector<AudioClipPlay> clips;
     std::vector<AudioTrackPlay> tracks;
     float masterVolume = 1;
+    float masterMixGain = 1; // the mix as a source of the master (§7.8)
     uint64_t masterId = 0; // the master's TrackId value
     /// The master's Volume lane as fader positions (0..1) over song ticks; empty when none plays (muted or absent).
     std::vector<AutoPoint> masterLane;
