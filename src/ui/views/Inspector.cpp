@@ -852,8 +852,31 @@ void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
                      double(f.curve) * 100);
             return std::string(text);
         };
-        y = row(vg, y, "Fade in", fade(instance->fadeIn));
-        y = row(vg, y, "Fade out", fade(instance->fadeOut));
+        // Where the instance overlaps a neighbour, the crossfade takes that side's fade (§6.3).
+        auto crossfade = [&](bool before) -> std::pair<std::string, std::string> {
+            for (const ArrangerClip& o : t.arrangement) {
+                if (o.id == instance->id || o.muted)
+                    continue;
+                Tick shared = before ? std::min(instanceEnd(o), instanceEnd(*instance)) - instance->position
+                                     : std::min(instanceEnd(o), instanceEnd(*instance)) - o.position;
+                bool side = before ? o.position < instance->position : o.position > instance->position;
+                if (!side || shared <= 0)
+                    continue;
+                const Clip* other = song.findClip(o.clip);
+                char text[48];
+                snprintf(text, sizeof text, "Crossfade · %.0f ms", double(shared) * secondsPerTick(bpm) * 1000);
+                return {text, "with " + (other && !other->name.empty() ? other->name : std::string("a clip"))};
+            }
+            return {};
+        };
+        auto fadeRows = [&](const char* label, bool before, const Fade& f) {
+            auto [cross, with] = crossfade(before);
+            y = row(vg, y, label, cross.empty() ? fade(f) : cross);
+            if (!with.empty())
+                y = row(vg, y, "", with);
+        };
+        fadeRows("Fade in", true, instance->fadeIn);
+        fadeRows("Fade out", false, instance->fadeOut);
         y = row(vg, y, "Muted", instance->muted ? "Yes" : "No");
     }
 }

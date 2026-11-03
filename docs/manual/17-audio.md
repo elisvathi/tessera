@@ -148,7 +148,8 @@ Like the clip menu, these change the clip, so every linked copy follows.
 
 With an audio clip selected, the inspector shows its **Gain**, **Follow tempo**, **Sound type**, **Clip tempo**,
 **Pitch** (Stretch clips) and **Reverse** (click one to change it), its length and loop, and its file: name, length, sample rate, mono or stereo. With a
-timeline copy selected, it shows that copy's fade in and fade out too.
+timeline copy selected, it shows that copy's fade in and fade out too; where the copy crossfades with a neighbour,
+that side says **Crossfade** and with which clip.
 
 For the track, it shows its **Volume**, **Pan** and **Output** (MAIN).
 
