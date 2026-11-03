@@ -391,6 +391,9 @@ void TesseraModule::audioStep() {
         if (!build.snapshot->holds(r.first.get()))
             build.snapshot->buffers.push_back(r.first);
     audio->want(build.wanted);
+    if (std::any_of(build.snapshot->tracks.begin(), build.snapshot->tracks.end(),
+                    [](const AudioTrackPlay& tp) { return tp.delay > 0; }))
+        player->ensureDelays();
     audioSnapshots.publish(std::move(build.snapshot));
     if (releaseHolds) {
         player->releaseHolds();

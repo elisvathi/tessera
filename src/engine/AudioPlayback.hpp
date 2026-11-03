@@ -89,6 +89,7 @@ struct AudioTrackPlay {
     bool own = true;     // its own sound (clips, lane INs) plays; off when muted or soloed away (§4.5)
     bool sending = true; // its sends play
     std::vector<SendPlay> sends; // receivers always come later in `tracks`
+    int delay = 0; // samples it waits on its way to the master, so tracks with latency line up (§3.5)
 };
 
 /// Everything the audio thread plays, for one Tessera.

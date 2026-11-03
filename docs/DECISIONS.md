@@ -1892,3 +1892,10 @@ Why: built to the spec; these are the places it left open or where the code sugg
   file seconds at the clip tempo: two Warp points, the clip's start and end; algorithm "stretch" or "repitch". Every
   source's file goes in the zip as "audio/<name>" (repeated names numbered), read from patch storage.
 - Not yet: audio launcher clips, reverse, clip gain, pitch shift.
+
+## 126. Automatic delay compensation (3 Nov)
+
+- Every track that makes sound waits (latest latency − its own) samples after its fader, before the master: a
+  delay line per bus slot (the slot never moves, so reordering tracks never mixes up the lines), 8192 samples at most
+  (about 170 ms at 48 kHz). The lines (4 MB) are made once, on the UI thread, the first time a snapshot needs them.
+  Stems are taken after the delay, so exported stems line up too. Sends leave before it.

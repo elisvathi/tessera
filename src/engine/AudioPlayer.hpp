@@ -122,6 +122,16 @@ class AudioPlayer {
     /// The level of a running tap's signal now (volts, the last block's peak), for "until silent".
     float tapLevel(int n) const { return taps[size_t(n)].level.load(std::memory_order_relaxed); }
 
+    /// The longest delay compensation can add, in samples (about 170 ms at 48 kHz).
+    static constexpr int kMaxDelay = 8192;
+    /// Makes room for delay compensation, once: call on the UI thread before a snapshot with delays plays.
+    void ensureDelays() {
+        if (delays.load(std::memory_order_acquire))
+            return;
+        delayMemory.reset(new float[size_t(kMaxTracks) * 2 * kMaxDelay]());
+        delays.store(delayMemory.get(), std::memory_order_release);
+    }
+
     /// Measures the recording offset (§8.6): counts samples from now until track `track`'s IN goes above 1 V.
     /// The caller fires the click at the same sample. UI thread.
     void startMeasure(uint64_t track) {
@@ -281,6 +291,9 @@ class AudioPlayer {
         float peak = 0;
     };
     std::array<Tap, kMaxTaps> taps{};
+    std::unique_ptr<float[]> delayMemory; // per bus slot, two channels of kMaxDelay; made once, never freed early
+    std::atomic<float*> delays{nullptr};
+    size_t delayPos = 0;
     std::atomic<bool> measuring{false};
     std::atomic<uint64_t> measureTrack{0};
     std::atomic<int64_t> measureResult{-2};
