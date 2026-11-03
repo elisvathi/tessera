@@ -359,6 +359,10 @@ void EditorHost::runAction(Action action) {
     case Action::ExportMidi:
         exportMidi::openSong(ctx);
         return;
+    case Action::MaximizeMixer:
+        view.mixerMax = !view.mixerMax;
+        view.mixerOpen = true;
+        return;
     case Action::ImportAudio:
         audioActions::importDialog(ctx);
         return;

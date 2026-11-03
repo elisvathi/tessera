@@ -308,6 +308,11 @@ class TesseraModule : public rack::engine::Module {
     AudioStore* audioStore() const { return audio.get(); }
     const AudioPlayer& audioPlayer() const { return *player; }
     AudioPlayer& audioPlayer() { return *player; }
+    /// Plays a fader or pan at once while the mouse drags it, before the edit lands (§8.4: no snapshot rebuild).
+    /// `track` may be the master's ID.
+    void holdChannel(TrackId track, float volumeDb, float pan) { player->hold(track.value, dbToGain(volumeDb), pan); }
+    /// Ends the holds once the snapshot with the committed values is out, so the sound never steps back.
+    void releaseChannelHolds() { releaseHolds = true; }
     /// Whether MAIN L has a cable (the master's way out).
     bool mainPatched() const { return mainConnected.load(std::memory_order_relaxed); }
     /// Whether the master has sound now: for the MAIN warnings.
@@ -387,6 +392,7 @@ class TesseraModule : public rack::engine::Module {
     double tempoSettleAt = 0;    // when the tempo last moved (seconds)
     std::atomic<float> audioRate{0};
     std::atomic<bool> mainConnected{false};
+    bool releaseHolds = false;
     // Buffers a new snapshot no longer uses stay in it a second longer, so fades already reading them can finish.
     std::vector<std::pair<std::shared_ptr<const AudioBuffer>, double>> retiringBuffers;
 
