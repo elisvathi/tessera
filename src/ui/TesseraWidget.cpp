@@ -7,6 +7,7 @@
 #include "PanelEditor.hpp"
 #include "TesseraDisplay.hpp"
 #include "Theme.hpp"
+#include "editing/AudioActions.hpp"
 #include "editing/ProjectFile.hpp"
 #include "widgets/Draw.hpp"
 #include "widgets/Lights.hpp"
@@ -372,6 +373,12 @@ struct TesseraWidget : rack::app::ModuleWidget {
 
         menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createMenuItem("Open editor", "", [this] { openEditor(); }));
+        if (hasAudio(m->song()) && !m->mainPatched() && audioActions::audioModuleInPatch())
+            menu->addChild(rack::createMenuItem("Connect MAIN to Audio module", "", [m] {
+                std::string text = audioActions::connectMainToAudio(m);
+                if (EditorContext* c = EditorWindow::contextFor(m->id))
+                    c->toast(text);
+            }));
         int64_t id = m->id;
         menu->addChild(rack::createSubmenuItem("File", "", [this, m, id](rack::ui::Menu* sub) {
             projectFile::appendFileMenu(
