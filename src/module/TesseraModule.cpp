@@ -1337,6 +1337,11 @@ void TesseraModule::writeTransportOutputs(const ProcessArgs& args) {
         clickLevel = ev.bar ? 10.f : 5.f;
         beatFlash.trigger(kBeatFlashSeconds);
     }
+    // Measuring the recording offset: one click, timed from this sample.
+    if (measureClick.exchange(false, std::memory_order_acq_rel)) {
+        clickPulse.trigger(kTriggerSeconds);
+        clickLevel = 10.f;
+    }
 
     outputs[CLOCK_OUTPUT].setVoltage(ev.clock ? 10.f : 0.f);
     outputs[RUN_OUTPUT].setVoltage(ev.running ? 10.f : 0.f);

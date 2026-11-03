@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace tessera {
@@ -343,6 +344,14 @@ class TesseraModule : public rack::engine::Module {
     Tick songEnd() const;
     /// What the last export made, once, for a toast ("Exported Song.wav and 4 stems"); then empty.
     std::string exportResult;
+    /// Measures the recording offset (§8.6): plays a click on CLICK four times and times how long each takes to
+    /// come back on the first armed audio track's IN; the middle value becomes the offset. False when no audio
+    /// track is armed. The result arrives in exportResult's place, as a message.
+    bool measureOffset();
+    /// Glue across files (§3.4): renders the selected audio clips of one track, with their gains and fades, into
+    /// one new file on a worker thread, then puts it in their place as one undo step. False when they aren't all
+    /// audio on one track, or a glue already runs.
+    bool glueAudio(TrackId track, const std::vector<ArrangementId>& instances);
     /// Stops a bounce or export and leaves nothing behind.
     void cancelCapture();
     /// What runs now, for the progress line: "Bouncing Bass · bar 3 of 8". Empty when nothing does.
@@ -521,6 +530,31 @@ class TesseraModule : public rack::engine::Module {
         std::string name;
     };
     std::optional<ExportJob> exporting;
+    struct Measure {
+        TrackId track;
+        std::vector<int64_t> results;
+        double nextAt = 0;
+        bool waiting = false;
+    };
+    std::optional<Measure> measure;
+    struct GlueJob {
+        TrackId track;
+        std::vector<ArrangementId> instances;
+        Tick from = 0;
+        std::string path;
+        std::thread worker;
+        std::atomic<bool> done{false}, ok{false};
+        ~GlueJob() {
+            if (worker.joinable())
+                worker.join();
+        }
+    };
+    std::unique_ptr<GlueJob> glue;
+    /// Puts a finished glue in place. Each UI frame.
+    void glueStep();
+    std::atomic<bool> measureClick{false};
+    /// Works a running measurement: one click at a time, then the result. Each UI frame.
+    void measureStep();
     /// Works a running export: arms its taps after the jump to the start, ends it, reports. Each UI frame.
     void exportStep();
 

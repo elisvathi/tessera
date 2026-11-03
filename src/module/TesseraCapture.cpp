@@ -1,8 +1,12 @@
 #include "TesseraModule.hpp"
 
 #include "CommandAction.hpp"
+#include "../engine/Snapshot.hpp"
+#include "../engine/AudioSnapshotBuilder.hpp"
 
+#include <chrono>
 #include <cstring>
+#include <limits>
 #include <filesystem>
 
 // Recording audio, bouncing and exporting (docs/design/AUDIO_MIXER.md §8.6): the UI-thread side. The audio thread
@@ -53,6 +57,7 @@ std::vector<TesseraModule::LiveTake> TesseraModule::liveTakes() const {
 }
 
 void TesseraModule::captureStep() {
+    glueStep();
     if (!audio || !player->active())
         return;
     if (!captureWriter)
@@ -133,6 +138,7 @@ void TesseraModule::captureStep() {
         importTakes(takes);
     bounceStep();
     exportStep();
+    measureStep();
 }
 
 bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal) {
@@ -171,6 +177,192 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
         requestTransport(kRequestPlay);
     bounce = job;
     return true;
+}
+
+bool TesseraModule::measureOffset() {
+    if (measure || !player->active())
+        return false;
+    for (const Track& t : songData.tracks)
+        if (t.type == TrackType::Audio && t.armed) {
+            Measure job;
+            job.track = t.id;
+            job.nextAt = rack::system::getTime();
+            measure = job;
+            return true;
+        }
+    return false;
+}
+
+void TesseraModule::measureStep() {
+    if (!measure)
+        return;
+    Measure& job = *measure;
+    double now = rack::system::getTime();
+    if (job.waiting) {
+        int64_t got = player->measured();
+        if (got == -2)
+            return;
+        job.waiting = false;
+        if (got < 0) {
+            measure.reset();
+            exportResult = "Nothing came back: patch CLICK out through the sound card and back into the armed "
+                           "track's Track Out IN";
+            return;
+        }
+        job.results.push_back(got);
+        job.nextAt = now + 0.3;
+    }
+    if (job.results.size() >= 4) {
+        std::vector<int64_t> r = job.results;
+        std::sort(r.begin(), r.end());
+        int64_t middle = (r[1] + r[2]) / 2;
+        RecordSettings s = recorder.settings;
+        s.recordOffsetSamples = int(std::max<int64_t>(0, middle - kKnownLatency));
+        setRecordSettings(s);
+        double rate = audioRate.load() > 0 ? double(audioRate.load()) : 48000;
+        char text[96];
+        snprintf(text, sizeof text, "Recording offset: %.1f ms (%d samples), measured",
+                 s.recordOffsetSamples * 1000.0 / rate, s.recordOffsetSamples);
+        exportResult = text;
+        measure.reset();
+        return;
+    }
+    if (now >= job.nextAt) {
+        player->startMeasure(job.track.value);
+        measureClick.store(true, std::memory_order_release);
+        job.waiting = true;
+    }
+}
+
+bool TesseraModule::glueAudio(TrackId track, const std::vector<ArrangementId>& instances) {
+    const Track* t = songData.findTrack(track);
+    if (!t || glue || !audio || instances.empty())
+        return false;
+    Song solo = songData;
+    Track* only = solo.findTrack(track);
+    // Only those clips, as they are, at 0 dB: what the glued clip should hold.
+    std::vector<ArrangerClip> kept;
+    Tick from = std::numeric_limits<Tick>::max(), to = 0;
+    for (const ArrangerClip& a : only->arrangement)
+        if (std::find(instances.begin(), instances.end(), a.id) != instances.end()) {
+            const Clip* clip = solo.findClip(a.clip);
+            if (!clip || !clip->audio)
+                return false;
+            kept.push_back(a);
+            from = std::min(from, a.position);
+            to = std::max(to, a.position + a.length);
+        }
+    if (kept.size() != instances.size() || to <= from)
+        return false;
+    only->arrangement = kept;
+    only->channel = Channel{};
+    only->clips = SourceLevel{};
+    only->mute = only->solo = false;
+    only->sends.clear();
+    only->automation.clear();
+    solo.tracks = {*only};
+    solo.master.volumeDb = 0;
+    solo.master.automation.clear();
+    solo.master.mix = SourceLevel{};
+    double rate = audioRate.load() > 0 ? double(audioRate.load()) : 48000;
+    double bpm = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    auto job = std::make_unique<GlueJob>();
+    job->track = track;
+    job->instances = instances;
+    job->from = from;
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / ("tessera-" + std::to_string(id));
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    job->path = (dir / (t->name + " glued.wav")).string();
+    // The snapshot holds the samples it plays, so the worker needs nothing else from the UI thread.
+    BusSlots slots;
+    slots.sync(solo);
+    std::shared_ptr<Snapshot> notes = buildSnapshot(solo, slots);
+    std::shared_ptr<AudioSnapshot> sound = buildAudioSnapshot(solo, *audio, rate, bpm, {}, MixPlan{}).snapshot;
+    GlueJob* raw = job.get();
+    job->worker = std::thread([raw, notes, sound, rate, bpm, from, to] {
+        Engine engine;
+        engine.setSampleRate(float(rate));
+        engine.setTempo(bpm);
+        engine.setSnapshot(notes.get());
+        engine.seek(double(from));
+        engine.play();
+        AudioPlayer player;
+        player.setSampleRate(float(rate));
+        player.setSnapshot(sound.get());
+        std::array<TrackFrame, kMaxTracks> frames{};
+        TransportEvents events;
+        auto ring = std::make_shared<FrameRing>(1 << 16);
+        CaptureWriter writer;
+        int id = writer.start(ring, raw->path, rate, CaptureWriter::Format::Float32);
+        int64_t total = int64_t(double(to - from) / (bpm / 60.0 * double(kPpq)) * rate);
+        for (int64_t n = 0; n < total; n++) {
+            engine.process(frames.data(), events);
+            float l = 0, r = 0;
+            player.process(engine, l, r);
+            while (!ring->push(l, r))
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        int64_t written = 0;
+        while (!writer.finish(id, &written))
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        raw->ok = written > 0;
+        raw->done = true;
+    });
+    glue = std::move(job);
+    return true;
+}
+
+void TesseraModule::glueStep() {
+    if (!glue || !glue->done)
+        return;
+    glue->worker.join();
+    std::unique_ptr<GlueJob> job = std::move(glue);
+    const Track* t = songData.findTrack(job->track);
+    if (!job->ok || !t)
+        return;
+    double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    AudioImport imp = audio->importFile(job->path, songTempo, songData.timeSig);
+    std::error_code ec;
+    std::filesystem::remove(job->path, ec);
+    if (!imp.ok)
+        return;
+    ImportedAudio f;
+    f.source = imp.source;
+    f.source.volts = kFullScaleVolts;
+    f.tempo = songTempo;
+    f.follow = TempoFollow::Stretch;
+    f.sound = imp.guess.sound;
+    f.loop = false;
+    // The glued clips go first, then the new one takes their place, in one undo step.
+    std::vector<ArrangerClip> rest;
+    for (const ArrangerClip& a : t->arrangement)
+        if (std::find(job->instances.begin(), job->instances.end(), a.id) == job->instances.end())
+            rest.push_back(a);
+    auto compound = std::make_unique<CompoundCommand>("Glue audio");
+    NoteSelection before = editorState.selection;
+    if (CommandPtr remove = setTrackField(songData, job->track, &Track::arrangement, rest, "Glue audio")) {
+        remove->apply(songData);
+        compound->add(std::move(remove));
+    }
+    AudioDropTarget target;
+    target.kind = AudioDropTarget::Kind::Track;
+    target.track = job->track;
+    target.at = job->from;
+    ImportResult made;
+    if (CommandPtr place = importAudio(songData, {f}, target, ids(), &made)) {
+        place->apply(songData);
+        compound->add(std::move(place));
+    }
+    publish(ChangeSet::all());
+    audio->sync(songData);
+    auto* complex = new rack::history::ComplexAction;
+    complex->name = "glue audio";
+    complex->push(new CommandAction(id, std::move(compound), before, editorState.selection));
+    APP->history->push(complex);
+    editorState.clipSelection.clear();
+    for (ArrangementId a : made.instances)
+        editorState.clipSelection.insert(a);
 }
 
 Tick TesseraModule::songEnd() const {

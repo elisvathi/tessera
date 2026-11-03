@@ -106,11 +106,22 @@ void glueSelected(ArrangerLanes& lanes) {
     IdSet ids = lanes.selection();
     CommandPtr command = arrange::glue(m->song(), ids, m->ids());
     if (!command) {
-        for (const arrange::Placed& p : arrange::pick(lanes.committed(), ids))
-            if (const Clip* c = m->song().findClip(p.clip.clip); c && c->audio) {
-                lanes.context().toast("Audio clips glue only when they are parts of one clip, side by side");
-                break;
-            }
+        // Audio from different files, or with gaps: render them into one new file.
+        std::vector<arrange::Placed> picked = arrange::pick(lanes.committed(), ids);
+        bool audio = !picked.empty(), oneTrack = true;
+        std::vector<ArrangementId> instances;
+        for (const arrange::Placed& p : picked) {
+            const Clip* c = m->song().findClip(p.clip.clip);
+            audio &= c && c->audio;
+            oneTrack &= p.track == picked.front().track;
+            instances.push_back(p.clip.id);
+        }
+        if (audio && picked.size() > 1) {
+            if (!oneTrack)
+                lanes.context().toast("Audio clips glue on one track at a time");
+            else if (m->glueAudio(picked.front().track, instances))
+                lanes.context().toast("Gluing " + std::to_string(picked.size()) + " audio clips into one file");
+        }
         return;
     }
     IdSet old = arrange::idsOf(lanes.committed());

@@ -1849,3 +1849,18 @@ Why: built to the spec; these are the places it left open or where the code sugg
   tick, so it starts exactly at the jump to the start and never at the old playhead. Verified: 8 bars at 112 BPM
   gave 17.143 s, exactly.
 - Stopping the timeline before the end cancels and deletes the files; with the clips, Stop finishes the file.
+
+## 122. Phase 3 finished: offset, latency, the Audio files list, glue across files (3 Nov)
+
+- **Recording offset** (`RecordSettings::recordOffsetSamples`): Record ▾ Recording offset shows it in ms, Measure it,
+  type ms, None. **Measuring**: four clicks on CLICK, 0.3 s apart, each timed by the player from that sample until the
+  first armed audio track's IN goes above 1 V (a second at most); the middle two averaged, less Tessera's own 2
+  samples. A straight cable from CLICK into IN measures 0 ms.
+- **Track latency** (`Track::latencySamples`, saved when not 0) is typed in the mixer strip's name menu; it is not
+  yet used for delay compensation while playing (Phase 4).
+- **The Audio files list** is a menu, not a window (the coming UX overhaul may make it one): per file the facts, Find
+  file… (missing), Select its clips; the total and Remove unused audio.
+- **Glue across files**: when the usual glue can't join the selected audio clips, they are rendered (one track's
+  clips only, at 0 dB, no fader, sends or lanes) by a private engine and player on a worker thread into one WAV,
+  imported in their place: the old instances go and the new clip lands at the first one's start, one undo step.
+  Stretched clips render through the render cache when ready, else the varispeed reader.

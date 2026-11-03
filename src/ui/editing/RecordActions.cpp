@@ -2,6 +2,7 @@
 
 #include "../../module/TesseraModule.hpp"
 #include "../interaction/Shortcuts.hpp"
+#include "../widgets/MenuTextField.hpp"
 
 namespace tessera::recordActions {
 
@@ -60,6 +61,32 @@ void openMenu(EditorContext& ctx) {
             for (float db : {-24.f, -18.f, -12.f, -6.f, 0.f})
                 sub->addChild(settingItem(c, std::to_string(int(db)) + " dB", &RecordSettings::metronomeDb, db));
         }));
+    double rate = APP->engine->getSampleRate() > 0 ? double(APP->engine->getSampleRate()) : 48000;
+    char offset[32];
+    snprintf(offset, sizeof offset, "%.1f ms", s.recordOffsetSamples * 1000.0 / rate);
+    menu->addChild(rack::createSubmenuItem("Recording offset", offset, [c, rate](rack::ui::Menu* sub) {
+        sub->addChild(rack::createMenuLabel("How late audio comes back through the sound card; takes move earlier"));
+        sub->addChild(rack::createMenuItem("Measure it", "", [c] {
+            TesseraModule* m = c->module();
+            if (!m || !m->measureOffset())
+                c->toast("Arm an audio track first, and patch CLICK out through the sound card into its Track Out IN");
+            else
+                c->toast("Measuring: four clicks on CLICK");
+        }));
+        sub->addChild(rack::createMenuLabel("First patch CLICK through the sound card into the armed track's IN"));
+        sub->addChild(new rack::ui::MenuSeparator);
+        sub->addChild(rack::createMenuLabel("Type it (ms)"));
+        sub->addChild(new MenuTextField("", [c, rate](const std::string& text) {
+            char* end = nullptr;
+            double ms = std::strtod(text.c_str(), &end);
+            if (TesseraModule* m = c->module(); m && end != text.c_str()) {
+                RecordSettings next = m->recordSettings();
+                next.recordOffsetSamples = int(std::clamp(std::lround(ms * rate / 1000.0), 0L, 96000L));
+                m->setRecordSettings(next);
+            }
+        }));
+        sub->addChild(settingItem(c, "None (0 ms)", &RecordSettings::recordOffsetSamples, 0));
+    }));
     menu->addChild(rack::createSubmenuItem(
         "New launcher clips", s.clipBars == 0 ? "As long as played" : bars(s.clipBars), [c](rack::ui::Menu* sub) {
             sub->addChild(settingItem(c, "As long as played (rounded up to the bar)", &RecordSettings::clipBars, 0));

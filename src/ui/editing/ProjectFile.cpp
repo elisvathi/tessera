@@ -136,6 +136,10 @@ void appendFileMenu(rack::ui::Menu* menu, TesseraModule* m, std::function<Editor
         if (EditorContext* c = editor())
             audioActions::importDialog(*c);
     }));
+    menu->addChild(rack::createMenuItem("Audio files…", "", [editor] {
+        if (EditorContext* c = editor())
+            audioActions::openAudioFiles(*c);
+    }, m->song().audioSources.empty()));
     menu->addChild(rack::createMenuItem("Remove unused audio", "", [editor] {
         if (EditorContext* c = editor())
             audioActions::removeUnused(*c);
