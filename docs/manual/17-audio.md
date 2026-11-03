@@ -221,7 +221,8 @@ clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B
 - **The master**, or **The master and every track (stems)**: a file for the master, and beside it one per track
   that makes sound, after its fader, named "Song - Bass.wav". Muted tracks have no stem; the message at the end
   says how many were left out.
-- **24-bit WAV** (with dither) or **32-bit float WAV**.
+- **24-bit WAV** (with dither), **32-bit float WAV**, or **24-bit FLAC**: the same sound as the 24-bit WAV, in about
+  half the space.
 - **It follows Plays.** With **Timeline**, it plays the song from the start to the end of the last clip, or the loop
   when the loop is on. With **Clips**, it records the master from now until you press **Stop**, so a live clip
   performance becomes a file.

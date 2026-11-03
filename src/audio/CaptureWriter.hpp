@@ -16,8 +16,8 @@ namespace tessera {
 
 class CaptureWriter {
   public:
-    /// The file format: 32-bit float (recordings, bounces) or 24-bit with dither (exports).
-    enum class Format { Float32, Pcm24 };
+    /// The file format: 32-bit float WAV (recordings, bounces), or for exports 24-bit WAV or FLAC with dither.
+    enum class Format { Float32, Pcm24, Flac24 };
 
     CaptureWriter();
     ~CaptureWriter();

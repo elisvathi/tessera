@@ -374,7 +374,7 @@ Tick TesseraModule::songEnd() const {
     return (end + bar - 1) / bar * bar;
 }
 
-bool TesseraModule::startExport(const std::string& path, bool stems, bool float32) {
+bool TesseraModule::startExport(const std::string& path, bool stems, CaptureWriter::Format format) {
     if (bounce || exporting || !audio || !player->active())
         return false;
     if (!captureWriter)
@@ -390,7 +390,6 @@ bool TesseraModule::startExport(const std::string& path, bool stems, bool float3
         if (job.to <= job.from)
             return false;
     }
-    auto format = float32 ? CaptureWriter::Format::Float32 : CaptureWriter::Format::Pcm24;
     auto add = [&](TrackId track, const std::string& file) {
         int tap = freeTap();
         if (tap < 0)
@@ -407,8 +406,8 @@ bool TesseraModule::startExport(const std::string& path, bool stems, bool float3
     };
     add(songData.master.id, path);
     if (stems) {
-        std::string base = path.size() > 4 && path.substr(path.size() - 4) == ".wav" ? path.substr(0, path.size() - 4)
-                                                                                    : path;
+        std::string ext = rack::system::getExtension(path);
+        std::string base = path.substr(0, path.size() - ext.size());
         for (const Track& t : songData.tracks) {
             if (soundIndex(t.id) < 0)
                 continue;
@@ -419,7 +418,7 @@ bool TesseraModule::startExport(const std::string& path, bool stems, bool float3
             std::string safe;
             for (char ch : t.name)
                 safe += std::strchr("/\\:*?\"<>|", ch) ? '_' : ch;
-            add(t.id, base + " - " + safe + ".wav");
+            add(t.id, base + " - " + safe + ext);
         }
     }
     if (job.timeline) {

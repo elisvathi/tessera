@@ -14,7 +14,7 @@ namespace {
 /// What the dialog has chosen; kept for the next export while Rack runs.
 struct Choice {
     bool stems = false;
-    bool float32 = false;
+    CaptureWriter::Format format = CaptureWriter::Format::Pcm24;
 };
 
 Choice& lastChoice() {
@@ -23,14 +23,15 @@ Choice& lastChoice() {
 }
 
 /// Asks where to save, with `name` as the suggestion; "" when cancelled. Adds ".wav" when missing.
-std::string pickPath(const std::string& name) {
-    osdialog_filters* filters = osdialog_filters_parse("WAV audio:wav");
-    char* chosen = osdialog_file(OSDIALOG_SAVE, nullptr, (name + ".wav").c_str(), filters);
+std::string pickPath(const std::string& name, bool flac) {
+    std::string ext = flac ? ".flac" : ".wav";
+    osdialog_filters* filters = osdialog_filters_parse(flac ? "FLAC audio:flac" : "WAV audio:wav");
+    char* chosen = osdialog_file(OSDIALOG_SAVE, nullptr, (name + ext).c_str(), filters);
     osdialog_filters_free(filters);
     std::string path = chosen ? chosen : "";
     std::free(chosen);
-    if (!path.empty() && rack::system::getExtension(path) != ".wav")
-        path += ".wav";
+    if (!path.empty() && rack::system::getExtension(path) != ext)
+        path += ext;
     return path;
 }
 
@@ -67,19 +68,22 @@ void openDialog(EditorContext& ctx) {
         "The master and every track (stems)", "", [choice] { return choice->stems; },
         [choice] { choice->stems = true; }, false, true));
     menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createCheckMenuItem(
-        "24-bit WAV", "", [choice] { return !choice->float32; }, [choice] { choice->float32 = false; }, false, true));
-    menu->addChild(rack::createCheckMenuItem(
-        "32-bit float WAV", "", [choice] { return choice->float32; }, [choice] { choice->float32 = true; }, false,
-        true));
+    using Format = CaptureWriter::Format;
+    auto format = [&](Format f, const char* name) {
+        menu->addChild(rack::createCheckMenuItem(
+            name, "", [choice, f] { return choice->format == f; }, [choice, f] { choice->format = f; }, false, true));
+    };
+    format(Format::Pcm24, "24-bit WAV");
+    format(Format::Float32, "32-bit float WAV");
+    format(Format::Flac24, "24-bit FLAC (about half the size)");
     menu->addChild(new rack::ui::MenuSeparator);
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuItem("Export…", "", [c, m, choice] {
         std::string name = m->instanceName().empty() ? "Tessera" : m->instanceName();
-        std::string path = pickPath(name);
+        std::string path = pickPath(name, choice->format == CaptureWriter::Format::Flac24);
         if (path.empty())
             return;
-        if (!m->startExport(path, choice->stems, choice->float32))
+        if (!m->startExport(path, choice->stems, choice->format))
             c->toast("Can't export now: the timeline is empty, or a bounce or export is running");
     }));
 }
