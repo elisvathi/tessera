@@ -26,7 +26,7 @@ class TrackOutDisplay : public rack::widget::Widget {
     BindingStatus status = BindingStatus::NoSource;
     std::string sourceName;
     std::string trackName;
-    int trackNumber = 0;
+    std::string trackNumber; // "3", or "M" for the master
     uint32_t trackColor = 0;
 };
 

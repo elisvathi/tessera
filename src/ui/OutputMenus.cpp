@@ -95,6 +95,21 @@ void appendTrackMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::strin
                 });
         }));
     }
+    // The master, last (§8.1): OUT is the master mix, IN is mixed into it.
+    if (m->canBindMaster()) {
+        TrackId master = song.master.id;
+        bool checked = m->binding().track == master;
+        menu->addChild(rack::createCheckMenuItem(
+            "Master", "", [checked] { return checked; },
+            [m, sourceId, master, what] {
+                TesseraModule* s = Registry::get().findSource(sourceId);
+                if (s)
+                    withModuleUndo(m, "change " + what + " track", [&] {
+                        m->setFollowSelected(false);
+                        m->bind(*s, master);
+                    });
+            }));
+    }
 }
 
 } // namespace tessera

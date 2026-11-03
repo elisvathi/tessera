@@ -1,5 +1,7 @@
 #include "TesseraModule.hpp"
 
+#include "OutputModuleBase.hpp"
+
 #include <patch.hpp>
 
 #include "../engine/ClockDivisions.hpp"
@@ -403,7 +405,10 @@ MixPlan TesseraModule::currentMixPlan() const {
     for (const Track& t : songData.tracks)
         if (int slot = slots.slotOf(t.id); slot >= 0)
             plan.busSlots.push_back({t.id, slot});
-    // Returns join once output modules have IN jacks (Phase 2a, after the Track Out panel is agreed).
+    // Output modules whose IN brings audio back feed their track, or the master (§2, §8.3).
+    for (OutputModuleBase* o : Registry::get().outputsOf(id))
+        if (int slot = o->activeReturn(); slot >= 0)
+            plan.returns.push_back({o->boundTrack(), slot});
     return plan;
 }
 

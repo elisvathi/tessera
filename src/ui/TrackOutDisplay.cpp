@@ -10,11 +10,13 @@ namespace tessera {
 namespace {
 
 constexpr float kPad = 1.5f * theme::metrics::kSpacing;
-// The display is 24 mm (~71 px) tall; keep the track name ~5 px off the bottom edge.
 constexpr float kSourceBaseline = 13.5f;
-constexpr float kNumberBaseline = 46;
-constexpr float kNameBaseline = 64;
-constexpr float kNumberSize = 28;
+
+// The number and the name follow the display's height (24 mm on Drum Out, shorter on Track Out); the name stays
+// ~7 px off the bottom edge.
+float numberBaseline(float height) { return height * 0.65f; }
+float nameBaseline(float height) { return height - 7; }
+float numberSize(float height) { return std::min(28.f, height * 0.4f); }
 
 } // namespace
 
@@ -23,7 +25,7 @@ void TrackOutDisplay::gather() {
         status = BindingStatus::Bound;
         sourceName = "Tessera";
         trackName = "Track 1";
-        trackNumber = 1;
+        trackNumber = "1";
         trackColor = trackColorForIndex(0);
         return;
     }
@@ -35,10 +37,16 @@ void TrackOutDisplay::gather() {
     if (status != BindingStatus::Bound)
         return;
     const Song& song = src->song();
+    if (module->boundKind() == BoundKind::Master) {
+        trackName = "Master";
+        trackNumber = "M";
+        trackColor = 0xC9CED6;
+        return;
+    }
     int index = song.trackIndex(module->binding().track);
     const Track& track = song.tracks[index];
     trackName = track.name;
-    trackNumber = index + 1;
+    trackNumber = std::to_string(index + 1);
     trackColor = track.color;
 }
 
@@ -84,11 +92,11 @@ void TrackOutDisplay::drawBound(NVGcontext* vg) {
     draw::TextStyle source{fonts::ui(), metrics::kDisplaySmall, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
     draw::text(vg, source, cx, kSourceBaseline, draw::ellipsize(vg, source, sourceName, maxWidth));
 
-    draw::TextStyle number{fonts::mono(), kNumberSize, color, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
-    draw::text(vg, number, cx, kNumberBaseline, std::to_string(trackNumber));
+    draw::TextStyle number{fonts::mono(), numberSize(box.size.y), color, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
+    draw::text(vg, number, cx, numberBaseline(box.size.y), trackNumber);
 
     draw::TextStyle name{fonts::uiStrong(), metrics::kDisplaySmall, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
-    draw::text(vg, name, cx, kNameBaseline, draw::ellipsize(vg, name, trackName, maxWidth));
+    draw::text(vg, name, cx, nameBaseline(box.size.y), draw::ellipsize(vg, name, trackName, maxWidth));
 }
 
 void TrackOutDisplay::drawMessage(NVGcontext* vg, const char* message, NVGcolor color, const char* hint) {
@@ -106,12 +114,12 @@ void TrackOutDisplay::drawMessage(NVGcontext* vg, const char* message, NVGcolor 
     draw::TextStyle msg{fonts::uiStrong(), metrics::kTextUi, color, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE};
     std::string text = message;
     size_t space = text.find(' ');
-    draw::text(vg, msg, cx, kNumberBaseline - 12, text.substr(0, space));
+    draw::text(vg, msg, cx, numberBaseline(box.size.y) - 12, text.substr(0, space));
     if (space != std::string::npos)
-        draw::text(vg, msg, cx, kNumberBaseline + 1, text.substr(space + 1));
+        draw::text(vg, msg, cx, numberBaseline(box.size.y) + 1, text.substr(space + 1));
 
     draw::TextStyle hintStyle{fonts::ui(), metrics::kPanelLabel, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_TOP};
-    draw::textBox(vg, hintStyle, kPad, kNameBaseline - 6, maxWidth, hint);
+    draw::textBox(vg, hintStyle, kPad, nameBaseline(box.size.y) - 6, maxWidth, hint);
 }
 
 } // namespace tessera

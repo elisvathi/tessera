@@ -45,6 +45,8 @@ class Registry {
     void addOutput(OutputModuleBase* output);
     void removeOutput(OutputModuleBase* output);
     bool hasOutputFor(int64_t sourceId, TrackId track) const;
+    /// The output modules bound to one Tessera.
+    std::vector<OutputModuleBase*> outputsOf(int64_t sourceId) const;
 
   private:
     mutable std::mutex mutex;
