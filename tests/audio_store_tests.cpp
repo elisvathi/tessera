@@ -249,3 +249,16 @@ TEST_CASE("loading a patch removes the files no source uses, and only those") {
     CHECK(fs::exists(dir.path / song.audioSources[0].file));
     CHECK(removeUnusedFiles(song, (dir.path / "nowhere").string()) == 0);
 }
+
+TEST_CASE("a project file's audio folder takes the files out and brings them back") {
+    TempFolder storage, project, other;
+    AudioStore store;
+    store.setFolder(storage.path.string());
+    Song song = makeDefaultSong();
+    importInto(store, song, "kick.wav");
+    CHECK(exportFiles(song, storage.path.string(), project.path.string()) == 1);
+    CHECK(exportFiles(song, storage.path.string(), project.path.string()) == 0);
+    CHECK(importFiles(song, project.path.string(), other.path.string()) == 1);
+    CHECK(fs::exists(other.path / song.audioSources[0].file));
+    CHECK(importFiles(song, project.path.string(), other.path.string()) == 0);
+}

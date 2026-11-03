@@ -301,6 +301,11 @@ class TesseraModule : public rack::engine::Module {
     /// Imports files as one undo step (§6.5): copies them into patch storage, guesses their tempo, places their
     /// clips as `target` says. In an empty song the first loop also sets the song tempo, in the same undo step.
     AudioDropResult importAudioFiles(const std::vector<std::string>& paths, AudioDropTarget target);
+    /// This module's patch storage folder, made when needed (empty without an ID).
+    std::string audioStorage() {
+        setupAudioFolder();
+        return audioFolder;
+    }
     /// The audio store, made when the song first has audio; null before.
     AudioStore* audioStore() const { return audio.get(); }
     const AudioPlayer& audioPlayer() const { return *player; }

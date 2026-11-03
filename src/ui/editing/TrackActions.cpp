@@ -504,6 +504,7 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
         full));
     menu->addChild(rack::createMenuItem(
         "Add drum track", shortcutLabel(Action::AddDrumTrack), [c] { add(*c, TrackType::Drum); }, full));
+    menu->addChild(rack::createMenuItem("Add audio track", "", [c] { add(*c, TrackType::Audio); }, full));
     menu->addChild(rack::createMenuItem(
         "Duplicate", shortcutLabel(Action::Duplicate), [c] { duplicateSelected(*c); }, !canAdd(song, ids.size())));
     if (full)

@@ -10,6 +10,7 @@
 #include <app/RackWidget.hpp>
 #include <app/Scene.hpp>
 #include <history.hpp>
+#include <osdialog.h>
 
 namespace tessera::audioActions {
 
@@ -129,6 +130,41 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
         m->audioStore()->renderStatus(key).state == RenderState::Failed)
         menu->addChild(rack::createMenuItem("Try again", "make the stretched version",
                                             [m, key] { m->audioStore()->retry(key); }));
+}
+
+void importDialog(EditorContext& ctx) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    osdialog_filters* filters = osdialog_filters_parse("Audio:wav,wave,aif,aiff,aifc,flac,mp3");
+    char* chosen = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, filters);
+    osdialog_filters_free(filters);
+    if (!chosen)
+        return;
+    std::string path = chosen;
+    std::free(chosen);
+    const Song& song = m->song();
+    AudioDropTarget target;
+    target.kind = AudioDropTarget::Kind::NewTracks;
+    target.index = int(song.tracks.size());
+    target.timeline = m->playMode() == PlayMode::Arranger;
+    Tick bar = ticksPerBar(song.timeSig);
+    target.at = Tick(m->playheadTicks() / double(bar)) * bar;
+    dropAudio(ctx, {path}, target);
+}
+
+void removeUnused(EditorContext& ctx) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    size_t n = unusedSources(m->song()).size();
+    if (n == 0) {
+        ctx.toast("Every audio file is in use");
+        return;
+    }
+    m->perform(removeUnusedAudio(m->song()));
+    ctx.toast("Removed " + std::to_string(n) + (n == 1 ? " audio file" : " audio files") +
+              ". The files go when the patch is next loaded; undo brings them back until then.");
 }
 
 std::string dropMessage(const std::vector<std::string>& imported, const std::vector<std::string>& failed,

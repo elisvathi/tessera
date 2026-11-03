@@ -279,6 +279,8 @@ void TrackHeaders::openAddMenu() {
         [c] { trackActions::add(*c, TrackType::Instrument); }, full));
     menu->addChild(rack::createMenuItem(
         "Drum track", shortcutLabel(Action::AddDrumTrack), [c] { trackActions::add(*c, TrackType::Drum); }, full));
+    menu->addChild(rack::createMenuItem(
+        "Audio track", "or drop audio files", [c] { trackActions::add(*c, TrackType::Audio); }, full));
 }
 
 TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
