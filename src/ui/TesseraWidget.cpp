@@ -325,6 +325,10 @@ struct TesseraWidget : rack::app::ModuleWidget {
             ModuleWidget::onPathDrop(e);
             return;
         }
+        if (!audioActions::confirmSize(e.paths)) {
+            e.consume(this);
+            return;
+        }
         AudioDropTarget target;
         target.kind = AudioDropTarget::Kind::NewTracks;
         target.index = int(m->song().tracks.size());

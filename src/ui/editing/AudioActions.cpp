@@ -124,6 +124,12 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
         menu->addChild(rack::createMenuItem("Gain back to 0 dB", audioDraw::dbText(clip->audio->gainDb), [edit] {
             edit("Clip gain 0 dB", [](AudioContent& a) { a.gainDb = 0; });
         }));
+    // A missing file: point at it, and it is copied into the patch.
+    if (const AudioSource* src = m->song().sourceOf(*clip))
+        if (m->audioStore() && m->audioStore()->status(src->id).state == SourceState::Missing) {
+            AudioSourceId id = src->id;
+            menu->addChild(rack::createMenuItem("Find file…", src->name, [c, id] { findFile(*c, id); }));
+        }
     RenderKey key;
     double songTempo = m->tempo() > 0 ? m->tempo() : 120;
     if (m->audioStore() && wantsRender(*clip->audio, songTempo, key) &&
@@ -186,10 +192,73 @@ std::string dropMessage(const std::vector<std::string>& imported, const std::vec
     return text;
 }
 
+void findFile(EditorContext& ctx, AudioSourceId source) {
+    TesseraModule* m = ctx.module();
+    const AudioSource* src = m ? m->song().findSource(source) : nullptr;
+    if (!src)
+        return;
+    std::string file = src->file;
+    osdialog_filters* filters = osdialog_filters_parse("Audio:wav,wave,aif,aiff,aifc,flac,mp3");
+    char* chosen = osdialog_file(OSDIALOG_OPEN, nullptr, src->name.c_str(), filters);
+    osdialog_filters_free(filters);
+    if (!chosen)
+        return;
+    std::string from = chosen;
+    std::free(chosen);
+    std::string to = rack::system::join(m->audioStorage(), file);
+    rack::system::createDirectories(rack::system::getDirectory(to));
+    if (!rack::system::copy(from, to)) {
+        ctx.toast("Couldn't copy " + rack::system::getFilename(from) + " into the patch");
+        return;
+    }
+    if (AudioStore* store = m->audioStore())
+        store->retryMissing();
+    ctx.toast("Found " + rack::system::getFilename(from));
+}
+
+std::vector<AudioSourceId> missingSources(TesseraModule& m) {
+    std::vector<AudioSourceId> out;
+    AudioStore* store = m.audioStore();
+    if (!store)
+        return out;
+    for (const AudioSource& s : m.song().audioSources)
+        if (store->status(s.id).state == SourceState::Missing)
+            out.push_back(s.id);
+    return out;
+}
+
+bool confirmSize(const std::vector<std::string>& paths) {
+    constexpr double kLongSeconds = 20 * 60;
+    constexpr double kManyBytes = 1024.0 * 1024 * 1024;
+    double bytes = 0, longest = 0;
+    std::string longName;
+    for (const std::string& p : paths) {
+        AudioFileInfo info;
+        if (!probeAudio(p, info) || info.sampleRate <= 0)
+            continue;
+        double seconds = double(info.frames) / info.sampleRate;
+        // Decoded samples are floats at Rack's rate, at most stereo; a stretched render about doubles that.
+        bytes += double(info.frames) * std::min(info.channels, 2) * sizeof(float) * 2;
+        if (seconds > longest) {
+            longest = seconds;
+            longName = rack::system::getFilename(p);
+        }
+    }
+    if (longest <= kLongSeconds && bytes <= kManyBytes)
+        return true;
+    char text[256];
+    if (longest > kLongSeconds)
+        snprintf(text, sizeof text, "'%s' is %.0f minutes and needs about %.1f GB of memory. Import anyway?",
+                 longName.c_str(), longest / 60, bytes / kManyBytes);
+    else
+        snprintf(text, sizeof text, "These files need about %.1f GB of memory. Import anyway?", bytes / kManyBytes);
+    return osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK_CANCEL, text) == 1;
+}
+
 void dropAudio(EditorContext& ctx, const std::vector<std::string>& paths, const AudioDropTarget& target,
                const std::string& note) {
     TesseraModule* m = ctx.module();
-    if (!m)
+    if (!m || !confirmSize(paths))
         return;
     TesseraModule::AudioDropResult r = m->importAudioFiles(paths, target);
     if (!r.made.instances.empty()) {
