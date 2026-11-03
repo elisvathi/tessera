@@ -488,9 +488,9 @@ void AudioPlayer::startVoice(TrackRun& run, const Wanted& w, float fadeSeconds) 
     double factor = rendered ? c.clipTempo / c.renderTempo : 1.0;
     double target = (c.startFrame + w.tick * c.framesPerTick) * factor;
     v.rate = w.tickRate * c.framesPerTick * factor;
-    v.exact = std::abs(v.rate - 1) < 1e-9 || v.free;
-    if (v.free)
-        v.rate = 1;
+    // An Off clip's step doesn't depend on the song tempo: one frame a sample, unless its buffer is still at another
+    // sample rate.
+    v.exact = std::abs(v.rate - 1) < 1e-9;
     v.pos = target;
     v.frame = int64_t(std::llround(target));
     v.gain = c.gain * w.envelope;
@@ -550,7 +550,7 @@ void AudioPlayer::follow(TrackRun& run, const std::array<Wanted, 2>& want, int c
             continue;
         }
         if (v.free) {
-            v.frame++;
+            advance(v);
             v.gain = c.gain * w.envelope;
             v.lastTick = w.tick;
         } else {
