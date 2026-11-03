@@ -440,6 +440,38 @@ TEST_CASE("OUT carries a track's clips before its fader; what comes back on IN j
     CHECK(master->l == doctest::Approx(left).epsilon(1e-3));
 }
 
+TEST_CASE("muting a track fades its clips out of OUT too, without a click") {
+    Rig rig(4.0, dc);
+    MixPlan plan;
+    plan.busSlots = {{rig.track, 0}};
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    OutputBus bus;
+    rig.engine->play();
+    std::vector<float> out;
+    float l, r;
+    auto run = [&](int n) {
+        for (int i = 0; i < n; i++) {
+            int64_t frame = int64_t(out.size());
+            rig.engine->setPlayMode(rig.mode);
+            rig.engine->process(rig.frames.data(), rig.events);
+            rig.player->process(*rig.engine, l, r, {&bus.returns(), bus.beginAudioWrite(frame), frame});
+            bus.publishAudio(frame);
+            out.push_back(bus.readAudio(frame + 1, 0, rig.track)->l);
+        }
+    };
+    run(4800);
+    CHECK(out.back() == doctest::Approx(kVolts));
+    rig.audioTrack().mute = true;
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    run(480);
+    CHECK(out.back() == 0);
+    CHECK(biggestStep(out) < 0.2f);
+}
+
 TEST_CASE("a note track whose output module brings audio back on IN makes sound; the master's IN comes after its OUT") {
     Song song = makeDefaultSong();
     FakeBuffers buffers;

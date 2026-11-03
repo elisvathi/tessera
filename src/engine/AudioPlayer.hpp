@@ -117,6 +117,7 @@ class AudioPlayer {
         size_t cursor = 0; // first timeline instance that may play
         int engineIndex = -1;
         float gainL = 0, gainR = 0, stepL = 0, stepR = 0; // fader and pan, ramping
+        float outGain = 0, outStep = 0; // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
         bool fresh = true; // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
         bool steady = false; // its voices step on unchanged for the rest of this block
         int slot = -1;       // the launched slot a steady block plays, or -1 on the timeline
