@@ -299,6 +299,12 @@ class TesseraModule : public rack::engine::Module {
     /// Imports files as one undo step (§6.5): copies them into patch storage, guesses their tempo, places their
     /// clips as `target` says. In an empty song the first loop also sets the song tempo, in the same undo step.
     AudioDropResult importAudioFiles(const std::vector<std::string>& paths, AudioDropTarget target);
+    /// What the rack adds to the mix now: each track's output bus slot and the return slots feeding tracks (§8.3).
+    MixPlan currentMixPlan() const;
+    /// A track's index among the tracks that make sound (the player's meters), or -1. UI thread.
+    int soundIndex(TrackId track) const;
+    /// Whether anything in the song makes sound: an audio track, or audio coming back on an output module's IN.
+    bool makesSound() const;
     /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
     /// False when the file isn't audio Tessera reads.
     bool replaceAudioFile(ClipId clip, const std::string& path);
@@ -406,6 +412,8 @@ class TesseraModule : public rack::engine::Module {
     int64_t savedId = -1; // this module's ID when its JSON was written; differs after paste or duplicate
     EditorState editorState;
     uint64_t revision = 0;
+    std::vector<TrackId> soundTracks; // the tracks of the last audio snapshot, in its order (UI thread)
+    uint64_t audioPlanKey = 0;        // the mix plan the last audio snapshot was built from
     std::shared_ptr<OutputBus> bus = std::make_shared<OutputBus>();
 
     // UI thread -> audio thread

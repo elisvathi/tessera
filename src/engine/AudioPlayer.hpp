@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AudioBus.hpp"
 #include "AudioPlayback.hpp"
 #include "Engine.hpp"
 #include "Varispeed.hpp"
@@ -34,13 +35,26 @@ class AudioPlayer {
     void setSnapshot(const AudioSnapshot* next);
     const AudioSnapshot* current() const { return snapshot; }
 
+    /// The rack's side of one sample (§8.3, §8.4): the return bus to read output modules' IN jacks from, and the
+    /// output bus's audio array to write each track's OUT to. Either may be null.
+    struct Rack {
+        const ReturnBus* returns = nullptr;
+        AudioOutFrame* out = nullptr;
+        int64_t frame = 0;
+    };
+
     /// Plays one sample: reads the engine's transport after its process(), plays the clips, mixes. `left` and
-    /// `right` get the master in volts (10 V = 0 dB), ready for MAIN.
+    /// `right` get the master in volts (10 V = 0 dB), ready for MAIN. With `rack`, each track's sound before its
+    /// fader goes to OUT and what came back on IN is mixed in.
+    void process(const Engine& engine, float& left, float& right, const Rack& rack);
+    /// The same without the rack: no OUT, no returns (tests, and the player on its own).
     void process(const Engine& engine, float& left, float& right);
 
-    /// Whether anything can sound: there are audio tracks, or voices still fading out. Tessera skips process()
-    /// otherwise, so a song without audio costs what it did before audio existed.
-    bool active() const { return (snapshot && !snapshot->tracks.empty()) || sounding; }
+    /// Whether anything can sound: there are tracks that make sound (or returns to the master), or voices still
+    /// fading out. Tessera skips process() otherwise, so a song without audio costs what it did before audio existed.
+    bool active() const {
+        return (snapshot && (!snapshot->tracks.empty() || !snapshot->masterReturns.empty())) || sounding;
+    }
 
     // ---- For the UI (any thread) ----------------------------------------------------------------------------
 

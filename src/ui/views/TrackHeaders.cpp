@@ -280,7 +280,7 @@ Rect TrackHeaders::addRowRect() {
 
 bool TrackHeaders::showsMaster() const {
     TesseraModule* m = ctx.module();
-    return m && hasAudio(m->song());
+    return m && m->makesSound();
 }
 
 Rect TrackHeaders::masterRowRect() {
@@ -370,18 +370,6 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
 
 namespace {
 
-
-/// The player index of an audio track: its place among the song's audio tracks.
-int audioIndexOf(const Song& song, TrackId id) {
-    int i = 0;
-    for (const Track& t : song.tracks) {
-        if (t.id == id)
-            return i;
-        if (t.type == TrackType::Audio)
-            i++;
-    }
-    return -1;
-}
 
 /// Drags an audio track's level bar sideways: relative, Shift or Ctrl/Cmd for fine, a soft detent at 0 dB (Alt
 /// skips it). Plays at once through the player's hold; one undo step on release.
@@ -531,7 +519,7 @@ void TrackHeaders::drawLevelLine(NVGcontext* vg, const Track& t, int row, float 
     Rect bar(hit.pos.x, hit.getCenter().y - kLevelBarH / 2, hit.size.x, kLevelBarH);
     // The live level in the track colour, faint, and bright only in its top 6 dB, so a busy song doesn't flicker
     // in every row.
-    int index = audioIndexOf(m->song(), t.id);
+    int index = m->soundIndex(t.id);
     float level = std::max(m->audioPlayer().level(index, 0), m->audioPlayer().level(index, 1));
     drawLevelBar(vg, bar, level, volume, theme::track(t.color, 0.4f), theme::track(t.color, 0.95f));
     draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};

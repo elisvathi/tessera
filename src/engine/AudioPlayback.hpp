@@ -60,9 +60,12 @@ struct AudioInstancePlay {
     double overlapIn = 0, overlapOut = 0;
 };
 
-/// One audio track's clips and mixer strip.
+/// One track that makes sound: an audio track's clips, and for any track the return slots its output modules' IN
+/// jacks fill, with its mixer strip.
 struct AudioTrackPlay {
     TrackId id;
+    int busSlot = -1;         // where its sound before the fader goes on the output bus, for Track Out's OUT
+    std::vector<int> returns; // return bus slots mixed into it, at 0 dB (§2)
     std::vector<AudioInstancePlay> instances; // sorted by position
     std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
     float volume = 1;                          // the fader as a gain
@@ -77,6 +80,7 @@ struct AudioSnapshot {
     std::vector<AudioTrackPlay> tracks;
     float masterVolume = 1;
     uint64_t masterId = 0; // the master's TrackId value
+    std::vector<int> masterReturns; // return slots mixed into the master
     /// Every buffer the clips point at, and recently dropped ones kept a little longer so a fade-out that started
     /// before this snapshot can finish reading them.
     std::vector<std::shared_ptr<const AudioBuffer>> buffers;

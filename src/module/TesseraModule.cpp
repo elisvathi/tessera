@@ -328,8 +328,9 @@ void TesseraModule::setupAudioFolder() {
 
 void TesseraModule::audioStep() {
     audioSnapshots.collect();
+    MixPlan plan = currentMixPlan();
     if (!audio) {
-        if (!hasAudio(songData))
+        if (!hasAudio(songData) && plan.returns.empty())
             return;
         setupAudioFolder();
         if (!audio)
@@ -350,7 +351,14 @@ void TesseraModule::audioStep() {
     }
     bool settled = now - tempoSettleAt >= 0.5;
     bool tempoMoved = settled && std::abs(t - audioTempo) > 1e-6;
-    if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved) {
+    // A cable on an output module's IN, or a track moving bus slot, changes what the player mixes.
+    uint64_t planKey = 0;
+    for (const MixPlan::Return& r : plan.returns)
+        planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1);
+    for (const auto& [track, slot] : plan.busSlots)
+        planKey = planKey * 1000003u + track.value * 31u + uint64_t(slot + 1);
+    bool planChanged = planKey != audioPlanKey;
+    if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved && !planChanged) {
         if (releaseHolds) {
             player->releaseHolds();
             releaseHolds = false;
@@ -359,6 +367,7 @@ void TesseraModule::audioStep() {
     }
     audioRevision = revision;
     audioChanges = audio->changes();
+    audioPlanKey = planKey;
     if (tempoMoved || audioTempo <= 0)
         audioTempo = t;
 
@@ -366,7 +375,10 @@ void TesseraModule::audioStep() {
     std::vector<std::shared_ptr<const AudioBuffer>> keep;
     const AudioSnapshot* last = audioSnapshots.latest();
     AudioBuild build = buildAudioSnapshot(songData, *audio, double(audioRate.load()) > 0 ? audioRate.load() : 48000,
-                                          audioTempo);
+                                          audioTempo, {}, plan);
+    soundTracks.clear();
+    for (const AudioTrackPlay& tp : build.snapshot->tracks)
+        soundTracks.push_back(tp.id);
     if (last)
         for (const auto& b : last->buffers)
             if (!build.snapshot->holds(b.get()) &&
@@ -384,6 +396,24 @@ void TesseraModule::audioStep() {
         player->releaseHolds();
         releaseHolds = false;
     }
+}
+
+MixPlan TesseraModule::currentMixPlan() const {
+    MixPlan plan;
+    for (const Track& t : songData.tracks)
+        if (int slot = slots.slotOf(t.id); slot >= 0)
+            plan.busSlots.push_back({t.id, slot});
+    // Returns join once output modules have IN jacks (Phase 2a, after the Track Out panel is agreed).
+    return plan;
+}
+
+bool TesseraModule::makesSound() const { return hasAudio(songData) || !currentMixPlan().returns.empty(); }
+
+int TesseraModule::soundIndex(TrackId track) const {
+    for (size_t i = 0; i < soundTracks.size(); i++)
+        if (soundTracks[i] == track)
+            return int(i);
+    return -1;
 }
 
 TesseraModule::AudioDropResult TesseraModule::importAudioFiles(const std::vector<std::string>& paths,
@@ -977,8 +1007,11 @@ void TesseraModule::process(const ProcessArgs& args) {
         player->setSnapshot(next);
     // A song without audio skips the player: it costs what it did before audio existed.
     float mainL = 0, mainR = 0;
-    if (player->active())
-        player->process(engine, mainL, mainR);
+    if (player->active()) {
+        AudioPlayer::Rack rack{&bus->returns(), bus->beginAudioWrite(args.frame), args.frame};
+        player->process(engine, mainL, mainR, rack);
+        bus->publishAudio(args.frame);
+    }
     outputs[MAIN_L_OUTPUT].setVoltage(mainL);
     outputs[MAIN_R_OUTPUT].setVoltage(mainR);
     mainConnected.store(outputs[MAIN_L_OUTPUT].isConnected(), std::memory_order_relaxed);

@@ -24,12 +24,15 @@ bool wantsRender(const AudioContent& clip, double tempo, RenderKey& key) {
 }
 
 AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double engineRate, double tempo,
-                              const std::vector<std::shared_ptr<const AudioBuffer>>& keep) {
+                              const std::vector<std::shared_ptr<const AudioBuffer>>& keep, const MixPlan& plan) {
     AudioBuild out;
     out.snapshot = std::make_unique<AudioSnapshot>();
     AudioSnapshot& snap = *out.snapshot;
     snap.masterVolume = dbToGain(song.master.volumeDb);
     snap.masterId = song.master.id.value;
+    for (const MixPlan::Return& r : plan.returns)
+        if (r.track == song.master.id)
+            snap.masterReturns.push_back(r.slot);
     snap.buffers = keep;
     auto hold = [&](const std::shared_ptr<const AudioBuffer>& b) {
         if (b && std::find(snap.buffers.begin(), snap.buffers.end(), b) == snap.buffers.end())
@@ -92,10 +95,16 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
     };
 
     for (const Track& t : song.tracks) {
-        if (t.type != TrackType::Audio)
+        if (!makesSound(t, plan))
             continue;
         AudioTrackPlay tp;
         tp.id = t.id;
+        for (const MixPlan::Return& r : plan.returns)
+            if (r.track == t.id)
+                tp.returns.push_back(r.slot);
+        for (const auto& [track, slot] : plan.busSlots)
+            if (track == t.id)
+                tp.busSlot = slot;
         tp.volume = dbToGain(t.channel.volumeDb);
         tp.pan = t.channel.pan;
         tp.audible = song.isAudible(t);

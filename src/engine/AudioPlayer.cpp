@@ -164,7 +164,9 @@ void AudioPlayer::startBlock(const Engine& engine) {
     masterStep = (master - masterGain) / kBlock;
 }
 
-void AudioPlayer::process(const Engine& engine, float& left, float& right) {
+void AudioPlayer::process(const Engine& engine, float& left, float& right) { process(engine, left, right, Rack()); }
+
+void AudioPlayer::process(const Engine& engine, float& left, float& right, const Rack& rack) {
     left = right = 0;
     if (blockPos == 0)
         startBlock(engine);
@@ -239,6 +241,20 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right) {
                     v = Voice{};
             }
         }
+        if (i < count) {
+            const AudioTrackPlay& tp = snapshot->tracks[i];
+            // OUT carries the track's clips before its fader; what comes back on IN joins them (§2, §8.4).
+            if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
+                rack.out[tp.busSlot] = {tp.id.value, sl, sr};
+            if (rack.returns)
+                for (int slot : tp.returns) {
+                    float rl, rr;
+                    if (rack.returns->read(rack.frame, slot, tp.id, rl, rr)) {
+                        sl += rl;
+                        sr += rr;
+                    }
+                }
+        }
         run.gainL += run.stepL;
         run.gainR += run.stepR;
         sl *= run.gainL;
@@ -247,6 +263,19 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right) {
         run.peakR = std::max(run.peakR, std::abs(sr));
         masterL += sl;
         masterR += sr;
+    }
+    if (snapshot) {
+        TrackId master(snapshot->masterId);
+        if (rack.out)
+            rack.out[kMaxTracks] = {master.value, masterL, masterR};
+        if (rack.returns)
+            for (int slot : snapshot->masterReturns) {
+                float rl, rr;
+                if (rack.returns->read(rack.frame, slot, master, rl, rr)) {
+                    masterL += rl;
+                    masterR += rr;
+                }
+            }
     }
     masterGain += masterStep;
     left = masterL * masterGain;

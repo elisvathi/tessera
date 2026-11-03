@@ -248,7 +248,7 @@ void MixerPane::draw(const DrawArgs& args) {
 
 bool MixerPane::hasSound() const {
     TesseraModule* m = ctx.module();
-    return m && hasAudio(m->song());
+    return m && m->makesSound();
 }
 
 float MixerPane::shownVolume(const Strip& s) const {
@@ -308,15 +308,16 @@ void MixerPane::layout() {
         s.readout = Rect(x + 2, faderBottom, w - 4, 14);
     };
     float x = kGap;
-    int index = 0;
     for (const Track& t : m->song().tracks) {
-        if (t.type != TrackType::Audio) {
+        // Tracks that make sound have strips (§7.9): audio tracks, and any track whose IN brings audio back.
+        int index = m->soundIndex(t.id);
+        if (t.type != TrackType::Audio && index < 0) {
             notesOnly++;
             continue;
         }
         Strip s;
         s.track = t.id;
-        s.playerIndex = index++;
+        s.playerIndex = index;
         partsOf(s, x, kStripWidth);
         strips.push_back(s);
         x += kStripWidth + kGap;
