@@ -69,7 +69,7 @@ EditorWindow::EditorWindow(int64_t moduleId) : EditorHost(moduleId, Surface::Ove
     detailArea->addChild(detail);
     detailArea->addChild(inspector);
     panes = new PaneStack(ctx, top, detailArea, kMinPaneHeight, [this] { runAction(Action::MaximizePane); });
-    panes->setMixer(new MixerPane(ctx, false));
+    detail->setMixer(new MixerPane(ctx, false));
 
     content->addChild(panes);
     content->addChild(transport);

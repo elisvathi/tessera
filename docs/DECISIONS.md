@@ -1788,3 +1788,16 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **"No OUT cable"** replaces the spec's "Sends go nowhere": that does not fit a 64 px chip.
 - **Not built yet**: the inspector's Sends section, send automation lanes, a meter of the send level in Show sends
   (strips keep their own meters there).
+
+## 118. The mixer shares the lower pane (3 Nov)
+
+- **The user**: the mixer as a third pane under the notes was "a bit unusable"; they switch between the two and
+  never need both in view, and the app should have the same window language everywhere. A full UX overhaul comes
+  later; this is the minimal fix.
+- The lower pane (`DetailPane`) shows the notes (or audio editor) **or** the mixer. A **Notes | Mixer** switch at the
+  left of its header, shown once something makes sound; F4 switches (`Action::ToggleMixer`, was "maximise the
+  mixer"). `ViewState::mixerOpen` now means "the lower pane shows the mixer".
+- The mixer's header is the pane header: the pane's maximise button, splitter, focus ring and Tab. Gone: the
+  folded tab, its height drag, its own maximise and `Pane::Mixer` as a focus or maximised pane (older saves load
+  into the lower pane). While the mixer shows, only keys that work everywhere act (no note keys).
+- Leaving the mixer (Notes, F4) leaves Show sends.

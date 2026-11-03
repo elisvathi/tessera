@@ -10,7 +10,6 @@
 #include "../widgets/ColorMenuItem.hpp"
 #include "../../model/Sends.hpp"
 #include "../editing/TrackActions.hpp"
-#include "../interaction/ClickOrDrag.hpp"
 #include "../widgets/Draw.hpp"
 #include "../widgets/EditTools.hpp"
 #include "../widgets/MenuTextField.hpp"
@@ -354,45 +353,28 @@ class SendGesture : public DragGesture {
     float start = kSilentDb, now = kSilentDb;
 };
 
-/// Drags the tab: the mixer's height, from the bottom of the editor up to the pointer.
-class TabGesture : public DragGesture {
-  public:
-    TabGesture(MixerPane& pane, EditorContext& ctx, Vec press) : pane(pane), ctx(ctx), grab(press.y) {}
-    void update(Vec pos, Modifiers) override {
-        ViewState& v = ctx.view();
-        v.mixerOpen = true;
-        v.mixerHeight = std::max(pane.tabHeight() + 60, pane.box.size.y - (pos.y - grab));
-    }
-    CursorShape cursor() const override { return CursorShape::ResizeV; }
-
-  private:
-    MixerPane& pane;
-    EditorContext& ctx;
-    float grab;
-};
-
 } // namespace
 
 float MixerPane::faderPos(float db) { return faderPosOfDb(db); }
 
 float MixerPane::faderDb(float pos) { return faderDbOfPos(pos); }
 
-float MixerPane::tabHeight() const { return panel && ctx.view().maximized != Pane::Mixer ? 16.f : 22.f; }
+float MixerPane::tabHeight() const { return theme::metrics::kPaneHeader; }
 
 MixerPane::MixerPane(EditorContext& ctx, bool panel) : InteractiveView(ctx), panel(panel) {
-    maximizeButton = makeMaximizeButton(ctx, Pane::Mixer);
+    maximizeButton = makeMaximizeButton(ctx, Pane::Detail);
     addChild(maximizeButton);
 }
 
 void MixerPane::onButton(const ButtonEvent& e) {
     if (e.action == GLFW_PRESS && ctx.module())
-        ctx.view().focus = Pane::Mixer; // clicking anywhere in a pane focuses it, as in the others
+        ctx.view().focus = Pane::Detail; // clicking anywhere in a pane focuses it, as in the others
     InteractiveView::onButton(e);
 }
 
 void MixerPane::draw(const DrawArgs& args) {
     InteractiveView::draw(args);
-    if (ctx.module() && ctx.view().focus == Pane::Mixer && box.size.y > tab.size.y + 20)
+    if (ctx.module() && ctx.view().focus == Pane::Detail && box.size.y > tab.size.y + 20)
         draw::roundedRectStroke(args.vg, Rect(Vec(), box.size), 0, nvgTransRGBAf(theme::colors().accent, 0.5f), 1);
 }
 
@@ -601,9 +583,9 @@ void MixerPane::layout() {
 }
 
 void MixerPane::step() {
-    // Folding the mixer leaves Show sends; maximise and restore keep it.
+    // Switching the pane back to the notes leaves Show sends; maximise and restore keep it.
     ViewState& v = ctx.view();
-    if (v.showSends.valid() && !v.mixerOpen && v.maximized != Pane::Mixer)
+    if (v.showSends.valid() && !v.mixerOpen)
         v.setShowSends(TrackId(), EditorContext::now());
     layout();
     // Once a loaded patch has settled, say if files are missing (§8.7): one toast, with Find… for the first.
@@ -683,16 +665,6 @@ std::unique_ptr<DragGesture> MixerPane::startGesture(Vec pos, int button, Modifi
         return nullptr;
     Hit h = hitTest(pos);
     switch (h.part) {
-    case Part::Tab: {
-        // A click opens or folds the mixer; only a real drag sets its height.
-        EditorContext* c = &ctx;
-        return std::make_unique<ClickOrDrag>(std::make_unique<TabGesture>(*this, ctx, pos), pos, [c] {
-            ViewState& v = c->view();
-            v.mixerOpen = !v.mixerOpen;
-            if (v.maximized == Pane::Mixer)
-                v.maximized.reset();
-        });
-    }
     case Part::SendKnob: {
         const Strip& s = strips[size_t(h.strip)];
         const Track* t = ctx.module()->song().findTrack(s.track);
@@ -959,16 +931,6 @@ void MixerPane::doubleClick(Vec pos, Modifiers mods) {
     if (!m)
         return;
     Hit h = hitTest(pos);
-    if (h.part == Part::Tab) {
-        ViewState& v = ctx.view();
-        if (v.maximized == Pane::Mixer) {
-            v.maximized.reset();
-        } else {
-            v.maximized = Pane::Mixer;
-            v.mixerOpen = true;
-        }
-        return;
-    }
     if (h.strip < 0)
         return;
     const Strip& s = strips[size_t(h.strip)];
@@ -1035,8 +997,6 @@ void MixerPane::wheel(Vec pos, Vec delta, Modifiers mods) {
 
 CursorShape MixerPane::hoverCursor(Vec pos, Modifiers mods) {
     switch (hitTest(pos).part) {
-    case Part::Tab:
-        return CursorShape::ResizeV;
     case Part::Fader:
     case Part::Pan:
     case Part::SendKnob:
@@ -1103,13 +1063,11 @@ void MixerPane::drawTab(NVGcontext* vg) {
     nvgRect(vg, 0, 0, box.size.x, 1);
     nvgFillColor(vg, c.line1);
     nvgFill(vg);
-    draw::TextStyle label{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     float cy = tab.size.y / 2;
-    draw::text(vg, label, tabLeft + 8, cy, "Mixer");
     if (!m || !hasSound())
         return;
-    // A thin live meter per track in its colour, so the folded tab still shows what plays.
-    float x = tabLeft + 60;
+    // A thin live meter per track in its colour: the header still shows what plays.
+    float x = tabLeft + 8;
     const AudioPlayer& player = m->audioPlayer();
     for (const Strip& s : strips) {
         if (s.master || s.lane >= 0)

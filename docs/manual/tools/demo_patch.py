@@ -258,9 +258,9 @@ def drum_loop(path, bpm=112.0, bars=2, rate=44100):
 
 def audio_patch(out, crossfade=False):
     """Writes audio.vcv: the demo with a "Loop" audio track playing a drum loop on the timeline from bar 5 and in
-    the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer open.
+    the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer showing in the lower pane.
     With `crossfade` it writes crossfade.vcv instead: two copies of the loop overlapping by a bar, the second one
-    reversed, and a curved fade in on the first, with the mixer folded."""
+    reversed, and a curved fade in on the first, with the notes showing in the lower pane."""
     song, _ = make_song()
     name = "Drum loop 112 BPM.wav"
     file = "audio/00000000-" + name

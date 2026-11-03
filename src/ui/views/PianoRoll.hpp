@@ -39,6 +39,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// Room the in-panel editor's "Full editor" button takes at the header's right end while this pane is on top.
     float headerReserve = 0;
+    /// Room kept free at the left end of the header, for the pane's Notes | Mixer switch.
+    float headerLeft = 0;
 
     bool handleAction(Action action) override;
     void layout() override;

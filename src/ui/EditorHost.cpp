@@ -125,10 +125,11 @@ bool EditorHost::handleKey(const rack::widget::Widget::KeyBaseEvent& e) {
     // clicked pane, Ctrl+A then Ctrl+D over the notes selected and copied every track.
     if (EditorPane* hovered = paneUnderMouse())
         ctx.view().focus = hovered->pane();
-    // The mixer has no keys of its own yet: with it focused, only the keys that work everywhere act.
-    Scope scope = ctx.view().focus == Pane::Top && arrangerPane() ? Scope::TopPane
-                  : ctx.view().focus == Pane::Mixer               ? Scope::Everywhere
-                                                                  : Scope::DetailPane;
+    // The mixer has no keys of its own yet: while the lower pane shows it, only the keys that work everywhere act.
+    bool mixerShown = ctx.module() && ctx.module()->makesSound() && ctx.view().mixerOpen;
+    Scope scope = ctx.view().focus == Pane::Top && arrangerPane()        ? Scope::TopPane
+                  : ctx.view().focus == Pane::Detail && mixerShown ? Scope::Everywhere
+                                                                   : Scope::DetailPane;
     std::optional<Action> action = findAction({e.key, e.keyName, mods}, scope);
     if (!action)
         return false;
@@ -275,11 +276,7 @@ void EditorHost::runAction(Action action) {
     case Action::SwitchPane: {
         if (!arrangerPane())
             return;
-        // Song, notes, then the mixer while it is open.
-        bool mixer = ctx.module() && ctx.module()->makesSound() && view.mixerOpen;
-        view.focus = view.focus == Pane::Top      ? Pane::Detail
-                     : view.focus == Pane::Detail ? (mixer ? Pane::Mixer : Pane::Top)
-                                                  : Pane::Top;
+        view.focus = view.focus == Pane::Top ? Pane::Detail : Pane::Top;
         if (view.maximized)
             view.maximized = view.focus;
         return;
@@ -385,14 +382,12 @@ void EditorHost::runAction(Action action) {
     case Action::ExportMidi:
         exportMidi::openSong(ctx);
         return;
-    case Action::MaximizeMixer:
-        if (view.maximized == Pane::Mixer) {
-            view.maximized.reset();
-        } else {
-            view.maximized = Pane::Mixer;
-            view.mixerOpen = true;
-        }
-        view.focus = Pane::Mixer;
+    case Action::ToggleMixer:
+        // The lower pane shows the notes or the mixer; F4 switches, as the switch in its header does.
+        if (!ctx.module() || !ctx.module()->makesSound())
+            return;
+        view.mixerOpen = !view.mixerOpen;
+        view.focus = Pane::Detail;
         return;
     case Action::ImportAudio:
         audioActions::importDialog(ctx);

@@ -6,6 +6,9 @@
 
 namespace tessera {
 
+class MixerPane;
+class ToolButton;
+
 class PianoRollView;
 class DeviceStrip;
 class ModulatorPopover;
@@ -32,6 +35,11 @@ class DetailPane : public EditorPane {
     }
 
     PianoRollView* pianoRoll() { return roll; }
+    /// Puts the mixer in this pane: a switch at the left of the header shows the notes or the mixer, once the song
+    /// makes sound. The pane takes ownership.
+    void setMixer(MixerPane* mixer);
+    /// Whether the pane shows the mixer now.
+    bool showsMixer() const;
     /// The note editor showing.
     NoteTarget* noteTarget();
     void onButton(const ButtonEvent& e) override;
@@ -41,6 +49,10 @@ class DetailPane : public EditorPane {
     DeviceStrip* strip;
     ModulatorPopover* popover;
     bool stripFocus = false; // the last click was in the device strip
+    MixerPane* mixer = nullptr;
+    ToolButton* notesTab = nullptr;
+    ToolButton* mixerTab = nullptr;
+    float rightReserve = 0;
 };
 
 } // namespace tessera

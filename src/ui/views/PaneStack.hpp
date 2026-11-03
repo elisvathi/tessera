@@ -21,8 +21,6 @@ class PaneStack : public rack::widget::Widget {
               std::function<void()> onSplitterDoubleClick);
 
     void layout();
-    /// Adds the mixer under the panes (folded to a tab unless opened). The stack takes ownership.
-    void setMixer(class MixerPane* mixer);
     /// True while the pointer is on the splitter or dragging it (for the cursor).
     bool splitterActive() const;
 
@@ -31,7 +29,6 @@ class PaneStack : public rack::widget::Widget {
     EditorPane* top;
     rack::widget::Widget* bottom;
     Splitter* splitter;
-    MixerPane* mixer = nullptr;
     float minPaneHeight;
 };
 
