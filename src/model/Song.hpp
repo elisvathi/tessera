@@ -30,9 +30,13 @@ struct TrackGroup {
     std::string name;
     uint32_t color = 0;
     std::vector<TrackId> tracks;
+    // Its mixer strip (§3.5): the sum of its tracks that make sound passes through it on the way to the master.
+    Channel channel;
+    bool mute = false;
 
     bool operator==(const TrackGroup& o) const {
-        return id == o.id && name == o.name && color == o.color && tracks == o.tracks;
+        return id == o.id && name == o.name && color == o.color && tracks == o.tracks && channel == o.channel &&
+               mute == o.mute;
     }
 };
 

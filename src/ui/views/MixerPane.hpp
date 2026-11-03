@@ -54,6 +54,7 @@ class MixerPane : public InteractiveView {
         TrackId track;
         bool master = false;
         int lane = -1; // a drum track's lane IN (Drum Out output 0..7): a narrow strip after its track's
+        GroupId group; // a group's strip, after its last track's (§3.5)
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
         // Sends (§7.6): "← N" when it receives some, a knob per send it has, the "+" that adds one, the OUT meter
         // of a track that receives sends, and "pre" above its fader while Show sends shows its send.
@@ -113,6 +114,8 @@ class MixerPane : public InteractiveView {
     void layout();
     void drawTab(NVGcontext* vg);
     void drawStrip(NVGcontext* vg, const Strip& s);
+    /// A group's strip: its name and colour, pan, M, fader, meter and level, then "→ Master".
+    void drawGroupStrip(NVGcontext* vg, const Strip& s, const TrackGroup& g);
     /// A drum lane IN's narrow strip: the lane's name and colour, pan, fader, meter and level.
     void drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t);
     void drawMeter(NVGcontext* vg, rack::math::Rect r, float left, float right);

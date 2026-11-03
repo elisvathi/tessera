@@ -135,6 +135,12 @@ class FaderGesture : public DragGesture {
             track = m->song().master.id;
             return;
         }
+        groupId = s.group;
+        if (groupId.valid()) {
+            const TrackGroup* g = m->song().findGroup(groupId);
+            groupPan = g ? g->channel.pan : 0;
+            return;
+        }
         const std::vector<TrackId>& sel = ctx.state().selectedTracks;
         bool inSelection = std::find(sel.begin(), sel.end(), s.track) != sel.end() && sel.size() > 1;
         for (const MixerPane::Strip& o : pane.layoutStrips()) {
@@ -154,9 +160,9 @@ class FaderGesture : public DragGesture {
             db = 0;
         now = db;
         TesseraModule* m = ctx.module();
-        if (master) {
-            m->holdChannel(track, now, 0, false);
-            pane.showHeld(track, now, 0);
+        if (master || groupId.valid()) {
+            m->holdChannel(track, now, groupPan, false);
+            pane.showHeld(track, now, groupPan);
             return;
         }
         for (const SetChannels::Change& g : group) {
@@ -170,6 +176,8 @@ class FaderGesture : public DragGesture {
         if (now != startDb) {
             if (master)
                 m->perform(setMasterVolume(m->song(), now));
+            else if (groupId.valid())
+                m->perform(setGroupChannel(m->song(), groupId, {now, groupPan}, "Group volume " + audioDraw::dbText(now)));
             else if (group.size() == 1)
                 m->perform(setChannel(m->song(), track, {now, group[0].before.pan}, "Volume " + audioDraw::dbText(now)));
             else
@@ -201,6 +209,8 @@ class FaderGesture : public DragGesture {
     Vec press;
     bool master = false;
     TrackId track;
+    GroupId groupId; // a group strip's fader
+    float groupPan = 0;
     float travel = 100;
     float startDb = 0, now = 0;
     std::vector<SetChannels::Change> group;
@@ -253,6 +263,7 @@ class PanGesture : public DragGesture {
         const MixerPane::Strip& s = pane.layoutStrips()[size_t(strip)];
         laneStrip = s;
         track = s.track;
+        groupId = s.group;
         start = pane.shownPan(s);
         volume = pane.shownVolume(s);
         now = start;
@@ -279,7 +290,9 @@ class PanGesture : public DragGesture {
             pane.clearHeld();
             return;
         }
-        if (now != start)
+        if (now != start && groupId.valid())
+            m->perform(setGroupChannel(m->song(), groupId, {volume, now}, "Group pan"));
+        else if (now != start)
             m->perform(setChannel(m->song(), track, {volume, now}, "Pan"));
         m->releaseChannelHolds();
         pane.clearHeld();
@@ -302,6 +315,7 @@ class PanGesture : public DragGesture {
     EditorContext& ctx;
     Vec press;
     TrackId track;
+    GroupId groupId;
     MixerPane::Strip laneStrip;
     float start = 0, now = 0, volume = 0;
 };
@@ -396,6 +410,13 @@ void MixerPane::setLane(const Strip& s, Channel c, const std::string& name) {
 
 float MixerPane::shownVolume(const Strip& s) const {
     TesseraModule* m = ctx.module();
+    if (s.group.valid()) {
+        auto it = held.find(s.group.value);
+        if (it != held.end())
+            return it->second.first;
+        const TrackGroup* g = m->song().findGroup(s.group);
+        return g ? g->channel.volumeDb : 0;
+    }
     if (s.lane >= 0) {
         auto held = heldLanes.find({s.track.value, s.lane});
         if (held != heldLanes.end())
@@ -418,6 +439,13 @@ float MixerPane::shownVolume(const Strip& s) const {
 }
 
 float MixerPane::shownPan(const Strip& s) const {
+    if (s.group.valid()) {
+        auto it = held.find(s.group.value);
+        if (it != held.end())
+            return it->second.second;
+        const TrackGroup* g = ctx.module()->song().findGroup(s.group);
+        return g ? g->channel.pan : 0;
+    }
     if (s.lane >= 0) {
         auto held = heldLanes.find({s.track.value, s.lane});
         if (held != heldLanes.end())
@@ -555,7 +583,9 @@ void MixerPane::layout() {
         }
     };
     float x = kGap;
+    const TrackGroup* lastOfGroup = nullptr;
     for (const Track& t : m->song().tracks) {
+        lastOfGroup = nullptr;
         // Tracks that make sound have strips (§7.9): audio tracks, and any track whose IN brings audio back.
         int index = m->soundIndex(t.id);
         if (t.type != TrackType::Audio && index < 0) {
@@ -568,6 +598,7 @@ void MixerPane::layout() {
         partsOf(s, x, kStripWidth);
         strips.push_back(s);
         x += kStripWidth + kGap;
+        lastOfGroup = groupOf(m->song(), t.id);
         // A drum track's lane INs with a cable get narrow strips of their own, right after the track's (§8.1).
         if (t.type == TrackType::Drum)
             for (int k = 0; k < kDrumInputs; k++) {
@@ -585,6 +616,33 @@ void MixerPane::layout() {
                 strips.push_back(lane);
                 x += kLaneStripWidth + 1;
             }
+        // After a group's last track that has a strip, the group's own strip.
+        if (lastOfGroup) {
+            bool more = false;
+            bool after = false;
+            for (const Track& o : m->song().tracks) {
+                if (o.id == t.id) {
+                    after = true;
+                    continue;
+                }
+                if (after && m->soundIndex(o.id) >= 0 &&
+                    std::find(lastOfGroup->tracks.begin(), lastOfGroup->tracks.end(), o.id) != lastOfGroup->tracks.end())
+                    more = true;
+            }
+            if (!more && m->groupIndex(lastOfGroup->id) >= 0) {
+                Strip gs;
+                gs.group = lastOfGroup->id;
+                gs.track = TrackId(lastOfGroup->id.value);
+                gs.playerIndex = m->groupIndex(lastOfGroup->id);
+                partsOf(gs, x, kStripWidth);
+                gs.solo = Rect();
+                gs.mute = Rect(gs.box.pos.x + 4, gs.mute.pos.y, kStripWidth - 8, 14);
+                gs.sendKnobs.clear();
+                gs.addSend = gs.receives = gs.outMeter = gs.pre = Rect();
+                strips.push_back(gs);
+                x += kStripWidth + kGap;
+            }
+        }
     }
     Strip master;
     master.master = true;
@@ -690,7 +748,7 @@ std::unique_ptr<DragGesture> MixerPane::startGesture(Vec pos, int button, Modifi
         if (target.valid()) {
             // Show sends: the faders of other tracks are their sends; the master and tracks that would make a
             // loop don't move.
-            if (s.master || s.lane >= 0 || s.track == target)
+            if (s.master || s.lane >= 0 || s.group.valid() || s.track == target)
                 return s.track == target && !s.master && s.lane < 0
                            ? std::make_unique<FaderGesture>(*this, ctx, h.strip, pos)
                            : nullptr;
@@ -719,6 +777,14 @@ void MixerPane::openTyping(const Strip& s) {
             ctx, "Lane " + std::to_string(s.lane + 1) + " volume (dB)", shownVolume(s), [this, lane, pan](float db) {
                 setLane(lane, {db, pan}, "Lane " + std::to_string(lane.lane + 1) + " volume " + audioDraw::dbText(db));
             });
+        return;
+    }
+    if (s.group.valid()) {
+        GroupId group = s.group;
+        float pan = shownPan(s);
+        typingMenu(ctx, "Group volume (dB)", shownVolume(s), [m, group, pan](float db) {
+            m->perform(setGroupChannel(m->song(), group, {db, pan}, "Group volume " + audioDraw::dbText(db)));
+        });
         return;
     }
     TrackId track = s.track;
@@ -815,7 +881,8 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         }
         return;
     }
-    if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && !s->master && s->lane < 0) {
+    if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && !s->master && s->lane < 0 &&
+        !s->group.valid()) {
         TrackId track = s->track;
         EditorContext* c = &ctx;
         rack::ui::Menu* menu = rack::createMenu();
@@ -847,7 +914,7 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
             menu->addChild(rack::createMenuItem("Centre", "double-click", [this, lane, volume] {
                 setLane(lane, {volume, 0}, "Lane " + std::to_string(lane.lane + 1) + " pan centre");
             }));
-        } else if (s && h.part == Part::Pan) {
+        } else if (s && h.part == Part::Pan && !s->group.valid()) {
             TrackId track = s->track;
             float volume = shownVolume(*s);
             rack::ui::Menu* menu = rack::createMenu();
@@ -865,11 +932,16 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         return;
     switch (h.part) {
     case Part::Name:
-        if (s && !s->master)
+        if (s && !s->master && !s->group.valid())
             ctx.state().selectedTrack = s->track;
         break;
     case Part::Mute:
-        trackActions::toggleMute(ctx, s->track);
+        if (s->group.valid()) {
+            if (const TrackGroup* g = m->song().findGroup(s->group))
+                m->perform(setGroupMute(m->song(), s->group, !g->mute));
+        } else {
+            trackActions::toggleMute(ctx, s->track);
+        }
         break;
     case Part::Solo:
         trackActions::toggleSolo(ctx, s->track, mods.ctrl || mods.shift);
@@ -905,6 +977,13 @@ void MixerPane::doubleClick(Vec pos, Modifiers mods) {
     if (sendTo.valid()) {
         if (const Send* send = findSend(m->song(), s.track, sendTo))
             m->perform(setSend(m->song(), s.track, {sendTo, kSilentDb, send->preFader}, "Send -inf"));
+        return;
+    }
+    if (s.group.valid()) {
+        if (h.part == Part::Fader)
+            m->perform(setGroupChannel(m->song(), s.group, {0, shownPan(s)}, "Group volume 0 dB"));
+        else if (h.part == Part::Pan)
+            m->perform(setGroupChannel(m->song(), s.group, {shownVolume(s), 0}, "Group pan centre"));
         return;
     }
     if (s.lane >= 0) {
@@ -1061,6 +1140,63 @@ void MixerPane::drawTab(NVGcontext* vg) {
     }
 }
 
+void MixerPane::drawGroupStrip(NVGcontext* vg, const Strip& s, const TrackGroup& g) {
+    const theme::Palette& c = theme::colors();
+    TesseraModule* m = ctx.module();
+    // A step darker than a track's strip, so it reads as the sum of the ones before it.
+    draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl, theme::recessed(c, c.bg1, 0.25f));
+    NVGcolor color = theme::track(g.color);
+    nvgBeginPath(vg);
+    nvgRect(vg, s.box.pos.x, s.box.pos.y, s.box.size.x, 3);
+    nvgFillColor(vg, color);
+    nvgFill(vg);
+    draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, name, s.name.getCenter().x, s.name.getCenter().y + 1,
+               draw::ellipsize(vg, name, g.name.empty() ? "Group" : g.name, s.name.size.x - 4));
+    draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler - 1, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    if (s.chip.size.x > 0) {
+        draw::roundedRect(vg, s.chip, theme::metrics::kRadiusControl, c.bg2);
+        draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y,
+                   "Group · " + std::to_string(g.tracks.size()));
+    }
+    if (s.pan.size.x > 0) {
+        float pan = shownPan(s);
+        Vec cc = s.pan.getCenter();
+        float r = s.pan.size.y / 2 - 2;
+        float at = -float(M_PI) / 2 + pan * 0.75f * float(M_PI);
+        nvgBeginPath(vg);
+        nvgArc(vg, cc.x, cc.y, r, 0.75f * float(M_PI), 2.25f * float(M_PI), NVG_CW);
+        nvgStrokeColor(vg, theme::recessed(c, c.bg0, 0.6f));
+        nvgStrokeWidth(vg, 2);
+        nvgStroke(vg);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, cc.x, cc.y);
+        nvgLineTo(vg, cc.x + std::cos(at) * r, cc.y + std::sin(at) * r);
+        nvgStrokeColor(vg, c.text0);
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
+    }
+    draw::roundedRect(vg, s.mute, theme::metrics::kRadiusControl, g.mute ? c.queue : c.bg2);
+    small.color = g.mute ? c.ink : c.text1;
+    draw::text(vg, small, s.mute.getCenter().x, s.mute.getCenter().y, "M");
+    small.color = c.text1;
+    float volume = shownVolume(s);
+    Rect groove(s.fader.getCenter().x - 1.5f, s.fader.pos.y, 3, s.fader.size.y);
+    draw::roundedRect(vg, groove, 1.5f, theme::recessed(c, c.bg0, 0.6f));
+    float capY = s.fader.getBottom() - faderPos(volume) * s.fader.size.y;
+    bool heldNow = held.count(s.group.value) > 0;
+    draw::roundedRect(vg, Rect(s.fader.pos.x - 2, capY - 5, s.fader.size.x + 4, 10), 2, heldNow ? c.accent : c.text1);
+    const AudioPlayer& player = m->audioPlayer();
+    drawMeter(vg, s.meter, player.groupLevel(s.playerIndex, 0), player.groupLevel(s.playerIndex, 1));
+    draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y, audioDraw::dbText(volume));
+    small.color = c.text2;
+    draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8, "\xE2\x86\x92 Master");
+    // Show sends: groups don't send, they step back like the master.
+    if (ctx.view().showSends.valid())
+        draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl, nvgTransRGBAf(c.bg0, 0.6f));
+}
+
 void MixerPane::drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t) {
     const theme::Palette& c = theme::colors();
     TesseraModule* m = ctx.module();
@@ -1121,6 +1257,11 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     const theme::Palette& c = theme::colors();
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
+    if (s.group.valid()) {
+        if (const TrackGroup* g = song.findGroup(s.group))
+            drawGroupStrip(vg, s, *g);
+        return;
+    }
     const Track* t = s.master ? nullptr : song.findTrack(s.track);
     // Show sends: other strips' faders are their sends to the target (§7.6).
     TrackId target = ctx.view().showSends;
@@ -1346,8 +1487,13 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y,
                showsSend ? "send " + audioDraw::dbText(volume) : audioDraw::dbText(volume));
     small.color = c.text2;
-    if (!s.master)
-        draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8, "\xE2\x86\x92 Master");
+    if (!s.master) {
+        const TrackGroup* g = groupOf(song, s.track);
+        bool viaGroup = g && m->groupIndex(g->id) >= 0;
+        draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8,
+                   draw::ellipsize(vg, small, "\xE2\x86\x92 " + (viaGroup ? g->name : std::string("Master")),
+                                   s.box.size.x - 4));
+    }
     else if (s.connect.size.x > 0) {
         draw::roundedRect(vg, s.connect, theme::metrics::kRadiusControl, c.bg2);
         small.color = c.text0;

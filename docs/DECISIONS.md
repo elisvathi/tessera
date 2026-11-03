@@ -1900,3 +1900,12 @@ Why: built to the spec; these are the places it left open or where the code sugg
   delay line per bus slot (the slot never moves, so reordering tracks never mixes up the lines), 8192 samples at most
   (about 170 ms at 48 kHz). The lines (4 MB) are made once, on the UI thread, the first time a snapshot needs them.
   Stems are taken after the delay, so exported stems line up too. Sends leave before it.
+
+## 127. Group strips (3 Nov)
+
+- `TrackGroup` gets a `channel` (level, pan) and `mute`, saved when not default; `setGroupChannel`, `setGroupMute`.
+  No new track kind (the spec). A group with a track that makes sound gets a strip after its last such track; its
+  tracks go into its bus after their faders (and delay compensation) instead of the master.
+- The strip: name and colour, "Group · N", pan, M (no solo: solo stays per track), fader, meter, level, "→ Master".
+  Holds use the group's ID like a track's. In Show sends groups step back like the master. No group automation
+  lanes yet.

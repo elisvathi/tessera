@@ -98,6 +98,14 @@ it.
   tracks that send to it.
 - Deleting a track removes the sends to it, in the same undo step.
 
+## Group strips
+
+A group of tracks (select them and press **Ctrl+G**) gets a strip of its own in the mixer, right after its last
+track: the sum of its tracks that make sound passes through it on the way to the Master. Its tracks say **→ Group
+name** under their faders. The group strip has a pan knob, **M** (mute the whole group), a fader with a meter, and its
+level. Drag, double-click and right-click work as on a track's fader. Stems in an export are each track on its own,
+before the group strip.
+
 ## Drum lanes
 
 When a drum module's output is patched into a lane's **IN** on the Drum Out, that lane gets a narrow strip of its own,

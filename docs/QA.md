@@ -587,6 +587,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A drum loop in the audio editor shows a small mark under each hit. Its clip menu ▸ Split at transients: one
       clip per hit, same sound. Make triggers from audio: a "<track> triggers" drum track under it, notes on its Hits
       lane at each hit, louder hits louder; through a rack drum it plays in time with the loop.
+- [ ] Group two sounding tracks (Ctrl+G): a group strip after the last one, the tracks say "→ <group>". Its fader
+      and pan move both together; M silences both; undo works. Ungroup: the strip goes, they go to the Master.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

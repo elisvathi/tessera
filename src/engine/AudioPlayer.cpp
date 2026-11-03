@@ -349,6 +349,31 @@ void AudioPlayer::startBlock(const Engine& engine) {
         run.stepL = run.stepR = run.outStep = run.heardStep = run.heardOwnStep = run.clipsStep = 0;
         run.sendStep = {};
     }
+    // Group strips ramp like tracks; a drag on one holds it (by the group's ID).
+    size_t groupCount = snapshot ? std::min<size_t>(snapshot->groups.size(), kMaxTracks) : 0;
+    for (size_t g = 0; g < groupCount; g++) {
+        const GroupPlay& gp = snapshot->groups[g];
+        GroupRun& run = groupRuns[g];
+        if (run.id != gp.id) {
+            run = GroupRun{};
+            run.id = gp.id;
+        }
+        float volume = gp.volume, pan = gp.pan, unused = 1;
+        held(gp.id, volume, pan, unused);
+        float l = 0, r = 0;
+        if (gp.audible) {
+            balanceGains(pan, l, r);
+            l *= volume;
+            r *= volume;
+        }
+        if (run.fresh) {
+            run.gainL = l;
+            run.gainR = r;
+            run.fresh = false;
+        }
+        run.stepL = (l - run.gainL) / kBlock;
+        run.stepR = (r - run.gainR) / kBlock;
+    }
     float master = snapshot ? snapshot->masterVolume : 0;
     float masterPan = 0;
     // The master's Volume lane runs along the song, like a track's (§7.3); a drag of its fader wins.
@@ -537,8 +562,27 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         run.stemR = sr;
         run.peakL = std::max(run.peakL, std::abs(sl));
         run.peakR = std::max(run.peakR, std::abs(sr));
-        masterL += sl;
-        masterR += sr;
+        int group = i < count ? snapshot->tracks[i].group : -1;
+        if (group >= 0 && group < int(kMaxTracks)) {
+            groupRuns[size_t(group)].busL += sl;
+            groupRuns[size_t(group)].busR += sr;
+        } else {
+            masterL += sl;
+            masterR += sr;
+        }
+    }
+    // Each group strip: its tracks' sum through its fader and pan, into the master.
+    size_t groupCount = snapshot ? std::min<size_t>(snapshot->groups.size(), kMaxTracks) : 0;
+    for (size_t g = 0; g < groupCount; g++) {
+        GroupRun& gr = groupRuns[g];
+        gr.gainL += gr.stepL;
+        gr.gainR += gr.stepR;
+        float gl = gr.busL * gr.gainL, grr = gr.busR * gr.gainR;
+        gr.busL = gr.busR = 0;
+        gr.peakL = std::max(gr.peakL, std::abs(gl));
+        gr.peakR = std::max(gr.peakR, std::abs(grr));
+        masterL += gl;
+        masterR += grr;
     }
     delayPos = (delayPos + 1) % size_t(kMaxDelay);
     mixGain += mixStep;
@@ -598,6 +642,14 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             }
             run.peakL = run.peakR = 0;
             run.outPeak = 0;
+        }
+        for (size_t g = 0; g < groupCount; g++) {
+            GroupRun& gr = groupRuns[g];
+            groupMeters[g][0].store(std::max(gr.peakL, groupMeters[g][0].load(std::memory_order_relaxed) * fall),
+                                    std::memory_order_relaxed);
+            groupMeters[g][1].store(std::max(gr.peakR, groupMeters[g][1].load(std::memory_order_relaxed) * fall),
+                                    std::memory_order_relaxed);
+            gr.peakL = gr.peakR = 0;
         }
         masterMeter[0].store(std::max(masterPeakL, masterMeter[0].load(std::memory_order_relaxed) * fall),
                              std::memory_order_relaxed);

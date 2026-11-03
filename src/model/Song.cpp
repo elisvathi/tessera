@@ -490,6 +490,7 @@ void normalize(Song& song) {
 
     for (TrackGroup& g : song.groups) {
         ids.fix(g.id);
+        normalizeChannel(g.channel);
         g.tracks.erase(
             std::remove_if(g.tracks.begin(), g.tracks.end(), [&](TrackId id) { return !song.findTrack(id); }),
             g.tracks.end());
