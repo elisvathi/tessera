@@ -1,5 +1,7 @@
 #include "EditorHost.hpp"
 
+#include "editing/AudioActions.hpp"
+
 #include "../module/TesseraModule.hpp"
 #include "Theme.hpp"
 #include "editing/DeviceActions.hpp"
@@ -356,6 +358,9 @@ void EditorHost::runAction(Action action) {
         return;
     case Action::ExportMidi:
         exportMidi::openSong(ctx);
+        return;
+    case Action::ImportAudio:
+        audioActions::importDialog(ctx);
         return;
     case Action::KeyboardPlay:
         state.keyboardPlay = !state.keyboardPlay;

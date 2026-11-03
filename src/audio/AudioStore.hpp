@@ -86,6 +86,8 @@ class AudioStore : public AudioBuffers {
     void want(const std::vector<RenderKey>& keys);
     /// Tries a failed render again (the clip menu's Try again).
     void retry(const RenderKey& key);
+    /// Loads again every source whose file was missing or unreadable, after files were copied in.
+    void retryMissing();
 
     SourceStatus status(AudioSourceId id) const;
     RenderStatus renderStatus(const RenderKey& key) const;
@@ -152,6 +154,12 @@ class AudioStore : public AudioBuffers {
 /// Copies the song's audio files that `to` lacks from `from` (the patch storage of the module this one was pasted
 /// from), when the copy there has the source's content hash. Returns how many it copied (DECISIONS §102).
 int copyMissingFiles(const Song& song, const std::string& from, const std::string& to);
+
+/// Copies the song's audio files from patch storage into `folder` (flat), for a saved project file. Returns how many.
+int exportFiles(const Song& song, const std::string& storage, const std::string& folder);
+/// The other way, for an opened project: copies files from `folder` into patch storage when they are missing there
+/// and match their source's hash. Returns how many.
+int importFiles(const Song& song, const std::string& folder, const std::string& storage);
 
 /// Removes the files in `folder`/audio that no source of the song uses, as a loaded patch does. Returns how many.
 int removeUnusedFiles(const Song& song, const std::string& folder);

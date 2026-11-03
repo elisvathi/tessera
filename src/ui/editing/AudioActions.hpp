@@ -26,6 +26,13 @@ std::string connectMainToAudio(TesseraModule* module);
 /// gain back to 0 dB, and Try again for a render that failed (§6.2).
 void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
 
+/// File ▸ Import audio… (Ctrl/Cmd+Shift+O): picks a file and imports it like a drop on empty space, on new tracks
+/// at the playhead's bar or in their first slots, following what plays.
+void importDialog(EditorContext& ctx);
+
+/// File ▸ Remove unused audio: takes out the sources no clip plays, as one undo step, and says how many.
+void removeUnused(EditorContext& ctx);
+
 /// The toast after a drop of audio files: what came in, what couldn't be read, what didn't fit.
 std::string dropMessage(const std::vector<std::string>& imported, const std::vector<std::string>& failed,
                         int skipped);

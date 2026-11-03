@@ -76,6 +76,40 @@ int copyMissingFiles(const Song& song, const std::string& from, const std::strin
     return copied;
 }
 
+int exportFiles(const Song& song, const std::string& storage, const std::string& folder) {
+    std::error_code ec;
+    int copied = 0;
+    for (const AudioSource& s : song.audioSources) {
+        fs::path src = fs::path(storage) / s.file;
+        fs::path dest = fs::path(folder) / fs::path(s.file).filename();
+        if (!fs::exists(src, ec))
+            continue;
+        fs::create_directories(dest.parent_path(), ec);
+        if (fs::exists(dest, ec) && hashFile(dest.string()) == hashFile(src.string()))
+            continue;
+        if (fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec))
+            copied++;
+    }
+    return copied;
+}
+
+int importFiles(const Song& song, const std::string& folder, const std::string& storage) {
+    std::error_code ec;
+    int copied = 0;
+    for (const AudioSource& s : song.audioSources) {
+        fs::path src = fs::path(folder) / fs::path(s.file).filename();
+        fs::path dest = fs::path(storage) / s.file;
+        if (fs::exists(dest, ec) || !fs::exists(src, ec))
+            continue;
+        if (s.contentHash != 0 && hashFile(src.string()) != s.contentHash)
+            continue;
+        fs::create_directories(dest.parent_path(), ec);
+        if (fs::copy_file(src, dest, ec))
+            copied++;
+    }
+    return copied;
+}
+
 int removeUnusedFiles(const Song& song, const std::string& folder) {
     std::error_code ec;
     fs::path audio = fs::path(folder) / "audio";
@@ -305,6 +339,14 @@ void AudioStore::retry(const RenderKey& key) {
             wake.notify_all();
             bump();
         }
+}
+
+void AudioStore::retryMissing() {
+    std::lock_guard<std::mutex> lock(mutex);
+    for (auto& [id, s] : sources)
+        if (s.status.state == SourceState::Missing || s.status.state == SourceState::Failed)
+            queueLoad(s);
+    bump();
 }
 
 void AudioStore::evictRenders() {

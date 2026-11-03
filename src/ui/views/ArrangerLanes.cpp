@@ -619,6 +619,8 @@ void ArrangerLanes::click(Vec pos, int button, Modifiers mods) {
             menu->addChild(rack::createMenuItem(
                 "Drum track", shortcutLabel(Action::AddDrumTrack), [c] { trackActions::add(*c, TrackType::Drum); },
                 full));
+            menu->addChild(rack::createMenuItem(
+                "Audio track", "or drop audio files", [c] { trackActions::add(*c, TrackType::Audio); }, full));
         }
         return;
     }
