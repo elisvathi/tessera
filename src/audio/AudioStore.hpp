@@ -149,6 +149,13 @@ class AudioStore : public AudioBuffers {
     std::thread loader, renderer;
 };
 
+/// Copies the song's audio files that `to` lacks from `from` (the patch storage of the module this one was pasted
+/// from), when the copy there has the source's content hash. Returns how many it copied (DECISIONS §102).
+int copyMissingFiles(const Song& song, const std::string& from, const std::string& to);
+
+/// Removes the files in `folder`/audio that no source of the song uses, as a loaded patch does. Returns how many.
+int removeUnusedFiles(const Song& song, const std::string& folder);
+
 /// The file name a dropped file gets in patch storage: "audio/" + 8 hex digits of its hash + "-" + its name.
 std::string storageName(const std::string& displayName, uint64_t hash);
 

@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <random>
 #include <thread>
 
@@ -213,4 +214,38 @@ TEST_CASE("the store feeds the snapshot builder: a clip plays its prepared buffe
     // One tick at 120 BPM is 1/1920 s: 44100/1920 frames at the engine rate.
     CHECK(c.framesPerTick == doctest::Approx(44100.0 / 1920));
     CHECK(b.wanted.empty());
+}
+
+TEST_CASE("a pasted Tessera copies its audio files from the original's patch storage") {
+    TempFolder original, pasted;
+    AudioStore store;
+    store.setFolder(original.path.string());
+    Song song = makeDefaultSong();
+    importInto(store, song, "kick.wav");
+    importInto(store, song, "click120.wav");
+    CHECK(copyMissingFiles(song, original.path.string(), pasted.path.string()) == 2);
+    for (const AudioSource& s : song.audioSources)
+        CHECK(fs::exists(pasted.path / s.file));
+    CHECK(copyMissingFiles(song, original.path.string(), pasted.path.string()) == 0);
+    // A file in the original folder with other content (the original changed since) is not taken.
+    TempFolder other;
+    fs::create_directories(other.path / "audio");
+    { std::ofstream(other.path / song.audioSources[0].file) << "not the same"; }
+    TempFolder third;
+    CHECK(copyMissingFiles(song, other.path.string(), third.path.string()) == 0);
+}
+
+TEST_CASE("loading a patch removes the files no source uses, and only those") {
+    TempFolder dir;
+    AudioStore store;
+    store.setFolder(dir.path.string());
+    Song song = makeDefaultSong();
+    importInto(store, song, "kick.wav");
+    importInto(store, song, "click120.wav");
+    std::string dropped = song.audioSources[1].file;
+    song.audioSources.pop_back();
+    CHECK(removeUnusedFiles(song, dir.path.string()) == 1);
+    CHECK_FALSE(fs::exists(dir.path / dropped));
+    CHECK(fs::exists(dir.path / song.audioSources[0].file));
+    CHECK(removeUnusedFiles(song, (dir.path / "nowhere").string()) == 0);
 }

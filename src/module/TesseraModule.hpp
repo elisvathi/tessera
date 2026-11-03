@@ -1,12 +1,15 @@
 #pragma once
 
+#include "../audio/AudioStore.hpp"
 #include "../engine/ArrangementCapture.hpp"
+#include "../engine/AudioPlayer.hpp"
 #include "../engine/ClockSync.hpp"
 #include "../engine/Engine.hpp"
 #include "../engine/Recorder.hpp"
 #include "../engine/SnapshotExchange.hpp"
 #include "../engine/SpscQueue.hpp"
 #include "../engine/TapTempo.hpp"
+#include "../model/AudioEdits.hpp"
 #include "../model/AutomationTake.hpp"
 #include "../model/Commands.hpp"
 #include "../model/TrackCommands.hpp"
@@ -82,7 +85,18 @@ class TesseraModule : public rack::engine::Module {
         CLOCK_INPUT,
         INPUTS_LEN
     };
-    enum OutputId { CLOCK_OUTPUT, RESET_OUTPUT, RUN_OUTPUT, EOC_OUTPUT, BAR_OUTPUT, CLICK_OUTPUT, OUTPUTS_LEN };
+    // New ports go last, so saved patches keep their cables.
+    enum OutputId {
+        CLOCK_OUTPUT,
+        RESET_OUTPUT,
+        RUN_OUTPUT,
+        EOC_OUTPUT,
+        BAR_OUTPUT,
+        CLICK_OUTPUT,
+        MAIN_L_OUTPUT,
+        MAIN_R_OUTPUT,
+        OUTPUTS_LEN
+    };
     enum LightId { PLAY_LIGHT, LOOP_LIGHT, BEAT_LIGHT, LAUNCH_LIGHT, MODE_LIGHT, REC_LIGHT, FILL_LIGHT, LIGHTS_LEN };
 
     TesseraModule();
@@ -272,6 +286,28 @@ class TesseraModule : public rack::engine::Module {
     void setRunInputMode(RunInputMode mode) { runMode.store(mode); }
 
     // Live transport state for the panel, safe to read from any thread
+    // ---- Audio (docs/design/AUDIO_MIXER.md) ----------------------------------------------------------------------
+
+    /// What a drop of audio files did, for the toast and the selection.
+    struct AudioDropResult {
+        ImportResult made;
+        std::vector<std::string> failed; // file names that weren't audio Tessera reads
+        std::vector<std::string> imported;
+        bool tempoSet = false; // the first loop set the song tempo
+        double oldTempo = 0, newTempo = 0;
+    };
+    /// Imports files as one undo step (§6.5): copies them into patch storage, guesses their tempo, places their
+    /// clips as `target` says. In an empty song the first loop also sets the song tempo, in the same undo step.
+    AudioDropResult importAudioFiles(const std::vector<std::string>& paths, AudioDropTarget target);
+    /// The audio store, made when the song first has audio; null before.
+    AudioStore* audioStore() const { return audio.get(); }
+    const AudioPlayer& audioPlayer() const { return *player; }
+    AudioPlayer& audioPlayer() { return *player; }
+    /// Whether MAIN L has a cable (the master's way out).
+    bool mainPatched() const { return mainConnected.load(std::memory_order_relaxed); }
+    /// Whether the master has sound now: for the MAIN warnings.
+    bool masterSounding() const { return player->masterLevel(0) > 1e-4f || player->masterLevel(1) > 1e-4f; }
+
     double playheadTicks() const { return uiPlayhead.load(std::memory_order_relaxed); }
     double playTicks() const { return uiPlayTick.load(std::memory_order_relaxed); }
     bool playing() const { return uiPlaying.load(std::memory_order_relaxed); }
@@ -333,6 +369,22 @@ class TesseraModule : public rack::engine::Module {
     };
 
     // UI thread
+    void audioStep();
+    void setupAudioFolder();
+    std::string audioFolder; // this module's patch storage, once it has audio
+
+    std::unique_ptr<AudioStore> audio;
+    std::unique_ptr<AudioPlayer> player = std::make_unique<AudioPlayer>();
+    Exchange<AudioSnapshot> audioSnapshots;
+    uint64_t audioRevision = ~uint64_t(0), audioChanges = 0;
+    double audioTempo = 0;       // the tempo the snapshot's renders were picked for
+    double tempoSeen = 0;        // the tempo last time, to see it settle
+    double tempoSettleAt = 0;    // when the tempo last moved (seconds)
+    std::atomic<float> audioRate{0};
+    std::atomic<bool> mainConnected{false};
+    // Buffers a new snapshot no longer uses stay in it a second longer, so fades already reading them can finish.
+    std::vector<std::pair<std::shared_ptr<const AudioBuffer>, double>> retiringBuffers;
+
     Song songData;
     BusSlots slots;
     SnapshotBuilder snapshotBuilder;
