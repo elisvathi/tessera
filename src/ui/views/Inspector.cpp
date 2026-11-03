@@ -1,5 +1,8 @@
 #include "Inspector.hpp"
 
+#include "../../model/Sends.hpp"
+#include "../editing/SendActions.hpp"
+
 #include "../editing/AudioActions.hpp"
 #include "AudioClipDraw.hpp"
 
@@ -336,7 +339,7 @@ void Inspector::click(Vec pos, int button, Modifiers mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT)
         for (const SettingRow& s : settingRows)
             if (s.rect.contains(Vec(pos.x, pos.y + scroll))) {
-                openSetting(s.which);
+                openSetting(s.which, s.target);
                 return;
             }
     const Region* hit = regionAt(pos);
@@ -489,7 +492,7 @@ float Inspector::row(NVGcontext* vg, float y, const std::string& label, const st
 }
 
 float Inspector::settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value,
-                            Setting which) {
+                            Setting which, uint64_t target) {
     const theme::Palette& c = theme::colors();
     draw::TextStyle l{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle v{theme::fonts::ui(), theme::metrics::kTextUi, c.text0, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
@@ -508,17 +511,21 @@ float Inspector::settingRow(NVGcontext* vg, float y, const std::string& label, c
     nvgStrokeColor(vg, c.text1);
     nvgStrokeWidth(vg, 1.2f);
     nvgStroke(vg);
-    settingRows.push_back({Rect(kPad, y, box.size.x - 2 * kPad, kRowHeight), which});
+    settingRows.push_back({Rect(kPad, y, box.size.x - 2 * kPad, kRowHeight), which, target});
     return y + kRowHeight;
 }
 
-void Inspector::openSetting(Setting which) {
+void Inspector::openSetting(Setting which, uint64_t target) {
     TesseraModule* m = ctx.module();
     const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;
     if (!t)
         return;
     rack::ui::Menu* menu = rack::createMenu();
-    if (which == Setting::Voices) {
+    if (which == Setting::Send) {
+        sendActions::appendSendItems(menu, ctx, t->id, TrackId(target));
+    } else if (which == Setting::AddSend) {
+        sendActions::appendAddSendItems(menu, ctx, t->id);
+    } else if (which == Setting::Voices) {
         menu->addChild(rack::createMenuLabel("Voices"));
         trackActions::appendVoicesItems(menu, ctx, {t->id});
     } else if (which == Setting::Audio) {
@@ -881,6 +888,30 @@ void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
     }
 }
 
+float Inspector::drawSends(NVGcontext* vg, float y, const Track& t) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    std::vector<TrackId> from = sendersTo(song, t.id);
+    // Only tracks that make sound send or receive; the others keep the inspector as it was.
+    if (m->soundIndex(t.id) < 0 && t.sends.empty())
+        return y;
+    y += kSectionGap;
+    y = section(vg, y, "SENDS");
+    for (const Send& s : t.sends)
+        if (const Track* to = song.findTrack(s.to))
+            y = settingRow(vg, y, to->name, audioDraw::dbText(s.db) + (s.preFader ? " · before fader" : " · after fader"),
+                           Setting::Send, s.to.value);
+    y = settingRow(vg, y, "Send to", "+", Setting::AddSend);
+    if (!from.empty()) {
+        std::string names;
+        for (TrackId id : from)
+            if (const Track* f = song.findTrack(id))
+                names += (names.empty() ? "" : ", ") + f->name;
+        y = row(vg, y, "Gets sends from", names);
+    }
+    return y;
+}
+
 void Inspector::drawFacts(NVGcontext* vg, float y) {
     settingRows.clear();
     TesseraModule* m = ctx.module();
@@ -901,6 +932,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
                  double(std::abs(t->channel.pan) * 100));
         y = row(vg, y, "Pan", pan);
         y = row(vg, y, "Output", m->mainPatched() ? "MAIN" : "MAIN (not patched)");
+        y = drawSends(vg, y, *t);
         y += kSectionGap;
         drawAudioClipFacts(vg, y, *t);
         return;
@@ -927,6 +959,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
                                    box.size.x - 2 * kPad));
         y += kRowHeight - 4;
     }
+    y = drawSends(vg, y, *t);
     y += kSectionGap;
 
     const Clip* clip = song.findClip(clipActions::shownClip(ctx, *t));

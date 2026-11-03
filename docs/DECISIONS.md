@@ -1786,8 +1786,10 @@ Why: built to the spec; these are the places it left open or where the code sugg
   loop strips dimmed, 120 ms glide, Esc leaves it first (before clearing the selection), folding the mixer leaves
   it. Not saved.
 - **"No OUT cable"** replaces the spec's "Sends go nowhere": that does not fit a 64 px chip.
-- **Not built yet**: the inspector's Sends section, send automation lanes, a meter of the send level in Show sends
-  (strips keep their own meters there).
+- **Also built (3 Nov, later)**: the inspector's SENDS section (rows open the knob's menu; a level bar there was
+  left out: one menu, one place to drag, the knob); Send lanes (`LaneDrive::Send` + `sendTo`, played by the audio
+  player like the master's lane, recorded from a knob or Show sends drag while armed, a ring on the knob); in Show
+  sends each strip's meter shows its send. The menus live in `sendActions` for the mixer and the inspector.
 
 ## 118. The mixer shares the lower pane (3 Nov)
 

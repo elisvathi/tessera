@@ -567,6 +567,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Reverb's OUT: its chip reads "No OUT cable" in amber. Mute Lead: the reverb stops getting it. Solo Lead: Lead
       and the reverb are heard. Solo Reverb: only the wet sound. Reverb can't send back to Lead ("Would feed back").
       Delete Reverb: Lead's send goes; undo brings both back.
+- [ ] Right-click Lead's send knob ▸ Automate in the timeline: a "Send to Reverb" lane opens; draw a dip and play: the
+      knob follows (with a ring) and the reverb dips. In Show sends the strip meters show the send levels. The
+      inspector's SENDS lists Lead's send (click: the same menu), "Send to +", and on Reverb "Gets sends from: Lead".
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

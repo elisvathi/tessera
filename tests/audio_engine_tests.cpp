@@ -735,4 +735,18 @@ TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, 
     play();
     CHECK(out[1].l == doctest::Approx(2.f).epsilon(1e-3));
     CHECK(left == doctest::Approx(0.3f).epsilon(1e-3));
+    song.tracks[1].solo = false;
+    // A Send lane moves the send: -6 dB before the fader.
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.drive = LaneDrive::Send;
+    lane.sendTo = reverb;
+    lane.points = {{0, faderPosOfDb(-6.0206f)}};
+    song.tracks[0].automation.push_back(lane);
+    play();
+    CHECK(out[1].l == doctest::Approx(1.f).epsilon(1e-3));
+    float db = 0;
+    CHECK(player.sendAutomated(0, 0, db));
+    CHECK(db == doctest::Approx(-6.02f).epsilon(1e-2));
+    CHECK(player.sendLevel(0, 0) > 0.9f);
 }

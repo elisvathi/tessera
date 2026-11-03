@@ -77,6 +77,22 @@ class AudioPlayer {
     void holdClips(uint64_t track, float gain);
     /// Holds the send from `track` to `to` at `gain` while a drag moves it (Show sends, a send knob).
     void holdSend(uint64_t track, uint64_t to, float gain);
+    /// The send from `track` to `to` a drag holds now, as a gain, for recording it into its lane. UI thread.
+    bool heldSend(uint64_t track, uint64_t to, float& gain) const;
+    /// Whether a Send lane moves track `track`'s (its index in the snapshot) send `k` now, and to what (dB).
+    bool sendAutomated(int track, int k, float& db) const {
+        if (track < 0 || track >= kMaxTracks || k < 0 || k >= kMaxSendsPerTrack ||
+            !(sendAutoFlags[size_t(track)].load(std::memory_order_relaxed) & (1u << k)))
+            return false;
+        db = sendAutoDb[size_t(track)][size_t(k)].load(std::memory_order_relaxed);
+        return true;
+    }
+    /// What track `track`'s send `k` carries now (volts, a peak falling 20 dB a second), for Show sends' meters.
+    float sendLevel(int track, int k) const {
+        return track >= 0 && track < kMaxTracks && k >= 0 && k < kMaxSendsPerTrack
+                   ? sendMeters[size_t(track)][size_t(k)].load(std::memory_order_relaxed)
+                   : 0.f;
+    }
     /// What leaves a track's OUT now (its index in the snapshot), in volts, a peak falling 20 dB a second (§7.6).
     float outLevel(int track) const {
         return track >= 0 && track < kMaxTracks ? outMeters[size_t(track)].load(std::memory_order_relaxed) : 0.f;
@@ -143,6 +159,8 @@ class AudioPlayer {
         float heardGain = 0, heardStep = 0;
         float heardOwnGain = 0, heardOwnStep = 0;
         std::array<float, kMaxSendsPerTrack> sendGain{}, sendStep{};
+        std::array<size_t, kMaxSendsPerTrack> sendCursor{};
+        std::array<float, kMaxSendsPerTrack> sendPeak{};
         float outPeak = 0;
         bool fresh = true; // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
         bool steady = false; // its voices step on unchanged for the rest of this block
@@ -209,6 +227,9 @@ class AudioPlayer {
 
     std::array<std::array<std::atomic<float>, 2>, kMaxTracks> meters{};
     std::array<std::atomic<float>, kMaxTracks> outMeters{};
+    std::array<std::atomic<uint32_t>, kMaxTracks> sendAutoFlags{};
+    std::array<std::array<std::atomic<float>, kMaxSendsPerTrack>, kMaxTracks> sendMeters{};
+    std::array<std::array<std::atomic<float>, kMaxSendsPerTrack>, kMaxTracks> sendAutoDb{};
     std::array<std::array<float, 2>, kMaxTracks> sendBus{}; // what senders put into each track's OUT this sample
     std::array<std::atomic<uint8_t>, kMaxTracks> autoFlags{};
     std::array<std::atomic<float>, kMaxTracks> autoVolume{}, autoPan{};

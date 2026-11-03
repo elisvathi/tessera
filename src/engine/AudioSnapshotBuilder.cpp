@@ -179,8 +179,13 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         const Track* t = song.findTrack(snap.tracks[i].id);
         for (const Send& send : t->sends)
             for (size_t j = i + 1; j < snap.tracks.size(); j++)
-                if (snap.tracks[j].id == send.to && snap.tracks[i].sends.size() < size_t(kMaxSendsPerTrack))
-                    snap.tracks[i].sends.push_back({int(j), dbToGain(send.db), send.preFader, send.to.value});
+                if (snap.tracks[j].id == send.to && snap.tracks[i].sends.size() < size_t(kMaxSendsPerTrack)) {
+                    SendPlay play{int(j), dbToGain(send.db), send.preFader, send.to.value, {}};
+                    for (const AutomationEnvelope& l : t->automation)
+                        if (l.drive == LaneDrive::Send && l.sendTo == send.to && !l.mute && !l.points.empty())
+                            play.lane = l.points;
+                    snap.tracks[i].sends.push_back(std::move(play));
+                }
     }
     return out;
 }

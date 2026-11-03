@@ -83,3 +83,20 @@ TEST_CASE("normalize drops sends that go nowhere, repeat, or close a loop") {
     CHECK_FALSE(sendsReach(song, bass, bass));
     CHECK_FALSE(sendsReach(song, lead, lead));
 }
+
+TEST_CASE("a Send lane names the track it sends to, and saves") {
+    Song song = fourTracks();
+    TrackId bass = idAt(song, 0), lead = idAt(song, 2);
+    addSend(song, bass, lead)->apply(song);
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.drive = LaneDrive::Send;
+    lane.sendTo = lead;
+    lane.points = {{0, 0.5f}};
+    song.tracks[0].automation.push_back(lane);
+    json::Ref j(songToJson(song));
+    Song back = songFromJson(j.get(), Song::kSchemaVersion);
+    REQUIRE(back.tracks[0].automation.size() == 1);
+    CHECK(back.tracks[0].automation[0].sendTo == lead);
+    CHECK(back.tracks[0].automation[0].drive == LaneDrive::Send);
+}
