@@ -134,8 +134,9 @@ Right-click the Roll panel for these settings.
 
 ![The Track Out module](images/track-out.png)
 
-Track Out plays one **instrument track**. Each jack is polyphonic: one channel per voice. The number of channels
-follows the track's **Voices** setting (by default, as many as the track ever plays at once).
+Track Out plays one track: an instrument track, a drum track, an audio track, or the **Master**. The note jacks are
+on the top plate, the **AUDIO** section below them. The note jacks are polyphonic: one channel per voice. The number
+of channels follows the track's **Voices** setting (by default, as many as the track ever plays at once).
 
 | Jack | What it sends |
 |---|---|
@@ -146,23 +147,37 @@ follows the track's **Voices** setting (by default, as many as the track ever pl
 | **TIMB** | Timbre curve of each note, 0 to 10 V (see [Shaping notes](08-shaping-notes.md#bends-timbre-and-pressure)). |
 | **PRESS** | Pressure curve of each note, 0 to 10 V. |
 | **AUTO** | The track's automation lanes, one channel per AUTO lane, already in volts. |
+| **OUT L / OUT R** | The track's sound before its fader, for an effect: an audio track's clips, or the master mix. 10 V is full scale (0 dB). |
+| **IN L / IN R** (inputs) | Audio mixed into the track before its fader, at full level. Patch an effect's output here. With one side patched, both sides hear it; a poly cable is summed. |
+
+**An effect on a track**: patch **OUT L/R** into the effect and the effect's output back into **IN L/R**. You hear
+the track's sound together with what comes back, through the track's fader in the [mixer](18-mixer.md). The light
+between IN L and IN R is green while audio comes back, red above 0 dB. A cable into IN of a note track gives that
+track a strip in the mixer: plug a synth's output in, and the track has a fader, pan and meter like an audio track.
+
+**Jacks that do nothing for the track are dim**: the note jacks on an audio track or the master, and OUT on a note
+track (for now). Hover a dim jack and its tooltip says why; a cable on a dim jack gets an amber ring. **AUTO** works
+for every track. Bypassing a Track Out never sends IN to OUT: what comes back simply drops out.
 
 **The screen** shows the Roll's name, the track number in the track's colour, and the track name. It shows
 "No source" when no Roll is found, and "Track missing" when the track was deleted. A Track Out never jumps to
 another track by itself: undo the delete, or pick a track, and it plays again.
 
-**The arrow buttons** step through the instrument tracks. Each step can be undone.
+**The arrow buttons** step through the tracks, the master last. Each step can be undone. The screen shows **M** and
+"Master" for the master.
 
 **Right-click** for the **Source** (which Roll, by instance name) and **Track** menus.
 
 ![The Track Out menu: Source and Track](images/track-out-menu.png)
 
 - **Follow the track selected in the editor** makes the Track Out play whatever track you select. This is useful to
-  try one synth with every part. Picking a track or pressing an arrow turns it off.
+  try one synth with every part. Picking a track or pressing an arrow turns it off. While it follows, OUT and IN
+  do nothing.
+- A new Track Out picks the track selected in the editor when nothing plays it yet; otherwise the first note track
+  without an output.
 - Several Track Outs can play the same track. They all send the same thing.
 
-You can also put a **drum track** on a Track Out. You get one channel per drum output, with the lane's note as
-V/OCT.
+On a **drum track**, you get one channel per drum output, with the lane's note as V/OCT.
 
 ## Drum Out
 

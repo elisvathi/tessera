@@ -1,5 +1,6 @@
 #include "OutputModuleBase.hpp"
 
+#include "../model/AudioSource.hpp"
 #include "Registry.hpp"
 #include "TesseraModule.hpp"
 
@@ -12,24 +13,100 @@ namespace {
 constexpr int64_t kReportEvery = 32;
 } // namespace
 
-OutputModuleBase::~OutputModuleBase() { Registry::get().removeOutput(this); }
+OutputModuleBase::~OutputModuleBase() {
+    Registry::get().removeOutput(this);
+    releaseReturn();
+}
 
 void OutputModuleBase::process(const ProcessArgs& args) {
     const OutputBus* b = bus.get();
-    TrackId track(boundTrack.load(std::memory_order_relaxed));
+    TrackId track(boundTrackId.load(std::memory_order_relaxed));
     const TrackFrame* frame = b ? b->read(args.frame, busSlot.load(std::memory_order_relaxed), track) : nullptr;
     if (frame)
         writeFrame(*frame);
     else
         silenceGates();
+    if (audioPorts.outL >= 0 || audioPorts.inL >= 0)
+        processAudio(args, b, track);
     if (args.frame % kReportEvery == 0)
         bus.markProcessed(args.frame);
 }
 
+void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b, TrackId track) {
+    bool on = b && audioOn.load(std::memory_order_relaxed);
+    if (audioPorts.outL >= 0) {
+        const AudioOutFrame* f =
+            on ? b->readAudio(args.frame, audioSlot.load(std::memory_order_relaxed), track) : nullptr;
+        outputs[size_t(audioPorts.outL)].setVoltage(f ? f->l : 0.f);
+        outputs[size_t(audioPorts.outR)].setVoltage(f ? f->r : 0.f);
+    }
+    if (audioPorts.inL < 0)
+        return;
+    rack::engine::Input& inL = inputs[size_t(audioPorts.inL)];
+    rack::engine::Input& inR = inputs[size_t(audioPorts.inR)];
+    float l = 0, r = 0;
+    // A poly cable is summed to stereo; R follows L when only L is patched, and the other way round.
+    bool hasL = inL.isConnected(), hasR = inR.isConnected();
+    if (hasL)
+        l = inL.getVoltageSum();
+    if (hasR)
+        r = inR.getVoltageSum();
+    if (hasL && !hasR)
+        r = l;
+    if (hasR && !hasL)
+        l = r;
+    int slot = returnSlot.load(std::memory_order_relaxed);
+    if (on && slot >= 0 && (hasL || hasR))
+        b->returns().write(args.frame, slot, track, l, r);
+    if (audioPorts.inLight >= 0) {
+        // Green while audio arrives, red above 0 dB (10 V); the peak falls so short hits still show.
+        float peak = std::max(std::fabs(l), std::fabs(r));
+        inPeak = std::max(peak, inPeak * 0.9995f);
+        bool arriving = on && (hasL || hasR) && inPeak > 0.01f;
+        lights[size_t(audioPorts.inLight)].setBrightnessSmooth(arriving ? 1.f : 0.f, args.sampleTime);
+        lights[size_t(audioPorts.inLight) + 1].setBrightnessSmooth(arriving && inPeak > kFullScaleVolts ? 1.f : 0.f,
+                                                                   args.sampleTime);
+    }
+}
+
 void OutputModuleBase::processBypass(const ProcessArgs& args) {
+    // Bypassed, IN never reaches OUT (in an effect loop that would feed back) and nothing goes back to Tessera.
     silenceGates();
+    if (audioPorts.outL >= 0) {
+        outputs[size_t(audioPorts.outL)].setVoltage(0.f);
+        outputs[size_t(audioPorts.outR)].setVoltage(0.f);
+    }
     if (args.frame % kReportEvery == 0)
         bus.markProcessed(args.frame);
+}
+
+void OutputModuleBase::releaseReturn() {
+    int slot = returnSlot.exchange(-1);
+    if (returnOwner && slot >= 0)
+        returnOwner->returns().release(slot);
+    returnOwner.reset();
+}
+
+BoundKind OutputModuleBase::boundKind() const {
+    TesseraModule* src = source();
+    if (!src || status() != BindingStatus::Bound)
+        return BoundKind::None;
+    if (acceptsMaster && bindingData.track == src->song().master.id)
+        return BoundKind::Master;
+    const Track* t = src->song().findTrack(bindingData.track);
+    if (!t)
+        return BoundKind::None;
+    return t->type == TrackType::Audio  ? BoundKind::Audio
+           : t->type == TrackType::Drum ? BoundKind::Drum
+                                        : BoundKind::Instrument;
+}
+
+int OutputModuleBase::activeReturn() const {
+    if (audioPorts.inL < 0 || !audioOn.load(std::memory_order_relaxed))
+        return -1;
+    // Rack's isConnected() isn't const; it only reads the channel count.
+    bool patched = inputs[size_t(audioPorts.inL)].channels > 0 || inputs[size_t(audioPorts.inR)].channels > 0;
+    return patched ? returnSlot.load(std::memory_order_relaxed) : -1;
 }
 
 void OutputModuleBase::onAdd(const AddEvent& e) {
@@ -49,12 +126,34 @@ void OutputModuleBase::onAdd(const AddEvent& e) {
     std::vector<TrackId> tracks = candidateTracks(*src);
     if (tracks.empty())
         return;
+    if (acceptsMaster) {
+        // Track Out (§8.1): the selected track if nothing plays it yet, else the first note track without one.
+        // Never an audio track or the master unless it is the selected one.
+        TrackId selected = src->editor().selectedTrack;
+        if (src->song().findTrack(selected) && !registry.hasOutputFor(src->id, selected)) {
+            bind(*src, selected);
+            return;
+        }
+        for (const Track& t : src->song().tracks)
+            if (t.type != TrackType::Audio && !registry.hasOutputFor(src->id, t.id)) {
+                bind(*src, t.id);
+                return;
+            }
+        for (const Track& t : src->song().tracks)
+            if (t.type != TrackType::Audio) {
+                bind(*src, t.id);
+                return;
+            }
+    }
     auto free =
         std::find_if(tracks.begin(), tracks.end(), [&](TrackId t) { return !registry.hasOutputFor(src->id, t); });
     bind(*src, free != tracks.end() ? *free : tracks.front());
 }
 
-void OutputModuleBase::onRemove(const RemoveEvent& e) { Registry::get().removeOutput(this); }
+void OutputModuleBase::onRemove(const RemoveEvent& e) {
+    Registry::get().removeOutput(this);
+    releaseReturn();
+}
 
 void OutputModuleBase::refreshBinding() {
     bus.collect();
@@ -75,15 +174,31 @@ void OutputModuleBase::refreshBinding() {
     if (src)
         bindingData.sourceName = src->instanceName();
     if (src && bindingData.followSelected) {
-        // A selected track this module can't play (a drum track for Track Out) leaves the last one playing.
+        // A selected track this module can't play (an audio track for Drum Out) leaves the last one playing.
         const Track* selected = src->song().findTrack(src->editor().selectedTrack);
         if (selected && accepts(selected->type))
             bindingData.track = selected->id;
     }
 
     busSlot.store(src ? src->busSlotOf(bindingData.track) : -1);
-    boundTrack.store(bindingData.track.value);
+    boundTrackId.store(bindingData.track.value);
     bus.set(src ? src->outputBus() : nullptr);
+
+    // Audio: OUT reads the track's (or the master's) slot; IN writes a return slot of this source's own bus. In
+    // "follow the selected track" mode both do nothing (§7.8).
+    bool master = src && acceptsMaster && bindingData.track == src->song().master.id;
+    audioSlot.store(master ? OutputBus::kMasterSlot : busSlot.load());
+    audioOn.store(src && !bindingData.followSelected && status() == BindingStatus::Bound);
+    if (audioPorts.inL >= 0) {
+        std::shared_ptr<OutputBus> owner = src ? src->outputBus() : nullptr;
+        if (owner != returnOwner) {
+            releaseReturn();
+            if (owner) {
+                returnOwner = owner;
+                returnSlot.store(owner->returns().claim());
+            }
+        }
+    }
 }
 
 void OutputModuleBase::bind(const TesseraModule& src, TrackId track) {
@@ -113,6 +228,8 @@ BindingStatus OutputModuleBase::status() const {
     TesseraModule* src = source();
     if (!src)
         return BindingStatus::NoSource;
+    if (acceptsMaster && bindingData.track == src->song().master.id)
+        return BindingStatus::Bound;
     if (!src->song().findTrack(bindingData.track) || src->busSlotOf(bindingData.track) < 0)
         return BindingStatus::TrackMissing;
     return BindingStatus::Bound;
@@ -123,6 +240,8 @@ std::vector<TrackId> OutputModuleBase::candidateTracks(const TesseraModule& src)
     for (const Track& t : src.song().tracks)
         if (accepts(t.type))
             out.push_back(t.id);
+    if (acceptsMaster)
+        out.push_back(src.song().master.id);
     return out;
 }
 

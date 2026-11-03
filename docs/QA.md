@@ -541,6 +541,12 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Drag the right edge of a one-shot audio clip past its file: it stops, "End of file".
 - [ ] Split an audio clip (Ctrl+E), select both halves, Ctrl+J: one clip again, playing the same. Ctrl+J on two
       unrelated audio clips: a message, nothing changes.
+- [ ] Track Out (6 HP): note jacks on top, AUDIO section below. Bind it to an audio track (Track menu): the note
+      jacks dim, AUTO stays live. Patch OUT L into an effect and back into IN L: the track gets the effect, the IN
+      light goes green, the mixer meter shows it. Bind it to Master: "M" on the screen, OUT is the mix. Bind to a note
+      track and patch a synth into IN: the track gets a mixer strip and a level line. Bypass Track Out: what came
+      back drops out, nothing feeds back.
+- [ ] Open a patch saved before: every Track Out keeps its place, its track and its cables.
 - [ ] Right-click an audio track's fader (mixer) or level bar (track row): Automate in the timeline adds a Volume lane
       at the current level and opens it; the scale reads +6.0 dB to -inf dB. Draw a lower point and play: the fader,
       the level bar and the dB follow, with a ring in the lane colour. Same for Pan. Muting the lane gives the

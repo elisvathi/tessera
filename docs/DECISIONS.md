@@ -1660,8 +1660,8 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **The mix plan** (`MixPlan`) says which return slots feed which track and each track's bus slot; any track with a
   return makes sound and joins the audio snapshot (`makesSound`). The mixer and the track headers find a track's
   meter by its place in the last snapshot (`soundIndex`). A change of plan rebuilds the snapshot.
-- **Not wired yet**: output modules have no IN or OUT jacks, so no plan has returns. The Track Out panel waits for a
-  mockup the user agrees to (the Tessera panel went the same way, §103).
+- **Wired to Track Out** (§110). Drum Out has no IN yet: the user doubts one stereo kit IN is enough and doesn't
+  want several Drum Outs for one kit, so its inputs wait for a second design.
 
 ## 109. Fader and pan automation (3 Nov)
 
@@ -1673,3 +1673,20 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **A ring in the lane's colour** marks a control that has a lane, playing or not.
 - **Not built yet**: writing a fader move into the lane while the track is armed (§7.3); master automation; fader
   and pan lanes for note tracks whose sound comes back on IN (they wait for the IN jacks).
+
+## 110. Track Out with an audio section (3 Nov)
+
+- **The user picked option A** of the panel mockup (https://claude.ai/artifact/6DdGVAETuSucSDk7wknADk), after first
+  picking B (8 HP): Track Out stays **6 HP**, the note jacks and AUTO on one plate, an **AUDIO** plate below with OUT
+  L/R over IN L/R and the IN light between IN L and IN R. The display is 18 mm tall (was 30) and note rows sit 13.2 mm
+  apart (were 16). Saved patches keep their places and cables: the new ports come after the old ones.
+- **Binding**: any track kind and the master (listed last in the Track menu, "M" on the screen). A new Track Out
+  takes the selected track when nothing plays it, else the first note track without an output; never an audio track
+  or the master unless it is the selected one.
+- **Each Track Out holds its own return slot** on its Tessera's bus, claimed on the UI thread when its source is
+  found and released when it goes or changes source. Tessera's mix plan lists the slots whose IN has a cable.
+- **IN**: one side patched feeds both; a poly cable is summed; following the editor's selection turns OUT and IN off;
+  bypass never routes IN to OUT. The light is green while audio arrives (a peak that falls slowly), red above 10 V.
+- **Dim jacks** are drawn by a veil over the jack and its label in the plate's colour, so the cached panel art stays
+  as it is; a cable on a dim jack gets an amber ring; tooltips say why. AUTO is never dim. OUT on a note track is dim
+  until sends exist (Phase 2b).
