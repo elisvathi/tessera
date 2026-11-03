@@ -10,6 +10,8 @@
 #include "../views/LauncherPanel.hpp"
 #include "../views/TimelineDraw.hpp"
 #include "ClipActions.hpp"
+#include "../../model/AudioEdits.hpp"
+#include "../views/AudioClipDraw.hpp"
 
 #include <cmath>
 
@@ -27,6 +29,16 @@ constexpr double kFineFactor = 0.1;
 std::string beatsText(double ticks, TimeSig ts) {
     char buf[32];
     snprintf(buf, sizeof(buf), "%.2f beats", ticks / double(ticksPerBeat(ts)));
+    return buf;
+}
+
+/// A length as a note value where it is one ("1/32", "1/8"), else in beats.
+std::string noteValueText(Tick length) {
+    Tick whole = 4 * kPpq;
+    if (length > 0 && length < whole && whole % length == 0)
+        return "1/" + std::to_string(whole / length);
+    char buf[32];
+    snprintf(buf, sizeof buf, "%.3g beats", double(length) / double(kPpq));
     return buf;
 }
 
@@ -301,6 +313,158 @@ class EdgeGesture : public SelectionGesture {
     ArrangerClip now;
 };
 
+// ---- Audio: clip tempo, gain, fades -------------------------------------------------------------------------
+
+/// Alt+drag on an audio clip's right edge: the clip tempo, the one place its speed is set. Making the clip twice as
+/// long halves the speed: the audio was played at twice the tempo (docs/design/AUDIO_MIXER.md §6.1).
+class ClipTempoGesture : public SelectionGesture {
+  public:
+    ClipTempoGesture(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) : SelectionGesture(lanes, press, grabbed) {
+        if (const Clip* c = song().findClip(anchor.clip))
+            if (c->audio) {
+                clip = c->id;
+                startTempo = c->audio->sourceTempo;
+                off = c->audio->follow == TempoFollow::Off;
+            }
+    }
+
+    void update(Vec pos, Modifiers mods) override {
+        if (!clip.valid() || off)
+            return;
+        double end = double(instanceEnd(anchor)) + (tickAt(pos) - pressTick);
+        double length = std::max(double(minLength()), end - double(anchor.position));
+        tempo = std::clamp(startTempo * length / double(std::max<Tick>(1, anchor.length)), kMinClipTempo, kMaxClipTempo);
+        if (!(mods.shift))
+            tempo = std::round(tempo * 10) / 10;
+        // The preview: every copy of the clip at its new length.
+        double factor = tempo / startTempo;
+        Layout after = before;
+        for (arrange::Placed& p : after)
+            if (p.clip.clip == clip)
+                p.clip.length = std::max<Tick>(1, Tick(std::llround(double(p.clip.length) * factor)));
+        preview(std::move(after));
+    }
+    void commit() override {
+        lanes.clearPreview();
+        TesseraModule* m = lanes.context().module();
+        if (m && clip.valid() && !off && std::abs(tempo - startTempo) > 1e-6)
+            m->perform(setClipTempo(m->song(), clip, tempo));
+    }
+    std::string readout() const override {
+        if (off)
+            return "This clip plays at its own speed: set Follow tempo to change it";
+        char text[48];
+        snprintf(text, sizeof text, "%.4g \u2192 %.4g BPM", startTempo, tempo > 0 ? tempo : startTempo);
+        return text;
+    }
+    CursorShape cursor() const override { return off ? CursorShape::NotAllowed : CursorShape::ResizeH; }
+
+  private:
+    ClipId clip;
+    double startTempo = 120, tempo = 0;
+    bool off = false;
+};
+
+/// Up or down on an audio clip's title bar: its gain, for every selected audio clip, with a soft snap at 0 dB. The
+/// waveform scales while dragging; the edit lands on mouse-up.
+class GainGesture : public SelectionGesture {
+  public:
+    GainGesture(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) : SelectionGesture(lanes, press, grabbed) {
+        for (const arrange::Placed& p : before)
+            if (ids.count(p.clip.id))
+                if (const Clip* c = song().findClip(p.clip.clip); c && c->audio &&
+                    std::find(clips.begin(), clips.end(), c->id) == clips.end()) {
+                    clips.push_back(c->id);
+                    start.push_back(c->audio->gainDb);
+                }
+        if (const Clip* c = song().findClip(anchor.clip); c && c->audio)
+            anchorStart = c->audio->gainDb;
+    }
+
+    void update(Vec pos, Modifiers mods) override {
+        double dy = pos.y - pressPos().y;
+        float raw = float(-dy * kGainDbPerPx * (mods.shift || mods.ctrl ? kFineFactor : 1));
+        // A soft snap where the grabbed clip passes 0 dB.
+        float target = anchorStart + raw;
+        if (!mods.alt && std::abs(target) < kGainSnapDb)
+            raw = -anchorStart;
+        delta = raw;
+        std::vector<std::pair<ClipId, float>> shown;
+        for (size_t i = 0; i < clips.size(); i++)
+            shown.push_back({clips[i], gainAfter(start[i])});
+        lanes.previewGain(std::move(shown));
+    }
+    void commit() override {
+        lanes.previewGain({});
+        TesseraModule* m = lanes.context().module();
+        if (m && delta != 0)
+            m->perform(nudgeClipGain(m->song(), clips, delta));
+    }
+    void cancel() override { lanes.previewGain({}); }
+    std::string readout() const override {
+        std::string text = "Gain " + audioDraw::dbText(gainAfter(anchorStart));
+        if (clips.size() > 1)
+            text = std::to_string(clips.size()) + " clips \u00b7 " + text;
+        return text;
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeV; }
+
+  private:
+    static constexpr double kGainDbPerPx = 0.1;
+    static constexpr float kGainSnapDb = 0.6f;
+    float gainAfter(float from) const {
+        return from <= kSilentDb ? kSilentDb : std::clamp(from + delta, kSilentDb, kMaxClipGainDb);
+    }
+    std::vector<ClipId> clips;
+    std::vector<float> start;
+    float anchorStart = 0;
+    float delta = 0;
+};
+
+/// A fade handle: drags the fade's length. Below one grid step it moves freely; beyond, it snaps to grid lines
+/// (Alt frees it).
+class FadeGesture : public SelectionGesture {
+  public:
+    FadeGesture(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool in)
+        : SelectionGesture(lanes, press, grabbed), in(in) {}
+
+    void update(Vec pos, Modifiers mods) override {
+        double dt = tickAt(pos) - pressTick;
+        Tick from = in ? anchor.fadeIn.length : anchor.fadeOut.length;
+        double raw = double(from) + (in ? dt : -dt);
+        Tick step = lanes.snapStep();
+        if (!mods.alt && step > 0 && raw >= double(step))
+            raw = std::round(raw / double(step)) * double(step);
+        length = std::clamp<Tick>(Tick(std::llround(raw)), 0, anchor.length - (in ? anchor.fadeOut.length : anchor.fadeIn.length));
+        Layout after = before;
+        for (arrange::Placed& p : after)
+            if (p.clip.id == anchor.id)
+                (in ? p.clip.fadeIn : p.clip.fadeOut).length = length;
+        preview(std::move(after));
+    }
+    void commit() override {
+        Tick from = in ? anchor.fadeIn.length : anchor.fadeOut.length;
+        if (length == from) {
+            lanes.clearPreview();
+            return;
+        }
+        lanes.commit(in ? "Fade in" : "Fade out", before, result, {anchor.id});
+    }
+    std::string readout() const override {
+        TesseraModule* m = lanes.context().module();
+        double bpm = m && m->tempo() > 0 ? m->tempo() : 120;
+        char text[64];
+        snprintf(text, sizeof text, "%s %s \u00b7 %.0f ms", in ? "Fade in" : "Fade out", noteValueText(length).c_str(),
+                 double(length) * secondsPerTick(bpm) * 1000);
+        return text;
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
+
+  private:
+    bool in;
+    Tick length = 0;
+};
+
 // ---- Velocity scale -----------------------------------------------------------------------------------------
 
 class VelocityGesture : public SelectionGesture {
@@ -344,7 +508,13 @@ class HeaderGesture : public DragGesture {
             Vec d = pos.minus(press);
             if (std::hypot(d.x, d.y) < AxisLock::kDecidePx)
                 return;
-            if (std::fabs(d.y) > std::fabs(d.x))
+            bool audio = false;
+            if (const arrange::Placed* p = arrange::find(lanes.committed(), grabbed))
+                if (const Clip* c = lanes.context().module()->song().findClip(p->clip.clip))
+                    audio = c->isAudio();
+            if (std::fabs(d.y) > std::fabs(d.x) && audio)
+                inner = std::make_unique<GainGesture>(lanes, press, grabbed);
+            else if (std::fabs(d.y) > std::fabs(d.x))
                 inner = std::make_unique<VelocityGesture>(lanes, press, grabbed);
             else
                 inner = std::make_unique<MoveGesture>(lanes, press, grabbed, mods.ctrl && mods.alt);
@@ -517,7 +687,15 @@ std::unique_ptr<DragGesture> move(ArrangerLanes& lanes, Vec press, ArrangementId
 std::unique_ptr<DragGesture> slip(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
     return std::make_unique<SlipGesture>(lanes, press, grabbed);
 }
+std::unique_ptr<DragGesture> fade(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool in) {
+    return std::make_unique<FadeGesture>(lanes, press, grabbed, in);
+}
 std::unique_ptr<DragGesture> resizeEnd(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool stretch) {
+    // On an audio clip, Alt+drag on the right edge sets the clip tempo instead of a stretch.
+    if (stretch)
+        if (const arrange::Placed* p = arrange::find(lanes.committed(), grabbed))
+            if (const Clip* c = lanes.context().module()->song().findClip(p->clip.clip); c && c->audio)
+                return std::make_unique<ClipTempoGesture>(lanes, press, grabbed);
     return std::make_unique<EdgeGesture>(lanes, press, grabbed,
                                          stretch ? EdgeGesture::Kind::Stretch : EdgeGesture::Kind::End);
 }

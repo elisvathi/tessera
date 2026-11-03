@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AudioClipDraw.hpp"
+
 #include "../../model/ArrangementEdits.hpp"
 #include "../interaction/NoteBars.hpp"
 #include "AutomationEditor.hpp"
@@ -36,12 +38,17 @@ class ArrangerLanes : public TimelineView {
     bool clipAction(Action action);
 
     /// What is under a point: a clip's body, its header strip or one of its edges.
-    enum class Part { None, Body, Header, LeftEdge, RightEdge };
+    enum class Part { None, Body, Header, LeftEdge, RightEdge, FadeIn, FadeOut };
     struct Hit {
         int row = -1;
         ArrangementId id;
         Part part = Part::None;
     };
+    /// Where instance `a` ends on the timeline now. An audio clip at its own speed (Follow tempo Off) covers more
+    /// ticks at a faster song tempo (docs/design/AUDIO_MIXER.md §5.4); every other clip ends at instanceEnd().
+    double shownEnd(const ArrangerClip& a);
+    /// Clip gain shown while a drag changes it, before the edit is committed (the waveform scales live).
+    void previewGain(std::vector<std::pair<ClipId, float>> gains);
     Hit hitTest(rack::math::Vec pos);
 
     int rowAt(float y);
@@ -98,6 +105,7 @@ class ArrangerLanes : public TimelineView {
     void doubleClick(rack::math::Vec pos, Modifiers mods) override;
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void onLeave(const LeaveEvent& e) override;
+    void onPathDrop(const PathDropEvent& e) override;
     void drawView(const DrawArgs& args) override;
     void drawForeground(const DrawArgs& args) override;
 
@@ -106,6 +114,9 @@ class ArrangerLanes : public TimelineView {
     void paintClips(NVGcontext* vg, rack::math::Vec size);
     void drawInstance(NVGcontext* vg, const Song& song, const Track& track, const ArrangerClip& a, float top,
                       float height, bool dim);
+    /// An audio clip's body: its waveform, fades and fade handles.
+    void drawAudioBody(NVGcontext* vg, const Clip& clip, const ArrangerClip& a, rack::math::Rect body,
+                       const audioDraw::ClipState& state, float gainDb, uint32_t color, float alpha);
     void drawRecording(NVGcontext* vg);
     /// Takes recording onto the timeline right now, with their notes so far.
     void drawTakes(NVGcontext* vg, double now);
@@ -131,6 +142,8 @@ class ArrangerLanes : public TimelineView {
     std::unordered_map<TrackId, arrange::Stacking> stacks;
     uint64_t stacksKey = ~uint64_t(0);
     Hit hover;
+    std::vector<std::pair<ClipId, float>> gainPreview;
+    uint64_t gainPreviewGeneration = 0;
 };
 
 } // namespace tessera

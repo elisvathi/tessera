@@ -1,4 +1,6 @@
 #include "ClipActions.hpp"
+
+#include "AudioActions.hpp"
 #include "ImportMidi.hpp"
 
 #include "ExportMidi.hpp"
@@ -472,7 +474,8 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
                                             [c, scene, track, id] { editTogether(*c, scene, track, id); }));
     menu->addChild(rack::createMenuItem("Rename", "", [c, id] { startRename(*c, id); }));
     appendColorMenu(menu, ctx, {id});
-    appendScaleMenu(menu, ctx, id);
+    if (!clip->isAudio())
+        appendScaleMenu(menu, ctx, id);
     menu->addChild(rack::createMenuItem("Place in arrangement at playhead", "", [c, track, id] {
         TesseraModule* mod = c->module();
         Tick bar = ticksPerBar(mod->song().timeSig);
@@ -482,8 +485,9 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
     }));
     menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate),
                                         [c, track, slot] { duplicate(*c, track, slot); }));
-    menu->addChild(
-        rack::createMenuItem("Export as MIDI…", "", [c, track, id] { exportMidi::openClips(*c, {{track, id}}); }));
+    if (!clip->isAudio())
+        menu->addChild(
+            rack::createMenuItem("Export as MIDI…", "", [c, track, id] { exportMidi::openClips(*c, {{track, id}}); }));
     menu->addChild(
         rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [c, track, slot] { remove(*c, track, slot); }));
 
@@ -520,6 +524,7 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
     menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "", [c, id] { exportClip(*c, id); }));
     menu->addChild(
         rack::createMenuItem("Replace with Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
+    audioActions::appendAudioClipMenu(menu, ctx, id);
 }
 
 void appendEmptySlotMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int slot) {

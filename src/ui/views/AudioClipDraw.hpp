@@ -1,0 +1,58 @@
+#pragma once
+
+#include "../../audio/AudioStore.hpp"
+#include "../../model/Song.hpp"
+
+#include <rack.hpp>
+
+#include <functional>
+#include <memory>
+#include <string>
+
+/// Drawing audio clips: waveforms, the tempo badge, gain and the clip states (docs/design/AUDIO_MIXER.md §6.1,
+/// §6.6). Shared by the timeline and the launcher slots.
+namespace tessera {
+
+class TesseraModule;
+
+namespace audioDraw {
+
+/// Everything an audio clip shows about its file and its render.
+struct ClipState {
+    const AudioSource* source = nullptr;
+    SourceStatus status;
+    RenderStatus render; // the render this clip wants at the song tempo; None when it needs none
+};
+
+/// The state of `clip` in `module` now.
+ClipState stateOf(TesseraModule& module, const Clip& clip);
+
+/// Source frames [from, to) shown in the column at `x`; false where the clip shows nothing.
+using FramesAt = std::function<bool(float x, double& from, double& to)>;
+
+/// The waveform of `clip` over `body`: lowest and highest sample per pixel column, a stereo file as two halves,
+/// scaled by the clip gain (`gainDb`, so a drag previews live). Missing files show stripes instead. Columns outside
+/// [`left`, `right`) are skipped.
+void drawWaveform(NVGcontext* vg, rack::math::Rect body, float left, float right, const ClipState& state,
+                  float gainDb, NVGcolor color, const FramesAt& framesAt);
+
+/// The small title-bar marks after the name: the tempo badge ("92 ▾", or "own speed" for clips that ignore the tempo),
+/// the gain when it isn't 0 dB, and "6→2" for mixed-down files.
+std::string titleMarks(const Clip& clip, const ClipState& state, float gainDb);
+
+/// A short word for a state worth seeing ("Loading 40%", "Missing file", "40%"), or empty when it just plays.
+std::string stateText(const ClipState& state);
+
+/// Whether a state wants an amber warning mark.
+bool stateWarns(const ClipState& state);
+
+/// The source frames of clip time `u` (clip ticks).
+inline double frameOfTick(const AudioContent& a, const AudioSource& s, double u) {
+    return double(a.sourceStart) + u * framesPerTick(a, s.sampleRate);
+}
+
+/// "−3.0 dB", "+2.5 dB", "−inf dB".
+std::string dbText(float db);
+
+} // namespace audioDraw
+} // namespace tessera
