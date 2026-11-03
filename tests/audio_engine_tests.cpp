@@ -440,6 +440,37 @@ TEST_CASE("OUT carries a track's clips before its fader; what comes back on IN j
     CHECK(master->l == doctest::Approx(left).epsilon(1e-3));
 }
 
+TEST_CASE("a track's own sources go to OUT, an effect's return doesn't, so an effect loop never feeds back") {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId drums = song.tracks.back().id;
+    MixPlan plan;
+    plan.busSlots = {{drums, 3}};
+    plan.returns = {{drums, 0, true}, {drums, 1, false}}; // a lane IN, the kit IN
+    auto snap = buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot;
+    REQUIRE(snap->tracks.size() == 1);
+    CHECK(snap->tracks[0].sources == std::vector<int>{0});
+    CHECK(snap->tracks[0].returns == std::vector<int>{1});
+    AudioPlayer player;
+    player.setSampleRate(kRate);
+    player.setSnapshot(snap.get());
+    Engine engine;
+    engine.setSampleRate(kRate);
+    ReturnBus returns;
+    std::array<AudioOutFrame, kMaxTracks + 1> out{};
+    std::array<TrackFrame, kMaxTracks> frames{};
+    TransportEvents events;
+    float left = 0, right = 0;
+    for (int64_t n = 0; n < 2000; n++) {
+        returns.write(n, 0, drums, 1.f, 1.f);
+        returns.write(n, 1, drums, 0.25f, 0.25f);
+        engine.process(frames.data(), events);
+        player.process(engine, left, right, {&returns, out.data(), n});
+    }
+    CHECK(out[3].l == doctest::Approx(1.f)); // OUT: the lane's sound only
+    CHECK(left == doctest::Approx(1.25f));   // the track: both
+}
+
 TEST_CASE("muting a track fades its clips out of OUT too, without a click") {
     Rig rig(4.0, dc);
     MixPlan plan;

@@ -18,20 +18,24 @@ using rack::math::Vec;
 
 constexpr int kHp = 20;
 
-// Layout in mm. The panel is 101.6 x 128.5.
-const Rect kDisplay(4, 12.5f, 93.6f, 24);
-constexpr float kButtonRow = 40.75f; // the arrows sit exactly halfway between the display and the plate
+// Layout in mm. The panel is 101.6 x 128.5. At the top, the display and the kit's AUDIO block (OUT over IN, like
+// Track Out's); below, one strip per lane output; at the bottom, the poly jacks (docs/design/AUDIO_MIXER.md §8.1).
+const Rect kDisplay(4, 10.5f, 54, 20);
+constexpr float kButtonRow = 37.5f;
+constexpr float kButtonLeft = 23, kButtonRight = 39;
 const Vec kButtonSize(12, 6);
-const Rect kOutputPlate(2.5f, 45, 96.6f, 78.5f);
-// One mixer-style strip per lane output: a colour chip with its number, the hit light, then five jacks. The rows are
-// named once, at the left, instead of a letter in every strip.
+const Rect kAudioPlate(60.5f, 10.5f, 38.6f, 31.5f);
+constexpr float kAudioLabelRight = 73, kAudioL = 81, kAudioR = 92.5f, kOutRow = 23.6f, kInRow = 35.6f;
+const Rect kOutputPlate(2.5f, 45, 96.6f, 79.5f);
+// One mixer-style strip per lane output: a colour chip with its number, the hit light, then five jacks and the lane's
+// IN. The rows are named once, at the left, instead of a letter in every strip.
 constexpr float kStripW = 9.6f, kStripPitch = 10.44f, kFirstStrip = 20.7f;
-constexpr float kStripTop = 46.5f, kStripH = 60;
+constexpr float kStripTop = 46.5f, kStripH = 65;
 constexpr float kChipTop = 47.3f, kChipH = 4;
 constexpr float kLightRow = 53.4f;
-constexpr float kRows[5] = {59, 69.5f, 80, 90.5f, 101}; // trigger, velocity, pitch, timbre, pressure
+constexpr float kRows[6] = {58.6f, 68.3f, 78, 87.7f, 97.4f, 107.1f}; // trigger, velocity, pitch, timbre, pressure, IN
 constexpr float kRowNameRight = 14.4f;
-constexpr float kPolyRow = 116.5f, kFirstPoly = 10.55f, kPolyPitch = 16.1f;
+constexpr float kPolyRow = 120.5f, kFirstPoly = 10.55f, kPolyPitch = 16.1f;
 
 /// The drum track this Drum Out plays, or nullptr when it has no source or the track is gone.
 const Track* trackOf(DrumOutModule* module) {
@@ -90,12 +94,27 @@ struct DrumOutWidget : rack::app::ModuleWidget {
         display->box = Rect(rack::mm2px(kDisplay.pos), rack::mm2px(kDisplay.size));
         addChild(display);
 
-        addStepButton(IconButton::Icon::Previous, Vec(44.3f, kButtonRow), "Previous drum track", -1);
-        addStepButton(IconButton::Icon::Next, Vec(57.3f, kButtonRow), "Next drum track", +1);
+        addStepButton(IconButton::Icon::Previous, Vec(kButtonLeft, kButtonRow), "Previous drum track", -1);
+        addStepButton(IconButton::Icon::Next, Vec(kButtonRight, kButtonRow), "Next drum track", +1);
+
+        // The kit's audio: OUT carries every lane IN mixed, before the drum track's fader; IN brings an effect back.
+        panel.art().addPlate(kAudioPlate);
+        panel.art().addLabel(Vec(kAudioPlate.getCenter().x, kAudioPlate.pos.y + 3), "AUDIO",
+                             PanelArt::LabelKind::Section);
+        panel.art().addLabel(Vec(kAudioLabelRight, kOutRow), "OUT", PanelArt::LabelKind::RowName);
+        panel.art().addLabel(Vec(kAudioLabelRight, kInRow), "IN", PanelArt::LabelKind::RowName);
+        panel.output(Vec(kAudioL, kOutRow), M::KIT_OUT_L_OUTPUT, "L");
+        panel.output(Vec(kAudioR, kOutRow), M::KIT_OUT_R_OUTPUT, "R");
+        panel.input(Vec(kAudioL, kInRow), M::KIT_IN_L_INPUT, "");
+        panel.input(Vec(kAudioR, kInRow), M::KIT_IN_R_INPUT, "");
+        auto* inLight =
+            rack::createLightCentered<rack::componentlibrary::SmallLight<rack::componentlibrary::GreenRedLight>>(
+                rack::mm2px(Vec(kAudioPlate.pos.x + 3.5f, kInRow)), module, M::KIT_IN_LIGHT);
+        addChild(inLight);
 
         panel.art().addPlate(kOutputPlate);
-        const char* rowNames[5] = {"TRIG", "VEL", "PITCH", "TIMBRE", "PRESS"};
-        for (int r = 0; r < 5; r++)
+        const char* rowNames[6] = {"TRIG", "VEL", "PITCH", "TIMBRE", "PRESS", "IN"};
+        for (int r = 0; r < 6; r++)
             panel.art().addLabel(Vec(kRowNameRight, kRows[r]), rowNames[r], PanelArt::LabelKind::RowName);
         for (int i = 0; i < M::kTrigJacks; i++) {
             float x = kFirstStrip + float(i) * kStripPitch;
@@ -108,6 +127,7 @@ struct DrumOutWidget : rack::app::ModuleWidget {
                                   M::PRESS_OUTPUT + i};
             for (int r = 0; r < 5; r++)
                 panel.output(Vec(x, kRows[r]), jacks[r], "");
+            panel.input(Vec(x, kRows[5]), M::LANE_IN_INPUT + i, "");
             // A smaller-than-stock light: the stock 2 mm halo would touch the trigger jack.
             auto* light = new rack::componentlibrary::SmallLight<PlayLight>;
             light->module = module;
@@ -167,6 +187,7 @@ struct DrumOutWidget : rack::app::ModuleWidget {
             m->outputInfos[size_t(M::TIMBRE_OUTPUT + i)]->name = name + " timbre";
             m->outputInfos[size_t(M::PRESS_OUTPUT + i)]->name = name + " pressure";
             m->lightInfos[size_t(M::TRIG_LIGHT + i)]->name = name;
+            m->inputInfos[size_t(M::LANE_IN_INPUT + i)]->name = name + " audio";
         }
     }
 

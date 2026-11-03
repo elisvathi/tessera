@@ -547,6 +547,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       track and patch a synth into IN: the track gets a mixer strip and a level line. Bypass Track Out: what came
       back drops out, nothing feeds back.
 - [ ] Open a patch saved before: every Track Out keeps its place, its track and its cables.
+- [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level
+      line; the kick plays through MAIN. Kit OUT carries the lane INs; patch it through an effect into kit IN: the
+      effect is heard, the light goes green, and there is no feedback (kit IN never reaches OUT). Hover lane 1's IN:
+      it is named after the lane ("Kick audio input").
 - [ ] Right-click an audio track's fader (mixer) or level bar (track row): Automate in the timeline adds a Volume lane
       at the current level and opens it; the scale reads +6.0 dB to -inf dB. Draw a lower point and play: the fader,
       the level bar and the dB follow, with a ring in the lane colour. Same for Pan. Muting the lane gives the

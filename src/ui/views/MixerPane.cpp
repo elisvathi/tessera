@@ -654,7 +654,8 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
 
     // Source chip: what feeds the track. In this phase that is its clips.
     if (s.chip.size.x > 0) {
-        std::string chip = "Clips";
+        // Where the sound comes from: an audio track's clips, or a note track's IN (its output module's inputs).
+        std::string chip = t && t->type != TrackType::Audio ? "IN" : "Clips";
         NVGcolor chipText = c.text1;
         if (t)
             for (const auto& [id, clip] : song.clips)

@@ -46,6 +46,7 @@ struct MixPlan {
     struct Return {
         TrackId track;
         int slot = -1;
+        bool source = false; // the track's own sound (Drum Out's lane INs): it goes to OUT; a return doesn't
     };
     std::vector<Return> returns;
     std::vector<std::pair<TrackId, int>> busSlots;

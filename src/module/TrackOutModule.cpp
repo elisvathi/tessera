@@ -19,7 +19,7 @@ struct TrackOutPortInfo : rack::engine::PortInfo {
         if (role == Role::Notes && (kind == BoundKind::Audio || kind == BoundKind::Master))
             why = kind == BoundKind::Audio ? "Nothing comes out here for an audio track"
                                            : "Nothing comes out here for the master";
-        else if (role == Role::Out && (kind == BoundKind::Instrument || kind == BoundKind::Drum))
+        else if (role == Role::Out && kind == BoundKind::Instrument)
             why = "Nothing comes out here yet for a note track: OUT will carry what other tracks send to it";
         else if ((role == Role::Out || role == Role::In) && m && m->binding().followSelected)
             why = "Off while Track Out follows the track selected in the editor";
