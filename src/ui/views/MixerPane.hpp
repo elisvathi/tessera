@@ -77,6 +77,7 @@ class MixerPane : public InteractiveView {
         double at = 0;
     };
     std::map<uint64_t, Peak> peaks;
+    size_t missingTold = 0; // how many missing files the last toast was about
 };
 
 } // namespace tessera

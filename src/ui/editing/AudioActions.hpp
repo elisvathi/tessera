@@ -37,6 +37,15 @@ void removeUnused(EditorContext& ctx);
 std::string dropMessage(const std::vector<std::string>& imported, const std::vector<std::string>& failed,
                         int skipped);
 
+/// Asks for a missing source's file and copies it into the patch under the source's name, then loads it.
+void findFile(EditorContext& ctx, AudioSourceId source);
+/// The sources whose files aren't in patch storage.
+std::vector<AudioSourceId> missingSources(TesseraModule& module);
+
+/// Asks once before importing files that need a lot of memory (one over 20 minutes, or over 1 GB in all, §8.7).
+/// True to go on.
+bool confirmSize(const std::vector<std::string>& paths);
+
 /// Imports dropped files into the editor's Tessera (§6.5): one undo step, the new clips selected, a toast saying
 /// what came in. When the first loop set the song tempo, the toast offers to keep the old one.
 /// `note` goes first in the toast ("Added an audio track: Lead plays notes").

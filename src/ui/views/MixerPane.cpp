@@ -312,6 +312,21 @@ void MixerPane::layout() {
 
 void MixerPane::step() {
     layout();
+    // Once a loaded patch has settled, say if files are missing (§8.7): one toast, with Find… for the first.
+    if (TesseraModule* m = ctx.module())
+        if (AudioStore* store = m->audioStore(); store && store->idle()) {
+            std::vector<AudioSourceId> missing = audioActions::missingSources(*m);
+            if (missing.size() != missingTold) {
+                missingTold = missing.size();
+                if (!missing.empty()) {
+                    EditorContext* c = &ctx;
+                    AudioSourceId first = missing.front();
+                    std::string text = missing.size() == 1 ? "1 audio file is missing"
+                                                           : std::to_string(missing.size()) + " audio files are missing";
+                    ctx.toast(text, "Find…", [c, first] { audioActions::findFile(*c, first); });
+                }
+            }
+        }
     InteractiveView::step();
 }
 
