@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AudioSource.hpp"
 #include "Automation.hpp"
 #include "Device.hpp"
 
@@ -9,7 +10,7 @@
 
 namespace tessera {
 
-enum class TrackType : uint8_t { Instrument, Drum };
+enum class TrackType : uint8_t { Instrument, Drum, Audio };
 
 /// Where an armed track takes its notes from (DESIGN.md §14).
 enum class RecordInput : uint8_t { Any, Cv, Midi };
@@ -44,11 +45,13 @@ struct ArrangerClip {
     float velocityScale = 1; // non-destructive, per instance
     float stretch = 1;       // time-stretch factor
     int8_t layer = 0;        // stacking order among overlapping clips: a lower layer takes a higher sub-row first
+    // Audio clips only. Where two instances overlap, the overlap is their crossfade and these curves shape it.
+    Fade fadeIn, fadeOut;
 
     bool operator==(const ArrangerClip& o) const {
         return id == o.id && clip == o.clip && position == o.position && length == o.length && offset == o.offset &&
                muted == o.muted && transpose == o.transpose && velocityScale == o.velocityScale &&
-               stretch == o.stretch && layer == o.layer;
+               stretch == o.stretch && layer == o.layer && fadeIn == o.fadeIn && fadeOut == o.fadeOut;
     }
 };
 
@@ -97,6 +100,7 @@ struct Track {
     std::vector<AutomationEnvelope> automation; // arranger time
     std::vector<Device> devices;                // the MIDI effect chain, in the order notes flow
     std::vector<Modulator> modulators;          // track level
+    Channel channel;                            // its mixer strip
 
     bool operator==(const Track& o) const {
         return id == o.id && name == o.name && color == o.color && type == o.type && polyphony == o.polyphony &&
@@ -105,7 +109,7 @@ struct Track {
                listenTrack == o.listenTrack && gateLengthScale == o.gateLengthScale &&
                transpose == o.transpose && drumLanes == o.drumLanes && slots == o.slots &&
                arrangement == o.arrangement && automation == o.automation && devices == o.devices &&
-               modulators == o.modulators;
+               modulators == o.modulators && channel == o.channel;
     }
 };
 

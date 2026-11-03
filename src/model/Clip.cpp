@@ -16,6 +16,8 @@ const Note* Clip::findNote(NoteId noteId) const {
 void Clip::sortNotes() { std::sort(notes.begin(), notes.end(), noteOrder); }
 
 Tick Clip::contentEnd() const {
+    if (audio)
+        return length;
     Tick end = 0;
     for (const Note& n : notes)
         end = std::max(end, n.end());

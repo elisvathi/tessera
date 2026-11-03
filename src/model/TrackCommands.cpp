@@ -162,10 +162,13 @@ CommandPtr addTrack(const Song& song, TrackType type, int index, const NextId& n
     t.type = type;
     int sameType =
         int(std::count_if(song.tracks.begin(), song.tracks.end(), [&](const Track& o) { return o.type == type; }));
-    t.name = (type == TrackType::Drum ? "Drums " : "Track ") + std::to_string(sameType + 1);
+    const char* base = type == TrackType::Drum ? "Drums " : type == TrackType::Audio ? "Audio " : "Track ";
+    t.name = base + std::to_string(sameType + 1);
     t.color = trackColorForIndex(int(song.tracks.size()));
     t.slots.resize(song.scenes.size());
-    std::string name = type == TrackType::Drum ? "Add drum track" : "Add instrument track";
+    std::string name = type == TrackType::Drum    ? "Add drum track"
+                       : type == TrackType::Audio ? "Add audio track"
+                                                  : "Add instrument track";
     return std::make_unique<AddTrack>(name, index, std::move(t), std::vector<Clip>{});
 }
 
