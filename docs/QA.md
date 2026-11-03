@@ -535,6 +535,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Pitch +7 st on a Stretch loop: it sounds a fifth higher at the same speed.
 - [ ] Drag an audio clip so it overlaps another: both stay on one row and crossfade; with Stack on or off alike.
       Drop a short clip inside a long one: the long one splits around it. Make three overlap: the earliest stops.
+- [ ] Overlapping audio clips show an X with a diamond on top and a dot in the middle. Drag the diamond: the crossfade
+      grows or shrinks evenly ("Crossfade 1/8 · 163 ms"). Drag the dot: "Curve +40%"; it is heard. Fades get a
+      curve dot too.
+- [ ] Drag the right edge of a one-shot audio clip past its file: it stops, "End of file".
 - [ ] Ctrl+drop a file on an audio clip (timeline and slot): the clip keeps place, length, gain and fades, and plays
       the new file. Replace file… in the menu does the same.
 - [ ] Save the patch, reload: the audio plays. Copy and paste the Tessera: the copy plays its audio too.

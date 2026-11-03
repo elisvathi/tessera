@@ -38,12 +38,32 @@ class ArrangerLanes : public TimelineView {
     bool clipAction(Action action);
 
     /// What is under a point: a clip's body, its header strip or one of its edges.
-    enum class Part { None, Body, Header, LeftEdge, RightEdge, FadeIn, FadeOut };
+    enum class Part {
+        None,
+        Body,
+        Header,
+        LeftEdge,
+        RightEdge,
+        FadeIn,
+        FadeOut,
+        FadeInCurve, // the dot in the middle of an audio fade: bends its curve
+        FadeOutCurve,
+        Crossfade,     // the handle on top of two overlapping audio clips: their crossfade's length
+        CrossfadeCurve // the dot in the middle of the crossfade's X
+    };
     struct Hit {
         int row = -1;
-        ArrangementId id;
+        ArrangementId id;    // for a crossfade, the later clip
+        ArrangementId other; // for a crossfade, the earlier clip
         Part part = Part::None;
     };
+    /// Two overlapping audio clips on a track and the song ticks they share: their crossfade (§6.3).
+    struct Crossfade {
+        ArrangementId first, second;
+        double start = 0, end = 0;
+    };
+    /// The crossfades on `track` as shown now (the preview while a drag runs).
+    std::vector<Crossfade> crossfadesOn(TrackId track);
     /// Where instance `a` ends on the timeline now. An audio clip at its own speed (Follow tempo Off) covers more
     /// ticks at a faster song tempo (docs/design/AUDIO_MIXER.md §5.4); every other clip ends at instanceEnd().
     double shownEnd(const ArrangerClip& a);
@@ -143,6 +163,10 @@ class ArrangerLanes : public TimelineView {
     uint64_t stacksKey = ~uint64_t(0);
     Hit hover;
     std::vector<std::pair<ClipId, float>> gainPreview;
+    // Song ticks each audio instance shares with the one before and after it, while the clips are painted.
+    std::unordered_map<ArrangementId, std::pair<double, double>> overlaps;
+    /// Draws a crossfade over the clips it joins: the X of their curves, its handle and its curve dot.
+    void drawCrossfade(NVGcontext* vg, const Crossfade& x, float top, float h, float alpha);
     uint64_t gainPreviewGeneration = 0;
 };
 

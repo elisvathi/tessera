@@ -273,6 +273,18 @@ class EdgeGesture : public SelectionGesture {
         switch (kind) {
         case Kind::End:
             after = arrange::resizeEnd(before, ids, delta, minLength());
+            // An audio clip that doesn't loop stops hard at the end of its file (§6.1).
+            fileEnd = false;
+            for (arrange::Placed& p : after) {
+                const Clip* c = ids.count(p.clip.id) ? song().findClip(p.clip.clip) : nullptr;
+                if (!c || !c->audio || c->loopMode == LoopMode::Loop)
+                    continue;
+                Tick most = std::max<Tick>(1, c->length - p.clip.offset);
+                if (p.clip.length >= most) {
+                    p.clip.length = most;
+                    fileEnd = fileEnd || p.clip.id == anchor.id;
+                }
+            }
             break;
         case Kind::Stretch:
             after = arrange::stretchEnd(before, ids, delta, minLength());
@@ -280,6 +292,12 @@ class EdgeGesture : public SelectionGesture {
         case Kind::Start:
             after = arrange::trimStart(before, ids, delta, minLength(), song().clips);
             break;
+        }
+        if (kind == Kind::Start) {
+            const arrange::Placed* p = arrange::find(after, anchor.id);
+            const Clip* c = p ? song().findClip(p->clip.clip) : nullptr;
+            fileEnd = c && c->audio && c->loopMode != LoopMode::Loop && p->clip.offset == 0 && delta < 0 &&
+                      p->clip.position > target;
         }
         pool.restart();
         preview(lanes.settle(after, ids, pool.source()));
@@ -302,8 +320,8 @@ class EdgeGesture : public SelectionGesture {
             return std::string(text) + "  " + beatsText(double(now.length), ts);
         }
         if (kind == Kind::Start)
-            return timeline::positionText(double(now.position), ts);
-        return beatsText(double(now.length), ts);
+            return (fileEnd ? "Start of file  " : "") + timeline::positionText(double(now.position), ts);
+        return (fileEnd ? "End of file  " : "") + beatsText(double(now.length), ts);
     }
     CursorShape cursor() const override { return CursorShape::ResizeH; }
 
@@ -311,6 +329,7 @@ class EdgeGesture : public SelectionGesture {
     Kind kind;
     Tick delta = 0;
     ArrangerClip now;
+    bool fileEnd = false; // an audio clip's edge stopped at its file's start or end
 };
 
 // ---- Audio: clip tempo, gain, fades -------------------------------------------------------------------------
@@ -463,6 +482,129 @@ class FadeGesture : public SelectionGesture {
   private:
     bool in;
     Tick length = 0;
+};
+
+// ---- Curves and crossfades ----------------------------------------------------------------------------------
+
+/// "Curve +40%", "Curve 0%".
+std::string curveText(float curve) {
+    char text[32];
+    snprintf(text, sizeof text, curve == 0 ? "Curve 0%%" : "Curve %+.0f%%", double(curve) * 100);
+    return text;
+}
+
+/// Bends a fade's curve, or both curves of a crossfade (`second` valid), with a vertical drag. Snaps to 0
+/// (a straight fade, an equal-power crossfade) unless Alt.
+class CurveGesture : public ClipGesture {
+  public:
+    CurveGesture(ArrangerLanes& lanes, Vec press, ArrangementId first, ArrangementId second, bool in)
+        : ClipGesture(lanes, press), first(first), second(second), in(in) {
+        if (const arrange::Placed* p = arrange::find(before, second.valid() ? second : first))
+            start = second.valid() || in ? p->clip.fadeIn.curve : p->clip.fadeOut.curve;
+        curve = start;
+    }
+
+    void update(Vec pos, Modifiers mods) override {
+        float dy = pos.y - pressPos().y;
+        curve = std::clamp(start - dy / kCurvePx * (mods.shift ? float(kFineFactor) : 1.f), -1.f, 1.f);
+        if (!mods.alt && std::fabs(curve) < 0.05f)
+            curve = 0;
+        Layout after = before;
+        for (arrange::Placed& p : after) {
+            if (second.valid()) {
+                if (p.clip.id == first)
+                    p.clip.fadeOut.curve = curve;
+                if (p.clip.id == second)
+                    p.clip.fadeIn.curve = curve;
+            } else if (p.clip.id == first) {
+                (in ? p.clip.fadeIn : p.clip.fadeOut).curve = curve;
+            }
+        }
+        preview(std::move(after));
+    }
+    void commit() override {
+        if (curve == start) {
+            lanes.clearPreview();
+            return;
+        }
+        lanes.commit(second.valid() ? "Crossfade curve" : "Fade curve", before, result, {first});
+    }
+    std::string readout() const override { return curveText(curve); }
+    CursorShape cursor() const override { return CursorShape::ResizeV; }
+
+  private:
+    static constexpr float kCurvePx = 80; // a drag this far bends the curve all the way
+    ArrangementId first, second;
+    bool in;
+    float start = 0, curve = 0;
+};
+
+/// The crossfade handle: the overlap of two audio clips grows or shrinks evenly around its centre, as far as both
+/// clips have audio.
+class CrossfadeGesture : public ClipGesture {
+  public:
+    CrossfadeGesture(ArrangerLanes& lanes, Vec press, ArrangementId first, ArrangementId second)
+        : ClipGesture(lanes, press), first(first), second(second) {
+        const arrange::Placed* a = arrange::find(before, first);
+        const arrange::Placed* b = arrange::find(before, second);
+        if (a && b)
+            start = std::max<Tick>(0, std::min(instanceEnd(a->clip), instanceEnd(b->clip)) - b->clip.position);
+        length = start;
+    }
+
+    void update(Vec pos, Modifiers mods) override {
+        const arrange::Placed* a = arrange::find(before, first);
+        const arrange::Placed* b = arrange::find(before, second);
+        if (!a || !b)
+            return;
+        double raw = double(start) + 2 * (tickAt(pos) - pressTick);
+        Tick step = lanes.snapStep();
+        if (!mods.alt && step > 0 && raw >= double(step))
+            raw = std::round(raw / double(step)) * double(step);
+        // As far as both clips have audio, and never past the other clip's far end.
+        Tick grow = std::max<Tick>(0, Tick(std::llround(raw)) - start);
+        Tick shrink = std::max<Tick>(0, start - Tick(std::llround(raw)));
+        Tick laterRoom = b->clip.position - a->clip.position;
+        Tick earlierRoom = instanceEnd(b->clip) - instanceEnd(a->clip);
+        if (const Clip* c = song().findClip(a->clip.clip); c && c->loopMode != LoopMode::Loop)
+            earlierRoom = std::min(earlierRoom, c->length - (a->clip.offset + a->clip.length));
+        if (const Clip* c = song().findClip(b->clip.clip); c && c->loopMode != LoopMode::Loop)
+            laterRoom = std::min(laterRoom, b->clip.offset);
+        Tick outA = std::clamp<Tick>((grow + 1) / 2, 0, std::max<Tick>(0, earlierRoom));
+        Tick outB = std::clamp<Tick>(grow / 2, 0, std::max<Tick>(0, laterRoom));
+        Tick inA = std::min<Tick>(shrink / 2, a->clip.length - 1);
+        Tick inB = std::min<Tick>((shrink + 1) / 2, b->clip.length - 1);
+        Layout after = arrange::resizeEnd(before, {first}, outA - inA, 1);
+        after = arrange::trimStart(after, {second}, inB - outB, 1, song().clips);
+        pool.restart();
+        after = lanes.settle(after, {first, second}, pool.source());
+        const arrange::Placed* na = arrange::find(after, first);
+        const arrange::Placed* nb = arrange::find(after, second);
+        length = na && nb
+                     ? std::max<Tick>(0, std::min(instanceEnd(na->clip), instanceEnd(nb->clip)) - nb->clip.position)
+                     : 0;
+        preview(std::move(after));
+    }
+    void commit() override {
+        if (length == start) {
+            lanes.clearPreview();
+            return;
+        }
+        lanes.commit(length > 0 ? "Crossfade" : "Remove crossfade", before, result, {first, second});
+    }
+    std::string readout() const override {
+        TesseraModule* m = lanes.context().module();
+        double bpm = m && m->tempo() > 0 ? m->tempo() : 120;
+        char text[64];
+        snprintf(text, sizeof text, "Crossfade %s \u00b7 %.0f ms", noteValueText(length).c_str(),
+                 double(length) * secondsPerTick(bpm) * 1000);
+        return text;
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
+
+  private:
+    ArrangementId first, second;
+    Tick start = 0, length = 0;
 };
 
 // ---- Velocity scale -----------------------------------------------------------------------------------------
@@ -689,6 +831,16 @@ std::unique_ptr<DragGesture> slip(ArrangerLanes& lanes, Vec press, ArrangementId
 }
 std::unique_ptr<DragGesture> fade(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool in) {
     return std::make_unique<FadeGesture>(lanes, press, grabbed, in);
+}
+std::unique_ptr<DragGesture> fadeCurve(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool in) {
+    return std::make_unique<CurveGesture>(lanes, press, grabbed, ArrangementId(), in);
+}
+std::unique_ptr<DragGesture> crossfade(ArrangerLanes& lanes, Vec press, ArrangementId first, ArrangementId second) {
+    return std::make_unique<CrossfadeGesture>(lanes, press, first, second);
+}
+std::unique_ptr<DragGesture> crossfadeCurve(ArrangerLanes& lanes, Vec press, ArrangementId first,
+                                            ArrangementId second) {
+    return std::make_unique<CurveGesture>(lanes, press, first, second, true);
 }
 std::unique_ptr<DragGesture> resizeEnd(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool stretch) {
     // On an audio clip, Alt+drag on the right edge sets the clip tempo instead of a stretch.

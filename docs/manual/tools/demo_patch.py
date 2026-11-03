@@ -256,9 +256,11 @@ def drum_loop(path, bpm=112.0, bars=2, rate=44100):
     return n
 
 
-def audio_patch(out):
+def audio_patch(out, crossfade=False):
     """Writes audio.vcv: the demo with a "Loop" audio track playing a drum loop on the timeline from bar 5 and in
-    the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer open."""
+    the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer open.
+    With `crossfade` it writes crossfade.vcv instead: two copies of the loop overlapping by a bar, the second one
+    reversed, and a curved fade in on the first, with the mixer folded."""
     song, _ = make_song()
     name = "Drum loop 112 BPM.wav"
     file = "audio/00000000-" + name
@@ -274,20 +276,29 @@ def audio_patch(out):
                 "audio": {"source": source["id"], "start": 0, "follow": "stretch", "sound": "drums", "tempo": 112.0}}
         place = {"id": ids.take(), "clip": loop["id"], "pos": 4 * BAR, "len": 16 * BAR, "offset": 0, "muted": False,
                  "transpose": 0, "velScale": 1.0, "stretch": 1.0, "fadeIn": [BEAT // 2, 0.0]}
+        places = [place]
+        if crossfade:
+            back = dict(loop, id=ids.take(), name="Drum loop reversed", color=2,
+                        audio=dict(loop["audio"], reverse=True))
+            place = dict(place, len=4 * BAR, fadeIn=[2 * BEAT, 0.6])
+            second = {"id": ids.take(), "clip": back["id"], "pos": 7 * BAR, "len": 4 * BAR, "offset": 0,
+                      "muted": False, "transpose": 0, "velScale": 1.0, "stretch": 1.0}
+            places = [place, second]
+            song["clips"].append(back)
         song["tracks"].append({"id": TRACK_IDS["Loop"], "name": "Loop", "color": COLORS["Loop"], "type": "audio",
                                "polyphony": 0, "mute": False, "solo": False, "armed": False, "monitor": True,
                                "recordInput": "any", "midiChannel": 0, "gateScale": 1.0, "transpose": 0,
                                "drumLanes": [], "slots": [None, loop["id"], loop["id"]] + [None] * 5,
-                               "arrangement": [place], "automation": [], "channel": {"volume": -3.0, "pan": 0.0}})
+                               "arrangement": places, "automation": [], "channel": {"volume": -3.0, "pan": 0.0}})
         song["clips"].append(loop)
         song["audioSources"] = [source]
         song["master"] = {"id": ids.take(), "volume": 0.0}
         song["nextId"] = ids.next + 10
         tessera = tessera_module(song, loop, PANEL_HP, True, "Loop")
-        tessera["data"]["ui"]["overlay"].update({"mixerOpen": True, "mixerHeight": 300.0})
+        tessera["data"]["ui"]["overlay"].update({"mixerOpen": not crossfade, "mixerHeight": 300.0})
         (root / "patch.json").write_text(json.dumps(patch([tessera] + outputs(PANEL_HP))))
-        subprocess.run(["tar", "--zstd", "-cf", str(out / "audio.vcv"), "-C", tmp, "patch.json", "modules"],
-                       check=True)
+        name = "crossfade.vcv" if crossfade else "audio.vcv"
+        subprocess.run(["tar", "--zstd", "-cf", str(out / name), "-C", tmp, "patch.json", "modules"], check=True)
 
 
 def main():
@@ -311,6 +322,7 @@ def main():
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
     audio_patch(out)
+    audio_patch(out, crossfade=True)
 
 
 if __name__ == "__main__":

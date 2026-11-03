@@ -187,12 +187,59 @@ std::pair<float, float> ArrangerLanes::instanceSpan(int row, const arrange::Plac
     return {top + each * float(sub), each};
 }
 
+std::vector<ArrangerLanes::Crossfade> ArrangerLanes::crossfadesOn(TrackId track) {
+    std::vector<Crossfade> out;
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(track) : nullptr;
+    if (!t || t->type != TrackType::Audio)
+        return out;
+    std::vector<const ArrangerClip*> mine;
+    for (const arrange::Placed& p : shown())
+        if (p.track == track && !p.clip.muted)
+            mine.push_back(&p.clip);
+    std::sort(mine.begin(), mine.end(), [](const ArrangerClip* x, const ArrangerClip* y) {
+        return x->position != y->position ? x->position < y->position : x->id.value < y->id.value;
+    });
+    for (size_t i = 0; i + 1 < mine.size(); i++) {
+        double end = std::min(shownEnd(*mine[i]), shownEnd(*mine[i + 1]));
+        if (end > double(mine[i + 1]->position))
+            out.push_back({mine[i]->id, mine[i + 1]->id, double(mine[i + 1]->position), end});
+    }
+    return out;
+}
+
 ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
     Hit hit;
     hit.row = rowAt(pos.y);
     TrackId track = trackOfRow(hit.row);
     if (!track.valid())
         return hit;
+    // A crossfade's handle and curve dot come first, then both clips' edges, then the bodies (§6.1 hit map).
+    if (ctx.state().tool == Tool::Pointer || ctx.state().tool == Tool::Draw) {
+        float top = rowTop(hit.row), h = rowHeight(hit.row);
+        float bodyTop = top + 1 + (h >= kMinHeightForStrip ? kHeaderStrip : headerHeight(h));
+        float bodyH = top + h - 1 - bodyTop;
+        float reach = theme::metrics::kAudioHandleHit / 2;
+        if (bodyH >= theme::metrics::kAudioHandleMinBody)
+            for (const Crossfade& x : crossfadesOn(track)) {
+                float xa = float(time().tickToX(x.start)), xb = float(time().tickToX(x.end));
+                float cx = (xa + xb) / 2;
+                if (std::fabs(pos.x - cx) > std::max(reach, (xb - xa) / 2))
+                    continue;
+                if (std::fabs(pos.x - cx) <= reach && pos.y >= bodyTop - 2 &&
+                    pos.y < bodyTop + theme::metrics::kAudioHandleTopZone) {
+                    hit.part = Part::Crossfade;
+                } else if (xb - xa >= 2 * reach && std::fabs(pos.x - cx) <= reach &&
+                           std::fabs(pos.y - (bodyTop + bodyH / 2)) <= reach) {
+                    hit.part = Part::CrossfadeCurve;
+                } else {
+                    continue;
+                }
+                hit.id = x.second;
+                hit.other = x.first;
+                return hit;
+            }
+    }
     float edge = theme::metrics::kEdgeHit;
     const arrange::IdSet& sel = selection();
     // Selected clips win where clips overlap (EDITOR_UX §9 hit priority). Clips the mouse is inside come before
@@ -218,6 +265,32 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
             // (docs/design/AUDIO_MIXER.md §6.1 hit map).
             float bodyTop = top + 1 + (h >= kMinHeightForStrip ? kHeaderStrip : headerHeight(h));
             const Clip* clip = ctx.module()->song().findClip(p.clip.clip);
+            if (clip && clip->audio && h - (bodyTop - top) >= theme::metrics::kAudioHandleMinBody &&
+                x1 - x0 >= theme::metrics::kAudioHandleMinWidth) {
+                // The curve dots in the middle of each fade, on its curve.
+                double perClipTick =
+                    songTicksPerClipTick(*clip->audio, ctx.module()->tempo() > 0 ? ctx.module()->tempo() : 120);
+                float bodyBottom = top + h - 1;
+                float reachDot = theme::metrics::kAudioHandleHit / 2;
+                auto dot = [&](double fromTick, double toTick, float curve, Part part) {
+                    float xa = float(time().tickToX(fromTick)), xb = float(time().tickToX(toTick));
+                    if (xb - xa < 2 * reachDot)
+                        return false;
+                    float y = bodyBottom - fadeShape(0.5f, curve, false) * (bodyBottom - bodyTop);
+                    if (std::fabs(pos.x - (xa + xb) / 2) <= reachDot && std::fabs(pos.y - y) <= reachDot) {
+                        hit.part = part;
+                        return true;
+                    }
+                    return false;
+                };
+                double start = double(p.clip.position), end = shownEnd(p.clip);
+                if (p.clip.fadeIn.length > 0 && dot(start, start + double(p.clip.fadeIn.length) * perClipTick,
+                                                    p.clip.fadeIn.curve, Part::FadeInCurve))
+                    return hit;
+                if (p.clip.fadeOut.length > 0 && dot(end - double(p.clip.fadeOut.length) * perClipTick, end,
+                                                     p.clip.fadeOut.curve, Part::FadeOutCurve))
+                    return hit;
+            }
             if (clip && clip->audio && h - (bodyTop - top) >= theme::metrics::kAudioHandleMinBody &&
                 x1 - x0 >= theme::metrics::kAudioHandleMinWidth && pos.y >= bodyTop &&
                 pos.y < bodyTop + theme::metrics::kAudioHandleTopZone) {
@@ -546,6 +619,13 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
         return clipGestures::rubberBand(*this, pos, mods);
     }
 
+    // A crossfade belongs to two clips: its drags leave the selection alone.
+    if (hit.part == Part::Crossfade || hit.part == Part::CrossfadeCurve) {
+        owner.target = ArrangerView::Target::Clips;
+        return hit.part == Part::Crossfade ? clipGestures::crossfade(*this, pos, hit.other, hit.id)
+                                           : clipGestures::crossfadeCurve(*this, pos, hit.other, hit.id);
+    }
+
     // A press selects at once, so a drag moves what was grabbed; a click in place adjusts the selection.
     ArrangementId id = hit.id;
     bool wasSelected = selection().count(id) > 0;
@@ -573,6 +653,10 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
     case Part::FadeIn:
     case Part::FadeOut:
         inner = clipGestures::fade(*this, pos, id, hit.part == Part::FadeIn);
+        break;
+    case Part::FadeInCurve:
+    case Part::FadeOutCurve:
+        inner = clipGestures::fadeCurve(*this, pos, id, hit.part == Part::FadeInCurve);
         break;
     case Part::LeftEdge:
         inner = clipGestures::trimStart(*this, pos, id);
@@ -710,7 +794,12 @@ CursorShape ArrangerLanes::hoverCursor(Vec pos, Modifiers mods) {
     case Part::RightEdge:
     case Part::FadeIn:
     case Part::FadeOut:
+    case Part::Crossfade:
         return CursorShape::ResizeH;
+    case Part::FadeInCurve:
+    case Part::FadeOutCurve:
+    case Part::CrossfadeCurve:
+        return CursorShape::ResizeV;
     case Part::Header:
         return mods.alt ? CursorShape::Move : CursorShape::ResizeV;
     case Part::Body:
@@ -1064,11 +1153,20 @@ void ArrangerLanes::paintClips(NVGcontext* vg, Vec size) {
         // Taken over by the launcher, or about to be: a stop waiting for the launch quantize dims it already.
         LauncherStatus st = m->launcherStatus(track->id);
         bool dim = arranger && (st.overridden || st.queued == kNoSlot);
+        std::vector<Crossfade> crossfades = crossfadesOn(track->id);
+        overlaps.clear();
+        for (const Crossfade& x : crossfades) {
+            overlaps[x.first].second = x.end - x.start;
+            overlaps[x.second].first = x.end - x.start;
+        }
         for (const arrange::Placed& p : layout)
             if (p.track == row.track) {
                 auto [subTop, subHeight] = instanceSpan(int(i), p);
                 drawInstance(vg, song, *track, p.clip, subTop, subHeight, dim);
             }
+        for (const Crossfade& x : crossfades)
+            drawCrossfade(vg, x, top, h, dim ? kOverriddenAlpha : 1.f);
+        overlaps.clear();
     }
 }
 
@@ -1266,17 +1364,91 @@ void ArrangerLanes::drawAudioBody(NVGcontext* vg, const Clip& clip, const Arrang
     float xEnd = float(time().tickToX(shownEnd(a)));
     float xIn = float(time().tickToX(double(a.position) + double(a.fadeIn.length) * perClipTick));
     float xOut = float(time().tickToX(shownEnd(a) - double(a.fadeOut.length) * perClipTick));
-    shade(xStart, xIn, true, a.fadeIn.curve);
-    shade(xOut, xEnd, false, a.fadeOut.curve);
-    // The fade handles, small and dim, at the top corners of the body.
+    // Where the clip overlaps a neighbour, the crossfade takes the place of that side's fade (drawCrossfade).
+    auto shared = overlaps.find(a.id);
+    bool crossIn = shared != overlaps.end() && shared->second.first > 0;
+    bool crossOut = shared != overlaps.end() && shared->second.second > 0;
+    if (!crossIn)
+        shade(xStart, xIn, true, a.fadeIn.curve);
+    if (!crossOut)
+        shade(xOut, xEnd, false, a.fadeOut.curve);
+    // The fade handles, small and dim, at the top corners of the body, and a curve dot in the middle of each fade.
     if (body.size.y >= theme::metrics::kAudioHandleMinBody && body.size.x >= theme::metrics::kAudioHandleMinWidth) {
         float s = theme::metrics::kAudioHandle;
-        for (float x : {std::max(xIn, xStart + 3), std::min(xOut, xEnd - 3)}) {
+        NVGcolor handle = nvgTransRGBAf(c.onTile, 0.55f * alpha);
+        for (int side = 0; side < 2; side++) {
+            if (side == 0 ? crossIn : crossOut)
+                continue;
+            float x = side == 0 ? std::max(xIn, xStart + 3) : std::min(xOut, xEnd - 3);
             nvgBeginPath(vg);
             nvgRect(vg, x - s / 2, body.pos.y, s, s / 2 + 1);
-            nvgFillColor(vg, nvgTransRGBAf(c.onTile, 0.55f * alpha));
+            nvgFillColor(vg, handle);
             nvgFill(vg);
+            float xa = side == 0 ? xStart : xOut, xb = side == 0 ? xIn : xEnd;
+            const Fade& f = side == 0 ? a.fadeIn : a.fadeOut;
+            if (f.length > 0 && xb - xa >= theme::metrics::kAudioHandleHit) {
+                float y = body.getBottom() - fadeShape(0.5f, f.curve, false) * body.size.y;
+                nvgBeginPath(vg);
+                nvgCircle(vg, (xa + xb) / 2, y, s / 2);
+                nvgFillColor(vg, handle);
+                nvgFill(vg);
+            }
         }
+    }
+}
+
+void ArrangerLanes::drawCrossfade(NVGcontext* vg, const Crossfade& x, float top, float h, float alpha) {
+    const arrange::Placed* first = arrange::find(shown(), x.first);
+    const arrange::Placed* second = arrange::find(shown(), x.second);
+    if (!first || !second)
+        return;
+    float xa = float(time().tickToX(x.start)), xb = float(time().tickToX(x.end));
+    if (xb < 0 || xa > box.size.x || xb - xa < 1)
+        return;
+    const theme::Palette& c = theme::colors();
+    float bodyTop = top + 1 + (h >= kMinHeightForStrip ? kHeaderStrip : headerHeight(h));
+    Rect body(xa, bodyTop, xb - xa, top + h - 1 - bodyTop);
+    if (body.size.y < 4)
+        return;
+    nvgBeginPath(vg);
+    nvgRect(vg, body.pos.x, body.pos.y, body.size.x, body.size.y);
+    nvgFillColor(vg, nvgTransRGBAf(c.bg0, 0.25f * alpha));
+    nvgFill(vg);
+    // The X: the earlier clip's gain falling, the later one's rising, each on its own curve.
+    for (int side = 0; side < 2; side++) {
+        float curve = side == 0 ? first->clip.fadeOut.curve : second->clip.fadeIn.curve;
+        nvgBeginPath(vg);
+        for (int i = 0; i <= 24; i++) {
+            float f = float(i) / 24;
+            float g = fadeShape(side == 0 ? 1 - f : f, curve, true);
+            float px = body.pos.x + body.size.x * f, py = body.getBottom() - g * body.size.y;
+            if (i == 0)
+                nvgMoveTo(vg, px, py);
+            else
+                nvgLineTo(vg, px, py);
+        }
+        nvgStrokeColor(vg, nvgTransRGBAf(c.onTile, 0.8f * alpha));
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+    }
+    if (body.size.y < theme::metrics::kAudioHandleMinBody)
+        return;
+    float s = theme::metrics::kAudioHandle;
+    float cx = body.getCenter().x;
+    // The handle on top: a small diamond, so it reads as different from the square fade handles.
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, cx, body.pos.y);
+    nvgLineTo(vg, cx + s / 2, body.pos.y + s / 2);
+    nvgLineTo(vg, cx, body.pos.y + s);
+    nvgLineTo(vg, cx - s / 2, body.pos.y + s / 2);
+    nvgClosePath(vg);
+    nvgFillColor(vg, nvgTransRGBAf(c.onTile, 0.85f * alpha));
+    nvgFill(vg);
+    if (xb - xa >= theme::metrics::kAudioHandleHit) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, body.getCenter().y, s / 2);
+        nvgFillColor(vg, nvgTransRGBAf(c.onTile, 0.85f * alpha));
+        nvgFill(vg);
     }
 }
 
