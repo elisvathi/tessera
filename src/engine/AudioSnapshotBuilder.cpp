@@ -55,20 +55,23 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         c.length = double(clip->length);
         if (const AudioSource* src = song.findSource(a.source)) {
             c.gain = dbToGain(a.gainDb) * src->volts;
-            c.framesPerTick = engineFrames(framesPerTick(a, src->sampleRate), src->sampleRate, engineRate);
-            c.startFrame = engineFrames(double(a.sourceStart), src->sampleRate, engineRate);
             std::shared_ptr<const AudioBuffer> prepared = buffers.prepared(a.source);
             hold(prepared);
             c.prepared = prepared.get();
+            // Positions are in the buffer's own frames: right after a rate change it may still be at the old rate.
+            double bufferRate = prepared && prepared->rate > 0 ? prepared->rate : engineRate;
+            c.framesPerTick = engineFrames(framesPerTick(a, src->sampleRate), src->sampleRate, bufferRate);
+            c.startFrame = engineFrames(double(a.sourceStart), src->sampleRate, bufferRate);
             double frames = prepared ? double(prepared->frames)
-                                     : engineFrames(double(src->frames), src->sampleRate, engineRate);
+                                     : engineFrames(double(src->frames), src->sampleRate, bufferRate);
             double after = frames - (c.startFrame + c.loopEnd * c.framesPerTick);
             c.seamDip = after < 0.006 * engineRate;
             RenderKey key;
             if (wantsRender(a, tempo, key)) {
                 RenderKey found;
                 std::shared_ptr<const AudioBuffer> render = buffers.render(key, found);
-                if (render && found.factor > 0) {
+                double renderRate = render && render->rate > 0 ? render->rate : engineRate;
+                if (render && found.factor > 0 && renderRate == bufferRate) {
                     hold(render);
                     c.render = render.get();
                     c.renderTempo = a.sourceTempo / found.factor;

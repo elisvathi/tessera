@@ -17,6 +17,7 @@ namespace tessera {
 struct AudioBuffer {
     int channels = 0; // 1 or 2; a mono buffer plays the same samples on both sides
     int64_t frames = 0;
+    double rate = 0; // its sample rate; 0 = the engine's. After a rate change, old buffers play on until new ones are ready
     std::array<std::vector<float>, 2> data;
 
     /// Channel `c`'s samples; the first channel again for a mono buffer.
