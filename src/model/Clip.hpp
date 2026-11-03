@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AudioSource.hpp"
 #include "Automation.hpp"
 #include "Note.hpp"
 #include "ScaleRef.hpp"
@@ -47,12 +48,16 @@ struct Clip {
     std::vector<AutomationEnvelope> automation; // clip time, loops with the clip
     std::optional<ScaleRef> scaleOverride;
     std::optional<LaunchQuantize> launchQuantize; // overrides the song's setting for this clip
+    std::optional<AudioContent> audio;            // set on audio clips, which have no notes
+
+    bool isAudio() const { return audio.has_value(); }
 
     const Note* findNote(NoteId noteId) const;
     /// The most unmuted notes that sound at the same moment while the clip plays.
     int maxSimultaneousNotes() const;
     /// Where the clip's content ends: its last note (muted ones too) or automation point; 0 when empty. A clip
-    /// without a loop plays this far: its length follows its notes, not the loop region.
+    /// without a loop plays this far: its length follows its notes, not the loop region. An audio clip's content is
+    /// its whole length: the window of the file it plays.
     Tick contentEnd() const;
     /// The part that plays: the loop, or [0, contentEnd()) without one.
     Tick playStart() const { return loopMode == LoopMode::Loop && loopEnd > loopStart ? loopStart : 0; }
@@ -66,7 +71,7 @@ struct Clip {
         return id == o.id && name == o.name && color == o.color && ownColor == o.ownColor && length == o.length &&
                loopStart == o.loopStart &&
                loopEnd == o.loopEnd && loopMode == o.loopMode && notes == o.notes && automation == o.automation &&
-               scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize;
+               scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize && audio == o.audio;
     }
 };
 

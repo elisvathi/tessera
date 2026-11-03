@@ -47,6 +47,21 @@ Clip* Song::findClip(ClipId id) {
 
 const Clip* Song::findClip(ClipId id) const { return const_cast<Song*>(this)->findClip(id); }
 
+const AudioSource* Song::findSource(AudioSourceId id) const {
+    auto it = std::lower_bound(audioSources.begin(), audioSources.end(), id,
+                               [](const AudioSource& s, AudioSourceId v) { return s.id < v; });
+    return it != audioSources.end() && it->id == id ? &*it : nullptr;
+}
+
+const AudioSource* Song::sourceOf(const Clip& clip) const {
+    return clip.audio ? findSource(clip.audio->source) : nullptr;
+}
+
+bool hasAudio(const Song& song) {
+    return std::any_of(song.tracks.begin(), song.tracks.end(),
+                       [](const Track& t) { return t.type == TrackType::Audio; });
+}
+
 const Clip* Song::activeClip(const Track& track) const {
     for (const ClipSlot& slot : track.slots)
         if (slot.clip)
@@ -232,6 +247,47 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
     normalizeAutomation(clip.automation, ids);
     if (clip.scaleOverride)
         clampValue<int8_t>(clip.scaleOverride->root, 0, 11);
+    if (clip.audio) {
+        AudioContent& a = *clip.audio;
+        clip.notes.clear();
+        a.sourceStart = std::max<int64_t>(0, a.sourceStart);
+        a.sourceTempo = std::isfinite(a.sourceTempo) ? std::clamp(a.sourceTempo, kMinClipTempo, kMaxClipTempo) : 120;
+        a.gainDb = std::isfinite(a.gainDb) ? std::clamp(a.gainDb, kSilentDb, kMaxClipGainDb) : 0.f;
+        clampValue<int8_t>(a.semitones, -24, 24);
+        a.cents = std::isfinite(a.cents) ? std::clamp(a.cents, -50.f, 50.f) : 0.f;
+    }
+}
+
+void normalizeFade(Fade& fade, Tick most) {
+    fade.length = std::clamp<Tick>(fade.length, 0, most);
+    fade.curve = std::isfinite(fade.curve) ? std::clamp(fade.curve, -1.f, 1.f) : 0.f;
+}
+
+void normalizeChannel(Channel& c) {
+    c.volumeDb = std::isfinite(c.volumeDb) ? std::clamp(c.volumeDb, kSilentDb, kMaxFaderDb) : 0.f;
+    c.pan = std::isfinite(c.pan) ? std::clamp(c.pan, -1.f, 1.f) : 0.f;
+}
+
+void normalizeSources(Song& song, IdRepair& ids) {
+    std::vector<AudioSource>& list = song.audioSources;
+    std::stable_sort(list.begin(), list.end(), [](const AudioSource& a, const AudioSource& b) { return a.id < b.id; });
+    // Clips point at sources by ID, so a source without a valid, unique ID can't be reached: it goes.
+    list.erase(std::remove_if(list.begin(), list.end(), [](const AudioSource& s) { return !s.id.valid(); }),
+               list.end());
+    list.erase(std::unique(list.begin(), list.end(),
+                           [](const AudioSource& a, const AudioSource& b) { return a.id == b.id; }),
+               list.end());
+    for (AudioSource& s : list) {
+        ids.claim(s.id.value);
+        clampValue(s.channels, 1, 2);
+        s.fileChannels = std::max(s.fileChannels, s.channels);
+        if (!(s.sampleRate >= 1000 && s.sampleRate <= 768000))
+            s.sampleRate = 48000;
+        s.frames = std::max<int64_t>(0, s.frames);
+        s.tempo = std::isfinite(s.tempo) && s.tempo > 0 ? std::clamp(s.tempo, kMinClipTempo, kMaxClipTempo) : 0;
+        if (!(std::isfinite(s.volts) && s.volts > 0))
+            s.volts = kImportVolts;
+    }
 }
 
 void normalizeParams(std::vector<float>& params, const std::vector<devices::ParamInfo>& table) {
@@ -311,13 +367,23 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
         clampValue(lane.chokeGroup, 0, kMaxChokeGroups);
     }
 
+    if (track.type == TrackType::Audio)
+        track.drumLanes.clear();
+    normalizeChannel(track.channel);
+
+    // A clip's kind must match its track: audio clips only on audio tracks, note clips only elsewhere.
+    bool audioTrack = track.type == TrackType::Audio;
+    auto fits = [&](ClipId id) {
+        const Clip* c = song.findClip(id);
+        return c && c->isAudio() == audioTrack;
+    };
     track.slots.resize(song.scenes.size());
     for (ClipSlot& slot : track.slots)
-        if (slot.clip && !song.findClip(*slot.clip))
+        if (slot.clip && !fits(*slot.clip))
             slot.clip.reset();
 
     auto& arr = track.arrangement;
-    arr.erase(std::remove_if(arr.begin(), arr.end(), [&](const ArrangerClip& a) { return !song.findClip(a.clip); }),
+    arr.erase(std::remove_if(arr.begin(), arr.end(), [&](const ArrangerClip& a) { return !fits(a.clip); }),
               arr.end());
     for (ArrangerClip& a : arr) {
         ids.fix(a.id);
@@ -326,6 +392,17 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
         a.offset = std::max<Tick>(0, a.offset);
         a.velocityScale = std::max(0.f, a.velocityScale);
         a.stretch = a.stretch > 0 ? std::clamp(a.stretch, kMinStretch, kMaxStretch) : 1.f;
+        if (audioTrack) {
+            // Pitch, gain and speed of audio live on the clip; audio tracks never stack.
+            a.transpose = 0;
+            a.velocityScale = 1;
+            a.stretch = 1;
+            a.layer = 0;
+            normalizeFade(a.fadeIn, a.length);
+            normalizeFade(a.fadeOut, a.length - a.fadeIn.length);
+        } else {
+            a.fadeIn = a.fadeOut = Fade{};
+        }
     }
     std::stable_sort(arr.begin(), arr.end(), [](const ArrangerClip& a, const ArrangerClip& b) {
         return a.position != b.position ? a.position < b.position : a.id.value < b.id.value;
@@ -359,6 +436,9 @@ void seeAllIds(Song& song, IdRepair& ids) {
             ids.see(d.id.value);
     for (const Marker& m : song.markers)
         ids.see(m.id.value);
+    for (const AudioSource& s : song.audioSources)
+        ids.see(s.id.value);
+    ids.see(song.master.id.value);
 }
 
 } // namespace
@@ -378,6 +458,7 @@ void normalize(Song& song) {
     if (song.loopEnd <= song.loopStart)
         song.loopEnd = song.loopStart + ticksPerBar(song.timeSig);
 
+    normalizeSources(song, ids);
     for (auto& [key, clip] : song.clips) {
         clip.id = key; // the pool key is the truth, and keys are already unique
         ids.claim(key.value);
@@ -411,6 +492,10 @@ void normalize(Song& song) {
         ids.fix(m.id);
         m.position = std::max<Tick>(0, m.position);
     }
+    ids.fix(song.master.id);
+    song.master.volumeDb = std::isfinite(song.master.volumeDb)
+                               ? std::clamp(song.master.volumeDb, kSilentDb, kMaxFaderDb)
+                               : 0.f;
     std::stable_sort(song.markers.begin(), song.markers.end(),
                      [](const Marker& a, const Marker& b) { return a.position < b.position; });
 }
@@ -505,6 +590,7 @@ Song makeDefaultSong() {
     song.tracks.push_back(makeTrack(song, TrackType::Instrument, "Track 2"));
     song.tracks.push_back(makeTrack(song, TrackType::Instrument, "Track 3"));
     song.tracks.push_back(makeTrack(song, TrackType::Drum, "Drums"));
+    song.master.id = song.newId<TrackId>();
     return song;
 }
 

@@ -58,6 +58,7 @@ class RandomSong {
             s.markers.push_back(m);
         }
         chains(s);
+        audio(s);
         normalize(s);
         return s;
     }
@@ -157,6 +158,71 @@ class RandomSong {
         if (coin())
             t.automation.push_back(lane(s));
         return t;
+    }
+
+    /// An audio track with sources, audio clips in slots and on the timeline with fades, and mixer settings. Drawn
+    /// after everything else, so the rest of a seed's song stays as it was before audio existed.
+    void audio(Song& s) {
+        for (Track& t : s.tracks)
+            if (coin())
+                t.channel = {float(range(-60, 6)) + 0.5f, unit() * 2 - 1};
+        s.master.id = s.newId<TrackId>();
+        s.master.volumeDb = float(range(-20, 6));
+        if (int(s.tracks.size()) >= kMaxTracks || coin())
+            return;
+        std::vector<ClipId> clips;
+        for (int i = 0, n = int(range(1, 3)); i < n; i++) {
+            AudioSource src;
+            src.id = s.newId<AudioSourceId>();
+            src.name = pick({"drums_92bpm.wav", "Bass – ünïcode.aif", "x.mp3"});
+            src.file = "audio/" + std::to_string(src.id.value) + "-" + src.name;
+            src.contentHash = (uint64_t(range(1, 1 << 30)) << 34) | uint64_t(range(1, 1 << 30));
+            src.channels = int(range(1, 2));
+            src.fileChannels = src.channels + int(range(0, 4));
+            src.sampleRate = coin() ? 44100 : 48000;
+            src.frames = range(1000, 2000000);
+            src.tempo = coin() ? 0 : double(range(70, 180)) + 0.25;
+            src.volts = coin() ? 5.f : 10.f;
+            s.audioSources.push_back(src);
+
+            Clip c;
+            c.id = s.newId<ClipId>();
+            c.name = src.name;
+            c.length = range(1, 8) * kPpq;
+            c.loopStart = 0;
+            c.loopEnd = c.length;
+            c.loopMode = coin() ? LoopMode::Loop : LoopMode::Off;
+            AudioContent a;
+            a.source = src.id;
+            a.sourceStart = range(0, 1000);
+            a.follow = TempoFollow(range(0, 2));
+            a.sound = SoundType(range(0, 3));
+            a.sourceTempo = double(range(60, 180)) + 0.5;
+            a.gainDb = float(range(-30, 12));
+            a.semitones = int8_t(range(-24, 24));
+            a.cents = float(range(-50, 50));
+            a.reverse = coin();
+            c.audio = a;
+            clips.push_back(c.id);
+            s.clips.emplace(c.id, std::move(c));
+        }
+        Track t = makeTrack(s, TrackType::Audio, "Audio");
+        t.channel = {float(range(-30, 6)), unit() * 2 - 1};
+        for (ClipSlot& slot : t.slots)
+            if (coin())
+                slot.clip = clips[size_t(range(0, int64_t(clips.size()) - 1))];
+        for (int i = 0; i < 3; i++) {
+            ArrangerClip a;
+            a.id = s.newId<ArrangementId>();
+            a.clip = clips[size_t(range(0, int64_t(clips.size()) - 1))];
+            a.position = range(0, 8) * 8 * kPpq;
+            a.length = range(2, 8) * kPpq;
+            a.offset = range(0, 2) * kPpq;
+            a.fadeIn = {range(0, 1) * kPpq / 2, unit() * 2 - 1};
+            a.fadeOut = {range(0, 1) * kPpq / 2, unit() * 2 - 1};
+            t.arrangement.push_back(a);
+        }
+        s.tracks.push_back(t);
     }
 
     /// Devices and modulators on random tracks, with routes that stay inside each modulator's reach.

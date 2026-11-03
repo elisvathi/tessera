@@ -4,6 +4,8 @@
 #include "Json.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 namespace tessera {
@@ -28,7 +30,10 @@ E enumFromName(const json_t* j, const char* const (&names)[N], E fallback) {
     return fallback;
 }
 
-const char* const kTrackTypes[] = {"instrument", "drum"};
+const char* const kTrackTypes[] = {"instrument", "drum", "audio"};
+const char* const kTempoFollow[] = {"stretch", "repitch", "off"};
+// In SoundType's order.
+const char* const kSoundTypes[] = {"drums", "melody", "voice", "fullMix"};
 const char* const kRecordInputs[] = {"any", "cv", "midi"};
 const char* const kListenSources[] = {"none", "external", "trackAfter", "trackBefore"};
 const char* const kAutoSources[] = {"knob", "cv"};
@@ -345,6 +350,92 @@ DrumLane drumLaneFromJson(const json_t* j) {
     return l;
 }
 
+// ---- Audio --------------------------------------------------------------------------------------------------
+
+json_t* fadeToJson(const Fade& f) { return json_pack("[If]", static_cast<json_int_t>(f.length), double(f.curve)); }
+
+Fade fadeFromJson(const json_t* j) {
+    Fade f;
+    f.length = intAt(j, 0, f.length);
+    f.curve = float(numberAt(j, 1, f.curve));
+    return f;
+}
+
+json_t* sourceToJson(const AudioSource& s) {
+    json_t* j = json_object();
+    set(j, "id", idJson(s.id));
+    setString(j, "name", s.name);
+    setString(j, "file", s.file);
+    // As a hex string: JSON numbers can't hold all 64 bits.
+    char hash[17];
+    snprintf(hash, sizeof hash, "%016llx", static_cast<unsigned long long>(s.contentHash));
+    setString(j, "hash", hash);
+    setInt(j, "channels", s.channels);
+    if (s.fileChannels != s.channels)
+        setInt(j, "fileChannels", s.fileChannels);
+    setNumber(j, "rate", s.sampleRate);
+    setInt(j, "frames", s.frames);
+    if (s.tempo > 0)
+        setNumber(j, "tempo", s.tempo);
+    setNumber(j, "volts", s.volts);
+    return j;
+}
+
+AudioSource sourceFromJson(const json_t* j) {
+    AudioSource s;
+    s.id = readId<AudioSourceId>(get(j, "id"));
+    s.name = getString(j, "name", s.name);
+    s.file = getString(j, "file", s.file);
+    s.contentHash = std::strtoull(getString(j, "hash", "0").c_str(), nullptr, 16);
+    s.channels = saturate<int>(getInt(j, "channels", s.channels));
+    s.fileChannels = saturate<int>(getInt(j, "fileChannels", s.channels));
+    s.sampleRate = getNumber(j, "rate", s.sampleRate);
+    s.frames = getInt(j, "frames", s.frames);
+    s.tempo = getNumber(j, "tempo", s.tempo);
+    s.volts = getFloat(j, "volts", s.volts);
+    return s;
+}
+
+json_t* audioToJson(const AudioContent& a) {
+    json_t* j = json_object();
+    set(j, "source", idJson(a.source));
+    setInt(j, "start", a.sourceStart);
+    setString(j, "follow", enumName(a.follow, kTempoFollow));
+    setString(j, "sound", enumName(a.sound, kSoundTypes));
+    setNumber(j, "tempo", a.sourceTempo);
+    if (a.gainDb != 0)
+        setNumber(j, "gain", a.gainDb);
+    if (a.semitones != 0)
+        setInt(j, "semitones", a.semitones);
+    if (a.cents != 0)
+        setNumber(j, "cents", a.cents);
+    if (a.reverse)
+        setBool(j, "reverse", true);
+    return j;
+}
+
+AudioContent audioFromJson(const json_t* j) {
+    AudioContent a;
+    a.source = readId<AudioSourceId>(get(j, "source"));
+    a.sourceStart = getInt(j, "start", a.sourceStart);
+    a.follow = enumFromName(get(j, "follow"), kTempoFollow, a.follow);
+    a.sound = enumFromName(get(j, "sound"), kSoundTypes, a.sound);
+    a.sourceTempo = getNumber(j, "tempo", a.sourceTempo);
+    a.gainDb = getFloat(j, "gain", a.gainDb);
+    a.semitones = saturate<int8_t>(getInt(j, "semitones", a.semitones));
+    a.cents = getFloat(j, "cents", a.cents);
+    a.reverse = getBool(j, "reverse", a.reverse);
+    return a;
+}
+
+json_t* channelToJson(float volumeDb, float pan) {
+    json_t* j = json_object();
+    setNumber(j, "volume", volumeDb);
+    if (pan != 0)
+        setNumber(j, "pan", pan);
+    return j;
+}
+
 json_t* arrangerClipToJson(const ArrangerClip& a) {
     json_t* j = json_object();
     set(j, "id", idJson(a.id));
@@ -358,6 +449,10 @@ json_t* arrangerClipToJson(const ArrangerClip& a) {
     setNumber(j, "stretch", a.stretch);
     if (a.layer != 0)
         setInt(j, "layer", a.layer);
+    if (a.fadeIn != Fade{})
+        set(j, "fadeIn", fadeToJson(a.fadeIn));
+    if (a.fadeOut != Fade{})
+        set(j, "fadeOut", fadeToJson(a.fadeOut));
     return j;
 }
 
@@ -373,6 +468,8 @@ ArrangerClip arrangerClipFromJson(const json_t* j) {
     a.velocityScale = getFloat(j, "velScale", a.velocityScale);
     a.stretch = getFloat(j, "stretch", a.stretch);
     a.layer = int8_t(std::clamp<int64_t>(getInt(j, "layer", a.layer), 0, kMaxStackLayer));
+    a.fadeIn = fadeFromJson(get(j, "fadeIn"));
+    a.fadeOut = fadeFromJson(get(j, "fadeOut"));
     return a;
 }
 
@@ -538,6 +635,8 @@ json_t* trackToJson(const Track& t) {
     }
     if (!t.modulators.empty())
         set(j, "modulators", modulatorListToJson(t.modulators));
+    if (t.channel != Channel{})
+        set(j, "channel", channelToJson(t.channel.volumeDb, t.channel.pan));
     return j;
 }
 
@@ -570,6 +669,8 @@ Track trackFromJson(const json_t* j) {
     t.automation = automationListFromJson(get(j, "automation"));
     forEach(get(j, "devices"), [&](const json_t* d) { t.devices.push_back(deviceFromJson(d)); });
     t.modulators = modulatorListFromJson(get(j, "modulators"));
+    t.channel.volumeDb = getFloat(get(j, "channel"), "volume", t.channel.volumeDb);
+    t.channel.pan = getFloat(get(j, "channel"), "pan", t.channel.pan);
     return t;
 }
 
@@ -596,6 +697,8 @@ json_t* clipToJson(const Clip& c) {
         set(j, "scale", scaleToJson(*c.scaleOverride));
     if (c.launchQuantize)
         setString(j, "launchQuantize", enumName(*c.launchQuantize, kLaunchQuantize));
+    if (c.audio)
+        set(j, "audio", audioToJson(*c.audio));
     return j;
 }
 
@@ -620,6 +723,8 @@ Clip clipFromJson(const json_t* j) {
         c.scaleOverride = scaleFromJson(get(j, "scale"));
     if (json_is_string(get(j, "launchQuantize")))
         c.launchQuantize = enumFromName(get(j, "launchQuantize"), kLaunchQuantize, LaunchQuantize::Bar);
+    if (json_is_object(get(j, "audio")))
+        c.audio = audioFromJson(get(j, "audio"));
     return c;
 }
 
@@ -693,6 +798,15 @@ json_t* songToJson(const Song& s) {
     set(j, "markers", markers);
     if (!s.modulators.empty())
         set(j, "modulators", modulatorListToJson(s.modulators));
+    if (!s.audioSources.empty()) {
+        json_t* sources = json_array();
+        for (const AudioSource& src : s.audioSources)
+            json_array_append_new(sources, sourceToJson(src));
+        set(j, "audioSources", sources);
+    }
+    json_t* master = channelToJson(s.master.volumeDb, 0);
+    set(master, "id", idJson(s.master.id));
+    set(j, "master", master);
     return j;
 }
 
@@ -746,6 +860,8 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     }
     // Version 5 added device chains and modulators. Older songs have none, and every new field loads as empty,
     // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob; songFromJson rescales it.
+    // Version 7 added audio: sources, audio clips, fades, mixer channels and the master. Older songs load with
+    // none, every channel at 0 dB and centred, and the master at 0 dB.
     return fromVersion <= Song::kSchemaVersion;
 }
 
@@ -931,6 +1047,9 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
         s.markers.push_back(m);
     });
     s.modulators = modulatorListFromJson(get(j, "modulators"));
+    forEach(get(j, "audioSources"), [&](const json_t* aj) { s.audioSources.push_back(sourceFromJson(aj)); });
+    s.master.id = readId<TrackId>(get(get(j, "master"), "id"));
+    s.master.volumeDb = getFloat(get(j, "master"), "volume", s.master.volumeDb);
 
     // Before normalize, which trims each device's knobs to its type's list and would drop the old values.
     splitLegacyRandom(s);
