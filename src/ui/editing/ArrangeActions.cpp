@@ -327,44 +327,48 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     menu->addChild(rack::createMenuItem(muted ? "Unmute" : "Mute", "", [l, muted] { setMuted(*l, !muted); }));
     // Overlapping clips stack in rows; these swap it with the clip in the row above or below. Where they share an
     // AUTO channel the clip on the lowest row plays it, as a newer take lands there.
-    auto moveInStack = [l, clicked](int direction, const char* name) {
-        const arrange::Layout& before = l->committed();
-        l->commit(name, before, arrange::moveInStack(before, clicked, direction), arrange::IdSet{clicked});
-    };
-    menu->addChild(rack::createMenuItem(
-        "Move up a row", "", [moveInStack] { moveInStack(-1, "Move clip up a row"); },
-        !arrange::canMoveInStack(lanes.committed(), clicked, -1)));
-    menu->addChild(rack::createMenuItem(
-        "Move down a row", "", [moveInStack] { moveInStack(+1, "Move clip down a row"); },
-        !arrange::canMoveInStack(lanes.committed(), clicked, +1)));
+    // Audio clips never stack (they crossfade), and their pitch and gain live on the clip, not the copy.
+    if (!audio) {
+        auto moveInStack = [l, clicked](int direction, const char* name) {
+            const arrange::Layout& before = l->committed();
+            l->commit(name, before, arrange::moveInStack(before, clicked, direction), arrange::IdSet{clicked});
+        };
+        menu->addChild(rack::createMenuItem(
+            "Move up a row", "", [moveInStack] { moveInStack(-1, "Move clip up a row"); },
+            !arrange::canMoveInStack(lanes.committed(), clicked, -1)));
+        menu->addChild(rack::createMenuItem(
+            "Move down a row", "", [moveInStack] { moveInStack(+1, "Move clip down a row"); },
+            !arrange::canMoveInStack(lanes.committed(), clicked, +1)));
 
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(
-        rack::createSubmenuItem("Transpose", std::to_string(placed->clip.transpose), [l](rack::ui::Menu* sub) {
-            for (int d : {12, 1, -1, -12})
-                sub->addChild(
-                    rack::createMenuItem((d > 0 ? "+" : "") + std::to_string(d), "", [l, d] { transpose(*l, d); }));
-            sub->addChild(rack::createMenuItem("Reset", "", [l] {
-                editSelected(*l, "Reset transpose", [](const Layout& lay, const IdSet& ids) {
-                    Layout out = lay;
-                    for (arrange::Placed& p : out)
-                        if (ids.count(p.clip.id))
-                            p.clip.transpose = 0;
-                    return out;
-                });
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(
+            rack::createSubmenuItem("Transpose", std::to_string(placed->clip.transpose), [l](rack::ui::Menu* sub) {
+                for (int d : {12, 1, -1, -12})
+                    sub->addChild(
+                        rack::createMenuItem((d > 0 ? "+" : "") + std::to_string(d), "", [l, d] { transpose(*l, d); }));
+                sub->addChild(rack::createMenuItem("Reset", "", [l] {
+                    editSelected(*l, "Reset transpose", [](const Layout& lay, const IdSet& ids) {
+                        Layout out = lay;
+                        for (arrange::Placed& p : out)
+                            if (ids.count(p.clip.id))
+                                p.clip.transpose = 0;
+                        return out;
+                    });
+                }));
             }));
-        }));
-    menu->addChild(rack::createSubmenuItem(
-        "Velocity", std::to_string(int(std::lround(placed->clip.velocityScale * 100))) + "%", [l](rack::ui::Menu* sub) {
-            for (int pct : {50, 75, 100, 125, 150})
-                sub->addChild(rack::createMenuItem(std::to_string(pct) + "%", "",
-                                                   [l, pct] { setVelocityScale(*l, float(pct) / 100.f); }));
-        }));
-    menu->addChild(rack::createMenuItem("Reset stretch", "", [l] { resetStretch(*l); }, placed->clip.stretch == 1.f));
+        menu->addChild(rack::createSubmenuItem(
+            "Velocity", std::to_string(int(std::lround(placed->clip.velocityScale * 100))) + "%", [l](rack::ui::Menu* sub) {
+                for (int pct : {50, 75, 100, 125, 150})
+                    sub->addChild(rack::createMenuItem(std::to_string(pct) + "%", "",
+                                                       [l, pct] { setVelocityScale(*l, float(pct) / 100.f); }));
+            }));
+        menu->addChild(rack::createMenuItem("Reset stretch", "", [l] { resetStretch(*l); }, placed->clip.stretch == 1.f));
+    }
 
     // The clip itself (every instance of it changes).
     menu->addChild(new rack::ui::MenuSeparator);
-    clipActions::appendScaleMenu(menu, *c, clipId);
+    if (!audio)
+        clipActions::appendScaleMenu(menu, *c, clipId);
     menu->addChild(rack::createBoolMenuItem(
         "Clip loops", "",
         [c, clipId] {
@@ -376,8 +380,9 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
             mod->perform(setClipField(mod->song(), clipId, &Clip::loopMode, on ? LoopMode::Loop : LoopMode::Off,
                                       on ? "Loop clip" : "Play clip once"));
         }));
-    menu->addChild(
-        rack::createMenuItem("Save as Tessera clip file…", "", [c, clipId] { clipActions::exportClip(*c, clipId); }));
+    if (!audio)
+        menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "",
+                                            [c, clipId] { clipActions::exportClip(*c, clipId); }));
     if (audio)
         audioActions::appendAudioClipMenu(menu, lanes.context(), clipId);
 }

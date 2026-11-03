@@ -87,6 +87,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Shift+Tab | Maximize the pane, or restore both |
 | F2 | Widen / narrow the clips beside the timeline |
 | F3 | Device strip above the notes |
+| F4 | Maximise the mixer, or restore it |
 | G | Drum lanes / keys (*notes pane*) |
 
 ## Tracks
@@ -107,6 +108,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 |---|---|
 | ? (Shift+/) | Shortcut help |
 | Ctrl+Shift+E | Export MIDI… |
+| Ctrl+Shift+O | Import audio… |
 | Esc | Cancel a drag, clear the selection, then close the editor |
 
 ## While keyboard play is on (Ctrl+K)

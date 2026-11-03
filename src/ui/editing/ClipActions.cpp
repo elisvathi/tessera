@@ -520,10 +520,13 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
                 rack::createCheckMenuItem(quantizeLabel(q), "", [isSet, q] { return isSet(q); }, [set, q] { set(q); }));
     }));
 
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "", [c, id] { exportClip(*c, id); }));
-    menu->addChild(
-        rack::createMenuItem("Replace with Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
+    // A clip file holds notes; an audio clip's sound lives in the patch.
+    if (!clip->isAudio()) {
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "", [c, id] { exportClip(*c, id); }));
+        menu->addChild(rack::createMenuItem("Replace with Tessera clip file…", "",
+                                            [c, track, slot] { importClip(*c, track, slot); }));
+    }
     audioActions::appendAudioClipMenu(menu, ctx, id);
 }
 

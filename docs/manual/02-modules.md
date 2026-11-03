@@ -102,6 +102,11 @@ exactly with the notes on the output modules.
 | **EOC** | "End of cycle": a trigger each time the song loop wraps around. |
 | **BAR** | A trigger on every bar. |
 | **CLICK** | A trigger on every beat: 10 V on the first beat of the bar, 5 V on the others. Use it as a metronome. It also clicks during the count-in. |
+| **MAIN L** / **MAIN R** | The Master: every audio track mixed, after the Master fader. 10 V is full scale (0 dB), what Rack's Audio module sends to your sound card at full volume. See [Audio](17-audio.md). |
+
+MAIN sits in its own column at the right of the plate, with a two-bar meter beside it: one bar per side, red above
+0 dB. An amber dot above the meter means the Master plays but nothing is patched into MAIN. Hover over MAIN to read
+the Master's peak level.
 
 ### The module menu
 
@@ -112,7 +117,8 @@ Right-click the Tessera panel for these settings.
 | Item | What it does |
 |---|---|
 | **Open editor** | Same as the EDITOR button. |
-| **File** | New song, open and save project files, import MIDI files, export MIDI and DAWproject. See [Files](14-files.md). |
+| **Connect MAIN to Audio module** | Shown when the song has audio, MAIN has no cable and the patch has an Audio module: patches MAIN L and R into its first two inputs. See [Audio](17-audio.md#hearing-it-main-l-and-main-r). |
+| **File** | New song, open and save project files, import MIDI and audio files, export MIDI and DAWproject. See [Files](14-files.md). |
 | **MIDI input (for recording)** | The MIDI device and channel Tessera listens to. |
 | **Panel editor** | Widens the panel to show a small editor in the rack: Off, 48, 80 or 120 HP. See [The editor](03-editor.md#the-editor-inside-the-panel). |
 | **Colour scheme** | The look of the editor and panels. See [The editor](03-editor.md#colour-schemes). |

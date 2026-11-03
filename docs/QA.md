@@ -498,3 +498,31 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Swing on a song of 1/8s: turning it on picks the 1/8 grid and it is heard; notes it moves show a tick where they
       start, the piano roll's in-between grid lines swing; a Groove added to a 1/8 track starts on 1/8.
 - [ ] Swing menu › Show swing in the editor off: no ticks, straight grid, swing still heard; it stays off after saving.
+
+## Audio, Phase 1a (docs/design/AUDIO_MIXER.md)
+
+- [ ] Drop a WAV loop on the Tessera panel of an empty song: a new audio track; with Plays = Timeline the clip is at
+      bar 1, and the song tempo takes the loop's (the toast offers Keep 120 BPM, which puts it back).
+- [ ] Drop several files on an audio track in the timeline: they go end to end at the drop point. One Ctrl+Z removes all.
+- [ ] Drop a file on a launcher slot of an audio track: it goes there; several fill the slots below.
+- [ ] Drop on a note track: a new audio track just below it. Drop a text file named .wav: a toast says it can't be read.
+- [ ] MAIN L/R: the meter beside MAIN moves while audio plays; the amber dot shows while MAIN has no cable.
+- [ ] With an Audio module in the patch, right-click Tessera → Connect MAIN to Audio module: two cables; one Ctrl+Z
+      removes both. With its inputs 1 and 2 taken, it says so and changes nothing.
+- [ ] Turn TEMPO while a Stretch loop plays: it follows like tape, then the clean version takes over without a click.
+- [ ] Set Follow tempo Off on a one-shot, change the tempo: it plays at its own speed; its clip on the timeline gets
+      longer or shorter.
+- [ ] Drag an audio clip's title bar up and down: the waveform scales live; the readout says the gain; 0 dB catches.
+- [ ] Drag a fade handle (top corner of the body): the fade shades the waveform and is heard.
+- [ ] Alt+drag an audio clip's right edge: the readout says "112 → 56 BPM"; every linked copy follows.
+- [ ] The mixer bar appears only once the song has an audio track. Click opens it, drag sets its height, F4 maximises.
+- [ ] Mixer: drag a fader (no jump on click), Shift for fine, double-click for 0 dB, scroll ±0.5 dB, right-click to
+      type. With several audio tracks selected, one fader moves them all by the same dB.
+- [ ] Track header of an audio track: the level line shows the live level; drag it sideways; double-click resets.
+- [ ] Save the patch, reload: the audio plays. Copy and paste the Tessera: the copy plays its audio too.
+- [ ] Delete the stored file from patch storage (autosave/modules/<id>/audio) and reload: the clip shows stripes and
+      "Missing file", a toast says so; Find file… puts it back.
+- [ ] Save project as …: a "<name> audio" folder appears beside it; open the project in a new Tessera: it plays.
+- [ ] File → Remove unused audio after deleting an audio track: one undo step; undo brings the clips back.
+- [ ] In the in-panel editor (80 HP), the mixer tab is 16 px and the mixer opens and plays the same.
+- [ ] A song without audio: no mixer bar, no change in Rack's CPU meter against the previous version.

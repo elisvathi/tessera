@@ -1848,6 +1848,8 @@ void NoteGrid::drawEmptyState(NVGcontext* vg) {
         message = "Select a track to see its clip.";
     else if (!clip)
         message = "Double-click to create a clip.";
+    else if (clip->isAudio())
+        message = "An audio clip has no notes. Set its gain, tempo and sound in the inspector or its menu.";
     else if (clip->notes.empty() && !hasGesture() && ghosts.empty()) // the hint would cover the ghost notes
         message = "Draw with D, or press Ctrl/Cmd+R for step input.";
     if (!message)
