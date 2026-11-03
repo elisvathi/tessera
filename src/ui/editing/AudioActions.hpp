@@ -37,6 +37,11 @@ void removeUnused(EditorContext& ctx);
 std::string dropMessage(const std::vector<std::string>& imported, const std::vector<std::string>& failed,
                         int skipped);
 
+/// Replace file…: asks for a file and gives it to audio clip `clip`, keeping its place, length, gain and fades.
+void replaceFileDialog(EditorContext& ctx, ClipId clip);
+/// Gives the dropped file to audio clip `clip` (a Ctrl/Cmd+drop on the clip), with a toast.
+void replaceFile(EditorContext& ctx, ClipId clip, const std::string& path);
+
 /// Asks for a missing source's file and copies it into the patch under the source's name, then loads it.
 void findFile(EditorContext& ctx, AudioSourceId source);
 /// The sources whose files aren't in patch storage.

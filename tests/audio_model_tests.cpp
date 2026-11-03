@@ -1,10 +1,12 @@
 #include "doctest.h"
 
+#include "../src/model/ArrangementEdits.hpp"
 #include "../src/model/AudioEdits.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
 #include "RandomSong.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace tessera;
@@ -376,4 +378,159 @@ TEST_CASE("audio track names come from the file name") {
     CHECK(audioTrackName("/home/x/Loop 120 BPM.aif") == "Loop 120 BPM");
     CHECK(audioTrackName(".wav") == ".wav");
     CHECK(audioTrackName("") == "Audio");
+}
+
+namespace {
+
+/// A song with one audio track and one 8-beat audio clip, and timeline copies of it at the given spans (in beats).
+struct AudioLanes {
+    Song song = makeDefaultSong();
+    TrackId track;
+    ClipId clip;
+
+    AudioLanes() {
+        ImportResult made;
+        importAudio(song, {loop()}, {}, idsOf(song), &made)->apply(song);
+        track = made.tracks[0];
+        clip = made.clips[0];
+        song.findTrack(track)->arrangement.clear();
+    }
+    /// A copy of the clip on the track over [start, end) beats.
+    arrange::Placed at(double start, double end) {
+        ArrangerClip a;
+        a.id = ArrangementId(song.nextId++);
+        a.clip = clip;
+        a.position = Tick(start * kPpq);
+        a.length = Tick((end - start) * kPpq);
+        return {track, a};
+    }
+    arrange::IdSource ids() {
+        return [this] { return ArrangementId(song.nextId++); };
+    }
+};
+
+/// The spans [start, end) in ticks of a layout's instances, by position.
+std::vector<std::pair<Tick, Tick>> spans(arrange::Layout layout) {
+    std::sort(layout.begin(), layout.end(),
+              [](const arrange::Placed& x, const arrange::Placed& y) { return x.clip.position < y.clip.position; });
+    std::vector<std::pair<Tick, Tick>> out;
+    for (const arrange::Placed& p : layout)
+        out.push_back({p.clip.position, instanceEnd(p.clip)});
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("audio overlaps stay as crossfades; a covered audio clip goes") {
+    AudioLanes f;
+    arrange::Placed a = f.at(0, 8), b = f.at(6, 14);
+    arrange::Layout out = arrange::settleAudio({a, b}, {b.clip.id}, f.song.clips, f.ids());
+    CHECK(spans(out) == std::vector<std::pair<Tick, Tick>>{{0, 8 * kPpq}, {6 * kPpq, 14 * kPpq}});
+
+    arrange::Placed big = f.at(0, 16);
+    out = arrange::settleAudio({a, big}, {big.clip.id}, f.song.clips, f.ids());
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].clip.id == big.clip.id);
+}
+
+TEST_CASE("an audio clip dropped inside another splits it, each part reaching into it for a crossfade") {
+    AudioLanes f;
+    arrange::Placed outer = f.at(0, 8), inner = f.at(3, 5);
+    outer.clip.fadeIn.length = kPpq / 4;
+    outer.clip.fadeOut.length = kPpq / 4;
+    arrange::Layout out = arrange::settleAudio({outer, inner}, {inner.clip.id}, f.song.clips, f.ids());
+    Tick seam = arrange::kSeamCrossfade;
+    CHECK(spans(out) ==
+          std::vector<std::pair<Tick, Tick>>{{0, 3 * kPpq + seam}, {3 * kPpq, 5 * kPpq}, {5 * kPpq - seam, 8 * kPpq}});
+    for (const arrange::Placed& p : out) {
+        if (p.clip.position == 0) {
+            CHECK(p.clip.id == outer.clip.id); // the left part stays the same instance
+            CHECK(p.clip.fadeIn.length == kPpq / 4);
+            CHECK(p.clip.fadeOut.length == 0);
+        } else if (p.clip.position == 5 * kPpq - seam) {
+            CHECK(p.clip.fadeIn.length == 0);
+            CHECK(p.clip.fadeOut.length == kPpq / 4);
+            // The right part plays on from where it was: its offset moved with its start.
+            CHECK(p.clip.offset == 5 * kPpq - seam);
+        }
+    }
+}
+
+TEST_CASE("where three audio clips would sound at once, the earliest stops") {
+    AudioLanes f;
+    arrange::Placed a = f.at(0, 8), b = f.at(4, 12), c = f.at(6, 14);
+    arrange::Layout out = arrange::settleAudio({a, b, c}, {c.clip.id}, f.song.clips, f.ids());
+    CHECK(spans(out) ==
+          std::vector<std::pair<Tick, Tick>>{{0, 6 * kPpq}, {4 * kPpq, 12 * kPpq}, {6 * kPpq, 14 * kPpq}});
+
+    // When the earliest is the one being moved, the third starts later instead.
+    out = arrange::settleAudio({a, b, c}, {a.clip.id}, f.song.clips, f.ids());
+    CHECK(spans(out) ==
+          std::vector<std::pair<Tick, Tick>>{{0, 8 * kPpq}, {4 * kPpq, 12 * kPpq}, {8 * kPpq, 14 * kPpq}});
+}
+
+TEST_CASE("resolveOverlaps leaves audio overlaps to the audio rule and keeps audio clips on one row") {
+    AudioLanes f;
+    arrange::Placed a = f.at(0, 8), b = f.at(6, 14);
+    b.clip.layer = 2;
+    arrange::Layout out = arrange::resolveOverlaps({a, b}, {b.clip.id}, f.song.clips, f.ids());
+    REQUIRE(out.size() == 2);
+    CHECK(spans(out) == std::vector<std::pair<Tick, Tick>>{{0, 8 * kPpq}, {6 * kPpq, 14 * kPpq}});
+    for (const arrange::Placed& p : out)
+        CHECK(p.clip.layer == 0);
+}
+
+TEST_CASE("Normalise lifts a clip's loudest sample in its window to full scale, and only once") {
+    Song song = makeDefaultSong();
+    ImportResult made;
+    importAudio(song, {loop()}, {}, idsOf(song), &made)->apply(song);
+    Clip& clip = *song.findClip(made.clips[0]);
+    const AudioSource& src = *song.sourceOf(clip);
+    // Quiet (0.5) inside the clip's first beat, loud (0.9) after it: the clip plays only its first beat.
+    std::vector<std::vector<float>> samples(1, std::vector<float>(size_t(src.frames), 0.f));
+    samples[0][1000] = -0.5f;
+    samples[0][40000] = 0.9f;
+    clip.length = kPpq; // half a second: frames [0, 24000)
+    PeakCache peaks(samples);
+    float peak = clipPeak(clip, src, peaks);
+    CHECK(peak == doctest::Approx(0.5).epsilon(1e-3));
+    CommandPtr cmd = normaliseClip(song, clip.id, peak);
+    REQUIRE(cmd);
+    CHECK(cmd->name() == "Normalise");
+    applyAndCheckUndo(song, *cmd);
+    CHECK(song.findClip(clip.id)->audio->gainDb == doctest::Approx(6.02).epsilon(1e-2));
+    CHECK_FALSE(normaliseClip(song, clip.id, peak));
+    CHECK_FALSE(normaliseClip(song, clip.id, 0));
+}
+
+TEST_CASE("Replace file keeps the clip's place, length, gain and fades, and plays the new file from its start") {
+    Song song = makeDefaultSong();
+    ImportResult made;
+    importAudio(song, {loop()}, {}, idsOf(song), &made)->apply(song);
+    ClipId id = made.clips[0];
+    editAudio(
+        song, id,
+        [](AudioContent& a) {
+            a.gainDb = -3;
+            a.sourceStart = 500;
+        },
+        "x")
+        ->apply(song);
+    setFades(song, made.instances[0], {kPpq / 2, 0}, {kPpq / 4, 0})->apply(song);
+    Tick length = song.findClip(id)->length;
+    CommandPtr cmd = replaceAudioFile(song, id, loop("other_92bpm.wav", 92), idsOf(song));
+    REQUIRE(cmd);
+    CHECK(cmd->name() == "Replace file with other_92bpm.wav");
+    applyAndCheckUndo(song, *cmd);
+    const Clip* c = song.findClip(id);
+    CHECK(song.sourceOf(*c)->name == "other_92bpm.wav");
+    CHECK(song.audioSources.size() == 2); // the old one stays until Remove unused audio
+    CHECK(c->audio->sourceStart == 0);
+    CHECK(c->audio->sourceTempo == 92);
+    CHECK(c->audio->gainDb == -3);
+    CHECK(c->length == length);
+    const ArrangerClip& a = song.findTrack(made.tracks[0])->arrangement[0];
+    CHECK(a.fadeIn.length == kPpq / 2);
+    CHECK(a.fadeOut.length == kPpq / 4);
+    CHECK(unusedSources(song).size() == 1);
 }

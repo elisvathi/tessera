@@ -154,8 +154,11 @@ const arrange::Stacking& ArrangerLanes::stackingOf(TrackId track) {
         stacksKey = key;
     }
     auto it = stacks.find(track);
-    if (it == stacks.end())
-        it = stacks.emplace(track, arrange::stackOf(shown(), track)).first;
+    if (it == stacks.end()) {
+        const Track* t = m ? m->song().findTrack(track) : nullptr;
+        bool flat = t && t->type == TrackType::Audio;
+        it = stacks.emplace(track, arrange::stackOf(shown(), track, flat)).first;
+    }
     return it->second;
 }
 
@@ -252,8 +255,10 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
 arrange::Layout ArrangerLanes::settle(const arrange::Layout& layout, const arrange::IdSet& changed,
                                       const arrange::IdSource& newId) {
     TesseraModule* m = ctx.module();
-    if (!m || ctx.state().stackClips)
+    if (!m)
         return layout;
+    if (ctx.state().stackClips)
+        return arrange::settleAudio(layout, changed, m->song().clips, newId);
     return arrange::resolveOverlaps(layout, changed, m->song().clips, newId);
 }
 
@@ -902,6 +907,17 @@ void ArrangerLanes::onPathDrop(const PathDropEvent& e) {
         return;
     }
     const Song& song = m->song();
+    // Ctrl/Cmd+drop on an audio clip replaces its file.
+    if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL && !e.paths.empty()) {
+        Hit hit = hitTest(e.pos);
+        const arrange::Placed* p = hit.id.valid() ? arrange::find(committed(), hit.id) : nullptr;
+        const Clip* clip = p ? song.findClip(p->clip.clip) : nullptr;
+        if (clip && clip->audio) {
+            audioActions::replaceFile(ctx, clip->id, e.paths.front());
+            e.consume(this);
+            return;
+        }
+    }
     Tick beat = ticksPerBeat(song.timeSig);
     double tick = std::max(0.0, time().xToTick(e.pos.x));
     AudioDropTarget target;
@@ -1226,8 +1242,7 @@ void ArrangerLanes::drawAudioBody(NVGcontext* vg, const Clip& clip, const Arrang
             return false;
         if (!clipTick(time().xToTick(x + 1), u1) || u1 < u0)
             u1 = clip.loopMode == LoopMode::Loop ? double(clip.loopEnd) : double(clip.length);
-        from = audioDraw::frameOfTick(audio, *src, u0);
-        to = audioDraw::frameOfTick(audio, *src, u1);
+        audioDraw::framesOfTicks(clip, *src, u0, u1, from, to);
         return true;
     });
 

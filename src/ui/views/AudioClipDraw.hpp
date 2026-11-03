@@ -50,10 +50,23 @@ std::string stateText(const ClipState& state);
 /// Whether a state wants an amber warning mark.
 bool stateWarns(const ClipState& state);
 
-/// The source frames of clip time `u` (clip ticks).
-inline double frameOfTick(const AudioContent& a, const AudioSource& s, double u) {
-    return double(a.sourceStart) + u * framesPerTick(a, s.sampleRate);
+/// The source frames that clip ticks [u0, u1) play, lowest first: back to front for a reversed clip, whose window
+/// of the file runs from its end.
+inline void framesOfTicks(const Clip& clip, const AudioSource& s, double u0, double u1, double& from, double& to) {
+    const AudioContent& a = *clip.audio;
+    double perTick = framesPerTick(a, s.sampleRate);
+    if (a.reverse) {
+        double end = double(a.sourceStart) + double(clip.length) * perTick;
+        from = end - u1 * perTick;
+        to = end - u0 * perTick;
+    } else {
+        from = double(a.sourceStart) + u0 * perTick;
+        to = double(a.sourceStart) + u1 * perTick;
+    }
 }
+
+/// A Stretch clip's pitch: "0 st", "+2 st", "−3 st 25 ct".
+std::string pitchText(const AudioContent& a);
 
 /// "−3.0 dB", "+2.5 dB", "−inf dB".
 std::string dbText(float db);

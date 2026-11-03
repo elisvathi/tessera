@@ -15,9 +15,11 @@ struct RenderKey {
     double factor = 1;    // output length / input length
     double semitones = 0; // the clip's semitones and cents together
     SoundType sound = SoundType::FullMix;
+    bool reverse = false; // made from the reversed source
 
     bool operator==(const RenderKey& o) const {
-        return source == o.source && factor == o.factor && semitones == o.semitones && sound == o.sound;
+        return source == o.source && factor == o.factor && semitones == o.semitones && sound == o.sound &&
+               reverse == o.reverse;
     }
 };
 
@@ -25,10 +27,11 @@ struct RenderKey {
 class AudioBuffers {
   public:
     virtual ~AudioBuffers() = default;
-    /// The source at the engine rate; null while it decodes, or when its file is missing.
-    virtual std::shared_ptr<const AudioBuffer> prepared(AudioSourceId source) = 0;
-    /// The render for `key` if it is ready, else the ready render of the same source, pitch and sound whose factor
-    /// is nearest, and its key in `found`; null when there is none.
+    /// The source at the engine rate, back to front when `reversed`; null while it decodes, or when its file is
+    /// missing. A reversed copy is made on first asking, so it may be null for a moment after the clip turns round.
+    virtual std::shared_ptr<const AudioBuffer> prepared(AudioSourceId source, bool reversed = false) = 0;
+    /// The render for `key` if it is ready, else the ready render of the same source, pitch, sound and direction
+    /// whose factor is nearest, and its key in `found`; null when there is none.
     virtual std::shared_ptr<const AudioBuffer> render(const RenderKey& key, RenderKey& found) = 0;
 };
 

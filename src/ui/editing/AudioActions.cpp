@@ -64,6 +64,29 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Audio" + all));
 
+    bool reversed = clip->audio->reverse;
+    menu->addChild(rack::createCheckMenuItem(
+        "Reverse", "", [reversed] { return reversed; },
+        [edit, reversed] {
+            edit(reversed ? "Play forwards" : "Reverse", [](AudioContent& a) { a.reverse = !a.reverse; });
+        }));
+    // Normalise reads the waveform, so it waits until the file is loaded.
+    float peak = 0;
+    if (const AudioSource* src = m->song().sourceOf(*clip))
+        if (AudioStore* store = m->audioStore())
+            if (std::shared_ptr<const PeakCache> peaks = store->status(src->id).peaks)
+                peak = clipPeak(*clip, *src, *peaks);
+    menu->addChild(rack::createMenuItem(
+        "Normalise", peak > 0 ? "loudest sample to full scale" : "",
+        [c, clipId, peak] {
+            TesseraModule* mod = c->module();
+            if (CommandPtr cmd = normaliseClip(mod->song(), clipId, peak))
+                mod->perform(std::move(cmd));
+            else
+                c->toast("Already normalised");
+        },
+        !(peak > 0)));
+
     static const char* const kFollow[] = {"Stretch: keeps its pitch", "Repitch: faster and higher, like tape",
                                           "Off: its own speed and pitch"};
     menu->addChild(rack::createSubmenuItem("Follow tempo", "", [c, clipId, edit](rack::ui::Menu* sub) {
@@ -88,6 +111,34 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
             }));
         }
     }));
+
+    if (clip->audio->follow == TempoFollow::Stretch) {
+        AudioContent now = *clip->audio;
+        menu->addChild(rack::createSubmenuItem("Pitch", audioDraw::pitchText(now), [edit, now](rack::ui::Menu* sub) {
+            auto setPitch = [edit](int st, float ct) {
+                edit("Pitch", [st, ct](AudioContent& a) {
+                    a.semitones = int8_t(std::clamp(st, -24, 24));
+                    a.cents = std::clamp(ct, -50.f, 50.f);
+                });
+            };
+            for (int st : {12, 7, 5, 2, 1, 0, -1, -2, -5, -7, -12}) {
+                char t[16];
+                snprintf(t, sizeof t, st == 0 ? "0 st" : "%+d st", st);
+                bool on = now.semitones == st && now.cents == 0;
+                sub->addChild(
+                    rack::createCheckMenuItem(t, "", [on] { return on; }, [setPitch, st] { setPitch(st, 0); }));
+            }
+            sub->addChild(new rack::ui::MenuSeparator);
+            sub->addChild(rack::createMenuLabel("Type semitones, like -3 or 2.5 (Enter)"));
+            char typed[24];
+            snprintf(typed, sizeof typed, "%.4g", now.semitones + double(now.cents) / 100);
+            sub->addChild(new MenuTextField(typed, [setPitch](const std::string& text) {
+                double v = std::clamp(std::atof(text.c_str()), -24.0, 24.0);
+                int st = int(std::lround(v));
+                setPitch(st, float((v - st) * 100));
+            }));
+        }));
+    }
 
     double tempo = clip->audio->sourceTempo;
     auto setTempo = [c, clipId](double bpm) {
@@ -124,6 +175,8 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
         menu->addChild(rack::createMenuItem("Gain back to 0 dB", audioDraw::dbText(clip->audio->gainDb), [edit] {
             edit("Clip gain 0 dB", [](AudioContent& a) { a.gainDb = 0; });
         }));
+    menu->addChild(rack::createMenuItem("Replace file…", "or Ctrl+drop a file on the clip",
+                                        [c, clipId] { replaceFileDialog(*c, clipId); }));
     // A missing file: point at it, and it is copied into the patch.
     if (const AudioSource* src = m->song().sourceOf(*clip))
         if (m->audioStore() && m->audioStore()->status(src->id).state == SourceState::Missing) {
@@ -157,6 +210,28 @@ void importDialog(EditorContext& ctx) {
     Tick bar = ticksPerBar(song.timeSig);
     target.at = Tick(m->playheadTicks() / double(bar)) * bar;
     dropAudio(ctx, {path}, target);
+}
+
+void replaceFile(EditorContext& ctx, ClipId clip, const std::string& path) {
+    TesseraModule* m = ctx.module();
+    if (!m || !confirmSize({path}))
+        return;
+    std::string name = rack::system::getFilename(path);
+    if (m->replaceAudioFile(clip, path))
+        ctx.toast("Replaced the file with " + name);
+    else
+        ctx.toast("Couldn't read '" + name + "'. Tessera reads WAV, AIFF, FLAC and MP3.");
+}
+
+void replaceFileDialog(EditorContext& ctx, ClipId clip) {
+    osdialog_filters* filters = osdialog_filters_parse("Audio:wav,wave,aif,aiff,aifc,flac,mp3");
+    char* chosen = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, filters);
+    osdialog_filters_free(filters);
+    if (!chosen)
+        return;
+    std::string path = chosen;
+    std::free(chosen);
+    replaceFile(ctx, clip, path);
 }
 
 void removeUnused(EditorContext& ctx) {

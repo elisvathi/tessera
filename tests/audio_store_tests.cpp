@@ -105,6 +105,31 @@ TEST_CASE("an imported source becomes ready at the engine rate, with its wavefor
     CHECK(store.idle());
 }
 
+TEST_CASE("a reversed copy is made on first asking and dropped when no reversed clip plays it") {
+    TempFolder dir;
+    AudioStore store;
+    store.setFolder(dir.path.string());
+    store.setEngineRate(48000);
+    Song song = makeDefaultSong();
+    AudioSourceId id = importInto(store, song, "click120.wav");
+    store.sync(song);
+    store.waitIdle();
+    auto forwards = store.prepared(id);
+    REQUIRE(forwards);
+    CHECK_FALSE(store.prepared(id, true)); // asked for: made on the loader thread
+    store.waitIdle();
+    auto back = store.prepared(id, true);
+    REQUIRE(back);
+    REQUIRE(back->frames == forwards->frames);
+    CHECK(back->channel(0)[0] == forwards->channel(0)[size_t(forwards->frames - 1)]);
+    CHECK(back->channel(0)[size_t(back->frames - 1)] == forwards->channel(0)[0]);
+    size_t both = store.memoryBytes();
+
+    // No clip plays it reversed: the next sync lets the copy go.
+    store.sync(song);
+    CHECK(store.memoryBytes() < both);
+}
+
 TEST_CASE("a source whose file isn't in patch storage is missing; the store forgets sources the song drops") {
     TempFolder dir;
     AudioStore store;

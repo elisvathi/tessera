@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ArrangementEdits.hpp"
+#include "AudioAnalysis.hpp"
 #include "Commands.hpp"
 #include "TrackCommands.hpp"
 
@@ -89,6 +90,13 @@ CommandPtr editAudio(const Song& song, ClipId clip, const std::function<void(Aud
 /// selection), clamped. Clips at -inf stay there. One undo step; null when nothing changed.
 CommandPtr nudgeClipGain(const Song& song, const std::vector<ClipId>& clips, float deltaDb);
 
+/// The loudest sample of the part of its file `clip` plays, as a share of the file's full scale (0..1), read from
+/// the source's waveform. 0 when the clip isn't audio or plays silence.
+float clipPeak(const Clip& clip, const AudioSource& source, const PeakCache& peaks);
+/// Normalise: sets the clip gain so its loudest sample reaches the file's full scale (`peak` from clipPeak()), for
+/// every copy of the clip. Null when the clip is silent or already there.
+CommandPtr normaliseClip(const Song& song, ClipId clip, float peak);
+
 /// Sets an audio clip's tempo, the one place its speed is set (§5.1). A Stretch clip keeps the same audio, so its
 /// length in ticks, its loop and every timeline copy scale with the tempo. One undo step; null when unchanged.
 CommandPtr setClipTempo(const Song& song, ClipId clip, double bpm);
@@ -151,5 +159,10 @@ CommandPtr importAudio(const Song& song, std::vector<ImportedAudio> files, const
 
 /// A track name for an audio file: its name without the extension.
 std::string audioTrackName(const std::string& fileName);
+
+/// Replace file (Ctrl/Cmd+drop on a clip, or its menu): the clip plays `file` from its start at the file's tempo,
+/// keeping its length, gain, follow tempo, sound type and every timeline copy with its place and fades (§6.5).
+/// The old source stays until Remove unused audio. One undo step; null when the clip isn't audio.
+CommandPtr replaceAudioFile(const Song& song, ClipId clip, ImportedAudio file, const NextId& nextId);
 
 } // namespace tessera
