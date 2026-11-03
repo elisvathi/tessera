@@ -104,8 +104,14 @@ void glueSelected(ArrangerLanes& lanes) {
     TesseraModule* m = moduleOf(lanes);
     IdSet ids = lanes.selection();
     CommandPtr command = arrange::glue(m->song(), ids, m->ids());
-    if (!command)
+    if (!command) {
+        for (const arrange::Placed& p : arrange::pick(lanes.committed(), ids))
+            if (const Clip* c = m->song().findClip(p.clip.clip); c && c->audio) {
+                lanes.context().toast("Audio clips glue only when they are parts of one clip, side by side");
+                break;
+            }
         return;
+    }
     IdSet old = arrange::idsOf(lanes.committed());
     m->perform(std::move(command));
     // Select the glued instance: the one that wasn't there before.

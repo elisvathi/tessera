@@ -1633,6 +1633,11 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **The audio editor has one ruler**, the clip's beats and bars: for Stretch and Repitch clips the song's bars fall on
   the same lines. Beat 1's flag drags like the window (a slip). Not built yet: the Slice tool, click in the ruler to
   play, dim copies of a loop's repeats, fades and gain in the editor.
+- **Glue on audio** joins only the parts of one clip that lie end to end, each playing on from the last (a split
+  undone); they become one instance of that clip. Anything else says why and does nothing: gluing other audio needs
+  rendering (Phase 3).
+- **Split (Ctrl+E) is not nudged to a zero crossing.** A tick is about 25 samples at 120 BPM, so the nudge could only
+  land near one, and every clip edge already gets a 2 ms fade: a split never clicks.
 - **The mixer is a pane** (`Pane::Mixer`) like the song and notes: the same maximize button, focus ring, Tab (while it
   is open) and Shift+Tab. F4 stays as a direct key. With the mixer focused only keys that work everywhere act. A
   patch saved with the old mixer-only maximise flag opens with the mixer maximized.

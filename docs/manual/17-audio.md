@@ -90,6 +90,9 @@ Audio clips move, copy, trim, loop and split with the same gestures as note clip
 | Alt+drag the right edge | The clip tempo (see above). |
 | Drag an edge of a clip that doesn't loop | Trims it. It stops at the start or end of the file and says **Start of file** or **End of file**. |
 
+**Glue** (**Ctrl+J**) joins audio clips only when they are parts of one clip side by side, such as the two halves of a
+split: they become one clip again. Gluing audio from different files or places isn't possible yet.
+
 The clip's settings (gain, follow tempo, sound type, tempo) belong to the clip, so every linked copy of it changes
 together. The inspector says **all 3 copies** when there are several.
 

@@ -614,6 +614,33 @@ CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId) {
     const Clip* first = song.findClip(chosen.front().clip.clip);
     if (!first || end <= start)
         return nullptr;
+    if (first->audio) {
+        // Audio glues without rendering only where the parts are pieces of one clip, end to end, each playing on
+        // from where the last stopped (a split undone by hand). Other audio waits for rendering (Phase 3).
+        std::sort(chosen.begin(), chosen.end(),
+                  [](const Placed& a, const Placed& b) { return a.clip.position < b.clip.position; });
+        for (size_t i = 0; i < chosen.size(); i++) {
+            const ArrangerClip& a = chosen[i].clip;
+            if (a.clip != first->id || a.muted)
+                return nullptr;
+            if (i > 0) {
+                const ArrangerClip& prev = chosen[i - 1].clip;
+                if (a.position != instanceEnd(prev) || a.offset != prev.offset + prev.length)
+                    return nullptr;
+            }
+        }
+        if (chosen.size() < 2)
+            return nullptr;
+        Placed whole = chosen.front();
+        whole.clip.length = end - start;
+        whole.clip.fadeOut = chosen.back().clip.fadeOut;
+        Layout after;
+        for (const Placed& p : before)
+            if (!ids.count(p.clip.id))
+                after.push_back(p);
+        after.push_back(whole);
+        return replaceArrangement(song, "Glue " + countClips(chosen.size()), before, after);
+    }
 
     Clip glued;
     glued.id = ClipId(nextId());
