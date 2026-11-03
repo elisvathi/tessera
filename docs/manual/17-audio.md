@@ -139,6 +139,9 @@ clip's name and menu on the left, the maximize button on the right.
 - **The ruler on top shows the clip's beats and bars.** Beat 1 has a **1** flag where the clip starts. **Drag any
   other beat line** to set the clip tempo: the beats stretch from beat 1 so that the beat you hold lands where you
   let go ("112 → 103 BPM"). Use it to line the grid up with the drum hits.
+- **Click in the ruler** (away from the beat lines) to play from there: the song plays from that point of the clip's
+  timeline copy (the selected copy, or the first). While the timeline plays it, a green line shows where it is in
+  the file.
 - A loop over part of the clip shows as two amber lines.
 - **Scroll** to move through the file, **Ctrl+scroll** to zoom, **double-click** empty space to see the whole file.
 

@@ -59,6 +59,7 @@ class AudioEditor : public InteractiveView {
 
   protected:
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
+    void click(rack::math::Vec pos, int button, Modifiers mods) override;
     void doubleClick(rack::math::Vec pos, Modifiers mods) override;
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void wheel(rack::math::Vec pos, rack::math::Vec delta, Modifiers mods) override;
@@ -66,6 +67,8 @@ class AudioEditor : public InteractiveView {
 
   private:
     void drawRuler(NVGcontext* vg, rack::math::Rect r);
+    /// The timeline copy of the clip that playback and "play from here" use: the selected one, else the first.
+    const ArrangerClip* instance();
     rack::math::Rect waveRect() const;
 
     double left = 0;          // the source frame at x = 0

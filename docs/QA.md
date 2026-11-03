@@ -543,7 +543,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       unrelated audio clips: a message, nothing changes.
 - [ ] Select an audio clip: the notes pane becomes the audio editor under the same header. Drag the window (Start in
       file), its edges (they catch beat lines; Alt frees), and a beat line in the ruler ("112 → 103 BPM"). Ctrl+scroll
-      zooms, double-click fits. Maximize and restore the pane: the waveform stays in view.
+      zooms, double-click fits. Maximize and restore the pane: the waveform stays in view. Click the ruler between
+      beat lines: the song plays from there and a green line moves through the file.
 - [ ] The mixer's maximize button is the one the other panes have. Click in the mixer: a focus ring. Tab cycles song,
       notes, mixer (while open); Shift+Tab maximizes the mixer; F4 too; the button restores.
 - [ ] Ctrl+drop a file on an audio clip (timeline and slot): the clip keeps place, length, gain and fades, and plays

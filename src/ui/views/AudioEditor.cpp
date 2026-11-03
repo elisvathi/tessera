@@ -285,6 +285,43 @@ std::unique_ptr<DragGesture> AudioEditor::startGesture(Vec pos, int button, Modi
     }
 }
 
+const ArrangerClip* AudioEditor::instance() {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return nullptr;
+    const ArrangerClip* first = nullptr;
+    for (const Track& t : m->song().tracks)
+        for (const ArrangerClip& a : t.arrangement) {
+            if (a.clip != clip)
+                continue;
+            if (ctx.state().clipSelection.count(a.id))
+                return &a;
+            if (!first || a.position < first->position)
+                first = &a;
+        }
+    return first;
+}
+
+void AudioEditor::click(Vec pos, int button, Modifiers mods) {
+    // A click in the ruler plays from there, on the timeline copy of the clip (§6.4).
+    TesseraModule* m = ctx.module();
+    const AudioSource* src = source();
+    if (!m || !src || button != GLFW_MOUSE_BUTTON_LEFT || pos.y >= kRulerHeight || hitTest(pos).part != Part::None)
+        return;
+    const ArrangerClip* a = instance();
+    if (!a) {
+        ctx.toast("This clip isn't on the timeline: launch it to hear it");
+        return;
+    }
+    AudioContent audio = shownAudio();
+    double u = (xToFrame(pos.x) - window().first) / framesPerTick(audio, src->sampleRate);
+    double perClip = songTicksPerClipTick(audio, m->tempo() > 0 ? m->tempo() : 120);
+    double tick = double(a->position) + std::max(0.0, u - double(a->offset)) * perClip;
+    tick = std::min(tick, double(instanceEnd(*a)));
+    m->requestSeek(tick);
+    m->requestTransport(kRequestPlay);
+}
+
 void AudioEditor::doubleClick(Vec pos, Modifiers mods) {
     if (hitTest(pos).part == Part::None)
         fit();
@@ -436,6 +473,23 @@ void AudioEditor::drawView(const DrawArgs& args) {
         note += "  " + st;
     draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
     draw::text(vg, small, 6, wave.pos.y + 2, note);
+    // Where playback is in the file, while the timeline copy plays.
+    if (const ArrangerClip* inst = instance(); inst && m->playing() && m->playMode() == PlayMode::Arranger) {
+        double t = m->playheadTicks();
+        double perClip = songTicksPerClipTick(a, m->tempo() > 0 ? m->tempo() : 120);
+        if (t >= double(inst->position) && t < double(inst->position) + double(inst->length) * perClip) {
+            double u = double(inst->offset) + (t - double(inst->position)) / perClip;
+            if (cl->loopMode == LoopMode::Loop && cl->loopEnd > cl->loopStart && u >= double(cl->loopEnd))
+                u = double(cl->loopStart) + std::fmod(u - double(cl->loopStart), double(cl->loopEnd - cl->loopStart));
+            double perTick = framesPerTick(a, src->sampleRate);
+            double f = a.reverse ? e - u * perTick : s + u * perTick;
+            float x = float(frameToX(f));
+            nvgBeginPath(vg);
+            nvgRect(vg, x - 0.5f, 0, 1, box.size.y);
+            nvgFillColor(vg, c.play);
+            nvgFill(vg);
+        }
+    }
     nvgRestore(vg);
 }
 
