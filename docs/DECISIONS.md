@@ -1836,3 +1836,16 @@ Why: built to the spec; these are the places it left open or where the code sugg
   editor's transport). Stop before the end cancels.
 - The result is one undo step: the new track (named "<track> (bounce)", a looping clip unless until silent) and
   the original's mute.
+
+## 121. Export audio as built (3 Nov)
+
+- **A menu dialog** like Bounce: what it will play (it follows Plays: the song from bar 1 to the last clip's end,
+  rounded up to the bar, or the loop; with the clips, from now until Stop), the master or the master and stems, 24-bit
+  (TPDF dither) or 32-bit float, then Export… asks where to save. The last choice is kept while Rack runs.
+- Stems are every track that makes sound after its fader as heard ("<file> - <track>.wav"); muted tracks are left
+  out and counted in the result toast. Mute and solo are not locked during an export (the spec asked for it); a
+  change is heard in the file, like any edit.
+- **On the timeline the taps arm at once** with `startWithin`: a tap starts only within 64 samples after its start
+  tick, so it starts exactly at the jump to the start and never at the old playhead. Verified: 8 bars at 112 BPM
+  gave 17.143 s, exactly.
+- Stopping the timeline before the end cancels and deletes the files; with the clips, Stop finishes the file.

@@ -124,6 +124,7 @@ std::vector<ActionInfo> buildTable() {
 
         {Ac::Help, "General", "Shortcut help", {C("/", S)}},
         {Ac::ExportMidi, "General", "Export MIDI…", {C("e", Ctl | S)}},
+        {Ac::ExportAudio, "General", "Export audio…", {C("e", Ctl | A)}},
         {Ac::ImportAudio, "General", "Import audio…", {C("o", Ctl | S)}},
         {Ac::Close, "General", "Close editor", {K(GLFW_KEY_ESCAPE)}},
     };

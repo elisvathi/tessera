@@ -212,6 +212,21 @@ clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B
   **Stop** cancels too, and a cancelled bounce leaves nothing behind.
 - The result is a new audio track under the original, "Bass (bounce)", in one undo step.
 
+## Exporting audio
+
+**File → Export audio…** (**Ctrl+Alt+E**) records the song as WAV files.
+
+- **The master**, or **The master and every track (stems)**: a file for the master, and beside it one per track
+  that makes sound, after its fader, named "Song - Bass.wav". Muted tracks have no stem; the message at the end
+  says how many were left out.
+- **24-bit WAV** (with dither) or **32-bit float WAV**.
+- **It follows Plays.** With **Timeline**, it plays the song from the start to the end of the last clip, or the loop
+  when the loop is on. With **Clips**, it records the master from now until you press **Stop**, so a live clip
+  performance becomes a file.
+- It plays in real time, with "Exporting · bar 3 of 20" and **Cancel**. Stopping the timeline before the end
+  cancels; nothing is left. You can keep editing: what you change is heard in the file.
+- The metronome is never in an export.
+
 ## Removing audio you don't use
 
 **File → Remove unused audio** removes the files no clip plays any more. It is one undo step; the files themselves

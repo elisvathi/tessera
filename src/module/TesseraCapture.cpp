@@ -2,6 +2,7 @@
 
 #include "CommandAction.hpp"
 
+#include <cstring>
 #include <filesystem>
 
 // Recording audio, bouncing and exporting (docs/design/AUDIO_MIXER.md §8.6): the UI-thread side. The audio thread
@@ -131,11 +132,12 @@ void TesseraModule::captureStep() {
     if (!takes.empty())
         importTakes(takes);
     bounceStep();
+    exportStep();
 }
 
 bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal) {
     const Track* t = songData.findTrack(track);
-    if (!t || bounce || !audio || !player->active() || to <= from)
+    if (!t || bounce || exporting || !audio || !player->active() || to <= from)
         return false;
     if (!captureWriter)
         captureWriter = std::make_unique<CaptureWriter>();
@@ -171,7 +173,149 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
     return true;
 }
 
+Tick TesseraModule::songEnd() const {
+    Tick end = 0;
+    for (const Track& t : songData.tracks)
+        for (const ArrangerClip& a : t.arrangement)
+            end = std::max(end, a.position + a.length);
+    Tick bar = ticksPerBar(songData.timeSig);
+    return (end + bar - 1) / bar * bar;
+}
+
+bool TesseraModule::startExport(const std::string& path, bool stems, bool float32) {
+    if (bounce || exporting || !audio || !player->active())
+        return false;
+    if (!captureWriter)
+        captureWriter = std::make_unique<CaptureWriter>();
+    double rate = audioRate.load() > 0 ? double(audioRate.load()) : 48000;
+    ExportJob job;
+    job.timeline = playMode() == PlayMode::Arranger;
+    job.name = rack::system::getFilename(path);
+    if (job.timeline) {
+        bool loop = loopEnabled() && songData.loopEnd > songData.loopStart;
+        job.from = loop ? songData.loopStart : 0;
+        job.to = loop ? songData.loopEnd : songEnd();
+        if (job.to <= job.from)
+            return false;
+    }
+    auto format = float32 ? CaptureWriter::Format::Float32 : CaptureWriter::Format::Pcm24;
+    auto add = [&](TrackId track, const std::string& file) {
+        int tap = freeTap();
+        if (tap < 0)
+            return;
+        Capture c;
+        c.kind = Capture::Kind::Export;
+        c.track = track;
+        c.tap = tap;
+        c.ring = std::make_shared<FrameRing>(size_t(kRingSeconds * rate));
+        c.path = file;
+        c.writer = captureWriter->start(c.ring, c.path, rate, format);
+        captures.push_back(std::move(c));
+        job.captures.push_back(int(captures.size()) - 1);
+    };
+    add(songData.master.id, path);
+    if (stems) {
+        std::string base = path.size() > 4 && path.substr(path.size() - 4) == ".wav" ? path.substr(0, path.size() - 4)
+                                                                                    : path;
+        for (const Track& t : songData.tracks) {
+            if (soundIndex(t.id) < 0)
+                continue;
+            if (t.mute) {
+                job.skipped.push_back(t.name);
+                continue;
+            }
+            std::string safe;
+            for (char ch : t.name)
+                safe += std::strchr("/\\:*?\"<>|", ch) ? '_' : ch;
+            add(t.id, base + " - " + safe + ".wav");
+        }
+    }
+    if (job.timeline) {
+        requestSeek(double(job.from));
+        if (!playing())
+            requestTransport(kRequestPlay);
+    } else if (!playing()) {
+        requestTransport(kRequestPlay);
+    }
+    exporting = job;
+    return true;
+}
+
+void TesseraModule::exportStep() {
+    if (!exporting)
+        return;
+    ExportJob& job = *exporting;
+    if (!job.armed) {
+        // On the timeline the taps are armed at once and start right at the jump to `from`.
+        for (size_t k = 0; k < job.captures.size(); k++) {
+            Capture& c = captures[size_t(job.captures[k])];
+            AudioPlayer::TapSpec spec;
+            spec.track = c.track;
+            spec.kind = k == 0 ? AudioPlayer::TapKind::Master : AudioPlayer::TapKind::Stem;
+            spec.from = job.timeline ? double(job.from) : -1;
+            spec.to = job.timeline ? double(job.to) : -1;
+            spec.startWithin = job.timeline ? 64 * ticksPerSampleNow() : -1;
+            spec.ring = c.ring.get();
+            player->armTap(c.tap, spec);
+        }
+        job.armed = true;
+    }
+    if (playing())
+        job.started = true;
+    Capture& master = captures[size_t(job.captures[0])];
+    if (!job.finishing) {
+        bool done = player->tapState(master.tap) == AudioPlayer::TapState::Done;
+        bool stopped = job.started && !playing();
+        if (job.timeline && (done || stopped)) {
+            // Stopped before the end: nothing is kept.
+            if (playheadTicks() < double(job.to) - 1 && stopped && !done) {
+                cancelCapture();
+                return;
+            }
+            job.finishing = true;
+            requestTransport(kRequestStop);
+        } else if (!job.timeline && (done || stopped)) {
+            job.finishing = true;
+        }
+        if (job.finishing)
+            for (int index : job.captures)
+                player->disarmTap(captures[size_t(index)].tap);
+    }
+    if (!job.finishing)
+        return;
+    bool all = true;
+    for (int index : job.captures)
+        all &= captureWriter->finish(captures[size_t(index)].writer);
+    if (!all)
+        return;
+    int stems = int(job.captures.size()) - 1;
+    std::string result = "Exported " + job.name;
+    if (stems > 0)
+        result += " and " + std::to_string(stems) + (stems == 1 ? " stem" : " stems");
+    if (!job.skipped.empty())
+        result += " · muted, left out: " + std::to_string(job.skipped.size());
+    // Erase from the back so the indices stay right.
+    std::vector<int> indices = job.captures;
+    std::sort(indices.rbegin(), indices.rend());
+    for (int index : indices)
+        captures.erase(captures.begin() + index);
+    exporting.reset();
+    exportResult = result;
+}
+
 void TesseraModule::cancelCapture() {
+    if (exporting) {
+        std::vector<int> indices = exporting->captures;
+        std::sort(indices.rbegin(), indices.rend());
+        for (int index : indices) {
+            player->disarmTap(captures[size_t(index)].tap);
+            captureWriter->cancel(captures[size_t(index)].writer);
+            captures.erase(captures.begin() + index);
+        }
+        exporting.reset();
+        requestTransport(kRequestStop);
+        return;
+    }
     if (!bounce)
         return;
     Capture& c = captures[size_t(bounce->capture)];
@@ -185,6 +329,14 @@ void TesseraModule::cancelCapture() {
 }
 
 std::string TesseraModule::captureStatus() const {
+    if (exporting) {
+        if (!exporting->timeline)
+            return "Exporting the clips you play · press Stop to finish";
+        Tick bar = ticksPerBar(songData.timeSig);
+        int at = int(std::max(0.0, playheadTicks() - double(exporting->from)) / double(bar)) + 1;
+        int of = int((exporting->to - exporting->from + bar - 1) / bar);
+        return "Exporting · bar " + std::to_string(std::min(at, of)) + " of " + std::to_string(of);
+    }
     if (!bounce)
         return "";
     const Track* t = songData.findTrack(bounce->track);

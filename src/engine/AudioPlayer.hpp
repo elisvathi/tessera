@@ -107,6 +107,9 @@ class AudioPlayer {
         TapKind kind = TapKind::In;
         double from = -1, to = -1; // song ticks; -1: at once, open-ended
         bool whileRecording = false;
+        // With `from`: start only within this many ticks after it, so a tap armed before a jump to `from` never
+        // starts at the old position. Negative: any time after `from`.
+        double startWithin = -1;
         FrameRing* ring = nullptr; // owned by the caller, alive until disarmTap() and a block more
     };
     enum class TapState : int { Idle, Armed, Running, Done };
@@ -259,7 +262,7 @@ class AudioPlayer {
         std::atomic<int> state{0};
         std::atomic<uint64_t> track{0};
         std::atomic<int> kind{0};
-        std::atomic<double> from{-1}, to{-1}, firstTick{-1};
+        std::atomic<double> from{-1}, to{-1}, firstTick{-1}, startWithin{-1};
         std::atomic<bool> whileRecording{false};
         std::atomic<FrameRing*> ring{nullptr};
         std::atomic<float> level{0};
