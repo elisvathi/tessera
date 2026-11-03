@@ -14,6 +14,7 @@ class DetailPane;
 class ArrangerView;
 class TopPane;
 class PaneStack;
+class MixerPane;
 class ToolButton;
 
 /// The compact editor inside a widened Tessera panel: the launcher or arranger above the selected track's
@@ -58,6 +59,7 @@ class PanelEditor : public rack::widget::OpaqueWidget, public EditorHost {
     bool mouseInside();
 
     PaneStack* panes;
+    MixerPane* mixer;
     TopPane* top;
     DetailPane* detail;
     ToolButton* fullEditor;

@@ -61,16 +61,28 @@ void TrackOutDisplay::drawLayer(const DrawArgs& args, int layer) {
     if (layer == 1) {
         gather();
         const theme::Palette& c = theme::screenColors();
-        switch (status) {
-        case BindingStatus::Bound:
-            drawBound(args.vg);
-            break;
-        case BindingStatus::TrackMissing:
-            drawMessage(args.vg, "Track missing", c.record, "Pick a track in the menu");
-            break;
-        case BindingStatus::NoSource:
-            drawMessage(args.vg, "No source", c.text1, "Right-click to choose");
-            break;
+        TesseraModule* src = module ? module->source() : nullptr;
+        if (src && src->isBypassed()) {
+            drawMessage(args.vg, "Tessera bypassed", c.queue, "Turn it on to play");
+        } else {
+            switch (status) {
+            case BindingStatus::Bound:
+                drawBound(args.vg);
+                break;
+            case BindingStatus::TrackMissing:
+                drawMessage(args.vg, "Track deleted", c.queue, "Undo, or pick a track in the menu");
+                break;
+            case BindingStatus::NoSource:
+                drawMessage(args.vg, "No source", c.text1, "Right-click to choose");
+                break;
+            }
+        }
+        // Show in the rack: a ring that pulses so the eye finds the module.
+        if (float flash = module ? module->flashAmount() : 0.f; flash > 0) {
+            NVGcolor ring = c.accent;
+            ring.a *= flash;
+            draw::roundedRectStroke(args.vg, rack::math::Rect(rack::math::Vec(1, 1), box.size.minus(rack::math::Vec(2, 2))),
+                                    theme::metrics::kPanelDisplayRadius, ring, 2.f);
         }
     }
     Widget::drawLayer(args, layer);

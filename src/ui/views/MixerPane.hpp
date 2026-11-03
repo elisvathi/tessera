@@ -23,8 +23,15 @@ class MixerPane : public InteractiveView {
   public:
     MixerPane(EditorContext& ctx, bool panel);
 
-    /// The height of the folded tab: 22 px, 16 in the in-panel editor.
+    /// The height of the folded tab: 22 px, 16 in the in-panel editor (22 there too while maximised, so the
+    /// panel's transport fits in it).
     float tabHeight() const;
+    /// Room the tab keeps free at its left and right ends for buttons the host lays over it (the panel editor's
+    /// transport and Full editor, while the mixer is maximised).
+    void reserveTab(float left, float right) {
+        tabLeft = left;
+        tabRight = right;
+    }
     /// Whether the song has anything for the mixer: with no sound, the pane stays folded and says nothing.
     bool hasSound() const;
 
@@ -50,7 +57,7 @@ class MixerPane : public InteractiveView {
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
         int playerIndex = -1; // its index among the player's tracks
     };
-    enum class Part { None, Tab, Name, Pan, Mute, Solo, Fader, Readout, ClipLight, Connect };
+    enum class Part { None, Tab, Name, Chip, Pan, Mute, Solo, Fader, Readout, ClipLight, Connect };
     struct Hit {
         Part part = Part::None;
         int strip = -1;
@@ -77,6 +84,8 @@ class MixerPane : public InteractiveView {
     void setLane(const Strip& s, Channel c, const std::string& name);
     /// The menu to type a level or reset it (right-click, or a double-click on the readout).
     void openTyping(const Strip& s);
+    /// The source chip's menu: Add a Track Out for this track, and Show in the rack for each module that plays it.
+    void openChipMenu(const Strip& s);
 
   private:
     void layout();
@@ -91,6 +100,7 @@ class MixerPane : public InteractiveView {
     bool panel;
     std::vector<Strip> strips;
     int notesOnly = 0; // tracks without strips
+    float tabLeft = 0, tabRight = 0;
     rack::math::Rect tab;
     ToolButton* maximizeButton;
     std::map<uint64_t, std::pair<float, float>> held; // drags in progress: volume dB, pan

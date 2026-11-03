@@ -160,8 +160,10 @@ instrument track (for now; on a drum track OUT carries what its Drum Out's lane 
 for every track. Bypassing a Track Out never sends IN to OUT: what comes back simply drops out.
 
 **The screen** shows the Tessera's name, the track number in the track's colour, and the track name. It shows
-"No source" when no Tessera is found, and "Track missing" when the track was deleted. A Track Out never jumps to
-another track by itself: undo the delete, or pick a track, and it plays again.
+"No source" when no Tessera is found, and "Track deleted" (amber) when its track was deleted: IN is then ignored and
+the IN light turns amber while a cable still brings audio. "Tessera bypassed" means its Tessera is bypassed and
+nothing plays. A Track Out never jumps to another track by itself: undo the delete, or pick a track, and it plays
+again.
 
 **The arrow buttons** step through the tracks, the master last. Each step can be undone. The screen shows **M** and
 "Master" for the master.

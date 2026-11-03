@@ -1715,3 +1715,19 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **In the mixer**, every lane with a cable gets a 40 px strip right after its drum track's strip: the lane's colour
   and name, pan, fader, meter, level. Same gestures as the big strips; lanes aren't part of the track selection, so a
   multi-strip fader drag never moves them. No mute, solo or automation per lane yet.
+
+## 113. Track Out states, the source chip and Add a Track Out (3 Nov)
+
+- **Display states** (spec §8.1): "Track deleted" in amber (was "Track missing" in red), with IN ignored and the IN
+  light amber while a cable still brings audio; "Tessera bypassed" when its Tessera is bypassed; "No source" as before.
+- **Add a Track Out for this track** (§8.2) places a Track Out (a Drum Out for a drum track) in the first free space
+  right of Tessera, bound to the track or the master, as one Rack undo step, its screen flashing. Besides the strip's
+  source chip (the spec's place), it is in the track menu, and a click on a row's amber "no output" jack runs it:
+  that jack is where a missing module is first noticed.
+- **Show in the rack** came forward from Phase 2b, since the chip menu already lists the modules: it scrolls the rack
+  to the module at the same zoom and flashes its screen.
+- **The source chip** says "IN · Track Out" / "IN · Drum Out", "2 sources" (an audio track with IN too; the sources
+  list itself stays in 2b), "Missing file", or **"Bypassed"** in amber: "Track Out bypassed" doesn't fit a 64 px
+  strip, so the chip menu names the bypassed module.
+- **The panel editor's transport and Full editor** sit in the maximised mixer's tab, which grows to 22 px there and
+  keeps room for them; before, they were drawn over its label and readout.

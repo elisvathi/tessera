@@ -14,17 +14,24 @@ The mixer is the third pane, under the notes pane, folded to a thin bar named **
 - The **maximize** button at the bar's right end is the same one the song and notes panes have: it fills the editor
   with the mixer, and restores the panes. **Double-click** the bar or press **F4** to do the same.
 - Like the other panes, a click in the mixer gives it the keys (a thin ring shows it), **Tab** reaches it while it is
-  open, and **Shift+Tab** maximizes it.
+  open, and **Shift+Tab** maximizes it. In the panel editor, the maximized mixer's bar also holds the transport and
+  the Full editor button.
 
-Folded, the bar still shows a small live meter for each audio track, the Master's peak level, and **MAIN not
+Folded, the bar still shows a small live meter for each track that makes sound, the Master's peak level, and **MAIN not
 patched** in amber when the Master plays but nothing is patched into MAIN.
 
 ## A strip
 
-Each audio track has a strip, in the same order as the tracks. From top to bottom:
+Each track that makes sound has a strip, in the same order as the tracks: an audio track, or any track whose sound
+comes back on a Track Out's or Drum Out's IN. From top to bottom:
 
 1. **The name**, under a bar in the track's colour. Click it to select the track.
-2. **The source**: **Clips** (what the track plays), or **Missing file** in amber when a clip's file is gone.
+2. **The source**: where the sound comes from. **Clips** for an audio track's clips; **IN · Track Out** or
+   **IN · Drum Out** for a note track whose voice comes back on that module's IN; **2 sources** when an audio track
+   also has audio on IN. In amber: **Missing file** when a clip's file is gone, **Bypassed** when a module that
+   brings the sound is bypassed. Click it for a menu: **Add a Track Out for this track** places a new Track Out (a
+   Drum Out for a drum track) bound to it, right of Tessera; **Show Track Out in the rack** scrolls the rack to the
+   module and makes its screen flash.
 3. **Pan**: drag it to move the sound left or right. Double-click centres it.
 4. **M** and **S**: mute and solo, the same switches as in the track rows.
 5. **The fader and the meter**. The fader sets the volume; the meter beside it shows the level as it plays.

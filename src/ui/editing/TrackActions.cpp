@@ -1,6 +1,7 @@
 #include "TrackActions.hpp"
 
 #include "../widgets/MenuTextField.hpp"
+#include "AudioActions.hpp"
 
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -563,6 +564,12 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     menu->addChild(rack::createSubmenuItem("Add automation lane", "", [c, first](rack::ui::Menu* sub) {
         appendAddLaneItems(sub, *c, first, LaneOwner::ofTrack(first));
     }));
+    if (ids.size() == 1) {
+        TrackId id = clicked;
+        menu->addChild(rack::createMenuItem(
+            track->type == TrackType::Drum ? "Add a Drum Out for this track" : "Add a Track Out for this track", "",
+            [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
+    }
     menu->addChild(
         rack::createSubmenuItem("Input", inputLabel(song, *track),
                                 [c, first = ids.front()](rack::ui::Menu* sub) { appendInputItems(sub, *c, first); }));

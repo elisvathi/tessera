@@ -12,6 +12,7 @@ namespace tessera {
 
 class TesseraModule;
 class EditorContext;
+class OutputModuleBase;
 
 namespace audioActions {
 
@@ -21,6 +22,20 @@ bool audioModuleInPatch();
 /// Cables MAIN L and R to the first two inputs of the first Audio module in the patch, as one Rack undo step.
 /// Changes nothing when those inputs are in use or there is no Audio module. Returns what happened, for a toast.
 std::string connectMainToAudio(TesseraModule* module);
+
+/// Add a Track Out for this track (§8.2): places a new output module beside Tessera, in the first free space to
+/// its right, bound to `track` (a Drum Out for a drum track, a Track Out for any other track or the master). One
+/// Rack undo step; the new module's screen flashes. Returns what happened, for a toast.
+std::string addOutputFor(TesseraModule* module, TrackId track);
+
+/// Show in the rack (§8.2): scrolls the rack to `output`, keeping the zoom, and flashes its screen.
+void showInRack(OutputModuleBase* output);
+
+/// An output module's short name for menus and chips: "Track Out", "Drum Out", "Auto Out".
+std::string outputName(const OutputModuleBase* output);
+
+/// The output modules that play `track` of `module` now, in the order they were added.
+std::vector<OutputModuleBase*> outputsFor(const TesseraModule* module, TrackId track);
 
 /// The audio part of a clip's menu: Follow tempo, Sound type, the clip tempo (its guess, ×2, ÷2, typed),
 /// gain back to 0 dB, and Try again for a render that failed (§6.2).

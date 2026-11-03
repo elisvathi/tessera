@@ -98,9 +98,12 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         float peak = std::max(std::fabs(l), std::fabs(r));
         inPeak = std::max(peak, inPeak * 0.9995f);
         bool arriving = on && (hasL || hasR) && inPeak > 0.01f;
-        lights[size_t(audioPorts.inLight)].setBrightnessSmooth(arriving ? 1.f : 0.f, args.sampleTime);
-        lights[size_t(audioPorts.inLight) + 1].setBrightnessSmooth(arriving && inPeak > kFullScaleVolts ? 1.f : 0.f,
-                                                                   args.sampleTime);
+        // Amber (half green, full red) while a cable still brings audio to a track that was deleted.
+        bool gone = !on && trackGone.load(std::memory_order_relaxed) && (hasL || hasR);
+        float green = arriving ? 1.f : gone ? 0.5f : 0.f;
+        float red = (arriving && inPeak > kFullScaleVolts) || gone ? 1.f : 0.f;
+        lights[size_t(audioPorts.inLight)].setBrightnessSmooth(green, args.sampleTime);
+        lights[size_t(audioPorts.inLight) + 1].setBrightnessSmooth(red, args.sampleTime);
     }
 }
 
@@ -243,6 +246,7 @@ void OutputModuleBase::refreshBinding() {
     bool master = src && acceptsMaster && bindingData.track == src->song().master.id;
     audioSlot.store(master ? OutputBus::kMasterSlot : busSlot.load());
     audioOn.store(src && !bindingData.followSelected && status() == BindingStatus::Bound);
+    trackGone.store(src && status() == BindingStatus::TrackMissing);
     // The sources' levels and pans: the drum track's lane IN settings, or what a drag in the mixer holds.
     if (audioPorts.sourceCount > 0) {
         const Track* t = src ? src->song().findTrack(bindingData.track) : nullptr;
@@ -291,6 +295,15 @@ void OutputModuleBase::stepTrack(int delta) {
     auto it = std::find(tracks.begin(), tracks.end(), bindingData.track);
     int index = it == tracks.end() ? (delta > 0 ? 0 : n - 1) : (int(it - tracks.begin()) + delta % n + n) % n;
     bind(*src, tracks[index]);
+}
+
+float OutputModuleBase::flashAmount() const {
+    double left = flashUntil - rack::system::getTime();
+    if (left <= 0)
+        return 0;
+    // Three pulses that never fade below 60%, then a quick fade out over the last 0.3 s.
+    double t = 1.2 - left;
+    return float((0.8 + 0.2 * std::cos(t * 2 * M_PI / 0.4)) * std::min(1.0, left / 0.3));
 }
 
 TesseraModule* OutputModuleBase::source() const { return Registry::get().findSource(bindingData.sourceId); }

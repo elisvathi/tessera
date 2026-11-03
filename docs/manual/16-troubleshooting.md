@@ -19,12 +19,13 @@ Check these in order:
    in the mixer, mean nothing is patched there. A clip marked **Missing file** has lost its file: right-click it,
    **Find file…**.
 
-## The output module says "No source" or "Track missing"
+## The output module says "No source", "Track deleted" or "Tessera bypassed"
 
 - **No source**: it can't find its Tessera. Right-click it and pick one under **Source**. This happens when the
   Tessera was deleted, or after pasting the output module alone into another patch.
-- **Track missing**: its track was deleted. Undo the delete, or pick another track with the arrows or the **Track**
+- **Track deleted**: its track was deleted. Undo the delete, or pick another track with the arrows or the **Track**
   menu. Output modules never switch tracks by themselves.
+- **Tessera bypassed**: its Tessera is bypassed (Ctrl+E on it, or its menu). Turn it on again.
 
 ## A key does nothing (or does something else)
 
