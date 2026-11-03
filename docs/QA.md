@@ -584,6 +584,12 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       bar n of m"; at the end the master file and a stem per sounding track are there, as long as the song (or
       the loop), no metronome. A muted track has no stem. Clips mode: it records until Stop. Stop early on the
       timeline: no files.
+- [ ] Record ▾ Recording offset ▸ Measure it with CLICK → sound card out → loop back → armed audio track's Track Out
+      IN: a message gives the offset; takes recorded afterwards line up with the click. Type 0: None.
+- [ ] Mixer: right-click a strip name ▸ Latency 480: a bounce of that track lands 480 samples earlier.
+- [ ] File ▸ Audio files…: every file with length, format, size and clip count; a missing one first with Find file….
+- [ ] Select an audio take and a loop clip from another file on one track, Ctrl+J: "Gluing…", then one clip "<track>
+      glued" in their place, sounding the same. Undo brings both back.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

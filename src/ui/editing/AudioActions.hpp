@@ -48,6 +48,11 @@ void importDialog(EditorContext& ctx);
 /// File ▸ Remove unused audio: takes out the sources no clip plays, as one undo step, and says how many.
 void removeUnused(EditorContext& ctx);
 
+/// File ▸ Audio files (§3.4): every file the song holds, with its length, format, size on disk and how many clips
+/// use it, missing ones in amber first; per file Find file… (when missing) and Select its clips; then the total
+/// size and Remove unused audio.
+void openAudioFiles(EditorContext& ctx);
+
 /// The toast after a drop of audio files: what came in, what couldn't be read, what didn't fit.
 std::string dropMessage(const std::vector<std::string>& imported, const std::vector<std::string>& failed,
                         int skipped);

@@ -16,6 +16,8 @@
 #include <history.hpp>
 #include <osdialog.h>
 
+#include <filesystem>
+
 namespace tessera::audioActions {
 
 namespace {
@@ -363,6 +365,71 @@ void dropAudio(EditorContext& ctx, const std::vector<std::string>& paths, const 
     } else if (!text.empty()) {
         ctx.toast(text);
     }
+}
+
+void openAudioFiles(EditorContext& ctx) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const Song& song = m->song();
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Audio files"));
+    if (song.audioSources.empty()) {
+        menu->addChild(rack::createMenuLabel("None yet: drop audio files on the song, or record"));
+        return;
+    }
+    std::string folder = m->audioStorage();
+    std::vector<AudioSourceId> missing = missingSources(*m);
+    uintmax_t total = 0;
+    std::vector<const AudioSource*> sources;
+    for (const AudioSource& s : song.audioSources)
+        sources.push_back(&s);
+    // Missing files first: they are the ones that need something done.
+    std::stable_sort(sources.begin(), sources.end(), [&](const AudioSource* a, const AudioSource* b) {
+        bool ma = std::count(missing.begin(), missing.end(), a->id) > 0;
+        bool mb = std::count(missing.begin(), missing.end(), b->id) > 0;
+        return ma && !mb;
+    });
+    EditorContext* c = &ctx;
+    for (const AudioSource* s : sources) {
+        int uses = 0;
+        for (const auto& [id, clip] : song.clips)
+            if (clip.audio && clip.audio->source == s->id)
+                uses += song.clipUses(id);
+        std::error_code ec;
+        uintmax_t size = std::filesystem::file_size(rack::system::join(folder, s->file), ec);
+        if (!ec)
+            total += size;
+        bool lost = std::count(missing.begin(), missing.end(), s->id) > 0;
+        char facts[96];
+        snprintf(facts, sizeof facts, "%s%.1f s · %s · %.0f kHz · %.1f MB · %d %s", lost ? "missing · " : "",
+                 s->seconds(), s->channels == 1 ? "mono" : "stereo", s->sampleRate / 1000, double(size) / (1 << 20),
+                 uses, uses == 1 ? "clip" : "clips");
+        AudioSourceId id = s->id;
+        menu->addChild(rack::createSubmenuItem(s->name, facts, [c, id, lost, uses](rack::ui::Menu* sub) {
+            if (lost)
+                sub->addChild(rack::createMenuItem("Find file…", "", [c, id] { findFile(*c, id); }));
+            sub->addChild(rack::createMenuItem(
+                "Select its clips", "", [c, id] {
+                    TesseraModule* mm = c->module();
+                    if (!mm)
+                        return;
+                    c->state().clipSelection.clear();
+                    for (const Track& t : mm->song().tracks)
+                        for (const ArrangerClip& a : t.arrangement)
+                            if (const Clip* clip = mm->song().findClip(a.clip); clip && clip->audio &&
+                                                                                clip->audio->source == id)
+                                c->state().clipSelection.insert(a.id);
+                },
+                uses == 0));
+        }));
+    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    char sum[64];
+    snprintf(sum, sizeof sum, "%zu files · %.1f MB in the patch", song.audioSources.size(), double(total) / (1 << 20));
+    menu->addChild(rack::createMenuLabel(sum));
+    menu->addChild(rack::createMenuItem("Remove unused audio", "", [c] { removeUnused(*c); },
+                                        unusedSources(song).empty()));
 }
 
 bool audioModuleInPatch() { return findAudioModule() != nullptr; }

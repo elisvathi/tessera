@@ -90,8 +90,10 @@ Audio clips move, copy, trim, loop and split with the same gestures as note clip
 | Alt+drag the right edge | The clip tempo (see above). |
 | Drag an edge of a clip that doesn't loop | Trims it. It stops at the start or end of the file and says **Start of file** or **End of file**. |
 
-**Glue** (**Ctrl+J**) joins audio clips only when they are parts of one clip side by side, such as the two halves of a
-split: they become one clip again. Gluing audio from different files or places isn't possible yet.
+**Glue** (**Ctrl+J**) joins audio clips on one track. Parts of one clip side by side, such as the two halves of a
+split, simply become one clip again. Clips from different files, or with gaps between them, are played into one new
+file (with their gains and fades, quicker than real time) that takes their place: "Bass glued". Either way it is one
+undo step.
 
 The clip's settings (gain, follow tempo, sound type, tempo) belong to the clip, so every linked copy of it changes
 together. The inspector says **all 3 copies** when there are several.
@@ -226,6 +228,26 @@ clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B
 - It plays in real time, with "Exporting · bar 3 of 20" and **Cancel**. Stopping the timeline before the end
   cancels; nothing is left. You can keep editing: what you change is heard in the file.
 - The metronome is never in an export.
+
+## Latency and the recording offset
+
+A recording comes back a little late: the sound card takes a few milliseconds to send a sound out and bring it back
+in. Tessera moves every take earlier by that much, so it lines up with the song.
+
+- **Record ▾ Recording offset** sets it for the whole Tessera. **Measure it** does it for you: patch **CLICK** to the
+  sound card's output, loop that output back into an input, and that input into the **IN** of a Track Out on an
+  armed audio track. Tessera plays four clicks, times each, and keeps the middle value. You can also type it in
+  milliseconds.
+- **A track's latency**: when one track's sound is late for its own reason (an effect that delays, a long path of
+  modules), right-click its name in the mixer and type its **Latency** in samples. Its takes and bounces move earlier
+  by that much too.
+
+## The Audio files list
+
+**File → Audio files…** lists every file the song holds: its length, mono or stereo, sample rate, its size in the
+patch and how many clips use it. Missing files come first, in the list's "missing" note, with **Find file…**.
+**Select its clips** selects the clips that play a file. At the bottom: how much audio the patch holds, and **Remove
+unused audio**.
 
 ## Removing audio you don't use
 

@@ -822,6 +822,18 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         menu->addChild(rack::createMenuItem("Show sends to this track", "", [c, track] {
             c->view().setShowSends(track, EditorContext::now());
         }));
+        // Extra delay this track's sound has (a slow effect): its recordings and bounces move earlier by it.
+        const Track* t = m->song().findTrack(track);
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createMenuLabel("Latency (samples): " + std::to_string(t ? t->latencySamples : 0)));
+        menu->addChild(new MenuTextField(t ? std::to_string(t->latencySamples) : "0", [m, track](const std::string& text) {
+            char* end = nullptr;
+            long n = std::strtol(text.c_str(), &end, 10);
+            if (end != text.c_str())
+                if (CommandPtr set = setTrackField(m->song(), track, &Track::latencySamples,
+                                                   int(std::clamp(n, 0L, 96000L)), "Set track latency"))
+                    m->perform(std::move(set));
+        }));
         return;
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {

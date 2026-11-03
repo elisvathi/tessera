@@ -546,6 +546,17 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
     right = masterR * masterGain;
     if (anyTap.load(std::memory_order_relaxed))
         runTaps(engine, song, left, right);
+    if (measuring.load(std::memory_order_acquire)) {
+        uint64_t id = measureTrack.load(std::memory_order_relaxed);
+        bool arrived = false;
+        for (size_t i = 0; i < count; i++)
+            if (snapshot->tracks[i].id.value == id)
+                arrived = std::max(std::abs(runs[i].inL), std::abs(runs[i].inR)) > 1.f;
+        if (arrived || ++measureCount > int64_t(sampleRate)) {
+            measureResult.store(arrived ? measureCount : -1, std::memory_order_release);
+            measuring.store(false, std::memory_order_relaxed);
+        }
+    }
     masterPeakL = std::max(masterPeakL, std::abs(left));
     masterPeakR = std::max(masterPeakR, std::abs(right));
     sounding = any;

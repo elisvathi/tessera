@@ -122,6 +122,17 @@ class AudioPlayer {
     /// The level of a running tap's signal now (volts, the last block's peak), for "until silent".
     float tapLevel(int n) const { return taps[size_t(n)].level.load(std::memory_order_relaxed); }
 
+    /// Measures the recording offset (§8.6): counts samples from now until track `track`'s IN goes above 1 V.
+    /// The caller fires the click at the same sample. UI thread.
+    void startMeasure(uint64_t track) {
+        measureTrack.store(track, std::memory_order_relaxed);
+        measureResult.store(-2, std::memory_order_relaxed);
+        measureCount = 0;
+        measuring.store(true, std::memory_order_release);
+    }
+    /// The samples it took, -1 when nothing came back within a second, -2 while still waiting.
+    int64_t measured() const { return measureResult.load(std::memory_order_acquire); }
+
     /// What leaves a track's OUT now (its index in the snapshot), in volts, a peak falling 20 dB a second (§7.6).
     float outLevel(int track) const {
         return track >= 0 && track < kMaxTracks ? outMeters[size_t(track)].load(std::memory_order_relaxed) : 0.f;
@@ -270,6 +281,10 @@ class AudioPlayer {
         float peak = 0;
     };
     std::array<Tap, kMaxTaps> taps{};
+    std::atomic<bool> measuring{false};
+    std::atomic<uint64_t> measureTrack{0};
+    std::atomic<int64_t> measureResult{-2};
+    int64_t measureCount = 0;
     std::atomic<bool> anyTap{false};
     double tapLastSong = 0;
     /// Audio thread: copies this sample's signals into the running taps, starting and ending them.
