@@ -1768,3 +1768,24 @@ Why: built to the spec; these are the places it left open or where the code sugg
   is). It fires when a track's counted sources grow past one; loading a patch never fires it.
 - **The Track Out screen** shows "IN OFF" or "IN -6.0 dB" in place of the Tessera's name: the screen is too narrow
   for both.
+
+## 117. Phase 2b, sends as built (3 Nov)
+
+- **Model**: `Track::sends` ({to, dB, before the fader}), saved only when there are some; `addSend`, `setSend`,
+  `removeSend`, `whyNoSend` (self, repeat, "Would feed back into …"), `sendOrder`, `sendersTo`
+  (`src/model/Sends.hpp`). Normalize drops sends to missing tracks, repeats and anything that closes a loop.
+  Deleting tracks removes the sends to them in the same undo step.
+- **Player**: the audio snapshot lists tracks senders first, so each send lands in its receiver's OUT the same
+  sample (a fixed send bus, at most 16 sends per track). A track's own sound, what comes back on IN, and its
+  sends each pass through one ramp, so mute and solo never click. A track that receives sends makes sound.
+- **Mute and solo** as the spec says (§4.5): mute stops a track's sound and sends; a muted receiver's OUT still
+  carries what it is sent. Solo: tracks a soloed track sends to stay heard but their own sound is off; tracks
+  that feed a soloed track keep sending but aren't heard dry.
+- **Strip**: "← N" under the name, a knob per send (two letters of the target in its colour, "pre"), a dim "+" in a
+  fixed spot; every strip keeps the same room for sends so faders stay level. **Show sends**: band with × and
+  "Esc to go back", hollow caps in the target colour, "send -15.5 dB", "pre" toggle beside the fader, master and
+  loop strips dimmed, 120 ms glide, Esc leaves it first (before clearing the selection), folding the mixer leaves
+  it. Not saved.
+- **"No OUT cable"** replaces the spec's "Sends go nowhere": that does not fit a 64 px chip.
+- **Not built yet**: the inspector's Sends section, send automation lanes, a meter of the send level in Show sends
+  (strips keep their own meters there).

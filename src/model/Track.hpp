@@ -110,6 +110,7 @@ struct Track {
     std::array<Channel, kDrumInputs> drumInputs{};
     // Audio tracks: the clips as a source of the track, beside what comes back on its Track Out's IN (§7.8).
     SourceLevel clips;
+    std::vector<Send> sends; // only the sends the user added, in the order added (§7.6)
 
     bool operator==(const Track& o) const {
         return id == o.id && name == o.name && color == o.color && type == o.type && polyphony == o.polyphony &&
@@ -118,7 +119,7 @@ struct Track {
                listenTrack == o.listenTrack && gateLengthScale == o.gateLengthScale && transpose == o.transpose &&
                drumLanes == o.drumLanes && slots == o.slots && arrangement == o.arrangement &&
                automation == o.automation && devices == o.devices && modulators == o.modulators &&
-               channel == o.channel && drumInputs == o.drumInputs && clips == o.clips;
+               channel == o.channel && drumInputs == o.drumInputs && clips == o.clips && sends == o.sends;
     }
 };
 

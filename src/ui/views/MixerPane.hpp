@@ -55,12 +55,20 @@ class MixerPane : public InteractiveView {
         bool master = false;
         int lane = -1; // a drum track's lane IN (Drum Out output 0..7): a narrow strip after its track's
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
+        // Sends (§7.6): "← N" when it receives some, a knob per send it has, the "+" that adds one, the OUT meter
+        // of a track that receives sends, and "pre" above its fader while Show sends shows its send.
+        rack::math::Rect receives, addSend, outMeter, pre;
+        std::vector<rack::math::Rect> sendKnobs;
         int playerIndex = -1; // its index among the player's tracks
     };
-    enum class Part { None, Tab, Name, Chip, Pan, Mute, Solo, Fader, Readout, ClipLight, Connect };
+    enum class Part {
+        None, Tab, Name, Chip, Pan, Mute, Solo, Fader, Readout, ClipLight, Connect,
+        Receives, SendKnob, AddSend, Pre, BandClose
+    };
     struct Hit {
         Part part = Part::None;
         int strip = -1;
+        int send = -1; // which of the strip's send knobs
     };
 
     // Used by the drags.
@@ -78,12 +86,26 @@ class MixerPane : public InteractiveView {
     void clearHeld() {
         held.clear();
         heldLanes.clear();
+        heldSends.clear();
     }
+    /// The level (dB) of the send from strip `s`'s track to `to`: what a drag holds, the song's, or -inf when there
+    /// is no send.
+    float shownSend(const Strip& s, TrackId to) const;
+    void showHeldSend(TrackId from, TrackId to, float db) { heldSends[{from.value, to.value}] = db; }
+    /// Where the strip's fader cap sits (0..1): its volume, or in Show sends its send, gliding over 120 ms between
+    /// the two.
+    float capPos(const Strip& s) const;
+    /// Whether Show sends is on (for a track that still has a strip).
+    bool showingSends() const { return ctx.view().showSends.valid(); }
     /// A lane strip's level and pan: plays at once while a drag holds it, and commits one undo step.
     void holdLane(const Strip& s, Channel c);
     void setLane(const Strip& s, Channel c, const std::string& name);
     /// The menu to type a level or reset it (right-click, or a double-click on the readout).
     void openTyping(const Strip& s);
+    /// The "+" menu: every track this one can send to, in track order; the ones that would make a loop greyed.
+    void openAddSend(TrackId from);
+    /// A send knob's menu: type a level, before or after the fader, remove.
+    void openSendMenu(TrackId from, TrackId to);
     /// The source chip's menu: Add a Track Out for this track, and Show in the rack for each module that plays it.
     void openChipMenu(const Strip& s);
 
@@ -105,6 +127,8 @@ class MixerPane : public InteractiveView {
     ToolButton* maximizeButton;
     std::map<uint64_t, std::pair<float, float>> held; // drags in progress: volume dB, pan
     std::map<std::pair<uint64_t, int>, Channel> heldLanes; // lane strip drags in progress
+    std::map<std::pair<uint64_t, uint64_t>, float> heldSends; // send drags in progress: from, to → dB
+    rack::math::Rect band, bandClose; // Show sends' band across the top of the strips
     struct Peak {
         float level = 0;
         double at = 0;

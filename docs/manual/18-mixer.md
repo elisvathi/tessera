@@ -65,6 +65,35 @@ A Track Out's **Use** and **Level** are kept in the module and also sit in its r
 of its track**. Its screen shows **IN OFF** or the level (like **IN -6.0 dB**) while they change the sound. They go
 with the module when you move, duplicate or delete it.
 
+## Sending to other tracks
+
+To share one effect between tracks, send to it. Any track can receive sends: add a track, name it "Reverb", patch
+its Track Out **OUT** into a reverb module and the reverb's output back into its **IN**. Then send other tracks to
+it.
+
+- **Add a send**: click the dim **+** under a strip's name and pick a track. Tracks that would feed back into this
+  one are listed but can't be picked ("Would feed back into Bass"). The send starts at -inf and the faders switch
+  to show sends to that track, so you can turn it up.
+- **Send knobs**: each send has a small knob on the sending strip, labelled with two letters of the receiving
+  track in its colour, and **pre** when it goes before the fader. Drag it up or down; double-click for -inf;
+  scroll for 0.5 dB steps. Right-click it to type a level, put it **before** or **after the fader**, or **remove**
+  it.
+- **← 2** under a strip's name means two tracks send to it. Click it (or right-click the name: **Show sends to this
+  track**) to see every send to that track on the faders: a band says "Faders show sends to Reverb", the fader caps
+  turn hollow in Reverb's colour, and the readouts say **send -15.5 dB**. Drag a fader to set that track's send
+  (dragging up from -inf adds one); **pre** beside a fader switches the send before or after the fader. Tracks that
+  can't send there, and the Master, are dimmed. **Esc**, the band's **×**, or folding the mixer goes back.
+- A track that receives sends has a thin **OUT meter** beside its fader: what leaves on OUT for the effect. It is
+  dim while OUT has no cable, and the strip's source then reads **No OUT cable** in amber: sends only reach a track
+  through the effect patched on its OUT, never straight into its sound.
+- **Mute** stops a track's sound and its sends. A muted receiving track still passes what it is sent to its OUT,
+  so the effect's tail is ready when you unmute.
+- **Solo follows the sends**: solo Bass and you hear Bass through the reverb it sends to. Solo the reverb track and
+  you hear the reverb, still fed by the tracks that send to it, but not their dry sound.
+- Sends you make in the rack with cables (a mult into the reverb) also work, but they don't follow the fader, mute
+  or solo.
+- Deleting a track removes the sends to it, in the same undo step.
+
 ## Drum lanes
 
 When a drum module's output is patched into a lane's **IN** on the Drum Out, that lane gets a narrow strip of its own,

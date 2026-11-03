@@ -76,6 +76,19 @@ struct ViewState {
     bool clipsWide = false;         // performing: the clips take the width, the timeline folds to a strip (F2)
     bool mixerOpen = false;         // the mixer pane under the notes pane; folded to its tab by default
     float mixerHeight = 260;        // px when open
+    // Show sends (§7.6): the mixer's faders show the sends to this track. Not saved. The faders glide from what
+    // they showed before (`sendsFrom`: the previous target, or none for volumes) since `sendsSince`.
+    TrackId showSends;
+    TrackId sendsFrom;
+    double sendsSince = -1;
+    /// Enters Show sends for `track`, or leaves it with an invalid ID.
+    void setShowSends(TrackId track, double now) {
+        if (track == showSends)
+            return;
+        sendsFrom = showSends;
+        showSends = track;
+        sendsSince = now;
+    }
 
     // A zero zoom means "not set yet": the view fits its content the first time it opens.
     TimeAxis::State arranger{0, 0};
