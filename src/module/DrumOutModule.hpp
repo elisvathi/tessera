@@ -8,12 +8,16 @@ namespace tessera {
 /// Lane outputs 1-8 each have a trigger, velocity, pitch, timbre and pressure jack; all 16 lanes are also on the
 /// poly outputs, channel = lane output. Pitch is the hit's tuning away from normal (1 V per octave, 0 V = none);
 /// timbre and pressure are 0-10 V. Each follows the hit's value or curve and holds until the lane's next hit.
+/// Audio: each lane output has a mono IN for its drum module; the kit's OUT L/R and IN L/R make an effect loop for
+/// the whole kit, like Track Out's.
 class DrumOutModule : public OutputModuleBase {
   public:
     static constexpr int kTrigJacks = 8;
 
     enum ParamId { PARAMS_LEN };
-    enum InputId { INPUTS_LEN };
+    // Each lane's mono sound (its drum module's output), mixed into the drum track and its OUT; the kit IN brings an
+    // effect on the whole kit back, or a stereo drum machine (docs/design/AUDIO_MIXER.md §8.1).
+    enum InputId { ENUMS(LANE_IN_INPUT, kTrigJacks), KIT_IN_L_INPUT, KIT_IN_R_INPUT, INPUTS_LEN };
     // New outputs go last: patches store cables by output ID.
     enum OutputId {
         ENUMS(TRIG_OUTPUT, kTrigJacks),
@@ -27,9 +31,11 @@ class DrumOutModule : public OutputModuleBase {
         ENUMS(PRESS_OUTPUT, kTrigJacks),
         PITCH_POLY_OUTPUT,
         ENUMS(PITCH_OUTPUT, kTrigJacks),
+        KIT_OUT_L_OUTPUT, // the kit's sound before the drum track's fader: every lane IN mixed
+        KIT_OUT_R_OUTPUT,
         OUTPUTS_LEN
     };
-    enum LightId { ENUMS(TRIG_LIGHT, kTrigJacks), LIGHTS_LEN };
+    enum LightId { ENUMS(TRIG_LIGHT, kTrigJacks), ENUMS(KIT_IN_LIGHT, 2), LIGHTS_LEN }; // the IN light: green, red
 
     DrumOutModule();
 

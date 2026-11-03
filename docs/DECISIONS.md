@@ -1661,8 +1661,7 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **The mix plan** (`MixPlan`) says which return slots feed which track and each track's bus slot; any track with a
   return makes sound and joins the audio snapshot (`makesSound`). The mixer and the track headers find a track's
   meter by its place in the last snapshot (`soundIndex`). A change of plan rebuilds the snapshot.
-- **Wired to Track Out** (§110). Drum Out has no IN yet: the user doubts one stereo kit IN is enough and doesn't
-  want several Drum Outs for one kit, so its inputs wait for a second design.
+- **Wired to Track Out and Drum Out** (§110, §111).
 
 ## 109. Fader and pan automation (3 Nov)
 
@@ -1691,3 +1690,17 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **Dim jacks** are drawn by a veil over the jack and its label in the plate's colour, so the cached panel art stays
   as it is; a cable on a dim jack gets an amber ring; tooltips say why. AUTO is never dim. OUT on a note track is dim
   until sends exist (Phase 2b).
+
+## 111. Drum Out: an IN per lane and a kit audio block (3 Nov)
+
+- **The user chose** (mockup https://claude.ai/artifact/49LUhQWoBuDcwVaDiqKEDV, after one stereo kit IN seemed too
+  little and several Drum Outs per kit too many): a **mono IN in every lane strip** (option A's columns, not the
+  transposed rows) and a **kit OUT L/R and IN L/R** like Track Out's audio section. Still 20 HP: the display is
+  narrower, the AUDIO block sits beside it, the lane rows are 9.7 mm apart, the poly row moved down 4 mm.
+- **Sources and returns**: the lane INs are the track's own sound, so they go into its OUT (the kit OUT); the kit IN
+  is a return and joins after OUT, so an effect loop never feeds back. The mix plan marks each slot (`source`), and
+  a Drum Out holds two return slots: its lane INs summed (mono, in the middle) and its kit IN.
+- **No level or pan per lane yet**: every lane IN is mixed at 0 dB; the drum track's fader is the kit's. Whether
+  lanes get their own sub-strips is still the user's call.
+- A Track Out bound to a drum track no longer dims OUT: it carries the lane INs. Strips fed by IN say "IN" where
+  audio tracks say "Clips".

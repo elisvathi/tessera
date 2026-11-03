@@ -40,6 +40,20 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         outputs[size_t(audioPorts.outL)].setVoltage(f ? f->l : 0.f);
         outputs[size_t(audioPorts.outR)].setVoltage(f ? f->r : 0.f);
     }
+    if (audioPorts.sourceCount > 0) {
+        float sum = 0;
+        bool any = false;
+        for (int k = 0; k < audioPorts.sourceCount; k++) {
+            rack::engine::Input& in = inputs[size_t(audioPorts.sourceFirst + k)];
+            if (in.isConnected()) {
+                sum += in.getVoltageSum();
+                any = true;
+            }
+        }
+        int slot = sourceSlot.load(std::memory_order_relaxed);
+        if (on && slot >= 0 && any)
+            b->returns().write(args.frame, slot, track, sum, sum); // mono drums sit in the middle
+    }
     if (audioPorts.inL < 0)
         return;
     rack::engine::Input& inL = inputs[size_t(audioPorts.inL)];
@@ -81,10 +95,21 @@ void OutputModuleBase::processBypass(const ProcessArgs& args) {
 }
 
 void OutputModuleBase::releaseReturn() {
-    int slot = returnSlot.exchange(-1);
-    if (returnOwner && slot >= 0)
-        returnOwner->returns().release(slot);
+    for (std::atomic<int>* held : {&returnSlot, &sourceSlot}) {
+        int slot = held->exchange(-1);
+        if (returnOwner && slot >= 0)
+            returnOwner->returns().release(slot);
+    }
     returnOwner.reset();
+}
+
+int OutputModuleBase::activeSource() const {
+    if (audioPorts.sourceCount <= 0 || !audioOn.load(std::memory_order_relaxed))
+        return -1;
+    for (int k = 0; k < audioPorts.sourceCount; k++)
+        if (inputs[size_t(audioPorts.sourceFirst + k)].channels > 0)
+            return sourceSlot.load(std::memory_order_relaxed);
+    return -1;
 }
 
 BoundKind OutputModuleBase::boundKind() const {
@@ -189,13 +214,16 @@ void OutputModuleBase::refreshBinding() {
     bool master = src && acceptsMaster && bindingData.track == src->song().master.id;
     audioSlot.store(master ? OutputBus::kMasterSlot : busSlot.load());
     audioOn.store(src && !bindingData.followSelected && status() == BindingStatus::Bound);
-    if (audioPorts.inL >= 0) {
+    if (audioPorts.inL >= 0 || audioPorts.sourceCount > 0) {
         std::shared_ptr<OutputBus> owner = src ? src->outputBus() : nullptr;
         if (owner != returnOwner) {
             releaseReturn();
             if (owner) {
                 returnOwner = owner;
-                returnSlot.store(owner->returns().claim());
+                if (audioPorts.inL >= 0)
+                    returnSlot.store(owner->returns().claim());
+                if (audioPorts.sourceCount > 0)
+                    sourceSlot.store(owner->returns().claim());
             }
         }
     }

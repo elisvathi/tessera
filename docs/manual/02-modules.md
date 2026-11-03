@@ -155,8 +155,8 @@ the track's sound together with what comes back, through the track's fader in th
 between IN L and IN R is green while audio comes back, red above 0 dB. A cable into IN of a note track gives that
 track a strip in the mixer: plug a synth's output in, and the track has a fader, pan and meter like an audio track.
 
-**Jacks that do nothing for the track are dim**: the note jacks on an audio track or the master, and OUT on a note
-track (for now). Hover a dim jack and its tooltip says why; a cable on a dim jack gets an amber ring. **AUTO** works
+**Jacks that do nothing for the track are dim**: the note jacks on an audio track or the master, and OUT on an
+instrument track (for now; on a drum track OUT carries what its Drum Out's lane INs bring in). Hover a dim jack and its tooltip says why; a cable on a dim jack gets an amber ring. **AUTO** works
 for every track. Bypassing a Track Out never sends IN to OUT: what comes back simply drops out.
 
 **The screen** shows the Tessera's name, the track number in the track's colour, and the track name. It shows
@@ -184,9 +184,9 @@ On a **drum track**, you get one channel per drum output, with the lane's note a
 ![The Drum Out module](images/drum-out.png)
 
 Drum Out plays one **drum track**. Each of the outputs 1 to 8 has a strip, like a mixer channel. On top is a chip
-with the output's number in the colour of the lane that plays there. Under it are five jacks, one per row. The rows
-are named once, at the left: **TRIG**, **VEL**, **PITCH**, **TIMBRE** and **PRESS**. Hover a jack to see which drum
-it is, for example "Snare pitch".
+with the output's number in the colour of the lane that plays there. Under it are five jacks and an input, one per
+row. The rows are named once, at the left: **TRIG**, **VEL**, **PITCH**, **TIMBRE**, **PRESS** and **IN**. Hover a
+jack to see which drum it is, for example "Snare pitch".
 
 | Jack | What it sends |
 |---|---|
@@ -195,8 +195,19 @@ it is, for example "Snare pitch".
 | **PITCH** row | How far the hit is tuned away from normal, 1 V per octave: +12 semitones is +1 V. 0 V when the hit has no pitch. Patch it to a drum module's tune input. |
 | **TIMBRE** row | The hit's timbre, 0 to 10 V. 0 V when it has none. |
 | **PRESS** row | The hit's pressure, 0 to 10 V. 0 V when it has none. |
+| **IN** row (inputs) | The sound of the drum on that lane: patch the drum module's output here. It is mixed into the drum track, in the middle. A poly cable is summed. |
 | **TRIGS**, **VEL**, **PITCH**, **TIMBRE**, **PRESS** | The same for all 16 outputs, on poly cables, one channel per output. |
 | **AUTO** | The track's automation lanes, one channel per lane. |
+
+**The AUDIO block** at the top right is the whole kit's, like Track Out's audio section:
+
+| Jack | What it does |
+|---|---|
+| **OUT L / R** | The kit's sound before the drum track's fader: every lane **IN** mixed. Patch it into an effect for the whole kit. |
+| **IN L / R** (inputs) | The effect coming back, or a stereo drum machine. Mixed into the drum track before its fader. With one side patched, both sides hear it. The light beside it is green while audio comes in, red above 0 dB. |
+
+What comes in on **IN L / R** never goes back out of OUT, so an effect loop can't feed back. With anything patched
+into an IN, the drum track gets a strip in the [mixer](18-mixer.md), with a fader, pan and meter for the whole kit.
 
 Lanes on outputs 9 to 16 reach only the poly jacks. A lane sends a short 1 ms trigger by default, a gate of a set
 length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings).

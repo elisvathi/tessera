@@ -65,7 +65,8 @@ struct AudioInstancePlay {
 struct AudioTrackPlay {
     TrackId id;
     int busSlot = -1;         // where its sound before the fader goes on the output bus, for Track Out's OUT
-    std::vector<int> returns; // return bus slots mixed into it, at 0 dB (§2)
+    std::vector<int> sources; // return bus slots that are the track's own sound (Drum Out's lane INs): they go to OUT
+    std::vector<int> returns; // return bus slots mixed in after OUT (an effect coming back), at 0 dB (§2)
     std::vector<AudioInstancePlay> instances; // sorted by position
     std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
     float volume = 1;                          // the fader as a gain

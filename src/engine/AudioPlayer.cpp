@@ -272,7 +272,16 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         }
         if (i < count) {
             const AudioTrackPlay& tp = snapshot->tracks[i];
-            // OUT carries the track's clips before its fader; what comes back on IN joins them (§2, §8.4).
+            // The track's own sources join its clips; OUT carries them before the fader; what comes back on IN joins
+            // after OUT, so an effect loop never feeds back (§2, §8.4).
+            if (rack.returns)
+                for (int slot : tp.sources) {
+                    float rl, rr;
+                    if (rack.returns->read(rack.frame, slot, tp.id, rl, rr)) {
+                        sl += rl;
+                        sr += rr;
+                    }
+                }
             // A muted (or soloed-away) track's own clips stop feeding its effect too.
             run.outGain += run.outStep;
             if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)

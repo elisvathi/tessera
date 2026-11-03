@@ -356,7 +356,7 @@ void TesseraModule::audioStep() {
     // A cable on an output module's IN, or a track moving bus slot, changes what the player mixes.
     uint64_t planKey = 0;
     for (const MixPlan::Return& r : plan.returns)
-        planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1);
+        planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1) * 2 + (r.source ? 1 : 0);
     for (const auto& [track, slot] : plan.busSlots)
         planKey = planKey * 1000003u + track.value * 31u + uint64_t(slot + 1);
     bool planChanged = planKey != audioPlanKey;
@@ -406,9 +406,12 @@ MixPlan TesseraModule::currentMixPlan() const {
         if (int slot = slots.slotOf(t.id); slot >= 0)
             plan.busSlots.push_back({t.id, slot});
     // Output modules whose IN brings audio back feed their track, or the master (§2, §8.3).
-    for (OutputModuleBase* o : Registry::get().outputsOf(id))
+    for (OutputModuleBase* o : Registry::get().outputsOf(id)) {
+        if (int slot = o->activeSource(); slot >= 0)
+            plan.returns.push_back({o->boundTrack(), slot, true});
         if (int slot = o->activeReturn(); slot >= 0)
-            plan.returns.push_back({o->boundTrack(), slot});
+            plan.returns.push_back({o->boundTrack(), slot, false});
+    }
     return plan;
 }
 

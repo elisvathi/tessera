@@ -67,6 +67,8 @@ class OutputModuleBase : public rack::engine::Module {
     /// The return bus slot its IN jacks write to while audio comes back on them, for Tessera's mix plan; -1 when
     /// nothing comes back (no IN, no cable, following the editor, or not bound). UI thread.
     int activeReturn() const;
+    /// The return bus slot its source inputs (Drum Out's lane INs) write to while any has a cable; -1 otherwise.
+    int activeSource() const;
     TrackId boundTrack() const { return bindingData.track; }
 
   protected:
@@ -74,6 +76,8 @@ class OutputModuleBase : public rack::engine::Module {
     /// into it, and the IN light shows what arrives (green, red above 0 dB). -1 where it has none.
     struct AudioPorts {
         int outL = -1, outR = -1, inL = -1, inR = -1, inLight = -1;
+        // Mono inputs that are the track's own sound (Drum Out's lane INs): mixed into it and into its OUT.
+        int sourceFirst = -1, sourceCount = 0;
     };
     void setAudioPorts(AudioPorts ports) { audioPorts = ports; }
 
@@ -102,6 +106,7 @@ class OutputModuleBase : public rack::engine::Module {
     std::atomic<uint64_t> boundTrackId{0};
     std::atomic<int> audioSlot{-1};         // where OUT reads on the output bus: the track's slot, or the master's
     std::atomic<int> returnSlot{-1};        // where IN writes on the return bus
+    std::atomic<int> sourceSlot{-1};        // where the source inputs write
     std::atomic<bool> audioOn{false};       // OUT and IN work: bound, and not following the editor's selection
     std::shared_ptr<OutputBus> returnOwner; // the bus whose return slot this module holds (UI thread)
     float inPeak = 0;

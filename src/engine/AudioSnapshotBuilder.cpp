@@ -101,7 +101,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         tp.id = t.id;
         for (const MixPlan::Return& r : plan.returns)
             if (r.track == t.id)
-                tp.returns.push_back(r.slot);
+                (r.source ? tp.sources : tp.returns).push_back(r.slot);
         for (const auto& [track, slot] : plan.busSlots)
             if (track == t.id)
                 tp.busSlot = slot;
