@@ -2,9 +2,10 @@ RACK_DIR ?= ../..
 
 SOURCES += $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 
-# The time stretch library, Signalsmith Stretch (MIT, header only; docs/design/AUDIO_MIXER.md §9.1).
-STRETCH_FLAGS := -isystem dep/signalsmith-stretch -isystem dep/signalsmith-linear/include
-FLAGS += $(STRETCH_FLAGS)
+# Vendored header-only libraries (docs/design/AUDIO_MIXER.md §9.1): Signalsmith Stretch (MIT) for time stretching,
+# dr_libs (public domain / MIT-0) for decoding. As system headers, their own warnings stay quiet.
+DEP_FLAGS := -isystem dep/signalsmith-stretch -isystem dep/signalsmith-linear/include -isystem dep/dr_libs
+FLAGS += $(DEP_FLAGS)
 
 DISTRIBUTABLES += res
 DISTRIBUTABLES += $(wildcard LICENSE*)
@@ -32,7 +33,7 @@ TEST_SOURCES := $(wildcard tests/*.cpp src/model/*.cpp src/engine/*.cpp) \
 	src/ui/interaction/Axes.cpp src/ui/interaction/Shortcuts.cpp src/ui/interaction/Snap.cpp \
 	src/ui/editing/NoteHitTest.cpp src/ui/interaction/TrackRows.cpp src/ui/EditorState.cpp \
 	src/ui/interaction/Search.cpp \
-	src/audio/TimeStretcher.cpp src/audio/Resample.cpp $(wildcard src/audio/stretch/*.cpp)
+	$(wildcard src/audio/*.cpp src/audio/stretch/*.cpp)
 TEST_HEADERS := $(wildcard tests/*.h tests/*.hpp src/model/*.hpp src/engine/*.hpp) \
 	src/ui/interaction/Axes.hpp src/ui/interaction/Navigation.hpp src/ui/interaction/Shortcuts.hpp \
 	src/ui/interaction/Snap.hpp src/ui/editing/NoteHitTest.hpp src/ui/interaction/TrackRows.hpp \
@@ -58,10 +59,11 @@ $(TEST_INCLUDE)/GLFW:
 $(TEST_OBJ_DIR)/%.o: %.cpp | $(TEST_INCLUDE)/GLFW
 	@mkdir -p $(dir $@)
 	$(TEST_CXX) $(TEST_FLAGS) -MMD -MP -isystem $(TEST_INCLUDE) $(shell pkg-config --cflags jansson 2>/dev/null) \
-		$(STRETCH_FLAGS) -c -o $@ $<
+		$(DEP_FLAGS) -c -o $@ $<
 
-# Stretching is slow without optimisation.
+# Stretching and decoding are slow without optimisation.
 $(TEST_OBJ_DIR)/src/audio/stretch/%.o: TEST_FLAGS += -O2
+$(TEST_OBJ_DIR)/src/audio/DrLibs.o: TEST_FLAGS += -O2
 
 $(TEST_BIN): $(TEST_OBJECTS)
 	@mkdir -p $(dir $@)
