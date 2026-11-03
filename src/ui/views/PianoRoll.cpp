@@ -407,9 +407,10 @@ bool PianoRollView::layoutToolbar(float header) {
         toolbarLeft = right;
         return false;
     }
+    // Back from the audio editor, everything it hid comes back, Devices too.
     for (rack::widget::Widget* w :
          {(rack::widget::Widget*)hearButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,
-          (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select})
+          (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select, (rack::widget::Widget*)devicesToggle})
         w->visible = true;
     const Track* t = track();
     bool drum = t && t->type == TrackType::Drum;
