@@ -28,6 +28,8 @@ std::unique_ptr<DragGesture> resizeEnd(ArrangerLanes& lanes, rack::math::Vec pre
 std::unique_ptr<DragGesture> trimStart(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed);
 /// Drag on a clip's header strip: down and up scale the selection's velocity (Shift: fine); sideways moves it.
 std::unique_ptr<DragGesture> header(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed);
+/// Drags an audio clip's fade in or fade out handle: the fade's length.
+std::unique_ptr<DragGesture> fade(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed, bool in);
 /// Draw tool in empty space: creates an empty clip as long as the drag (at least one grid step).
 std::unique_ptr<DragGesture> draw(ArrangerLanes& lanes, rack::math::Vec press);
 /// Erase tool: deletes every clip the pointer passes over.

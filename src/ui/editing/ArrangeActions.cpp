@@ -1,4 +1,6 @@
 #include "ArrangeActions.hpp"
+
+#include "AudioActions.hpp"
 #include "ImportMidi.hpp"
 
 #include "ExportMidi.hpp"
@@ -278,9 +280,11 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
         title += "  (linked, " + std::to_string(uses) + " uses)";
     menu->addChild(rack::createMenuLabel(title));
 
-    menu->addChild(
-        rack::createMenuItem("Open in piano roll", "double-click", [l, clicked] { openInEditor(*l, clicked); }));
-    if (n > 1) {
+    bool audio = clip->isAudio();
+    if (!audio)
+        menu->addChild(
+            rack::createMenuItem("Open in piano roll", "double-click", [l, clicked] { openInEditor(*l, clicked); }));
+    if (n > 1 && !audio) {
         std::vector<ClipId> together;
         for (const arrange::Placed& p : lanes.committed())
             if (lanes.selection().count(p.clip.id))
@@ -310,8 +314,9 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
                 if (std::find(clips.begin(), clips.end(), one) == clips.end())
                     clips.push_back(one);
             }
-        menu->addChild(rack::createMenuItem(clips.size() > 1 ? "Export clips as MIDI…" : "Export as MIDI…", "",
-                                            [l, clips] { exportMidi::openClips(l->context(), clips); }));
+        if (!audio)
+            menu->addChild(rack::createMenuItem(clips.size() > 1 ? "Export clips as MIDI…" : "Export as MIDI…", "",
+                                                [l, clips] { exportMidi::openClips(l->context(), clips); }));
     }
     menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [l] { deleteSelected(*l); }));
     menu->addChild(rack::createMenuItem("Split here", shortcutLabel(Action::Split), [l, at] { split(*l, at); }));
@@ -373,6 +378,8 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
         }));
     menu->addChild(
         rack::createMenuItem("Save as Tessera clip file…", "", [c, clipId] { clipActions::exportClip(*c, clipId); }));
+    if (audio)
+        audioActions::appendAudioClipMenu(menu, lanes.context(), clipId);
 }
 
 void appendLaneMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, TrackId track, Tick at) {

@@ -5,6 +5,7 @@
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ArrangeActions.hpp"
+#include "../editing/AudioActions.hpp"
 #include "../editing/ClipActions.hpp"
 #include "../editing/ClipGestures.hpp"
 #include "../editing/TrackActions.hpp"
@@ -14,6 +15,7 @@
 #include "../widgets/CachedLayer.hpp"
 #include "../widgets/Draw.hpp"
 #include "Arranger.hpp"
+#include "AudioClipDraw.hpp"
 #include "TimelineDraw.hpp"
 
 #include <cmath>
@@ -157,6 +159,20 @@ const arrange::Stacking& ArrangerLanes::stackingOf(TrackId track) {
     return it->second;
 }
 
+double ArrangerLanes::shownEnd(const ArrangerClip& a) {
+    TesseraModule* m = ctx.module();
+    const Clip* clip = m ? m->song().findClip(a.clip) : nullptr;
+    if (!clip || !clip->audio)
+        return double(instanceEnd(a));
+    double tempo = m->tempo() > 0 ? m->tempo() : 120;
+    return double(a.position) + double(a.length) * songTicksPerClipTick(*clip->audio, tempo);
+}
+
+void ArrangerLanes::previewGain(std::vector<std::pair<ClipId, float>> gains) {
+    gainPreview = std::move(gains);
+    gainPreviewGeneration++;
+}
+
 std::pair<float, float> ArrangerLanes::instanceSpan(int row, const arrange::Placed& p) {
     float top = rowTop(row), h = rowHeight(row);
     const arrange::Stacking& s = stackingOf(p.track);
@@ -188,13 +204,35 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
             if (pos.y < top || pos.y >= top + h)
                 continue; // another sub-row of stacked clips
             float x0 = float(time().tickToX(double(p.clip.position)));
-            float x1 = float(time().tickToX(double(instanceEnd(p.clip))));
+            float x1 = float(time().tickToX(shownEnd(p.clip)));
             // Edge zones reach a little outside, so even a very narrow clip can be resized.
             float inner = std::min(edge, (x1 - x0) / 3);
             float reach = reachOut ? edge / 2 : 0;
             if (pos.x < x0 - reach || pos.x > x1 + reach)
                 continue;
             hit.id = p.clip.id;
+            // An audio clip's fade handles sit at the top corners of its body and win over the edges there
+            // (docs/design/AUDIO_MIXER.md §6.1 hit map).
+            float bodyTop = top + 1 + (h >= kMinHeightForStrip ? kHeaderStrip : headerHeight(h));
+            const Clip* clip = ctx.module()->song().findClip(p.clip.clip);
+            if (clip && clip->audio && h - (bodyTop - top) >= theme::metrics::kAudioHandleMinBody &&
+                x1 - x0 >= theme::metrics::kAudioHandleMinWidth && pos.y >= bodyTop &&
+                pos.y < bodyTop + theme::metrics::kAudioHandleTopZone) {
+                double perClipTick = songTicksPerClipTick(*clip->audio, ctx.module()->tempo() > 0 ? ctx.module()->tempo() : 120);
+                float xIn = float(time().tickToX(double(p.clip.position) + double(p.clip.fadeIn.length) * perClipTick));
+                float xOut = float(time().tickToX(shownEnd(p.clip) - double(p.clip.fadeOut.length) * perClipTick));
+                float reachHandle = theme::metrics::kAudioHandleHit / 2;
+                xIn = std::max(xIn, x0 + 3);
+                xOut = std::min(xOut, x1 - 3);
+                if (std::fabs(pos.x - xIn) <= reachHandle && std::fabs(pos.x - xIn) <= std::fabs(pos.x - xOut)) {
+                    hit.part = Part::FadeIn;
+                    return hit;
+                }
+                if (std::fabs(pos.x - xOut) <= reachHandle) {
+                    hit.part = Part::FadeOut;
+                    return hit;
+                }
+            }
             if (pos.x >= x1 - inner)
                 hit.part = Part::RightEdge;
             else if (pos.x <= x0 + inner)
@@ -527,6 +565,10 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
     case Part::RightEdge:
         inner = clipGestures::resizeEnd(*this, pos, id, mods.alt);
         break;
+    case Part::FadeIn:
+    case Part::FadeOut:
+        inner = clipGestures::fade(*this, pos, id, hit.part == Part::FadeIn);
+        break;
     case Part::LeftEdge:
         inner = clipGestures::trimStart(*this, pos, id);
         break;
@@ -659,6 +701,8 @@ CursorShape ArrangerLanes::hoverCursor(Vec pos, Modifiers mods) {
     switch (hover.part) {
     case Part::LeftEdge:
     case Part::RightEdge:
+    case Part::FadeIn:
+    case Part::FadeOut:
         return CursorShape::ResizeH;
     case Part::Header:
         return mods.alt ? CursorShape::Move : CursorShape::ResizeV;
@@ -847,6 +891,36 @@ void ArrangerLanes::drawLanes(NVGcontext* vg) {
     }
 }
 
+void ArrangerLanes::onPathDrop(const PathDropEvent& e) {
+    // Files dropped on the timeline (§6.5): onto an audio track at the drop point, snapped to the beat; onto a note
+    // track as a new audio track just below it; onto empty space as new tracks at the drop bar.
+    TesseraModule* m = ctx.module();
+    if (!m) {
+        TimelineView::onPathDrop(e);
+        return;
+    }
+    const Song& song = m->song();
+    Tick beat = ticksPerBeat(song.timeSig);
+    double tick = std::max(0.0, time().xToTick(e.pos.x));
+    AudioDropTarget target;
+    target.at = Tick(std::llround(tick / double(beat))) * beat;
+    int row = rowAt(e.pos.y);
+    TrackId track = trackOfRow(row);
+    const Track* t = song.findTrack(track);
+    if (t && t->type == TrackType::Audio) {
+        target.kind = AudioDropTarget::Kind::Track;
+        target.track = track;
+    } else {
+        target.kind = AudioDropTarget::Kind::NewTracks;
+        target.index = t ? song.trackIndex(track) + 1 : int(song.tracks.size());
+        target.at = Tick(std::floor(tick / double(ticksPerBar(song.timeSig)))) * ticksPerBar(song.timeSig);
+        target.timeline = true;
+    }
+    std::string note = t && t->type != TrackType::Audio ? "Added an audio track: " + t->name + " plays notes" : "";
+    audioActions::dropAudio(ctx, e.paths, target, note);
+    e.consume(this);
+}
+
 void ArrangerLanes::onLeave(const LeaveEvent& e) {
     automation.leave();
     hover = Hit();
@@ -863,6 +937,12 @@ uint64_t ArrangerLanes::clipsKey() {
     key = hashMix(key, time().pxPerTick());
     key = hashMix(key, owner.tracks.scroll());
     key = hashMix(key, double(previewGeneration));
+    key = hashMix(key, double(gainPreviewGeneration));
+    // Waveforms fill in, states and renders change, and Off clips follow the tempo.
+    if (AudioStore* store = m->audioStore()) {
+        key = hashMix(key, double(store->changes()));
+        key = hashMix(key, m->tempo());
+    }
     for (double h : owner.tracks.heights())
         key = hashMix(key, h);
     uint64_t selected = 0;
@@ -973,11 +1053,20 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
                                  float h, bool dim) {
     const theme::Palette& c = theme::colors();
     float x0 = float(time().tickToX(double(a.position)));
-    float x1 = float(time().tickToX(double(instanceEnd(a))));
+    float x1 = float(time().tickToX(shownEnd(a)));
     if (x1 < 0 || x0 > box.size.x)
         return;
     Rect r(x0, top + 1, std::max(2.f, x1 - x0), h - 2);
     const Clip* clip = song.findClip(a.clip);
+    audioDraw::ClipState audioState;
+    float gainDb = 0;
+    if (clip && clip->audio) {
+        audioState = audioDraw::stateOf(*ctx.module(), *clip);
+        gainDb = clip->audio->gainDb;
+        for (const auto& [id, db] : gainPreview)
+            if (id == clip->id)
+                gainDb = db;
+    }
     uint32_t color = clip ? clip->shownColor(track.color) : track.color;
     float alpha = (a.muted ? kMutedAlpha : 1.f) * (dim ? kOverriddenAlpha : 1.f);
     float radius = theme::metrics::kRadiusItem;
@@ -1011,6 +1100,8 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             nvgFillColor(vg, theme::track(color, 0.25f * alpha));
             nvgFill(vg);
         }
+        if (clip->audio)
+            drawAudioBody(vg, *clip, a, body, audioState, gainDb, color, alpha);
         // The notes it plays, in miniature.
         if (body.size.y >= 6 && !clip->notes.empty()) {
             int lo = 127, hi = 0;
@@ -1052,6 +1143,12 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
 
         // Name, then what makes this instance different from its clip, then the link badge.
         std::string extras;
+        if (clip->audio) {
+            extras = audioDraw::titleMarks(*clip, audioState, gainDb);
+            std::string state = audioDraw::stateText(audioState);
+            if (!state.empty())
+                extras = state + "  " + extras;
+        }
         if (a.transpose != 0)
             extras += (a.transpose > 0 ? " +" : " ") + std::to_string(a.transpose);
         if (std::fabs(a.velocityScale - 1.f) > 0.005f)
@@ -1085,6 +1182,73 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
 
     if (selection().count(a.id))
         draw::roundedRectStroke(vg, r, radius, c.select, 1.5f);
+}
+
+void ArrangerLanes::drawAudioBody(NVGcontext* vg, const Clip& clip, const ArrangerClip& a, Rect body,
+                                  const audioDraw::ClipState& state, float gainDb, uint32_t color, float alpha) {
+    const theme::Palette& c = theme::colors();
+    const AudioContent& audio = *clip.audio;
+    double tempo = ctx.module()->tempo() > 0 ? ctx.module()->tempo() : 120;
+    double perClipTick = songTicksPerClipTick(audio, tempo);
+    // The clip tick playing at song tick t: like clipTimeAt(), with Off clips at their own speed.
+    auto clipTick = [&](double t, double& u) {
+        u = double(a.offset) + (t - double(a.position)) / perClipTick;
+        if (u < 0 || t >= double(a.position) + double(a.length) * perClipTick)
+            return false;
+        if (clip.loopMode == LoopMode::Loop && clip.loopEnd > clip.loopStart) {
+            if (u >= double(clip.loopEnd))
+                u = double(clip.loopStart) + std::fmod(u - double(clip.loopStart), double(clip.loopEnd - clip.loopStart));
+        } else if (u >= double(clip.length)) {
+            return false;
+        }
+        return true;
+    };
+    NVGcolor wave = nvgLerpRGBA(theme::track(color), c.text0, 0.35f);
+    wave.a = theme::metrics::kWaveformAlpha * alpha;
+    const AudioSource* src = state.source;
+    audioDraw::drawWaveform(vg, body, 0, box.size.x, state, gainDb, wave, [&](float x, double& from, double& to) {
+        double u0, u1;
+        if (!src || !clipTick(time().xToTick(x), u0))
+            return false;
+        if (!clipTick(time().xToTick(x + 1), u1) || u1 < u0)
+            u1 = clip.loopMode == LoopMode::Loop ? double(clip.loopEnd) : double(clip.length);
+        from = audioDraw::frameOfTick(audio, *src, u0);
+        to = audioDraw::frameOfTick(audio, *src, u1);
+        return true;
+    });
+
+    // Fades shade what they hide: the area over the curve.
+    auto shade = [&](float xa, float xb, bool in, float curve) {
+        if (xb - xa < 1)
+            return;
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, xa, body.pos.y);
+        for (int i = 0; i <= 16; i++) {
+            float f = float(i) / 16;
+            float g = fadeShape(in ? f : 1 - f, curve, false);
+            nvgLineTo(vg, xa + (xb - xa) * f, body.getBottom() - g * body.size.y);
+        }
+        nvgLineTo(vg, xb, body.pos.y);
+        nvgClosePath(vg);
+        nvgFillColor(vg, nvgTransRGBAf(c.bg0, 0.45f * alpha));
+        nvgFill(vg);
+    };
+    float xStart = float(time().tickToX(double(a.position)));
+    float xEnd = float(time().tickToX(shownEnd(a)));
+    float xIn = float(time().tickToX(double(a.position) + double(a.fadeIn.length) * perClipTick));
+    float xOut = float(time().tickToX(shownEnd(a) - double(a.fadeOut.length) * perClipTick));
+    shade(xStart, xIn, true, a.fadeIn.curve);
+    shade(xOut, xEnd, false, a.fadeOut.curve);
+    // The fade handles, small and dim, at the top corners of the body.
+    if (body.size.y >= theme::metrics::kAudioHandleMinBody && body.size.x >= theme::metrics::kAudioHandleMinWidth) {
+        float s = theme::metrics::kAudioHandle;
+        for (float x : {std::max(xIn, xStart + 3), std::min(xOut, xEnd - 3)}) {
+            nvgBeginPath(vg);
+            nvgRect(vg, x - s / 2, body.pos.y, s, s / 2 + 1);
+            nvgFillColor(vg, nvgTransRGBAf(c.onTile, 0.55f * alpha));
+            nvgFill(vg);
+        }
+    }
 }
 
 void ArrangerLanes::drawView(const DrawArgs& args) {

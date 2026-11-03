@@ -1,0 +1,135 @@
+#include "AudioClipDraw.hpp"
+
+#include "../../engine/AudioSnapshotBuilder.hpp"
+#include "../../module/TesseraModule.hpp"
+#include "../Theme.hpp"
+
+#include <cmath>
+
+namespace tessera::audioDraw {
+
+ClipState stateOf(TesseraModule& module, const Clip& clip) {
+    ClipState s;
+    if (!clip.audio)
+        return s;
+    s.source = module.song().findSource(clip.audio->source);
+    AudioStore* store = module.audioStore();
+    if (!s.source) {
+        s.status.state = SourceState::Missing;
+        return s;
+    }
+    if (!store) {
+        s.status.state = SourceState::Loading;
+        return s;
+    }
+    s.status = store->status(clip.audio->source);
+    RenderKey key;
+    double tempo = module.tempo() > 0 ? module.tempo() : 120;
+    if (wantsRender(*clip.audio, tempo, key))
+        s.render = store->renderStatus(key);
+    return s;
+}
+
+void drawWaveform(NVGcontext* vg, rack::math::Rect body, float left, float right, const ClipState& state,
+                  float gainDb, NVGcolor color, const FramesAt& framesAt) {
+    if (body.size.y < 3)
+        return;
+    if (state.status.state == SourceState::Missing || state.status.state == SourceState::Failed) {
+        // Stripes: nothing to play here.
+        nvgSave(vg);
+        nvgIntersectScissor(vg, body.pos.x, body.pos.y, body.size.x, body.size.y);
+        nvgBeginPath(vg);
+        float step = theme::metrics::kHatchSpacing;
+        for (float x = body.pos.x - body.size.y; x < body.getRight(); x += step) {
+            nvgMoveTo(vg, x, body.getBottom());
+            nvgLineTo(vg, x + body.size.y, body.pos.y);
+        }
+        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.35f));
+        nvgStrokeWidth(vg, 1);
+        nvgStroke(vg);
+        nvgRestore(vg);
+        return;
+    }
+    const PeakCache* peaks = state.status.peaks.get();
+    if (!peaks || peaks->empty())
+        return;
+    float gain = dbToGain(gainDb);
+    int channels = std::min(2, peaks->channels());
+    float laneH = body.size.y / float(channels);
+    float x0 = std::max(left, std::floor(body.pos.x)), x1 = std::min(right, body.getRight());
+    nvgBeginPath(vg);
+    for (int ch = 0; ch < channels; ch++) {
+        float mid = body.pos.y + laneH * (float(ch) + 0.5f);
+        float half = laneH / 2 - 0.5f;
+        for (float x = x0; x < x1; x += 1) {
+            double from, to;
+            if (!framesAt(x, from, to))
+                continue;
+            float lo, hi;
+            peaks->range(ch, std::min(from, to), std::max(from, to), lo, hi);
+            lo = std::clamp(lo * gain, -1.f, 1.f);
+            hi = std::clamp(hi * gain, -1.f, 1.f);
+            float y0 = mid - hi * half, y1 = mid - lo * half;
+            nvgRect(vg, x, y0, 1, std::max(0.75f, y1 - y0));
+        }
+    }
+    nvgFillColor(vg, color);
+    nvgFill(vg);
+}
+
+std::string dbText(float db) {
+    if (db <= kSilentDb)
+        return "-inf dB";
+    char buf[32];
+    snprintf(buf, sizeof buf, "%+.1f dB", double(db));
+    return buf;
+}
+
+std::string titleMarks(const Clip& clip, const ClipState& state, float gainDb) {
+    if (!clip.audio)
+        return "";
+    std::string out;
+    if (clip.audio->follow == TempoFollow::Off) {
+        // The UI fonts have no lock symbol; the words say the same.
+        out = "own speed";
+    } else {
+        char buf[24];
+        double t = clip.audio->sourceTempo;
+        snprintf(buf, sizeof buf, std::abs(t - std::round(t)) < 0.05 ? "%.0f \xE2\x96\xBE" : "%.1f \xE2\x96\xBE", t);
+        out = buf;
+    }
+    if (clip.audio->reverse)
+        out = "\xE2\x97\x80 " + out;
+    if (std::abs(gainDb) >= 0.05f)
+        out += "  " + dbText(gainDb);
+    if (state.source && state.source->fileChannels > state.source->channels)
+        out += "  " + std::to_string(state.source->fileChannels) + "\xE2\x86\x92" + std::to_string(state.source->channels);
+    return out;
+}
+
+std::string stateText(const ClipState& state) {
+    switch (state.status.state) {
+    case SourceState::Loading:
+        return "Loading " + std::to_string(int(state.status.progress * 100)) + "%";
+    case SourceState::Missing:
+        return "Missing file";
+    case SourceState::Failed:
+        return "Can't read file";
+    case SourceState::NoMemory:
+        return "Not enough memory";
+    case SourceState::Ready:
+        break;
+    }
+    if (state.render.state == RenderState::Waiting || state.render.state == RenderState::Rendering)
+        return "\xE2\x80\xA6 " + std::to_string(int(state.render.progress * 100)) + "%";
+    if (state.render.state == RenderState::Failed)
+        return "!";
+    return "";
+}
+
+bool stateWarns(const ClipState& state) {
+    return state.status.state == SourceState::Missing || state.status.state == SourceState::Failed ||
+           state.status.state == SourceState::NoMemory || state.render.state == RenderState::Failed;
+}
+
+} // namespace tessera::audioDraw

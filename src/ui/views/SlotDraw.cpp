@@ -1,5 +1,7 @@
 #include "SlotDraw.hpp"
 
+#include "AudioClipDraw.hpp"
+
 #include "../../model/Arrangement.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -170,12 +172,34 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     std::string label = draw::ellipsize(vg, name, clip->name.empty() ? "Clip" : clip->name, body.size.x - kTextPad);
     draw::text(vg, name, body.pos.x + 3, body.getCenter().y, label);
-    // The notes in miniature, in the room the name leaves.
+    // The notes (or the waveform) in miniature, in the room the name leaves.
     float previewLeft = body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
-    if (body.getRight() - previewLeft >= kMinPreviewWidth)
-        drawNotePreview(vg, *clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr,
-                        Rect(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6),
+    Rect preview(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6);
+    if (clip->audio) {
+        audioDraw::ClipState state = audioDraw::stateOf(*ctx.module(), *clip);
+        std::string mark = audioDraw::stateText(state);
+        if (!mark.empty() && body.getRight() - previewLeft >= kMinPreviewWidth) {
+            draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler - 1,
+                                  audioDraw::stateWarns(state) ? c.queue : c.onTile, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+            draw::text(vg, small, body.getRight() - 3, body.getCenter().y, mark);
+            preview.size.x -= draw::textWidth(vg, small, mark) + 4;
+        }
+        if (preview.size.x >= kMinPreviewWidth && state.source) {
+            const AudioContent& a = *clip->audio;
+            double from = double(clip->playStart()), span = double(clip->playEnd() - clip->playStart());
+            audioDraw::drawWaveform(vg, preview, preview.pos.x, preview.getRight(), state, a.gainDb,
+                                    nvgTransRGBAf(c.onTile, kPreviewAlpha), [&](float x, double& f0, double& f1) {
+                                        double u0 = from + span * double(x - preview.pos.x) / double(preview.size.x);
+                                        double u1 = u0 + span / double(preview.size.x);
+                                        f0 = audioDraw::frameOfTick(a, *state.source, u0);
+                                        f1 = audioDraw::frameOfTick(a, *state.source, u1);
+                                        return true;
+                                    });
+        }
+    } else if (body.getRight() - previewLeft >= kMinPreviewWidth) {
+        drawNotePreview(vg, *clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr, preview,
                         nvgTransRGBAf(c.onTile, kPreviewAlpha));
+    }
     nvgRestore(vg);
 
     // The launch button: a darker square with the triangle, a ring while playing.

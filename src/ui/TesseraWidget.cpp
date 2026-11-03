@@ -202,26 +202,14 @@ struct PlaysSwitch : rack::app::Switch {
 
 } // namespace
 
-/// The toast after a drop of audio files: what came in, and what couldn't be read (§6.5).
+/// The toast after a drop of audio files on the panel.
 std::string audioDropMessage(const TesseraModule::AudioDropResult& r) {
-    std::string text;
-    if (r.imported.size() == 1)
-        text = "Imported " + r.imported[0];
-    else if (!r.imported.empty())
-        text = "Imported " + std::to_string(r.imported.size()) + " files";
+    std::string text = audioActions::dropMessage(r.imported, r.failed, r.made.skipped);
     if (r.tempoSet) {
         char buf[64];
         snprintf(buf, sizeof buf, " · Song set to %.4g BPM", r.newTempo);
         text += buf;
     }
-    if (!r.failed.empty()) {
-        if (!text.empty())
-            text += ". ";
-        text += "Couldn't read '" + r.failed[0] + "'" + (r.failed.size() > 1 ? " and others" : "") +
-                ". Tessera reads WAV, AIFF, FLAC and MP3.";
-    }
-    if (r.made.skipped > 0)
-        text += " " + std::to_string(r.made.skipped) + " didn't fit (64 tracks at most).";
     return text;
 }
 
