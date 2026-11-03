@@ -35,6 +35,16 @@ the top turns red and shows the peak (like **+2.3**) when the sound went over fu
 Under its fader it says how much memory the song's audio uses. When MAIN has no cable and the patch has an Audio
 module, it offers **Connect to Audio**.
 
+## Drum lanes
+
+When a drum module's output is patched into a lane's **IN** on the Drum Out, that lane gets a narrow strip of its own,
+right after the drum track's strip, in the lane's colour and named after it (**Kick**, **Snare**). Each has a pan
+knob, a fader with a meter, and its level in dB. Faders and pan knobs work as on any strip: drag, double-click to
+reset, scroll, right-click to type a level.
+
+Use them to balance the kit inside Tessera; the drum track's own fader then sets the whole kit. The kit's **OUT**
+on the Drum Out carries the lanes at these levels and pans.
+
 ## Faders
 
 - **Drag** a fader up or down. It moves from where it is: a click never makes it jump.

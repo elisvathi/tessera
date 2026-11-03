@@ -637,6 +637,12 @@ json_t* trackToJson(const Track& t) {
         set(j, "modulators", modulatorListToJson(t.modulators));
     if (t.channel != Channel{})
         set(j, "channel", channelToJson(t.channel.volumeDb, t.channel.pan));
+    if (std::any_of(t.drumInputs.begin(), t.drumInputs.end(), [](const Channel& c) { return c != Channel{}; })) {
+        json_t* inputs = json_array();
+        for (const Channel& c : t.drumInputs)
+            json_array_append_new(inputs, channelToJson(c.volumeDb, c.pan));
+        set(j, "drumInputs", inputs);
+    }
     return j;
 }
 
@@ -671,6 +677,12 @@ Track trackFromJson(const json_t* j) {
     t.modulators = modulatorListFromJson(get(j, "modulators"));
     t.channel.volumeDb = getFloat(get(j, "channel"), "volume", t.channel.volumeDb);
     t.channel.pan = getFloat(get(j, "channel"), "pan", t.channel.pan);
+    if (const json_t* inputs = get(j, "drumInputs"); json_is_array(inputs))
+        for (size_t k = 0; k < t.drumInputs.size() && k < json_array_size(inputs); k++) {
+            const json_t* c = json_array_get(inputs, k);
+            t.drumInputs[k].volumeDb = getFloat(c, "volume", 0);
+            t.drumInputs[k].pan = getFloat(c, "pan", 0);
+        }
     return t;
 }
 

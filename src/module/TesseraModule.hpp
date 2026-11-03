@@ -322,6 +322,13 @@ class TesseraModule : public rack::engine::Module {
     /// Plays a fader or pan at once while the mouse drags it, before the edit lands (§8.4: no snapshot rebuild).
     /// `track` may be the master's ID.
     void holdChannel(TrackId track, float volumeDb, float pan) { player->hold(track.value, dbToGain(volumeDb), pan); }
+    /// Plays a drum lane IN's level and pan at once while the mixer drags it (its Drum Out reads the hold).
+    void holdDrumInput(TrackId track, int lane, Channel channel) { drumInputHolds[{track.value, lane}] = channel; }
+    void releaseDrumInputHolds() { drumInputHolds.clear(); }
+    std::optional<Channel> drumInputHold(TrackId track, int lane) const {
+        auto it = drumInputHolds.find({track.value, lane});
+        return it == drumInputHolds.end() ? std::nullopt : std::optional<Channel>(it->second);
+    }
     /// Ends the holds once the snapshot with the committed values is out, so the sound never steps back.
     void releaseChannelHolds() { releaseHolds = true; }
     /// Whether MAIN L has a cable (the master's way out).
@@ -416,6 +423,7 @@ class TesseraModule : public rack::engine::Module {
     int64_t savedId = -1; // this module's ID when its JSON was written; differs after paste or duplicate
     EditorState editorState;
     uint64_t revision = 0;
+    std::map<std::pair<uint64_t, int>, Channel> drumInputHolds; // mixer drags on lane strips (UI thread)
     std::vector<TrackId> soundTracks; // the tracks of the last audio snapshot, in its order (UI thread)
     uint64_t audioPlanKey = 0;        // the mix plan the last audio snapshot was built from
     std::shared_ptr<OutputBus> bus = std::make_shared<OutputBus>();

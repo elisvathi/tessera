@@ -115,6 +115,8 @@ CommandPtr setChannel(const Song& song, TrackId track, Channel channel, const st
 /// Strips at -inf stay at -inf.
 CommandPtr nudgeVolumes(const Song& song, const std::vector<SetChannels::Change>& start, float deltaDb);
 CommandPtr setMasterVolume(const Song& song, float db);
+/// A drum track's lane IN level and pan (`lane` 0..7, the Drum Out output). Null when nothing changed.
+CommandPtr setDrumInput(const Song& song, TrackId track, int lane, Channel channel, const std::string& name);
 
 /// The sources no clip uses, and a command that removes them. Null when there are none.
 std::vector<AudioSourceId> unusedSources(const Song& song);

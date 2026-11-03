@@ -370,6 +370,8 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
     if (track.type == TrackType::Audio)
         track.drumLanes.clear();
     normalizeChannel(track.channel);
+    for (Channel& c : track.drumInputs)
+        normalizeChannel(c);
 
     // A clip's kind must match its track: audio clips only on audio tracks, note clips only elsewhere.
     bool audioTrack = track.type == TrackType::Audio;

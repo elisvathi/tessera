@@ -69,6 +69,12 @@ class OutputModuleBase : public rack::engine::Module {
     int activeReturn() const;
     /// The return bus slot its source inputs (Drum Out's lane INs) write to while any has a cable; -1 otherwise.
     int activeSource() const;
+    /// Its source inputs (Drum Out's lane INs): how many, whether one has a cable, and its level after its own fader
+    /// and pan (volts, a peak falling 20 dB a second), for the mixer's lane strips. UI thread.
+    int sourceCount() const { return audioPorts.sourceCount; }
+    bool sourcePatched(int k) const;
+    float sourceLevel(int k) const;
+    static constexpr int kMaxSources = 8;
     TrackId boundTrack() const { return bindingData.track; }
 
   protected:
@@ -110,6 +116,13 @@ class OutputModuleBase : public rack::engine::Module {
     std::atomic<bool> audioOn{false};       // OUT and IN work: bound, and not following the editor's selection
     std::shared_ptr<OutputBus> returnOwner; // the bus whose return slot this module holds (UI thread)
     float inPeak = 0;
+    // Each source's gains (its level and pan), set on the UI thread, ramped on the audio thread; and its meter.
+    std::array<std::atomic<float>, kMaxSources> sourceTargetL{}, sourceTargetR{};
+    std::array<float, kMaxSources> sourceGainL{}, sourceGainR{};
+    std::array<float, kMaxSources> sourcePeak{};
+    std::array<std::atomic<float>, kMaxSources> sourceMeter{};
+    int meterCount = 0;
+    bool sourcesFresh = true;
 };
 
 } // namespace tessera

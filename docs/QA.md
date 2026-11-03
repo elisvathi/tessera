@@ -551,6 +551,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       line; the kick plays through MAIN. Kit OUT carries the lane INs; patch it through an effect into kit IN: the
       effect is heard, the light goes green, and there is no feedback (kit IN never reaches OUT). Hover lane 1's IN:
       it is named after the lane ("Kick audio input").
+- [ ] With lane INs patched, the mixer shows a narrow strip per lane after the drum strip (lane colour and name). Drag
+      a lane fader: its meter and the kit's sound follow at once, one undo step on release; double-click resets;
+      pan moves the lane left and right. Save and reload: the levels stay.
 - [ ] Right-click an audio track's fader (mixer) or level bar (track row): Automate in the timeline adds a Volume lane
       at the current level and opens it; the scale reads +6.0 dB to -inf dB. Draw a lower point and play: the fader,
       the level bar and the dB follow, with a ring in the lane colour. Same for Pan. Muting the lane gives the

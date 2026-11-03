@@ -1,5 +1,6 @@
 #include "OutputModuleBase.hpp"
 
+#include "../engine/AudioPlayer.hpp"
 #include "../model/AudioSource.hpp"
 #include "Registry.hpp"
 #include "TesseraModule.hpp"
@@ -41,18 +42,38 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         outputs[size_t(audioPorts.outR)].setVoltage(f ? f->r : 0.f);
     }
     if (audioPorts.sourceCount > 0) {
-        float sum = 0;
+        // Each source at its own level and pan (a lane strip in the mixer), ramped so a move never clicks.
+        float sumL = 0, sumR = 0;
         bool any = false;
+        float follow = sourcesFresh ? 1.f : 1.f - std::exp(-args.sampleTime / 0.005f);
+        sourcesFresh = false;
         for (int k = 0; k < audioPorts.sourceCount; k++) {
+            size_t i = size_t(k);
+            sourceGainL[i] += (sourceTargetL[i].load(std::memory_order_relaxed) - sourceGainL[i]) * follow;
+            sourceGainR[i] += (sourceTargetR[i].load(std::memory_order_relaxed) - sourceGainR[i]) * follow;
             rack::engine::Input& in = inputs[size_t(audioPorts.sourceFirst + k)];
-            if (in.isConnected()) {
-                sum += in.getVoltageSum();
-                any = true;
+            if (!in.isConnected())
+                continue;
+            float x = in.getVoltageSum();
+            float l = x * sourceGainL[i], r = x * sourceGainR[i];
+            sumL += l;
+            sumR += r;
+            sourcePeak[i] = std::max(sourcePeak[i], std::max(std::fabs(l), std::fabs(r)));
+            any = true;
+        }
+        if (++meterCount >= 32) {
+            meterCount = 0;
+            float fall = float(std::pow(10.0, -20.0 / 20.0 * 32 * args.sampleTime));
+            for (int k = 0; k < audioPorts.sourceCount; k++) {
+                size_t i = size_t(k);
+                sourceMeter[i].store(std::max(sourcePeak[i], sourceMeter[i].load(std::memory_order_relaxed) * fall),
+                                     std::memory_order_relaxed);
+                sourcePeak[i] = 0;
             }
         }
         int slot = sourceSlot.load(std::memory_order_relaxed);
         if (on && slot >= 0 && any)
-            b->returns().write(args.frame, slot, track, sum, sum); // mono drums sit in the middle
+            b->returns().write(args.frame, slot, track, sumL, sumR);
     }
     if (audioPorts.inL < 0)
         return;
@@ -101,6 +122,14 @@ void OutputModuleBase::releaseReturn() {
             returnOwner->returns().release(slot);
     }
     returnOwner.reset();
+}
+
+bool OutputModuleBase::sourcePatched(int k) const {
+    return k >= 0 && k < audioPorts.sourceCount && inputs[size_t(audioPorts.sourceFirst + k)].channels > 0;
+}
+
+float OutputModuleBase::sourceLevel(int k) const {
+    return k >= 0 && k < audioPorts.sourceCount ? sourceMeter[size_t(k)].load(std::memory_order_relaxed) : 0.f;
 }
 
 int OutputModuleBase::activeSource() const {
@@ -214,6 +243,20 @@ void OutputModuleBase::refreshBinding() {
     bool master = src && acceptsMaster && bindingData.track == src->song().master.id;
     audioSlot.store(master ? OutputBus::kMasterSlot : busSlot.load());
     audioOn.store(src && !bindingData.followSelected && status() == BindingStatus::Bound);
+    // The sources' levels and pans: the drum track's lane IN settings, or what a drag in the mixer holds.
+    if (audioPorts.sourceCount > 0) {
+        const Track* t = src ? src->song().findTrack(bindingData.track) : nullptr;
+        for (int k = 0; k < audioPorts.sourceCount && k < kDrumInputs; k++) {
+            Channel c = t ? t->drumInputs[size_t(k)] : Channel{};
+            if (std::optional<Channel> held = src ? src->drumInputHold(bindingData.track, k) : std::nullopt)
+                c = *held;
+            float l, r;
+            balanceGains(c.pan, l, r);
+            float g = dbToGain(c.volumeDb);
+            sourceTargetL[size_t(k)].store(l * g, std::memory_order_relaxed);
+            sourceTargetR[size_t(k)].store(r * g, std::memory_order_relaxed);
+        }
+    }
     if (audioPorts.inL >= 0 || audioPorts.sourceCount > 0) {
         std::shared_ptr<OutputBus> owner = src ? src->outputBus() : nullptr;
         if (owner != returnOwner) {

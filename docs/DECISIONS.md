@@ -1699,7 +1699,18 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **Sources and returns**: the lane INs are the track's own sound, so they go into its OUT (the kit OUT); the kit IN
   is a return and joins after OUT, so an effect loop never feeds back. The mix plan marks each slot (`source`), and
   a Drum Out holds two return slots: its lane INs summed (mono, in the middle) and its kit IN.
-- **No level or pan per lane yet**: every lane IN is mixed at 0 dB; the drum track's fader is the kit's. Whether
-  lanes get their own sub-strips is still the user's call.
+- **Each lane IN has its own level and pan** (§112).
 - A Track Out bound to a drum track no longer dims OUT: it carries the lane INs. Strips fed by IN say "IN" where
   audio tracks say "Clips".
+
+## 112. Drum lane strips (3 Nov)
+
+- **The user wanted a level and pan per drum lane IN.** They live on the drum track (`Track::drumInputs`, one per
+  Drum Out output 1–8), saved only when not at 0 dB / centre, each change one undo step (`setDrumInput`).
+- **The Drum Out applies them** before it mixes the lanes into its source slot: the UI thread hands it each lane's
+  gains (or what a mixer drag holds), the audio thread ramps toward them over about 5 ms and measures each lane's
+  level after its fader and pan. Tessera still gets one stereo source per Drum Out, so the player and the mix plan are
+  unchanged.
+- **In the mixer**, every lane with a cable gets a 40 px strip right after its drum track's strip: the lane's colour
+  and name, pan, fader, meter, level. Same gestures as the big strips; lanes aren't part of the track selection, so a
+  multi-strip fader drag never moves them. No mute, solo or automation per lane yet.

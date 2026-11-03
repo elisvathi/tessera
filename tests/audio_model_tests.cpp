@@ -589,3 +589,22 @@ TEST_CASE("glue joins the split parts of one audio clip back into one, and leave
     f.song.findTrack(f.track)->arrangement = {a.clip, b.clip};
     CHECK_FALSE(arrange::glue(f.song, {a.clip.id, b.clip.id}, [&] { return f.song.nextId++; }));
 }
+
+TEST_CASE("a drum track's lane IN levels and pans are undoable, clamped and saved") {
+    Song song = makeDefaultSong();
+    TrackId drums;
+    for (const Track& t : song.tracks)
+        if (t.type == TrackType::Drum)
+            drums = t.id;
+    REQUIRE(drums.valid());
+    CommandPtr cmd = setDrumInput(song, drums, 2, {-6, 0.5f}, "Lane level");
+    REQUIRE(cmd);
+    applyAndCheckUndo(song, *cmd);
+    CHECK(song.findTrack(drums)->drumInputs[2] == Channel{-6, 0.5f});
+    CHECK_FALSE(setDrumInput(song, drums, 2, {-6, 0.5f}, "same"));
+    CHECK_FALSE(setDrumInput(song, drums, 8, {}, "no such lane"));
+    setDrumInput(song, drums, 0, {40, 3}, "too far")->apply(song);
+    CHECK(song.findTrack(drums)->drumInputs[0] == Channel{kMaxFaderDb, 1});
+    Song loaded = throughJson(song);
+    CHECK(loaded.findTrack(drums)->drumInputs == song.findTrack(drums)->drumInputs);
+}
