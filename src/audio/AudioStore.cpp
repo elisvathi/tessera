@@ -57,6 +57,44 @@ std::shared_ptr<AudioBuffer> prepare(DecodedAudio& d, double rate, const RenderP
 
 } // namespace
 
+int copyMissingFiles(const Song& song, const std::string& from, const std::string& to) {
+    if (from.empty() || to.empty() || from == to)
+        return 0;
+    int copied = 0;
+    std::error_code ec;
+    for (const AudioSource& s : song.audioSources) {
+        fs::path dest = fs::path(to) / s.file;
+        fs::path src = fs::path(from) / s.file;
+        if (fs::exists(dest, ec) || !fs::exists(src, ec))
+            continue;
+        if (s.contentHash != 0 && hashFile(src.string()) != s.contentHash)
+            continue;
+        fs::create_directories(dest.parent_path(), ec);
+        if (fs::copy_file(src, dest, ec))
+            copied++;
+    }
+    return copied;
+}
+
+int removeUnusedFiles(const Song& song, const std::string& folder) {
+    std::error_code ec;
+    fs::path audio = fs::path(folder) / "audio";
+    if (folder.empty() || !fs::is_directory(audio, ec))
+        return 0;
+    int removed = 0;
+    std::vector<fs::path> gone;
+    for (const fs::directory_entry& e : fs::directory_iterator(audio, ec)) {
+        std::string rel = "audio/" + e.path().filename().string();
+        bool used = std::any_of(song.audioSources.begin(), song.audioSources.end(),
+                                [&](const AudioSource& s) { return s.file == rel; });
+        if (!used && e.is_regular_file(ec))
+            gone.push_back(e.path());
+    }
+    for (const fs::path& p : gone)
+        removed += fs::remove(p, ec) ? 1 : 0;
+    return removed;
+}
+
 std::string storageName(const std::string& displayName, uint64_t hash) {
     char hex[9];
     snprintf(hex, sizeof hex, "%08llx", static_cast<unsigned long long>(hash & 0xffffffffull));

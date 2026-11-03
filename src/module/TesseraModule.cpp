@@ -1,5 +1,7 @@
 #include "TesseraModule.hpp"
 
+#include <patch.hpp>
+
 #include "../engine/ClockDivisions.hpp"
 #include "../model/DeviceCommands.hpp"
 #include "../model/DeviceLookup.hpp"
@@ -25,6 +27,26 @@ constexpr uint32_t kMapDivision = 16; // mapped knobs follow automation at a 16t
 // Rack knob mappings of modulators are told apart from lanes' by this bit (IDs never reach it).
 constexpr uint64_t kModulatorKey = uint64_t(1) << 62;
 constexpr uint32_t kSongModulatorColor = 0xFF8A3D; // the accent: song modulators belong to no track
+
+} // namespace
+
+namespace {
+
+/// MAIN's tooltip, with the master's level as it plays.
+struct MainPortInfo : rack::engine::PortInfo {
+    std::string getDescription() override {
+        auto* m = static_cast<TesseraModule*>(module);
+        std::string text = "The master after its fader: every audio track mixed. 10 V is full scale (0 dB), as "
+                           "Rack's Audio module expects";
+        if (!m || !m->masterSounding())
+            return text;
+        const AudioPlayer& p = m->audioPlayer();
+        float peak = std::max(p.masterLevel(0), p.masterLevel(1));
+        char buf[96];
+        snprintf(buf, sizeof buf, "Master after its fader: %.1f dB peak. ", double(gainToDb(peak / kFullScaleVolts)));
+        return buf + text;
+    }
+};
 
 } // namespace
 
@@ -57,6 +79,8 @@ TesseraModule::TesseraModule() : clockDivisionIndex(kDefaultClockDivision) {
     configOutput(EOC_OUTPUT, "Loop end")->description = "Trigger each time the loop wraps";
     configOutput(BAR_OUTPUT, "Bar")->description = "Trigger on every bar";
     configOutput(CLICK_OUTPUT, "Click")->description = "Trigger on every beat: 10 V on the downbeat, 5 V otherwise";
+    configOutput<MainPortInfo>(MAIN_L_OUTPUT, "MAIN left");
+    configOutput<MainPortInfo>(MAIN_R_OUTPUT, "MAIN right");
 
     configLight(PLAY_LIGHT, "Playing");
     configLight(BEAT_LIGHT, "Beat");
@@ -246,6 +270,7 @@ void TesseraModule::playMidiEvent(const MidiEvent& e) {
 
 void TesseraModule::uiStep() {
     snapshots.collect();
+    audioStep();
     syncMappings();
     if (learning()) {
         learnMovedControl();
@@ -272,6 +297,139 @@ void TesseraModule::uiStep() {
         else if (captureSawPlaying)
             setRecordArrangement(false);
     }
+}
+
+void TesseraModule::setupAudioFolder() {
+    if (id < 0)
+        return;
+    std::string folder = createPatchStorageDirectory();
+    if (folder != audioFolder) {
+        audioFolder = folder;
+        // A pasted copy finds its files in the original's patch storage: Rack copies them on duplicate, not on
+        // paste (DECISIONS §102). A pasted module has no ID while its data loads, so this happens here, on add.
+        if (savedId >= 0 && savedId != id)
+            copyMissingFiles(songData, rack::system::join(APP->patch->autosavePath, "modules", std::to_string(savedId)),
+                             audioFolder);
+        // Loading a patch (nothing to undo yet) drops files no source uses: "Remove unused audio" leaves them for
+        // undo until then.
+        if (!APP->history->canUndo())
+            removeUnusedFiles(songData, audioFolder);
+    }
+    if (!audio)
+        audio = std::make_unique<AudioStore>();
+    audio->setFolder(audioFolder);
+}
+
+void TesseraModule::audioStep() {
+    audioSnapshots.collect();
+    if (!audio) {
+        if (!hasAudio(songData))
+            return;
+        setupAudioFolder();
+        if (!audio)
+            return;
+    }
+    if (float rate = audioRate.load(std::memory_order_relaxed); rate > 0)
+        audio->setEngineRate(rate);
+    if (revision != audioRevision)
+        audio->sync(songData);
+
+    // Renders follow the tempo once it has been steady for half a second (§5.2): while it moves, clips play the
+    // quick version, like tape.
+    double now = rack::system::getTime();
+    double t = tempo() > 0 ? tempo() : 120;
+    if (std::abs(t - tempoSeen) > 1e-6) {
+        tempoSeen = t;
+        tempoSettleAt = now;
+    }
+    bool settled = now - tempoSettleAt >= 0.5;
+    bool tempoMoved = settled && std::abs(t - audioTempo) > 1e-6;
+    if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved)
+        return;
+    audioRevision = revision;
+    audioChanges = audio->changes();
+    if (tempoMoved || audioTempo <= 0)
+        audioTempo = t;
+
+    // Keep a second longer what the last snapshot used and this one won't.
+    std::vector<std::shared_ptr<const AudioBuffer>> keep;
+    const AudioSnapshot* last = audioSnapshots.latest();
+    AudioBuild build = buildAudioSnapshot(songData, *audio, double(audioRate.load()) > 0 ? audioRate.load() : 48000,
+                                          audioTempo);
+    if (last)
+        for (const auto& b : last->buffers)
+            if (!build.snapshot->holds(b.get()) &&
+                std::none_of(retiringBuffers.begin(), retiringBuffers.end(), [&](const auto& r) { return r.first == b; }))
+                retiringBuffers.push_back({b, now});
+    retiringBuffers.erase(std::remove_if(retiringBuffers.begin(), retiringBuffers.end(),
+                                         [&](const auto& r) { return now - r.second > 1.0; }),
+                          retiringBuffers.end());
+    for (const auto& r : retiringBuffers)
+        if (!build.snapshot->holds(r.first.get()))
+            build.snapshot->buffers.push_back(r.first);
+    audio->want(build.wanted);
+    audioSnapshots.publish(std::move(build.snapshot));
+}
+
+TesseraModule::AudioDropResult TesseraModule::importAudioFiles(const std::vector<std::string>& paths,
+                                                               AudioDropTarget target) {
+    AudioDropResult result;
+    setupAudioFolder();
+    if (!audio)
+        return result;
+    double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    std::vector<ImportedAudio> files;
+    std::vector<std::string> storedFiles;
+    bool firstLoop = songData.clips.empty();
+    for (const std::string& path : paths) {
+        AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
+        std::string name = rack::system::getFilename(path);
+        if (!imp.ok) {
+            result.failed.push_back(name);
+            continue;
+        }
+        ImportedAudio f;
+        f.source = imp.source;
+        f.loop = imp.guess.loop;
+        f.sound = imp.guess.sound;
+        f.follow = imp.guess.oneShot ? TempoFollow::Off : TempoFollow::Stretch;
+        f.tempo = imp.guess.bpm > 0 ? imp.guess.bpm : songTempo;
+        // The first loop in an empty song sets the song tempo, so the loop plays as it was made (§5.5).
+        if (firstLoop && files.empty() && !imp.guess.oneShot && imp.guess.loop && imp.guess.bpm > 0 &&
+            std::abs(imp.guess.bpm - songTempo) > 1e-6) {
+            result.tempoSet = true;
+            result.oldTempo = songTempo;
+            result.newTempo = std::clamp(imp.guess.bpm, Engine::kMinBpm, Engine::kMaxBpm);
+        }
+        files.push_back(f);
+        storedFiles.push_back(f.source.file);
+        result.imported.push_back(name);
+    }
+    if (files.empty())
+        return result;
+    CommandPtr command = importAudio(songData, files, target, ids(), &result.made);
+    if (!command)
+        return result;
+    NoteSelection before = editorState.selection;
+    command->apply(songData);
+    publish(command->changes());
+    // The new sources take the samples decoded at drop time, so they play at once.
+    audio->sync(songData);
+    auto* complex = new rack::history::ComplexAction;
+    complex->name = command->name();
+    complex->push(new CommandAction(id, std::move(command), before, editorState.selection));
+    if (result.tempoSet) {
+        params[BPM_PARAM].setValue(float(result.newTempo));
+        auto* change = new rack::history::ParamChange;
+        change->name = "set tempo";
+        change->moduleId = id;
+        change->paramId = BPM_PARAM;
+        change->oldValue = float(result.oldTempo);
+        change->newValue = float(result.newTempo);
+        complex->push(change);
+    }
+    APP->history->push(complex);
+    return result;
 }
 
 void TesseraModule::drainCapture() {
@@ -752,6 +910,8 @@ void TesseraModule::process(const ProcessArgs& args) {
         engineSampleRate = args.sampleRate;
         engine.setSampleRate(engineSampleRate);
         recCv.setSampleRate(engineSampleRate);
+        player->setSampleRate(engineSampleRate);
+        audioRate.store(engineSampleRate, std::memory_order_relaxed);
     }
     if (const Snapshot* next = snapshots.poll())
         engine.setSnapshot(next);
@@ -783,6 +943,15 @@ void TesseraModule::process(const ProcessArgs& args) {
     engine.setClockDivision(kClockDivisions[clockDivisionIndex.load(std::memory_order_relaxed)].ticks);
     engine.process(bus->beginWrite(args.frame), lastEvents);
     bus->publish(args.frame);
+    if (const AudioSnapshot* next = audioSnapshots.poll())
+        player->setSnapshot(next);
+    // A song without audio skips the player: it costs what it did before audio existed.
+    float mainL = 0, mainR = 0;
+    if (player->active())
+        player->process(engine, mainL, mainR);
+    outputs[MAIN_L_OUTPUT].setVoltage(mainL);
+    outputs[MAIN_R_OUTPUT].setVoltage(mainR);
+    mainConnected.store(outputs[MAIN_L_OUTPUT].isConnected(), std::memory_order_relaxed);
     if (mapDivider.process()) {
         writeMappings();
         int channels = inputs[AUTO_REC_INPUT].getChannels();
@@ -990,6 +1159,8 @@ void TesseraModule::writeTransportOutputs(const ProcessArgs& args) {
 }
 
 void TesseraModule::onAdd(const AddEvent& e) {
+    if (hasAudio(songData))
+        setupAudioFolder();
     Registry& registry = Registry::get();
     // A duplicated module arrives with its original's name; give it its own so name lookups stay unambiguous.
     TesseraModule* sameName = registry.findSourceByName(name);
