@@ -1884,3 +1884,11 @@ Why: built to the spec; these are the places it left open or where the code sugg
   second-order prediction, Rice codes with 5-bit parameters in one partition, frame CRCs, no MD5 (allowed by the
   format). Tested lossless by reading back with dr_flac. Exports offer "24-bit FLAC" beside the two WAV formats,
   with the same dither as 24-bit WAV; stems take the export's extension. Recordings stay 32-bit float WAV.
+
+## 125. DAWproject export of audio (3 Nov)
+
+- Audio tracks export with `contentType="audio"`, a Volume (linear) and Pan (normalized). Each timeline instance is
+  a Clip (time, duration in song beats, playStart = its offset, loop, fades in beats) holding Warps from clip beats to
+  file seconds at the clip tempo: two Warp points, the clip's start and end; algorithm "stretch" or "repitch". Every
+  source's file goes in the zip as "audio/<name>" (repeated names numbered), read from patch storage.
+- Not yet: audio launcher clips, reverse, clip gain, pitch shift.
