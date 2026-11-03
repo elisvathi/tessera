@@ -9,6 +9,8 @@ namespace tessera {
 
 std::vector<AutomationEnvelope>* lanesOf(Song& song, LaneOwner owner) {
     if (owner.track.valid()) {
+        if (owner.track == song.master.id)
+            return &song.master.automation;
         Track* t = song.findTrack(owner.track);
         return t ? &t->automation : nullptr;
     }

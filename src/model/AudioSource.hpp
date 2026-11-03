@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Automation.hpp"
 #include "SoundType.hpp"
 #include "Types.hpp"
 
@@ -150,8 +151,12 @@ struct Channel {
 struct MasterChannel {
     TrackId id;
     float volumeDb = 0;
+    /// Its automation: only a Volume lane (the master has no pan), shown under the Master row.
+    std::vector<AutomationEnvelope> automation;
 
-    bool operator==(const MasterChannel& o) const { return id == o.id && volumeDb == o.volumeDb; }
+    bool operator==(const MasterChannel& o) const {
+        return id == o.id && volumeDb == o.volumeDb && automation == o.automation;
+    }
     bool operator!=(const MasterChannel& o) const { return !(*this == o); }
 };
 

@@ -199,6 +199,14 @@ void AudioPlayer::startBlock(const Engine& engine) {
     }
     float master = snapshot ? snapshot->masterVolume : 0;
     float masterPan = 0;
+    // The master's Volume lane runs along the song, like a track's (§7.3); a drag of its fader wins.
+    bool masterLane = snapshot && !snapshot->masterLane.empty();
+    if (masterLane) {
+        float db = faderDbOfPos(evaluateAt(snapshot->masterLane, engine.position(), masterLaneCursor, 0));
+        master = dbToGain(db);
+        masterAutoDb.store(db, std::memory_order_relaxed);
+    }
+    masterAuto.store(masterLane, std::memory_order_relaxed);
     if (snapshot)
         held(snapshot->masterId, master, masterPan);
     if (masterFresh && snapshot) {

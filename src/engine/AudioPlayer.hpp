@@ -86,6 +86,13 @@ class AudioPlayer {
         value = (pan ? autoPan : autoVolume)[size_t(track)].load(std::memory_order_relaxed);
         return true;
     }
+    /// Whether the master's Volume lane moves its fader now, and to what (dB).
+    bool masterAutomated(float& db) const {
+        if (!masterAuto.load(std::memory_order_relaxed))
+            return false;
+        db = masterAutoDb.load(std::memory_order_relaxed);
+        return true;
+    }
 
   private:
     struct Voice {
@@ -179,6 +186,9 @@ class AudioPlayer {
     int blockPos = 0;
     float masterGain = 0, masterStep = 0;
     bool masterFresh = true;
+    size_t masterLaneCursor = 0;
+    std::atomic<bool> masterAuto{false};
+    std::atomic<float> masterAutoDb{0};
     float masterPeakL = 0, masterPeakR = 0;
 
     std::array<std::array<std::atomic<float>, 2>, kMaxTracks> meters{};

@@ -360,10 +360,10 @@ float MixerPane::shownVolume(const Strip& s) const {
     auto it = held.find(key);
     if (it != held.end())
         return it->second.first;
-    if (s.master)
-        return m->song().master.volumeDb;
     // A fader lane playing moves the fader with it (§7.3).
     float automated;
+    if (s.master)
+        return m->audioPlayer().masterAutomated(automated) ? automated : m->song().master.volumeDb;
     if (m->audioPlayer().automated(s.playerIndex, false, automated))
         return automated;
     const Track* t = m->song().findTrack(s.track);
@@ -390,12 +390,13 @@ float MixerPane::shownPan(const Strip& s) const {
 
 std::optional<NVGcolor> MixerPane::laneColor(const Strip& s, bool pan) const {
     // The ring shows whenever the track has the lane, playing or not: the control belongs to it.
-    const Track* t = s.master ? nullptr : ctx.module()->song().findTrack(s.track);
-    if (!t)
+    const Song& song = ctx.module()->song();
+    const Track* t = s.master ? nullptr : song.findTrack(s.track);
+    if (!t && !s.master)
         return std::nullopt;
-    for (const AutomationEnvelope& l : t->automation)
+    for (const AutomationEnvelope& l : t ? t->automation : song.master.automation)
         if (l.drive == (pan ? LaneDrive::Pan : LaneDrive::Volume) && !l.mute)
-            return theme::track(l.color ? l.color : t->color);
+            return theme::track(l.color ? l.color : t ? t->color : theme::kMasterColor);
     return std::nullopt;
 }
 
@@ -571,9 +572,8 @@ void MixerPane::openTyping(const Strip& s) {
     bool master = s.master;
     float pan = master ? 0 : shownPan(s);
     EditorContext* c = &ctx;
-    std::function<void()> automate;
-    if (!master)
-        automate = [c, track] { trackActions::automateMix(*c, track, false); };
+    TrackId automated = master ? m->song().master.id : track;
+    std::function<void()> automate = [c, automated] { trackActions::automateMix(*c, automated, false); };
     typingMenu(
         ctx, master ? "Master volume (dB)" : "Volume (dB)", shownVolume(s),
         [m, track, master, pan](float db) {

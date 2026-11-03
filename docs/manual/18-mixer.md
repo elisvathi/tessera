@@ -102,6 +102,11 @@ Right-click a fader, a level bar or a pan knob and choose **Automate in the time
 
 ## The Master row
 
-Under **+ Add track**, a thin **Master** row shows the Master's level bar and its volume in dB. It works like a
-track's level bar: drag it sideways, double-click it for 0 dB, scroll over it to move 0.5 dB at a time. Click the
-word **Master** to open the mixer. Like the mixer, it appears once a track makes sound.
+After the last track, above **+ Add track**, a thin **Master** row shows the Master's level bar and its volume in
+dB. It works like a track's level bar: drag it sideways, double-click it for 0 dB, scroll over it to move 0.5 dB at
+a time. Click the word **Master** to open the mixer. Like the mixer, it appears once a track makes sound.
+
+**Automate the Master**: right-click its level bar (or the Master fader in the mixer) and choose **Automate in the
+timeline**. A **Volume** lane opens under the Master row; draw it like any lane, for a fade-out at the end of a
+song, say. The arrow beside the word **Master** shows or hides it. While it plays, the level bar and the Master
+fader follow it, with a ring in the lane's colour. The Master has no arm, so its lane is only drawn, never recorded.

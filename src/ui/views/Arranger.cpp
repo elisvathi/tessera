@@ -216,7 +216,7 @@ void ArrangerView::applyZoomLimits() {
 void ArrangerView::syncFromState() {
     ViewState& state = ctx.view();
     const Song& song = ctx.module()->song();
-    rows = buildTrackRows(song, state.foldedGroups, state.openAutomation);
+    rows = buildTrackRows(song, state.foldedGroups, state.openAutomation, headers->showsMaster());
     std::vector<double> heights;
     heights.reserve(rows.size());
     for (const TrackRow& row : rows) {
@@ -230,6 +230,9 @@ void ArrangerView::syncFromState() {
         case TrackRow::Kind::AddLane:
             heights.push_back(kAddLaneRowHeight);
             break;
+        case TrackRow::Kind::Master:
+            heights.push_back(TrackHeaders::kMasterRowHeight + 6);
+            break;
         default: {
             // Stacked clips need room: the track grows for as long as they overlap, without changing its setting.
             const Track* t = ctx.module() ? ctx.module()->song().findTrack(row.track) : nullptr;
@@ -241,8 +244,8 @@ void ArrangerView::syncFromState() {
     }
     syncedHeights = heights;
     tracks.setViewHeight(lanes->box.size.y);
-    // Room to scroll the "+ Add track" row, and the Master row under it, into view.
-    tracks.setFooter(36 + (headers->showsMaster() ? TrackHeaders::kMasterRowHeight + 2 : 0));
+    // Room to scroll the "+ Add track" row, after everything, into view.
+    tracks.setFooter(36);
     tracks.setHeights(std::move(heights));
     tracks.scrollTo(state.trackScroll);
 

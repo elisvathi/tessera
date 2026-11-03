@@ -818,6 +818,8 @@ json_t* songToJson(const Song& s) {
     }
     json_t* master = channelToJson(s.master.volumeDb, 0);
     set(master, "id", idJson(s.master.id));
+    if (!s.master.automation.empty())
+        set(master, "automation", automationListToJson(s.master.automation));
     set(j, "master", master);
     return j;
 }
@@ -1062,6 +1064,7 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
     forEach(get(j, "audioSources"), [&](const json_t* aj) { s.audioSources.push_back(sourceFromJson(aj)); });
     s.master.id = readId<TrackId>(get(get(j, "master"), "id"));
     s.master.volumeDb = getFloat(get(j, "master"), "volume", s.master.volumeDb);
+    s.master.automation = automationListFromJson(get(get(j, "master"), "automation"));
 
     // Before normalize, which trims each device's knobs to its type's list and would drop the old values.
     splitLegacyRandom(s);

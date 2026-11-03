@@ -102,6 +102,8 @@ class TrackHeaders : public InteractiveView {
     void drawAddRow(NVGcontext* vg);
     rack::math::Rect masterRowRect();
     rack::math::Rect masterLevelRect();
+    /// The Master row's lanes arrow, between its name and its level bar.
+    rack::math::Rect masterLanesRect();
     void drawMasterRow(NVGcontext* vg);
     /// The "+ Add track" row right after the last track.
     rack::math::Rect addRowRect();

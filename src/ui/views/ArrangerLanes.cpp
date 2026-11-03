@@ -816,7 +816,7 @@ std::optional<LaneFrame> ArrangerLanes::laneFrame(int row) {
     const TrackRow& r = owner.rows[size_t(row)];
     const Track* track = m->song().findTrack(r.track);
     const AutomationEnvelope* lane = findLane(m->song(), LaneOwner::ofTrack(r.track), r.lane);
-    if (!track || !lane)
+    if (!lane || (!track && r.track != m->song().master.id))
         return std::nullopt;
     LaneFrame f;
     f.owner = LaneOwner::ofTrack(r.track);
@@ -825,7 +825,7 @@ std::optional<LaneFrame> ArrangerLanes::laneFrame(int row) {
     f.time = &time();
     f.snap = snapStep();
     f.playhead = m->playing() ? playhead() : NAN;
-    f.color = theme::track(lane->color ? lane->color : track->color);
+    f.color = theme::track(lane->color ? lane->color : track ? track->color : theme::kMasterColor);
     return f;
 }
 

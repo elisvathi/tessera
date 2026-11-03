@@ -2,6 +2,7 @@
 
 #include "../src/model/ArrangementEdits.hpp"
 #include "../src/model/AudioEdits.hpp"
+#include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
 #include "RandomSong.hpp"
@@ -107,6 +108,34 @@ TEST_CASE("a schema 6 song loads with a master at 0 dB and channels centred at 0
         CHECK(t.channel == Channel{});
     CHECK(s.audioSources.empty());
     CHECK_FALSE(hasAudio(s));
+}
+
+TEST_CASE("the master keeps one Volume lane: added like a track's, saved, and trimmed on load") {
+    Song song = makeDefaultSong();
+    LaneOwner master = LaneOwner::ofTrack(song.master.id);
+    REQUIRE(lanesOf(song, master) == &song.master.automation);
+    AutomationEnvelope volume = makeLane(song.newId<AutomationId>(), 0, 0);
+    volume.drive = LaneDrive::Volume;
+    volume.points = {{0, 0.5f}, {kPpq * 4, 0.75f}};
+    CommandPtr add = addLane(song, master, volume);
+    REQUIRE(add);
+    add->apply(song);
+    REQUIRE(song.master.automation.size() == 1);
+    CHECK(findLane(song, master, volume.id) != nullptr);
+    CHECK(throughJson(song) == song);
+    add->revert(song);
+    CHECK(song.master.automation.empty());
+
+    // Anything but one Volume lane is dropped: the master has no pan and no AUTO outputs.
+    AutomationEnvelope pan = volume;
+    pan.id = song.newId<AutomationId>();
+    pan.drive = LaneDrive::Pan;
+    AutomationEnvelope second = volume;
+    second.id = song.newId<AutomationId>();
+    song.master.automation = {pan, volume, second};
+    normalize(song);
+    REQUIRE(song.master.automation.size() == 1);
+    CHECK(song.master.automation[0].id == volume.id);
 }
 
 TEST_CASE("normalize keeps clip kinds on matching tracks and clamps audio values") {

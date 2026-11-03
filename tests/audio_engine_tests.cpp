@@ -538,6 +538,33 @@ TEST_CASE("a note track whose output module brings audio back on IN makes sound;
     CHECK(player.level(0, 0) > 1.9f);
 }
 
+TEST_CASE("the master's Volume lane moves the master, a held master fader wins, and a muted lane gives it back") {
+    Rig rig(4.0, dc);
+    AutomationEnvelope volume;
+    volume.id = AutomationId(rig.song.nextId++);
+    volume.drive = LaneDrive::Volume;
+    volume.points = {{0, faderPosOfDb(-6.0206f)}};
+    rig.song.master.automation = {volume};
+    rig.rebuild();
+    rig.engine->play();
+    float right = 0, left = 0;
+    for (int i = 0; i < 4800; i++)
+        left = rig.step(&right);
+    CHECK(left == doctest::Approx(kVolts * 0.5).epsilon(1e-3));
+    float db = 0;
+    REQUIRE(rig.player->masterAutomated(db));
+    CHECK(db == doctest::Approx(-6.02).epsilon(1e-2));
+
+    rig.player->hold(rig.song.master.id.value, 1.f, 0, AudioPlayer::kHoldVolume);
+    CHECK(rig.run(480).back() == doctest::Approx(kVolts).epsilon(1e-3));
+    rig.player->releaseHolds();
+
+    rig.song.master.automation[0].mute = true;
+    rig.rebuild();
+    CHECK(rig.run(480).back() == doctest::Approx(kVolts).epsilon(1e-3));
+    CHECK_FALSE(rig.player->masterAutomated(db));
+}
+
 TEST_CASE("a fader lane moves an audio track's level and a pan lane its pan; a held fader wins over them") {
     Rig rig(4.0, dc);
     AutomationEnvelope volume;

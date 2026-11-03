@@ -88,6 +88,8 @@ void appendSchemeMenu(rack::ui::Menu* menu);
 
 /// A track or clip colour as stored in the song, tuned for the editor's scheme: deeper on light ones.
 NVGcolor track(uint32_t color, float alpha = 1.f);
+/// The master's colour where a track would show its own: its lane, its Track Out screen.
+constexpr uint32_t kMasterColor = 0xC9CED6;
 
 NVGcolor rgb(uint32_t hex, float alpha = 1.f);
 

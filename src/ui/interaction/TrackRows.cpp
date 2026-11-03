@@ -5,7 +5,7 @@
 namespace tessera {
 
 std::vector<TrackRow> buildTrackRows(const Song& song, const std::set<uint64_t>& foldedGroups,
-                                     const std::set<uint64_t>& openAutomation) {
+                                     const std::set<uint64_t>& openAutomation, bool master) {
     std::vector<TrackRow> rows;
     std::set<uint64_t> shown;
     auto addTrack = [&](const Track& t, GroupId group, bool inGroup) {
@@ -33,6 +33,12 @@ std::vector<TrackRow> buildTrackRows(const Song& song, const std::set<uint64_t>&
     for (const TrackGroup& g : song.groups)
         if (!shown.count(g.id.value))
             rows.push_back({TrackRow::Kind::Group, TrackId(), g.id, false});
+    if (master) {
+        rows.push_back({TrackRow::Kind::Master, song.master.id, GroupId(), false});
+        if (openAutomation.count(song.master.id.value))
+            for (const AutomationEnvelope& lane : song.master.automation)
+                rows.push_back({TrackRow::Kind::Lane, song.master.id, GroupId(), false, lane.id});
+    }
     return rows;
 }
 

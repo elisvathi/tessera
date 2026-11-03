@@ -1738,4 +1738,14 @@ Why: built to the spec; these are the places it left open or where the code sugg
   record mode (Touch by default). It reads the control only while the mouse holds it; let go, and the lane plays.
 - **A hold names the control it holds** (`AudioPlayer::kHoldVolume` / `kHoldPan`). Before, a pan drag also held the
   fader at its strip value, which froze a playing Volume lane during the drag.
-- Master automation is still to come (§109).
+
+## 115. Master automation (3 Nov)
+
+- **The user chose the order**: tracks, then the **Master row with its lane under it**, then "+ Add track" at the
+  very end (the Master row used to sit under "+ Add track"). The Master row is now a row of the track list
+  (`TrackRow::Kind::Master`), so its lane is drawn and edited like any other.
+- **One Volume lane** (`MasterChannel::automation`, saved with the master; normalize drops anything else). It is
+  added from the Master level bar's or the Master fader's "Automate in the timeline", and a lanes arrow beside
+  "Master" shows or hides it. There is no add-lane row and no recording: the master has no arm.
+- **The audio player plays it**, reading the lane at the song position each 32-sample block (the master isn't an
+  engine track); a drag of the master fader wins, a muted lane gives the fader back.

@@ -145,6 +145,23 @@ TEST_CASE("grouping gathers tracks, moving into and out of groups, ungrouping") 
     CHECK(open[3].track == song.tracks[0].id);
     song.tracks[0].automation.clear();
 
+    // The Master row comes last, after the groups; its lanes follow it when open, with no add-lane row.
+    AutomationEnvelope masterLane;
+    masterLane.id = song.newId<AutomationId>();
+    masterLane.drive = LaneDrive::Volume;
+    song.master.automation.push_back(masterLane);
+    auto withMaster = buildTrackRows(song, {}, {}, true);
+    REQUIRE(withMaster.size() == 6);
+    CHECK(withMaster.back().kind == TrackRow::Kind::Master);
+    CHECK(withMaster.back().track == song.master.id);
+    auto masterOpen = buildTrackRows(song, {}, {song.master.id.value}, true);
+    REQUIRE(masterOpen.size() == 7);
+    CHECK(masterOpen[5].kind == TrackRow::Kind::Master);
+    CHECK(masterOpen[6].kind == TrackRow::Kind::Lane);
+    CHECK(masterOpen[6].lane == masterLane.id);
+    CHECK(buildTrackRows(song, {}, {song.master.id.value}).size() == 5); // no sound: no Master row
+    song.master.automation.clear();
+
     // Drop D onto the group (at its end): it joins.
     CommandPtr join = moveTracks(song, {song.tracks[3].id}, 2, g);
     REQUIRE(join);
