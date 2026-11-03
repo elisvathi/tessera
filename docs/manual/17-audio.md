@@ -86,7 +86,9 @@ Audio clips move, copy, trim, loop and split with the same gestures as note clip
 |---|---|
 | Drag the title bar up or down | The clip's gain. The waveform grows and shrinks while you drag. Every selected audio clip changes by the same amount. Snaps to 0 dB; Alt skips the snap. |
 | Drag a top corner of the clip body | The fade in (left) or fade out (right). The fade shades the waveform. |
+| Drag the dot in the middle of a fade up or down | Bends the fade's curve: up rises fast then levels off, down starts slowly. It catches at straight; Alt skips that. |
 | Alt+drag the right edge | The clip tempo (see above). |
+| Drag an edge of a clip that doesn't loop | Trims it. It stops at the start or end of the file and says **Start of file** or **End of file**. |
 
 The clip's settings (gain, follow tempo, sound type, tempo) belong to the clip, so every linked copy of it changes
 together. The inspector says **all 3 copies** when there are several.
@@ -94,8 +96,15 @@ together. The inspector says **all 3 copies** when there are several.
 ### Overlaps are crossfades
 
 An audio track always has one row of clips: its clips never stack. Where two clips overlap, the overlap is a
-crossfade: one fades out while the other fades in. Drag a clip over another, or drag an edge into its neighbour, to
-make one; move them apart and it is gone.
+crossfade: one fades out while the other fades in, drawn as an X. Drag a clip over another, or drag an edge into its
+neighbour, to make one; move them apart and it is gone.
+
+![Two audio clips crossfading; the second plays reversed](images/audio-crossfade.png)
+
+- **Drag the diamond on top of the X** sideways: right makes the crossfade longer, left shorter, evenly around its
+  middle. It reaches only as far as both clips have audio.
+- **Drag the dot in the middle of the X** up or down to bend both curves. Straight in the middle is "equal power":
+  the level stays even through the crossfade.
 
 - **Drop a clip inside another** and the outer clip splits around it, crossfading at each end.
 - **At most two clips sound at once.** Move a clip so a third would join in, and the earliest of the three stops
