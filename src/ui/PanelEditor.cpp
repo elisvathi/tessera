@@ -146,7 +146,8 @@ PanelEditor::PanelEditor(int64_t moduleId, std::function<void()> openFullEditor)
     top = new TopPane(ctx);
     detail = new DetailPane(ctx);
     panes = new PaneStack(ctx, top, detail, kMinPaneHeight, [this] { runAction(Action::MaximizePane); });
-    panes->setMixer(new MixerPane(ctx, true));
+    mixer = new MixerPane(ctx, true);
+    panes->setMixer(mixer);
     addChild(panes);
     // "Full editor" belongs to the whole editor, not a pane: it stays in the top-right corner whichever pane is
     // maximized, next to that pane's own maximize / restore button.
@@ -203,7 +204,10 @@ void PanelEditor::step() {
     song->cornerInset = notesOnTop ? 0 : transportWidth + 4;
     panes->layout();
     detail->layout();
-    float rulerHeight = Ruler::heightFor(song->source, ctx.surface);
+    // With the mixer maximised, the transport and Full editor sit in its tab, which keeps room for them.
+    bool mixerOnTop = ctx.view().maximized == Pane::Mixer && mixer->visible;
+    mixer->reserveTab(mixerOnTop ? transportWidth + 4 : 0, mixerOnTop ? kCornerButton + 6 : 0);
+    float rulerHeight = mixerOnTop ? mixer->tabHeight() : Ruler::heightFor(song->source, ctx.surface);
     float buttonY = notesOnTop ? (theme::metrics::kPaneHeader - kCornerButton) / 2 : (rulerHeight - kCornerButton) / 2;
     float maximizeRoom = notesOnTop ? 6 + kMaximizeButton + 6 : 3 + kMaximizeButton + 4;
     float x = box.size.x - maximizeRoom - kCornerButton;

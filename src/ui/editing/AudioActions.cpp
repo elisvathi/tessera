@@ -1,12 +1,16 @@
 #include "AudioActions.hpp"
 
+#include "../../module/OutputModuleBase.hpp"
+#include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
+#include "../../plugin.hpp"
 #include "../../engine/AudioSnapshotBuilder.hpp"
 #include "../EditorContext.hpp"
 #include "../views/AudioClipDraw.hpp"
 #include "../widgets/MenuTextField.hpp"
 
 #include <app/CableWidget.hpp>
+#include <app/RackScrollWidget.hpp>
 #include <app/RackWidget.hpp>
 #include <app/Scene.hpp>
 #include <history.hpp>
@@ -375,6 +379,69 @@ std::string connectMainToAudio(TesseraModule* module) {
     addCable(module, TesseraModule::MAIN_R_OUTPUT, audio, 1, undo);
     APP->history->push(undo);
     return "MAIN is connected to the Audio module";
+}
+
+std::string addOutputFor(TesseraModule* module, TrackId track) {
+    if (!module || !APP->scene || !APP->scene->rack)
+        return "";
+    const Song& song = module->song();
+    const Track* t = song.findTrack(track);
+    bool master = track == song.master.id;
+    if (!t && !master)
+        return "";
+    rack::app::ModuleWidget* tessera = APP->scene->rack->getModule(module->id);
+    if (!tessera)
+        return "";
+    bool drum = t && t->type == TrackType::Drum;
+    rack::plugin::Model* model = drum ? modelDrumOut : modelTrackOut;
+    rack::engine::Module* added = model->createModule();
+    APP->engine->addModule(added);
+    // A new module binds itself on add (to the selected track, or the first one without an output); this one is
+    // for the track the user asked about.
+    auto* output = dynamic_cast<OutputModuleBase*>(added);
+    if (output)
+        output->bind(*module, track);
+    rack::app::ModuleWidget* widget = model->createModuleWidget(added);
+    APP->scene->rack->addModule(widget);
+    APP->scene->rack->setModulePosNearest(widget,
+                                          tessera->box.pos.plus(rack::math::Vec(tessera->box.size.x, 0)));
+    auto* undo = new rack::history::ModuleAdd;
+    undo->name = drum ? "add Drum Out" : "add Track Out";
+    undo->setModule(widget);
+    APP->history->push(undo);
+    if (output)
+        output->flash();
+    return std::string(drum ? "Added a Drum Out for " : "Added a Track Out for ") + (master ? "the master" : t->name) +
+           ", beside Tessera";
+}
+
+void showInRack(OutputModuleBase* output) {
+    if (!output || !APP->scene || !APP->scene->rack || !APP->scene->rackScroll)
+        return;
+    rack::app::ModuleWidget* widget = APP->scene->rack->getModule(output->id);
+    if (!widget)
+        return;
+    rack::app::RackScrollWidget* scroll = APP->scene->rackScroll;
+    // A bound the size of the view at the current zoom, centred on the module: the view moves, the zoom stays.
+    rack::math::Vec view = scroll->box.size.div(std::max(0.01f, scroll->getZoom()));
+    scroll->zoomToBound(rack::math::Rect(widget->box.getCenter().minus(view.div(2)), view));
+    output->flash();
+}
+
+std::string outputName(const OutputModuleBase* output) {
+    std::string name = output && output->model ? output->model->name : "";
+    const std::string brand = "Tessera ";
+    return name.rfind(brand, 0) == 0 ? name.substr(brand.size()) : name;
+}
+
+std::vector<OutputModuleBase*> outputsFor(const TesseraModule* module, TrackId track) {
+    std::vector<OutputModuleBase*> out;
+    if (!module)
+        return out;
+    for (OutputModuleBase* o : Registry::get().outputsOf(module->id))
+        if (o->boundTrack() == track && o->status() == BindingStatus::Bound)
+            out.push_back(o);
+    return out;
 }
 
 } // namespace tessera::audioActions

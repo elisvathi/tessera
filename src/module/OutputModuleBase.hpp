@@ -76,6 +76,10 @@ class OutputModuleBase : public rack::engine::Module {
     float sourceLevel(int k) const;
     static constexpr int kMaxSources = 8;
     TrackId boundTrack() const { return bindingData.track; }
+    /// Makes its screen flash for a moment, so the user finds it in the rack (Show in the rack). UI thread.
+    void flash() { flashUntil = rack::system::getTime() + 1.2; }
+    /// How strongly its screen flashes now, 0 when it does not. UI thread.
+    float flashAmount() const;
 
   protected:
     /// Audio jacks a subclass has (§8.1): OUT L/R carry the track's sound before its fader, IN L/R bring audio back
@@ -106,6 +110,7 @@ class OutputModuleBase : public rack::engine::Module {
     // whether its Tessera was pasted alongside it.
     bool checkPaste = false;
     double addedFrameTime = 0;
+    double flashUntil = 0;
 
     AudioHandoff<const OutputBus> bus;
     std::atomic<int> busSlot{-1};
@@ -114,6 +119,7 @@ class OutputModuleBase : public rack::engine::Module {
     std::atomic<int> returnSlot{-1};        // where IN writes on the return bus
     std::atomic<int> sourceSlot{-1};        // where the source inputs write
     std::atomic<bool> audioOn{false};       // OUT and IN work: bound, and not following the editor's selection
+    std::atomic<bool> trackGone{false};     // its track was deleted: IN is ignored and its light turns amber
     std::shared_ptr<OutputBus> returnOwner; // the bus whose return slot this module holds (UI thread)
     float inPeak = 0;
     // Each source's gains (its level and pan), set on the UI thread, ramped on the audio thread; and its meter.

@@ -110,7 +110,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Double-click a name to rename (Enter commits, Esc cancels, clicking away commits); typing never
       triggers shortcuts.
 - [ ] Delete (arranger focused) and Duplicate; the last track can't be deleted.
-- [ ] A Track Out bound to a deleted track shows "Track missing" and goes silent; undo brings it back playing.
+- [ ] A Track Out bound to a deleted track shows "Track deleted" in amber and goes silent; with a cable on IN its
+  light is amber. Undo brings it back playing.
+- [ ] Bypass Tessera: its Track Outs show "Tessera bypassed". Turn it on again: they play.
 - [ ] Duplicate a track with a clip: editing the copy's notes leaves the original alone.
 - [ ] All of the above in the panel editor's arranger.
 
@@ -547,6 +549,14 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       track and patch a synth into IN: the track gets a mixer strip and a level line. Bypass Track Out: what came
       back drops out, nothing feeds back.
 - [ ] Open a patch saved before: every Track Out keeps its place, its track and its cables.
+- [ ] A track with notes and no output: click the amber jack in its row. A Track Out (Drum Out for a drum track)
+      appears in the first free space right of Tessera, bound to that track, its screen flashing; the jack goes.
+      Ctrl+Z removes it. The track menu's "Add a Track Out for this track" does the same for any track.
+- [ ] Mixer source chip: "IN · Track Out" on a note track fed by IN, "Bypassed" in amber while that Track Out is
+      bypassed (the menu says which). Click the chip: Add a Track Out for this track; Show Track Out in the rack
+      scrolls the rack to it (same zoom) and flashes its screen.
+- [ ] In the in-panel editor, maximize the mixer: the transport and Full editor sit in its bar, clear of "Mixer" and
+      the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level
       line; the kick plays through MAIN. Kit OUT carries the lane INs; patch it through an effect into kit IN: the
       effect is heard, the light goes green, and there is no feedback (kit IN never reaches OUT). Hover lane 1's IN:

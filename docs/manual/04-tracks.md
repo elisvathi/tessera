@@ -22,8 +22,9 @@ Each track has a header row on the left:
 
 - **The colour tile** with the track number. A drum track also shows a small drum.
 - **The name.** Double-click it to rename. Enter keeps the new name, Esc cancels.
-- **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Add a
-  Track Out (or Drum Out) and pick this track.
+- **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Click it
+  to add a Track Out (a Drum Out for a drum track) bound to this track, in the first free space right of Tessera.
+  The track menu has the same command, **Add a Track Out for this track**, for any track. Both are one undo step.
 - **Arm** (the ring): arms the track for recording. It turns red while armed. See [Recording](11-recording.md).
 - **The lanes arrow** (▸): shows the track's automation lanes under it. It is dim until the track has lanes.
 - **M** mutes the track. **S** solos it.
@@ -46,7 +47,7 @@ Click a header to select the track. The piano roll then shows its clip.
 
 New tracks go right after the selected one.
 
-When you delete a track, an output module that played it shows **Track missing** and goes quiet. Undo the delete and
+When you delete a track, an output module that played it shows **Track deleted** and goes quiet. Undo the delete and
 it plays again. Clips that only that track used are deleted with it; clips shared with other tracks stay.
 
 ## Selecting several tracks

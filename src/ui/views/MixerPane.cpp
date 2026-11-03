@@ -38,6 +38,45 @@ float voltsDb(float volts) { return gainToDb(volts / kFullScaleVolts); }
 /// Where a level sits on a meter running from -60 to +6 dB (0..1).
 float meterPos(float db) { return std::clamp((db + 60) / 66, 0.f, 1.f); }
 
+/// What a strip's source chip says, and whether it warns (amber).
+struct ChipText {
+    std::string text;
+    bool warn = false;
+};
+
+/// The source chip of a track's strip (§7.2): its clips, the module whose IN brings its sound, "2 sources", or
+/// what is wrong ("Missing file", "Bypassed": a module that brings its sound is bypassed; the chip's menu says
+/// which). Null `t` is the master, whose chip the caller writes.
+ChipText chipText(TesseraModule& m, const Track* t) {
+    if (!t)
+        return {};
+    const Song& song = m.song();
+    for (const auto& [id, clip] : song.clips) {
+        if (!clip.audio || song.clipUses(id) == 0)
+            continue;
+        bool used = std::any_of(t->arrangement.begin(), t->arrangement.end(),
+                                [&](const ArrangerClip& a) { return a.clip == id; }) ||
+                    std::any_of(t->slots.begin(), t->slots.end(), [&](const ClipSlot& sl) { return sl.clip == id; });
+        if (used && audioDraw::stateOf(m, clip).status.state == SourceState::Missing)
+            return {"Missing file", true};
+    }
+    int count = t->type == TrackType::Audio ? 1 : 0;
+    const OutputModuleBase* feeding = nullptr;
+    for (OutputModuleBase* o : audioActions::outputsFor(&m, t->id)) {
+        if (o->activeReturn() < 0 && o->activeSource() < 0)
+            continue;
+        if (o->isBypassed())
+            return {"Bypassed", true};
+        feeding = o;
+        count++;
+    }
+    if (count > 1)
+        return {std::to_string(count) + " sources"};
+    if (feeding)
+        return {"IN · " + audioActions::outputName(feeding)};
+    return {t->type == TrackType::Audio ? "Clips" : "IN"};
+}
+
 /// The menu for typing a level: "Type a value", then Reset.
 /// The menu to type a level: `automate`, when set, adds "Automate in the timeline" (§7.3).
 void typingMenu(EditorContext& ctx, const std::string& title, float now, std::function<void(float)> set,
@@ -274,7 +313,7 @@ float MixerPane::faderPos(float db) { return faderPosOfDb(db); }
 
 float MixerPane::faderDb(float pos) { return faderDbOfPos(pos); }
 
-float MixerPane::tabHeight() const { return panel ? 16.f : 22.f; }
+float MixerPane::tabHeight() const { return panel && ctx.view().maximized != Pane::Mixer ? 16.f : 22.f; }
 
 MixerPane::MixerPane(EditorContext& ctx, bool panel) : InteractiveView(ctx), panel(panel) {
     maximizeButton = makeMaximizeButton(ctx, Pane::Mixer);
@@ -472,6 +511,8 @@ MixerPane::Hit MixerPane::hitTest(Vec pos) const {
             hit.part = Part::Connect;
         else if (s.name.contains(pos))
             hit.part = Part::Name;
+        else if (s.chip.size.x > 0 && s.chip.contains(pos))
+            hit.part = Part::Chip;
         else if (s.pan.size.x > 0 && s.pan.grow(Vec(4, 4)).contains(pos))
             hit.part = Part::Pan;
         else if (s.mute.contains(pos))
@@ -544,12 +585,48 @@ void MixerPane::openTyping(const Strip& s) {
         automate);
 }
 
+void MixerPane::openChipMenu(const Strip& s) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const Song& song = m->song();
+    TrackId track = s.master ? song.master.id : s.track;
+    const Track* t = song.findTrack(track);
+    if (!t && !s.master)
+        return;
+    EditorContext* c = &ctx;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(t ? t->name : "Master"));
+    bool drum = t && t->type == TrackType::Drum;
+    std::string add = std::string(drum ? "Add a Drum Out" : "Add a Track Out") + (t ? " for this track" : " for the master");
+    menu->addChild(rack::createMenuItem(add, "", [c, m, track] { c->toast(audioActions::addOutputFor(m, track)); }));
+    std::vector<OutputModuleBase*> outputs = audioActions::outputsFor(m, track);
+    for (size_t i = 0; i < outputs.size(); i++) {
+        std::string name = audioActions::outputName(outputs[i]);
+        if (outputs.size() > 1)
+            name += " " + std::to_string(i + 1);
+        if (outputs[i]->isBypassed())
+            menu->addChild(rack::createMenuLabel(name + " is bypassed: nothing comes back on its IN"));
+        int64_t id = outputs[i]->id;
+        // Look the module up again on click: the menu can outlive it.
+        menu->addChild(rack::createMenuItem("Show " + name + " in the rack", "", [m, track, id] {
+            for (OutputModuleBase* o : audioActions::outputsFor(m, track))
+                if (o->id == id)
+                    audioActions::showInRack(o);
+        }));
+    }
+}
+
 void MixerPane::click(Vec pos, int button, Modifiers mods) {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
     Hit h = hitTest(pos);
     const Strip* s = h.strip >= 0 ? &strips[size_t(h.strip)] : nullptr;
+    if (s && h.part == Part::Chip && s->lane < 0) {
+        openChipMenu(*s);
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         if (s && (h.part == Part::Fader || h.part == Part::Readout))
             openTyping(*s);
@@ -663,6 +740,7 @@ CursorShape MixerPane::hoverCursor(Vec pos, Modifiers mods) {
     case Part::Mute:
     case Part::Solo:
     case Part::Name:
+    case Part::Chip:
     case Part::ClipLight:
     case Part::Connect:
         return CursorShape::Hand;
@@ -718,11 +796,11 @@ void MixerPane::drawTab(NVGcontext* vg) {
     nvgFill(vg);
     draw::TextStyle label{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     float cy = tab.size.y / 2;
-    draw::text(vg, label, 8, cy, "Mixer");
+    draw::text(vg, label, tabLeft + 8, cy, "Mixer");
     if (!m || !hasSound())
         return;
     // A thin live meter per track in its colour, so the folded tab still shows what plays.
-    float x = 60;
+    float x = tabLeft + 60;
     const AudioPlayer& player = m->audioPlayer();
     for (const Strip& s : strips) {
         if (s.master || s.lane >= 0)
@@ -741,10 +819,10 @@ void MixerPane::drawTab(NVGcontext* vg) {
             nvgFill(vg);
         }
         x += 46;
-        if (x > box.size.x - 260)
+        if (x > box.size.x - 260 - tabRight)
             break;
     }
-    float right = maximizeButton->box.pos.x - 8;
+    float right = maximizeButton->box.pos.x - 8 - tabRight;
     draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
     float peak = std::max(player.masterLevel(0), player.masterLevel(1));
     char text[32];
@@ -838,28 +916,17 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
                draw::ellipsize(vg, name, label, s.name.size.x - 4));
     draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler - 1, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
 
-    // Source chip: what feeds the track. In this phase that is its clips.
+    // Source chip: what feeds the track, in words (§7.2).
     if (s.chip.size.x > 0) {
-        // Where the sound comes from: an audio track's clips, or a note track's IN (its output module's inputs).
-        std::string chip = t && t->type != TrackType::Audio ? "IN" : "Clips";
-        NVGcolor chipText = c.text1;
-        if (t)
-            for (const auto& [id, clip] : song.clips)
-                if (clip.audio && song.clipUses(id) > 0) {
-                    audioDraw::ClipState st = audioDraw::stateOf(*m, clip);
-                    if (st.status.state == SourceState::Missing &&
-                        (std::any_of(t->arrangement.begin(), t->arrangement.end(), [&](const ArrangerClip& a) { return a.clip == id; }) ||
-                         std::any_of(t->slots.begin(), t->slots.end(), [&](const ClipSlot& sl) { return sl.clip == id; }))) {
-                        chip = "Missing file";
-                        chipText = c.queue;
-                    }
-                }
+        ChipText ct = chipText(*m, t);
+        std::string chip = ct.text;
+        NVGcolor chipColor = ct.warn ? c.queue : c.text1;
         if (s.master)
             chip = m->mainPatched() ? "MAIN" : "MAIN not patched";
         if (s.master && !m->mainPatched())
-            chipText = c.queue;
+            chipColor = c.queue;
         draw::roundedRect(vg, s.chip, theme::metrics::kRadiusControl, c.bg2);
-        small.color = chipText;
+        small.color = chipColor;
         draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y, draw::ellipsize(vg, small, chip, s.chip.size.x - 4));
         small.color = c.text1;
     }

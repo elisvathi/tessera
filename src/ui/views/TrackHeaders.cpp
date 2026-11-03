@@ -8,6 +8,7 @@
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
+#include "../editing/AudioActions.hpp"
 #include "../editing/DeviceActions.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
@@ -615,7 +616,7 @@ std::unique_ptr<DragGesture> TrackHeaders::startGesture(Vec pos, int button, Mod
         return std::make_unique<ClickOrDrag>(std::move(inner), pos, [] {});
     }
     if (hit.row < 0 || hit.part == Part::Fold || hit.part == Part::Arm || hit.part == Part::Mute ||
-        hit.part == Part::Solo || hit.part == Part::Automation)
+        hit.part == Part::Solo || hit.part == Part::Automation || hit.part == Part::Output)
         return nullptr;
     const TrackRow& row = owner.rows[size_t(hit.row)];
     if (row.isLane())
@@ -755,6 +756,9 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
     case Part::Solo:
         trackActions::toggleSolo(ctx, row.track, !mods.shift);
         break;
+    case Part::Output:
+        ctx.toast(audioActions::addOutputFor(ctx.module(), row.track));
+        break;
     default:
         break;
     }
@@ -837,7 +841,7 @@ CursorShape TrackHeaders::hoverCursor(Vec pos, Modifiers mods) {
             tip.enter();
         }
     }
-    if (hover.part == Part::AddRow || hover.part == Part::AddLane)
+    if (hover.part == Part::AddRow || hover.part == Part::AddLane || hover.part == Part::Output)
         return CursorShape::Hand;
     if (hover.part == Part::Level || hover.part == Part::MasterLevel)
         return CursorShape::ResizeH;
@@ -864,8 +868,8 @@ std::string TrackHeaders::tipFor(const Hit& hit) {
         return t->automation.empty() ? "Automation lanes: add one to draw CV or turn a knob"
                                      : "Automation lanes (" + std::to_string(t->automation.size()) + ")";
     case Part::Output:
-        return t->type == TrackType::Drum ? "Nothing plays this track. Add a Tessera Drum Out and pick this track"
-                                          : "Nothing plays this track. Add a Tessera Track Out and pick this track";
+        return t->type == TrackType::Drum ? "Nothing plays this track. Click to add a Drum Out for it beside Tessera"
+                                          : "Nothing plays this track. Click to add a Track Out for it beside Tessera";
     case Part::Level:
         return "Volume " + audioDraw::dbText(t->channel.volumeDb) + ". Drag sideways; double-click: 0 dB";
     case Part::Pan:
