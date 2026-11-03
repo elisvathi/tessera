@@ -24,7 +24,7 @@ constexpr float kStripWidth = 64;
 constexpr float kMasterWidth = 88;
 constexpr float kGap = 4;
 constexpr float kFaderSnapPx = 6;    // the soft detent at 0 dB
-constexpr float kZeroDbPos = 0.75f;  // 0 dB sits at 75% of the fader's travel
+constexpr float kZeroDbPos = kZeroDbFaderPos;
 constexpr double kPeakHoldSeconds = 1.5;
 constexpr float kWheelDb = 0.5f;
 constexpr float kFine = 0.1f;
@@ -36,8 +36,12 @@ float voltsDb(float volts) { return gainToDb(volts / kFullScaleVolts); }
 float meterPos(float db) { return std::clamp((db + 60) / 66, 0.f, 1.f); }
 
 /// The menu for typing a level: "Type a value", then Reset.
-void typingMenu(EditorContext& ctx, const std::string& title, float now, std::function<void(float)> set) {
+/// The menu to type a level: `automate`, when set, adds "Automate in the timeline" (§7.3).
+void typingMenu(EditorContext& ctx, const std::string& title, float now, std::function<void(float)> set,
+                std::function<void()> automate = nullptr) {
     rack::ui::Menu* menu = rack::createMenu();
+    if (automate)
+        menu->addChild(rack::createMenuItem("Automate in the timeline", "", automate));
     menu->addChild(rack::createMenuLabel(title));
     char text[16];
     snprintf(text, sizeof text, "%.1f", double(now));
@@ -209,23 +213,9 @@ class TabGesture : public DragGesture {
 
 } // namespace
 
-float MixerPane::faderPos(float db) {
-    if (db <= kSilentDb)
-        return 0;
-    if (db >= 0)
-        return kZeroDbPos + (1 - kZeroDbPos) * std::min(db, kMaxFaderDb) / kMaxFaderDb;
-    // Below 0 dB the travel follows the fourth root of the gain: -12 dB sits at about half way, -48 dB near the
-    // bottom, so the useful range gets most of the fader.
-    return kZeroDbPos * std::pow(dbToGain(db), 0.25f);
-}
+float MixerPane::faderPos(float db) { return faderPosOfDb(db); }
 
-float MixerPane::faderDb(float pos) {
-    if (pos <= 0.001f)
-        return kSilentDb;
-    if (pos >= kZeroDbPos)
-        return (pos - kZeroDbPos) / (1 - kZeroDbPos) * kMaxFaderDb;
-    return gainToDb(std::pow(pos / kZeroDbPos, 4.f));
-}
+float MixerPane::faderDb(float pos) { return faderDbOfPos(pos); }
 
 float MixerPane::tabHeight() const { return panel ? 16.f : 22.f; }
 
@@ -259,6 +249,10 @@ float MixerPane::shownVolume(const Strip& s) const {
         return it->second.first;
     if (s.master)
         return m->song().master.volumeDb;
+    // A fader lane playing moves the fader with it (§7.3).
+    float automated;
+    if (m->audioPlayer().automated(s.playerIndex, false, automated))
+        return automated;
     const Track* t = m->song().findTrack(s.track);
     return t ? t->channel.volumeDb : 0;
 }
@@ -267,8 +261,22 @@ float MixerPane::shownPan(const Strip& s) const {
     auto it = held.find(s.track.value);
     if (it != held.end())
         return it->second.second;
+    float automated;
+    if (ctx.module()->audioPlayer().automated(s.playerIndex, true, automated))
+        return automated;
     const Track* t = ctx.module()->song().findTrack(s.track);
     return t ? t->channel.pan : 0;
+}
+
+std::optional<NVGcolor> MixerPane::laneColor(const Strip& s, bool pan) const {
+    // The ring shows whenever the track has the lane, playing or not: the control belongs to it.
+    const Track* t = s.master ? nullptr : ctx.module()->song().findTrack(s.track);
+    if (!t)
+        return std::nullopt;
+    for (const AutomationEnvelope& l : t->automation)
+        if (l.drive == (pan ? LaneDrive::Pan : LaneDrive::Volume) && !l.mute)
+            return theme::track(l.color ? l.color : t->color);
+    return std::nullopt;
 }
 
 void MixerPane::layout() {
@@ -412,12 +420,19 @@ void MixerPane::openTyping(const Strip& s) {
     TrackId track = s.track;
     bool master = s.master;
     float pan = master ? 0 : shownPan(s);
-    typingMenu(ctx, master ? "Master volume (dB)" : "Volume (dB)", shownVolume(s), [m, track, master, pan](float db) {
-        if (master)
-            m->perform(setMasterVolume(m->song(), db));
-        else
-            m->perform(setChannel(m->song(), track, {db, pan}, "Volume " + audioDraw::dbText(db)));
-    });
+    EditorContext* c = &ctx;
+    std::function<void()> automate;
+    if (!master)
+        automate = [c, track] { trackActions::automateMix(*c, track, false); };
+    typingMenu(
+        ctx, master ? "Master volume (dB)" : "Volume (dB)", shownVolume(s),
+        [m, track, master, pan](float db) {
+            if (master)
+                m->perform(setMasterVolume(m->song(), db));
+            else
+                m->perform(setChannel(m->song(), track, {db, pan}, "Volume " + audioDraw::dbText(db)));
+        },
+        automate);
 }
 
 void MixerPane::click(Vec pos, int button, Modifiers mods) {
@@ -433,6 +448,9 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
             TrackId track = s->track;
             float volume = shownVolume(*s);
             rack::ui::Menu* menu = rack::createMenu();
+            EditorContext* c = &ctx;
+            menu->addChild(rack::createMenuItem("Automate in the timeline", "",
+                                                [c, track] { trackActions::automateMix(*c, track, true); }));
             menu->addChild(rack::createMenuLabel("Pan"));
             menu->addChild(rack::createMenuItem("Centre", "double-click", [m, track, volume] {
                 m->perform(setChannel(m->song(), track, {volume, 0}, "Pan centre"));
@@ -681,6 +699,13 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         nvgStrokeColor(vg, c.text0);
         nvgStrokeWidth(vg, 1.5f);
         nvgStroke(vg);
+        if (std::optional<NVGcolor> ring = laneColor(s, true)) {
+            nvgBeginPath(vg);
+            nvgCircle(vg, cc.x, cc.y, r + 3);
+            nvgStrokeColor(vg, *ring);
+            nvgStrokeWidth(vg, 1.5f);
+            nvgStroke(vg);
+        }
     }
     // Mute and solo, the same switches as the track rows.
     if (t) {
@@ -716,7 +741,10 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     nvgFill(vg);
     float capY = s.fader.getBottom() - faderPos(volume) * s.fader.size.y;
     bool heldNow = held.count(s.master ? song.master.id.value : s.track.value) > 0;
-    draw::roundedRect(vg, Rect(s.fader.pos.x - 2, capY - 5, s.fader.size.x + 4, 10), 2, heldNow ? c.accent : c.text1);
+    Rect cap(s.fader.pos.x - 2, capY - 5, s.fader.size.x + 4, 10);
+    draw::roundedRect(vg, cap, 2, heldNow ? c.accent : c.text1);
+    if (std::optional<NVGcolor> ring = laneColor(s, false))
+        draw::roundedRectStroke(vg, cap.grow(Vec(2, 2)), 3, *ring, 1.5f);
     // Meter beside it, with peak-hold ticks.
     const AudioPlayer& player = m->audioPlayer();
     float l = s.master ? player.masterLevel(0) : player.level(s.playerIndex, 0);

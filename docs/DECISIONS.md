@@ -1662,3 +1662,14 @@ Why: built to the spec; these are the places it left open or where the code sugg
   meter by its place in the last snapshot (`soundIndex`). A change of plan rebuilds the snapshot.
 - **Not wired yet**: output modules have no IN or OUT jacks, so no plan has returns. The Track Out panel waits for a
   mockup the user agrees to (the Tessera panel went the same way, §103).
+
+## 109. Fader and pan automation (3 Nov)
+
+- **Two more lane kinds**, `LaneDrive::Volume` and `LaneDrive::Pan`, played at their own engine slots after pitch
+  and pressure. A lane's value 0..1 is the fader's travel (the mixer's curve, now in the model: `faderPosOfDb`) or
+  pan from hard left to hard right. With no such lane playing, the strip's own setting applies.
+- **The audio player reads them at each 32-sample block**, so automation ramps like a fader move; a control held
+  in a drag wins over its lane. The player publishes what it plays, so the mixer and the track rows move with it.
+- **A ring in the lane's colour** marks a control that has a lane, playing or not.
+- **Not built yet**: writing a fader move into the lane while the track is armed (§7.3); master automation; fader
+  and pan lanes for note tracks whose sound comes back on IN (they wait for the IN jacks).

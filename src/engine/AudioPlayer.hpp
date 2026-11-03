@@ -73,6 +73,16 @@ class AudioPlayer {
     void hold(uint64_t track, float volumeGain, float pan);
     void releaseHolds();
 
+    /// Whether a fader (`pan` false) or pan lane moves track `track` (its index in the snapshot) now, and to what:
+    /// dB for the fader, -1..1 for pan. The mixer and the headers show it and ring the control (§7.3).
+    bool automated(int track, bool pan, float& value) const {
+        if (track < 0 || track >= kMaxTracks ||
+            !(autoFlags[size_t(track)].load(std::memory_order_relaxed) & (pan ? 2 : 1)))
+            return false;
+        value = (pan ? autoPan : autoVolume)[size_t(track)].load(std::memory_order_relaxed);
+        return true;
+    }
+
   private:
     struct Voice {
         bool on = false;
@@ -167,6 +177,8 @@ class AudioPlayer {
     float masterPeakL = 0, masterPeakR = 0;
 
     std::array<std::array<std::atomic<float>, 2>, kMaxTracks> meters{};
+    std::array<std::atomic<uint8_t>, kMaxTracks> autoFlags{};
+    std::array<std::atomic<float>, kMaxTracks> autoVolume{}, autoPan{};
     std::array<std::atomic<float>, 2> masterMeter{};
     std::atomic<float> clipPeak{0};
     struct Hold {

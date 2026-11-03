@@ -279,6 +279,10 @@ std::string laneOutputLabel(const AutomationEnvelope& lane) {
         return "V/OCT";
     case LaneDrive::Pressure:
         return "PRESS";
+    case LaneDrive::Volume:
+        return "fader";
+    case LaneDrive::Pan:
+        return "pan";
     case LaneDrive::Auto:
     default:
         return "AUTO " + std::to_string(lane.outputIndex + 1);

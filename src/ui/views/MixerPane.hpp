@@ -4,6 +4,7 @@
 
 #include <array>
 #include <map>
+#include <optional>
 
 namespace tessera {
 class ToolButton;
@@ -62,6 +63,8 @@ class MixerPane : public InteractiveView {
     /// The volume shown for a strip: the committed value, or the one a drag holds.
     float shownVolume(const Strip& s) const;
     float shownPan(const Strip& s) const;
+    /// The colour of the strip's fader (`pan` false) or pan lane, when it has one: the control draws a ring in it.
+    std::optional<NVGcolor> laneColor(const Strip& s, bool pan) const;
     void showHeld(TrackId track, float volumeDb, float pan) { held[track.value] = {volumeDb, pan}; }
     void clearHeld() { held.clear(); }
     /// The menu to type a level or reset it (right-click, or a double-click on the readout).

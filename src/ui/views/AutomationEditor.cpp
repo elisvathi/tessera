@@ -8,6 +8,7 @@
 #include "../interaction/Snap.hpp"
 #include "../widgets/Draw.hpp"
 #include "../widgets/MenuTextField.hpp"
+#include "AudioClipDraw.hpp"
 
 #include <map>
 
@@ -557,6 +558,9 @@ std::string AutomationEditor::valueText(const LaneFrame& f, float value) const {
             ctx.module() ? deviceActions::infoOf(ctx.module()->song(), l->paramTarget) : nullptr;
         return info ? devices::format(*info, value) : "Target missing";
     }
+    if (l)
+        if (std::string mix = audioDraw::mixLaneText(*l, value); !mix.empty())
+            return mix;
     char text[32];
     snprintf(text, sizeof(text), "%.2f V", l ? double(toVolts(*l, value)) : double(value));
     return text;

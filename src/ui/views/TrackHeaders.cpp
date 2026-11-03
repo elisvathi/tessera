@@ -515,31 +515,53 @@ void TrackHeaders::drawLevelLine(NVGcontext* vg, const Track& t, int row, float 
     const theme::Palette& c = theme::colors();
     TesseraModule* m = ctx.module();
     bool dragged = std::isfinite(LevelGesture::shown) && LevelGesture::shownId == t.id.value;
-    float volume = dragged ? LevelGesture::shown : t.channel.volumeDb;
+    int index = m->soundIndex(t.id);
+    float volume = t.channel.volumeDb, pan = t.channel.pan, automated;
+    if (m->audioPlayer().automated(index, false, automated))
+        volume = automated;
+    if (m->audioPlayer().automated(index, true, automated))
+        pan = automated;
+    if (dragged)
+        volume = LevelGesture::shown;
     Rect bar(hit.pos.x, hit.getCenter().y - kLevelBarH / 2, hit.size.x, kLevelBarH);
     // The live level in the track colour, faint, and bright only in its top 6 dB, so a busy song doesn't flicker
     // in every row.
-    int index = m->soundIndex(t.id);
     float level = std::max(m->audioPlayer().level(index, 0), m->audioPlayer().level(index, 1));
     drawLevelBar(vg, bar, level, volume, theme::track(t.color, 0.4f), theme::track(t.color, 0.95f));
+    // A lane on the fader or pan: a ring in its colour (§7.3).
+    auto laneColor = [&](LaneDrive drive) -> std::optional<NVGcolor> {
+        for (const AutomationEnvelope& l : t.automation)
+            if (l.drive == drive && !l.mute)
+                return theme::track(l.color ? l.color : t.color);
+        return std::nullopt;
+    };
+    if (std::optional<NVGcolor> ring = laneColor(LaneDrive::Volume))
+        draw::roundedRectStroke(vg, bar.grow(Vec(2, 3)), 3, *ring, 1.f);
     draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
-    Rect pan = panRect(t, row, top, h);
-    draw::text(vg, mono, pan.pos.x - 4, hit.getCenter().y, audioDraw::dbText(volume));
+    Rect panBox = panRect(t, row, top, h);
+    draw::text(vg, mono, panBox.pos.x - 4, hit.getCenter().y, audioDraw::dbText(volume));
     // The pan knob: an arc from the centre to where it points.
-    Vec cc = pan.getCenter();
+    Vec cc = panBox.getCenter();
     float r = kPanSize / 2 - 2;
     nvgBeginPath(vg);
     nvgArc(vg, cc.x, cc.y, r, float(M_PI) * 0.75f, float(M_PI) * 2.25f, NVG_CW);
     nvgStrokeColor(vg, theme::recessed(c, c.bg0, 0.6f));
     nvgStrokeWidth(vg, 2);
     nvgStroke(vg);
-    float at = float(M_PI) * 1.5f + t.channel.pan * float(M_PI) * 0.75f;
+    float at = float(M_PI) * 1.5f + pan * float(M_PI) * 0.75f;
     nvgBeginPath(vg);
     nvgMoveTo(vg, cc.x, cc.y);
     nvgLineTo(vg, cc.x + std::cos(at) * r, cc.y + std::sin(at) * r);
     nvgStrokeColor(vg, c.text0);
     nvgStrokeWidth(vg, 1.5f);
     nvgStroke(vg);
+    if (std::optional<NVGcolor> ring = laneColor(LaneDrive::Pan)) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cc.x, cc.y, r + 2.5f);
+        nvgStrokeColor(vg, *ring);
+        nvgStrokeWidth(vg, 1.f);
+        nvgStroke(vg);
+    }
 }
 
 TrackHeaders::DropTarget TrackHeaders::dropTargetAt(float y) {
@@ -675,6 +697,24 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
                 m->perform(replaceLane(m->song(), laneOwner, next, next.mute ? "Mute lane" : "Unmute lane"));
             }
         }
+        return;
+    }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && (hit.part == Part::Level || hit.part == Part::Pan)) {
+        // The level bar's and pan knob's own menu (§7.3).
+        rack::ui::Menu* menu = rack::createMenu();
+        EditorContext* c = &ctx;
+        TrackId id = row.track;
+        bool pan = hit.part == Part::Pan;
+        menu->addChild(rack::createMenuItem("Automate in the timeline", "",
+                                            [c, id, pan] { trackActions::automateMix(*c, id, pan); }));
+        menu->addChild(rack::createMenuItem(pan ? "Centre" : "Reset to 0 dB", "double-click", [c, id, pan] {
+            TesseraModule* m = c->module();
+            if (const Track* t = m->song().findTrack(id)) {
+                Channel ch = t->channel;
+                (pan ? ch.pan : ch.volumeDb) = 0;
+                m->perform(setChannel(m->song(), id, ch, pan ? "Pan centre" : "Volume 0 dB"));
+            }
+        }));
         return;
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
@@ -1077,6 +1117,8 @@ void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
                 text = "Target missing";
                 detail.color = c.record;
             }
+        } else if (std::string mix = audioDraw::mixLaneText(*lane, evaluate(*lane, now)); !mix.empty()) {
+            text = laneOutputLabel(*lane) + "  ·  " + mix;
         } else {
             char volts[48];
             snprintf(volts, sizeof(volts), "  ·  %.2f V", double(toVolts(*lane, evaluate(*lane, now))));

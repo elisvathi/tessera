@@ -475,6 +475,42 @@ TEST_CASE("a note track whose output module brings audio back on IN makes sound;
     CHECK(player.level(0, 0) > 1.9f);
 }
 
+TEST_CASE("a fader lane moves an audio track's level and a pan lane its pan; a held fader wins over them") {
+    Rig rig(4.0, dc);
+    AutomationEnvelope volume;
+    volume.id = AutomationId(rig.song.nextId++);
+    volume.name = "Volume";
+    volume.drive = LaneDrive::Volume;
+    volume.rangeMin = 0;
+    volume.rangeMax = 1;
+    volume.points = {{0, faderPosOfDb(-6.0206f)}};
+    AutomationEnvelope pan = volume;
+    pan.id = AutomationId(rig.song.nextId++);
+    pan.name = "Pan";
+    pan.drive = LaneDrive::Pan;
+    pan.points = {{0, 0.f}}; // hard left
+    rig.audioTrack().automation = {volume, pan};
+    rig.rebuild();
+    rig.engine->play();
+    float right = 0, left = 0;
+    for (int i = 0; i < 4800; i++)
+        left = rig.step(&right);
+    CHECK(left == doctest::Approx(kVolts * 0.5).epsilon(1e-3));
+    CHECK(std::abs(right) < 1e-4f);
+    float db = 0, p = 0;
+    REQUIRE(rig.player->automated(0, false, db));
+    CHECK(db == doctest::Approx(-6.02).epsilon(1e-2));
+    REQUIRE(rig.player->automated(0, true, p));
+    CHECK(p == doctest::Approx(-1));
+
+    // While the user holds the fader in a drag, it plays where the hand is.
+    rig.player->hold(rig.track.value, 1.f, 0.f);
+    for (int i = 0; i < 480; i++)
+        left = rig.step(&right);
+    CHECK(left == doctest::Approx(kVolts).epsilon(1e-3));
+    CHECK(right == doctest::Approx(kVolts).epsilon(1e-3));
+}
+
 TEST_CASE("a missing file plays silence") {
     Rig rig(4.0, dc);
     rig.buffers.sources.clear();

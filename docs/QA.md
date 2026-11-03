@@ -535,6 +535,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Drag the right edge of a one-shot audio clip past its file: it stops, "End of file".
 - [ ] Split an audio clip (Ctrl+E), select both halves, Ctrl+J: one clip again, playing the same. Ctrl+J on two
       unrelated audio clips: a message, nothing changes.
+- [ ] Right-click an audio track's fader (mixer) or level bar (track row): Automate in the timeline adds a Volume lane
+      at the current level and opens it; the scale reads +6.0 dB to -inf dB. Draw a lower point and play: the fader,
+      the level bar and the dB follow, with a ring in the lane colour. Same for Pan. Muting the lane gives the
+      control back.
 - [ ] Select an audio clip: the notes pane becomes the audio editor under the same header. Drag the window (Start in
       file), its edges (they catch beat lines; Alt frees), and a beat line in the ruler ("112 → 103 BPM"). Ctrl+scroll
       zooms, double-click fits. Maximize and restore the pane: the waveform stays in view. Click the ruler between
