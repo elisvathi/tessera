@@ -1,6 +1,7 @@
 #include "TrackActions.hpp"
 
 #include "../widgets/MenuTextField.hpp"
+#include "../Theme.hpp"
 #include "AudioActions.hpp"
 
 #include "../../model/TrackColors.hpp"
@@ -300,21 +301,26 @@ void appendAddLaneItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track,
 
 void automateMix(EditorContext& ctx, TrackId track, bool pan) {
     TesseraModule* m = ctx.module();
-    const Track* t = m ? m->song().findTrack(track) : nullptr;
-    if (!t)
+    if (!m)
+        return;
+    const Song& song = m->song();
+    const Track* t = song.findTrack(track);
+    bool master = track == song.master.id;
+    if (!t && !(master && !pan))
         return;
     LaneDrive drive = pan ? LaneDrive::Pan : LaneDrive::Volume;
     ctx.view().openAutomation.insert(track.value);
-    for (const AutomationEnvelope& l : t->automation)
+    for (const AutomationEnvelope& l : *lanesOf(song, LaneOwner::ofTrack(track)))
         if (l.drive == drive)
             return;
-    AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), 0, t->color);
+    AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), 0, t ? t->color : theme::kMasterColor);
     lane.name = pan ? "Pan" : "Volume";
     lane.drive = drive;
     lane.rangeMin = 0;
     lane.rangeMax = 1;
-    lane.points = {{0, pan ? (t->channel.pan + 1) / 2 : faderPosOfDb(t->channel.volumeDb)}};
-    m->perform(addLane(m->song(), LaneOwner::ofTrack(track), lane));
+    float volumeDb = t ? t->channel.volumeDb : song.master.volumeDb;
+    lane.points = {{0, pan ? (t->channel.pan + 1) / 2 : faderPosOfDb(volumeDb)}};
+    m->perform(addLane(song, LaneOwner::ofTrack(track), lane));
 }
 
 void automateKnob(EditorContext& ctx, TrackId track) {

@@ -498,6 +498,14 @@ void normalize(Song& song) {
     song.master.volumeDb = std::isfinite(song.master.volumeDb)
                                ? std::clamp(song.master.volumeDb, kSilentDb, kMaxFaderDb)
                                : 0.f;
+    // The master plays only a Volume lane.
+    auto& masterLanes = song.master.automation;
+    masterLanes.erase(std::remove_if(masterLanes.begin(), masterLanes.end(),
+                                     [](const AutomationEnvelope& l) { return l.drive != LaneDrive::Volume; }),
+                      masterLanes.end());
+    if (masterLanes.size() > 1)
+        masterLanes.resize(1);
+    normalizeAutomation(masterLanes, ids);
     std::stable_sort(song.markers.begin(), song.markers.end(),
                      [](const Marker& a, const Marker& b) { return a.position < b.position; });
 }

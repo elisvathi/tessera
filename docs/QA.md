@@ -562,6 +562,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       at the current level and opens it; the scale reads +6.0 dB to -inf dB. Draw a lower point and play: the fader,
       the level bar and the dB follow, with a ring in the lane colour. Same for Pan. Muting the lane gives the
       control back.
+- [ ] Right-click the Master level bar: Automate in the timeline. A Volume lane opens under the Master row (which sits
+      above "+ Add track"). Draw a fade and play: the Master bar and the mixer's Master fader follow, with a ring.
+      The arrow beside "Master" folds the lane. Mute the lane: the fader is free again. Save and reload: it stays.
 - [ ] Arm a track with a Volume lane and record: drag its fader up and down. On stop, the lane holds the move (one
       undo step) and plays it back. Dragging the pan meanwhile leaves the Volume lane playing.
 - [ ] Select an audio clip: the notes pane becomes the audio editor under the same header. Drag the window (Start in

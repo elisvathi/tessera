@@ -30,6 +30,9 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
     AudioSnapshot& snap = *out.snapshot;
     snap.masterVolume = dbToGain(song.master.volumeDb);
     snap.masterId = song.master.id.value;
+    for (const AutomationEnvelope& l : song.master.automation)
+        if (l.drive == LaneDrive::Volume && !l.mute && !l.points.empty())
+            snap.masterLane = l.points;
     for (const MixPlan::Return& r : plan.returns)
         if (r.track == song.master.id)
             snap.masterReturns.push_back(r.slot);

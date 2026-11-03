@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../model/AudioSource.hpp"
+#include "../model/Automation.hpp"
 #include "../model/Types.hpp"
 
 #include <array>
@@ -81,6 +82,8 @@ struct AudioSnapshot {
     std::vector<AudioTrackPlay> tracks;
     float masterVolume = 1;
     uint64_t masterId = 0; // the master's TrackId value
+    /// The master's Volume lane as fader positions (0..1) over song ticks; empty when none plays (muted or absent).
+    std::vector<AutoPoint> masterLane;
     std::vector<int> masterReturns; // return slots mixed into the master
     /// Every buffer the clips point at, and recently dropped ones kept a little longer so a fade-out that started
     /// before this snapshot can finish reading them.
