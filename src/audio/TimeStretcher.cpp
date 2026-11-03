@@ -7,27 +7,17 @@
 #include <cmath>
 #include <new>
 
-#if !defined(TESSERA_STRETCH_SIGNALSMITH) && !defined(TESSERA_STRETCH_RUBBERBAND)
-#error "Build at least one time stretcher: set STRETCHERS in the Makefile"
-#endif
-
 namespace tessera {
 
 namespace {
 
-// The user's pick after the Phase 0 blind listening test (3 Nov). Its MIT licence lets it ship in any product.
+// The user's pick after the Phase 0 blind listening test (3 Nov), and the only library Tessera ships.
 constexpr const char* kDefaultStretcher = "signalsmith";
 
-/// Makes a stretcher by id, or returns null when this build doesn't include it.
+/// Makes a stretcher by id, or returns null for an id Tessera doesn't have.
 std::unique_ptr<TimeStretcher> makeBuilt(const std::string& id) {
-#ifdef TESSERA_STRETCH_SIGNALSMITH
     if (id == "signalsmith")
         return makeSignalsmithStretcher();
-#endif
-#ifdef TESSERA_STRETCH_RUBBERBAND
-    if (id == "rubberband")
-        return makeRubberBandStretcher();
-#endif
     return nullptr;
 }
 
@@ -77,7 +67,7 @@ std::vector<std::string> availableStretchers() {
     std::vector<std::string> ids;
     if (makeBuilt(kDefaultStretcher))
         ids.push_back(kDefaultStretcher);
-    for (const char* id : {"signalsmith", "rubberband"})
+    for (const char* id : {"signalsmith"})
         if (id != std::string(kDefaultStretcher) && makeBuilt(id))
             ids.push_back(id);
     return ids;

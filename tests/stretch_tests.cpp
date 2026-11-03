@@ -11,8 +11,8 @@
 
 using namespace tessera;
 
-// The same checks run on every stretcher in the build (docs/design/AUDIO_MIXER.md §9.1), so a library can be
-// swapped in only if it passes them all.
+// The checks every stretcher must pass (docs/design/AUDIO_MIXER.md §9.1), so another library can only replace
+// Signalsmith Stretch if it passes them all.
 
 namespace {
 
@@ -201,9 +201,7 @@ TEST_CASE("resampling a 1 kHz sine from 44.1 to 48 kHz stays clean (THD+N under 
     CHECK(10 * std::log10(rest / signal) < -90);
 }
 
-// Rubber Band's finer engine puts clicks early as the stretch grows: about 2.5 ms at 1.33x, 6 ms at 2x. It is the
-// optional engine, not the default (DECISIONS.md), so this check is allowed to fail for it.
-TEST_CASE("a stretched click track keeps its clicks on the beat within 1 ms" * doctest::may_fail()) {
+TEST_CASE("a stretched click track keeps its clicks on the beat within 1 ms") {
     for (const auto& id : availableStretchers()) {
         CAPTURE(id);
         for (auto [ratio, semitones] : {std::pair{0.75, 0.0}, {1.33, 0.0}, {1.1, 3.0}}) {

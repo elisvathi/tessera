@@ -1501,24 +1501,27 @@ Why: the user's answers; the mixer must not clutter a MIDI-only song.
 
 Why: the review's recommendation, which the user took.
 
-## 101. Time stretching: swappable, Signalsmith by default, pitch by resampling (2-3 Nov)
+## 101. Time stretching: Signalsmith Stretch only, pitch by resampling (2-3 Nov)
 
-- **One `TimeStretcher` interface** (`src/audio/TimeStretcher.hpp`) with an adapter per library in
-  `src/audio/stretch/`: Signalsmith Stretch 1.4.0 (MIT) and Rubber Band 4.0.0 (GPL, finer engine). The Makefile's
-  `STRETCHERS` picks which get built; nothing outside an adapter includes a library header.
-- **Signalsmith is the default**, Rubber Band the optional engine. The user picked it after a blind listening test
+- **One `TimeStretcher` interface** (`src/audio/TimeStretcher.hpp`) with one adapter, Signalsmith Stretch 1.4.0
+  (MIT), in `src/audio/stretch/`. Nothing outside the adapter includes the library's header, so another library could
+  replace it later without other code changing.
+- **Signalsmith Stretch is the only library.** The user picked it after a blind listening test against Rubber Band
   (https://claude.ai/artifact/PFYRHnkf9JGJaff1ABcgw3): 8 sounds x 6 changes, loudness-matched. Tally 18 Signalsmith,
   17 Rubber Band, 13 the same; Signalsmith won the drum loop 6-0, Rubber Band the bass and full mix 5-1. Signalsmith also
   renders about 4x faster (0.3 s against 1.2 s per 8-second clip) and keeps clicks on the beat within 0.5 ms; Rubber
   Band puts them 2.5 ms early at 1.33x.
 - **A library only changes length. Pitch is done by stretching by ratio x pitch factor, then resampling** with
   libsamplerate's best sinc (`src/audio/Resample.hpp`). For Voice, the stretch moves formants the other way so a voice
-  keeps its character. Both libraries now land within 1 cent, down to 55 Hz.
-- `tests/stretch_tests.cpp` runs every adapter through the same checks (length, pitch, clicks on the beat, short
-  sounds, silence, the same output twice, cancel). Rubber Band's click check is allowed to fail.
+  keeps its character. Notes land within 1 cent, down to 55 Hz.
+- **Rubber Band is removed** (3 Nov, the user's call): its code, its adapter, the Makefile's `STRETCHERS` switch and
+  the planned Settings ▸ Audio engine picker are gone. Only one library ships, so there is nothing to pick.
+- `tests/stretch_tests.cpp` holds the checks a stretcher must pass (length, pitch, clicks on the beat within 1 ms,
+  short sounds, silence, the same output twice, cancel).
 
 Why: Signalsmith's own pitch shifting tuned low notes 15-25 cents sharp, which is audible on bass. The user chose
-stretch-then-resample (2 Nov) and Signalsmith (3 Nov).
+stretch-then-resample (2 Nov), Signalsmith (3 Nov), and then to keep only Signalsmith: one library is less code to
+build and ship, and its MIT licence fits any product.
 
 ## 102. Audio files live in patch storage; a paste copies them from the source (3 Nov)
 
