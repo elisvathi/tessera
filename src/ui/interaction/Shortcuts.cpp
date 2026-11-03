@@ -62,6 +62,7 @@ std::vector<ActionInfo> buildTable() {
         {Ac::Split, "Edit", "Split", {C("e", Ctl)}},
         {Ac::Glue, "Edit", "Glue", {C("j", Ctl)}},
         {Ac::MakeUnique, "Edit", "Make unique", {C("u", Ctl)}},
+        {Ac::Bounce, "Edit", "Bounce the selected track to a new audio track", {C("b", Ctl)}},
         {Ac::Quantize, "Edit", "Quantize", {C("q")}},
         {Ac::QuantizeDialog, "Edit", "Quantize…", {C("q", S)}},
         {Ac::TransposeUp, "Edit", "Transpose up (a key step with scale snap)", {K(GLFW_KEY_UP)}},

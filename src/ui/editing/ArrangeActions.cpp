@@ -1,4 +1,5 @@
 #include "ArrangeActions.hpp"
+#include "BounceActions.hpp"
 
 #include "AudioActions.hpp"
 #include "ImportMidi.hpp"
@@ -327,6 +328,11 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [l] { deleteSelected(*l); }));
     menu->addChild(rack::createMenuItem("Split here", shortcutLabel(Action::Split), [l, at] { split(*l, at); }));
     menu->addChild(rack::createMenuItem("Glue", shortcutLabel(Action::Glue), [l] { glueSelected(*l); }));
+    if (TesseraModule* m = c->module(); m && m->soundIndex(placed->track) >= 0) {
+        TrackId owner = placed->track;
+        menu->addChild(rack::createMenuItem("Bounce to a new audio track…", shortcutLabel(Action::Bounce),
+                                            [c, owner] { bounceActions::openDialog(*c, owner); }));
+    }
     menu->addChild(rack::createMenuItem(
         "Make unique", shortcutLabel(Action::MakeUnique), [l] { makeUniqueSelected(*l); }, uses <= 1));
     bool muted = placed->clip.muted;

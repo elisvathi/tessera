@@ -48,6 +48,7 @@ enum class Action {
     Split,
     Glue,
     MakeUnique,
+    Bounce,
     Quantize,
     QuantizeDialog,
     TransposeUp,
