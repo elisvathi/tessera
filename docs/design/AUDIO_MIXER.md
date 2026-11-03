@@ -1,6 +1,6 @@
 # Audio tracks and the mixer
 
-Status: **proposal, revision 7 (2 Nov 2026). Not confirmed yet.** Mockups:
+Status: **revision 7, confirmed by the user on 3 Nov 2026. Phase 0 is done (DECISIONS §94–105).** Mockups:
 https://claude.ai/artifact/WNtGof3EbafDF7yptw5w5i (private; source HTML is not in the repo). The mockups predate
 revisions 5–7 (they still show FX tracks): **where they disagree, this spec wins.** Trello:
 https://trello.com/c/RiahbPgS. Nothing here is built.
@@ -13,7 +13,7 @@ switches or replaces another sound (§2), and Phase 2 is split in two (§11). Th
 the build follows the phases in §11.
 
 **This branch stays local: no push and no pull request.** The user hasn't decided yet whether this feature will
-be commercial. **Nothing is implemented until the user confirms the whole design.**
+be commercial.
 
 This feature replaces the DESIGN.md §1 non-goal "No audio recording, no audio clips". It also changes DESIGN.md
 §2 ("no external dependencies"): §9.1 lists the libraries it needs.
@@ -727,7 +727,7 @@ has a source in use (§7.8), audio clips, or sends it receives. Otherwise:
 
 | Module | Change |
 |---|---|
-| **Tessera** | MAIN L / MAIN R outputs with a small level meter. The panel has no free row for them today, so the panel gets a new layout, shown as a mockup for approval before building (P1a). Tooltip on MAIN: "Master after its fader: −6.2 dB peak". An amber dot beside MAIN while the master has signal but MAIN has no cable. |
+| **Tessera** | MAIN L / MAIN R outputs with a small level meter. Agreed in Phase 0 (DECISIONS §103): the panel grows to 26 HP and MAIN L over MAIN R become a ninth column of the jack grid on the output plate, with a two-bar meter (mockup https://claude.ai/artifact/YNyhpxzcvtYPW6XDEwSt6B). Tooltip on MAIN: "Master after its fader: −6.2 dB peak". An amber dot beside MAIN while the master has signal but MAIN has no cable. |
 | **Track Out** | Binds to **any** track and to the master. Gains OUT L/R and IN L/R (R follows L when unpatched), and an **IN level** light: green while audio comes back, red above 0 dB, off when nothing arrives. The display shows IN OFF when its source is unticked, and the source level when it isn't 0 dB (§7.8); the right-click menu has its source Level and Use. Stays 6 HP: the display gets shorter and the jacks are laid out again. |
 | **Drum Out** | A stereo kit IN (L/R) under the lane rows. |
 | **Auto Out** | No change. |
@@ -849,9 +849,10 @@ trigger, unchanged.
 
 - `createPatchStorageDirectory()` / `getPatchStorageDirectory()` hold the `audio/` folder; Rack packs it into the
   .vcv patch. A .tessera project file carries `audio/` too.
-- **Verify in Phase 0, in the hidden Rack**: save and reload; duplicate; copy/paste; delete and undo; two
-  Tesseras. Where Rack doesn't copy storage, find the files by `contentHash` in the source module's storage and
-  copy them; otherwise "Missing file".
+- **Verified in Phase 0** (DECISIONS §102): save/reload, duplicate and two Tesseras keep the files; copy/paste
+  doesn't copy them, and delete → save → undo loses them. Tessera saves its module id in its data; after a paste it
+  copies the files by `contentHash` from the source module's storage (in `onAdd`: a pasted module has no id while its
+  data is read); otherwise "Missing file". No shared cache.
 - **Missing files** on load: hatched clips, the strip chip "Missing file", and one toast "2 audio files are
   missing · Find…".
 - **Memory and size.** Decoded audio lives in RAM as float (a 4-minute stereo file at 48 kHz is about 92 MB, plus
@@ -932,24 +933,24 @@ with no sound, 16 tracks and 64 tracks, and while repatching during playback.
 needs the product to be GPL or a paid licence from its makers.
 
 ```cpp
-// src/audio/TimeStretcher.hpp: used only on worker threads.
-struct StretchJob {
-    const float* const* in; int channels; int64_t inFrames; double sampleRate;
-    double ratio;            // output length / input length
-    double semitones;        // pitch change, independent of the ratio
-    SoundType sound;         // the adapter maps it to its own settings
-};
+// src/audio/TimeStretcher.hpp: used only on worker threads. As built in Phase 0 (DECISIONS §101).
+struct StretchJob { const float* const* in; int channels; int64_t inFrames; double sampleRate;
+                    double ratio /* output length / input length */; double semitones; SoundType sound; };
+struct LengthJob  { const float* const* in; int channels; int64_t inFrames; double sampleRate;
+                    SoundType sound; double formantFactor = 1; };
 class TimeStretcher {
   public:
-    virtual ~TimeStretcher() = default;
     virtual const char* id() const = 0;   // goes into the render cache key
-    /// Renders the whole job into out (outFrames = inFrames * ratio). Calls progress() now and then; returns
-    /// false when cancelled.
-    virtual bool render(const StretchJob& job, float* const* out, int64_t outFrames,
-                        const std::function<bool(double)>& progress) = 0;
+    /// Stretches by ratio x pitch factor through the library, then resamples with libsamplerate's best sinc to
+    /// move the pitch, so every library lands exactly in tune. Returns false when cancelled.
+    bool render(const StretchJob& job, float* const* out, int64_t outFrames, const RenderProgress& progress = {});
+  protected:
+    /// The only part an adapter writes: change the length, keep the pitch, line up with the input.
+    virtual bool stretchLength(const LengthJob& job, float* const* out, int64_t outFrames,
+                               const RenderProgress& progress) = 0;
 };
 std::unique_ptr<TimeStretcher> makeStretcher(const std::string& id);   // falls back to the default one
-std::vector<std::string> availableStretchers();
+std::vector<std::string> availableStretchers();                        // the default ("signalsmith") first
 ```
 
 - One adapter per library in `src/audio/stretch/`, each library vendored under `dep/<name>/` with its licence
@@ -1125,4 +1126,13 @@ Each phase is usable on its own.
 A second review of revisions 5 and 6 was held on 2 Nov; only the Phase 2 split was taken. This section and the
 spec are the record: where `AUDIO_MIXER_REVIEW.md` disagrees with the spec, the spec wins.
 
-Still open: the user's confirmation of the whole design, and the import level (decided by ear before release).
+21. **The whole design is confirmed** (3 Nov: "let's start").
+22. **Pitch: stretch, then resample**, so every library lands in tune (2 Nov, DECISIONS §101).
+23. **Signalsmith Stretch is the default engine** after the blind listening test (3 Nov, DECISIONS §101).
+24. **Lost audio files: as the spec says**, copy from the source module after a paste, otherwise "Missing file"; no
+    shared cache (3 Nov, DECISIONS §102).
+25. **MAIN on the panel: option A**, 26 HP with a ninth jack column (3 Nov, DECISIONS §103).
+26. **Builds on Linux only for now**; Windows and macOS (and libsamplerate's exported symbols there) wait for the
+    decision about pushing.
+
+Still open: the import level (decided by ear before release).

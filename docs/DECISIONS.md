@@ -1431,3 +1431,137 @@ Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifac
 - Jack IDs are unchanged, so saved cables stay on their jacks.
 
 Why: the user found the old jack area messy (two plates of different sizes, inputs on a plate, uneven spacing).
+
+## 94. Audio tracks and a mixer (2-3 Nov)
+
+- **Tessera gets audio tracks, a mixer and a master**, built in phases (P0 decide, P1a a loop in time, P1b editing,
+  P2a the rack round trip, P2b sends and sources, P3 record/bounce/export, P4 deeper). The full design is
+  `docs/design/AUDIO_MIXER.md` (revision 7); its §12 lists every answer. This replaces DESIGN.md §1's non-goal "No
+  audio recording, no audio clips" and its "no external dependencies": the libraries are in `dep/` with their licences.
+- **The branch stays local** (no push, no pull request) until the user says so.
+- **The first loop in an empty song sets the tempo.** Setup helpers ("Connect to Audio module", "Add a Track Out for
+  this track", "Show in the rack") are each one Rack undo step.
+
+Why: the user confirmed the whole design on 3 Nov ("let's start") after seven revisions and two reviews.
+
+## 95. One Track Out for every track kind (2 Nov)
+
+- **Track Out binds to any track and to the master.** It gains OUT L/R and IN L/R next to the note jacks. Jacks that do
+  nothing for the bound track are drawn at about 35% and their tooltips say why. There is no separate audio output
+  module. Drum Out gets one stereo kit IN; Auto Out doesn't change.
+- New jacks are appended to the port lists, so saved cables stay on their jacks.
+
+Why: the user's idea; one module to learn, and the same patching for every track.
+
+## 96. Every source is mixed within its track (2 Nov)
+
+- **A track's sound is all its sources mixed, always, each at its own level.** The clips are one source (the
+  master's mix is its source); every Track Out IN is another. Nothing switches: arming, cables or an effect loop never
+  turn a source off or replace another. For a pure insert, turn Clips down to −∞.
+- **A level and a Use box per source**, shown only when needed (two sources or more, or one that is off or not at
+  0 dB). A new second source plays at once, with a toast. One output port patched into two INs counts once.
+
+Why: the user: "it should be mixed within that track. PERIOD." Rules that worked out a job from the cables were
+rejected as hard to predict.
+
+## 97. No effect track kind: any track receives sends (2 Nov)
+
+- **A "reverb track" is an ordinary track** the user named Reverb. No effect-track name, helper or shortcut.
+- A dim **+** on each strip adds a send to any track (tracks that would make a loop are greyed). A receiving track
+  shows **← 3**; clicking it turns every fader into its send (Show sends). Receiving strips get an OUT meter; the
+  inspector has a Sends section. Sends leave on OUT and come back on IN; with nothing on OUT, an amber "Sends go
+  nowhere". Solo follows the sends.
+
+Why: the user asked for an argument for a separate kind and none held up.
+
+## 98. Audio tracks never layer; overlaps crossfade (2 Nov)
+
+- Two audio clips on one track never play on top of each other. Where they overlap, Tessera crossfades them
+  automatically.
+
+Why: the user's answer; an audio track is one stream, like a tape track.
+
+## 99. The mixer: a third pane, levels in the track headers, a Master row (2 Nov)
+
+- **The mixer is a third pane** under the notes pane, folded to a tab; F4 maximises it.
+- **Volume and pan also sit in the track headers** (layout A), and a thin **Master** row sits at the bottom of the song
+  pane.
+- **Tracks that make no sound show no level controls**, so Tessera looks as it does today until audio reaches a track.
+  Hidden values are kept.
+- "Follow the selected track" stays; in that mode Track Out's audio jacks are dim.
+
+Why: the user's answers; the mixer must not clutter a MIDI-only song.
+
+## 100. Levels: 0 dB = 10 V, a metronome on MAIN only (2 Nov)
+
+- **0 dB means 10 V everywhere**: MAIN, Track Out OUT and IN, meters. Only the level of imported files stays open (5 V
+  for now), to be decided by ear before release.
+- **A metronome** (Off / Count-in only / While recording / Always) plays on MAIN only: never on OUT, in bounces,
+  exports or stems. The CLICK jack keeps its trigger.
+
+Why: the review's recommendation, which the user took.
+
+## 101. Time stretching: swappable, Signalsmith by default, pitch by resampling (2-3 Nov)
+
+- **One `TimeStretcher` interface** (`src/audio/TimeStretcher.hpp`) with an adapter per library in
+  `src/audio/stretch/`: Signalsmith Stretch 1.4.0 (MIT) and Rubber Band 4.0.0 (GPL, finer engine). The Makefile's
+  `STRETCHERS` picks which get built; nothing outside an adapter includes a library header.
+- **Signalsmith is the default**, Rubber Band the optional engine. The user picked it after a blind listening test
+  (https://claude.ai/artifact/PFYRHnkf9JGJaff1ABcgw3): 8 sounds x 6 changes, loudness-matched. Tally 18 Signalsmith,
+  17 Rubber Band, 13 the same; Signalsmith won the drum loop 6-0, Rubber Band the bass and full mix 5-1. Signalsmith also
+  renders about 4x faster (0.3 s against 1.2 s per 8-second clip) and keeps clicks on the beat within 0.5 ms; Rubber
+  Band puts them 2.5 ms early at 1.33x.
+- **A library only changes length. Pitch is done by stretching by ratio x pitch factor, then resampling** with
+  libsamplerate's best sinc (`src/audio/Resample.hpp`). For Voice, the stretch moves formants the other way so a voice
+  keeps its character. Both libraries now land within 1 cent, down to 55 Hz.
+- `tests/stretch_tests.cpp` runs every adapter through the same checks (length, pitch, clicks on the beat, short
+  sounds, silence, the same output twice, cancel). Rubber Band's click check is allowed to fail.
+
+Why: Signalsmith's own pitch shifting tuned low notes 15-25 cents sharp, which is audible on bass. The user chose
+stretch-then-resample (2 Nov) and Signalsmith (3 Nov).
+
+## 102. Audio files live in patch storage; a paste copies them from the source (3 Nov)
+
+Checked in a hidden Rack 2.6 with a probe module, and in Rack's source:
+
+| Action | The module's storage folder |
+|---|---|
+| Save and reload | kept: packed into the .vcv |
+| Duplicate | copied by Rack |
+| Copy and paste (onto a module, or as a new one) | not copied: the paste starts with an empty folder |
+| Delete, then undo | kept, unless the patch was saved in between (save and quit delete folders of removed modules) |
+| Two Tesseras | one folder each |
+
+- Tessera saves its own module id in its data. **After a paste, Tessera copies the files it needs from the source
+  module's folder**, found by that id and the file's content hash, while that folder still exists. A pasted module has
+  no id while its data is read, so the copy happens when the module is added.
+- **Anything still missing shows as "Missing file"** with Find…. No shared cache outside the patch.
+
+Why: the user picked the spec's approach over a shared cache that would cost disk space and need a clean-up.
+
+## 103. MAIN on the Tessera panel: 26 HP, a ninth jack column (3 Nov)
+
+- **The panel grows from 24 to 26 HP.** MAIN L over MAIN R become a ninth column of the jack grid (13 mm on, like
+  every jack) at the right end of the output plate, set apart by a thin line, with a two-bar level meter at the edge.
+  The display grows with the panel and TEMPO moves 8 mm right.
+- An amber dot shows while the master has sound but MAIN has no cable. A saved patch pushes the module to Tessera's
+  right aside once, on load, the way the in-panel editor already does.
+
+Why: the user picked option A of the mockup (https://claude.ai/artifact/YNyhpxzcvtYPW6XDEwSt6B). The 8 x 2 grid (§93)
+has no free spot, and squeezing MAIN beside FILL left no room for a meter.
+
+## 104. Recording takes the INs; bounce has three lengths (2 Nov)
+
+- **Recording captures a track's INs**, never its clips. **Bounce captures the whole sound** at IN, before the fader.
+- **Bounce length**: the selected clips, a selected area, or "until silent" (below −60 dB for a second, at most 8 bars
+  after the last note), each offered only when it applies.
+
+Why: the user's answers.
+
+## 105. Audio performance budgets (2 Nov)
+
+- **A song with no sound costs what it costs today.** 16 busy audio tracks stay under 1% of one core, 64 under 3%.
+- A flat mix plan built on the UI thread, fixed memory, per-block maths, return slots on separate cache lines, and a
+  benchmark test that fails above budget (`AUDIO_MIXER.md` §8.8).
+
+Why: the user: "PAY ATTENTION TO PERFORMANCE". Tessera shares Rack's audio thread with every other module.
