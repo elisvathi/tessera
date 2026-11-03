@@ -657,3 +657,28 @@ TEST_CASE("a drum track's lane IN levels and pans are undoable, clamped and save
     Song loaded = throughJson(song);
     CHECK(loaded.findTrack(drums)->drumInputs == song.findTrack(drums)->drumInputs);
 }
+
+TEST_CASE("an audio clip's hits fall on the timeline where its transients play, each loop pass too") {
+    Clip clip;
+    clip.id = ClipId(1);
+    clip.audio = AudioContent{};
+    clip.audio->sourceTempo = 120; // at 48 kHz a tick is 25 frames
+    clip.length = 4 * kPpq;
+    clip.loopMode = LoopMode::Off;
+    ArrangerClip at;
+    at.clip = clip.id;
+    at.position = 10 * kPpq;
+    at.length = 4 * kPpq;
+    std::vector<int64_t> hits{0, 24000, 48000}; // beats 0, 1, 2
+    std::vector<Tick> ticks = hitTicks(clip, at, hits, 48000, 120);
+    REQUIRE(ticks.size() == 3);
+    CHECK(ticks[1] == 11 * kPpq);
+    // Looping one beat for four beats: the hit at its start comes four times.
+    clip.loopMode = LoopMode::Loop;
+    clip.loopStart = 0;
+    clip.loopEnd = kPpq;
+    CHECK(hitTicks(clip, at, {0}, 48000, 120).size() == 4);
+    // Starting half a beat in: the first pass's hit is cut off.
+    at.offset = kPpq / 2;
+    CHECK(hitTicks(clip, at, {0}, 48000, 120).front() == at.position + kPpq / 2);
+}

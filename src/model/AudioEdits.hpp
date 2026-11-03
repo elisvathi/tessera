@@ -121,6 +121,11 @@ CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, con
 /// A drum track's lane IN level and pan (`lane` 0..7, the Drum Out output). Null when nothing changed.
 CommandPtr setDrumInput(const Song& song, TrackId track, int lane, Channel channel, const std::string& name);
 
+/// Where a timeline audio clip's hits fall, in song ticks, from its file's transients (frames at `fileRate`): each
+/// pass of a looping clip has its own. Reversed clips have none for now.
+std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,
+                           double fileRate, double songTempo);
+
 /// The sources no clip uses, and a command that removes them. Null when there are none.
 std::vector<AudioSourceId> unusedSources(const Song& song);
 CommandPtr removeUnusedAudio(const Song& song);

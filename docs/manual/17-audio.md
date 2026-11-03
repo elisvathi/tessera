@@ -229,6 +229,17 @@ clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B
   cancels; nothing is left. You can keep editing: what you change is heard in the file.
 - The metronome is never in an export.
 
+## Hits: transients, splitting, triggers
+
+Tessera finds where each hit starts in a file (its **transients**) once it has loaded it. The audio editor marks them
+with small triangles under the waveform.
+
+- **Split at transients** (an audio clip's right-click menu on the timeline) cuts the clip at every hit, so each hit
+  is its own clip to move, mute or reorder. One undo step; the pieces stay selected.
+- **Make triggers from audio** (same menu) adds a drum track under the audio track, "Loop triggers", with a clip
+  that hits its **Hits** lane wherever the audio has a hit, louder for louder hits. Patch its Drum Out into a rack
+  drum to double the loop, or replace it.
+
 ## Latency and the recording offset
 
 A recording comes back a little late: the sound card takes a few milliseconds to send a sound out and bring it back

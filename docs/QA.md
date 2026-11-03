@@ -590,6 +590,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] File ▸ Audio files…: every file with length, format, size and clip count; a missing one first with Find file….
 - [ ] Select an audio take and a loop clip from another file on one track, Ctrl+J: "Gluing…", then one clip "<track>
       glued" in their place, sounding the same. Undo brings both back.
+- [ ] A drum loop in the audio editor shows a small mark under each hit. Its clip menu ▸ Split at transients: one
+      clip per hit, same sound. Make triggers from audio: a "<track> triggers" drum track under it, notes on its Hits
+      lane at each hit, louder hits louder; through a rack drum it plays in time with the loop.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

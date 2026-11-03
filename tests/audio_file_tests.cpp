@@ -256,3 +256,20 @@ TEST_CASE("a capture that never got sound leaves no file, and a cancelled one is
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     CHECK_FALSE(std::filesystem::exists(path));
 }
+
+TEST_CASE("transients are found where hits start, and not in a steady tone") {
+    const double rate = 48000;
+    std::vector<std::vector<float>> hits(1, std::vector<float>(size_t(rate * 2), 0.f));
+    // Four clicks that ring down, half a second apart.
+    for (int h = 0; h < 4; h++)
+        for (int i = 0; i < 4000; i++)
+            hits[0][size_t(h * 24000 + 1000 + i)] = float(std::sin(i * 0.3) * std::exp(-i / 800.0));
+    std::vector<int64_t> found = findTransients(hits, rate);
+    REQUIRE(found.size() == 4);
+    for (int h = 0; h < 4; h++)
+        CHECK(std::abs(double(found[size_t(h)] - (h * 24000 + 1000))) < 0.012 * rate);
+    std::vector<std::vector<float>> tone(1, std::vector<float>(size_t(rate * 2)));
+    for (size_t i = 0; i < tone[0].size(); i++)
+        tone[0][i] = float(0.5 * std::sin(double(i) * 0.05));
+    CHECK(findTransients(tone, rate).size() <= 1); // at most the start
+}

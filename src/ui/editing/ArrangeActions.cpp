@@ -8,6 +8,8 @@
 #include "TrackActions.hpp"
 
 #include "../../model/ArrangementEdits.hpp"
+#include "../../model/AudioEdits.hpp"
+#include "../../model/TrackCommands.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../interaction/Shortcuts.hpp"
 #include "../views/Arranger.hpp"
@@ -99,6 +101,156 @@ void split(ArrangerLanes& lanes, Tick at) {
     IdSet select = lanes.selection();
     select.insert(right.begin(), right.end());
     lanes.commit("Split " + arrange::countClips(right.size()), before, after, select);
+}
+
+namespace {
+
+/// The hits of one timeline audio clip, in song ticks, and their loudness 0..1; empty while its file decodes.
+struct Hits {
+    TrackId track;
+    const ArrangerClip* at = nullptr;
+    std::vector<Tick> ticks;
+    std::vector<float> level;
+};
+
+Hits hitsOf(TesseraModule& m, ArrangementId instance) {
+    Hits h;
+    for (const Track& t : m.song().tracks)
+        for (const ArrangerClip& a : t.arrangement)
+            if (a.id == instance) {
+                h.track = t.id;
+                h.at = &a;
+            }
+    const Clip* clip = h.at ? m.song().findClip(h.at->clip) : nullptr;
+    AudioStore* store = m.audioStore();
+    if (!clip || !clip->audio || !store)
+        return h;
+    SourceStatus status = store->status(clip->audio->source);
+    if (!status.transients || status.sampleRate <= 0)
+        return h;
+    double tempo = m.tempo() > 0 ? m.tempo() : 120;
+    h.ticks = hitTicks(*clip, *h.at, *status.transients, status.sampleRate, tempo);
+    // Loudness: the waveform's peak just after each hit, against the loudest of them.
+    double perTick = framesPerTick(*clip->audio, status.sampleRate);
+    for (Tick t : h.ticks) {
+        float peak = 0.8f;
+        if (status.peaks && perTick > 0) {
+            double clipTick = double(h.at->offset) + double(t - h.at->position);
+            if (clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart)
+                clipTick = double(clip->loopStart) +
+                           std::fmod(clipTick, double(clip->loopEnd - clip->loopStart));
+            int64_t frame = clip->audio->sourceStart + int64_t(clipTick * perTick);
+            int64_t span = int64_t(0.02 * status.sampleRate);
+            float lo = 0, hi = 0;
+            status.peaks->range(0, frame, frame + span, lo, hi);
+            peak = std::max(std::fabs(lo), std::fabs(hi));
+        }
+        h.level.push_back(peak);
+    }
+    float most = h.level.empty() ? 1.f : *std::max_element(h.level.begin(), h.level.end());
+    for (float& l : h.level)
+        l = most > 0 ? std::clamp(l / most, 0.2f, 1.f) : 0.8f;
+    return h;
+}
+
+} // namespace
+
+void splitAtTransients(ArrangerLanes& lanes, ArrangementId instance) {
+    TesseraModule* m = moduleOf(lanes);
+    Hits hits = hitsOf(*m, instance);
+    if (!hits.at) {
+        return;
+    }
+    if (hits.ticks.empty()) {
+        lanes.context().toast("No hits found in this clip (or its file is still loading)");
+        return;
+    }
+    const Layout& before = lanes.committed();
+    Layout after = before;
+    IdSet ids{instance}, made;
+    // Cut from left to right, each time the part on the right; not right at the clip's edges.
+    Tick start = hits.at->position, edge = kPpq / 32;
+    for (Tick t : hits.ticks) {
+        if (t <= start + edge)
+            continue;
+        IdSet right;
+        after = arrange::split(after, ids, t, m->song().clips, idSource(lanes), &right);
+        if (right.empty())
+            continue;
+        made.insert(right.begin(), right.end());
+        ids = right;
+    }
+    if (made.empty())
+        return;
+    made.insert(instance);
+    lanes.commit("Split at transients", before, after, made);
+}
+
+void makeTriggers(ArrangerLanes& lanes, ArrangementId instance) {
+    TesseraModule* m = moduleOf(lanes);
+    Hits hits = hitsOf(*m, instance);
+    if (!hits.at)
+        return;
+    if (hits.ticks.empty()) {
+        lanes.context().toast("No hits found in this clip (or its file is still loading)");
+        return;
+    }
+    const Song& song = m->song();
+    const Track* source = song.findTrack(hits.track);
+    const Clip* audio = song.findClip(hits.at->clip);
+    int index = song.trackIndex(hits.track) + 1;
+    CommandPtr add = addTrack(song, TrackType::Drum, index, m->ids());
+    if (!add) {
+        lanes.context().toast(trackActions::kTracksFull);
+        return;
+    }
+    Song preview = song;
+    add->apply(preview);
+    Track& drums = preview.tracks[size_t(index)];
+    // A new drum track starts with no lanes: the hits get one, on the first trigger output.
+    std::vector<DrumLane> lanesBefore = drums.drumLanes;
+    if (drums.drumLanes.empty()) {
+        DrumLane hitsLane;
+        hitsLane.name = "Hits";
+        hitsLane.pitch = 36;
+        hitsLane.outputIndex = 0;
+        drums.drumLanes.push_back(hitsLane);
+    }
+    int8_t pitch = drums.drumLanes.front().pitch;
+    double k = songTicksPerClipTick(*audio->audio, m->tempo() > 0 ? m->tempo() : 120);
+    Tick span = Tick(std::llround(double(hits.at->length) * k));
+    Clip clip;
+    clip.id = m->newId<ClipId>();
+    clip.name = (audio->name.empty() ? source->name : audio->name) + " triggers";
+    clip.length = span;
+    clip.loopMode = LoopMode::Off;
+    for (size_t i = 0; i < hits.ticks.size(); i++) {
+        Note n;
+        n.id = m->newId<NoteId>();
+        n.start = hits.ticks[i] - hits.at->position;
+        n.length = kPpq / 8;
+        n.pitch = pitch;
+        n.velocity = hits.level[i];
+        if (n.start >= 0 && n.start < span)
+            clip.notes.push_back(n);
+    }
+    std::sort(clip.notes.begin(), clip.notes.end(), [](const Note& a, const Note& b) { return a.start < b.start; });
+    TrackId drumId = drums.id;
+    CommandPtr place = arrange::placeNewClip(preview, drumId, hits.at->position, clip, ArrangementId(m->newId<ArrangementId>()),
+                                    idSource(lanes), false, clip.name);
+    auto all = std::make_unique<CompoundCommand>("Make triggers from audio");
+    all->add(std::move(add));
+    if (drums.drumLanes != lanesBefore)
+        all->add(std::make_unique<SetTrackField<std::vector<DrumLane>>>("Add lane", drums.id, &Track::drumLanes,
+                                                                         lanesBefore, drums.drumLanes));
+    // The new track is named after the audio track.
+    if (CommandPtr rename = setTrackField(preview, drumId, &Track::name, source->name + " triggers", "Rename"))
+        all->add(std::move(rename));
+    all->add(std::move(place));
+    m->perform(std::move(all));
+    lanes.context().state().selectedTrack = drumId;
+    lanes.context().toast("Added " + source->name + " triggers: " + std::to_string(clip.notes.size()) +
+                          " hits on its first lane");
 }
 
 void glueSelected(ArrangerLanes& lanes) {
@@ -339,6 +491,10 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [l] { deleteSelected(*l); }));
     menu->addChild(rack::createMenuItem("Split here", shortcutLabel(Action::Split), [l, at] { split(*l, at); }));
     menu->addChild(rack::createMenuItem("Glue", shortcutLabel(Action::Glue), [l] { glueSelected(*l); }));
+    if (audio) {
+        menu->addChild(rack::createMenuItem("Split at transients", "", [l, clicked] { splitAtTransients(*l, clicked); }));
+        menu->addChild(rack::createMenuItem("Make triggers from audio", "", [l, clicked] { makeTriggers(*l, clicked); }));
+    }
     if (TesseraModule* m = c->module(); m && m->soundIndex(placed->track) >= 0) {
         TrackId owner = placed->track;
         menu->addChild(rack::createMenuItem("Bounce to a new audio track…", shortcutLabel(Action::Bounce),

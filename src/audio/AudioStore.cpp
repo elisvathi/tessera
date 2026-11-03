@@ -540,9 +540,11 @@ void AudioStore::load(const LoadJob& job) {
         }
     }
     std::shared_ptr<const PeakCache> peaks;
+    std::shared_ptr<const std::vector<int64_t>> transients;
     AudioGuess guess;
     try {
         peaks = std::make_shared<PeakCache>(decoded->channels);
+        transients = std::make_shared<std::vector<int64_t>>(findTransients(decoded->channels, decoded->sampleRate));
         guess = fullGuess(quick, decoded->channels, decoded->sampleRate, quick.bpm > 0 ? quick.bpm : songTempo);
     } catch (const std::bad_alloc&) {
         fail(SourceState::NoMemory);
@@ -566,6 +568,7 @@ void AudioStore::load(const LoadJob& job) {
     s.status.state = SourceState::Ready;
     s.status.progress = 1;
     s.status.peaks = std::move(peaks);
+    s.status.transients = std::move(transients);
     s.status.sampleRate = fileRate;
     s.status.guess = guess;
     bump();

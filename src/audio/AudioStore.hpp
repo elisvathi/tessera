@@ -36,6 +36,7 @@ struct SourceStatus {
     std::shared_ptr<const PeakCache> peaks; // the waveform, in the source's own frames; null until decoded
     double sampleRate = 0;                  // of the file
     AudioGuess guess;                       // from the samples, once decoded
+    std::shared_ptr<const std::vector<int64_t>> transients; // where hits start, in the file's frames
 };
 
 enum class RenderState : uint8_t { None, Waiting, Rendering, Ready, Failed };
