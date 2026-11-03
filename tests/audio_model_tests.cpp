@@ -138,6 +138,26 @@ TEST_CASE("the master keeps one Volume lane: added like a track's, saved, and tr
     CHECK(song.master.automation[0].id == volume.id);
 }
 
+TEST_CASE("an audio track's clips and the master's mix have a Level and Use, saved and undoable") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    CommandPtr clips = setSongSource(song, track, {-6, false}, "Clips off");
+    REQUIRE(clips);
+    clips->apply(song);
+    CHECK(song.tracks[0].clips == SourceLevel{-6, false});
+    CommandPtr mix = setSongSource(song, song.master.id, {-3, true}, "Mix level");
+    REQUIRE(mix);
+    mix->apply(song);
+    CHECK(song.master.mix.db == -3);
+    CHECK(throughJson(song) == song);
+    CHECK(setSongSource(song, track, {-6, false}, "same") == nullptr);
+    clips->revert(song);
+    CHECK(song.tracks[0].clips == SourceLevel{});
+    song.tracks[0].clips.db = 99;
+    normalize(song);
+    CHECK(song.tracks[0].clips.db == kMaxFaderDb);
+}
+
 TEST_CASE("normalize keeps clip kinds on matching tracks and clamps audio values") {
     Song song = makeDefaultSong();
     ImportResult made;

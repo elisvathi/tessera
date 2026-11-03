@@ -35,6 +35,15 @@ void OutputModuleBase::process(const ProcessArgs& args) {
 
 void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b, TrackId track) {
     bool on = b && audioOn.load(std::memory_order_relaxed);
+    // The source Level and Use, ramped over about 5 ms so a change never clicks.
+    float target = inputTarget.load(std::memory_order_relaxed);
+    inputGain += (target - inputGain) * std::min(1.f, args.sampleTime / 0.005f);
+    if (args.frame % 32 == 0) {
+        float fall = float(std::pow(10.0, -20.0 / 20.0 * 32 * args.sampleTime));
+        inputMeter.store(std::max(inputPeak, inputMeter.load(std::memory_order_relaxed) * fall),
+                         std::memory_order_relaxed);
+        inputPeak = 0;
+    }
     if (audioPorts.outL >= 0) {
         const AudioOutFrame* f =
             on ? b->readAudio(args.frame, audioSlot.load(std::memory_order_relaxed), track) : nullptr;
@@ -72,8 +81,12 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
             }
         }
         int slot = sourceSlot.load(std::memory_order_relaxed);
-        if (on && slot >= 0 && any)
+        if (on && slot >= 0 && any) {
+            sumL *= inputGain;
+            sumR *= inputGain;
+            inputPeak = std::max(inputPeak, std::max(std::fabs(sumL), std::fabs(sumR)));
             b->returns().write(args.frame, slot, track, sumL, sumR);
+        }
     }
     if (audioPorts.inL < 0)
         return;
@@ -91,8 +104,11 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
     if (hasR && !hasL)
         l = r;
     int slot = returnSlot.load(std::memory_order_relaxed);
-    if (on && slot >= 0 && (hasL || hasR))
-        b->returns().write(args.frame, slot, track, l, r);
+    if (on && slot >= 0 && (hasL || hasR)) {
+        float gl = l * inputGain, gr = r * inputGain;
+        inputPeak = std::max(inputPeak, std::max(std::fabs(gl), std::fabs(gr)));
+        b->returns().write(args.frame, slot, track, gl, gr);
+    }
     if (audioPorts.inLight >= 0) {
         // Green while audio arrives, red above 0 dB (10 V); the peak falls so short hits still show.
         float peak = std::max(std::fabs(l), std::fabs(r));
@@ -247,6 +263,8 @@ void OutputModuleBase::refreshBinding() {
     audioSlot.store(master ? OutputBus::kMasterSlot : busSlot.load());
     audioOn.store(src && !bindingData.followSelected && status() == BindingStatus::Bound);
     trackGone.store(src && status() == BindingStatus::TrackMissing);
+    float levelDb = heldLevelDb ? *heldLevelDb : setting.db;
+    inputTarget.store(setting.use && !countedOnce ? dbToGain(levelDb) : 0.f, std::memory_order_relaxed);
     // The sources' levels and pans: the drum track's lane IN settings, or what a drag in the mixer holds.
     if (audioPorts.sourceCount > 0) {
         const Track* t = src ? src->song().findTrack(bindingData.track) : nullptr;
@@ -297,6 +315,12 @@ void OutputModuleBase::stepTrack(int delta) {
     bind(*src, tracks[index]);
 }
 
+void OutputModuleBase::setSourceSetting(SourceLevel level) {
+    level.db = std::clamp(level.db, kSilentDb, kMaxFaderDb);
+    setting = level;
+    refreshBinding();
+}
+
 float OutputModuleBase::flashAmount() const {
     double left = flashUntil - rack::system::getTime();
     if (left <= 0)
@@ -335,6 +359,10 @@ json_t* OutputModuleBase::dataToJson() {
     json_object_set_new(root, "sourceName", json_string(bindingData.sourceName.c_str()));
     json_object_set_new(root, "track", json_integer(static_cast<json_int_t>(bindingData.track.value)));
     json_object_set_new(root, "followSelected", json_boolean(bindingData.followSelected));
+    if (setting.db != 0)
+        json_object_set_new(root, "level", json_real(setting.db));
+    if (!setting.use)
+        json_object_set_new(root, "use", json_false());
     return root;
 }
 
@@ -347,6 +375,9 @@ void OutputModuleBase::dataFromJson(json_t* root) {
     if (json_t* j = json_object_get(root, "track"))
         bindingData.track = TrackId(uint64_t(json_integer_value(j)));
     bindingData.followSelected = json_is_true(json_object_get(root, "followSelected"));
+    if (json_t* j = json_object_get(root, "level"); json_is_number(j))
+        setting.db = std::clamp(float(json_number_value(j)), kSilentDb, kMaxFaderDb);
+    setting.use = !json_is_false(json_object_get(root, "use"));
 }
 
 } // namespace tessera

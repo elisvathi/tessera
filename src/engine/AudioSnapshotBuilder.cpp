@@ -29,6 +29,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
     out.snapshot = std::make_unique<AudioSnapshot>();
     AudioSnapshot& snap = *out.snapshot;
     snap.masterVolume = dbToGain(song.master.volumeDb);
+    snap.masterMixGain = song.master.mix.use ? dbToGain(song.master.mix.db) : 0.f;
     snap.masterId = song.master.id.value;
     for (const AutomationEnvelope& l : song.master.automation)
         if (l.drive == LaneDrive::Volume && !l.mute && !l.points.empty())
@@ -109,6 +110,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             if (track == t.id)
                 tp.busSlot = slot;
         tp.volume = dbToGain(t.channel.volumeDb);
+        tp.clipsGain = t.clips.use ? dbToGain(t.clips.db) : 0.f;
         tp.pan = t.channel.pan;
         tp.audible = song.isAudible(t);
         for (const ClipSlot& s : t.slots)

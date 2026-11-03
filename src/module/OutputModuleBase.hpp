@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../model/AudioSource.hpp"
 #include "../model/Track.hpp"
 #include "AudioHandoff.hpp"
 #include "OutputBus.hpp"
@@ -76,6 +77,18 @@ class OutputModuleBase : public rack::engine::Module {
     float sourceLevel(int k) const;
     static constexpr int kMaxSources = 8;
     TrackId boundTrack() const { return bindingData.track; }
+    /// What it brings in as a source of its track (§7.8): Level and Use, saved with the module. Applies to every
+    /// audio input it has (IN, and a Drum Out's lane INs). UI thread; the caller records the undo step.
+    SourceLevel sourceSetting() const { return setting; }
+    void setSourceSetting(SourceLevel level);
+    /// Plays a Level at once while the sources list drags it, before the drag is committed; nullopt ends it.
+    void holdSourceLevel(std::optional<float> db) { heldLevelDb = db; }
+    /// What it brings in now, after its Level (volts, a peak falling 20 dB a second), for the sources list.
+    float inputLevel() const { return inputMeter.load(std::memory_order_relaxed); }
+    /// "Counted once": its IN takes the same cable as another source of the same track, so it adds nothing. Set by
+    /// the Tessera it follows. UI thread.
+    void setCountedOnce(bool on) { countedOnce = on; }
+    bool isCountedOnce() const { return countedOnce; }
     /// Makes its screen flash for a moment, so the user finds it in the rack (Show in the rack). UI thread.
     void flash() { flashUntil = rack::system::getTime() + 1.2; }
     /// How strongly its screen flashes now, 0 when it does not. UI thread.
@@ -129,6 +142,13 @@ class OutputModuleBase : public rack::engine::Module {
     std::array<std::atomic<float>, kMaxSources> sourceMeter{};
     int meterCount = 0;
     bool sourcesFresh = true;
+    SourceLevel setting;
+    std::optional<float> heldLevelDb;
+    bool countedOnce = false;
+    std::atomic<float> inputTarget{1}; // Level as a gain, 0 when not in use or counted once
+    float inputGain = 1;
+    float inputPeak = 0;
+    std::atomic<float> inputMeter{0};
 };
 
 } // namespace tessera

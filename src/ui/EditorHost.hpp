@@ -63,6 +63,7 @@ class EditorHost {
     bool spaceUsed = false;
     bool cursorApplied = false;
     uint64_t unlinkedSeen = 0; // the last UnlinkedControls serial shown
+    uint64_t sourceNewsSeen = 0; // the last NewSource serial shown
     bool noticesSeen = false;  // showNotices() has run once
 };
 

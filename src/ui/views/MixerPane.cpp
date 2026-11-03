@@ -6,6 +6,7 @@
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/AudioActions.hpp"
+#include "../editing/Sources.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../widgets/Draw.hpp"
@@ -42,6 +43,7 @@ float meterPos(float db) { return std::clamp((db + 60) / 66, 0.f, 1.f); }
 struct ChipText {
     std::string text;
     bool warn = false;
+    bool dim = false;
 };
 
 /// The source chip of a track's strip (§7.2): its clips, the module whose IN brings its sound, "2 sources", or
@@ -60,20 +62,24 @@ ChipText chipText(TesseraModule& m, const Track* t) {
         if (used && audioDraw::stateOf(m, clip).status.state == SourceState::Missing)
             return {"Missing file", true};
     }
-    int count = t->type == TrackType::Audio ? 1 : 0;
-    const OutputModuleBase* feeding = nullptr;
-    for (OutputModuleBase* o : audioActions::outputsFor(&m, t->id)) {
-        if (o->activeReturn() < 0 && o->activeSource() < 0)
-            continue;
+    for (OutputModuleBase* o : m.sourceModules(t->id))
         if (o->isBypassed())
             return {"Bypassed", true};
-        feeding = o;
-        count++;
+    std::vector<sources::Row> rows = sources::rowsOf(m, t->id);
+    if (sources::needsList(rows)) {
+        int counted = 0, inUse = 0;
+        for (const sources::Row& r : rows)
+            if (!r.countedOnce) {
+                counted++;
+                inUse += r.level.use ? 1 : 0;
+            }
+        if (inUse == 0)
+            return {"No source in use", false, true};
+        return {counted == 1 ? "1 source" : std::to_string(counted) + " sources"};
     }
-    if (count > 1)
-        return {std::to_string(count) + " sources"};
-    if (feeding)
-        return {"IN · " + audioActions::outputName(feeding)};
+    for (const sources::Row& r : rows)
+        if (r.module)
+            return {"IN · " + r.name};
     return {t->type == TrackType::Audio ? "Clips" : "IN"};
 }
 
@@ -591,6 +597,10 @@ void MixerPane::openChipMenu(const Strip& s) {
         return;
     const Song& song = m->song();
     TrackId track = s.master ? song.master.id : s.track;
+    if (sources::needsList(sources::rowsOf(*m, track))) {
+        sources::openList(ctx, track);
+        return;
+    }
     const Track* t = song.findTrack(track);
     if (!t && !s.master)
         return;
@@ -920,11 +930,14 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     if (s.chip.size.x > 0) {
         ChipText ct = chipText(*m, t);
         std::string chip = ct.text;
-        NVGcolor chipColor = ct.warn ? c.queue : c.text1;
-        if (s.master)
+        NVGcolor chipColor = ct.warn ? c.queue : ct.dim ? c.text2 : c.text1;
+        if (s.master) {
+            std::vector<sources::Row> rows = sources::rowsOf(*m, m->song().master.id);
             chip = m->mainPatched() ? "MAIN" : "MAIN not patched";
-        if (s.master && !m->mainPatched())
-            chipColor = c.queue;
+            chipColor = m->mainPatched() ? c.text1 : c.queue;
+            if (sources::needsList(rows) && m->mainPatched())
+                chip = std::to_string(rows.size()) + " sources";
+        }
         draw::roundedRect(vg, s.chip, theme::metrics::kRadiusControl, c.bg2);
         small.color = chipColor;
         draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y, draw::ellipsize(vg, small, chip, s.chip.size.x - 4));

@@ -538,6 +538,25 @@ TEST_CASE("a note track whose output module brings audio back on IN makes sound;
     CHECK(player.level(0, 0) > 1.9f);
 }
 
+TEST_CASE("the clips' Level and Use scale an audio track's clips, and the mix's Level scales the master") {
+    Rig rig(4.0, dc);
+    rig.engine->play();
+    rig.run(4800);
+    rig.audioTrack().clips = {-6.0206f, true};
+    rig.rebuild();
+    CHECK(rig.run(480).back() == doctest::Approx(kVolts / 2).epsilon(1e-3));
+    rig.audioTrack().clips = {0, false};
+    rig.rebuild();
+    CHECK(std::abs(rig.run(480).back()) < 1e-5f);
+    rig.audioTrack().clips = {};
+    rig.song.master.mix = {-6.0206f, true};
+    rig.rebuild();
+    CHECK(rig.run(480).back() == doctest::Approx(kVolts / 2).epsilon(1e-3));
+    // A Level drag plays at once, before it is committed.
+    rig.player->holdClips(rig.song.master.id.value, 1.f);
+    CHECK(rig.run(480).back() == doctest::Approx(kVolts).epsilon(1e-3));
+}
+
 TEST_CASE("the master's Volume lane moves the master, a held master fader wins, and a muted lane gives it back") {
     Rig rig(4.0, dc);
     AutomationEnvelope volume;

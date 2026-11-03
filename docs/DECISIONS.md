@@ -1749,3 +1749,21 @@ Why: built to the spec; these are the places it left open or where the code sugg
   "Master" shows or hides it. There is no add-lane row and no recording: the master has no arm.
 - **The audio player plays it**, reading the lane at the song position each 32-sample block (the master isn't an
   engine track); a drag of the master fader wins, a muted lane gives the fader back.
+
+## 116. Phase 2b, sources as built (3 Nov)
+
+- **Level and Use** (spec §7.8): `SourceLevel` on an audio track (`Track::clips`) and on the master
+  (`MasterChannel::mix`), song edits (`setSongSource`); on a Track Out or Drum Out in its patch data ("level",
+  "use"), a Rack undo step. A module's setting scales everything it brings in (IN, and a Drum Out's lane INs) before
+  the return bus, ramped over 5 ms; Clips and Mix are scaled in the player. Drags play through holds.
+- **The list** opens from the strip's source chip whenever it is needed (two sources, or one off or not at 0 dB):
+  per source a Use tick, a live meter, a Rack Level slider (the mixer's fader taper) and Show in the rack. The chip
+  reads "2 sources" (no ▾: the fonts lack it) or "No source in use".
+- **Names**: one module of a kind is "Track Out"; several are numbered by place in the rack (top row first, left to
+  right).
+- **Counted once** compares the output port on each Track Out's IN L (or IN R) among the track's sources; the later
+  one in rack order adds nothing (its gain is 0) and shows no level.
+- **The toast** has one button, "Use only the new one" (the toast holds one action; the chip is where the list
+  is). It fires when a track's counted sources grow past one; loading a patch never fires it.
+- **The Track Out screen** shows "IN OFF" or "IN -6.0 dB" in place of the Tessera's name: the screen is too narrow
+  for both.

@@ -272,6 +272,7 @@ void TesseraModule::playMidiEvent(const MidiEvent& e) {
 
 void TesseraModule::uiStep() {
     snapshots.collect();
+    sourcesStep();
     audioStep();
     syncMappings();
     if (learning()) {
@@ -407,6 +408,80 @@ MixPlan TesseraModule::currentMixPlan() const {
             plan.returns.push_back({o->boundTrack(), slot, false});
     }
     return plan;
+}
+
+std::vector<OutputModuleBase*> TesseraModule::sourceModules(TrackId track) const {
+    std::vector<std::pair<rack::math::Vec, OutputModuleBase*>> found;
+    for (OutputModuleBase* o : Registry::get().outputsOf(id)) {
+        if (o->boundTrack() != track || (o->activeReturn() < 0 && o->activeSource() < 0))
+            continue;
+        rack::math::Vec pos;
+        if (APP->scene && APP->scene->rack)
+            if (rack::app::ModuleWidget* w = APP->scene->rack->getModule(o->id))
+                pos = w->box.pos;
+        found.push_back({pos, o});
+    }
+    std::stable_sort(found.begin(), found.end(), [](const auto& a, const auto& b) {
+        return a.first.y != b.first.y ? a.first.y < b.first.y : a.first.x < b.first.x;
+    });
+    std::vector<OutputModuleBase*> out;
+    for (const auto& f : found)
+        out.push_back(f.second);
+    return out;
+}
+
+void TesseraModule::sourcesStep() {
+    std::vector<OutputModuleBase*> outputs = Registry::get().outputsOf(id);
+    if (outputs.empty() && sourcesSeen.empty())
+        return;
+    // Which output port feeds each input: the same cable into two INs of one track counts once (§7.8).
+    std::map<std::pair<int64_t, int>, std::pair<int64_t, int>> feeds;
+    for (int64_t cableId : APP->engine->getCableIds())
+        if (rack::engine::Cable* c = APP->engine->getCable(cableId))
+            if (c->inputModule && c->outputModule)
+                feeds[{c->inputModule->id, c->inputId}] = {c->outputModule->id, c->outputId};
+    std::vector<TrackId> tracks;
+    for (const Track& t : songData.tracks)
+        tracks.push_back(t.id);
+    tracks.push_back(songData.master.id);
+    std::map<uint64_t, std::vector<int64_t>> seen;
+    for (TrackId track : tracks) {
+        std::vector<OutputModuleBase*> mods = sourceModules(track);
+        std::set<std::pair<int64_t, int>> ports;
+        std::vector<int64_t> counted;
+        for (OutputModuleBase* o : mods) {
+            std::optional<std::pair<int64_t, int>> port;
+            for (int input : {0, 1})
+                if (!port)
+                    if (auto it = feeds.find({o->id, input}); it != feeds.end())
+                        port = it->second;
+            bool twice = port && o->activeSource() < 0 && !ports.insert(*port).second;
+            o->setCountedOnce(twice);
+            if (!twice)
+                counted.push_back(o->id);
+        }
+        if (!counted.empty())
+            seen[track.value] = counted;
+    }
+    // A new second source plays at once, with a toast. Clips count as the first source of an audio track.
+    if (sourcesSeeded)
+        for (const auto& [track, mods] : seen) {
+            const Track* t = songData.findTrack(TrackId(track));
+            int clips = t && t->type == TrackType::Audio ? 1 : 0;
+            auto before = sourcesSeen.find(track);
+            size_t had = before == sourcesSeen.end() ? 0 : before->second.size();
+            int count = clips + int(mods.size());
+            if (mods.size() > had && count >= 2 && clips + int(had) >= 1) {
+                int64_t newest = -1;
+                for (int64_t m : mods)
+                    if (before == sourcesSeen.end() ||
+                        std::find(before->second.begin(), before->second.end(), m) == before->second.end())
+                        newest = m;
+                sourceNews = {sourceNews.serial + 1, TrackId(track), count, newest};
+            }
+        }
+    sourcesSeen = std::move(seen);
+    sourcesSeeded = true;
 }
 
 bool TesseraModule::makesSound() const { return hasAudio(songData) || !currentMixPlan().returns.empty(); }

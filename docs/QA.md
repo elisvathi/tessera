@@ -555,6 +555,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Mixer source chip: "IN · Track Out" on a note track fed by IN, "Bypassed" in amber while that Track Out is
       bypassed (the menu says which). Click the chip: Add a Track Out for this track; Show Track Out in the rack
       scrolls the rack to it (same zoom) and flashes its screen.
+- [ ] Two Track Outs on one track, each with its own synth on IN: patching the second toasts "… has 2 sources now.
+      Both play"; "Use only the new one" turns the first off. The chip reads "2 sources"; its list has a tick, meter,
+      Level slider and Show in the rack per source. A Level drag is heard at once and is one undo step; the Track
+      Out screen shows "IN -6.0 dB" / "IN OFF". The same cable into a third Track Out's IN: "counted once", no
+      louder. Save and reload: levels stay. The Track Out's right-click menu has the same Use and Level.
 - [ ] In the in-panel editor, maximize the mixer: the transport and Full editor sit in its bar, clear of "Mixer" and
       the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level
