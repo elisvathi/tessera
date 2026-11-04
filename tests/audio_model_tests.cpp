@@ -713,3 +713,57 @@ TEST_CASE("warp markers pin file frames to clip ticks; between them the file str
     CHECK(w.warps[1].tick == 2 * kPpq);
     CHECK(throughJson(song) == song);
 }
+
+TEST_CASE("takes: each part of a split clip picks its own take, a comp glues only by rendering") {
+    AudioLanes f;
+    arrange::Placed whole = f.at(0, 8);
+    f.song.findTrack(f.track)->arrangement = {whole.clip};
+    AudioSourceId second(f.song.nextId++);
+    f.song.findClip(f.clip)->audio->takes = {{second, 0}};
+    arrange::IdSet right;
+    arrange::Layout parts =
+        arrange::split(arrange::layoutOf(f.song), {whole.clip.id}, 3 * kPpq, f.song.clips, f.ids(), &right);
+    arrange::replaceArrangement(f.song, "split", arrange::layoutOf(f.song), parts)->apply(f.song);
+    REQUIRE(right.size() == 1);
+    ArrangementId later = *right.begin();
+
+    CommandPtr pick = setInstanceTake(f.song, f.track, later, 0);
+    REQUIRE(pick);
+    CHECK(pick->name() == "Play take 2");
+    applyAndCheckUndo(f.song, *pick);
+    for (const ArrangerClip& a : f.song.findTrack(f.track)->arrangement)
+        CHECK(a.take == (a.id == later ? 0 : -1));
+    CHECK_FALSE(setInstanceTake(f.song, f.track, later, 0)); // already plays it
+    arrange::IdSet both = arrange::idsOf(arrange::layoutOf(f.song));
+    CHECK_FALSE(arrange::glue(f.song, both, [&] { return f.song.nextId++; }));
+
+    // Every copy on take 2: the parts are one clip again and glue without rendering, keeping the take.
+    CommandPtr all = useTakeEverywhere(f.song, f.clip, 0);
+    REQUIRE(all);
+    applyAndCheckUndo(f.song, *all);
+    CommandPtr glued = arrange::glue(f.song, both, [&] { return f.song.nextId++; });
+    REQUIRE(glued);
+    glued->apply(f.song);
+    REQUIRE(f.song.findTrack(f.track)->arrangement.size() == 1);
+    CHECK(f.song.findTrack(f.track)->arrangement[0].take == 0);
+    CHECK(throughJson(f.song).findTrack(f.track)->arrangement[0].take == 0);
+
+    // A take the clip no longer has falls back to the clip's own.
+    f.song.findTrack(f.track)->arrangement[0].take = 5;
+    normalize(f.song);
+    CHECK(f.song.findTrack(f.track)->arrangement[0].take == -1);
+}
+
+TEST_CASE("takeContent plays a take's file from its start, without the clip's warp markers") {
+    AudioContent a;
+    a.source = AudioSourceId(1);
+    a.sourceStart = 100;
+    a.warps = {{0, 100}, {double(kPpq), 30000}};
+    a.takes = {{AudioSourceId(2), 7}};
+    AudioContent t = takeContent(a, 0);
+    CHECK(t.source == AudioSourceId(2));
+    CHECK(t.sourceStart == 7);
+    CHECK(t.warps.empty());
+    CHECK(takeContent(a, -1) == a);
+    CHECK(takeContent(a, 3) == a);
+}

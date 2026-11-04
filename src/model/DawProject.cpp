@@ -181,10 +181,11 @@ void audioClips(Xml& x, const Song& song, const Track& t, const Options& o, doub
         if (a.muted && !o.includeMuted)
             continue;
         const Clip* clip = song.findClip(a.clip);
-        const AudioSource* src = clip && clip->audio ? song.findSource(clip->audio->source) : nullptr;
+        // A copy that plays another take exports that take's file.
+        const AudioContent c = clip && clip->audio ? takeContent(*clip->audio, a.take) : AudioContent{};
+        const AudioSource* src = clip && clip->audio ? song.findSource(c.source) : nullptr;
         if (!src)
             continue;
-        const AudioContent& c = *clip->audio;
         double k = songTicksPerClipTick(c, songTempo);
         double secondsPerClipTick = secondsPerTick(c.sourceTempo);
         double fileStart = double(c.sourceStart) / src->sampleRate;

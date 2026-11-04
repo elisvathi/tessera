@@ -674,6 +674,45 @@ void TesseraModule::importTakes(const std::vector<Take>& takes) {
         std::filesystem::remove(take.path, ec);
         if (!imp.ok)
             continue;
+        // Stack mode: a take that starts where an audio clip starts (a loop pass) becomes another take of that clip,
+        // and that copy plays it; splitting the clip and picking a take per part comps them (§3.5). Only a clip at
+        // the tempo the take was recorded at, so the take lines up with it.
+        if (!take.slot && recorder.settings.arranger == ArrangerRecordMode::Stack) {
+            const ArrangerClip* over = nullptr;
+            for (const ArrangerClip& a : t->arrangement)
+                if (a.offset == 0 && std::abs(double(a.position - take.at)) <= double(kPpq / 8))
+                    if (const Clip* clip = songData.findClip(a.clip);
+                        clip && clip->audio && !clip->audio->reverse &&
+                        std::abs(clip->audio->sourceTempo - songTempo) < 0.01)
+                        over = &a;
+            if (over) {
+                AudioSource src = imp.source;
+                src.id = newId<AudioSourceId>();
+                src.volts = kFullScaleVolts;
+                ClipId clipId = over->clip;
+                ArrangementId instance = over->id;
+                // The take's frame at the clip's start: the take may have started a little before it.
+                int64_t start = std::max<int64_t>(
+                    0, std::llround(double(over->position - take.at) * secondsPerTick(songTempo) * src.sampleRate));
+                start = std::min<int64_t>(start, std::max<int64_t>(0, src.frames - 1));
+                int index = int(songData.findClip(clipId)->audio->takes.size());
+                auto stack = std::make_unique<CompoundCommand>("Record take " + std::to_string(index + 2));
+                NoteSelection before = editorState.selection;
+                auto step = [&](CommandPtr cmd) {
+                    if (cmd) {
+                        cmd->apply(songData);
+                        stack->add(std::move(cmd));
+                    }
+                };
+                step(std::make_unique<AddAudioSources>(std::vector<AudioSource>{src}));
+                step(editAudio(songData, clipId, [&](AudioContent& a) { a.takes.push_back({src.id, start}); },
+                               "Record take"));
+                step(setInstanceTake(songData, take.track, instance, index));
+                publish(ChangeSet::all());
+                complex->push(new CommandAction(id, std::move(stack), before, editorState.selection));
+                continue;
+            }
+        }
         ImportedAudio f;
         f.source = imp.source;
         // A take stores what reached IN as V / 10, so it plays back at 10 V per full scale (§7.4).

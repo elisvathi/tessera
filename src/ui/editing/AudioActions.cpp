@@ -415,7 +415,9 @@ void openAudioFiles(EditorContext& ctx) {
     for (const AudioSource* s : sources) {
         int uses = 0;
         for (const auto& [id, clip] : song.clips)
-            if (clip.audio && clip.audio->source == s->id)
+            if (clip.audio && (clip.audio->source == s->id ||
+                               std::any_of(clip.audio->takes.begin(), clip.audio->takes.end(),
+                                           [&](const AudioTake& tk) { return tk.source == s->id; })))
                 uses += song.clipUses(id);
         std::error_code ec;
         uintmax_t size = std::filesystem::file_size(rack::system::join(folder, s->file), ec);

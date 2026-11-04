@@ -125,6 +125,13 @@ Hits hitsOf(TesseraModule& m, ArrangementId instance) {
     AudioStore* store = m.audioStore();
     if (!clip || !clip->audio || !store)
         return h;
+    // The hits of the take this copy plays.
+    Clip taken;
+    if (h.at->take >= 0) {
+        taken = *clip;
+        taken.audio = takeContent(*clip->audio, h.at->take);
+        clip = &taken;
+    }
     SourceStatus status = store->status(clip->audio->source);
     if (!status.transients || status.sampleRate <= 0)
         return h;
@@ -491,6 +498,32 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [l] { deleteSelected(*l); }));
     menu->addChild(rack::createMenuItem("Split here", shortcutLabel(Action::Split), [l, at] { split(*l, at); }));
     menu->addChild(rack::createMenuItem("Glue", shortcutLabel(Action::Glue), [l] { glueSelected(*l); }));
+    // Takes (§3.5): which take this copy plays; split the clip first to pick one per part.
+    if (const Clip* ac = m->song().findClip(placed->clip.clip); audio && ac && ac->audio && !ac->audio->takes.empty()) {
+        TrackId owner = placed->track;
+        int current = placed->clip.take;
+        int count = int(ac->audio->takes.size()) + 1;
+        ClipId clipId = ac->id;
+        menu->addChild(rack::createSubmenuItem(
+            "Take", "take " + std::to_string(current + 2) + " of " + std::to_string(count),
+            [c, owner, clicked, current, count, clipId](rack::ui::Menu* sub) {
+                sub->addChild(rack::createMenuLabel("This copy plays"));
+                for (int k = -1; k < count - 1; k++)
+                    sub->addChild(rack::createCheckMenuItem(
+                        "Take " + std::to_string(k + 2), "", [current, k] { return current == k; },
+                        [c, owner, clicked, k] {
+                            TesseraModule* mm = c->module();
+                            mm->perform(setInstanceTake(mm->song(), owner, clicked, k));
+                        }));
+                sub->addChild(new rack::ui::MenuSeparator);
+                sub->addChild(rack::createMenuItem("Every copy plays this take", "", [c, clipId, current] {
+                    TesseraModule* mm = c->module();
+                    if (CommandPtr cmd = useTakeEverywhere(mm->song(), clipId, current))
+                        mm->perform(std::move(cmd));
+                }));
+                sub->addChild(rack::createMenuLabel("Split the clip to pick a take per part"));
+            }));
+    }
     if (audio) {
         menu->addChild(rack::createMenuItem("Split at transients", "", [l, clicked] { splitAtTransients(*l, clicked); }));
         menu->addChild(rack::createMenuItem("Make triggers from audio", "", [l, clicked] { makeTriggers(*l, clicked); }));

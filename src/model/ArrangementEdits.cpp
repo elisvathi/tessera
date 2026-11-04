@@ -621,7 +621,8 @@ CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId) {
                   [](const Placed& a, const Placed& b) { return a.clip.position < b.clip.position; });
         for (size_t i = 0; i < chosen.size(); i++) {
             const ArrangerClip& a = chosen[i].clip;
-            if (a.clip != first->id || a.muted)
+            // Parts playing different takes (a comp) only glue by rendering.
+            if (a.clip != first->id || a.muted || a.take != chosen.front().clip.take)
                 return nullptr;
             if (i > 0) {
                 const ArrangerClip& prev = chosen[i - 1].clip;

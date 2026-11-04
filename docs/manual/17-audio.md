@@ -117,7 +117,8 @@ neighbour, to make one; move them apart and it is gone.
 - **A clip that covers another completely** replaces it.
 - Clips that only touch get no crossfade. Every clip edge gets a tiny fade, so a cut never clicks.
 
-These rules hold for audio tracks whatever the **Stack** setting says (Stack is for note clips).
+These rules hold for audio tracks whatever the **Stack** setting says (Stack is for note clips). Recording in
+**Stack** mode over an audio clip adds takes to that clip, see [Takes and comping](#takes-and-comping).
 
 ### Replacing a file
 
@@ -197,6 +198,24 @@ first empty slot. Each take is one undo step. Takes are stored in the patch, lik
 the level they came in.
 
 Several armed audio tracks record at once. An armed audio track never records notes.
+
+### Takes and comping
+
+With **Recording over arranger clips** set to **Stack**, recording over an audio clip keeps every pass inside that
+clip instead of making a new clip each time. Set a loop over the clip (or record a first pass that makes it), record
+a few passes, and each pass that starts where the clip starts becomes its next **take**: take 2, take 3 and so on.
+The clip plays the newest take, and its title shows which one ("take 3").
+
+To pick the best parts of each pass (comping):
+
+1. **Split** the clip where the takes should change (**Ctrl+E**, or right-click ▸ **Split here**).
+2. Right-click each part ▸ **Take** and pick the take that part plays. The waveform shows that take.
+3. **Every copy plays this take** (in the same menu) sets every copy of the clip to the take this one plays.
+
+Picking a take is one undo step and is saved with the patch. Glue the parts back together when you are done: parts
+that play different takes are glued into one new file, which plays exactly what you hear. A take plays without the
+clip's warp markers, which belong to take 1. A take only joins a clip at the song tempo it was recorded at;
+otherwise the pass becomes a new clip, as it does in Merge and Replace.
 
 ## Bouncing a track to audio
 

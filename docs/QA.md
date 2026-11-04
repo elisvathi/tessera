@@ -598,6 +598,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Audio editor: double-click a hit: a marker (line + ruler handle) pins it to the nearest 1/16; drag it: the ruler's
       beats bend, the clip plays the hit later or earlier, in time, same pitch once the render is ready. Right-click:
       remove. Clip menu ▸ Pin every hit to the nearest 1/16 on a loose loop: it plays tight. Save and reload: kept.
+- [ ] Recording in Stack mode, loop over an audio clip, three passes: one clip whose title says "take 4", playing the
+      last pass. Split it, pick take 2 for one part (right-click ▸ Take): the waveform and sound change; undo works.
+      Glue the parts: one new file that sounds the same. Save and reload: the takes and picks are kept.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

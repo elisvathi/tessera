@@ -48,15 +48,18 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
     };
 
     // One entry per audio clip any audio track uses.
-    std::vector<ClipId> clipIds;
-    auto clipIndex = [&](ClipId id) -> int {
-        auto it = std::find(clipIds.begin(), clipIds.end(), id);
-        if (it != clipIds.end())
-            return int(it - clipIds.begin());
+    // One entry per audio clip and take that plays (a copy picking another take plays that take's file).
+    std::vector<std::pair<ClipId, int>> clipIds;
+    auto clipIndex = [&](ClipId id, int take = -1) -> int {
         const Clip* clip = song.findClip(id);
         if (!clip || !clip->audio)
             return -1;
-        const AudioContent& a = *clip->audio;
+        if (take >= int(clip->audio->takes.size()))
+            take = -1;
+        auto it = std::find(clipIds.begin(), clipIds.end(), std::make_pair(id, take));
+        if (it != clipIds.end())
+            return int(it - clipIds.begin());
+        const AudioContent a = takeContent(*clip->audio, take);
         AudioClipPlay c;
         c.clip = id.value;
         c.clipTempo = a.sourceTempo;
@@ -105,7 +108,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         } else {
             c.gain = 0;
         }
-        clipIds.push_back(id);
+        clipIds.push_back({id, take});
         snap.clips.push_back(c);
         return int(snap.clips.size()) - 1;
     };
@@ -154,7 +157,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         for (const ArrangerClip& a : t.arrangement) {
             if (a.muted)
                 continue;
-            int ci = clipIndex(a.clip);
+            int ci = clipIndex(a.clip, a.take);
             if (ci < 0)
                 continue;
             AudioInstancePlay ip;

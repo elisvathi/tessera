@@ -79,7 +79,8 @@ It depends on what the armed track is doing when your first note arrives:
     for just those notes, from the first to the end of the last. A clip that is placed more than once shares its
     notes, so the new notes show in every copy.
   - **Stack**: a new clip is made from exactly punch-in to punch-out, stacked over what was there. You can
-    move, mute or delete each take on its own. Where stacked clips have a lane on the same AUTO channel, the clip on
+    move, mute or delete each take on its own. On an audio track, a pass that starts where an audio clip starts
+    becomes another take inside that clip instead ([Takes and comping](17-audio.md#takes-and-comping)). Where stacked clips have a lane on the same AUTO channel, the clip on
     top plays it.
   - **Replace**: a new clip is made from exactly punch-in to punch-out, and old clips are cut only there. Notes
     outside that stretch stay, even in the same bar. While you record, the track's timeline clips are silent, so
