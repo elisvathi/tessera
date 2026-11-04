@@ -589,6 +589,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       lane at each hit, louder hits louder; through a rack drum it plays in time with the loop.
 - [ ] Group two sounding tracks (Ctrl+G): a group strip after the last one, the tracks say "→ <group>". Its fader
       and pan move both together; M silences both; undo works. Ungroup: the strip goes, they go to the Master.
+- [ ] Audio editor: double-click a hit: a marker (line + ruler handle) pins it to the nearest 1/16; drag it: the ruler's
+      beats bend, the clip plays the hit later or earlier, in time, same pitch once the render is ready. Right-click:
+      remove. Clip menu ▸ Pin every hit to the nearest 1/16 on a loose loop: it plays tight. Save and reload: kept.
 - [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
       its header, as for the notes, clear of the peak readout.
 - [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level

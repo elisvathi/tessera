@@ -24,7 +24,7 @@ bool wantsRender(const AudioContent& clip, double tempo, RenderKey& key) {
     key.semitones = clip.semitones + double(clip.cents) / 100;
     key.sound = clip.sound;
     key.reverse = clip.reverse;
-    return key.factor != 1 || key.semitones != 0;
+    return key.factor != 1 || key.semitones != 0 || (!clip.warps.empty() && !clip.reverse);
 }
 
 AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double engineRate, double tempo,
@@ -81,8 +81,16 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
                 c.startFrame = frames - (c.startFrame + double(clip->length) * c.framesPerTick);
             double after = frames - (c.startFrame + c.loopEnd * c.framesPerTick);
             c.seamDip = after < 0.006 * engineRate;
+            if (!a.warps.empty() && !a.reverse)
+                for (const WarpMarker& m : a.warps)
+                    c.warps.push_back({m.tick, engineFrames(double(m.frame), src->sampleRate, bufferRate)});
             RenderKey key;
             if (wantsRender(a, tempo, key)) {
+                key.warps = c.warps;
+                if (!c.warps.empty()) {
+                    key.startFrame = c.startFrame;
+                    key.framesPerTick = c.framesPerTick;
+                }
                 RenderKey found;
                 std::shared_ptr<const AudioBuffer> render = buffers.render(key, found);
                 double renderRate = render && render->rate > 0 ? render->rate : engineRate;

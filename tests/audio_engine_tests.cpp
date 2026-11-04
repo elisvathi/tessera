@@ -858,3 +858,18 @@ TEST_CASE("a group strip sums its tracks through its own fader and mute on the w
     play();
     CHECK(left == doctest::Approx(0.25f).epsilon(1e-3));
 }
+
+TEST_CASE("before its render is ready, a warped clip plays its file through the markers") {
+    // A ramp: each sample is its own frame number, so the output says where in the file the clip plays.
+    Rig rig(4.0, [](int64_t i) { return double(i) / 192000.0; });
+    Clip* clip = rig.song.findClip(rig.clip);
+    clip->audio->warps = {{0, 0}, {double(kPpq), 12000}}; // the first beat's audio is half a beat long: half speed
+    rig.rebuild();
+    rig.engine->play();
+    std::vector<float> out = rig.run(48000);
+    double volts = rig.song.findSource(rig.source)->volts;
+    // Half way into the first beat (12000 samples at 120 BPM) it has played 6000 frames of the file.
+    CHECK(out[12000] / volts == doctest::Approx(6000.0 / 192000).epsilon(0.02));
+    // Past the last marker it plays at the clip tempo again: half a beat on, 12000 + 12000 frames.
+    CHECK(out[36000] / volts == doctest::Approx(24000.0 / 192000).epsilon(0.02));
+}

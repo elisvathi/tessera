@@ -1909,3 +1909,19 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - The strip: name and colour, "Group · N", pan, M (no solo: solo stays per track), fader, meter, level, "→ Master".
   Holds use the group's ID like a track's. In Show sends groups step back like the master. No group automation
   lanes yet.
+
+## 128. Warp markers (4 Nov)
+
+- `AudioContent::warps`: (clip tick, source frame), both rising. With markers, the file position at a tick comes from
+  them (`warpedFrame`, inverse `warpedTick`), at the clip tempo past the first and last; sourceStart only matters
+  without markers. Reversed clips ignore them.
+- **Playback**: a warped clip always asks for a render, made **straight**: each piece between markers stretched at its
+  own ratio (Signalsmith, one stretcher per piece) so render frame (startFrame + tick × framesPerTick) × factor plays
+  that tick, and the player's render formula is unchanged. The render key carries the markers (prepared frames),
+  startFrame and framesPerTick; a stand-in render must have the same markers. Until it is ready the player reads the
+  prepared buffer through the markers (pitch follows the speed there, like tape).
+- **Editor**: double-click a hit (nearest transient within 12 px) pins it to the nearest 1/16 (Alt: where it is); the
+  first marker also pins tick 0 where it is. Drag a marker: its tick moves in 1/16 steps (Alt: free), between its
+  neighbours. Right-click: remove one, or all. Double-click the ruler fits the view (it used to be any empty space).
+  With markers, window, edge and tempo drags are off. **Clip menu**: Pin every hit to the nearest 1/16
+  (`quantizeAudio`, a marker per hit from the transients) and Remove warp markers. Hit detection follows warps.

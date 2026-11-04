@@ -62,6 +62,14 @@ enum class TempoFollow : uint8_t {
 constexpr double kMinClipTempo = 20;
 constexpr double kMaxClipTempo = 999;
 
+/// A warp marker (§3.5): pins a frame of the file to a clip tick, so the audio between markers stretches to fit.
+struct WarpMarker {
+    double tick = 0;   // clip ticks
+    int64_t frame = 0; // the source's own frames
+
+    bool operator==(const WarpMarker& o) const { return tick == o.tick && frame == o.frame; }
+};
+
 /// What an audio clip plays of its source.
 struct AudioContent {
     AudioSourceId source;
@@ -73,6 +81,9 @@ struct AudioContent {
     int8_t semitones = 0;     // -24..24
     float cents = 0;          // -50..50
     bool reverse = false;     // plays the clip's window of the source backwards
+    // Sorted by tick, frames rising too. With markers, they set where the file plays (sourceStart only matters
+    // without them); past the first and last, the file plays at the clip tempo. Ignored on a reversed clip.
+    std::vector<WarpMarker> warps;
 
     /// Pitch factor of the semitones and cents (2 = an octave up).
     double pitchFactor() const { return std::exp2((semitones + double(cents) / 100) / 12); }
@@ -80,7 +91,7 @@ struct AudioContent {
     bool operator==(const AudioContent& o) const {
         return source == o.source && sourceStart == o.sourceStart && follow == o.follow && sound == o.sound &&
                sourceTempo == o.sourceTempo && gainDb == o.gainDb && semitones == o.semitones && cents == o.cents &&
-               reverse == o.reverse;
+               reverse == o.reverse && warps == o.warps;
     }
 };
 
@@ -113,6 +124,47 @@ inline double secondsPerTick(double bpm) { return 60.0 / (bpm * double(kPpq)); }
 /// Source frames per clip tick: one tick at the clip tempo, in the source's own sample rate.
 inline double framesPerTick(const AudioContent& a, double sampleRate) {
     return secondsPerTick(a.sourceTempo) * sampleRate;
+}
+
+/// The source frame clip tick `tick` plays (§3.5): straight from sourceStart at the clip tempo, or through the warp
+/// markers, at the clip tempo past the first and the last.
+inline double warpedFrame(const AudioContent& a, double tick, double sampleRate) {
+    double perTick = framesPerTick(a, sampleRate);
+    const std::vector<WarpMarker>& w = a.warps;
+    if (w.empty() || a.reverse)
+        return double(a.sourceStart) + tick * perTick;
+    if (tick <= w.front().tick)
+        return double(w.front().frame) + (tick - w.front().tick) * perTick;
+    if (tick >= w.back().tick)
+        return double(w.back().frame) + (tick - w.back().tick) * perTick;
+    size_t i = 1;
+    while (w[i].tick < tick)
+        i++;
+    const WarpMarker& a0 = w[i - 1];
+    const WarpMarker& a1 = w[i];
+    double span = a1.tick - a0.tick;
+    return span > 0 ? double(a0.frame) + (tick - a0.tick) / span * double(a1.frame - a0.frame) : double(a1.frame);
+}
+
+/// The clip tick at which source frame `frame` plays: the inverse of warpedFrame().
+inline double warpedTick(const AudioContent& a, double frame, double sampleRate) {
+    double perTick = framesPerTick(a, sampleRate);
+    const std::vector<WarpMarker>& w = a.warps;
+    if (perTick <= 0)
+        return 0;
+    if (w.empty() || a.reverse)
+        return (frame - double(a.sourceStart)) / perTick;
+    if (frame <= double(w.front().frame))
+        return w.front().tick + (frame - double(w.front().frame)) / perTick;
+    if (frame >= double(w.back().frame))
+        return w.back().tick + (frame - double(w.back().frame)) / perTick;
+    size_t i = 1;
+    while (double(w[i].frame) < frame)
+        i++;
+    const WarpMarker& a0 = w[i - 1];
+    const WarpMarker& a1 = w[i];
+    double span = double(a1.frame - a0.frame);
+    return span > 0 ? a0.tick + (frame - double(a0.frame)) / span * (a1.tick - a0.tick) : a1.tick;
 }
 
 /// Clip ticks covering `frames` frames of a source at `sampleRate`, at the clip tempo.

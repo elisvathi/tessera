@@ -415,6 +415,16 @@ json_t* audioToJson(const AudioContent& a) {
         setNumber(j, "cents", a.cents);
     if (a.reverse)
         setBool(j, "reverse", true);
+    if (!a.warps.empty()) {
+        json_t* warps = json_array();
+        for (const WarpMarker& m : a.warps) {
+            json_t* mj = json_array();
+            json_array_append_new(mj, json_real(m.tick));
+            json_array_append_new(mj, json_integer(json_int_t(m.frame)));
+            json_array_append_new(warps, mj);
+        }
+        set(j, "warps", warps);
+    }
     return j;
 }
 
@@ -429,6 +439,11 @@ AudioContent audioFromJson(const json_t* j) {
     a.semitones = saturate<int8_t>(getInt(j, "semitones", a.semitones));
     a.cents = getFloat(j, "cents", a.cents);
     a.reverse = getBool(j, "reverse", a.reverse);
+    forEach(get(j, "warps"), [&](const json_t* mj) {
+        if (json_array_size(mj) == 2)
+            a.warps.push_back({json_number_value(json_array_get(mj, 0)),
+                               int64_t(json_integer_value(json_array_get(mj, 1)))});
+    });
     return a;
 }
 

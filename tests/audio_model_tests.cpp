@@ -682,3 +682,34 @@ TEST_CASE("an audio clip's hits fall on the timeline where its transients play, 
     at.offset = kPpq / 2;
     CHECK(hitTicks(clip, at, {0}, 48000, 120).front() == at.position + kPpq / 2);
 }
+
+TEST_CASE("warp markers pin file frames to clip ticks; between them the file stretches, beyond them it plays on") {
+    AudioContent a;
+    a.sourceTempo = 120; // 25 frames a tick at 48 kHz
+    a.sourceStart = 1000;
+    CHECK(warpedFrame(a, kPpq, 48000) == doctest::Approx(1000 + 24000));
+    a.warps = {{0, 1000}, {double(kPpq), 13000}}; // the first beat's audio squeezed: it lasts half as long
+    CHECK(warpedFrame(a, kPpq / 2, 48000) == doctest::Approx(7000));
+    CHECK(warpedFrame(a, 2 * kPpq, 48000) == doctest::Approx(13000 + 24000)); // beyond: the clip tempo
+    CHECK(warpedTick(a, 7000, 48000) == doctest::Approx(kPpq / 2));
+    CHECK(warpedTick(a, 37000, 48000) == doctest::Approx(2 * kPpq));
+
+    Song song = makeDefaultSong();
+    ImportResult made;
+    AudioDropTarget last;
+    last.index = 4;
+    importAudio(song, {loop()}, last, idsOf(song), &made)->apply(song);
+    ClipId clip = made.clips.at(0);
+    // A hit just after each beat is pinned onto the beat.
+    const AudioContent& c = *song.findClip(clip)->audio;
+    double perTick = framesPerTick(c, song.findSource(c.source)->sampleRate);
+    std::vector<int64_t> hits{int64_t(c.sourceStart + (kPpq + 30) * perTick), int64_t(c.sourceStart + (2 * kPpq + 20) * perTick)};
+    CommandPtr q = quantizeAudio(song, clip, hits, song.findSource(c.source)->sampleRate, kPpq / 4);
+    REQUIRE(q);
+    q->apply(song);
+    const AudioContent& w = *song.findClip(clip)->audio;
+    REQUIRE(w.warps.size() == 2);
+    CHECK(w.warps[0].tick == kPpq);
+    CHECK(w.warps[1].tick == 2 * kPpq);
+    CHECK(throughJson(song) == song);
+}

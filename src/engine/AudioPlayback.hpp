@@ -25,6 +25,26 @@ struct AudioBuffer {
     const float* channel(int c) const { return data[size_t(c < channels ? c : 0)].data(); }
 };
 
+/// Where a warped clip plays in its prepared buffer at clip tick `tick`, and how many prepared frames a tick lasts
+/// there (§3.5): through the markers, at `framesPerTick` past the first and the last.
+inline double warpedPrepared(const std::vector<std::pair<double, double>>& warps, double framesPerTick, double tick,
+                             double* slope = nullptr) {
+    if (tick <= warps.front().first || tick >= warps.back().first) {
+        const auto& end = tick <= warps.front().first ? warps.front() : warps.back();
+        if (slope)
+            *slope = framesPerTick;
+        return end.second + (tick - end.first) * framesPerTick;
+    }
+    size_t i = 1;
+    while (warps[i].first < tick)
+        i++;
+    double dt = warps[i].first - warps[i - 1].first;
+    double s = dt > 0 ? (warps[i].second - warps[i - 1].second) / dt : framesPerTick;
+    if (slope)
+        *slope = s;
+    return warps[i - 1].second + (tick - warps[i - 1].first) * s;
+}
+
 /// One audio clip as the engine plays it.
 struct AudioClipPlay {
     uint64_t clip = 0; // ClipId value
@@ -42,6 +62,17 @@ struct AudioClipPlay {
     double length = 0;                 // clip ticks: where a clip without a loop ends
     // The file ends at (or just after) the loop end, so a seam has nothing to crossfade with: it dips instead.
     bool seamDip = false;
+    // Warp markers as (clip tick, prepared frame); empty when none. The render, when there is one, is straight.
+    std::vector<std::pair<double, double>> warps;
+
+    /// The prepared frame clip tick `tick` plays when not rendered, and prepared frames per tick there.
+    double framesAt(double tick, double& rate) const {
+        if (warps.empty()) {
+            rate = framesPerTick;
+            return startFrame + tick * framesPerTick;
+        }
+        return warpedPrepared(warps, framesPerTick, tick, &rate);
+    }
 
     /// Song ticks one clip tick lasts at `songTempo` (Off clips play at their own speed).
     double songTicksPerTick(double songTempo) const {

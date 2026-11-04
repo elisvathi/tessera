@@ -26,10 +26,11 @@ class AudioEditor : public InteractiveView {
     // ---- For the drags ----
 
     /// What is under a point: the window, one of its edges, or a beat line of the ruler.
-    enum class Part { None, Window, LeftEdge, RightEdge, Beat };
+    enum class Part { None, Window, LeftEdge, RightEdge, Beat, Warp };
     struct Hit {
         Part part = Part::None;
         int beat = 0; // Beat: which beat line (1 is the first after beat 1)
+        int warp = -1; // Warp: which marker
     };
     Hit hitTest(rack::math::Vec pos);
 
@@ -51,6 +52,7 @@ class AudioEditor : public InteractiveView {
         std::optional<int64_t> sourceStart;
         std::optional<std::pair<int64_t, int64_t>> window;
         std::optional<double> tempo;
+        std::optional<std::vector<WarpMarker>> warps;
     };
     Preview preview;
 

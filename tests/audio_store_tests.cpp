@@ -287,3 +287,33 @@ TEST_CASE("a project file's audio folder takes the files out and brings them bac
     CHECK(fs::exists(other.path / song.audioSources[0].file));
     CHECK(importFiles(song, project.path.string(), other.path.string()) == 0);
 }
+
+TEST_CASE("a warped clip's render is straight: each piece between markers stretched to its place") {
+    TempFolder dir;
+    AudioStore store;
+    store.setFolder(dir.path.string());
+    store.setEngineRate(48000);
+    Song song = makeDefaultSong();
+    AudioSourceId id = importInto(store, song, "click120.wav"); // a click every 24000 frames, 4 s
+    store.sync(song);
+    store.waitIdle();
+    // The file's first half beat fills a whole beat; after it, the file plays at the clip tempo (25 frames a tick).
+    RenderKey key{id, 1.0, 0, SoundType::Drums};
+    key.warps = {{0, 0}, {double(kPpq), 12000}};
+    key.startFrame = 0;
+    key.framesPerTick = 25;
+    store.want({key});
+    store.waitIdle();
+    RenderKey found;
+    auto r = store.render(key, found);
+    REQUIRE(r);
+    CHECK(r->frames == (kPpq + (192000 - 12000) / 25) * 25);
+    // The file's second click (frame 24000) plays at tick 960 + 12000 / 25 = 1440: render frame 36000.
+    auto loudest = [&](int64_t from, int64_t to) {
+        float most = 0;
+        for (int64_t i = from; i < to; i++)
+            most = std::max(most, std::abs(r->channel(0)[i]));
+        return most;
+    };
+    CHECK(loudest(35500, 36600) > 4 * loudest(30000, 35000));
+}
