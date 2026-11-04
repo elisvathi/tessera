@@ -145,7 +145,7 @@ clip's name and menu on the left, the maximize button on the right.
   timeline copy (the selected copy, or the first). While the timeline plays it, a green line shows where it is in
   the file.
 - A loop over part of the clip shows as two amber lines.
-- **Scroll** to move through the file, **Ctrl+scroll** to zoom, **double-click** empty space to see the whole file.
+- **Scroll** to move through the file, **Ctrl+scroll** to zoom, **double-click** the ruler to see the whole file.
 
 Like the clip menu, these change the clip, so every linked copy follows.
 
@@ -240,6 +240,21 @@ with small triangles under the waveform.
 - **Make triggers from audio** (same menu) adds a drum track under the audio track, "Loop triggers", with a clip
   that hits its **Hits** lane wherever the audio has a hit, louder for louder hits. Patch its Drum Out into a rack
   drum to double the loop, or replace it.
+
+## Warp markers: putting hits on the beat
+
+A loop played by hand drifts a little against the grid. **Warp markers** pin a moment of the file to a beat, and the
+audio between markers stretches (keeping its pitch) so each pinned hit lands where it should.
+
+- In the audio editor, **double-click a hit** on the waveform: a marker pins it to the nearest 1/16 note (hold
+  **Alt** to pin it where it is). The first marker also pins the clip's start, so only that hit moves. Markers show
+  as a line through the hit with a handle in the ruler, and the ruler's beats bend to follow them.
+- **Drag a marker** left or right to move the beat it pins its hit to, in 1/16 steps (**Alt** for free).
+- **Right-click a marker** to remove it, or all of them.
+- **Pin every hit to the nearest 1/16** (the clip's right-click menu) does it for the whole clip in one go, from the
+  hits Tessera found; **Remove warp markers** undoes the warping.
+- While a clip has markers, its window, edges and tempo can't be dragged in the audio editor: remove the markers
+  first. A reversed clip ignores its markers.
 
 ## Latency and the recording offset
 

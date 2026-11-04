@@ -256,6 +256,15 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
         a.gainDb = std::isfinite(a.gainDb) ? std::clamp(a.gainDb, kSilentDb, kMaxClipGainDb) : 0.f;
         clampValue<int8_t>(a.semitones, -24, 24);
         a.cents = std::isfinite(a.cents) ? std::clamp(a.cents, -50.f, 50.f) : 0.f;
+        // Warp markers keep both their ticks and their frames rising: anything else would play backwards.
+        std::stable_sort(a.warps.begin(), a.warps.end(),
+                         [](const WarpMarker& x, const WarpMarker& y) { return x.tick < y.tick; });
+        std::vector<WarpMarker> kept;
+        for (const WarpMarker& m : a.warps)
+            if (std::isfinite(m.tick) && m.frame >= 0 &&
+                (kept.empty() || (m.tick > kept.back().tick && m.frame > kept.back().frame)))
+                kept.push_back(m);
+        a.warps = kept;
     }
 }
 

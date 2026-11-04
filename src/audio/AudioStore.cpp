@@ -455,7 +455,8 @@ std::shared_ptr<const AudioBuffer> AudioStore::render(const RenderKey& key, Rend
     for (const Render& r : renders) {
         if (r.status.state != RenderState::Ready || !r.buffer || r.bufferRate != rate ||
             !(r.key.source == key.source) || r.key.semitones != key.semitones || r.key.sound != key.sound ||
-            r.key.reverse != key.reverse)
+            r.key.reverse != key.reverse || r.key.warps != key.warps || r.key.startFrame != key.startFrame ||
+            r.key.framesPerTick != key.framesPerTick)
             continue;
         if (r.key == key) {
             best = &r;
@@ -623,6 +624,67 @@ void AudioStore::renderLoop() {
     }
 }
 
+namespace {
+
+/// A warped clip's render (§3.5): each piece between ticks where markers sit stretched on its own, so render frame
+/// (startFrame + tick * framesPerTick) * factor plays what the clip plays at that tick. Parts before the file's
+/// start stay silent.
+bool renderWarped(const RenderKey& key, const AudioBuffer& in, AudioBuffer& out, const RenderProgress& progress) {
+    const auto& w = key.warps;
+    double fpt = key.framesPerTick;
+    auto inAt = [&](double tick) { return warpedPrepared(w, fpt, tick); };
+    auto outAt = [&](double tick) { return (key.startFrame + tick * fpt) * key.factor; };
+    double t0 = -key.startFrame / fpt;
+    double t1 = (double(out.frames) / key.factor - key.startFrame) / fpt;
+    std::vector<double> ticks{t0};
+    for (const auto& m : w)
+        if (m.first > t0 && m.first < t1)
+            ticks.push_back(m.first);
+    ticks.push_back(t1);
+    for (size_t k = 0; k + 1 < ticks.size(); k++) {
+        double i0 = inAt(ticks[k]), i1 = inAt(ticks[k + 1]);
+        double o0 = outAt(ticks[k]), o1 = outAt(ticks[k + 1]);
+        if (i1 <= i0 || o1 <= o0)
+            continue;
+        // Keep the part inside the file; the output for the rest stays silent.
+        if (i0 < 0) {
+            o0 += (0 - i0) / (i1 - i0) * (o1 - o0);
+            i0 = 0;
+        }
+        if (i1 > double(in.frames)) {
+            o1 -= (i1 - double(in.frames)) / (i1 - i0) * (o1 - o0);
+            i1 = double(in.frames);
+        }
+        int64_t a = int64_t(std::llround(i0)), b = int64_t(std::llround(i1));
+        int64_t oa = std::clamp<int64_t>(int64_t(std::llround(o0)), 0, out.frames);
+        int64_t ob = std::clamp<int64_t>(int64_t(std::llround(o1)), 0, out.frames);
+        if (b - a < 2 || ob - oa < 2)
+            continue;
+        std::vector<const float*> src;
+        std::vector<float*> dst;
+        for (int c = 0; c < in.channels; c++) {
+            src.push_back(in.data[size_t(c)].data() + a);
+            dst.push_back(out.data[size_t(c)].data() + oa);
+        }
+        StretchJob job;
+        job.in = src.data();
+        job.channels = in.channels;
+        job.inFrames = b - a;
+        job.sampleRate = out.rate > 0 ? out.rate : 48000;
+        job.ratio = double(ob - oa) / double(b - a);
+        job.semitones = key.semitones;
+        job.sound = key.sound;
+        std::unique_ptr<TimeStretcher> stretcher = makeStretcher("signalsmith");
+        double share = 1.0 / double(ticks.size() - 1);
+        if (!stretcher->render(job, dst.data(), ob - oa,
+                               [&](double p) { return progress((double(k) + p) * share); }))
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
 void AudioStore::renderOne(const RenderKey& key) {
     std::shared_ptr<const AudioBuffer> in;
     double inRate = 0;
@@ -659,6 +721,15 @@ void AudioStore::renderOne(const RenderKey& key) {
     out->channels = in->channels;
     out->rate = inRate;
     out->frames = std::max<int64_t>(1, stretchedFrames(in->frames, key.factor));
+    if (!key.warps.empty() && key.framesPerTick > 0) {
+        // Warped: render frame (startFrame + tick * framesPerTick) * factor plays the tick, so the length follows the
+        // tick where the file ends.
+        const auto& last = key.warps.back();
+        double endTick = double(in->frames) >= last.second
+                             ? last.first + (double(in->frames) - last.second) / key.framesPerTick
+                             : last.first;
+        out->frames = std::max<int64_t>(1, int64_t((key.startFrame + endTick * key.framesPerTick) * key.factor));
+    }
     bool ok = true;
     try {
         for (int c = 0; c < in->channels; c++)
@@ -673,23 +744,28 @@ void AudioStore::renderOne(const RenderKey& key) {
             src.push_back(in->data[size_t(c)].data());
             dst.push_back(out->data[size_t(c)].data());
         }
-        StretchJob job;
-        job.in = src.data();
-        job.channels = in->channels;
-        job.inFrames = in->frames;
-        job.sampleRate = inRate;
-        job.ratio = key.factor;
-        job.semitones = key.semitones;
-        job.sound = key.sound;
-        std::unique_ptr<TimeStretcher> stretcher = makeStretcher("signalsmith");
-        ok = stretcher->render(job, dst.data(), out->frames, [&](double p) {
+        auto progress = [&](double p) {
             std::lock_guard<std::mutex> lock(mutex);
             auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });
             if (stopping || r == renders.end() || inRate != rate)
                 return false;
             r->status.progress = float(p);
             return true;
-        });
+        };
+        if (key.warps.empty() || key.framesPerTick <= 0) {
+            StretchJob job;
+            job.in = src.data();
+            job.channels = in->channels;
+            job.inFrames = in->frames;
+            job.sampleRate = inRate;
+            job.ratio = key.factor;
+            job.semitones = key.semitones;
+            job.sound = key.sound;
+            std::unique_ptr<TimeStretcher> stretcher = makeStretcher("signalsmith");
+            ok = stretcher->render(job, dst.data(), out->frames, progress);
+        } else {
+            ok = renderWarped(key, *in, *out, progress);
+        }
     }
     std::lock_guard<std::mutex> lock(mutex);
     auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });

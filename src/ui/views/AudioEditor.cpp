@@ -31,6 +31,58 @@ std::string timeText(double frames, double rate) {
     return text;
 }
 
+/// Drags a warp marker (§3.5): the beat it pins its hit to moves, snapping to 1/16 notes unless Alt is held. The
+/// beat grid slides around the hit; the audio between the markers either side stretches to fit.
+class WarpGesture : public DragGesture {
+  public:
+    WarpGesture(AudioEditor& view, Vec press, int index) : view(view), press(press), index(index) {
+        if (const Clip* c = view.shownClip())
+            warps = c->audio->warps;
+    }
+    void update(Vec pos, Modifiers mods) override {
+        const AudioSource* src = view.source();
+        if (!src || index < 0 || index >= int(warps.size()))
+            return;
+        double perTick = framesPerTick(view.shownAudio(), src->sampleRate);
+        double start = warps[size_t(index)].tick;
+        double tick = start + (pos.x - press.x) * view.pixelFrames() / perTick;
+        if (!mods.alt)
+            tick = std::round(tick / double(kPpq / 4)) * double(kPpq / 4);
+        double lo = index > 0 ? warps[size_t(index - 1)].tick + 1 : -1e12;
+        double hi = index + 1 < int(warps.size()) ? warps[size_t(index + 1)].tick - 1 : 1e12;
+        std::vector<WarpMarker> next = warps;
+        next[size_t(index)].tick = std::clamp(tick, lo, hi);
+        view.preview.warps = next;
+        shown = next[size_t(index)].tick;
+    }
+    void commit() override {
+        TesseraModule* m = view.context().module();
+        if (view.preview.warps && m)
+            m->perform(setWarps(m->song(), view.clip, *view.preview.warps, "Move warp marker"));
+        view.preview = {};
+    }
+    void cancel() override { view.preview = {}; }
+    std::string readout() const override {
+        TesseraModule* m = view.context().module();
+        TimeSig ts = m ? m->song().timeSig : TimeSig();
+        Tick beat = ticksPerBeat(ts);
+        int b = int(std::floor(shown / double(beat)));
+        int bar = b / std::max(1, int(ts.num)) + 1, inBar = b % std::max(1, int(ts.num)) + 1;
+        double sixteenth = std::fmod(shown, double(beat)) / double(kPpq / 4);
+        char text[48];
+        snprintf(text, sizeof text, "Pinned to %d.%d.%.0f", bar, inBar, std::floor(sixteenth) + 1);
+        return text;
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
+
+  private:
+    AudioEditor& view;
+    Vec press;
+    int index;
+    std::vector<WarpMarker> warps;
+    double shown = 0;
+};
+
 /// Drags the window's body: the clip plays another part of the file, as long as before.
 class SlipGesture : public DragGesture {
   public:
@@ -183,6 +235,8 @@ AudioContent AudioEditor::shownAudio() {
         a.sourceStart = preview.window->first;
     if (preview.tempo)
         a.sourceTempo = *preview.tempo;
+    if (preview.warps)
+        a.warps = *preview.warps;
     return a;
 }
 
@@ -199,6 +253,11 @@ std::pair<double, double> AudioEditor::window() {
     const AudioSource* src = source();
     if (!c || !src)
         return {0, 0};
+    // With warp markers, they say where the clip starts and ends in the file.
+    if (!c->audio->warps.empty() && !c->audio->reverse) {
+        AudioContent w = shownAudio();
+        return {warpedFrame(w, 0, src->sampleRate), warpedFrame(w, double(c->length), src->sampleRate)};
+    }
     // A tempo preview leaves the window where it is: the clip keeps the same audio (§5.1).
     const AudioContent& a = *c->audio;
     double start = double(preview.sourceStart ? *preview.sourceStart : a.sourceStart);
@@ -246,6 +305,21 @@ AudioEditor::Hit AudioEditor::hitTest(Vec pos) {
         return hit;
     auto [s, e] = window();
     float xs = float(frameToX(s)), xe = float(frameToX(e));
+    // A warped clip: its markers are what moves; window, edges and tempo wait until they are gone.
+    const AudioContent& a = *shownClip()->audio;
+    if (!a.warps.empty() && !a.reverse) {
+        AudioContent w = shownAudio();
+        double best = 6;
+        for (size_t i = 0; i < w.warps.size(); i++) {
+            double d = std::fabs(frameToX(double(w.warps[i].frame)) - pos.x);
+            if (d <= best) {
+                best = d;
+                hit.part = Part::Warp;
+                hit.warp = int(i);
+            }
+        }
+        return hit;
+    }
     if (pos.y < kRulerHeight) {
         double perBeat = framesPerBeat();
         if (perBeat <= 0)
@@ -280,6 +354,8 @@ std::unique_ptr<DragGesture> AudioEditor::startGesture(Vec pos, int button, Modi
         return std::make_unique<EdgeGesture>(*this, pos, hit.part == Part::LeftEdge);
     case Part::Beat:
         return std::make_unique<BeatGesture>(*this, pos, hit.beat);
+    case Part::Warp:
+        return std::make_unique<WarpGesture>(*this, pos, hit.warp);
     default:
         return nullptr;
     }
@@ -303,6 +379,27 @@ const ArrangerClip* AudioEditor::instance() {
 }
 
 void AudioEditor::click(Vec pos, int button, Modifiers mods) {
+    if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+        Hit hit = hitTest(pos);
+        TesseraModule* m = ctx.module();
+        const Clip* c = shownClip();
+        if (hit.part == Part::Warp && m && c) {
+            std::vector<WarpMarker> warps = c->audio->warps;
+            int index = hit.warp;
+            ClipId id = clip;
+            rack::ui::Menu* menu = rack::createMenu();
+            menu->addChild(rack::createMenuLabel("Warp marker"));
+            menu->addChild(rack::createMenuItem("Remove this marker", "", [m, id, warps, index] {
+                std::vector<WarpMarker> rest = warps;
+                rest.erase(rest.begin() + index);
+                m->perform(setWarps(m->song(), id, rest, "Remove warp marker"));
+            }));
+            menu->addChild(rack::createMenuItem("Remove all markers", "", [m, id] {
+                m->perform(setWarps(m->song(), id, {}, "Remove warp markers"));
+            }));
+        }
+        return;
+    }
     // A click in the ruler plays from there, on the timeline copy of the clip (§6.4).
     TesseraModule* m = ctx.module();
     const AudioSource* src = source();
@@ -323,8 +420,39 @@ void AudioEditor::click(Vec pos, int button, Modifiers mods) {
 }
 
 void AudioEditor::doubleClick(Vec pos, Modifiers mods) {
-    if (hitTest(pos).part == Part::None)
+    Hit hit = hitTest(pos);
+    if (hit.part != Part::None && hit.part != Part::Window)
+        return;
+    // In the ruler: show the whole file. On the waveform: pin the nearest hit to the nearest 1/16 (§3.5).
+    if (pos.y < kRulerHeight) {
         fit();
+        return;
+    }
+    TesseraModule* m = ctx.module();
+    const Clip* c = shownClip();
+    const AudioSource* src = source();
+    if (!m || !c || !src || c->audio->reverse)
+        return;
+    double frame = xToFrame(pos.x);
+    if (AudioStore* store = m->audioStore())
+        if (SourceStatus st = store->status(c->audio->source); st.transients) {
+            double best = 12 * framesPerPx;
+            for (int64_t f : *st.transients)
+                if (std::fabs(double(f) - frame) < best) {
+                    best = std::fabs(double(f) - frame);
+                    frame = double(f);
+                }
+        }
+    AudioContent a = *c->audio;
+    double tick = warpedTick(a, frame, src->sampleRate);
+    if (!mods.alt)
+        tick = std::round(tick / double(kPpq / 4)) * double(kPpq / 4);
+    std::vector<WarpMarker> warps = a.warps;
+    // Without markers yet, the clip's start is pinned where it is, so only the hit moves.
+    if (warps.empty() && tick > 0)
+        warps.push_back({0, a.sourceStart});
+    warps.push_back({tick, int64_t(std::llround(frame))});
+    m->perform(setWarps(m->song(), clip, warps, "Add warp marker"));
 }
 
 CursorShape AudioEditor::hoverCursor(Vec pos, Modifiers mods) {
@@ -368,6 +496,10 @@ void AudioEditor::drawRuler(NVGcontext* vg, Rect r) {
     if (!m || perBeat <= 0)
         return;
     auto [s, e] = window();
+    // A warped clip's beats sit where its markers put them.
+    AudioContent audio = shownAudio();
+    const AudioSource* src = source();
+    bool warped = src && !audio.warps.empty() && !audio.reverse;
     int beatsPerBar = std::max(1, int(m->song().timeSig.num));
     int first = int(std::floor((xToFrame(0) - s) / perBeat)) - 1;
     int last = int(std::ceil((xToFrame(box.size.x) - s) / perBeat)) + 1;
@@ -379,6 +511,8 @@ void AudioEditor::drawRuler(NVGcontext* vg, Rect r) {
         if (!bar && !beats)
             continue;
         double f = s + k * perBeat;
+        if (warped)
+            f = warpedFrame(audio, double(k) * double(ticksPerBeat(m->song().timeSig)), src->sampleRate);
         float x = float(frameToX(f));
         bool inside = f >= s - 0.5 && f <= e + 0.5;
         nvgBeginPath(vg);
@@ -468,6 +602,25 @@ void AudioEditor::drawView(const DrawArgs& args) {
                 nvgClosePath(vg);
             }
             nvgFillColor(vg, nvgTransRGBAf(c.text0, 0.6f));
+            nvgFill(vg);
+        }
+    // Warp markers: a line through the hit they pin, with a handle in the ruler.
+    if (!a.reverse)
+        for (const WarpMarker& w : a.warps) {
+            float x = float(frameToX(double(w.frame)));
+            if (x < -4 || x > box.size.x + 4)
+                continue;
+            nvgBeginPath(vg);
+            nvgRect(vg, x - 0.75f, 2, 1.5f, wave.getBottom() - 2);
+            nvgFillColor(vg, c.select);
+            nvgFill(vg);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x, kRulerHeight - 2);
+            nvgLineTo(vg, x - 5, kRulerHeight - 9);
+            nvgLineTo(vg, x, kRulerHeight - 16);
+            nvgLineTo(vg, x + 5, kRulerHeight - 9);
+            nvgClosePath(vg);
+            nvgFillColor(vg, c.select);
             nvgFill(vg);
         }
     // The window's edges, with grips to show they move.

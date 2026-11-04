@@ -124,6 +124,14 @@ CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, con
 /// A drum track's lane IN level and pan (`lane` 0..7, the Drum Out output). Null when nothing changed.
 CommandPtr setDrumInput(const Song& song, TrackId track, int lane, Channel channel, const std::string& name);
 
+/// The warp markers of audio clip `clip` (§3.5), cleaned up as normalize does (rising ticks and frames). One undo
+/// step; null when nothing changed.
+CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps, const std::string& name);
+/// Pins every hit (transients, in the file's frames) of `clip` to the nearest `grid` ticks: a marker per hit, so
+/// the audio plays in time with the grid. Hits closer than half a grid step to the one before are left alone.
+CommandPtr quantizeAudio(const Song& song, ClipId clip, const std::vector<int64_t>& transients, double fileRate,
+                         Tick grid);
+
 /// Where a timeline audio clip's hits fall, in song ticks, from its file's transients (frames at `fileRate`): each
 /// pass of a looping clip has its own. Reversed clips have none for now.
 std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,

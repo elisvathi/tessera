@@ -824,11 +824,23 @@ int AudioPlayer::wanted(const Engine& engine, const AudioTrackPlay& track, Track
     return 1;
 }
 
+void AudioPlayer::positionIn(const AudioClipPlay& c, bool rendered, const Wanted& w, double& target, double& rate) {
+    if (rendered) {
+        // A render is straight, warped or not: one line through it.
+        double factor = c.clipTempo / c.renderTempo;
+        target = (c.startFrame + w.tick * c.framesPerTick) * factor;
+        rate = w.tickRate * c.framesPerTick * factor;
+        return;
+    }
+    double perTick = 0;
+    target = c.framesAt(w.tick, perTick);
+    rate = w.tickRate * perTick;
+}
+
 void AudioPlayer::place(Voice& v, const Wanted& w) const {
     const AudioClipPlay& c = snapshot->clips[size_t(w.clip)];
-    double factor = v.rendered ? c.clipTempo / c.renderTempo : 1.0;
-    double target = (c.startFrame + w.tick * c.framesPerTick) * factor;
-    v.rate = w.tickRate * c.framesPerTick * factor;
+    double target = 0;
+    positionIn(c, v.rendered, w, target, v.rate);
     v.gain = c.gain * w.envelope;
     v.lastTick = w.tick;
     if (v.exact)
@@ -867,9 +879,8 @@ void AudioPlayer::startVoice(TrackRun& run, const Wanted& w, float fadeSeconds) 
     v.buffer = buffer;
     v.rendered = rendered;
     v.free = c.follow == TempoFollow::Off;
-    double factor = rendered ? c.clipTempo / c.renderTempo : 1.0;
-    double target = (c.startFrame + w.tick * c.framesPerTick) * factor;
-    v.rate = w.tickRate * c.framesPerTick * factor;
+    double target = 0;
+    positionIn(c, rendered, w, target, v.rate);
     // An Off clip's step doesn't depend on the song tempo: one frame a sample, unless its buffer is still at another
     // sample rate.
     v.exact = std::abs(v.rate - 1) < 1e-9;
@@ -913,9 +924,8 @@ void AudioPlayer::follow(TrackRun& run, const std::array<Wanted, 2>& want, int c
             fadeFor[size_t(match)] = float(kRenderFadeSeconds);
             continue;
         }
-        double factor = rendered ? c.clipTempo / c.renderTempo : 1.0;
-        double target = (c.startFrame + w.tick * c.framesPerTick) * factor;
-        double rate = w.tickRate * c.framesPerTick * factor;
+        double target = 0, rate = 0;
+        positionIn(c, rendered, w, target, rate);
         bool jump;
         if (v.free) {
             // Off clips keep their own pace; only a seam (the clip tick going back) or a jump of the song moves them.

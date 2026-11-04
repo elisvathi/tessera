@@ -16,10 +16,15 @@ struct RenderKey {
     double semitones = 0; // the clip's semitones and cents together
     SoundType sound = SoundType::FullMix;
     bool reverse = false; // made from the reversed source
+    // A warped clip's render (§3.5) is made straight: each stretch between markers at its own ratio, so render frame
+    // (startFrame + tick * framesPerTick) * factor plays what the clip plays at that tick. Prepared frames.
+    std::vector<std::pair<double, double>> warps; // (clip tick, prepared frame)
+    double startFrame = 0, framesPerTick = 0;
 
     bool operator==(const RenderKey& o) const {
         return source == o.source && factor == o.factor && semitones == o.semitones && sound == o.sound &&
-               reverse == o.reverse;
+               reverse == o.reverse && warps == o.warps && startFrame == o.startFrame &&
+               framesPerTick == o.framesPerTick;
     }
 };
 

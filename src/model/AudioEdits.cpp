@@ -304,6 +304,35 @@ CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, con
     return setTrackField(song, track, &Track::clips, level, name);
 }
 
+CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps, const std::string& name) {
+    std::stable_sort(warps.begin(), warps.end(), [](const WarpMarker& x, const WarpMarker& y) { return x.tick < y.tick; });
+    std::vector<WarpMarker> kept;
+    for (const WarpMarker& m : warps)
+        if (kept.empty() || (m.tick > kept.back().tick && m.frame > kept.back().frame))
+            kept.push_back(m);
+    return editAudio(song, clip, [&](AudioContent& a) { a.warps = kept; }, name);
+}
+
+CommandPtr quantizeAudio(const Song& song, ClipId clip, const std::vector<int64_t>& transients, double fileRate,
+                         Tick grid) {
+    const Clip* c = song.findClip(clip);
+    if (!c || !c->audio || grid <= 0)
+        return nullptr;
+    // Warped from the clip as it plays now, without its old markers moving things twice.
+    AudioContent plain = *c->audio;
+    std::vector<WarpMarker> warps;
+    for (int64_t f : transients) {
+        double t = warpedTick(plain, double(f), fileRate);
+        if (t < 0 || t > double(c->length))
+            continue;
+        double snapped = std::round(t / double(grid)) * double(grid);
+        if (!warps.empty() && snapped <= warps.back().tick)
+            continue;
+        warps.push_back({snapped, f});
+    }
+    return setWarps(song, clip, warps, "Quantize audio");
+}
+
 std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,
                            double fileRate, double songTempo) {
     std::vector<Tick> out;
@@ -318,7 +347,7 @@ std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::
     double start = double(clip.playStart()), period = double(clip.loopEnd - clip.loopStart);
     double from = double(at.offset), to = double(at.offset + at.length);
     for (int64_t f : transients) {
-        double t = double(f - a.sourceStart) / perTick; // clip ticks
+        double t = warpedTick(a, double(f), fileRate); // clip ticks
         if (t < 0 || t >= double(clip.length))
             continue;
         // Play position u (clip ticks since the clip's play start) for each time it comes round.

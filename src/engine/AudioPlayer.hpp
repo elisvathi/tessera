@@ -236,6 +236,9 @@ class AudioPlayer {
     /// The engine's ticks since the track's launched clip started; NaN when none plays.
     double engineElapsed(const Engine& engine, const TrackRun& run) const;
     void follow(TrackRun& run, const std::array<Wanted, 2>& want, int count);
+    /// Where in its buffer a voice of clip `c` plays at `w`'s tick, and how fast it moves: through a straight render,
+    /// or the prepared buffer through the clip's warp markers.
+    static void positionIn(const AudioClipPlay& c, bool rendered, const Wanted& w, double& target, double& rate);
     void startVoice(TrackRun& run, const Wanted& w, float fadeSeconds);
     static void retire(Voice& v, float samples);
     /// Moves a voice that plays on its own (leaving) one sample on.

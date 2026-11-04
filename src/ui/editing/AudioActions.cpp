@@ -76,6 +76,27 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
         [edit, reversed] {
             edit(reversed ? "Play forwards" : "Reverse", [](AudioContent& a) { a.reverse = !a.reverse; });
         }));
+    // Warp: pin every hit to the nearest 1/16, or let the file play straight again (§3.5).
+    std::shared_ptr<const std::vector<int64_t>> hits;
+    double hitRate = 0;
+    if (const AudioSource* src = m->song().sourceOf(*clip))
+        if (AudioStore* store = m->audioStore()) {
+            SourceStatus st = store->status(src->id);
+            hits = st.transients;
+            hitRate = st.sampleRate;
+        }
+    menu->addChild(rack::createMenuItem(
+        "Pin every hit to the nearest 1/16", hits ? "warp markers" : "",
+        [c, clipId, hits, hitRate] {
+            TesseraModule* mod = c->module();
+            if (CommandPtr q = quantizeAudio(mod->song(), clipId, *hits, hitRate, kPpq / 4))
+                mod->perform(std::move(q));
+        },
+        !hits || reversed));
+    if (!clip->audio->warps.empty())
+        menu->addChild(rack::createMenuItem("Remove warp markers", std::to_string(clip->audio->warps.size()), [edit] {
+            edit("Remove warp markers", [](AudioContent& a) { a.warps.clear(); });
+        }));
     // Normalise reads the waveform, so it waits until the file is loaded.
     float peak = 0;
     if (const AudioSource* src = m->song().sourceOf(*clip))
