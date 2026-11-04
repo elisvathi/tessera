@@ -5,6 +5,8 @@
 #include "../src/engine/FrameRing.hpp"
 #include "../src/engine/Snapshot.hpp"
 #include "../src/model/AudioEdits.hpp"
+#include "../src/model/Json.hpp"
+#include "../src/model/Serialize.hpp"
 #include "../src/model/Sends.hpp"
 #include "../src/module/OutputBus.hpp"
 
@@ -872,4 +874,27 @@ TEST_CASE("before its render is ready, a warped clip plays its file through the 
     CHECK(out[12000] / volts == doctest::Approx(6000.0 / 192000).epsilon(0.02));
     // Past the last marker it plays at the clip tempo again: half a beat on, 12000 + 12000 frames.
     CHECK(out[36000] / volts == doctest::Approx(24000.0 / 192000).epsilon(0.02));
+}
+
+TEST_CASE("a timeline copy can play another take of its clip: its file, from the same place") {
+    Rig rig(4.0, dc);
+    // Take 2: another file, half as loud.
+    AudioSource second = rig.song.audioSources[0];
+    second.id = rig.song.newId<AudioSourceId>();
+    second.name = "take 2.wav";
+    rig.song.audioSources.push_back(second);
+    rig.buffers.sources[second.id.value] = bufferOf(second.frames, [](int64_t) { return 0.5; });
+    rig.song.findClip(rig.clip)->audio->takes = {{second.id, 0}};
+    rig.engine->play();
+    rig.run(4800);
+    CHECK(rig.run(100).back() == doctest::Approx(kVolts).epsilon(1e-3)); // take 1, the clip's own
+    for (ArrangerClip& a : rig.audioTrack().arrangement)
+        a.take = 0;
+    rig.rebuild();
+    CHECK(rig.run(4800).back() == doctest::Approx(kVolts / 2).epsilon(1e-3));
+    CHECK(unusedSources(rig.song).empty()); // a take's file is in use
+    json::Ref j(songToJson(rig.song));
+    Song back = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK(back.findClip(rig.clip)->audio->takes.size() == 1);
+    CHECK(back.findTrack(rig.track)->arrangement.front().take == 0);
 }

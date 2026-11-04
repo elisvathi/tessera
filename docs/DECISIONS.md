@@ -1925,3 +1925,16 @@ Why: built to the spec; these are the places it left open or where the code sugg
   neighbours. Right-click: remove one, or all. Double-click the ruler fits the view (it used to be any empty space).
   With markers, window, edge and tempo drags are off. **Clip menu**: Pin every hit to the nearest 1/16
   (`quantizeAudio`, a marker per hit from the transients) and Remove warp markers. Hit detection follows warps.
+
+## 129. Takes and comping (4 Nov)
+
+- `AudioContent::takes`: the other takes of a clip (source + sourceStart); the clip's own content is take 1.
+  `ArrangerClip::take` picks what a timeline copy plays (-1 take 1, k `takes[k]`); `takeContent` makes that content.
+  Takes play without the clip's warp markers. Comping is split + a take per part: no comp lanes, no layers.
+- **Recording**: in Stack mode, a timeline take whose start is within 1/32 of a beat of an audio clip's start (offset
+  0, not reversed, clip tempo = song tempo) becomes that clip's next take, from the frame at the clip's start, and
+  that copy plays it: one undo step. Anything else becomes a new clip as before.
+- **Clip menu** ▸ Take: pick per copy, or "Every copy plays this take". Title shows "take N" when a clip has takes.
+- Takes count as in use (Remove unused audio, the Audio files list), export to DAWproject as the picked file, and
+  drive hits for Split at transients. Glue without rendering needs one take for all parts, so a comp glues by
+  rendering. The audio editor still shows take 1.

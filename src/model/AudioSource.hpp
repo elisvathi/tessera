@@ -70,6 +70,14 @@ struct WarpMarker {
     bool operator==(const WarpMarker& o) const { return tick == o.tick && frame == o.frame; }
 };
 
+/// Another take recorded over an audio clip (§3.5): its file, from the frame that plays at clip tick 0.
+struct AudioTake {
+    AudioSourceId source;
+    int64_t sourceStart = 0;
+
+    bool operator==(const AudioTake& o) const { return source == o.source && sourceStart == o.sourceStart; }
+};
+
 /// What an audio clip plays of its source.
 struct AudioContent {
     AudioSourceId source;
@@ -84,6 +92,9 @@ struct AudioContent {
     // Sorted by tick, frames rising too. With markers, they set where the file plays (sourceStart only matters
     // without them); past the first and last, the file plays at the clip tempo. Ignored on a reversed clip.
     std::vector<WarpMarker> warps;
+    // Takes recorded over this clip besides its own (take 1); a timeline copy picks one (ArrangerClip::take), so
+    // splitting the clip and picking per part comps them.
+    std::vector<AudioTake> takes;
 
     /// Pitch factor of the semitones and cents (2 = an octave up).
     double pitchFactor() const { return std::exp2((semitones + double(cents) / 100) / 12); }
@@ -91,7 +102,7 @@ struct AudioContent {
     bool operator==(const AudioContent& o) const {
         return source == o.source && sourceStart == o.sourceStart && follow == o.follow && sound == o.sound &&
                sourceTempo == o.sourceTempo && gainDb == o.gainDb && semitones == o.semitones && cents == o.cents &&
-               reverse == o.reverse && warps == o.warps;
+               reverse == o.reverse && warps == o.warps && takes == o.takes;
     }
 };
 
@@ -124,6 +135,18 @@ inline double secondsPerTick(double bpm) { return 60.0 / (bpm * double(kPpq)); }
 /// Source frames per clip tick: one tick at the clip tempo, in the source's own sample rate.
 inline double framesPerTick(const AudioContent& a, double sampleRate) {
     return secondsPerTick(a.sourceTempo) * sampleRate;
+}
+
+/// The content a copy that picks take `take` plays: -1 (or out of range) the clip's own, k its takes[k]. Takes play
+/// without the clip's warp markers, which belong to take 1.
+inline AudioContent takeContent(const AudioContent& a, int take) {
+    if (take < 0 || take >= int(a.takes.size()))
+        return a;
+    AudioContent t = a;
+    t.source = a.takes[size_t(take)].source;
+    t.sourceStart = a.takes[size_t(take)].sourceStart;
+    t.warps.clear();
+    return t;
 }
 
 /// The source frame clip tick `tick` plays (§3.5): straight from sourceStart at the clip tempo, or through the warp

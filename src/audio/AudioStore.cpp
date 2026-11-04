@@ -235,8 +235,11 @@ void AudioStore::sync(const Song& song) {
     // Reversed copies only live while a reversed clip plays them.
     std::vector<uint64_t> reversedUsed;
     for (const auto& [id, c] : song.clips)
-        if (c.audio && c.audio->reverse)
+        if (c.audio && c.audio->reverse) {
             reversedUsed.push_back(c.audio->source.value);
+            for (const AudioTake& tk : c.audio->takes)
+                reversedUsed.push_back(tk.source.value);
+        }
     for (auto& [id, s] : sources)
         if (s.reversed && std::find(reversedUsed.begin(), reversedUsed.end(), id) == reversedUsed.end()) {
             s.reversed.reset();

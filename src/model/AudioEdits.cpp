@@ -304,6 +304,32 @@ CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, con
     return setTrackField(song, track, &Track::clips, level, name);
 }
 
+CommandPtr setInstanceTake(const Song& song, TrackId track, ArrangementId instance, int take) {
+    const Track* t = song.findTrack(track);
+    if (!t)
+        return nullptr;
+    std::vector<ArrangerClip> arr = t->arrangement;
+    for (ArrangerClip& a : arr)
+        if (a.id == instance)
+            a.take = int8_t(take);
+    return setTrackField(song, track, &Track::arrangement, arr,
+                         take < 0 ? "Play take 1" : "Play take " + std::to_string(take + 2));
+}
+
+CommandPtr useTakeEverywhere(const Song& song, ClipId clip, int take) {
+    auto all = std::make_unique<CompoundCommand>(take < 0 ? "Play take 1" : "Play take " + std::to_string(take + 2));
+    for (const Track& t : song.tracks) {
+        std::vector<ArrangerClip> arr = t.arrangement;
+        for (ArrangerClip& a : arr)
+            if (a.clip == clip)
+                a.take = int8_t(take);
+        all->add(setTrackField(song, t.id, &Track::arrangement, arr, "Take"));
+    }
+    if (all->empty())
+        return nullptr;
+    return all;
+}
+
 CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps, const std::string& name) {
     std::stable_sort(warps.begin(), warps.end(), [](const WarpMarker& x, const WarpMarker& y) { return x.tick < y.tick; });
     std::vector<WarpMarker> kept;
@@ -369,8 +395,11 @@ std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::
 std::vector<AudioSourceId> unusedSources(const Song& song) {
     std::set<AudioSourceId> used;
     for (const auto& [id, clip] : song.clips)
-        if (clip.audio)
+        if (clip.audio) {
             used.insert(clip.audio->source);
+            for (const AudioTake& tk : clip.audio->takes)
+                used.insert(tk.source);
+        }
     std::vector<AudioSourceId> out;
     for (const AudioSource& s : song.audioSources)
         if (!used.count(s.id))

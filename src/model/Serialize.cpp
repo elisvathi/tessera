@@ -425,6 +425,16 @@ json_t* audioToJson(const AudioContent& a) {
         }
         set(j, "warps", warps);
     }
+    if (!a.takes.empty()) {
+        json_t* takes = json_array();
+        for (const AudioTake& tk : a.takes) {
+            json_t* tj = json_object();
+            set(tj, "source", idJson(tk.source));
+            setInt(tj, "start", tk.sourceStart);
+            json_array_append_new(takes, tj);
+        }
+        set(j, "takes", takes);
+    }
     return j;
 }
 
@@ -443,6 +453,9 @@ AudioContent audioFromJson(const json_t* j) {
         if (json_array_size(mj) == 2)
             a.warps.push_back({json_number_value(json_array_get(mj, 0)),
                                int64_t(json_integer_value(json_array_get(mj, 1)))});
+    });
+    forEach(get(j, "takes"), [&](const json_t* tj) {
+        a.takes.push_back({readId<AudioSourceId>(get(tj, "source")), getInt(tj, "start", 0)});
     });
     return a;
 }
@@ -487,6 +500,8 @@ json_t* arrangerClipToJson(const ArrangerClip& a) {
         set(j, "fadeIn", fadeToJson(a.fadeIn));
     if (a.fadeOut != Fade{})
         set(j, "fadeOut", fadeToJson(a.fadeOut));
+    if (a.take >= 0)
+        setInt(j, "take", a.take);
     return j;
 }
 
@@ -504,6 +519,7 @@ ArrangerClip arrangerClipFromJson(const json_t* j) {
     a.layer = int8_t(std::clamp<int64_t>(getInt(j, "layer", a.layer), 0, kMaxStackLayer));
     a.fadeIn = fadeFromJson(get(j, "fadeIn"));
     a.fadeOut = fadeFromJson(get(j, "fadeOut"));
+    a.take = saturate<int8_t>(getInt(j, "take", -1));
     return a;
 }
 

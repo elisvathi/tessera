@@ -1179,6 +1179,13 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         return;
     Rect r(x0, top + 1, std::max(2.f, x1 - x0), h - 2);
     const Clip* clip = song.findClip(a.clip);
+    // A copy that plays another take shows that take's waveform.
+    Clip taken;
+    if (clip && clip->audio && a.take >= 0) {
+        taken = *clip;
+        taken.audio = takeContent(*clip->audio, a.take);
+        clip = &taken;
+    }
     audioDraw::ClipState audioState;
     float gainDb = 0;
     if (clip && clip->audio) {
@@ -1266,6 +1273,10 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         std::string extras;
         if (clip->audio) {
             extras = audioDraw::titleMarks(*clip, audioState, gainDb);
+            if (!clip->audio->takes.empty() || a.take >= 0) {
+                std::string mark = "take " + std::to_string(a.take + 2);
+                extras = extras.empty() ? mark : mark + " · " + extras;
+            }
             if (ctx.state().freshAudio.count(a.id)) {
                 // The big form only where it still leaves room for the name.
                 std::string big = audioDraw::bigTitleMarks(*clip, audioState, gainDb, song.timeSig);

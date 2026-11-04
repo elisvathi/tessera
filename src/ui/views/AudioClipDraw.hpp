@@ -60,8 +60,8 @@ inline void framesOfTicks(const Clip& clip, const AudioSource& s, double u0, dou
         from = end - u1 * perTick;
         to = end - u0 * perTick;
     } else {
-        from = double(a.sourceStart) + u0 * perTick;
-        to = double(a.sourceStart) + u1 * perTick;
+        from = warpedFrame(a, u0, s.sampleRate);
+        to = warpedFrame(a, u1, s.sampleRate);
     }
 }
 

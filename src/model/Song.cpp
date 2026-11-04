@@ -418,8 +418,14 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
             a.layer = 0;
             normalizeFade(a.fadeIn, a.length);
             normalizeFade(a.fadeOut, a.length - a.fadeIn.length);
+            const Clip* clip = song.findClip(a.clip);
+            int takes = clip && clip->audio ? int(clip->audio->takes.size()) : 0;
+            if (a.take >= takes)
+                a.take = -1;
+            a.take = std::max<int8_t>(-1, a.take);
         } else {
             a.fadeIn = a.fadeOut = Fade{};
+            a.take = -1;
         }
     }
     std::stable_sort(arr.begin(), arr.end(), [](const ArrangerClip& a, const ArrangerClip& b) {

@@ -132,6 +132,12 @@ CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps
 CommandPtr quantizeAudio(const Song& song, ClipId clip, const std::vector<int64_t>& transients, double fileRate,
                          Tick grid);
 
+/// Takes (§3.5): which take a timeline copy of an audio clip plays (-1 the clip's own). One undo step; null when
+/// unchanged.
+CommandPtr setInstanceTake(const Song& song, TrackId track, ArrangementId instance, int take);
+/// Every timeline copy of `clip` plays take `take`. One undo step; null when none changes.
+CommandPtr useTakeEverywhere(const Song& song, ClipId clip, int take);
+
 /// Where a timeline audio clip's hits fall, in song ticks, from its file's transients (frames at `fileRate`): each
 /// pass of a looping clip has its own. Reversed clips have none for now.
 std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,
