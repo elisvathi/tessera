@@ -175,11 +175,11 @@ def fundamental(mid, model, x):
 
 def outputs(start):
     """The demo's output modules, placed from HP `start`: three Track Outs, a Drum Out and an Auto Out."""
-    return [output_module(2001, "TesseraTrackOut", "Bass", start),
-            output_module(2002, "TesseraTrackOut", "Chords", start + 6),
-            output_module(2003, "TesseraTrackOut", "Lead", start + 12),
-            output_module(2004, "TesseraDrumOut", "Drums", start + 18),
-            output_module(2005, "TesseraAutoOut", "Chords", start + 38)]
+    return [output_module(2001, "TrackOut", "Bass", start),
+            output_module(2002, "TrackOut", "Chords", start + 6),
+            output_module(2003, "TrackOut", "Lead", start + 12),
+            output_module(2004, "DrumOut", "Drums", start + 18),
+            output_module(2005, "AutoOut", "Chords", start + 38)]
 
 
 def polymeter_song():
@@ -220,7 +220,7 @@ def main():
     (out / "demo.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 24, True)] + outputs(24))))
     (out / "panel.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 80, True)] + outputs(80))))
     (out / "modules.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 24, True)] + outputs(24), 1.6)))
-    first = [tessera_module(song, lead, 24, False), output_module(2001, "TesseraTrackOut", "Bass", 24),
+    first = [tessera_module(song, lead, 24, False), output_module(2001, "TrackOut", "Bass", 24),
              fundamental(3001, "VCO", 31), fundamental(3002, "ADSR", 42), fundamental(3003, "VCA-1", 52)]
     (out / "first.vcv").write_text(json.dumps(patch(first, 1.3)))
     poly, verse = polymeter_song()

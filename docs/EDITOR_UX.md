@@ -225,7 +225,7 @@ Per-note expression curves (Pitch, Timbre, Pressure):
   lands on the row it heads for. While the lower pane shows Pitch, pressing a note in the grid bends it (Select and
   Draw alike); timbre and pressure are shaped in a strip above the selected notes while the lower pane shows them
   (docs/DECISIONS.md §63–66).
-- Output: per voice, the Pitch curve is added to the V/OCT output; Timbre and Pressure go to Tessera Track Out's **TIMBRE** and **PRESS** poly outputs (see DESIGN.md §6).
+- Output: per voice, the Pitch curve is added to the V/OCT output; Timbre and Pressure go to Track Out's **TIMBRE** and **PRESS** poly outputs (see DESIGN.md §6).
 
 ### 4.7 Inspector (selection editing panel)
 

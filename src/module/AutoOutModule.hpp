@@ -4,7 +4,7 @@
 
 namespace tessera {
 
-/// "Tessera Auto Out": a track's automation lanes, one mono jack each, labelled with the lane's name on the panel.
+/// "Auto Out": a track's automation lanes, one mono jack each, labelled with the lane's name on the panel.
 /// Works for instrument and drum tracks. (Track Out and Drum Out also carry the lanes on their poly AUTO jack.)
 class AutoOutModule : public OutputModuleBase {
   public:

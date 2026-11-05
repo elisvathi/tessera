@@ -71,8 +71,8 @@ tessera/
       ClockSync.hpp            # external clock / PPQN / tempo estimation
     module/
       TesseraModule.hpp/.cpp   # rack::Module: transport, global I/O, process()
-      TrackOutModule.hpp/.cpp  # "Tessera Track Out": instrument track outputs
-      DrumOutModule.hpp/.cpp   # "Tessera Drum Out": per-lane drum outputs
+      TrackOutModule.hpp/.cpp  # "Track Out": instrument track outputs
+      DrumOutModule.hpp/.cpp   # "Drum Out": per-lane drum outputs
       OutputBus.hpp            # double-buffered frame bus (see §6)
       Registry.hpp/.cpp        # instance registry keyed by module ID
       ParamMapper.hpp/.cpp     # automation lane -> other modules' params
@@ -271,8 +271,8 @@ Tessera is a small family of modules:
 | Module | HP | Role |
 |---|---|---|
 | **Tessera** | 24 | The sequencer: transport, editor, global I/O. Owns the song. Several can exist in one patch. |
-| **Tessera Track Out** | 6 | Outputs for one instrument track. Place anywhere, as many as you like. |
-| **Tessera Drum Out** | 10 | Per-lane outputs for one drum track. Place anywhere. |
+| **Track Out** | 6 | Outputs for one instrument track. Place anywhere, as many as you like. |
+| **Drum Out** | 10 | Per-lane outputs for one drum track. Place anywhere. |
 
 There are **no expanders and no chaining**. Output modules find their sequencer through a registry (below). This design is informed by Biset Tracker, whose Tracker Synth / Tracker Drum modules select a synth by number and read its outputs from anywhere in the patch. Tessera keeps that UX but fixes its two weaknesses: Biset allows only one global Tracker instance, and its output modules read shared arrays with no synchronization.
 
@@ -300,7 +300,7 @@ The main module is a compact panel with a mini-overview and an **"Open Editor"**
 ### Global outputs (Tessera)
 CLOCK OUT (selectable division), RESET OUT, RUN OUT, EOC/loop trigger, BAR trigger, CLICK (count-in/metronome).
 
-### Tessera Track Out
+### Track Out
 | Port / control | Type | Notes |
 |---|---|---|
 | V/OCT | poly up to 16 | Pitch per voice, including per-note pitch expression |
@@ -315,7 +315,7 @@ CLOCK OUT (selectable division), RESET OUT, RUN OUT, EOC/loop trigger, BAR trigg
 
 Context menu: choose source Tessera (by instance name), choose track (list with names and colors), "Follow selected track" mode (outputs whatever track is selected in the editor, useful for auditioning one synth across tracks).
 
-### Tessera Drum Out
+### Drum Out
 | Port | Type | Notes |
 |---|---|---|
 | TRIG 1–8 | mono ×8 | One jack per lane for lanes 1–8 (the common case: patch kick, snare… to separate voices) |
@@ -636,14 +636,14 @@ Export to Standard MIDI Files (`.mid`) so work made in Rack can move into any DA
 
 Do these in order. Each milestone must build, pass tests, and be usable before moving on. Commit at the end of each.
 
-1. **Skeleton**: plugin builds, Tessera panel, internal clock, transport, one hard-coded clip on one track. **Registry + OutputBus + Tessera Track Out** with poly V/OCT/GATE/VEL, binding via context menu. Output routing is foundational, so it is built first.
+1. **Skeleton**: plugin builds, Tessera panel, internal clock, transport, one hard-coded clip on one track. **Registry + OutputBus + Track Out** with poly V/OCT/GATE/VEL, binding via context menu. Output routing is foundational, so it is built first.
 2. **Model + commands + undo + persistence** with tests. Snapshot publishing to engine. Output module bindings saved and restored, including ID remapping on paste/duplicate.
 3. **Editor overlay shell**: transport bar, track headers, splitters, theme, fonts, and EDITOR_UX §10 step 1 (axes, navigation, gesture engine).
 4. **Piano roll v1**: EDITOR_UX §10 steps 2–3.
 5. **Dynamic tracks**: add/delete/duplicate/reorder/group (all undoable), voice allocation, mute/solo, output status dots, scrolling headers.
 6. **Clip launcher**: slots, launch quantize, scenes, panel scene controls.
 7. **Arranger**: EDITOR_UX §10 step 4.
-8. **Drum tracks + Tessera Drum Out**: lanes, step grid, per-lane outputs, choke, polymeter, Euclidean.
+8. **Drum tracks + Drum Out**: lanes, step grid, per-lane outputs, choke, polymeter, Euclidean.
 9. **Scales**: highlight, snap, fold, chord stamp.
 10. **Recording**: CV + MIDI, launcher/arranger modes, count-in, overdub, capture buffer.
 11. **Automation**: lanes, curves, CV output, **parameter mapping with learn**, recording (including from mapped knobs), and EDITOR_UX §10 step 7.

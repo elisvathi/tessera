@@ -1,7 +1,7 @@
 {
   "slug": "Tessera",
   "name": "Tessera",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "license": "GPL-3.0-or-later",
   "brand": "Tessera",
   "author": "elis.vathi",
@@ -18,40 +18,25 @@
       "slug": "Tessera",
       "name": "Tessera",
       "description": "Piano roll, clip launcher and arranger with up to 64 polyphonic tracks",
-      "tags": [
-        "Sequencer",
-        "Polyphonic",
-        "Clock generator"
-      ]
+      "tags": ["Sequencer", "Polyphonic", "Clock generator"]
     },
     {
-      "slug": "TesseraTrackOut",
-      "name": "Tessera Track Out",
+      "slug": "TrackOut",
+      "name": "Track Out",
       "description": "The outputs of one Tessera instrument track, anywhere in the patch",
-      "tags": [
-        "Sequencer",
-        "Polyphonic",
-        "Utility"
-      ]
+      "tags": ["Sequencer", "Polyphonic", "Utility"]
     },
     {
-      "slug": "TesseraDrumOut",
-      "name": "Tessera Drum Out",
+      "slug": "DrumOut",
+      "name": "Drum Out",
       "description": "The lane triggers of one Tessera drum track, anywhere in the patch",
-      "tags": [
-        "Sequencer",
-        "Drum",
-        "Utility"
-      ]
+      "tags": ["Sequencer", "Drum", "Utility"]
     },
     {
-      "slug": "TesseraAutoOut",
-      "name": "Tessera Auto Out",
+      "slug": "AutoOut",
+      "name": "Auto Out",
       "description": "A Tessera track's automation lanes, one labelled jack each, anywhere in the patch",
-      "tags": [
-        "Sequencer",
-        "Utility"
-      ]
+      "tags": ["Sequencer", "Utility"]
     }
   ]
 }

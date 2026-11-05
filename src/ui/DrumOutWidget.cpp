@@ -185,4 +185,4 @@ struct DrumOutWidget : rack::app::ModuleWidget {
 
 } // namespace tessera
 
-rack::plugin::Model* modelDrumOut = rack::createModel<tessera::DrumOutModule, tessera::DrumOutWidget>("TesseraDrumOut");
+rack::plugin::Model* modelDrumOut = rack::createModel<tessera::DrumOutModule, tessera::DrumOutWidget>("DrumOut");

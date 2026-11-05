@@ -89,4 +89,4 @@ struct TrackOutWidget : rack::app::ModuleWidget {
 } // namespace tessera
 
 rack::plugin::Model* modelTrackOut =
-    rack::createModel<tessera::TrackOutModule, tessera::TrackOutWidget>("TesseraTrackOut");
+    rack::createModel<tessera::TrackOutModule, tessera::TrackOutWidget>("TrackOut");

@@ -179,4 +179,4 @@ struct AutoOutWidget : rack::app::ModuleWidget {
 
 } // namespace tessera
 
-rack::plugin::Model* modelAutoOut = rack::createModel<tessera::AutoOutModule, tessera::AutoOutWidget>("TesseraAutoOut");
+rack::plugin::Model* modelAutoOut = rack::createModel<tessera::AutoOutModule, tessera::AutoOutWidget>("AutoOut");

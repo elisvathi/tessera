@@ -813,8 +813,8 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
                              NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         draw::text(vg, hint, kPad, y + kRowHeight / 2 - 3,
                    draw::ellipsize(vg, hint,
-                                   t->type == TrackType::Drum ? "Add a Tessera Drum Out and pick this track"
-                                                              : "Add a Tessera Track Out and pick this track",
+                                   t->type == TrackType::Drum ? "Add a Drum Out and pick this track"
+                                                              : "Add a Track Out and pick this track",
                                    box.size.x - 2 * kPad));
         y += kRowHeight - 4;
     }

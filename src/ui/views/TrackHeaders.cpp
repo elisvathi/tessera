@@ -559,8 +559,8 @@ std::string TrackHeaders::tipFor(const Hit& hit) {
         return t->automation.empty() ? "Automation lanes: add one to draw CV or turn a knob"
                                      : "Automation lanes (" + std::to_string(t->automation.size()) + ")";
     case Part::Output:
-        return t->type == TrackType::Drum ? "Nothing plays this track. Add a Tessera Drum Out and pick this track"
-                                          : "Nothing plays this track. Add a Tessera Track Out and pick this track";
+        return t->type == TrackType::Drum ? "Nothing plays this track. Add a Drum Out and pick this track"
+                                          : "Nothing plays this track. Add a Track Out and pick this track";
     case Part::Mute:
         return withShortcut("Mute", Action::MuteTracks);
     case Part::Solo:

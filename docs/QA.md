@@ -471,7 +471,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 
 - [ ] Launcher mode (ARRANGE off): draw a track lane with points, map a knob, press play: the knob moves and the
       lane's AUTO channel moves.
-- [ ] Add Tessera Auto Out: it binds to a track, shows "1 Auto 1" beside the first jack with a moving bar; arrows
+- [ ] Add Auto Out: it binds to a track, shows "1 Auto 1" beside the first jack with a moving bar; arrows
       and the Track menu switch tracks (drum tracks too). A lane on AUTO 3 shows beside jack 3.
 
 ## Bug fixes, 19 Oct

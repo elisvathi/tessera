@@ -494,7 +494,7 @@ stays for big work and opens from the strip's "Full editor" button.
 - **Track automation plays in Launcher mode too.** Track lanes run along the song position in both modes. In Arranger mode they still stop while
   the launcher has taken the track over, until "Back to arrangement". Before, they only played in Arranger mode, so
   mapped knobs and AUTO outputs stood still in the default Launcher mode.
-- **Tessera Auto Out** (8 HP): a track's automation lanes on eight mono jacks, each labelled on the panel with its
+- **Auto Out** (8 HP): a track's automation lanes on eight mono jacks, each labelled on the panel with its
   lane's name and a live value bar. It binds like Track Out, to instrument or drum tracks, with the same source /
   track menus and arrows. The poly AUTO jacks on Track Out and Drum Out stay, so older patches keep working.
 - A mapped knob also counts as active when its channel has points in a clip placed on the timeline.
@@ -1431,3 +1431,15 @@ Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifac
 - Jack IDs are unchanged, so saved cables stay on their jacks.
 
 Why: the user found the old jack area messy (two plates of different sizes, inputs on a plate, uneven spacing).
+
+## 94. Output module slugs and names without the "Tessera" prefix (5 Nov)
+
+VCV's library review asked for the redundant plugin name to come out of the module slugs and names, since
+a module is already identified by its plugin. So `TesseraTrackOut`/`TesseraDrumOut`/`TesseraAutoOut` became
+`TrackOut`/`DrumOut`/`AutoOut`, and the display names became "Track Out"/"Drum Out"/"Auto Out" — in
+`plugin.json` and in the `createModel` calls, which must match the manifest or Rack refuses to load the plugin.
+
+Why: the library displays a module as "<plugin> <name>", so the old names read as "Tessera Tessera Track Out".
+
+Impact: patches saved before this change lose their Track Out, Drum Out and Auto Out modules (the main
+Tessera module kept its slug). The plugin was not yet in the library, so no user patches exist.

@@ -4,7 +4,7 @@
 
 namespace tessera {
 
-/// "Tessera Track Out": the outputs of one instrument track, placed anywhere in the patch.
+/// "Track Out": the outputs of one instrument track, placed anywhere in the patch.
 class TrackOutModule : public OutputModuleBase {
   public:
     enum ParamId { PARAMS_LEN };
