@@ -73,8 +73,9 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
     bool reversed = clip->audio->reverse;
     menu->addChild(rack::createCheckMenuItem(
         "Reverse", "", [reversed] { return reversed; },
-        [edit, reversed] {
-            edit(reversed ? "Play forwards" : "Reverse", [](AudioContent& a) { a.reverse = !a.reverse; });
+        [c, clipId] {
+            TesseraModule* mod = c->module();
+            mod->perform(reverseAudio(mod->song(), clipId));
         }));
     // Warp: pin every hit to the nearest 1/16, or let the file play straight again (§3.5).
     std::shared_ptr<const std::vector<int64_t>> hits;

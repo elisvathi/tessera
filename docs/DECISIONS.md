@@ -1938,3 +1938,10 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - Takes count as in use (Remove unused audio, the Audio files list), export to DAWproject as the picked file, and
   drive hits for Split at transients. Glue without rendering needs one take for all parts, so a comp glues by
   rendering. The audio editor still shows take 1.
+
+## 130. Reverse keeps a split clip's cuts (5 Nov, Trello "Reverse of a sliced clip doesn't keep the cuts")
+
+- A reversed clip plays clip tick u from the end of its window, so the parts of a split clip (copies of one clip at
+  different offsets) swapped their audio. `reverseAudio` flips the clip and mirrors every copy's offset
+  (o → length − o − n) in the same undo step: each part plays its own audio backwards, in place. Copies that wrap
+  round a loop (or a loop that isn't the whole clip) keep their offsets.

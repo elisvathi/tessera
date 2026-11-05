@@ -63,7 +63,8 @@ has:
 - **Pitch** (Stretch clips only): moves the pitch in semitones without changing the speed. Pick a step, or type one
   such as **-3** or **2.5** (two and a half semitones).
 
-The same menu has **Reverse** (the clip plays back to front; its title shows ◀), **Normalise** (sets the clip's gain
+The same menu has **Reverse** (the clip plays back to front; its title shows ◀. A clip you have split keeps its
+cuts: each part plays its own audio backwards, where it is), **Normalise** (sets the clip's gain
 so its loudest sample reaches full scale) and **Replace file…** (see below).
 
 ![The audio part of a clip's menu](images/audio-clip-menu.png)
