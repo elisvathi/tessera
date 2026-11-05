@@ -10,8 +10,9 @@
 namespace tessera {
 
 struct TrackRow {
-    /// Lane: one of a track's automation lanes, under it. AddLane: the "+ Add lane" row after them.
-    enum class Kind { Track, Group, Lane, AddLane };
+    /// Lane: one of a track's automation lanes, under it. AddLane: the "+ Add lane" row after them. Master: the
+    /// thin Master row after every track (`track` is the master's ID), its lanes under it.
+    enum class Kind { Track, Group, Lane, AddLane, Master };
     Kind kind = Kind::Track;
     TrackId track; // Track, Lane, AddLane
     GroupId group; // Group, or the group a track row belongs to
@@ -23,9 +24,10 @@ struct TrackRow {
 };
 
 /// A group's header comes right before its first track. Empty groups go last. Tracks in `openAutomation` are
-/// followed by their automation lanes and an add-lane row.
+/// followed by their automation lanes and an add-lane row. With `master`, the Master row comes last, followed by its
+/// lanes when the master is in `openAutomation` (no add-lane row: its one lane is added from its level bar).
 std::vector<TrackRow> buildTrackRows(const Song& song, const std::set<uint64_t>& foldedGroups,
-                                     const std::set<uint64_t>& openAutomation = {});
+                                     const std::set<uint64_t>& openAutomation = {}, bool master = false);
 
 /// Every track from `a` to `b` in display order, both included (Shift+click range selection).
 std::vector<TrackId> trackRange(const Song& song, TrackId a, TrackId b);

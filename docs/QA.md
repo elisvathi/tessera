@@ -110,7 +110,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Double-click a name to rename (Enter commits, Esc cancels, clicking away commits); typing never
       triggers shortcuts.
 - [ ] Delete (arranger focused) and Duplicate; the last track can't be deleted.
-- [ ] A Track Out bound to a deleted track shows "Track missing" and goes silent; undo brings it back playing.
+- [ ] A Track Out bound to a deleted track shows "Track deleted" in amber and goes silent; with a cable on IN its
+  light is amber. Undo brings it back playing.
+- [ ] Bypass Tessera: its Track Outs show "Tessera bypassed". Turn it on again: they play.
 - [ ] Duplicate a track with a clip: editing the copy's notes leaves the original alone.
 - [ ] All of the above in the panel editor's arranger.
 
@@ -566,3 +568,132 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       (1x forward: a ramp per pass; backward falls; ping-pong zigzags; repeats show steps back); no notes. An off
       playhead's path is faint. A stretched or offset clip draws its paths as it plays them. Launcher slots show the
       same over one pass. Bypassing the Playheads device brings the notes back.
+
+## Audio, Phase 1a (docs/design/AUDIO_MIXER.md)
+
+- [ ] Drop a WAV loop on the Tessera panel of an empty song: a new audio track; with Plays = Timeline the clip is at
+      bar 1, and the song tempo takes the loop's (the toast offers Keep 120 BPM, which puts it back).
+- [ ] Drop several files on an audio track in the timeline: they go end to end at the drop point. One Ctrl+Z removes all.
+- [ ] Drop a file on a launcher slot of an audio track: it goes there; several fill the slots below.
+- [ ] Drop on a note track: a new audio track just below it. Drop a text file named .wav: a toast says it can't be read.
+- [ ] MAIN L/R: the meter beside MAIN moves while audio plays; the amber dot shows while MAIN has no cable.
+- [ ] With an Audio module in the patch, right-click Tessera → Connect MAIN to Audio module: two cables; one Ctrl+Z
+      removes both. With its inputs 1 and 2 taken, it says so and changes nothing.
+- [ ] Turn TEMPO while a Stretch loop plays: it follows like tape, then the clean version takes over without a click.
+- [ ] Set Follow tempo Off on a one-shot, change the tempo: it plays at its own speed; its clip on the timeline gets
+      longer or shorter.
+- [ ] Drag an audio clip's title bar up and down: the waveform scales live; the readout says the gain; 0 dB catches.
+- [ ] Drag a fade handle (top corner of the body): the fade shades the waveform and is heard.
+- [ ] Alt+drag an audio clip's right edge: the readout says "112 → 56 BPM"; every linked copy follows.
+- [ ] The lower pane's "Notes | Mixer" switch appears only once something makes sound. Mixer shows the mixer in the
+      same pane (no pane under the notes); Notes and F4 switch back.
+- [ ] Mixer: drag a fader (no jump on click), Shift for fine, double-click for 0 dB, scroll ±0.5 dB, right-click to
+      type. With several audio tracks selected, one fader moves them all by the same dB.
+- [ ] Track header of an audio track: the level line shows the live level; drag it sideways; double-click resets.
+- [ ] Under "+ Add track", the Master row shows the master's live level and dB once there is an audio track. Drag
+      its bar sideways, double-click for 0 dB, scroll ±0.5 dB; click "Master" to open the mixer.
+- [ ] Drop a loop on the timeline: its title bar reads "92 BPM · 2 bars · Stretch ▾" until you click elsewhere.
+- [ ] Reverse an audio clip from its menu: it plays back to front, the waveform mirrors, ◀ shows; turn it off again.
+      Reverse a Stretch clip at another song tempo: the stretched version also plays back to front.
+- [ ] Normalise a quiet clip: its gain rises so the loudest sample hits full scale; a second Normalise says "Already
+      normalised".
+- [ ] Pitch +7 st on a Stretch loop: it sounds a fifth higher at the same speed.
+- [ ] Drag an audio clip so it overlaps another: both stay on one row and crossfade; with Stack on or off alike.
+      Drop a short clip inside a long one: the long one splits around it. Make three overlap: the earliest stops.
+- [ ] Overlapping audio clips show an X with a diamond on top and a dot in the middle. Drag the diamond: the crossfade
+      grows or shrinks evenly ("Crossfade 1/8 · 163 ms"). Drag the dot: "Curve +40%"; it is heard. Fades get a
+      curve dot too.
+- [ ] Drag the right edge of a one-shot audio clip past its file: it stops, "End of file".
+- [ ] Split an audio clip (Ctrl+E), select both halves, Ctrl+J: one clip again, playing the same. Ctrl+J on two
+      unrelated audio clips: a message, nothing changes.
+- [ ] Track Out (6 HP): note jacks on top, AUDIO section below. Bind it to an audio track (Track menu): the note
+      jacks dim, AUTO stays live. Patch OUT L into an effect and back into IN L: the track gets the effect, the IN
+      light goes green, the mixer meter shows it. Bind it to Master: "M" on the screen, OUT is the mix. Bind to a note
+      track and patch a synth into IN: the track gets a mixer strip and a level line. Bypass Track Out: what came
+      back drops out, nothing feeds back.
+- [ ] Open a patch saved before: every Track Out keeps its place, its track and its cables.
+- [ ] A track with notes and no output: click the amber jack in its row. A Track Out (Drum Out for a drum track)
+      appears in the first free space right of Tessera, bound to that track, its screen flashing; the jack goes.
+      Ctrl+Z removes it. The track menu's "Add a Track Out for this track" does the same for any track.
+- [ ] Mixer source chip: "IN · Track Out" on a note track fed by IN, "Bypassed" in amber while that Track Out is
+      bypassed (the menu says which). Click the chip: Add a Track Out for this track; Show Track Out in the rack
+      scrolls the rack to it (same zoom) and flashes its screen.
+- [ ] Two Track Outs on one track, each with its own synth on IN: patching the second toasts "… has 2 sources now.
+      Both play"; "Use only the new one" turns the first off. The chip reads "2 sources"; its list has a tick, meter,
+      Level slider and Show in the rack per source. A Level drag is heard at once and is one undo step; the Track
+      Out screen shows "IN -6.0 dB" / "IN OFF". The same cable into a third Track Out's IN: "counted once", no
+      louder. Save and reload: levels stay. The Track Out's right-click menu has the same Use and Level.
+- [ ] Sends: a Reverb track with its Track Out OUT → reverb → IN. On Lead's strip click "+" ▸ Reverb: the faders
+      show sends to Reverb (band, hollow caps, "send -inf dB"). Drag Lead's fader up: the reverb is heard, Reverb's
+      OUT meter moves; release is one undo step. Esc goes back; Lead shows a "Re" knob. Reverb reads "← 1". Unpatch
+      Reverb's OUT: its chip reads "No OUT cable" in amber. Mute Lead: the reverb stops getting it. Solo Lead: Lead
+      and the reverb are heard. Solo Reverb: only the wet sound. Reverb can't send back to Lead ("Would feed back").
+      Delete Reverb: Lead's send goes; undo brings both back.
+- [ ] Right-click Lead's send knob ▸ Automate in the timeline: a "Send to Reverb" lane opens; draw a dip and play: the
+      knob follows (with a ring) and the reverb dips. In Show sends the strip meters show the send levels. The
+      inspector's SENDS lists Lead's send (click: the same menu), "Send to +", and on Reverb "Gets sends from: Lead".
+- [ ] Record ▾ Metronome While recording: record with a count-in: clicks on MAIN during the count-in and the take,
+      higher on the bar; Track Out OUT has none. Always: clicks whenever playing.
+- [ ] Arm an audio track with a synth on its Track Out IN; record 4 bars and stop: a red box grows with the waveform,
+      then a clip "<track> take N" lies where recording started and plays back at the same level. Undo removes it.
+      Loop on: each pass is a clip. Playing clips: the take lands in the first empty slot. Two armed tracks: two
+      clips, one undo step.
+- [ ] Bounce: select a note track's clips (voice on its Track Out IN, through an effect), Ctrl+B: the dialog lists
+      Selected clips and Until silent; Bounce plays from a bar before with "Bouncing … · bar n of m" and Cancel. At
+      the end a "… (bounce)" track sits under it, in time with the original, which is muted. Undo removes both
+      changes. Stop during a bounce: nothing is left. Until silent on a reverb tail: it stops a second after quiet.
+- [ ] Export audio (Ctrl+Alt+E), master and stems, 24-bit: pick a file; it plays from the start with "Exporting ·
+      bar n of m"; at the end the master file and a stem per sounding track are there, as long as the song (or
+      the loop), no metronome. A muted track has no stem. Clips mode: it records until Stop. Stop early on the
+      timeline: no files.
+- [ ] Record ▾ Recording offset ▸ Measure it with CLICK → sound card out → loop back → armed audio track's Track Out
+      IN: a message gives the offset; takes recorded afterwards line up with the click. Type 0: None.
+- [ ] Mixer: right-click a strip name ▸ Latency 480: a bounce of that track lands 480 samples earlier.
+- [ ] File ▸ Audio files…: every file with length, format, size and clip count; a missing one first with Find file….
+- [ ] Select an audio take and a loop clip from another file on one track, Ctrl+J: "Gluing…", then one clip "<track>
+      glued" in their place, sounding the same. Undo brings both back.
+- [ ] A drum loop in the audio editor shows a small mark under each hit. Its clip menu ▸ Split at transients: one
+      clip per hit, same sound. Make triggers from audio: a "<track> triggers" drum track under it, notes on its Hits
+      lane at each hit, louder hits louder; through a rack drum it plays in time with the loop.
+- [ ] Group two sounding tracks (Ctrl+G): a group strip after the last one, the tracks say "→ <group>". Its fader
+      and pan move both together; M silences both; undo works. Ungroup: the strip goes, they go to the Master.
+- [ ] Audio editor: double-click a hit: a marker (line + ruler handle) pins it to the nearest 1/16; drag it: the ruler's
+      beats bend, the clip plays the hit later or earlier, in time, same pitch once the render is ready. Right-click:
+      remove. Clip menu ▸ Pin every hit to the nearest 1/16 on a loose loop: it plays tight. Save and reload: kept.
+- [ ] Recording in Stack mode, loop over an audio clip, three passes: one clip whose title says "take 4", playing the
+      last pass. Split it, pick take 2 for one part (right-click ▸ Take): the waveform and sound change; undo works.
+      Glue the parts: one new file that sounds the same. Save and reload: the takes and picks are kept.
+- [ ] In the in-panel editor, show the mixer and maximize the pane: the transport and Full editor sit at the right of
+      its header, as for the notes, clear of the peak readout.
+- [ ] Drum Out: patch a drum module's output into lane 1's IN: the drum track gets a mixer strip ("IN") and a level
+      line; the kick plays through MAIN. Kit OUT carries the lane INs; patch it through an effect into kit IN: the
+      effect is heard, the light goes green, and there is no feedback (kit IN never reaches OUT). Hover lane 1's IN:
+      it is named after the lane ("Kick audio input").
+- [ ] With lane INs patched, the mixer shows a narrow strip per lane after the drum strip (lane colour and name). Drag
+      a lane fader: its meter and the kit's sound follow at once, one undo step on release; double-click resets;
+      pan moves the lane left and right. Save and reload: the levels stay.
+- [ ] Right-click an audio track's fader (mixer) or level bar (track row): Automate in the timeline adds a Volume lane
+      at the current level and opens it; the scale reads +6.0 dB to -inf dB. Draw a lower point and play: the fader,
+      the level bar and the dB follow, with a ring in the lane colour. Same for Pan. Muting the lane gives the
+      control back.
+- [ ] Right-click the Master level bar: Automate in the timeline. A Volume lane opens under the Master row (which sits
+      above "+ Add track"). Draw a fade and play: the Master bar and the mixer's Master fader follow, with a ring.
+      The arrow beside "Master" folds the lane. Mute the lane: the fader is free again. Save and reload: it stays.
+- [ ] Arm a track with a Volume lane and record: drag its fader up and down. On stop, the lane holds the move (one
+      undo step) and plays it back. Dragging the pan meanwhile leaves the Volume lane playing.
+- [ ] Select an audio clip: the notes pane becomes the audio editor under the same header. Drag the window (Start in
+      file), its edges (they catch beat lines; Alt frees), and a beat line in the ruler ("112 → 103 BPM"). Ctrl+scroll
+      zooms, double-click fits. Maximize and restore the pane: the waveform stays in view. Click the ruler between
+      beat lines: the song plays from there and a green line moves through the file.
+- [ ] With the mixer showing, the lower pane keeps its maximize button, splitter and focus ring; Tab goes song ↔
+      lower pane; Shift+Tab maximizes it; F4 switches notes/mixer and keeps it maximized. Note keys (Delete,
+      Ctrl+A) do nothing while the mixer shows.
+- [ ] Ctrl+drop a file on an audio clip (timeline and slot): the clip keeps place, length, gain and fades, and plays
+      the new file. Replace file… in the menu does the same.
+- [ ] Save the patch, reload: the audio plays. Copy and paste the Tessera: the copy plays its audio too.
+- [ ] Delete the stored file from patch storage (autosave/modules/<id>/audio) and reload: the clip shows stripes and
+      "Missing file", a toast says so; Find file… puts it back.
+- [ ] Save project as …: a "<name> audio" folder appears beside it; open the project in a new Tessera: it plays.
+- [ ] File → Remove unused audio after deleting an audio track: one undo step; undo brings the clips back.
+- [ ] In the in-panel editor (80 HP), the mixer shows in the lower pane and plays the same.
+- [ ] A song without audio: no Notes | Mixer switch, no change in Rack's CPU meter against the previous version.

@@ -88,6 +88,8 @@ void appendSchemeMenu(rack::ui::Menu* menu);
 
 /// A track or clip colour as stored in the song, tuned for the editor's scheme: deeper on light ones.
 NVGcolor track(uint32_t color, float alpha = 1.f);
+/// The master's colour where a track would show its own: its lane, its Track Out screen.
+constexpr uint32_t kMasterColor = 0xC9CED6;
 
 NVGcolor rgb(uint32_t hex, float alpha = 1.f);
 
@@ -164,6 +166,15 @@ constexpr float kPanelLabelAboveJackMm = 6.4f; // label baseline offset above a 
 constexpr float kDisplaySmall = 9;
 constexpr float kDisplayLarge = 22;
 constexpr float kStatusBar = 3; // colored strip at the top of an output display
+
+// Audio clips (docs/design/AUDIO_MIXER.md §6.1)
+constexpr float kAudioHandle = 7;          // fade handles and curve dots, as drawn
+constexpr float kAudioHandleHit = 12;      // their hit area
+constexpr float kAudioHandleMinBody = 16;  // bodies shorter than this hide the handles (the inspector has them)
+constexpr float kAudioHandleMinWidth = 40; // and so do narrower clips
+constexpr float kAudioHandleTopZone = 10;  // the top of the body belongs to the fade handles, not the edges
+constexpr float kWaveformAlpha = 0.85f;    // the waveform over a clip body
+constexpr float kHatchSpacing = 6;         // the stripes of a clip whose file is missing
 } // namespace metrics
 
 } // namespace tessera::theme

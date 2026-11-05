@@ -1,9 +1,11 @@
 #include "ProjectFile.hpp"
+#include "ExportAudio.hpp"
 #include "ImportMidi.hpp"
 
 #include "../../module/TesseraModule.hpp"
 #include "../ModuleUndo.hpp"
 #include "../interaction/Shortcuts.hpp"
+#include "AudioActions.hpp"
 #include "ExportMidi.hpp"
 
 #include <osdialog.h>
@@ -37,6 +39,12 @@ std::string defaultName(TesseraModule* m) {
     return name + ".tessera";
 }
 
+/// The folder beside a project file that holds its audio: "Song.tessera" keeps it in "Song audio".
+std::string audioFolderOf(const std::string& projectPath) {
+    return rack::system::join(rack::system::getDirectory(projectPath),
+                              rack::system::getStem(projectPath) + " audio");
+}
+
 } // namespace
 
 void open(TesseraModule* m, Say say) {
@@ -59,6 +67,12 @@ void open(TesseraModule* m, Say say) {
         m->dataFromJson(merged);
         m->applyProjectTransport(project);
     });
+    // Its audio files sit next to it, in "<name> audio".
+    if (hasAudio(m->song())) {
+        importFiles(m->song(), audioFolderOf(path), m->audioStorage());
+        if (AudioStore* store = m->audioStore())
+            store->retryMissing();
+    }
     json_decref(merged);
     json_decref(project);
     say("Opened " + rack::system::getFilename(path), false);
@@ -80,6 +94,8 @@ void save(TesseraModule* m, bool as, Say say) {
         return;
     }
     m->projectPath = path;
+    if (hasAudio(m->song()))
+        exportFiles(m->song(), m->audioStorage(), audioFolderOf(path));
     say("Saved " + rack::system::getFilename(path), false);
 }
 
@@ -116,10 +132,26 @@ void appendFileMenu(rack::ui::Menu* menu, TesseraModule* m, std::function<Editor
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(
         rack::createMenuItem("Import MIDI file as tracks…", "", [m, say] { importMidi::asTracks(m, say); }));
+    menu->addChild(rack::createMenuItem("Import audio…", shortcutLabel(Action::ImportAudio), [editor] {
+        if (EditorContext* c = editor())
+            audioActions::importDialog(*c);
+    }));
+    menu->addChild(rack::createMenuItem("Audio files…", "", [editor] {
+        if (EditorContext* c = editor())
+            audioActions::openAudioFiles(*c);
+    }, m->song().audioSources.empty()));
+    menu->addChild(rack::createMenuItem("Remove unused audio", "", [editor] {
+        if (EditorContext* c = editor())
+            audioActions::removeUnused(*c);
+    }, unusedSources(m->song()).empty()));
     menu->addChild(rack::createMenuItem("Export MIDI…", shortcutLabel(Action::ExportMidi), [editor] {
         if (EditorContext* c = editor())
             exportMidi::openSong(*c);
     }));
+    menu->addChild(rack::createMenuItem("Export audio…", shortcutLabel(Action::ExportAudio), [editor] {
+        if (EditorContext* c = editor())
+            exportAudio::openDialog(*c);
+    }, !m->makesSound()));
     menu->addChild(rack::createMenuItem("Export DAWproject…", "For other DAWs", [editor] {
         if (EditorContext* c = editor())
             exportMidi::openDawProject(*c);

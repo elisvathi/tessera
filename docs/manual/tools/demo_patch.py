@@ -6,20 +6,29 @@ modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the m
 (Tessera, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Tessera alone) and
 polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own), playheads.vcv
 (Lead read by three playheads), curve.vcv (the Bass track open, a 16-bar Curve on its Transpose's key steps that
-plays bars 5 to 8) and hitvalues.vcv (the Drums track open on its Pitch lane: the snares tuned up step by step, the
-second a shaped curve, the hats with timbre).
+plays bars 5 to 8), hitvalues.vcv (the Drums track open on its Pitch lane: the snares tuned up step by step, the
+second a shaped curve, the hats with timbre) and audio.vcv (the demo with an audio track, "Loop", playing a
+synthesised 112 BPM drum loop from bar 5, its file in the patch's storage; Rack's patch archive format, so it carries
+the file).
 """
 
 import json
+import math
+import random
+import struct
+import subprocess
 import sys
+import tempfile
+import wave
 from pathlib import Path
 
 BEAT = 960
 BAR = 4 * BEAT
 
 TESSERA_ID = 1001
-TRACK_IDS = {"Bass": 1, "Chords": 2, "Lead": 3, "Drums": 4}
-COLORS = {"Bass": 0x4498E8, "Chords": 0xDA743C, "Lead": 0x9B7FE2, "Drums": 0x1AAE74}
+TRACK_IDS = {"Bass": 1, "Chords": 2, "Lead": 3, "Drums": 4, "Loop": 5}
+COLORS = {"Bass": 0x4498E8, "Chords": 0xDA743C, "Lead": 0x9B7FE2, "Drums": 0x1AAE74, "Loop": 0xD79628}
+PANEL_HP = 26  # Tessera's own width
 
 # The model's 16 track colours (src/model/TrackColors.hpp); a kit lane takes colour (output * 5) % 16, as new kits do.
 TRACK_COLORS = [0xEF806F, 0xE88949, 0xD79628, 0xBDA422, 0x9AB140, 0x6DBA67, 0x2DC08E, 0x00C0B4,
@@ -230,7 +239,7 @@ def playheads_module():
                          "playheads": heads},
                         {"id": ids.take(), "type": "scale", "name": "", "on": True, "params": []}]
     song["nextId"] = ids.next + 10
-    module = tessera_module(song, lead, 24, False)
+    module = tessera_module(song, lead, PANEL_HP, False)
     module["data"]["schema"] = 8
     module["data"]["ui"]["overlay"]["deviceStrip"] = True
     return module
@@ -256,10 +265,91 @@ def curve_module():
                            "length": 16 * BAR, "points": points, "segment": [4 * BAR, 8 * BAR],
                            "routes": [{"kind": "param", "amount": 1.0, "target": ["device", transpose["id"], 2]}]}]
     song["nextId"] = ids.next + 10
-    module = tessera_module(song, verse, 24, False, "Bass")
+    module = tessera_module(song, verse, PANEL_HP, False, "Bass")
     module["data"]["schema"] = 8
     module["data"]["ui"]["overlay"]["deviceStrip"] = True
     return module
+
+
+def drum_loop(path, bpm=112.0, bars=2, rate=44100):
+    """Writes a stereo drum loop to `path`: kick, snare and closed hats, synthesised so the file is free to use."""
+    beat = 60.0 / bpm
+    n = int(round(bars * 4 * beat * rate))
+    left, right = [0.0] * n, [0.0] * n
+    rnd = random.Random(7)
+
+    def hit(at, length, sample, pan=0.0):
+        start = int(round(at * rate))
+        for i in range(int(length * rate)):
+            if start + i >= n:
+                break
+            v = sample(i / rate)
+            left[start + i] += v * (1 - max(0.0, pan))
+            right[start + i] += v * (1 + min(0.0, pan))
+
+    kick = lambda t: 0.9 * math.sin(2 * math.pi * (50 * t + 120 * (1 - math.exp(-t * 25)) / 25)) * math.exp(-t * 7)
+    snare = lambda t: (0.45 * (rnd.random() * 2 - 1) + 0.25 * math.sin(2 * math.pi * 190 * t)) * math.exp(-t * 18)
+    hat = lambda t: 0.22 * (rnd.random() * 2 - 1) * math.exp(-t * 70)
+    for bar in range(bars):
+        t0 = bar * 4 * beat
+        for k in (0, 1.5, 2) if bar == 0 else (0, 1.5, 2.5):
+            hit(t0 + k * beat, 0.5, kick)
+        for k in (1, 3):
+            hit(t0 + k * beat, 0.3, snare)
+        for k in range(8):
+            hit(t0 + k * beat / 2, 0.08, hat, 0.3)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<hh", max(-32767, min(32767, int(a * 30000))),
+                                           max(-32767, min(32767, int(b * 30000)))) for a, b in zip(left, right)))
+    return n
+
+
+def audio_patch(out, crossfade=False):
+    """Writes audio.vcv: the demo with a "Loop" audio track playing a drum loop on the timeline from bar 5 and in
+    the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer showing in the lower pane.
+    With `crossfade` it writes crossfade.vcv instead: two copies of the loop overlapping by a bar, the second one
+    reversed, and a curved fade in on the first, with the notes showing in the lower pane."""
+    song, _ = make_song()
+    name = "Drum loop 112 BPM.wav"
+    file = "audio/00000000-" + name
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        storage = root / "modules" / str(TESSERA_ID) / "audio"
+        storage.mkdir(parents=True)
+        frames = drum_loop(storage / Path(file).name)
+        source = {"id": ids.take(), "name": name, "file": file, "hash": "0000000000000000", "channels": 2,
+                  "rate": 44100.0, "frames": frames, "tempo": 112.0, "volts": 5.0}
+        loop = {"id": ids.take(), "name": "Drum loop 112 BPM", "color": 0, "length": 2 * BAR, "loop": [0, 2 * BAR],
+                "loopMode": "loop", "notes": [], "automation": [],
+                "audio": {"source": source["id"], "start": 0, "follow": "stretch", "sound": "drums", "tempo": 112.0}}
+        place = {"id": ids.take(), "clip": loop["id"], "pos": 4 * BAR, "len": 16 * BAR, "offset": 0, "muted": False,
+                 "transpose": 0, "velScale": 1.0, "stretch": 1.0, "fadeIn": [BEAT // 2, 0.0]}
+        places = [place]
+        if crossfade:
+            back = dict(loop, id=ids.take(), name="Drum loop reversed", color=2,
+                        audio=dict(loop["audio"], reverse=True))
+            place = dict(place, len=4 * BAR, fadeIn=[2 * BEAT, 0.6])
+            second = {"id": ids.take(), "clip": back["id"], "pos": 7 * BAR, "len": 4 * BAR, "offset": 0,
+                      "muted": False, "transpose": 0, "velScale": 1.0, "stretch": 1.0}
+            places = [place, second]
+            song["clips"].append(back)
+        song["tracks"].append({"id": TRACK_IDS["Loop"], "name": "Loop", "color": COLORS["Loop"], "type": "audio",
+                               "polyphony": 0, "mute": False, "solo": False, "armed": False, "monitor": True,
+                               "recordInput": "any", "midiChannel": 0, "gateScale": 1.0, "transpose": 0,
+                               "drumLanes": [], "slots": [None, loop["id"], loop["id"]] + [None] * 5,
+                               "arrangement": places, "automation": [], "channel": {"volume": -3.0, "pan": 0.0}})
+        song["clips"].append(loop)
+        song["audioSources"] = [source]
+        song["master"] = {"id": ids.take(), "volume": 0.0}
+        song["nextId"] = ids.next + 10
+        tessera = tessera_module(song, loop, PANEL_HP, True, "Loop")
+        tessera["data"]["ui"]["overlay"].update({"mixerOpen": not crossfade, "mixerHeight": 300.0})
+        (root / "patch.json").write_text(json.dumps(patch([tessera] + outputs(PANEL_HP))))
+        name = "crossfade.vcv" if crossfade else "audio.vcv"
+        subprocess.run(["tar", "--zstd", "-cf", str(out / name), "-C", tmp, "patch.json", "modules"], check=True)
 
 
 def main():
@@ -267,22 +357,25 @@ def main():
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
     song, lead = make_song()
-    (out / "demo.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 24, True)] + outputs(24))))
+    hp = PANEL_HP
+    (out / "demo.vcv").write_text(json.dumps(patch([tessera_module(song, lead, hp, True)] + outputs(hp))))
     (out / "panel.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 80, True)] + outputs(80))))
-    (out / "modules.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 24, True)] + outputs(24), 1.6)))
-    first = [tessera_module(song, lead, 24, False), output_module(2001, "TesseraTrackOut", "Bass", 24),
-             fundamental(3001, "VCO", 31), fundamental(3002, "ADSR", 42), fundamental(3003, "VCA-1", 52)]
+    (out / "modules.vcv").write_text(json.dumps(patch([tessera_module(song, lead, hp, True)] + outputs(hp), 1.6)))
+    first = [tessera_module(song, lead, hp, False), output_module(2001, "TesseraTrackOut", "Bass", hp),
+             fundamental(3001, "VCO", hp + 7), fundamental(3002, "ADSR", hp + 18), fundamental(3003, "VCA-1", hp + 28)]
     (out / "first.vcv").write_text(json.dumps(patch(first, 1.3)))
     poly, verse = polymeter_song()
-    (out / "polymeter.vcv").write_text(json.dumps(patch([tessera_module(poly, verse, 24, False, "Drums")] +
-                                                        outputs(24))))
+    (out / "polymeter.vcv").write_text(json.dumps(patch([tessera_module(poly, verse, hp, False, "Drums")] +
+                                                        outputs(hp))))
     values, beat = hit_values_song()
-    (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, 24, False, "Drums", "pitch")] +
-                                                         outputs(24))))
-    (out / "playheads.vcv").write_text(json.dumps(patch([playheads_module()] + outputs(24))))
-    (out / "curve.vcv").write_text(json.dumps(patch([curve_module()] + outputs(24))))
+    (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, hp, False, "Drums", "pitch")] +
+                                                         outputs(hp))))
+    (out / "playheads.vcv").write_text(json.dumps(patch([playheads_module()] + outputs(hp))))
+    (out / "curve.vcv").write_text(json.dumps(patch([curve_module()] + outputs(hp))))
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
+    audio_patch(out)
+    audio_patch(out, crossfade=True)
 
 
 if __name__ == "__main__":

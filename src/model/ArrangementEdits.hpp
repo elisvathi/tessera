@@ -35,12 +35,13 @@ const Placed* find(const Layout& layout, ArrangementId id);
 /// for its whole span. Instances are taken by layer (ArrangerClip::layer, 0 by default, so a lower layer claims its
 /// row first), then start, then ID, so the layout is stable and a clip with nothing overlapping sits on top. `rows`
 /// is at least 1. Where stacked clips share an AUTO
-/// channel, the clip on the lower row plays it.
+/// channel, the clip on the lower row plays it. With `flat` (audio tracks, which never stack: their overlaps are
+/// crossfades) every instance is on row 0.
 struct Stacking {
     std::unordered_map<ArrangementId, int> row;
     int rows = 1;
 };
-Stacking stackOf(const Layout& layout, TrackId track);
+Stacking stackOf(const Layout& layout, TrackId track, bool flat = false);
 /// Whether instance `id` overlaps a clip in the sub-row above (`direction` -1) or below (+1), to swap rows with.
 bool canMoveInStack(const Layout& layout, ArrangementId id, int direction);
 /// Swaps instance `id` with the overlapping clips in the sub-row above (-1) or below (+1). Every clip on the track
@@ -72,8 +73,17 @@ Layout transpose(const Layout& layout, const IdSet& ids, int semitones);
 Layout setVelocityScale(const Layout& layout, const IdSet& ids, float scale);
 
 /// The overlap rule: an instance in `changed` wins over the others on its track. Ones it covers are removed,
-/// ones it overlaps are trimmed, and one it sits inside is split around it.
+/// ones it overlaps are trimmed, and one it sits inside is split around it. Audio instances follow settleAudio().
 Layout resolveOverlaps(const Layout& layout, const IdSet& changed, const ClipPool& clips, const IdSource& newId);
+
+/// How far the parts of a split audio clip reach into the clip dropped inside it: each seam crossfades over this.
+constexpr Tick kSeamCrossfade = kPpq / 8;
+
+/// The audio overlap rule (docs/design/AUDIO_MIXER.md §6.3), whether or not clips stack: on an audio track an
+/// overlap is a crossfade, so clips stay where they are, but a clip a changed one covers goes, one a changed clip
+/// sits inside is split around it (crossfading at each seam), and where three would sound at once the earliest
+/// stops. Audio instances always sit on layer 0: audio tracks never stack.
+Layout settleAudio(const Layout& layout, const IdSet& changed, const ClipPool& clips, const IdSource& newId);
 
 /// Instances on the timeline replaced by others: deletes what left the layout, adds what is new. Clips no
 /// longer used anywhere leave the pool with it.
@@ -113,7 +123,8 @@ CommandPtr drawClip(const Song& song, TrackId track, Tick position, Tick length,
 CommandPtr placeNewClip(const Song& song, TrackId track, Tick position, Clip clip, ArrangementId instance,
                         const IdSource& newId, bool stack, const std::string& name);
 /// Joins the instances in `ids` (all on one track) into one new clip and one instance spanning them
-/// (Ctrl/Cmd+J). Loops, offsets, stretch, transpose and velocity scale are baked into the new clip.
+/// (Ctrl/Cmd+J). Loops, offsets, stretch, transpose and velocity scale are baked into the new clip. Audio instances
+/// join only when they are pieces of one clip end to end (they become one instance of it); otherwise null.
 CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId);
 /// Gives each instance in `ids` whose clip is also used elsewhere its own copy of the clip (Ctrl/Cmd+U).
 CommandPtr makeUnique(const Song& song, const IdSet& ids, const NextId& nextId);

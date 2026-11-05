@@ -39,6 +39,9 @@ class LauncherPanel : public InteractiveView {
         TrackId track;
     };
     Hit hitTest(rack::math::Vec pos);
+    /// Files dropped on a slot of an audio track go into it and the slots below; anywhere else in the launcher
+    /// they make new audio tracks, each with the clip in its first slot (§6.5).
+    void onPathDrop(const PathDropEvent& e) override;
     /// The slot cell of a row and scene, in panel coordinates.
     rack::math::Rect cellRect(int row, int scene);
     float columnX(int scene) const { return float(scene) * kSlotWidth - scrollX; }

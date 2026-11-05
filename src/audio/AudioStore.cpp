@@ -1,0 +1,787 @@
+#include "AudioStore.hpp"
+
+#include "Resample.hpp"
+#include "TimeStretcher.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <new>
+
+namespace fs = std::filesystem;
+
+namespace tessera {
+
+namespace {
+
+/// Files up to this long are decoded at drop time, so their full tempo guess is ready before the first sound.
+constexpr double kDecodeAtDropSeconds = 60;
+/// Finished renders no clip wants right now are dropped, least recently wanted first, above this many bytes.
+constexpr size_t kSpareRenderBytes = size_t(512) << 20;
+
+/// Bytes of samples in `b`.
+size_t bytesOf(const AudioBuffer* b) {
+    return b ? size_t(b->frames) * size_t(b->channels) * sizeof(float) : 0;
+}
+
+/// A buffer holding `d`'s samples, resampled to `rate`. Null when memory runs out or `cancel` stops it.
+/// `in` back to front: what a reversed clip plays. Null when memory runs out.
+std::shared_ptr<AudioBuffer> reversedCopy(const AudioBuffer& in) {
+    auto out = std::make_shared<AudioBuffer>();
+    out->channels = in.channels;
+    out->frames = in.frames;
+    out->rate = in.rate;
+    try {
+        for (int c = 0; c < in.channels; c++)
+            out->data[size_t(c)].assign(in.data[size_t(c)].rbegin(), in.data[size_t(c)].rend());
+    } catch (const std::bad_alloc&) {
+        return nullptr;
+    }
+    return out;
+}
+
+std::shared_ptr<AudioBuffer> prepare(DecodedAudio& d, double rate, const RenderProgress& progress) {
+    auto b = std::make_shared<AudioBuffer>();
+    b->channels = int(d.channels.size());
+    b->rate = rate;
+    if (std::abs(d.sampleRate - rate) < 1e-9) {
+        b->frames = d.frames();
+        for (size_t c = 0; c < d.channels.size(); c++)
+            b->data[c] = std::move(d.channels[c]);
+        return b;
+    }
+    int64_t outFrames = std::max<int64_t>(1, std::llround(double(d.frames()) * rate / d.sampleRate));
+    try {
+        for (size_t c = 0; c < d.channels.size(); c++)
+            b->data[c].resize(size_t(outFrames));
+    } catch (const std::bad_alloc&) {
+        return nullptr;
+    }
+    std::vector<const float*> in;
+    std::vector<float*> out;
+    for (size_t c = 0; c < d.channels.size(); c++) {
+        in.push_back(d.channels[c].data());
+        out.push_back(b->data[c].data());
+    }
+    if (!resampleBest(in.data(), b->channels, d.frames(), out.data(), outFrames, progress))
+        return nullptr;
+    b->frames = outFrames;
+    return b;
+}
+
+} // namespace
+
+int copyMissingFiles(const Song& song, const std::string& from, const std::string& to) {
+    if (from.empty() || to.empty() || from == to)
+        return 0;
+    int copied = 0;
+    std::error_code ec;
+    for (const AudioSource& s : song.audioSources) {
+        fs::path dest = fs::path(to) / s.file;
+        fs::path src = fs::path(from) / s.file;
+        if (fs::exists(dest, ec) || !fs::exists(src, ec))
+            continue;
+        if (s.contentHash != 0 && hashFile(src.string()) != s.contentHash)
+            continue;
+        fs::create_directories(dest.parent_path(), ec);
+        if (fs::copy_file(src, dest, ec))
+            copied++;
+    }
+    return copied;
+}
+
+int exportFiles(const Song& song, const std::string& storage, const std::string& folder) {
+    std::error_code ec;
+    int copied = 0;
+    for (const AudioSource& s : song.audioSources) {
+        fs::path src = fs::path(storage) / s.file;
+        fs::path dest = fs::path(folder) / fs::path(s.file).filename();
+        if (!fs::exists(src, ec))
+            continue;
+        fs::create_directories(dest.parent_path(), ec);
+        if (fs::exists(dest, ec) && hashFile(dest.string()) == hashFile(src.string()))
+            continue;
+        if (fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec))
+            copied++;
+    }
+    return copied;
+}
+
+int importFiles(const Song& song, const std::string& folder, const std::string& storage) {
+    std::error_code ec;
+    int copied = 0;
+    for (const AudioSource& s : song.audioSources) {
+        fs::path src = fs::path(folder) / fs::path(s.file).filename();
+        fs::path dest = fs::path(storage) / s.file;
+        if (fs::exists(dest, ec) || !fs::exists(src, ec))
+            continue;
+        if (s.contentHash != 0 && hashFile(src.string()) != s.contentHash)
+            continue;
+        fs::create_directories(dest.parent_path(), ec);
+        if (fs::copy_file(src, dest, ec))
+            copied++;
+    }
+    return copied;
+}
+
+int removeUnusedFiles(const Song& song, const std::string& folder) {
+    std::error_code ec;
+    fs::path audio = fs::path(folder) / "audio";
+    if (folder.empty() || !fs::is_directory(audio, ec))
+        return 0;
+    int removed = 0;
+    std::vector<fs::path> gone;
+    for (const fs::directory_entry& e : fs::directory_iterator(audio, ec)) {
+        std::string rel = "audio/" + e.path().filename().string();
+        bool used = std::any_of(song.audioSources.begin(), song.audioSources.end(),
+                                [&](const AudioSource& s) { return s.file == rel; });
+        if (!used && e.is_regular_file(ec))
+            gone.push_back(e.path());
+    }
+    for (const fs::path& p : gone)
+        removed += fs::remove(p, ec) ? 1 : 0;
+    return removed;
+}
+
+std::string storageName(const std::string& displayName, uint64_t hash) {
+    char hex[9];
+    snprintf(hex, sizeof hex, "%08llx", static_cast<unsigned long long>(hash & 0xffffffffull));
+    std::string name = displayName;
+    for (char& c : name)
+        if (c == '/' || c == '\\' || c == ':')
+            c = '_';
+    return std::string("audio/") + hex + "-" + name;
+}
+
+AudioStore::AudioStore() {
+    loader = std::thread([this] { loadLoop(); });
+    renderer = std::thread([this] { renderLoop(); });
+}
+
+AudioStore::~AudioStore() {
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        stopping = true;
+    }
+    wake.notify_all();
+    loader.join();
+    renderer.join();
+}
+
+std::string AudioStore::pathOf(const std::string& file) const {
+    return root.empty() ? file : (fs::path(root) / file).string();
+}
+
+void AudioStore::setFolder(const std::string& folder) {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (folder == root)
+        return;
+    root = folder;
+    renders.clear();
+    renderQueue.clear();
+    for (auto& [id, s] : sources) {
+        s.buffer.reset();
+        queueLoad(s);
+    }
+    bump();
+}
+
+void AudioStore::setEngineRate(double r) {
+    if (!(r > 0))
+        return;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (std::abs(r - rate) < 1e-9)
+        return;
+    rate = r;
+    // Renders are made from the prepared samples at one rate; new ones come with the next snapshot.
+    renders.clear();
+    renderQueue.clear();
+    for (auto& [id, s] : sources)
+        queueLoad(s);
+    bump();
+}
+
+void AudioStore::queueLoad(Source& s) {
+    s.status.state = SourceState::Loading;
+    s.status.progress = 0;
+    if (!s.queued) {
+        s.queued = true;
+        loads.push_back({s.info.id, rate});
+    }
+    wake.notify_all();
+}
+
+void AudioStore::sync(const Song& song) {
+    std::lock_guard<std::mutex> lock(mutex);
+    bool changed = false;
+    for (const AudioSource& src : song.audioSources) {
+        auto it = sources.find(src.id.value);
+        if (it != sources.end() && it->second.info.file == src.file) {
+            it->second.info = src;
+            continue;
+        }
+        Source s;
+        s.info = src;
+        auto imp = imported.find(src.file);
+        if (imp != imported.end()) {
+            s.decoded = imp->second;
+            imported.erase(imp);
+        }
+        Source& placed = sources[src.id.value] = std::move(s);
+        queueLoad(placed);
+        changed = true;
+    }
+    // Reversed copies only live while a reversed clip plays them.
+    std::vector<uint64_t> reversedUsed;
+    for (const auto& [id, c] : song.clips)
+        if (c.audio && c.audio->reverse) {
+            reversedUsed.push_back(c.audio->source.value);
+            for (const AudioTake& tk : c.audio->takes)
+                reversedUsed.push_back(tk.source.value);
+        }
+    for (auto& [id, s] : sources)
+        if (s.reversed && std::find(reversedUsed.begin(), reversedUsed.end(), id) == reversedUsed.end()) {
+            s.reversed.reset();
+            changed = true;
+        }
+    for (auto it = sources.begin(); it != sources.end();) {
+        if (!song.findSource(AudioSourceId(it->first))) {
+            AudioSourceId gone(it->first);
+            renders.erase(std::remove_if(renders.begin(), renders.end(),
+                                         [&](const Render& r) { return r.key.source == gone; }),
+                          renders.end());
+            it = sources.erase(it);
+            changed = true;
+        } else {
+            ++it;
+        }
+    }
+    if (changed)
+        bump();
+}
+
+AudioImport AudioStore::importFile(const std::string& path, double songTempo, TimeSig ts) {
+    AudioImport out;
+    out.displayName = fs::path(path).filename().string();
+    AudioFileInfo info;
+    if (!probeAudio(path, info)) {
+        out.error = fs::exists(path) ? DecodeError::NotAudio : DecodeError::CantOpen;
+        return out;
+    }
+    uint64_t hash = hashFile(path);
+    std::string file = storageName(out.displayName, hash);
+    std::string folder;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        folder = root;
+    }
+    fs::path dest = folder.empty() ? fs::path(file) : fs::path(folder) / file;
+    std::error_code ec;
+    fs::create_directories(dest.parent_path(), ec);
+    if (!fs::exists(dest, ec) || hashFile(dest.string()) != hash) {
+        fs::copy_file(path, dest, fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            out.error = DecodeError::CantOpen;
+            return out;
+        }
+    }
+
+    AudioSource& s = out.source;
+    s.name = out.displayName;
+    s.file = file;
+    s.contentHash = hash;
+    s.fileChannels = info.channels;
+    s.channels = std::min(info.channels, 2);
+    s.sampleRate = info.sampleRate;
+    s.frames = info.frames;
+    s.volts = kImportVolts;
+    double seconds = info.sampleRate > 0 ? double(info.frames) / info.sampleRate : 0;
+    out.guess = quickGuess(out.displayName, info.tempo, seconds, songTempo, ts);
+
+    if (seconds <= kDecodeAtDropSeconds) {
+        auto decoded = std::make_shared<DecodedAudio>();
+        DecodeError e = decodeAudio(dest.string(), *decoded);
+        if (e != DecodeError::None) {
+            out.error = e;
+            return out;
+        }
+        s.frames = decoded->frames();
+        out.guess = fullGuess(out.guess, decoded->channels, decoded->sampleRate, songTempo);
+        std::lock_guard<std::mutex> lock(mutex);
+        imported[file] = decoded;
+    }
+    if (out.guess.bpm > 0)
+        s.tempo = out.guess.bpm;
+    out.ok = true;
+    return out;
+}
+
+void AudioStore::adopt(AudioSourceId id, const std::string& file) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto imp = imported.find(file);
+    auto it = sources.find(id.value);
+    if (imp == imported.end() || it == sources.end())
+        return;
+    it->second.decoded = imp->second;
+    imported.erase(imp);
+}
+
+void AudioStore::want(const std::vector<RenderKey>& keys) {
+    std::lock_guard<std::mutex> lock(mutex);
+    wantRound++;
+    for (const RenderKey& k : keys) {
+        auto it = std::find_if(renders.begin(), renders.end(), [&](const Render& r) { return r.key == k; });
+        if (it == renders.end()) {
+            Render r;
+            r.key = k;
+            r.status.state = RenderState::Waiting;
+            r.lastWanted = wantRound;
+            renders.push_back(r);
+            renderQueue.push_back(k);
+        } else {
+            it->lastWanted = wantRound;
+        }
+    }
+    // Waiting renders the clips no longer want go: the tempo moved on before they started.
+    auto stale = [&](const RenderKey& k) {
+        auto it = std::find_if(renders.begin(), renders.end(), [&](const Render& r) { return r.key == k; });
+        return it == renders.end() || it->lastWanted != wantRound;
+    };
+    renderQueue.erase(std::remove_if(renderQueue.begin(), renderQueue.end(), stale), renderQueue.end());
+    renders.erase(std::remove_if(renders.begin(), renders.end(),
+                                 [&](const Render& r) {
+                                     return r.status.state == RenderState::Waiting && r.lastWanted != wantRound;
+                                 }),
+                  renders.end());
+    evictRenders();
+    wake.notify_all();
+}
+
+void AudioStore::retry(const RenderKey& key) {
+    std::lock_guard<std::mutex> lock(mutex);
+    for (Render& r : renders)
+        if (r.key == key && r.status.state == RenderState::Failed) {
+            r.status = {RenderState::Waiting, 0};
+            renderQueue.push_back(key);
+            wake.notify_all();
+            bump();
+        }
+}
+
+void AudioStore::retryMissing() {
+    std::lock_guard<std::mutex> lock(mutex);
+    for (auto& [id, s] : sources)
+        if (s.status.state == SourceState::Missing || s.status.state == SourceState::Failed)
+            queueLoad(s);
+    bump();
+}
+
+void AudioStore::evictRenders() {
+    size_t spare = 0;
+    for (const Render& r : renders)
+        if (r.lastWanted != wantRound)
+            spare += bytesOf(r.buffer.get());
+    while (spare > kSpareRenderBytes) {
+        auto oldest = renders.end();
+        for (auto it = renders.begin(); it != renders.end(); ++it)
+            if (it->lastWanted != wantRound && it->buffer && (oldest == renders.end() || it->lastWanted < oldest->lastWanted))
+                oldest = it;
+        if (oldest == renders.end())
+            break;
+        spare -= bytesOf(oldest->buffer.get());
+        renders.erase(oldest);
+    }
+}
+
+SourceStatus AudioStore::status(AudioSourceId id) const {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = sources.find(id.value);
+    return it == sources.end() ? SourceStatus{SourceState::Missing, 0, nullptr, 0, {}} : it->second.status;
+}
+
+RenderStatus AudioStore::renderStatus(const RenderKey& key) const {
+    std::lock_guard<std::mutex> lock(mutex);
+    for (const Render& r : renders)
+        if (r.key == key)
+            return r.status;
+    return {};
+}
+
+size_t AudioStore::memoryBytes() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    size_t n = 0;
+    for (const auto& [id, s] : sources)
+        n += bytesOf(s.buffer.get()) + bytesOf(s.reversed.get()) + (s.status.peaks ? s.status.peaks->bytes() : 0);
+    for (const Render& r : renders)
+        n += bytesOf(r.buffer.get());
+    return n;
+}
+
+bool AudioStore::idle() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    for (const auto& [id, s] : sources)
+        if (s.status.state == SourceState::Loading)
+            return false;
+    return true;
+}
+
+void AudioStore::waitIdle() {
+    std::unique_lock<std::mutex> lock(mutex);
+    settled.wait(lock, [&] {
+        bool rendering = std::any_of(renders.begin(), renders.end(), [](const Render& r) {
+            return r.status.state == RenderState::Waiting || r.status.state == RenderState::Rendering;
+        });
+        return loads.empty() && busy == 0 && !rendering;
+    });
+}
+
+std::shared_ptr<const AudioBuffer> AudioStore::prepared(AudioSourceId source, bool reversed) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = sources.find(source.value);
+    if (it == sources.end())
+        return nullptr;
+    Source& s = it->second;
+    if (!reversed)
+        return s.buffer;
+    if (!s.reversed && s.buffer && s.status.state == SourceState::Ready && !s.reverseQueued) {
+        s.reverseQueued = true;
+        loads.push_back({source, rate, true});
+        wake.notify_all();
+    }
+    return s.reversed;
+}
+
+std::shared_ptr<const AudioBuffer> AudioStore::render(const RenderKey& key, RenderKey& found) {
+    std::lock_guard<std::mutex> lock(mutex);
+    const Render* best = nullptr;
+    for (const Render& r : renders) {
+        if (r.status.state != RenderState::Ready || !r.buffer || r.bufferRate != rate ||
+            !(r.key.source == key.source) || r.key.semitones != key.semitones || r.key.sound != key.sound ||
+            r.key.reverse != key.reverse || r.key.warps != key.warps || r.key.startFrame != key.startFrame ||
+            r.key.framesPerTick != key.framesPerTick)
+            continue;
+        if (r.key == key) {
+            best = &r;
+            break;
+        }
+        if (!best || std::abs(std::log(r.key.factor / key.factor)) < std::abs(std::log(best->key.factor / key.factor)))
+            best = &r;
+    }
+    if (!best)
+        return nullptr;
+    found = best->key;
+    return best->buffer;
+}
+
+// ---- Workers ------------------------------------------------------------------------------------------------
+
+void AudioStore::loadLoop() {
+    std::unique_lock<std::mutex> lock(mutex);
+    while (true) {
+        wake.wait(lock, [&] { return stopping || !loads.empty(); });
+        if (stopping)
+            return;
+        LoadJob job = loads.front();
+        loads.pop_front();
+        busy++;
+        lock.unlock();
+        if (job.reverse)
+            reverseOne(job);
+        else
+            load(job);
+        lock.lock();
+        busy--;
+        settled.notify_all();
+        wake.notify_all(); // a render may have waited for this source
+    }
+}
+
+void AudioStore::load(const LoadJob& job) {
+    std::string path;
+    std::shared_ptr<DecodedAudio> decoded;
+    double songTempo = 120;
+    AudioGuess quick;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = sources.find(job.id.value);
+        if (it == sources.end())
+            return;
+        Source& s = it->second;
+        s.queued = false;
+        path = pathOf(s.info.file);
+        decoded = std::move(s.decoded);
+        double seconds = s.info.seconds();
+        quick = quickGuess(s.info.name, s.info.tempo, seconds, s.info.tempo > 0 ? s.info.tempo : songTempo, TimeSig{});
+    }
+    auto setProgress = [&](double p) {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = sources.find(job.id.value);
+        if (it == sources.end() || stopping || job.rate != rate)
+            return false;
+        it->second.status.progress = float(p);
+        return true;
+    };
+    auto fail = [&](SourceState state) {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = sources.find(job.id.value);
+        if (it != sources.end() && job.rate == rate) {
+            it->second.status.state = state;
+            bump();
+        }
+    };
+
+    if (!decoded) {
+        decoded = std::make_shared<DecodedAudio>();
+        DecodeError e = decodeAudio(path, *decoded, [&](double p) { return setProgress(p * 0.8); });
+        if (e == DecodeError::Cancelled)
+            return;
+        if (e != DecodeError::None) {
+            fail(e == DecodeError::CantOpen ? SourceState::Missing
+                 : e == DecodeError::NoMemory ? SourceState::NoMemory
+                                              : SourceState::Failed);
+            return;
+        }
+    }
+    std::shared_ptr<const PeakCache> peaks;
+    std::shared_ptr<const std::vector<int64_t>> transients;
+    AudioGuess guess;
+    try {
+        peaks = std::make_shared<PeakCache>(decoded->channels);
+        transients = std::make_shared<std::vector<int64_t>>(findTransients(decoded->channels, decoded->sampleRate));
+        guess = fullGuess(quick, decoded->channels, decoded->sampleRate, quick.bpm > 0 ? quick.bpm : songTempo);
+    } catch (const std::bad_alloc&) {
+        fail(SourceState::NoMemory);
+        return;
+    }
+    double fileRate = decoded->sampleRate;
+    std::shared_ptr<AudioBuffer> buffer = prepare(*decoded, job.rate, [&](double p) { return setProgress(0.8 + 0.2 * p); });
+    if (!buffer) {
+        fail(job.rate == rate ? SourceState::NoMemory : SourceState::Loading);
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = sources.find(job.id.value);
+    if (it == sources.end() || job.rate != rate)
+        return;
+    Source& s = it->second;
+    s.buffer = std::move(buffer);
+    s.bufferRate = job.rate;
+    s.reversed.reset(); // made again from the new buffer when a reversed clip asks
+    s.reverseQueued = false;
+    s.status.state = SourceState::Ready;
+    s.status.progress = 1;
+    s.status.peaks = std::move(peaks);
+    s.status.transients = std::move(transients);
+    s.status.sampleRate = fileRate;
+    s.status.guess = guess;
+    bump();
+}
+
+void AudioStore::reverseOne(const LoadJob& job) {
+    std::shared_ptr<const AudioBuffer> in;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = sources.find(job.id.value);
+        if (it == sources.end())
+            return;
+        it->second.reverseQueued = false;
+        if (it->second.reversed || !it->second.buffer)
+            return;
+        in = it->second.buffer;
+    }
+    std::shared_ptr<AudioBuffer> out = reversedCopy(*in);
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = sources.find(job.id.value);
+    // Only if the buffer it came from is still the one the source plays (a rate change replaces it).
+    if (out && it != sources.end() && it->second.buffer == in) {
+        it->second.reversed = std::move(out);
+        bump();
+    }
+}
+
+void AudioStore::renderLoop() {
+    std::unique_lock<std::mutex> lock(mutex);
+    while (true) {
+        // The first waiting render whose source is ready; one whose source failed fails too.
+        auto ready = [&]() -> std::deque<RenderKey>::iterator {
+            for (auto it = renderQueue.begin(); it != renderQueue.end(); ++it) {
+                auto s = sources.find(it->source.value);
+                if (s == sources.end() || s->second.status.state != SourceState::Loading)
+                    return it;
+            }
+            return renderQueue.end();
+        };
+        wake.wait(lock, [&] { return stopping || ready() != renderQueue.end(); });
+        if (stopping)
+            return;
+        auto pick = ready();
+        RenderKey key = *pick;
+        renderQueue.erase(pick);
+        busy++;
+        lock.unlock();
+        renderOne(key);
+        lock.lock();
+        busy--;
+        settled.notify_all();
+    }
+}
+
+namespace {
+
+/// A warped clip's render (§3.5): each piece between ticks where markers sit stretched on its own, so render frame
+/// (startFrame + tick * framesPerTick) * factor plays what the clip plays at that tick. Parts before the file's
+/// start stay silent.
+bool renderWarped(const RenderKey& key, const AudioBuffer& in, AudioBuffer& out, const RenderProgress& progress) {
+    const auto& w = key.warps;
+    double fpt = key.framesPerTick;
+    auto inAt = [&](double tick) { return warpedPrepared(w, fpt, tick); };
+    auto outAt = [&](double tick) { return (key.startFrame + tick * fpt) * key.factor; };
+    double t0 = -key.startFrame / fpt;
+    double t1 = (double(out.frames) / key.factor - key.startFrame) / fpt;
+    std::vector<double> ticks{t0};
+    for (const auto& m : w)
+        if (m.first > t0 && m.first < t1)
+            ticks.push_back(m.first);
+    ticks.push_back(t1);
+    for (size_t k = 0; k + 1 < ticks.size(); k++) {
+        double i0 = inAt(ticks[k]), i1 = inAt(ticks[k + 1]);
+        double o0 = outAt(ticks[k]), o1 = outAt(ticks[k + 1]);
+        if (i1 <= i0 || o1 <= o0)
+            continue;
+        // Keep the part inside the file; the output for the rest stays silent.
+        if (i0 < 0) {
+            o0 += (0 - i0) / (i1 - i0) * (o1 - o0);
+            i0 = 0;
+        }
+        if (i1 > double(in.frames)) {
+            o1 -= (i1 - double(in.frames)) / (i1 - i0) * (o1 - o0);
+            i1 = double(in.frames);
+        }
+        int64_t a = int64_t(std::llround(i0)), b = int64_t(std::llround(i1));
+        int64_t oa = std::clamp<int64_t>(int64_t(std::llround(o0)), 0, out.frames);
+        int64_t ob = std::clamp<int64_t>(int64_t(std::llround(o1)), 0, out.frames);
+        if (b - a < 2 || ob - oa < 2)
+            continue;
+        std::vector<const float*> src;
+        std::vector<float*> dst;
+        for (int c = 0; c < in.channels; c++) {
+            src.push_back(in.data[size_t(c)].data() + a);
+            dst.push_back(out.data[size_t(c)].data() + oa);
+        }
+        StretchJob job;
+        job.in = src.data();
+        job.channels = in.channels;
+        job.inFrames = b - a;
+        job.sampleRate = out.rate > 0 ? out.rate : 48000;
+        job.ratio = double(ob - oa) / double(b - a);
+        job.semitones = key.semitones;
+        job.sound = key.sound;
+        std::unique_ptr<TimeStretcher> stretcher = makeStretcher("signalsmith");
+        double share = 1.0 / double(ticks.size() - 1);
+        if (!stretcher->render(job, dst.data(), ob - oa,
+                               [&](double p) { return progress((double(k) + p) * share); }))
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+void AudioStore::renderOne(const RenderKey& key) {
+    std::shared_ptr<const AudioBuffer> in;
+    double inRate = 0;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = sources.find(key.source.value);
+        auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });
+        if (r == renders.end())
+            return;
+        if (it == sources.end() || !it->second.buffer || it->second.status.state != SourceState::Ready) {
+            r->status = {RenderState::Failed, 0};
+            bump();
+            return;
+        }
+        in = it->second.buffer;
+        inRate = it->second.bufferRate;
+        r->status = {RenderState::Rendering, 0};
+        bump();
+    }
+    if (key.reverse) {
+        // Stretched from the reversed source, so the render plays the clip's window forwards like the prepared one.
+        std::shared_ptr<const AudioBuffer> flipped = reversedCopy(*in);
+        if (!flipped) {
+            std::lock_guard<std::mutex> lock(mutex);
+            auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });
+            if (r != renders.end())
+                r->status = {RenderState::Failed, 0};
+            bump();
+            return;
+        }
+        in = std::move(flipped);
+    }
+    auto out = std::make_shared<AudioBuffer>();
+    out->channels = in->channels;
+    out->rate = inRate;
+    out->frames = std::max<int64_t>(1, stretchedFrames(in->frames, key.factor));
+    if (!key.warps.empty() && key.framesPerTick > 0) {
+        // Warped: render frame (startFrame + tick * framesPerTick) * factor plays the tick, so the length follows the
+        // tick where the file ends.
+        const auto& last = key.warps.back();
+        double endTick = double(in->frames) >= last.second
+                             ? last.first + (double(in->frames) - last.second) / key.framesPerTick
+                             : last.first;
+        out->frames = std::max<int64_t>(1, int64_t((key.startFrame + endTick * key.framesPerTick) * key.factor));
+    }
+    bool ok = true;
+    try {
+        for (int c = 0; c < in->channels; c++)
+            out->data[size_t(c)].resize(size_t(out->frames));
+    } catch (const std::bad_alloc&) {
+        ok = false;
+    }
+    if (ok) {
+        std::vector<const float*> src;
+        std::vector<float*> dst;
+        for (int c = 0; c < in->channels; c++) {
+            src.push_back(in->data[size_t(c)].data());
+            dst.push_back(out->data[size_t(c)].data());
+        }
+        auto progress = [&](double p) {
+            std::lock_guard<std::mutex> lock(mutex);
+            auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });
+            if (stopping || r == renders.end() || inRate != rate)
+                return false;
+            r->status.progress = float(p);
+            return true;
+        };
+        if (key.warps.empty() || key.framesPerTick <= 0) {
+            StretchJob job;
+            job.in = src.data();
+            job.channels = in->channels;
+            job.inFrames = in->frames;
+            job.sampleRate = inRate;
+            job.ratio = key.factor;
+            job.semitones = key.semitones;
+            job.sound = key.sound;
+            std::unique_ptr<TimeStretcher> stretcher = makeStretcher("signalsmith");
+            ok = stretcher->render(job, dst.data(), out->frames, progress);
+        } else {
+            ok = renderWarped(key, *in, *out, progress);
+        }
+    }
+    std::lock_guard<std::mutex> lock(mutex);
+    auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });
+    if (r == renders.end() || inRate != rate)
+        return;
+    if (ok) {
+        r->buffer = std::move(out);
+        r->bufferRate = inRate;
+        r->status = {RenderState::Ready, 1};
+    } else {
+        r->status = {RenderState::Failed, 0};
+    }
+    bump();
+}
+
+} // namespace tessera

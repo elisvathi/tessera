@@ -83,10 +83,13 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Ctrl+4 | Snap on / off |
 | Ctrl+Shift+F | Fold to the key's rows (*notes pane*) |
 | I | Inspector |
-| Tab | Switch pane |
-| Shift+Tab | Maximize the pane, or restore both |
+| Tab | Switch pane (song, lower pane) |
+| Shift+Tab | Maximize the pane, or restore the panes |
 | F2 | Widen / narrow the clips beside the timeline |
 | F3 | Device strip above the notes |
+| F4 | Show the mixer or the notes in the lower pane |
+| Ctrl+B | Bounce the selected track to a new audio track |
+| Ctrl+Alt+E | Export audio |
 | G | Drum lanes / keys (*notes pane*) |
 
 ## Tracks
@@ -108,6 +111,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 |---|---|
 | ? (Shift+/) | Shortcut help |
 | Ctrl+Shift+E | Export MIDI… |
+| Ctrl+Shift+O | Import audio… |
 | Esc | Cancel a drag, clear the selection, then close the editor |
 
 ## While keyboard play is on (Ctrl+K)

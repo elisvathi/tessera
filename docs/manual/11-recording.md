@@ -52,6 +52,8 @@ Click the **▾** next to the record button.
 | Setting | Choices |
 |---|---|
 | **Count-in** | **Off**, **1 bar** or **2 bars**. The record button blinks and the **CLICK** output clicks during the count-in. |
+| **Metronome** | **Off**, **Count-in only**, **While recording** or **Always** (whenever the song plays), and a **Level**. A soft click, higher on the first beat of the bar, on **MAIN** only: never on a Track Out's OUT, in bounces, exports or stems. The **CLICK** output keeps its trigger either way. |
+| **Recording offset** | How late audio comes back through the sound card; audio takes are moved earlier by it. **Measure it**, type it in ms, or **None**. See [Latency and the recording offset](17-audio.md#latency-and-the-recording-offset). |
 | **New launcher clips** | **As long as played** (rounded up to whole bars when you stop), or a fixed **1, 2, 4 or 8 bars**. A fixed-length clip is finished when full; then it loops and the next passes are added to it. |
 | **Recording over arranger clips** | **Merge** (the default: the take is added to the clip that is there), **Stack** (the take is a new clip on top, and the old one stays as it was) or **Replace** (the take replaces what was there). See below. |
 | **Input quantize** | **Off**, or a grid from 1/4 to 1/32, with a strength from 50% to 100%. |
@@ -77,7 +79,8 @@ It depends on what the armed track is doing when your first note arrives:
     for just those notes, from the first to the end of the last. A clip that is placed more than once shares its
     notes, so the new notes show in every copy.
   - **Stack**: a new clip is made from exactly punch-in to punch-out, stacked over what was there. You can
-    move, mute or delete each take on its own. Where stacked clips have a lane on the same AUTO channel, the clip on
+    move, mute or delete each take on its own. On an audio track, a pass that starts where an audio clip starts
+    becomes another take inside that clip instead ([Takes and comping](17-audio.md#takes-and-comping)). Where stacked clips have a lane on the same AUTO channel, the clip on
     top plays it.
   - **Replace**: a new clip is made from exactly punch-in to punch-out, and old clips are cut only there. Notes
     outside that stretch stay, even in the same bar. While you record, the track's timeline clips are silent, so

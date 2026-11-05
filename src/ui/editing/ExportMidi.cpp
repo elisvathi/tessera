@@ -330,7 +330,24 @@ void openDawProject(EditorContext& ctx) {
         std::string path = pickPath(title, "DAWproject:dawproject", ".dawproject");
         if (path.empty())
             return;
-        std::string bytes = dawproject::build(mod->song(), options, contextOf(mod), mod->model->plugin->version);
+        // Every audio file a clip plays goes inside the project, so it opens with its sound.
+        std::vector<std::pair<std::string, std::string>> audio;
+        std::map<uint64_t, std::string> paths = dawproject::audioPaths(mod->song());
+        std::string folder = mod->song().audioSources.empty() ? "" : mod->audioStorage();
+        for (const AudioSource& s : mod->song().audioSources) {
+            std::FILE* in = std::fopen(rack::system::join(folder, s.file).c_str(), "rb");
+            if (!in)
+                continue;
+            std::string data;
+            char chunk[65536];
+            size_t n;
+            while ((n = std::fread(chunk, 1, sizeof chunk, in)) > 0)
+                data.append(chunk, n);
+            std::fclose(in);
+            audio.push_back({paths[s.id.value], std::move(data)});
+        }
+        std::string bytes =
+            dawproject::build(mod->song(), options, contextOf(mod), mod->model->plugin->version, audio);
         FILE* f = std::fopen(path.c_str(), "wb");
         bool ok = f && std::fwrite(bytes.data(), 1, bytes.size(), f) == bytes.size();
         if (f)

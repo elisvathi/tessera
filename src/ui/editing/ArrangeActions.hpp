@@ -17,6 +17,11 @@ void deleteSelected(ArrangerLanes& lanes);
 void duplicateSelected(ArrangerLanes& lanes);
 /// Splits the selected clips at `at`; with nothing selected, the clips `at` falls in on the selected track.
 void split(ArrangerLanes& lanes, Tick at);
+/// Split at transients (§3.5): cuts a timeline audio clip at every hit in it, one undo step.
+void splitAtTransients(ArrangerLanes& lanes, ArrangementId instance);
+/// Make triggers from audio (§3.5): a new drum track under the audio track, with a clip that hits its first lane
+/// wherever the audio clip has a hit, louder for louder hits, to play rack drums in time with a loop.
+void makeTriggers(ArrangerLanes& lanes, ArrangementId instance);
 void glueSelected(ArrangerLanes& lanes);
 void makeUniqueSelected(ArrangerLanes& lanes);
 void setMuted(ArrangerLanes& lanes, bool muted);

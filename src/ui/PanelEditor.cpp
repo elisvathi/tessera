@@ -1,5 +1,7 @@
 #include "PanelEditor.hpp"
 
+#include "views/MixerPane.hpp"
+
 #include <set>
 
 #include "../module/TesseraModule.hpp"
@@ -144,6 +146,8 @@ PanelEditor::PanelEditor(int64_t moduleId, std::function<void()> openFullEditor)
     top = new TopPane(ctx);
     detail = new DetailPane(ctx);
     panes = new PaneStack(ctx, top, detail, kMinPaneHeight, [this] { runAction(Action::MaximizePane); });
+    mixer = new MixerPane(ctx, true);
+    detail->setMixer(mixer);
     addChild(panes);
     // "Full editor" belongs to the whole editor, not a pane: it stays in the top-right corner whichever pane is
     // maximized, next to that pane's own maximize / restore button.

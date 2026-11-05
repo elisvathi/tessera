@@ -14,13 +14,18 @@ Check these in order:
 4. **Is the track muted, or another track soloed?** Look at **M** and **S** in the track headers.
 5. **Is a note muted?** Muted notes are hatched. Right-click them and choose **Mute / unmute**.
 6. **Is Tessera bypassed?** A bypassed Tessera sends no gates.
+7. **An audio track?** Audio comes out of **MAIN L** and **MAIN R** on the Tessera panel: patch them into the Audio
+   module (right-click Tessera: **Connect MAIN to Audio module**). An amber dot beside MAIN, and **MAIN not patched**
+   in the mixer, mean nothing is patched there. A clip marked **Missing file** has lost its file: right-click it,
+   **Find file…**.
 
-## The output module says "No source" or "Track missing"
+## The output module says "No source", "Track deleted" or "Tessera bypassed"
 
 - **No source**: it can't find its Tessera. Right-click it and pick one under **Source**. This happens when the
   Tessera was deleted, or after pasting the output module alone into another patch.
-- **Track missing**: its track was deleted. Undo the delete, or pick another track with the arrows or the **Track**
+- **Track deleted**: its track was deleted. Undo the delete, or pick another track with the arrows or the **Track**
   menu. Output modules never switch tracks by themselves.
+- **Tessera bypassed**: its Tessera is bypassed (Ctrl+E on it, or its menu). Turn it on again.
 
 ## A key does nothing (or does something else)
 
@@ -123,3 +128,6 @@ Give each Tessera its own **Instance name** (module menu). Output modules show t
 | A playhead's segment moving as the song plays | Right-click the segment on the piano roll's ruler |
 | What a Curve moves, its CV out | **Moves ▾** in the curve pane's top row |
 | Every shortcut | Press **?** in the editor |
+| The mixer | The **Mixer** bar under the notes pane (only when the song has an audio track), or **F4** |
+| Where audio comes out | **MAIN L** and **MAIN R** on the Tessera panel |
+| A clip's tempo, follow tempo, sound type | Right-click the audio clip, or the inspector |

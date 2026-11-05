@@ -57,11 +57,14 @@ NoteEvent noteEvent(const Note& note, const Track& track, Tick end) {
 std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& lanes) {
     std::vector<LanePlayback> out;
     for (const AutomationEnvelope& l : lanes) {
-        if (l.mute || l.paramTarget.valid())
+        // Send lanes play in the audio player, beside the sends they move.
+        if (l.mute || l.paramTarget.valid() || l.drive == LaneDrive::Send)
             continue;
         LanePlayback p;
         p.output = l.drive == LaneDrive::Pitch      ? kPitchLaneSlot
                    : l.drive == LaneDrive::Pressure ? kPressureLaneSlot
+                   : l.drive == LaneDrive::Volume   ? kVolumeLaneSlot
+                   : l.drive == LaneDrive::Pan      ? kPanLaneSlot
                                                     : std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1);
         p.rangeMin = l.rangeMin;
         p.rangeMax = l.rangeMax;
@@ -318,7 +321,8 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     for (int b = 0; b < tp->voiceBlockCount; b++)
         tp->voiceBlocks[size_t(b)] = {blocks[size_t(b)].part, 0, uint8_t(blocks[size_t(b)].size)};
     tp->audible = song.isAudible(track);
-    tp->armed = track.armed;
+    // An armed audio track records audio from its IN, never notes (§8.6).
+    tp->armed = track.armed && track.type != TrackType::Audio;
     tp->monitor = track.monitor;
     tp->input = track.recordInput;
     tp->midiChannel = track.midiChannel;

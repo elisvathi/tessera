@@ -467,7 +467,9 @@ struct Harness {
     BusSlots slots;
     SnapshotBuilder builder;
     std::unique_ptr<Snapshot> snapshot, old;
-    Engine engine;
+    // On the heap: an Engine is over a megabyte, and a test's subcases keep several harnesses in one stack frame.
+    std::unique_ptr<Engine> enginePtr = std::make_unique<Engine>();
+    Engine& engine = *enginePtr;
     std::array<TrackFrame, kMaxTracks> frames{};
     TransportEvents events;
     int64_t sample = -1;

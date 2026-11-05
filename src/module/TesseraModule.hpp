@@ -1,12 +1,17 @@
 #pragma once
 
+#include "../audio/AudioStore.hpp"
+#include "../audio/CaptureWriter.hpp"
 #include "../engine/ArrangementCapture.hpp"
+#include "../engine/AudioPlayer.hpp"
 #include "../engine/ClockSync.hpp"
 #include "../engine/Engine.hpp"
+#include "../engine/Metronome.hpp"
 #include "../engine/Recorder.hpp"
 #include "../engine/SnapshotExchange.hpp"
 #include "../engine/SpscQueue.hpp"
 #include "../engine/TapTempo.hpp"
+#include "../model/AudioEdits.hpp"
 #include "../model/AutomationTake.hpp"
 #include "../model/Commands.hpp"
 #include "../model/TrackCommands.hpp"
@@ -21,9 +26,12 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace tessera {
+
+class OutputModuleBase;
 
 enum class RunInputMode { Toggle, Gate };
 /// How the SCENE input picks a scene: 0.1 V apart, or one semitone (1/12 V) apart like a keyboard.
@@ -86,7 +94,18 @@ class TesseraModule : public rack::engine::Module {
         CLOCK_INPUT,
         INPUTS_LEN
     };
-    enum OutputId { CLOCK_OUTPUT, RESET_OUTPUT, RUN_OUTPUT, EOC_OUTPUT, BAR_OUTPUT, CLICK_OUTPUT, OUTPUTS_LEN };
+    // New ports go last, so saved patches keep their cables.
+    enum OutputId {
+        CLOCK_OUTPUT,
+        RESET_OUTPUT,
+        RUN_OUTPUT,
+        EOC_OUTPUT,
+        BAR_OUTPUT,
+        CLICK_OUTPUT,
+        MAIN_L_OUTPUT,
+        MAIN_R_OUTPUT,
+        OUTPUTS_LEN
+    };
     enum LightId { PLAY_LIGHT, LOOP_LIGHT, BEAT_LIGHT, LAUNCH_LIGHT, MODE_LIGHT, REC_LIGHT, FILL_LIGHT, LIGHTS_LEN };
 
     TesseraModule();
@@ -276,6 +295,112 @@ class TesseraModule : public rack::engine::Module {
     void setRunInputMode(RunInputMode mode) { runMode.store(mode); }
 
     // Live transport state for the panel, safe to read from any thread
+    // ---- Audio (docs/design/AUDIO_MIXER.md) ----------------------------------------------------------------------
+
+    /// What a drop of audio files did, for the toast and the selection.
+    struct AudioDropResult {
+        ImportResult made;
+        std::vector<std::string> failed; // file names that weren't audio Tessera reads
+        std::vector<std::string> imported;
+        bool tempoSet = false; // the first loop set the song tempo
+        double oldTempo = 0, newTempo = 0;
+    };
+    /// Imports files as one undo step (§6.5): copies them into patch storage, guesses their tempo, places their
+    /// clips as `target` says. In an empty song the first loop also sets the song tempo, in the same undo step.
+    AudioDropResult importAudioFiles(const std::vector<std::string>& paths, AudioDropTarget target);
+    /// What the rack adds to the mix now: each track's output bus slot and the return slots feeding tracks (§8.3).
+    MixPlan currentMixPlan() const;
+    /// A track's index among the tracks that make sound (the player's meters), or -1. UI thread.
+    int soundIndex(TrackId track) const;
+    /// A group strip's index among the player's groups (its meters), or -1 when it has none. UI thread.
+    int groupIndex(GroupId group) const {
+        for (size_t i = 0; i < soundGroups.size(); i++)
+            if (soundGroups[i] == group)
+                return int(i);
+        return -1;
+    }
+    /// Whether anything in the song makes sound: an audio track, or audio coming back on an output module's IN.
+    bool makesSound() const;
+    /// The output modules whose audio inputs bring sound to `track` (or the master) now, by place in the rack: left
+    /// to right, then top to bottom (§7.8). UI thread; the pointers are good for this frame only.
+    std::vector<OutputModuleBase*> sourceModules(TrackId track) const;
+    /// A track that just got a second source: the editors toast it once (§7.8, "A new second source plays at once").
+    struct NewSource {
+        uint64_t serial = 0;
+        TrackId track;
+        int count = 0;
+        int64_t module = -1; // the module that came in
+    };
+    const NewSource& newSource() const { return sourceNews; }
+
+    // ---- Capture (§8.6): audio recording, bounce and export, written by a writer thread.
+
+    /// A take being recorded now, for drawing it as it grows.
+    struct LiveTake {
+        TrackId track;
+        double startTick = 0;
+        double lengthTicks = 0;
+        std::vector<float> peaks; // one per 512 frames, 0..1 of full scale
+    };
+    std::vector<LiveTake> liveTakes() const;
+    /// Bounce (§8.6): plays `track` from a bar before `from` and records its sound at IN, before the fader, onto a
+    /// new audio track under it. It stops at `to`; with `untilSilent`, once past `to` the sound stays below -60 dB
+    /// for a second (at most 8 bars on). False when a bounce or export already runs.
+    bool startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal);
+    /// Export audio (§8.6): the master, and with `stems` every heard track after its fader, into WAV files at
+    /// `path` (stems beside it, "<name> - <track>.wav"). It follows Plays: on the timeline, the song (or the loop)
+    /// from its start; with the clips, from now until Stop. False when a bounce or export already runs.
+    bool startExport(const std::string& path, bool stems, CaptureWriter::Format format);
+    /// Where the song ends on the timeline: the last clip's end, rounded up to the bar.
+    Tick songEnd() const;
+    /// What the last export made, once, for a toast ("Exported Song.wav and 4 stems"); then empty.
+    std::string exportResult;
+    /// Measures the recording offset (§8.6): plays a click on CLICK four times and times how long each takes to
+    /// come back on the first armed audio track's IN; the middle value becomes the offset. False when no audio
+    /// track is armed. The result arrives in exportResult's place, as a message.
+    bool measureOffset();
+    /// Glue across files (§3.4): renders the selected audio clips of one track, with their gains and fades, into
+    /// one new file on a worker thread, then puts it in their place as one undo step. False when they aren't all
+    /// audio on one track, or a glue already runs.
+    bool glueAudio(TrackId track, const std::vector<ArrangementId>& instances);
+    /// Stops a bounce or export and leaves nothing behind.
+    void cancelCapture();
+    /// What runs now, for the progress line: "Bouncing Bass · bar 3 of 8". Empty when nothing does.
+    std::string captureStatus() const;
+    /// Why the last take stopped early, once ("The disk is full: the take was kept up to there"); empty when not.
+    std::string takeProblem;
+    /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
+    /// False when the file isn't audio Tessera reads.
+    bool replaceAudioFile(ClipId clip, const std::string& path);
+    /// This module's patch storage folder, made when needed (empty without an ID).
+    std::string audioStorage() {
+        setupAudioFolder();
+        return audioFolder;
+    }
+    /// The audio store, made when the song first has audio; null before.
+    AudioStore* audioStore() const { return audio.get(); }
+    const AudioPlayer& audioPlayer() const { return *player; }
+    AudioPlayer& audioPlayer() { return *player; }
+    /// Plays a fader (`pan` false) or pan at once while the mouse drags it, before the edit lands (§8.4: no
+    /// snapshot rebuild). Only the dragged control wins over its lane, and records into it while the track is armed.
+    /// `track` may be the master's ID.
+    void holdChannel(TrackId track, float volumeDb, float pan, bool panHeld) {
+        player->hold(track.value, dbToGain(volumeDb), pan, panHeld ? AudioPlayer::kHoldPan : AudioPlayer::kHoldVolume);
+    }
+    /// Plays a drum lane IN's level and pan at once while the mixer drags it (its Drum Out reads the hold).
+    void holdDrumInput(TrackId track, int lane, Channel channel) { drumInputHolds[{track.value, lane}] = channel; }
+    void releaseDrumInputHolds() { drumInputHolds.clear(); }
+    std::optional<Channel> drumInputHold(TrackId track, int lane) const {
+        auto it = drumInputHolds.find({track.value, lane});
+        return it == drumInputHolds.end() ? std::nullopt : std::optional<Channel>(it->second);
+    }
+    /// Ends the holds once the snapshot with the committed values is out, so the sound never steps back.
+    void releaseChannelHolds() { releaseHolds = true; }
+    /// Whether MAIN L has a cable (the master's way out).
+    bool mainPatched() const { return mainConnected.load(std::memory_order_relaxed); }
+    /// Whether the master has sound now: for the MAIN warnings.
+    bool masterSounding() const { return player->masterLevel(0) > 1e-4f || player->masterLevel(1) > 1e-4f; }
+
     double playheadTicks() const { return uiPlayhead.load(std::memory_order_relaxed); }
     double playTicks() const { return uiPlayTick.load(std::memory_order_relaxed); }
     bool playing() const { return uiPlaying.load(std::memory_order_relaxed); }
@@ -337,6 +462,23 @@ class TesseraModule : public rack::engine::Module {
     };
 
     // UI thread
+    void audioStep();
+    void setupAudioFolder();
+    std::string audioFolder; // this module's patch storage, once it has audio
+
+    std::unique_ptr<AudioStore> audio;
+    std::unique_ptr<AudioPlayer> player = std::make_unique<AudioPlayer>();
+    Exchange<AudioSnapshot> audioSnapshots;
+    uint64_t audioRevision = ~uint64_t(0), audioChanges = 0;
+    double audioTempo = 0;       // the tempo the snapshot's renders were picked for
+    double tempoSeen = 0;        // the tempo last time, to see it settle
+    double tempoSettleAt = 0;    // when the tempo last moved (seconds)
+    std::atomic<float> audioRate{0};
+    std::atomic<bool> mainConnected{false};
+    bool releaseHolds = false;
+    // Buffers a new snapshot no longer uses stay in it a second longer, so fades already reading them can finish.
+    std::vector<std::pair<std::shared_ptr<const AudioBuffer>, double>> retiringBuffers;
+
     Song songData;
     BusSlots slots;
     SnapshotBuilder snapshotBuilder;
@@ -344,6 +486,10 @@ class TesseraModule : public rack::engine::Module {
     int64_t savedId = -1; // this module's ID when its JSON was written; differs after paste or duplicate
     EditorState editorState;
     uint64_t revision = 0;
+    std::map<std::pair<uint64_t, int>, Channel> drumInputHolds; // mixer drags on lane strips (UI thread)
+    std::vector<TrackId> soundTracks; // the tracks of the last audio snapshot, in its order (UI thread)
+    std::vector<GroupId> soundGroups; // its group strips, in its order
+    uint64_t audioPlanKey = 0;        // the mix plan the last audio snapshot was built from
     std::shared_ptr<OutputBus> bus = std::make_shared<OutputBus>();
 
     // UI thread -> audio thread
@@ -363,6 +509,90 @@ class TesseraModule : public rack::engine::Module {
     Host recorderHost{*this};
     Recorder recorder{recorderHost};
     UnlinkedControls unlinked;
+    NewSource sourceNews;
+    struct Capture {
+        enum class Kind { Take, Bounce, Export } kind = Kind::Take;
+        int tap = -1;
+        std::shared_ptr<FrameRing> ring;
+        int writer = -1;
+        std::string path;
+        TrackId track;
+        bool finishing = false;
+        double startTick = -1;
+    };
+    std::vector<Capture> captures;
+    struct BounceJob {
+        TrackId track;
+        Tick from = 0, to = 0;
+        bool untilSilent = false, muteOriginal = false;
+        int capture = -1; // index into captures
+        double quietSince = -1;
+        bool restoreLauncher = false;
+        bool started = false; // the transport has been seen playing
+        bool armed = false;   // its tap is armed (after the jump to the start)
+        bool keep = false;    // it reached its end: keep the file
+    };
+    std::optional<BounceJob> bounce;
+    struct ExportJob {
+        std::vector<int> captures; // the master first, then the stems
+        std::vector<std::string> skipped; // muted tracks, left out of the stems
+        Tick from = 0, to = 0;
+        bool timeline = true;
+        bool started = false, armed = false, finishing = false;
+        std::string name;
+    };
+    std::optional<ExportJob> exporting;
+    struct Measure {
+        TrackId track;
+        std::vector<int64_t> results;
+        double nextAt = 0;
+        bool waiting = false;
+    };
+    std::optional<Measure> measure;
+    struct GlueJob {
+        TrackId track;
+        std::vector<ArrangementId> instances;
+        Tick from = 0;
+        std::string path;
+        std::thread worker;
+        std::atomic<bool> done{false}, ok{false};
+        ~GlueJob() {
+            if (worker.joinable())
+                worker.join();
+        }
+    };
+    std::unique_ptr<GlueJob> glue;
+    /// Puts a finished glue in place. Each UI frame.
+    void glueStep();
+    std::atomic<bool> measureClick{false};
+    /// Works a running measurement: one click at a time, then the result. Each UI frame.
+    void measureStep();
+    /// Works a running export: arms its taps after the jump to the start, ends it, reports. Each UI frame.
+    void exportStep();
+
+    /// Works a running bounce: its end, until silent, a stop that cancels it; then its new track. Each UI frame.
+    void bounceStep();
+    std::unique_ptr<CaptureWriter> captureWriter;
+    int takeCounter = 0;
+    /// A tap no capture uses, or -1.
+    int freeTap() const;
+    /// Arms a tap on each armed audio track's IN, and turns finished takes into clips (one undo step). Each UI frame.
+    void captureStep();
+    /// A recorded file into the song: on the track's timeline at `at`, or in its first empty slot.
+    struct Take {
+        std::string path;
+        TrackId track;
+        Tick at = 0;
+        bool slot = false;
+    };
+    void importTakes(const std::vector<Take>& takes);
+    /// Ticks per sample at the tempo now: for latency and lengths.
+    double ticksPerSampleNow() const;
+    std::map<uint64_t, std::vector<int64_t>> sourcesSeen; // per track: its source modules last frame
+    bool sourcesSeeded = false;
+    double sourcesSeededAt = 0;
+    /// Marks sources counted once and reports a new second source. Each UI frame.
+    void sourcesStep();
     // A knob held by a drag: kind, parameter and owner packed into one word (0 = none), then its value.
     std::atomic<uint64_t> heldKnobKey{0};
     std::atomic<float> heldKnobValue{0};
@@ -428,6 +658,9 @@ class TesseraModule : public rack::engine::Module {
     std::atomic<double> seekTarget{0};
     std::atomic<bool> seekPending{false};
     std::atomic<int> countInBars{0};
+    std::atomic<int> metronomeMode{0};
+    std::atomic<float> metronomeGain{0.25f};
+    Metronome metronome;
     std::atomic<bool> editorFill{false};
     std::array<std::atomic<float>, kMaxAutomationLanes> autoRecVolts{};
     std::atomic<int> autoRecChannels{0};

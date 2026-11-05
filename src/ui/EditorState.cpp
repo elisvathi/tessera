@@ -12,7 +12,7 @@ namespace {
 
 json_t* pair(double a, double b) { return json_pack("[ff]", a, b); }
 
-const char* const kPaneNames[] = {"top", "detail"};
+const char* const kPaneNames[] = {"top", "detail", "mixer"};
 const char* const kGhostNames[] = {"none", "track", "allTracks", "otherClips"};
 const char* const kNoteLaneNames[] = {"velocity", "release", "chance", "velocitySpread", "repeats",
                                       "micro",    "pitch",   "timbre", "pressure"};
@@ -57,6 +57,8 @@ json_t* viewToJson(const ViewState& v) {
     setBool(j, "deviceStrip", v.deviceStrip);
     setNumber(j, "launcherPanelWidth", v.launcherPanelWidth);
     setBool(j, "clipsWide", v.clipsWide);
+    setBool(j, "mixerOpen", v.mixerOpen);
+    setNumber(j, "mixerHeight", v.mixerHeight);
     setInt(j, "lowerLane", static_cast<json_int_t>(v.lowerLane));
     setNumber(j, "curveHeight", v.curveHeight);
     setString(j, "noteLane", kNoteLaneNames[int(v.noteLane)]);
@@ -79,6 +81,15 @@ ViewState viewFromJson(const json_t* j, ViewState v = ViewState()) {
     if (json_is_string(get(j, "maximized")))
         v.maximized = fromName(get(j, "maximized"), kPaneNames, Pane::Detail);
     v.clipsWide = getBool(j, "clipsWide", v.clipsWide);
+    v.mixerOpen = getBool(j, "mixerOpen", v.mixerOpen);
+    v.mixerHeight = std::clamp(getFloat(j, "mixerHeight", v.mixerHeight), 40.f, 4000.f);
+    // The mixer used to be a pane of its own, under the notes; it now shares the notes' pane.
+    if (getBool(j, "mixerMax", false) || v.maximized == Pane::Mixer) {
+        v.maximized = Pane::Detail;
+        v.mixerOpen = true;
+    }
+    if (v.focus == Pane::Mixer)
+        v.focus = Pane::Detail;
     v.deviceStrip = getBool(j, "deviceStrip", v.deviceStrip);
     v.launcherPanelWidth = std::clamp(getFloat(j, "launcherPanelWidth", v.launcherPanelWidth), 40.f, 4000.f);
     v.launcherScrollX = std::max(0.0, numberAt(get(j, "launcherScroll"), 0, 0));
