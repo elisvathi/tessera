@@ -97,6 +97,35 @@ CommandPtr editAudio(const Song& song, ClipId clip, const std::function<void(Aud
     return std::make_unique<SetAudioContent>(name, clip, *c->audio, after);
 }
 
+CommandPtr reverseAudio(const Song& song, ClipId clip) {
+    const Clip* c = song.findClip(clip);
+    if (!c || !c->audio)
+        return nullptr;
+    bool reverse = !c->audio->reverse;
+    auto all = std::make_unique<CompoundCommand>(reverse ? "Reverse" : "Play forwards");
+    all->add(editAudio(song, clip, [reverse](AudioContent& a) { a.reverse = reverse; }, all->name()));
+    // Clip tick u plays frame end - u (reversed) instead of start + u, so a copy playing ticks [o, o + n) moves to
+    // [L - o - n, L - o): the same audio, backwards. Only where no loop wrap is involved.
+    const Tick total = c->length;
+    bool looping = c->loopMode == LoopMode::Loop && c->loopEnd > c->loopStart;
+    bool plain = !looping || (c->loopStart == 0 && c->loopEnd == total);
+    for (const Track& t : song.tracks) {
+        std::vector<ArrangerClip> arr = t.arrangement;
+        bool changed = false;
+        for (ArrangerClip& a : arr)
+            if (a.clip == clip && plain && a.offset >= 0 && a.offset + a.length <= total) {
+                Tick mirrored = total - a.offset - a.length;
+                changed |= mirrored != a.offset;
+                a.offset = mirrored;
+            }
+        if (changed)
+            all->add(setTrackField(song, t.id, &Track::arrangement, arr, all->name()));
+    }
+    if (all->empty())
+        return nullptr;
+    return all;
+}
+
 CommandPtr setAudioWindow(const Song& song, ClipId clip, int64_t start, int64_t end) {
     const Clip* c = song.findClip(clip);
     const AudioSource* src = c ? song.sourceOf(*c) : nullptr;

@@ -86,6 +86,11 @@ class SetChannels : public Command {
 CommandPtr editAudio(const Song& song, ClipId clip, const std::function<void(AudioContent&)>& change,
                      const std::string& name);
 
+/// Reverse (or play forwards again) an audio clip, keeping its cuts: a reversed clip plays its window from the end,
+/// so each timeline copy's offset is mirrored too and every slice of a split clip plays its own audio backwards,
+/// where it was. Copies that wrap round a loop keep their offsets. One undo step; null when not an audio clip.
+CommandPtr reverseAudio(const Song& song, ClipId clip);
+
 /// Sets the gain of every audio clip in `clips` to its current gain plus `deltaDb` (the title-bar drag on a
 /// selection), clamped. Clips at -inf stay there. One undo step; null when nothing changed.
 CommandPtr nudgeClipGain(const Song& song, const std::vector<ClipId>& clips, float deltaDb);

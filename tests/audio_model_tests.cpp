@@ -767,3 +767,42 @@ TEST_CASE("takeContent plays a take's file from its start, without the clip's wa
     CHECK(takeContent(a, -1) == a);
     CHECK(takeContent(a, 3) == a);
 }
+
+TEST_CASE("reversing a split audio clip keeps the cuts: each part plays its own audio backwards") {
+    // Trello: "Reverse of a sliced clip doesn't keep the cuts".
+    AudioLanes f;
+    arrange::Placed whole = f.at(0, 8);
+    f.song.findTrack(f.track)->arrangement = {whole.clip};
+    REQUIRE(f.song.findClip(f.clip)->length == 8 * kPpq);
+    arrange::IdSet right;
+    arrange::Layout parts =
+        arrange::split(arrange::layoutOf(f.song), {whole.clip.id}, 3 * kPpq, f.song.clips, f.ids(), &right);
+    arrange::replaceArrangement(f.song, "split", arrange::layoutOf(f.song), parts)->apply(f.song);
+    ArrangementId later = *right.begin();
+
+    CommandPtr cmd = reverseAudio(f.song, f.clip);
+    REQUIRE(cmd);
+    CHECK(cmd->name() == "Reverse");
+    applyAndCheckUndo(f.song, *cmd);
+    CHECK(f.song.findClip(f.clip)->audio->reverse);
+    const AudioContent& a = *f.song.findClip(f.clip)->audio;
+    double perTick = framesPerTick(a, 48000);
+    double end = double(a.sourceStart) + 8 * kPpq * perTick;
+    for (const ArrangerClip& p : f.song.findTrack(f.track)->arrangement) {
+        // Reversed, clip tick u plays frame end - u: the first part (beats 0-3) starts at the end of its own audio,
+        // the second (beats 3-8) at the end of the file.
+        double first = end - double(p.offset) * perTick;
+        if (p.id == later) {
+            CHECK(p.position == 3 * kPpq);
+            CHECK(first == doctest::Approx(8 * kPpq * perTick));
+        } else {
+            CHECK(p.position == 0);
+            CHECK(first == doctest::Approx(3 * kPpq * perTick));
+        }
+    }
+    // Forwards again: the offsets come back.
+    reverseAudio(f.song, f.clip)->apply(f.song);
+    CHECK_FALSE(f.song.findClip(f.clip)->audio->reverse);
+    for (const ArrangerClip& p : f.song.findTrack(f.track)->arrangement)
+        CHECK(p.offset == (p.id == later ? 3 * kPpq : 0));
+}
