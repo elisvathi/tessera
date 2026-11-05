@@ -635,6 +635,9 @@ void CurveView::click(Vec pos, int button, Modifiers mods) {
                 if (TesseraModule* m = ctx.module())
                     m->perform(removeModulator(m->song(), mod->id));
             break;
+        case HeaderPart::Kind::Moves:
+            openMovesMenu();
+            break;
         }
         return;
     }
@@ -665,9 +668,17 @@ std::vector<CurveView::HeaderPart> CurveView::headerParts() {
     x += 88 + 96 + 46; // the picked count, then "Shapes"
     for (int i = 0; i < int(std::size(kShapes)); i++)
         parts.push_back({HeaderPart::Kind::Shape, Rect(x + float(i) * 30, y, 26, h), i});
+    float shapesEnd = x + float(std::size(kShapes)) * 30;
     parts.push_back({HeaderPart::Kind::Close, Rect(box.size.x - kPad - 20, y, 20, h)});
-    if (modulator())
-        parts.push_back({HeaderPart::Kind::Remove, Rect(box.size.x - kPad - 20 - 6 - 96, y, 96, h)});
+    float right = box.size.x - kPad - 20 - 6;
+    if (modulator()) {
+        parts.push_back({HeaderPart::Kind::Remove, Rect(right - 96, y, 96, h)});
+        right -= 96 + 6;
+    }
+    // What it moves, where there is room after the shapes.
+    float moves = std::min(220.f, right - shapesEnd - 12);
+    if (moves >= 90)
+        parts.push_back({HeaderPart::Kind::Moves, Rect(right - moves, y, moves, h)});
     return parts;
 }
 
@@ -744,6 +755,60 @@ void CurveView::openPointMenu(int index) {
             view->commit(now);
         }
     }));
+}
+
+std::string CurveView::movesText() {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return "";
+    const Modulator* mod = modulator();
+    if (!mod)
+        return title();
+    int drawn = mods::drawnRoute(*mod);
+    if (drawn < 0)
+        return mod->routes.empty() ? "nothing yet" : deviceActions::targetName(m->song(), mod->routes.front());
+    std::string text = deviceActions::targetName(m->song(), mod->routes[size_t(drawn)]);
+    if (mod->routes.size() > 1)
+        text += " +" + std::to_string(mod->routes.size() - 1);
+    return text;
+}
+
+void CurveView::openMovesMenu() {
+    TesseraModule* m = ctx.module();
+    const Modulator* mod = modulator();
+    if (!m || !mod)
+        return;
+    EditorContext* c = &ctx;
+    ModulatorId id = mod->id;
+    int drawn = mods::drawnRoute(*mod);
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(mod->name + " moves"));
+    if (mod->routes.empty())
+        menu->addChild(rack::createMenuLabel("Nothing yet"));
+    for (size_t r = 0; r < mod->routes.size(); r++) {
+        std::string amount;
+        if (int(r) == drawn) {
+            amount = "as drawn";
+        } else {
+            char text[16];
+            snprintf(text, sizeof(text), "%+.0f%%", double(mod->routes[r].amount) * 100);
+            amount = text;
+        }
+        int index = int(r);
+        menu->addChild(rack::createSubmenuItem(deviceActions::targetName(m->song(), mod->routes[r]), amount,
+                                               [c, id, index](rack::ui::Menu* sub) {
+                                                   sub->addChild(rack::createMenuItem("Remove", "", [c, id, index] {
+                                                       if (TesseraModule* mm = c->module())
+                                                           mm->perform(removeRoute(mm->song(), id, index));
+                                                   }));
+                                               }));
+    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuItem("Map to more knobs", "", [c, id] {
+        c->mappingModulator = id.value;
+        c->openModulator = 0;
+    }));
+    menu->addChild(rack::createMenuItem("CV out…", "", [c, id] { deviceActions::openCvOutMenu(*c, id); }));
 }
 
 void CurveView::openMenu() {
@@ -892,6 +957,25 @@ void CurveView::drawHeader(NVGcontext* vg, NVGcolor color) {
             choice.color = c.text1;
             draw::text(vg, choice, r.getCenter().x, r.getCenter().y, "Remove curve");
             break;
+        case HeaderPart::Kind::Moves: {
+            draw::roundedRect(vg, r, 3, c.bg2);
+            draw::TextStyle what = choice;
+            what.color = color;
+            what.align = NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE;
+            draw::text(vg, label, r.pos.x + 7, r.getCenter().y, "Moves");
+            float lx = r.pos.x + 7 + draw::textWidth(vg, label, "Moves") + 6;
+            draw::text(vg, what, lx, r.getCenter().y,
+                       draw::ellipsize(vg, what, movesText(), std::max(10.f, r.getRight() - 16 - lx)));
+            float ax = r.getRight() - 9, ay = r.getCenter().y;
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, ax - 3, ay - 1.5f);
+            nvgLineTo(vg, ax + 3, ay - 1.5f);
+            nvgLineTo(vg, ax, ay + 2);
+            nvgClosePath(vg);
+            nvgFillColor(vg, c.text1);
+            nvgFill(vg);
+            break;
+        }
         }
     }
 }

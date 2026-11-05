@@ -110,10 +110,11 @@ int voicesThrough(const std::vector<Device>& chain, int voices) {
             voices *= 2;
             break;
         case DeviceType::Playheads: {
+            // Off ones too: a curve or a lane may turn one on while the song plays, and switching one on or off
+            // never moves the others' voices.
             int total = 0;
             for (const Playhead& p : d.playheads)
-                if (!p.mute)
-                    total += voicesThrough(p.branch, voices * playheadOverlap(p));
+                total += voicesThrough(p.branch, voices * playheadOverlap(p));
             voices = std::max(1, total);
             break;
         }

@@ -123,6 +123,9 @@ class Chain {
             for (int i = 0; i < state.heldCount; i++)
                 state.held[size_t(i)].note.extras = nullptr;
     }
+    /// Forgets the notes of one playhead's lane (1..16) that haven't come out yet: waiting starts, echo repeats and
+    /// the notes an arpeggiator holds. Ends stay, so nothing waits for a note that never ends.
+    void dropLane(uint8_t lane);
     /// A fresh ID for a note entering the chain (never 0, never with kLiveNote).
     uint32_t newId() {
         ids = (ids + 1) & ~kLiveNote;

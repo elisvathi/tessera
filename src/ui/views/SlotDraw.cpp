@@ -3,6 +3,7 @@
 #include "../../model/Arrangement.hpp"
 #include "../../model/DeviceLookup.hpp"
 #include "../../model/DrumKit.hpp"
+#include "../../model/Playheads.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
@@ -119,11 +120,87 @@ void drawPlayheadMark(NVGcontext* vg, const Track& track, Vec topRight, float ma
         const Playhead& p = device->playheads[size_t(i)];
         Rect stripe(topRight.x - w, topRight.y + float(i) * (h + gap), w, h);
         NVGcolor color = theme::playheadColor(p.color);
-        if (p.mute)
+        if (!playheads::isOn(p))
             draw::roundedRectStroke(vg, stripe, 1, color, 1);
         else
             draw::roundedRect(vg, stripe, 1, color);
     }
+}
+
+void drawHatch(NVGcontext* vg, Rect r, float right, NVGcolor color) {
+    namespace m = theme::metrics;
+    nvgSave(vg);
+    nvgIntersectScissor(vg, r.pos.x, r.pos.y, r.size.x, r.size.y);
+    nvgBeginPath(vg);
+    // From the clip's own left edge, so the lines move with it; only those in view.
+    float origin = r.pos.x - r.size.y;
+    float first = origin + std::max(0.f, std::floor((-r.size.y - origin) / m::kPlayheadHatch)) * m::kPlayheadHatch;
+    for (float x = first; x < std::min(right, r.getRight()); x += m::kPlayheadHatch) {
+        nvgMoveTo(vg, x, r.getBottom());
+        nvgLineTo(vg, x + r.size.y, r.pos.y);
+    }
+    nvgStrokeColor(vg, color);
+    nvgStrokeWidth(vg, 1);
+    nvgStroke(vg);
+    nvgRestore(vg);
+}
+
+void drawPlayheadPaths(NVGcontext* vg, const Song& song, const Track& track, const Device& device, const Clip& clip,
+                       Rect area, float x0, float x1, double e0, double e1, NVGcolor line, float alpha) {
+    namespace m = theme::metrics;
+    int count = int(device.playheads.size());
+    if (count == 0 || x1 <= x0 || e1 <= e0)
+        return;
+    nvgSave(vg);
+    nvgIntersectScissor(vg, area.pos.x, area.pos.y, area.size.x, area.size.y);
+    const std::vector<DrumLane>* lanes = track.type == TrackType::Drum ? &track.drumLanes : nullptr;
+    std::pair<Tick, Tick> segment = playheadSpan(clip, lanes);
+    bool bands = area.size.y / float(count) >= m::kPlayheadBand;
+    float bandHeight = bands ? area.size.y / float(count) : area.size.y;
+    int samples = std::max(2, int(std::ceil((x1 - x0) / m::kPlayheadPathStep)));
+    double de = (e1 - e0) / double(samples);
+    for (int k = 0; k < count; k++) {
+        const Playhead& p = device.playheads[size_t(k)];
+        playheads::Motion motion = playheads::motionFrom(p.params.data(), device.params.data(), double(segment.first),
+                                                         double(segment.second), song.timeSig);
+        if (playheads::wantsDrawnPath(p.params.data()))
+            motion.path = &p.path;
+        if (motion.regionLength <= 0)
+            continue;
+        float top = area.pos.y + (bands ? float(k) * bandHeight : 0) + 1, h = std::max(1.f, bandHeight - 2);
+        if (bands && k > 0) {
+            nvgBeginPath(vg);
+            nvgRect(vg, area.pos.x, top - 1, area.size.x, 1);
+            nvgFillColor(vg, line);
+            nvgFill(vg);
+        }
+        // How far the playhead can move between two samples (0..1 of its segment): more is a jump, left undrawn.
+        double reach = 3 * std::abs(motion.rate) * de / motion.regionLength + 0.02;
+        nvgBeginPath(vg);
+        double last = NAN;
+        for (int i = 0; i <= samples; i++) {
+            double e = e0 + double(i) * de;
+            double pos = playheads::positionAt(motion, e);
+            if (!std::isfinite(pos)) {
+                last = NAN;
+                continue;
+            }
+            double f = std::clamp((pos - motion.regionStart) / motion.regionLength, 0.0, 1.0);
+            float x = x0 + (x1 - x0) * float(i) / float(samples), y = top + h - float(f) * h;
+            if (!std::isfinite(last) || std::abs(f - last) > reach)
+                nvgMoveTo(vg, x, y);
+            else
+                nvgLineTo(vg, x, y);
+            last = f;
+        }
+        NVGcolor color = theme::playheadColor(p.color);
+        color.a = alpha * (playheads::heardAsSet(device.playheads, p) ? 1.f : 0.3f);
+        nvgStrokeColor(vg, color);
+        nvgStrokeWidth(vg, m::kPlayheadPathWidth);
+        nvgLineJoin(vg, NVG_ROUND);
+        nvgStroke(vg);
+    }
+    nvgRestore(vg);
 }
 
 void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, int scene, const LauncherStatus& st,
@@ -189,12 +266,21 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     std::string label = draw::ellipsize(vg, name, clip->name.empty() ? "Clip" : clip->name, body.size.x - kTextPad);
     draw::text(vg, name, body.pos.x + 3, body.getCenter().y, label);
-    // The notes in miniature, in the room the name leaves.
+    // The notes in miniature, in the room the name leaves; with playheads, where they go over one pass of the clip
+    // instead (its notes as written aren't what plays).
     float previewLeft = body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
-    if (body.getRight() - previewLeft >= kMinPreviewWidth)
-        drawNotePreview(vg, *clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr,
-                        Rect(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6),
-                        nvgTransRGBAf(c.onTile, kPreviewAlpha));
+    const std::vector<DrumLane>* lanes = track->type == TrackType::Drum ? &track->drumLanes : nullptr;
+    Rect preview(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6);
+    if (const Device* readers = activePlayheads(*track)) {
+        drawHatch(vg, body, body.getRight(), nvgTransRGBAf(c.onTile, 0.12f));
+        // Clear of the playhead mark at the right.
+        preview.size.x -= theme::metrics::kPlayheadMarkWidth + 4;
+        if (preview.size.x >= kMinPreviewWidth)
+            drawPlayheadPaths(vg, song, *track, *readers, *clip, preview, preview.pos.x, preview.getRight(), 0,
+                              double(clipSpan(*clip, lanes).length()), nvgTransRGBAf(c.onTile, 0.2f), 1);
+    } else if (preview.size.x >= kMinPreviewWidth) {
+        drawNotePreview(vg, *clip, lanes, preview, nvgTransRGBAf(c.onTile, kPreviewAlpha));
+    }
     nvgRestore(vg);
     drawPlayheadMark(vg, *track, Vec(body.getRight() - 4, body.pos.y + 4), body.size.y - 8);
 

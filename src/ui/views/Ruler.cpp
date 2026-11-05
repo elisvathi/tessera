@@ -407,6 +407,12 @@ std::unique_ptr<DragGesture> Ruler::startGesture(rack::math::Vec pos, int button
 }
 
 void Ruler::click(rack::math::Vec pos, int button, Modifiers mods) {
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && zoneAt(pos.y) == Zone::Segments) {
+        TimelineSource::PlayheadSegment segment{};
+        if (segmentGrabAt(pos.x, &segment) != SegmentGrab::None)
+            source.openPlayheadSegmentMenu(segment.id);
+        return;
+    }
     if (button != GLFW_MOUSE_BUTTON_RIGHT || zoneAt(pos.y) != Zone::Markers)
         return;
     std::vector<Marker> m = source.markers();
@@ -510,14 +516,18 @@ CursorShape Ruler::hoverCursor(rack::math::Vec pos, Modifiers mods) {
     bool onLockedLoop = zoneAt(pos.y) == Zone::Loop && source.loopLocked() &&
                         pos.x >= float(t.tickToX(double(source.loopStart()))) &&
                         pos.x <= float(t.tickToX(double(source.loopEnd())));
-    if (onLockedLoop != tipOn) {
-        tipOn = onLockedLoop;
+    bool onSegment = zoneAt(pos.y) == Zone::Segments && segmentGrabAt(pos.x, nullptr) != SegmentGrab::None;
+    Tip want = onLockedLoop ? Tip::LockedLoop : onSegment ? Tip::Segment : Tip::None;
+    if (want != tipOn) {
+        tipOn = want;
         tip.leave();
-        if (tipOn) {
+        if (tipOn == Tip::LockedLoop)
             tip.setText("Loop " + lengthText(source.loopEnd() - source.loopStart(), source.timeSig()) +
                         ": set by the lane lengths. It runs until every lane lines up again");
+        else if (tipOn == Tip::Segment)
+            tip.setText("Where this playhead plays: drag it, or a grip. Right-click to move or resize it in time");
+        if (tipOn != Tip::None)
             tip.enter();
-        }
     }
     switch (zoneAt(pos.y)) {
     case Zone::Markers:
@@ -557,7 +567,7 @@ void Ruler::step() {
 }
 
 void Ruler::onLeave(const LeaveEvent& e) {
-    tipOn = false;
+    tipOn = Tip::None;
     tip.leave();
     InteractiveView::onLeave(e);
 }

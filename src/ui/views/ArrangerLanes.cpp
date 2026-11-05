@@ -1,6 +1,9 @@
 #include "ArrangerLanes.hpp"
 
+#include "../../model/Arrangement.hpp"
+#include "../../model/DeviceLookup.hpp"
 #include "../../model/LauncherCommands.hpp"
+#include "../../model/Playheads.hpp"
 #include "../../model/RangeEdits.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -1012,8 +1015,23 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             nvgFillColor(vg, theme::track(color, 0.25f * alpha));
             nvgFill(vg);
         }
+        // Read by playheads: where they go, not the notes as written. Each timeline clip starts its playheads from
+        // where it begins the clip, slower when stretched (as the engine reads it).
+        const Device* readers = activePlayheads(track);
+        if (readers && body.size.y >= 6) {
+            slotDraw::drawHatch(vg, body, std::min(body.getRight(), box.size.x), theme::track(color, 0.16f * alpha));
+            double t0 = std::max(double(a.position), time().xToTick(std::max(0.f, body.pos.x)));
+            double t1 = std::min(double(instanceEnd(a)), time().xToTick(std::min(box.size.x, body.getRight())));
+            double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
+            double begin = double(normalizeOffset(*clip, a.offset)) - double(clipSpan(*clip).start);
+            if (t1 > t0)
+                slotDraw::drawPlayheadPaths(vg, song, track, *readers, *clip, body, float(time().tickToX(t0)),
+                                            float(time().tickToX(t1)), begin + (t0 - double(a.position)) / stretch,
+                                            begin + (t1 - double(a.position)) / stretch,
+                                            theme::track(color, 0.22f * alpha), alpha);
+        }
         // The notes it plays, in miniature.
-        if (body.size.y >= 6 && !clip->notes.empty()) {
+        if (!readers && body.size.y >= 6 && !clip->notes.empty()) {
             int lo = 127, hi = 0;
             for (const Note& n : clip->notes) {
                 lo = std::min<int>(lo, n.pitch);

@@ -381,11 +381,11 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     float h = box.size.y;
     const Playhead* shown = shownPlayhead(d);
     using namespace playheads::knob;
-    // One row in two groups: MOVE (how it travels) and REPEAT (piece, times and how the repeats are spaced), then
-    // More. Pitch and loudness are devices in the playhead's own chain (Transpose, Velocity); its channel and Notes
-    // are set once, so they live in the chip's and More's menus.
+    // One row in two groups: MOVE (whether and how it travels: On, Rate, Direction) and REPEAT (piece, times and how
+    // the repeats are spaced), then More. Pitch and loudness are devices in the playhead's own chain (Transpose,
+    // Velocity); its channel and Notes are set once, so they live in the chip's and More's menus.
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
-    float controls = 2 * kCell + kGroupGap + kRepeatBlock + kGroupGap + kCell;
+    float controls = 3 * kCell + kGroupGap + kRepeatBlock + kGroupGap + kCell;
     Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);
     parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
     Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
@@ -409,7 +409,11 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
                              ParamRef::Kind::Playhead});
         };
         float kx = card.pos.x + kCardPad;
-        parts.push_back({Kind::GroupLabel, Rect(kx, knobTop - 12, 2 * kCell, 10), index, 0, id});
+        parts.push_back({Kind::GroupLabel, Rect(kx, knobTop - 12, 3 * kCell, 10), index, 0, id});
+        // On: the chip's dot, here with a name that opens its curve, so the playhead can come in and drop out in time.
+        label(kx, kCell, kOn);
+        parts.push_back({Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kOn, id, ParamRef::Kind::Playhead});
+        kx += kCell;
         // Rate
         label(kx, kCell, kRate);
         parts.push_back({Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, kRate, id,
@@ -654,14 +658,22 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         deviceActions::openModulatorBrowser(ctx, t->id);
         break;
     case Kind::ModulatorRow:
-    case Kind::Dot:
-        ctx.openModulator = ctx.openModulator == hit->id ? 0 : hit->id;
+    case Kind::Dot: {
         ctx.mappingModulator = 0;
-        // A Curve's shape is drawn in the lower pane, under the notes it moves.
-        if (const Modulator* mod = findModulator(m->song(), ModulatorId(hit->id)))
-            if (mod->type == ModulatorType::Curve)
+        // A Curve is edited in the lower pane, under the notes it moves, with what it moves in the pane's header: it
+        // opens no popover (Trello: the dialog and the pane opened together). A second click puts the notes back.
+        const Modulator* mod = findModulator(m->song(), ModulatorId(hit->id));
+        if (mod && mod->type == ModulatorType::Curve) {
+            ctx.openModulator = 0;
+            if (deviceActions::curveShown(ctx, mod->id))
+                ctx.view().lowerLane = 0;
+            else
                 deviceActions::showCurve(ctx, mod->id);
+            break;
+        }
+        ctx.openModulator = ctx.openModulator == hit->id ? 0 : hit->id;
         break;
+    }
     case Kind::ModulatorMap:
         ctx.mappingModulator = ctx.mappingModulator == hit->id ? 0 : hit->id;
         ctx.openModulator = 0;
@@ -700,7 +712,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         ctx.selectedPlayhead = hit->id;
         // The dot at the chip's left end turns it off or on; with Alt it solos it.
         if (pos.x < hit->rect.pos.x + kChipDot)
-            deviceActions::togglePlayheadMute(ctx, mods.alt);
+            deviceActions::togglePlayheadOn(ctx, mods.alt);
         break;
     case Kind::PlayheadDirection:
         deviceActions::openDirectionMenu(ctx, PlayheadId(hit->id));
@@ -988,7 +1000,8 @@ void DeviceStrip::drawModulators(NVGcontext* vg) {
         const Modulator* mod = findModulator(song, ModulatorId(p.id), &place);
         if (!mod)
             continue;
-        bool open = ctx.openModulator == p.id, mapping = ctx.mappingModulator == p.id;
+        bool open = ctx.openModulator == p.id || deviceActions::curveShown(ctx, mod->id),
+             mapping = ctx.mappingModulator == p.id;
         bool mapHot =
             hovered >= 0 && parts[size_t(hovered)].kind == Kind::ModulatorMap && parts[size_t(hovered)].id == p.id;
         if (open || mapping || hot || mapHot)
@@ -1400,10 +1413,12 @@ void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& 
     draw::roundedRect(vg, part.rect, radius, selected ? nvgTransRGBAf(color, 0.22f) : (hot ? c.bg2 : c.bg1));
     draw::roundedRectStroke(vg, part.rect, radius, selected || hot ? color : nvgTransRGBAf(color, 0.5f), 1);
     Vec mid = part.rect.getCenter();
-    // Its on/off switch: filled when it plays, hollow when it is off.
+    // Its on/off switch: filled when it plays, hollow when it is off; a curve or a lane on its On switches it as the
+    // song plays.
+    bool on = deviceActions::playheadPlaysNow(ctx, p);
     nvgBeginPath(vg);
     nvgCircle(vg, part.rect.pos.x + 9, mid.y, 3.5f);
-    if (p.mute) {
+    if (!on) {
         nvgStrokeColor(vg, color);
         nvgStrokeWidth(vg, 1.3f);
         nvgStroke(vg);
@@ -1416,7 +1431,7 @@ void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& 
     draw::TextStyle ch{theme::fonts::mono(), 9.5f, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
     draw::text(vg, ch, part.rect.getRight() - 7, mid.y, channel);
     float chWidth = draw::textWidth(vg, ch, channel);
-    draw::TextStyle name{theme::fonts::ui(), 10.5f, p.mute ? c.text2 : c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::TextStyle name{theme::fonts::ui(), 10.5f, on ? c.text0 : c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     std::string label = p.solo ? "S · " + p.name : p.name;
     draw::text(vg, name, part.rect.pos.x + 16, mid.y,
                draw::ellipsize(vg, name, label, part.rect.size.x - 16 - chWidth - 12));
@@ -1511,7 +1526,9 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
         break;
     }
     case devices::ParamInfo::Kind::Toggle: {
-        bool on = base >= 0.5f;
+        // As it plays now, when a curve, a modulator or a lane moves it.
+        bool held = knobPreview && knobPreview->first == ref;
+        bool on = (!held && (curved || !rings.empty() || automated) ? m->liveKnob(ref) : base) >= 0.5f;
         Rect sw(cx - 15, center.y - 8, 30, 16);
         draw::roundedRect(vg, sw, 8, on ? valueColor : c.line1);
         nvgBeginPath(vg);

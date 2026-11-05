@@ -54,7 +54,7 @@ struct Marker {
 /// Invariants (normalize() restores them): 1..kMaxTracks tracks, every track has one slot per scene,
 /// notes are sorted, and nextId is above every ID in use.
 struct Song {
-    static constexpr int kSchemaVersion = 7;
+    static constexpr int kSchemaVersion = 8; // 8: more playhead rates and lengths (Serialize.cpp)
 
     TimeSig timeSig;
     float swing = 0;           // 0..1, shown as 50..75% (Swing.hpp)

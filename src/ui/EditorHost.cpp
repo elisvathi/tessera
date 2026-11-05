@@ -337,7 +337,7 @@ void EditorHost::runAction(Action action) {
             trackActions::toggleSolo(ctx, state.selectedTrack, true);
         return;
     case Action::MutePlayhead:
-        deviceActions::togglePlayheadMute(ctx);
+        deviceActions::togglePlayheadOn(ctx);
         return;
     case Action::AddInstrumentTrack:
         trackActions::add(ctx, TrackType::Instrument);

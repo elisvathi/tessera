@@ -213,10 +213,12 @@ void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) 
         if (!command)
             return;
         mod->perform(std::move(command));
-        c->openModulator = added.value;
         setStripOpen(*c, true);
+        // A Curve opens in the lower pane only; the others open their settings.
         if (type == ModulatorType::Curve)
             showCurve(*c, added);
+        else
+            c->openModulator = added.value;
     };
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
 }
@@ -241,7 +243,7 @@ const Playhead* shownPlayhead(EditorContext& ctx) {
     return &d->playheads.front();
 }
 
-void togglePlayheadMute(EditorContext& ctx, bool solo) {
+void togglePlayheadOn(EditorContext& ctx, bool solo) {
     TesseraModule* m = ctx.module();
     const Playhead* p = shownPlayhead(ctx);
     if (!m || !p)
@@ -249,7 +251,14 @@ void togglePlayheadMute(EditorContext& ctx, bool solo) {
     if (solo)
         m->perform(setPlayheadSolo(m->song(), p->id, !p->solo));
     else
-        m->perform(setPlayheadMute(m->song(), p->id, !p->mute));
+        m->perform(setPlayheadOn(m->song(), p->id, !playheads::isOn(*p)));
+}
+
+bool playheadPlaysNow(EditorContext& ctx, const Playhead& p) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return playheads::isOn(p);
+    return m->liveKnob({ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOn)}) >= 0.5f;
 }
 
 void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std::pair<int, float>>& values,
@@ -327,6 +336,10 @@ void showCurve(EditorContext& ctx, ModulatorId id) {
     ctx.view().lowerLane = kCurveLane;
 }
 
+bool curveShown(EditorContext& ctx, ModulatorId id) {
+    return id.valid() && ctx.view().lowerLane == kCurveLane && ctx.curveModulator == id.value;
+}
+
 ModulatorId curveOn(const Song& song, const ParamRef& target) {
     ModulatorId found;
     forEachModulator(song, [&](const Modulator& m, const ModulatorPlace&) {
@@ -372,29 +385,38 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
                     [channel, ch] { return channel == ch; },
                     [run, id, ch] { run([&](const Song& s, TesseraModule*) { return setPlayheadChannel(s, id, ch); }); }));
         }));
-    bool mute = p->mute, solo = p->solo;
+    bool on = playheads::isOn(*p), solo = p->solo;
     menu->addChild(rack::createCheckMenuItem(
-        "Mute", "", [mute] { return mute; },
-        [run, id, mute] { run([&](const Song& s, TesseraModule*) { return setPlayheadMute(s, id, !mute); }); }));
+        "On", "Shift+M", [on] { return on; },
+        [run, id, on] { run([&](const Song& s, TesseraModule*) { return setPlayheadOn(s, id, !on); }); }));
     menu->addChild(rack::createCheckMenuItem(
         "Solo", "", [solo] { return solo; },
         [run, id, solo] { run([&](const Song& s, TesseraModule*) { return setPlayheadSolo(s, id, !solo); }); }));
-    // The rarer settings, each its own choice list.
-    menu->addChild(new rack::ui::MenuSeparator);
     using namespace playheads::knob;
+    ParamRef onRef{ParamRef::Kind::Playhead, id.value, uint16_t(kOn)};
+    menu->addChild(rack::createMenuItem("Switch it on and off in time…", "", [c, onRef] { showCurveFor(*c, onRef); }));
+    // The rarer settings, each its own choice list, with its curve and its lanes like the card's settings.
+    menu->addChild(new rack::ui::MenuSeparator);
     for (int k : {kNotes, kOnJump, kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
         const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
         float now = playheadValue(*p, k);
         std::vector<std::string> choices =
             info.kind == devices::ParamInfo::Kind::Toggle ? std::vector<std::string>{"Off", "On"} : info.choices;
-        menu->addChild(rack::createSubmenuItem(
-            info.name, choices[size_t(std::clamp(int(now), 0, int(choices.size()) - 1))], [=](rack::ui::Menu* sub) {
+        ParamRef ref{ParamRef::Kind::Playhead, id.value, uint16_t(k)};
+        bool curved = curveOn(m->song(), ref).valid();
+        std::string shown = choices[size_t(std::clamp(int(now), 0, int(choices.size()) - 1))];
+        menu->addChild(
+            rack::createSubmenuItem(info.name, curved ? shown + " ~" : shown, [=](rack::ui::Menu* sub) {
                 for (int i = 0; i < int(choices.size()); i++)
                     sub->addChild(rack::createCheckMenuItem(
                         choices[size_t(i)], "", [now, i] { return int(now) == i; },
                         [c, id, k, i, name = std::string(info.name)] {
                             setPlayheadValues(*c, id, {{k, float(i)}}, "Set " + name);
                         }));
+                sub->addChild(new rack::ui::MenuSeparator);
+                sub->addChild(rack::createMenuItem(curved ? "Show its curve" : "Draw a curve for it", "",
+                                                   [c, ref] { showCurveFor(*c, ref); }));
+                sub->addChild(rack::createMenuItem("Automate or modulate…", "", [c, ref] { openKnobMenu(*c, ref); }));
             }));
     }
     menu->addChild(rack::createMenuItem("Draw its path in the time map", "", [c] { c->view().lowerLane = kTimeMapLane; }));
@@ -687,6 +709,10 @@ void openModulatorMenu(EditorContext& ctx, ModulatorId id) {
         if (TesseraModule* m2 = c->module())
             m2->perform(renameModulator(m2->song(), id, name));
     }));
+    if (mod->type == ModulatorType::Curve) {
+        menu->addChild(rack::createMenuItem("Show its curve", "", [c, id] { showCurve(*c, id); }));
+        menu->addChild(rack::createMenuItem("CV out…", "", [c, id] { openCvOutMenu(*c, id); }));
+    }
     menu->addChild(rack::createMenuItem("Map to knobs", "", [c, id] {
         c->mappingModulator = id.value;
         c->openModulator = 0;

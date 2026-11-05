@@ -181,7 +181,7 @@ std::vector<TypeInfo> buildModulators() {
 TypeInfo buildPlayhead() {
     using namespace playheads;
     return {"Playhead",
-            {choice("Rate", playheads::rateNames(), 7),
+            {choice("Rate", playheads::rateNames(), choiceIndex(playheads::rateNames(), "1x")),
              choice("Direction", {"Forward", "Backward", "Ping-pong", "Freeze"}, 0),
              integer("Start", 0, 256, 0, "steps"),
              integer("Region start", 0, kMaxRegionSteps, 0, "steps"),
@@ -193,17 +193,18 @@ TypeInfo buildPlayhead() {
              choice("Bend cycle", cycleNames(), 2),
              integer("Offset", -16, 16, 0, "steps"),
              choice("Length", {"As written", "Follows playhead", "Fixed"}, 1),
-             choice("Fixed length", fixedLengthNames(), 2),
+             choice("Fixed length", fixedLengthNames(), choiceIndex(fixedLengthNames(), "1/16")),
              choice("Path", {"From settings", "Drawn"}, 0),
-             choice("Path cycle", pathCycleNames(), 0),
+             choice("Path cycle", pathCycleNames(), choiceIndex(pathCycleNames(), "1 bar")),
              integer("Octave", -4, 4, 0, "oct"),
              integer("Steps", -14, 14, 0, "steps"),
              choice("Notes", {"All", "Lowest", "Highest"}, 0),
              toggle("Invert", false),
              number("Velocity", -100, 100, 0, "%"),
              choice("Order", {"In order", "Outside in", "Inside out", "Odd then even", "Shuffle"}, 0),
-             choice("Order step", orderStepNames(), 1),
-             choice("On a jump", {"Retrigger", "Let ring"}, 0)}};
+             choice("Order step", orderStepNames(), choiceIndex(orderStepNames(), "1/8")),
+             choice("On a jump", {"Retrigger", "Let ring"}, 0),
+             toggle("On", true)}};
 }
 
 const std::vector<TypeInfo>& deviceTable() {

@@ -1,5 +1,6 @@
 #include "Serialize.hpp"
 
+#include "DeviceLookup.hpp"
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
 #include "Json.hpp"
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 
 namespace tessera {
 
@@ -599,8 +601,6 @@ json_t* playheadToJson(const Playhead& p) {
     setInt(j, "color", p.color);
     set(j, "params", floatsToJson(p.params));
     setInt(j, "channel", p.channel);
-    if (p.mute)
-        setBool(j, "mute", true);
     if (p.solo)
         setBool(j, "solo", true);
     if (!p.path.empty()) {
@@ -626,7 +626,14 @@ Playhead playheadFromJson(const json_t* j) {
     p.color = saturate<uint8_t>(getInt(j, "color", p.color));
     p.params = floatsFromJson(get(j, "params"));
     p.channel = saturate<uint8_t>(getInt(j, "channel", p.channel));
-    p.mute = getBool(j, "mute", p.mute);
+    if (getBool(j, "mute", false)) {
+        // Before 5 Nov a playhead was turned off by a switch of its own; now it is its On setting, which curves and
+        // lanes can move too.
+        const std::vector<devices::ParamInfo>& list = devices::playheadInfo().params;
+        for (size_t i = p.params.size(); i < list.size(); i++)
+            p.params.push_back(devices::defaultNormalized(list[i]));
+        p.params[size_t(playheads::knob::kOn)] = 0;
+    }
     p.solo = getBool(j, "solo", p.solo);
     forEach(get(j, "branch"), [&](const json_t* dj) { p.branch.push_back(deviceFromJson(dj)); });
     forEach(get(j, "path"), [&](const json_t* pj) {
@@ -960,8 +967,9 @@ bool migrateSong(json_t* songJ, int fromVersion) {
         json_array_foreach(tracks, i, t) json_object_set_new(t, "monitor", json_true());
     }
     // Version 5 added device chains and modulators. Older songs have none, and every new field loads as empty,
-    // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob (songFromJson rescales it), and
-    // version 7 added the Playheads device.
+    // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob (songFromJson rescales it),
+    // version 7 added the Playheads device, and version 8 gave its choices more rates and lengths (songFromJson
+    // keeps each saved choice by name).
     if (fromVersion == 6) {
         // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
         // notes for the written length by default, so at half speed a note stopped halfway while the playhead was
@@ -1044,6 +1052,84 @@ void narrowTransposeSemitones(Song& s) {
     }
     for (auto& [id, clip] : s.clips)
         lanes(clip.automation);
+}
+
+/// Before schema 8 a playhead's Rate, Piece, Order step, Fixed length and Path cycle had fewer choices (Trello: "add
+/// more divisions"). A choice is saved as 0..1 of its list, so each saved value finds its choice by name in the
+/// longer list. Lanes on those settings move the same way; a curve drawn in one keeps reaching the choices it
+/// reached from the setting as set, and another modulator's amount keeps its reach from there.
+void growPlayheadChoices(Song& s) {
+    namespace pk = playheads::knob;
+    struct Grown {
+        int knob;
+        std::vector<std::string> before;
+        const std::vector<std::string>& now;
+    };
+    const std::vector<Grown> grown = {
+        {pk::kRate,
+         {"1/16x", "1/8x", "1/4x", "1/3x", "1/2x", "2/3x", "3/4x", "1x", "4/3x", "3/2x", "2x", "3x", "4x", "8x", "16x"},
+         playheads::rateNames()},
+        {pk::kRepeatSize, {"Off", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::repeatNames()},
+        {pk::kOrderStep, {"1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::orderStepNames()},
+        {pk::kFixedLength, {"1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::fixedLengthNames()},
+        {pk::kPathCycle, {"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, playheads::pathCycleNames()}};
+    auto oldIndex = [](const Grown& g, float v) {
+        return std::clamp(int(std::lround(double(v) * double(g.before.size() - 1))), 0, int(g.before.size()) - 1);
+    };
+    auto newIndex = [](const Grown& g, int old) { return playheads::choiceIndex(g.now, g.before[size_t(old)]); };
+    auto normalized = [](const Grown& g, int index) { return float(double(index) / double(g.now.size() - 1)); };
+    // A move of `delta` (0..1 of the old list) from choice `from`, as a move in the new list.
+    auto moved = [&](const Grown& g, int from, double delta) {
+        int to = std::clamp(int(std::lround(double(from) + delta * double(g.before.size() - 1))), 0,
+                            int(g.before.size()) - 1);
+        return double(newIndex(g, to) - newIndex(g, from)) / double(g.now.size() - 1);
+    };
+    // Where each playhead's grown settings were (old index), before they move.
+    std::map<std::pair<uint64_t, int>, int> base;
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices)
+            for (Playhead& p : d.playheads)
+                for (const Grown& g : grown)
+                    if (size_t(g.knob) < p.params.size()) {
+                        int old = oldIndex(g, p.params[size_t(g.knob)]);
+                        base[{p.id.value, g.knob}] = old;
+                        p.params[size_t(g.knob)] = normalized(g, newIndex(g, old));
+                    }
+    auto grownOf = [&](const ParamRef& r) -> const Grown* {
+        if (r.kind != ParamRef::Kind::Playhead)
+            return nullptr;
+        for (const Grown& g : grown)
+            if (g.knob == r.param && base.count({r.owner, g.knob}))
+                return &g;
+        return nullptr;
+    };
+    auto lanes = [&](std::vector<AutomationEnvelope>& list) {
+        for (AutomationEnvelope& lane : list)
+            if (const Grown* g = grownOf(lane.paramTarget))
+                for (AutoPoint& p : lane.points)
+                    p.value = normalized(*g, newIndex(*g, oldIndex(*g, p.value)));
+    };
+    for (Track& t : s.tracks)
+        lanes(t.automation);
+    for (auto& [id, clip] : s.clips)
+        lanes(clip.automation);
+    forEachModulator(s, [&](Modulator& m, const ModulatorPlace&) {
+        int drawn = mods::drawnRoute(m);
+        for (size_t i = 0; i < m.routes.size(); i++) {
+            Modulation& r = m.routes[i];
+            const Grown* g = r.kind == Modulation::Kind::Param ? grownOf(r.target) : nullptr;
+            if (!g)
+                continue;
+            int from = base[{r.target.owner, g->knob}];
+            if (int(i) == drawn) {
+                // A drawn point's height is a move from the setting as set: 0.5 + (move / 2) at full amount.
+                for (AutoPoint& p : m.points)
+                    p.value = std::clamp(float(0.5 + moved(*g, from, (double(p.value) - 0.5) * 2) / 2), 0.f, 1.f);
+            } else {
+                r.amount = std::clamp(float(moved(*g, from, double(r.amount))), -1.f, 1.f);
+            }
+        }
+    });
 }
 
 /// Before 13 Oct 2026 Random also had velocity (knob 3) and timing (knob 4). Those moved to the Humanize device: a
@@ -1174,6 +1260,8 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
     splitLegacyRandom(s);
     if (schemaVersion < 6)
         narrowTransposeSemitones(s);
+    if (schemaVersion < 8)
+        growPlayheadChoices(s);
     normalize(s);
     return s;
 }

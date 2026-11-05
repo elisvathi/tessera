@@ -55,7 +55,7 @@ void openMotionMenu(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& 
 /// The same choices, added to `menu` (a note's Motion › submenu).
 void appendMotionItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes,
                        DeviceId current);
-/// A playhead's menu: rename, channel, mute, solo, its rarer settings (Notes, On a jump, Length, Path...), duplicate,
+/// A playhead's menu: rename, channel, on, solo, its rarer settings (Notes, On a jump, Length, Path...), duplicate,
 /// delete.
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
 /// The merged Direction dropdown (direction, or a step order with its step size), as one undo step.
@@ -66,6 +66,8 @@ std::string directionText(const Playhead& p);
 void drawCurveIcon(NVGcontext* vg, rack::math::Rect r, int index, NVGcolor color, float width);
 /// Shows a Curve modulator's shape in the piano roll's lower pane.
 void showCurve(EditorContext& ctx, ModulatorId id);
+/// Whether the lower pane shows Curve modulator `id` now.
+bool curveShown(EditorContext& ctx, ModulatorId id);
 /// Shows the Curve modulator moving `target` in the lower pane; with none yet, an empty curve for it: the first point
 /// drawn adds the modulator.
 void showCurveFor(EditorContext& ctx, const ParamRef& target);
@@ -81,8 +83,11 @@ const Playhead* shownPlayhead(EditorContext& ctx);
 /// the ones before left it: setting commands replace the whole chain.
 void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std::pair<int, float>>& values,
                        const std::string& name);
-/// Turns the shown playhead off or on (Shift+M, the dot on its chip); `solo` solos it instead (Alt-click).
-void togglePlayheadMute(EditorContext& ctx, bool solo = false);
+/// Turns the shown playhead off or on (Shift+M, the dot on its chip): its On setting. `solo` solos it instead
+/// (Alt-click).
+void togglePlayheadOn(EditorContext& ctx, bool solo = false);
+/// Whether a playhead plays now: its On as a curve or a lane has it while the song plays, else as set.
+bool playheadPlaysNow(EditorContext& ctx, const Playhead& p);
 /// A choice knob's choices, the current one ticked.
 void openChoiceMenu(EditorContext& ctx, const ParamRef& ref);
 /// Type a value in the knob's units ("75", "1/16" for choices by name).

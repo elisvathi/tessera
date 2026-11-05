@@ -528,11 +528,14 @@ CommandPtr setPlayheadChannel(const Song& song, PlayheadId id, int channel) {
     });
 }
 
-CommandPtr setPlayheadMute(const Song& song, PlayheadId id, bool mute) {
-    return playheadEdit(song, id, (mute ? "Mute " : "Unmute ") + playheadName(song, id), [&](Device&, Playhead& p) {
-        p.mute = mute;
-        return true;
-    });
+CommandPtr setPlayheadOn(const Song& song, PlayheadId id, bool on) {
+    return playheadEdit(song, id, std::string("Turn ") + playheadName(song, id) + (on ? " on" : " off"),
+                        [&](Device&, Playhead& p) {
+                            if (p.params.size() <= size_t(playheads::knob::kOn) || playheads::isOn(p) == on)
+                                return false;
+                            p.params[size_t(playheads::knob::kOn)] = on ? 1.f : 0.f;
+                            return true;
+                        });
 }
 
 CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoint> path, const std::string& name) {

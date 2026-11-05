@@ -208,24 +208,37 @@ double ticksAt(const Length (&list)[N], int index, TimeSig ts) {
     return ticksOf(list[size_t(std::clamp(index, 0, int(N) - 1))], ts);
 }
 
-const Length kRepeats[] = {{"Off", 0},       {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},
-                           {"1/4", 1.0 / 4}, {"1/2", 1.0 / 2},   {"1 bar", 1, true}};
+// Each list runs from short to long, so a curve on the setting moves through it in order. Saved songs keep their
+// choices by name when a list grows (Serialize: songs before schema 8). T is a triplet (2/3 of the note), D dotted.
+const Length kRepeats[] = {{"Off", 0},          {"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/16 T", 1.0 / 24},
+                           {"1/16", 1.0 / 16},  {"1/8 T", 1.0 / 12}, {"1/16 D", 3.0 / 32}, {"1/8", 1.0 / 8},
+                           {"1/4 T", 1.0 / 6},  {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"1/2 T", 1.0 / 3},
+                           {"1/4 D", 3.0 / 8},  {"1/2", 1.0 / 2},    {"1/2 D", 3.0 / 4},   {"1 bar", 1, true},
+                           {"2 bars", 2, true}, {"4 bars", 4, true}};
 const Length kCycles[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},    {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},
                           {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}};
-const Length kPathCycles[] = {
-    {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}, {"8 bars", 8, true}, {"16 bars", 16, true}};
-const Length kOrderSteps[] = {
-    {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8}, {"1/4", 1.0 / 4}, {"1/2", 1.0 / 2}, {"1 bar", 1, true}};
-const Length kFixedLengths[] = {{"1/64", 1.0 / 64}, {"1/32", 1.0 / 32}, {"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},
-                                {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},   {"1 bar", 1, true}};
+const Length kPathCycles[] = {{"1/4", 1.0 / 4},      {"1/2", 1.0 / 2},      {"1 bar", 1, true},
+                              {"2 bars", 2, true},   {"3 bars", 3, true},   {"4 bars", 4, true},
+                              {"6 bars", 6, true},   {"8 bars", 8, true},   {"12 bars", 12, true},
+                              {"16 bars", 16, true}, {"32 bars", 32, true}, {"64 bars", 64, true}};
+const Length kOrderSteps[] = {{"1/32", 1.0 / 32}, {"1/16 T", 1.0 / 24}, {"1/16", 1.0 / 16}, {"1/8 T", 1.0 / 12},
+                              {"1/8", 1.0 / 8},   {"1/4 T", 1.0 / 6},   {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},
+                              {"1 bar", 1, true}, {"2 bars", 2, true}};
+const Length kFixedLengths[] = {{"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/16 T", 1.0 / 24}, {"1/16", 1.0 / 16},
+                                {"1/8 T", 1.0 / 12}, {"1/16 D", 3.0 / 32}, {"1/8", 1.0 / 8},     {"1/4 T", 1.0 / 6},
+                                {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"1/4 D", 3.0 / 8},   {"1/2", 1.0 / 2},
+                                {"1 bar", 1, true},  {"2 bars", 2, true}};
 
 struct Rate {
     const char* name;
     double value;
 };
-const Rate kRates[] = {{"1/16x", 1.0 / 16}, {"1/8x", 1.0 / 8}, {"1/4x", 0.25}, {"1/3x", 1.0 / 3}, {"1/2x", 0.5},
-                       {"2/3x", 2.0 / 3},   {"3/4x", 0.75},    {"1x", 1},      {"4/3x", 4.0 / 3}, {"3/2x", 1.5},
-                       {"2x", 2},           {"3x", 3},         {"4x", 4},      {"8x", 8},         {"16x", 16}};
+// Slow to fast: halves and doubles, thirds (triplet speeds), dotted (3/8x, 3/4x, 3/2x) and fives (4/5x, 5/4x).
+const Rate kRates[] = {
+    {"1/32x", 1.0 / 32}, {"1/16x", 1.0 / 16}, {"1/12x", 1.0 / 12}, {"1/8x", 1.0 / 8}, {"1/6x", 1.0 / 6}, {"1/4x", 0.25},
+    {"1/3x", 1.0 / 3},   {"3/8x", 3.0 / 8},   {"1/2x", 0.5},       {"2/3x", 2.0 / 3}, {"3/4x", 0.75},    {"4/5x", 0.8},
+    {"1x", 1},           {"5/4x", 1.25},      {"4/3x", 4.0 / 3},   {"3/2x", 1.5},     {"2x", 2},         {"3x", 3},
+    {"4x", 4},           {"6x", 6},           {"8x", 8},           {"12x", 12},       {"16x", 16},       {"32x", 32}};
 
 } // namespace
 
@@ -237,6 +250,11 @@ const std::vector<std::string>& rateNames() {
         return out;
     }();
     return names;
+}
+
+int choiceIndex(const std::vector<std::string>& names, const std::string& name, int fallback) {
+    auto it = std::find(names.begin(), names.end(), name);
+    return it == names.end() ? fallback : int(it - names.begin());
 }
 
 double playheadRate(int index) { return kRates[size_t(std::clamp(index, 0, int(std::size(kRates)) - 1))].value; }

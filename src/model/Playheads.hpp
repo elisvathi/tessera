@@ -47,7 +47,8 @@ enum Playhead {
     kVelocity,  // added to its notes' velocity
     kOrder,     // reads its segment's steps in order, outside in, inside out, odd then even, or shuffled
     kOrderStep, // the size of those steps
-    kOnJump     // Retrigger: a jump cuts the note playing and plays again the notes it lands inside; or Let ring
+    kOnJump,    // Retrigger: a jump cuts the note playing and plays again the notes it lands inside; or Let ring
+    kOn         // whether it plays: the dot on its chip; a curve or a lane can switch it in time
 };
 /// The Playheads device's own knobs.
 enum Device { kRestart, kRestartBars, kSameNote };
@@ -123,6 +124,22 @@ double nextJump(const Motion& m, double from, double horizon);
 
 /// Whether a playhead set to Retrigger plays again the notes it jumps into (the On a jump setting).
 bool retriggers(const float* knobs);
+
+/// Whether a playhead's On setting says it plays, from its knobs as they play now (curves and lanes applied).
+inline bool playsNow(const float* knobs) { return knobs[knob::kOn] >= 0.5f; }
+/// Whether a playhead is on as set (the dot on its chip), before curves and lanes.
+inline bool isOn(const Playhead& p) {
+    return p.params.size() <= size_t(knob::kOn) || p.params[size_t(knob::kOn)] >= 0.5f;
+}
+/// Which playheads of a Playheads device are heard as set: on, and soloed when any on playhead is.
+inline bool heardAsSet(const std::vector<Playhead>& all, const Playhead& p) {
+    bool solo = std::any_of(all.begin(), all.end(), [](const Playhead& q) { return q.solo && isOn(q); });
+    return isOn(p) && (!solo || p.solo);
+}
+/// Whether the solo picks which playheads are heard: false means every on playhead is (solo set on none).
+inline bool soloDecides(const std::vector<Playhead>& all) {
+    return std::any_of(all.begin(), all.end(), [](const Playhead& q) { return q.solo && isOn(q); });
+}
 
 /// Calls `hit(note, rest)` for every note the sweep lands inside when it jumps: one that started before where it
 /// lands and is still going there (going backward, one that ends after it). `rest` is how much of the note is left
@@ -221,8 +238,10 @@ std::vector<uint32_t> orderByEnd(const std::vector<Note>& notes) {
     return order;
 }
 
-/// The choices of the knobs that pick a speed or a length, and what each one means.
+/// The choices of the knobs that pick a speed or a length, and what each one means. Each list runs short to long.
 const std::vector<std::string>& rateNames();
+/// The place of `name` in `names` (a choice list above), or `fallback` when it isn't there.
+int choiceIndex(const std::vector<std::string>& names, const std::string& name, int fallback = 0);
 double playheadRate(int index);
 const std::vector<std::string>& repeatNames(); // "Off" first
 double repeatTicks(int index, TimeSig ts);

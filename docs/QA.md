@@ -536,7 +536,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A Curve or LFO on a playhead's Rate: its line in the piano roll speeds up and slows down with the sound, and
       the keys it lights follow it.
 - [ ] Two Motion devices, one in the chain and one in a playhead's own devices: both show ghosts for their notes.
-- [ ] Playheads card reads MOVE (Rate, Direction), REPEAT (Piece × Times, Curve), More; Notes is in More. Click
+- [ ] Playheads card reads MOVE (On, Rate, Direction), REPEAT (Piece × Times, Curve), More; Notes is in More. Click
       Direction's, Piece's or Times' underlined name: the lower pane opens a curve for it; a point in
       bar 2 turns the playhead backward / starts repeating there, heard and drawn; the name takes the playhead's
       colour once it has a curve.
@@ -547,3 +547,28 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A curve stepping a playhead's Rate and Times at bar 4: playing past bar 4, the Rate knob reads the new rate,
       Times and the hits change with what is heard, and the moved boxes are outlined in the playhead's colour.
       MIDI export plays the same notes after the step as the engine (no jump back to the clip's start).
+
+## Playheads: On, finer choices, their own look (5 Nov)
+- [ ] Two playheads on long notes, one with an Echo in its own devices. While a note sounds, click its chip's dot (or
+      Shift+M): its gate drops at once, no echo follows, the other playhead's note goes on. Turn it on again: it
+      plays from the next note it reaches. Undo puts it back as one step ("Turn Bass on").
+- [ ] Click the card's On name: a curve with two rows opens; a step down at bar 2 and up at bar 3 silences that
+      playhead for bar 2 only (the dot and the On switch go hollow / off while it is off, and its line in the piano
+      roll disappears). A knob lane on On (right-click the name → automate) does the same. MIDI export (Devices:
+      Applied) leaves bar 2 out and ends the long note where it turns off.
+- [ ] A song saved before this build with a muted playhead opens with it off (dot hollow).
+- [ ] Rate offers 1/32x … 32x in order (1/12x, 3/8x, 4/5x, 5/4x, 6x, 12x among them); Piece Off, 1/64 … 4 bars with
+      T and D sizes; Direction's step sizes 1/32 … 2 bars; More › Length › Fixed length 1/64 … 2 bars; Path cycle
+      1/4 bar … 64 bars. A song saved before keeps its Rate, Piece, lanes and curves on them (a curve two choices up
+      from 2x still reaches 4x).
+- [ ] More › each setting's list ends with Draw a curve for it and Automate or modulate…; the curve opens in the lower
+      pane, and the item reads "~" once a curve moves it. The chip menu's Switch it on and off in time… opens On's curve.
+- [ ] Right-click the shown playhead's segment on the ruler: Move it in time with a curve… / Resize it in time with a
+      curve… open curves on Region start and length; Follow the clip's loop puts the segment back on the loop.
+- [ ] Click a Curve modulator's row: only the lower pane opens (no popover); click again: the note lane comes back.
+      The pane's top row shows Moves ▾ with what it moves; its menu removes a setting, starts mapping (Map to more
+      knobs), and opens CV out…. A new Curve from + Add opens the pane only. Other modulators still open their popover.
+- [ ] Timeline on a track with playheads: each clip shows diagonal lines and one band per playhead with its path
+      (1x forward: a ramp per pass; backward falls; ping-pong zigzags; repeats show steps back); no notes. An off
+      playhead's path is faint. A stretched or offset clip draws its paths as it plays them. Launcher slots show the
+      same over one pass. Bypassing the Playheads device brings the notes back.

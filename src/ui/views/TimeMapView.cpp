@@ -342,7 +342,7 @@ void TimeMapView::drawRow(NVGcontext* vg, const Row& row) {
         open = true;
         lastValue = value;
     }
-    nvgStrokeColor(vg, p.mute ? nvgTransRGBAf(color, 0.35f) : color);
+    nvgStrokeColor(vg, playheads::isOn(p) ? color : nvgTransRGBAf(color, 0.35f));
     nvgStrokeWidth(vg, 1.6f);
     nvgStroke(vg);
 

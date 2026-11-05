@@ -1012,7 +1012,7 @@ const Playhead* NoteGrid::updateMoved() {
     const Track* track = owner.track();
     const Device* device = m && clip && track && track->type != TrackType::Drum ? activePlayheads(*track) : nullptr;
     const Playhead* p = device ? deviceActions::shownPlayhead(ctx) : nullptr;
-    if (!p || p->mute) {
+    if (!p || !deviceActions::playheadPlaysNow(ctx, *p)) {
         moved.clear();
         movedFor = {~uint64_t(0), 0, 0, 0};
         return nullptr;
@@ -1194,8 +1194,7 @@ void NoteGrid::updateHeads() {
     double elapsed = owner.source.elapsed();
     if (!std::isfinite(elapsed))
         return;
-    bool solo = std::any_of(device->playheads.begin(), device->playheads.end(),
-                            [](const Playhead& p) { return p.solo && !p.mute; });
+    bool solo = playheads::soloDecides(device->playheads);
     // The region is the whole span: a drum clip's lane cycle, as the engine reads it.
     ClipSpan span = clipSpan(*clip, track->type == TrackType::Drum ? &track->drumLanes : nullptr);
     std::pair<Tick, Tick> segment =
@@ -1206,7 +1205,7 @@ void NoteGrid::updateHeads() {
     LauncherStatus status = m->launcherStatus(track->id);
     for (size_t k = 0; k < device->playheads.size(); k++) {
         const Playhead& p = device->playheads[k];
-        if (p.mute || (solo && !p.solo))
+        if (!deviceActions::playheadPlaysNow(ctx, p) || (solo && !p.solo))
             continue;
         playheads::Motion motion = playheads::motionFrom(p.params.data(), device->params.data(), double(segment.first),
                                                          double(segment.second), owner.timeSig());

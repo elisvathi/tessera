@@ -483,15 +483,15 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
             }
             if (d.type == DeviceType::Playheads) {
                 int knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
-                bool solo = std::any_of(d.playheads.begin(), d.playheads.end(),
-                                        [](const Playhead& p) { return p.solo && !p.mute; });
+                // On and off is its On setting, read as it plays (curves and lanes can move it); the solo is set.
+                bool solo = playheads::soloDecides(d.playheads);
                 for (size_t k = 0; k < d.playheads.size(); k++) {
                     const Playhead& p = d.playheads[k];
                     PlayheadPlayback pp;
                     pp.id = p.id.value;
                     pp.knobs = addOwner(ParamRef::Kind::Playhead, p.id.value, p.params);
                     pp.channel = p.channel;
-                    pp.audible = !p.mute && (!solo || p.solo);
+                    pp.audible = !solo || p.solo;
                     pp.path = p.path;
                     pp.knobCount = std::min<int>(int(p.params.size()), playheads::kMaxPlayheadParams);
                     if (d.on)

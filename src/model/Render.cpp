@@ -306,8 +306,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
     bool once =
         std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
                                      device.params[playheads::knob::kSameNote])) == 1;
-    bool solo = std::any_of(device.playheads.begin(), device.playheads.end(),
-                            [](const Playhead& p) { return p.solo && !p.mute; });
+    bool solo = playheads::soloDecides(device.playheads);
     std::vector<Item> items;
     for (const ArrangerClip& a : t.arrangement) {
         if (a.muted && !o.includeMuted)
@@ -395,16 +394,25 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
         double length = double(instanceEnd(a) - a.position) / stretch;
         for (size_t index = 0; index < device.playheads.size(); index++) {
             const Playhead& p = device.playheads[index];
-            if (p.mute || (solo && !p.solo))
+            if (solo && !p.solo)
                 continue;
             // Small steps, so no window needs more sweeps than one call gives; each step reads the modulators anew.
             constexpr double kStep = double(kPpq) / 8;
             std::vector<float> knobs(p.params.size());
             double ownTime = NAN, lastRestart = NAN, lastPos = NAN;
+            // Its On as it plays (a curve or a lane can switch it): off, it reads nothing, and what it sounds stops
+            // there, as in the engine. Its own time runs on meanwhile.
+            size_t firstItem = items.size();
+            std::vector<double> offAt;
+            bool wasOn = true;
             for (double e = begin; e < begin + length; e += kStep) {
                 double to = std::min(begin + length, e + kStep);
                 playheadKnobsAt(song, t, device, p, double(a.position) + (e - begin) * stretch, knobs.data(),
                                 (e - begin) * stretch);
+                bool on = knobs.size() <= size_t(playheads::knob::kOn) || playheads::playsNow(knobs.data());
+                if (!on && wasOn)
+                    offAt.push_back(double(a.position) + (e - begin) * stretch);
+                wasOn = on;
                 playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), double(segment.first),
                                                             double(segment.second), song.timeSig);
                 if (playheads::wantsDrawnPath(knobs.data()))
@@ -433,7 +441,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                     int count = playheads::sweeps(ownM, ownA, ownTime, sweeps, playheads::kMaxSweeps, lastPos);
                     if (count > 0)
                         lastPos = sweeps[count - 1].to;
-                    for (int i = 0; i < count; i++)
+                    for (int i = 0; i < count && on; i++)
                         for (const Group& g : groups) {
                             MovedBy moved;
                             if (g.motion) // its pass is the clip's
@@ -490,6 +498,12 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                         }
                     segA = segB;
                 }
+            }
+            for (size_t i = firstItem; i < items.size() && !offAt.empty(); i++) {
+                TimedNote& n = items[i].note;
+                auto off = std::upper_bound(offAt.begin(), offAt.end(), double(n.start));
+                if (off != offAt.end())
+                    n.end = std::max(n.start + 1, std::min(n.end, Tick(std::llround(*off))));
             }
         }
     }
