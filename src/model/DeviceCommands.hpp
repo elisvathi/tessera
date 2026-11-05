@@ -84,7 +84,8 @@ CommandPtr duplicatePlayhead(const Song& song, PlayheadId id, const NextId& next
 CommandPtr renamePlayhead(const Song& song, PlayheadId id, const std::string& name);
 /// The channel put on the playhead's notes: 1..16, or 0 to keep each note's own.
 CommandPtr setPlayheadChannel(const Song& song, PlayheadId id, int channel);
-CommandPtr setPlayheadMute(const Song& song, PlayheadId id, bool mute);
+/// Turns a playhead on or off: its On setting, which a curve or a lane can also move.
+CommandPtr setPlayheadOn(const Song& song, PlayheadId id, bool on);
 CommandPtr setPlayheadSolo(const Song& song, PlayheadId id, bool solo);
 /// Replaces a playhead's drawn path (sorted, values kept in 0..1), as one undo step named `name`.
 CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoint> path,

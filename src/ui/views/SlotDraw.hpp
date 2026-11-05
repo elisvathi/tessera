@@ -31,6 +31,14 @@ bool blinkOn();
 /// The mark of a clip played by playheads: one short stripe per playhead of `track`, in its colour (hollow when
 /// muted), stacked from `topRight` down and leftwards. Draws nothing when the track has no Playheads device on.
 void drawPlayheadMark(NVGcontext* vg, const Track& track, rack::math::Vec topRight, float maxHeight);
+/// A clip its track's playheads play: the notes written in it aren't what plays, so it shows where each playhead
+/// goes (as the time map draws it). One band of `area` per playhead (when they fit; else they share it) with its path
+/// in its colour, from its segment's start (bottom) to its end (top), over `x0`..`x1` for `e0`..`e1` ticks since the
+/// clip started. The paths follow the settings as set; an off playhead's is faint. `line` separates the bands.
+void drawPlayheadPaths(NVGcontext* vg, const Song& song, const Track& track, const Device& device, const Clip& clip,
+                       rack::math::Rect area, float x0, float x1, double e0, double e1, NVGcolor line, float alpha);
+/// Fine diagonal lines over `r` up to `right`, the ground of a clip its playheads play.
+void drawHatch(NVGcontext* vg, rack::math::Rect r, float right, NVGcolor color);
 
 } // namespace slotDraw
 

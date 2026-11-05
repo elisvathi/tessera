@@ -153,7 +153,7 @@ def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track
         ui["overlay"]["noteLane"] = note_lane
     return {"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera", "version": "2.0.0",
             "params": [{"value": v, "id": i} for i, v in enumerate(params)], "pos": [0, 0],
-            "data": {"schema": 7, "name": "Tessera", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
+            "data": {"schema": 8, "name": "Tessera", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
 
 
 def output_module(mid, model, track, x):
@@ -215,7 +215,8 @@ def hit_values_song():
 
 def playheads_module():
     """The demo song with a Playheads device on Lead: three playheads (Sparkle off), the first with its own Echo,
-    then a Scale for all of them. The device strip is open."""
+    then a Scale for all of them. The device strip is open. Sparkle is off by the old "mute" switch, which loads as its
+    On setting off (the settings list stays empty, so every other setting is its default)."""
     song, lead = make_song()
     for t in song["tracks"]:
         if t["name"] != "Lead":
@@ -230,7 +231,7 @@ def playheads_module():
                         {"id": ids.take(), "type": "scale", "name": "", "on": True, "params": []}]
     song["nextId"] = ids.next + 10
     module = tessera_module(song, lead, 24, False)
-    module["data"]["schema"] = 7
+    module["data"]["schema"] = 8
     module["data"]["ui"]["overlay"]["deviceStrip"] = True
     return module
 
@@ -256,7 +257,7 @@ def curve_module():
                            "routes": [{"kind": "param", "amount": 1.0, "target": ["device", transpose["id"], 2]}]}]
     song["nextId"] = ids.next + 10
     module = tessera_module(song, verse, 24, False, "Bass")
-    module["data"]["schema"] = 7
+    module["data"]["schema"] = 8
     module["data"]["ui"]["overlay"]["deviceStrip"] = True
     return module
 

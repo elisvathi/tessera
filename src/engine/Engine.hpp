@@ -361,6 +361,12 @@ class Engine {
         std::array<double, kMaxTrackVoices> voiceStart{}, voiceLength{}, voiceScale{};
         std::array<uint8_t, kMaxTrackVoices> voicePart{}; // the channel of each voice's note
         std::array<uint8_t, kMaxDrumLanes> lanePart{};    // the channel of each drum lane's last hit
+        // The playhead (1..16; 0 = none) that read each voice's note and each drum lane's last hit, so turning a
+        // playhead off stops what it sounds at once.
+        std::array<uint8_t, kMaxTrackVoices> voiceReader{};
+        std::array<uint8_t, kMaxDrumLanes> laneReader{};
+        // The playhead ID behind each of those numbers (number - 1), to follow a playhead that moved in a new snapshot.
+        std::array<uint64_t, playheads::kMaxPlayheads> readerIds{};
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
         std::array<uint64_t, kMaxTrackVoices> voiceClip{}, voiceNote{};
@@ -559,6 +565,11 @@ class Engine {
     static bool takesInput(const TrackPlayback& track, LiveSource source, int channel);
     void writeDrumFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const;
     void releaseAll(TrackState& state);
+    /// Playhead `lane` (1..16) was turned off: its sounding notes and drum gates stop now, and its waiting notes
+    /// (read ahead, delayed by operators, repeated by an Echo) are dropped. The other playheads play on.
+    void silencePlayhead(TrackState& state, uint8_t lane);
+    /// After a snapshot swap: the playhead numbers on sounding voices and drum lanes follow their playheads by ID.
+    static void renumberReaders(TrackState& state);
 
     // Device chains run on the engine clock (freeTick), which also runs while stopped, so live notes go through
     // them too. Voices end on the same clock.
@@ -629,6 +640,8 @@ class Engine {
         // Where its last sweep ended, so the next can tell a jump without working the place out again; NaN after
         // its own time starts afresh.
         double lastPos = NAN;
+        // Whether it played when it last read: turning off (a curve or a lane on its On) stops its notes at once.
+        bool heard = true;
     };
     /// Per track (by index in `tracks`) and playhead. On the heap: the engine sits on the stack in tests.
     std::unique_ptr<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>> playheadClocks;

@@ -74,6 +74,7 @@ class ClipSource : public TimelineSource {
 
     std::vector<PlayheadSegment> playheadSegments() override;
     void setPlayheadSegment(uint64_t id, double start, double end) override;
+    void openPlayheadSegmentMenu(uint64_t id) override;
 
   private:
     const Clip* current();

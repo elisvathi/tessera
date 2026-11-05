@@ -1,7 +1,9 @@
 # 6. The timeline
 
 The timeline lays your song out from left to right, bar by bar. Each track is a row. Each clip on it is a tile with
-a coloured title bar and a small picture of its notes. Set **Plays** to **Timeline** to hear it.
+a coloured title bar and a small picture of its notes. Set **Plays** to **Timeline** to hear it. On a track with
+[playheads](13-devices.md#playheads), a tile shows where each playhead goes instead of the notes, over fine diagonal
+lines: its notes as written aren't what plays.
 
 ![The timeline: three sections, an automation lane under Chords](images/timeline.png)
 

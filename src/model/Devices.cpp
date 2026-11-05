@@ -81,6 +81,26 @@ void Chain::clear() {
     }
 }
 
+void Chain::dropLane(uint8_t lane) {
+    if (lane == 0)
+        return;
+    int kept = 0;
+    for (int i = 0; i < count; i++) {
+        const Message& m = messages[size_t(i)];
+        if ((m.kind == Kind::On || m.kind == Kind::Echo) && m.note.lane == lane)
+            continue;
+        messages[size_t(kept++)] = m;
+    }
+    count = kept;
+    for (DeviceState& s : states) {
+        int held = 0;
+        for (int i = 0; i < s.heldCount; i++)
+            if (s.held[size_t(i)].note.lane != lane)
+                s.held[size_t(held++)] = s.held[size_t(i)];
+        s.heldCount = held;
+    }
+}
+
 void Chain::push(const ChainNote& note) {
     if (count >= kMaxMessages - kEndReserve) {
         overflows++;

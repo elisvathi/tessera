@@ -50,7 +50,7 @@ class CurveView : public InteractiveView {
     float left = 0;
 
     static constexpr float kEdge = 5;  // the top edge that drags to resize the pane
-    static constexpr float kHead = 24; // the header row: Length, Step | Ramp, shapes, Remove, close
+    static constexpr float kHead = 24; // the header row: Length, Step | Ramp, shapes, Moves, Remove, close
     static constexpr float kBar = 28;  // the ruler (positions, then the segment), under the header
 
     /// Keeps the curve's own zoom inside its limits, and lines a newly shown curve up under the notes.
@@ -104,7 +104,7 @@ class CurveView : public InteractiveView {
   private:
     /// One clickable part of the header row, rebuilt when needed.
     struct HeaderPart {
-        enum class Kind { Length, Step, Ramp, Shape, Remove, Close } kind;
+        enum class Kind { Length, Step, Ramp, Shape, Moves, Remove, Close } kind;
         rack::math::Rect rect;
         int shape = -1;
     };
@@ -121,6 +121,11 @@ class CurveView : public InteractiveView {
     void openPointMenu(int index);
     /// The Length field's list of lengths, 1 to 256 bars.
     void openLengthMenu();
+    /// What the curve moves, from the header's Moves button: each setting (the one it is drawn in, others with
+    /// their amounts) to remove, mapping it to more knobs, and its CV out. The curve needs no popover of its own.
+    void openMovesMenu();
+    /// The Moves button's text: what the curve is drawn in, and how many more it moves.
+    std::string movesText();
     /// The header row: Length, Shapes and Remove curve.
     void drawHeader(NVGcontext* vg, NVGcolor color);
     /// The curve's ruler: positions in the drawing on top, the segment that plays under them.

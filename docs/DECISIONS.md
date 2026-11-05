@@ -1626,3 +1626,52 @@ Design: `docs/design/PLAYHEADS.md`.
   right-click menu picks it first, then acts on the picked. The pane's height drags from its top edge
   (ViewState::curveHeight, per view, 0 = the default) and a × closes it back to the note lane. Dragging the segment
   past the drawing's end grows Length with it, so the segment is never stuck at the end.
+
+## 95. Playheads: On is a setting, finer choices, and their own look on the timeline (5 Nov)
+
+From the Trello list "Playheads Feedback" (#135 to #137) and the user's notes on the same day.
+
+- **Turning a playhead off stops it at once** (Trello #135: "the current gate continues"). It used to stop reading
+  only, so the note it was playing rang to its end, and an Echo in its own chain kept repeating. The engine now
+  remembers which playhead started each voice and each drum lane's last hit (`TrackState::voiceReader`,
+  `laneReader`, numbered by place and renumbered by ID when playheads are added or removed before it); turning one off releases those voices and cuts those drum gates, and drops its waiting notes (read
+  ahead, delayed by operators) and its On and Echo messages in the chain (`Chain::dropLane`; ends stay, so nothing
+  waits for a note that never ends). The others play on. An off playhead still runs its own time, so turned on again
+  it is where it would have been and plays what it reaches next, not the note it cut.
+- **On is a setting, not a switch of its own.** The playhead's `mute` flag became the appended knob `kOn` (a toggle,
+  on by default), so curves, other modulators and knob lanes reach it like Rate: a playhead can come in for bars 5
+  to 8 only. The chip's dot, Shift+M and the chip menu's **On** set it (one undo step, "Turn Bass off"); the dot and
+  the card show it as it plays now (`TesseraModule::liveKnob`). The engine reads it where the playheads read, a
+  control block at a time (the knob table with the exact curves), so a curve switches it within a block; a snapshot
+  swap stops a playhead that is off as set at once unless something moves its On (`onIsDriven`), so editing while a
+  lane holds it on never cuts it. Solo stays a switch (listening, not music) and counts the playheads on as set.
+  Voice counts count off playheads too (a curve may turn one on; switching never moves the others' voices). Songs
+  saved with `"mute": true` load with On off. MIDI export reads On where it reads the other settings and cuts the
+  notes a playhead plays where it turns off. Echoes still to come from its own chain are dropped by the engine but not
+  by export yet.
+- **The card shows On first in MOVE** (MOVE is "whether and how it travels": On, Rate, Direction), drawn as a switch
+  with its name underlined like the other settings, so the curve is one click away. The chip menu adds **Switch it on
+  and off in time…**; every rarer setting under More gets **Draw a curve for it** and **Automate or modulate…**;
+  right-clicking the segment on the ruler offers curves on its start and length (the segment moving or growing as the
+  song plays), their lanes, and **Follow the clip's loop**. Every playhead setting can now move in time from where it
+  is shown.
+- **Finer choices; schema 8** (Trello #136: "1/32, the multiplier, same for repeats and the other knobs"). Rate goes
+  from 1/32x to 32x with thirds, dotted speeds and fives; Piece from 1/64 to 4 bars with triplet (T) and dotted (D)
+  sizes; Order step 1/32 to 2 bars with triplets; Fixed length 1/64 to 2 bars with triplets and dotted; Path cycle
+  1/4 bar to 64 bars. Each list runs short to long, so a curve walks through it in order (appending at the end would
+  have kept saved values but made curves jump from 32x to 1/32x). A choice is saved as 0..1 of its list, so songs
+  before schema 8 are remapped by name on load (`growPlayheadChoices`): the settings, lanes on them, a curve drawn in
+  one (each point keeps reaching the same choice from the setting as set) and other modulators' amounts (their reach
+  from the setting as set). Times stays 2 to 16.
+- **A Curve modulator opens no popover** (Trello #137: clicking it opened the dialog and the lower pane together, and
+  the dialog had to be closed by hand). A Curve has no settings of its own (its length and segment are over the
+  drawing), so its row now only shows or hides its drawing; the popover's other parts moved into the curve pane's top
+  row as **Moves ▾** (what it moves, each to remove; Map to more knobs; CV out…), and its row's right-click menu adds
+  Show its curve and CV out…. A new Curve from the browser opens the same way. Other modulators keep their popover.
+- **A clip read by playheads draws where they go, not its notes** (the user: "doesn't make sense to display the
+  notes since what is playing is different"). On the timeline and in launcher slots it gets fine diagonal lines (the
+  ground of a clip its playheads decide) and one band per playhead with its path in its colour, the time map's
+  picture in miniature: across is time (on the timeline, as each clip restarts its playheads and stretches them),
+  up is the place in its segment. Paths come from the settings as set, so curves on them play but aren't drawn there
+  (the time map draws the same). Off playheads draw faint. Chosen over a plain background or the notes dimmed: the
+  paths say at a glance that the clip is played by playheads, how many, and how they move. The stripe mark stays.

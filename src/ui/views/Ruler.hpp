@@ -66,6 +66,8 @@ class TimelineSource {
     virtual std::vector<PlayheadSegment> playheadSegments() { return {}; }
     /// Moves a playhead's segment to [start, end) (already snapped), as one undo step.
     virtual void setPlayheadSegment(uint64_t id, double start, double end) {}
+    /// A right-click on a playhead's segment: curves and lanes that move it in time, back to the clip's loop.
+    virtual void openPlayheadSegmentMenu(uint64_t id) {}
 };
 
 /// The strip above a timeline: markers row, loop strip, time labels and the overview minimap (EDITOR_UX §3).
@@ -149,7 +151,7 @@ class Ruler : public InteractiveView {
     std::optional<std::vector<Marker>> markersPreview;
     // Explains a locked loop while the pointer rests on it.
     HoverTooltip tip{""};
-    bool tipOn = false;
+    enum class Tip { None, LockedLoop, Segment } tipOn = Tip::None; // which tooltip shows
 
     friend class LoopGesture;
     friend class PlayheadSegmentGesture;

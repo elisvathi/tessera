@@ -154,8 +154,9 @@ its other voices stay silent. This gives each playhead of a [Playheads](13-devic
 and also splits a clip that holds several parts on different channels.
 
 With playheads, each channel has voices of its own (up to 16), so one busy playhead never cuts another's notes, and
-muting, unmuting or adding a playhead while the song plays leaves the others' sounding notes alone. A muted playhead
-keeps its voices, so the number of voices a Track Out sends doesn't change when you mute one.
+turning a playhead off or on, or adding one, while the song plays leaves the others' sounding notes alone. The one you
+turn off stops at once. An off playhead keeps its voices, so the number of voices a Track Out sends doesn't change
+when you turn one off.
 
 A playhead's notes take the first free voice of its channel, and its Track Out sends only the voices that channel has
 needed since you pressed play: a bass that plays one note at a time sends one voice, a chord part grows to three when

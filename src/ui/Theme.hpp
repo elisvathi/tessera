@@ -122,6 +122,13 @@ constexpr float kMarkerRow = 14;
 constexpr float kLoopStrip = 12;
 constexpr float kPlayheadMarkWidth = 12; // a clip tile's stripe per playhead, when playheads play it
 constexpr float kPlayheadMarkHeight = 3;
+// A timeline clip its playheads play draws their paths instead of its notes: fine diagonal lines this far apart under
+// one band per playhead (at least kPlayheadBand tall, else the paths share the clip), each path sampled every
+// kPlayheadPathStep pixels and drawn kPlayheadPathWidth wide.
+constexpr float kPlayheadHatch = 6;
+constexpr float kPlayheadBand = 7;
+constexpr float kPlayheadPathStep = 2;
+constexpr float kPlayheadPathWidth = 1.4f;
 constexpr float kSegmentGrip = 6; // the solid grips at the ends of the selected playhead's segment
 constexpr float kSegmentRow = 16; // the piano roll ruler's row of playhead segments, when the track has playheads
 constexpr float kBranchCap = 3;   // the coloured cap on a device in a playhead's own chain

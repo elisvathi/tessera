@@ -119,4 +119,7 @@ Give each Tessera its own **Instance name** (module menu). Output modules show t
 | Recording a lane (the old lane arm) | Arm the track; the lane menu's **Records from** picks the source |
 | Automating a rack knob | **Add automation lane → Automate a knob: touch it in the rack** |
 | A sustain, mod wheel or other CC lane | **Add automation lane → MIDI control** |
+| A playhead coming in and dropping out | The **On** name on the Playheads card (a curve), or a chip's right-click menu → **Switch it on and off in time…** |
+| A playhead's segment moving as the song plays | Right-click the segment on the piano roll's ruler |
+| What a Curve moves, its CV out | **Moves ▾** in the curve pane's top row |
 | Every shortcut | Press **?** in the editor |

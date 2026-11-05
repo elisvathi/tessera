@@ -94,8 +94,7 @@ struct Playhead {
     uint8_t color = 0;         // index into the playhead colours
     std::vector<float> params; // normalized, the playhead parameter list (DeviceTypes.hpp playheadInfo)
     uint8_t channel = 1;       // 1..16 put on its notes; 0 = each note keeps its own
-    bool mute = false;
-    bool solo = false;
+    bool solo = false;         // whether it plays is its On setting (playheads::knob::kOn), which curves can move
     /// Devices only this playhead's notes go through, before the track's chain (never a Playheads device). They
     /// count toward the track's kMaxDevices.
     std::vector<Device> branch;
@@ -125,7 +124,7 @@ struct Device {
 
 inline bool Playhead::operator==(const Playhead& o) const {
     return id == o.id && name == o.name && color == o.color && params == o.params && channel == o.channel &&
-           mute == o.mute && solo == o.solo && branch == o.branch && path == o.path;
+           solo == o.solo && branch == o.branch && path == o.path;
 }
 
 } // namespace tessera

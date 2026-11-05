@@ -3,6 +3,7 @@
 #include "../src/model/Playheads.hpp"
 
 #include <set>
+#include <tuple>
 #include <vector>
 
 using namespace tessera;
@@ -192,6 +193,7 @@ TEST_CASE("notes repeating with their own length inside the region are read at t
 
 // ---- The Playheads device in a song ---------------------------------------------------------------------------
 
+#include "../src/model/AutomationEdits.hpp"
 #include "../src/model/DeviceCommands.hpp"
 #include "../src/model/DeviceTypes.hpp"
 #include "../src/model/Devices.hpp"
@@ -286,10 +288,10 @@ TEST_CASE("playheads are added, duplicated, changed and removed with undo") {
     CHECK(firstDevice(song).playheads[3].params == firstDevice(song).playheads[2].params);
 
     applyUndoable(song, setPlayheadChannel(song, copy, 9));
-    applyUndoable(song, setPlayheadMute(song, copy, true));
+    applyUndoable(song, setPlayheadOn(song, copy, false));
     applyUndoable(song, renamePlayhead(song, copy, "Bells"));
     CHECK(firstDevice(song).playheads[3].channel == 9);
-    CHECK(firstDevice(song).playheads[3].mute);
+    CHECK_FALSE(isOn(firstDevice(song).playheads[3]));
     CHECK(firstDevice(song).playheads[3].name == "Bells");
     CHECK(song.voicesOf(song.tracks[0]) == 4); // four playheads, one note at a time each (muted ones keep theirs)
 
@@ -373,7 +375,7 @@ TEST_CASE("each playhead channel gets its own block of voices, in playhead order
     applyUndoable(song,
                   setParam(song, {ParamRef::Kind::Device, echo.value, uint16_t(chain::knob::kRepeats)},
                            devices::normalize(devices::deviceInfo(DeviceType::Echo).params[chain::knob::kRepeats], 2)));
-    applyUndoable(song, setPlayheadMute(song, third, true));
+    applyUndoable(song, setPlayheadOn(song, third, false));
 
     // The muted third keeps its block, so muting it moves no one else's voices.
     std::vector<Song::VoiceBlock> blocks = song.voiceBlocks(song.tracks[0]);
@@ -397,7 +399,7 @@ TEST_CASE("each playhead channel gets its own block of voices, in playhead order
     applyUndoable(song, setTrackField(song, track, &Track::polyphony, 16, "Voices"));
     for (int i = 0; i < 13; i++)
         applyUndoable(song, addPlayhead(song, firstDevice(song).id, idsOf(song)));
-    applyUndoable(song, setPlayheadMute(song, third, false));
+    applyUndoable(song, setPlayheadOn(song, third, true));
     blocks = song.voiceBlocks(song.tracks[0]);
     REQUIRE(blocks.size() == 16);
     int total = 0;
@@ -450,6 +452,54 @@ TEST_CASE("playheads survive saving and loading, and a broken file is repaired")
         CHECK(loaded.tracks[0].devices[0].playheads.size() == 2);
         CHECK(loaded.tracks[0].devices[1].type == DeviceType::Echo);
     }
+}
+
+TEST_CASE("a song saved before the longer choice lists keeps its rates, pieces, lanes and curves") {
+    // Schema 7 saved Rate as 0..1 of 15 choices (1x was 7, 2x 10) and Piece of 6 (1/4 was 3).
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    Playhead& p = firstDevice(song).playheads[0];
+    PlayheadId id = p.id;
+    p.params[knob::kRate] = 10.f / 14;     // 2x
+    p.params[knob::kRepeatSize] = 3.f / 5; // 1/4
+    p.params[knob::kPathCycle] = 2.f / 4;  // 4 bars
+    ParamRef rate{ParamRef::Kind::Playhead, id.value, uint16_t(knob::kRate)};
+    // A lane on Rate: 1x, then 16x.
+    AutomationEnvelope lane = makeKnobLane(AutomationId(song.nextId++), rate, "Rate", 7.f / 14, true, 0);
+    lane.points = {{0, 7.f / 14, CurveType::Hold, 0}, {960, 1, CurveType::Hold, 0}};
+    song.tracks[0].automation.push_back(lane);
+    // A curve drawn on Rate: as set (2x), then two choices up (4x), then one down (3/2x).
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, ModulatorId(song.nextId++));
+    curve.points = {{0, 0.5f, CurveType::Hold, 0},
+                    {960, 0.5f + 1.f / 14, CurveType::Hold, 0},
+                    {1920, 0.5f - 1.f / 28, CurveType::Hold, 0}};
+    Modulation route;
+    route.target = rate;
+    route.amount = 1;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
+
+    json::Ref j(songToJson(song));
+    Song loaded = songFromJson(j.get(), 7);
+    const Playhead& q = loaded.tracks[0].devices[0].playheads[0];
+    const devices::TypeInfo& info = devices::playheadInfo();
+    auto shown = [&](int k, float v) { return devices::format(info.params[size_t(k)], v); };
+    CHECK(shown(knob::kRate, q.params[knob::kRate]) == "2x");
+    CHECK(shown(knob::kRepeatSize, q.params[knob::kRepeatSize]) == "1/4");
+    CHECK(shown(knob::kPathCycle, q.params[knob::kPathCycle]) == "4 bars");
+    const AutomationEnvelope& l = loaded.tracks[0].automation.back();
+    CHECK(shown(knob::kRate, l.points[0].value) == "1x");
+    CHECK(shown(knob::kRate, l.points[1].value) == "16x");
+    // The curve's points still reach 4x and 3/2x from the 2x as set (more choices lie between now).
+    const Modulator& c = loaded.tracks[0].modulators.back();
+    REQUIRE(c.points.size() == 3);
+    auto reached = [&](float v) { return shown(knob::kRate, q.params[knob::kRate] + (v - 0.5f) * 2); };
+    CHECK(reached(c.points[0].value) == "2x");
+    CHECK(reached(c.points[1].value) == "4x");
+    CHECK(reached(c.points[2].value) == "3/2x");
+    // A song saved now loads as it is.
+    json::Ref again(songToJson(loaded));
+    CHECK(songFromJson(again.get(), Song::kSchemaVersion) == loaded);
 }
 
 TEST_CASE("a new playhead reads as 1x forward from the clip's start") {
@@ -530,7 +580,8 @@ TEST_CASE("MIDI export retriggers the notes a playhead jumps into, as the engine
     PlayheadId head = firstDevice(song).playheads[0].id;
     const auto& info = devices::playheadInfo();
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRepeatSize)},
-                                 devices::normalize(info.params[playheads::knob::kRepeatSize], 1)));
+                                 devices::normalize(info.params[playheads::knob::kRepeatSize],
+                                                    float(choiceIndex(repeatNames(), "1/16")))));
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRepeatTimes)},
                                  devices::normalize(info.params[playheads::knob::kRepeatTimes], 4)));
 
@@ -566,7 +617,8 @@ TEST_CASE("zero-curve ratchets stay linear across playhead repeats") {
     PlayheadId head = firstDevice(song).playheads[0].id;
     const auto& info = devices::playheadInfo();
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRepeatSize)},
-                                 devices::normalize(info.params[playheads::knob::kRepeatSize], 1)));
+                                 devices::normalize(info.params[playheads::knob::kRepeatSize],
+                                                    float(choiceIndex(repeatNames(), "1/16")))));
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRepeatTimes)},
                                  devices::normalize(info.params[playheads::knob::kRepeatTimes], 4)));
 
@@ -967,6 +1019,66 @@ TEST_CASE("MIDI export plays a synced Curve modulator on a playhead setting") {
     CHECK(pitches == std::vector<int>{60, 72, 60});
 }
 
+TEST_CASE("MIDI export plays a playhead's On as the engine does, cutting its notes where it turns off") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    // A long note from the start and a short one halfway through beat 2.
+    for (auto [start, length, pitch] : {std::tuple{0, 3800, 60}, std::tuple{1440, 100, 64}}) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = start;
+        n.length = length;
+        n.pitch = int8_t(pitch);
+        clip.notes.push_back(n);
+    }
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId id = firstDevice(song).playheads[0].id;
+    // On as set for beat 1, then off: a whole row down.
+    applyUndoable(
+        song, animateWithCurve(
+                  song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOn)}, "On",
+                  {4 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {960, 0, CurveType::Hold, 0}}, 0, 4 * kPpq}, idsOf(song)));
+    std::vector<render::ExportNote> notes = render::trackNotes(song, song.tracks[0].id, render::Options(), {});
+    REQUIRE(notes.size() == 1); // the note in beat 2 falls where it is off
+    CHECK(notes[0].pitch == 60);
+    CHECK(notes[0].start == 0);
+    CHECK(notes[0].end == 960);
+}
+
+TEST_CASE("a playhead's On is a setting: undoable, saved, and a muted playhead from before loads off") {
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    PlayheadId id = firstDevice(song).playheads[1].id;
+    CHECK(isOn(firstDevice(song).playheads[1]));
+    applyUndoable(song, setPlayheadOn(song, id, false));
+    CHECK_FALSE(isOn(firstDevice(song).playheads[1]));
+    CHECK(setPlayheadOn(song, id, false) == nullptr); // already off: nothing to undo
+    CHECK_FALSE(isOn(savedAndLoaded(song).tracks[0].devices[0].playheads[1]));
+
+    // Saved when a playhead had a mute switch of its own (and no On in its settings).
+    json::Ref j(songToJson(song));
+    json_t* head = json_array_get(
+        json_object_get(
+            json_array_get(json_object_get(json_array_get(json_object_get(j.get(), "tracks"), 0), "devices"), 0),
+            "playheads"),
+        1);
+    json_t* params = json_object_get(head, "params");
+    json_array_remove(params, json_array_size(params) - 1);
+    json_object_set_new(head, "mute", json_true());
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK_FALSE(isOn(loaded.tracks[0].devices[0].playheads[1]));
+    CHECK(isOn(loaded.tracks[0].devices[0].playheads[0]));
+}
+
 TEST_CASE("the piano roll learns which pitch a playhead plays each note at") {
     Song song = songWithTrack();
     Clip clip;
@@ -1052,7 +1164,8 @@ TEST_CASE("MIDI export reads the notes of a Motion device before the playheads w
     applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
     PlayheadId head = firstDevice(song).playheads[0].id;
     applyUndoable(song, setParam(song, {ParamRef::Kind::Playhead, head.value, uint16_t(playheads::knob::kRate)},
-                                 devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10)));
+                                 devices::normalize(devices::playheadInfo().params[playheads::knob::kRate],
+                                                    float(choiceIndex(rateNames(), "2x")))));
     DeviceId motion;
     applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Motion, -1, idsOf(song), &motion));
     applyUndoable(song, setNotesMotion(song, clip.id, {n.id}, motion));

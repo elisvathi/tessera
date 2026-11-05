@@ -374,4 +374,34 @@ void ClipSource::setPlayheadSegment(uint64_t id, double start, double end) {
         m->perform(std::move(both));
 }
 
+void ClipSource::openPlayheadSegmentMenu(uint64_t id) {
+    TesseraModule* m = ctx.module();
+    const Playhead* p = m ? findPlayhead(m->song(), PlayheadId(id)) : nullptr;
+    if (!p)
+        return;
+    using namespace playheads::knob;
+    EditorContext* c = &ctx;
+    ParamRef start{ParamRef::Kind::Playhead, id, uint16_t(kRegionStart)};
+    ParamRef length{ParamRef::Kind::Playhead, id, uint16_t(kRegionLength)};
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(p->name + "'s segment"));
+    // A curve on its start moves the segment as the song plays; one on its length makes it longer or shorter.
+    auto curveItem = [&](const char* draw, const char* show, const ParamRef& ref) {
+        bool has = deviceActions::curveOn(m->song(), ref).valid();
+        menu->addChild(rack::createMenuItem(has ? show : draw, "", [c, ref] { deviceActions::showCurveFor(*c, ref); }));
+    };
+    curveItem("Move it in time with a curve…", "Show the curve moving it", start);
+    curveItem("Resize it in time with a curve…", "Show the curve resizing it", length);
+    menu->addChild(rack::createMenuItem("Automate or modulate its start…", "",
+                                        [c, start] { deviceActions::openKnobMenu(*c, start); }));
+    menu->addChild(rack::createMenuItem("Automate or modulate its length…", "",
+                                        [c, length] { deviceActions::openKnobMenu(*c, length); }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    PlayheadId playhead(id);
+    menu->addChild(rack::createMenuItem("Follow the clip's loop", "", [c, playhead] {
+        deviceActions::setPlayheadValues(*c, playhead, {{kRegionStart, 0}, {kRegionLength, 0}},
+                                         "Segment follows the clip");
+    }));
+}
+
 } // namespace tessera

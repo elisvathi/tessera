@@ -229,7 +229,7 @@ struct PlayheadPlayback {
     uint64_t id = 0;
     int knobs = 0;
     uint8_t channel = 1;         // 0 = each note keeps its own
-    bool audible = true;         // mute and solo already applied
+    bool audible = true;         // the solo applied; whether it is on is its On knob, read as it plays
     std::vector<AutoPoint> path; // its drawn path, when its Path knob says Drawn
     /// Curve modulators on its settings, which it reads at the moment it reads (Engine::playPlayheads).
     struct Exact {

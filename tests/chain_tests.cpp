@@ -422,6 +422,14 @@ struct Spec {
     float velocity = 0.8f;
 };
 
+/// A playhead setting's saved value for the choice named `name` ("2x", "1/16").
+float choiceKnob(int k, const char* name) {
+    const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
+    int index = playheads::choiceIndex(info.choices, name, -1);
+    REQUIRE(index >= 0);
+    return devices::normalize(info, float(index));
+}
+
 Song songWith(const std::vector<Spec>& notes, Tick loopLength = 4 * kPpq, int polyphony = 2) {
     Song song;
     Track track;
@@ -1456,7 +1464,7 @@ TEST_CASE("engine: a playhead that jumps into a note plays it again, and cuts th
         Song song = songWith({{0, 3840, 60}}, 4 * kPpq, kAutoVoices);
         Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
         Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-        p.params[playheads::knob::kRepeatSize] = devices::normalize(info.params[playheads::knob::kRepeatSize], 1);
+        p.params[playheads::knob::kRepeatSize] = choiceKnob(playheads::knob::kRepeatSize, "1/16");
         p.params[playheads::knob::kRepeatTimes] = devices::normalize(info.params[playheads::knob::kRepeatTimes], 4);
         p.params[playheads::knob::kOnJump] = devices::normalize(info.params[playheads::knob::kOnJump], float(onJump));
         d.playheads.push_back(p);
@@ -1508,6 +1516,42 @@ TEST_CASE("engine: a chord read by playheads keeps its whole length when one pla
     CHECK(sounding == 12); // both playheads' chords (6) and the two echoes still going (6)
 }
 
+TEST_CASE("engine: a playhead turned off stops its echoes still to come, and the other playhead plays on") {
+    // A short note read by two playheads; the first echoes it (1/8, 3 repeats).
+    Song song = songWith({{0, 200, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.branch.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto channelSounds = [&h](int channel) {
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v) && h.frame().part[v] == channel)
+                return true;
+        return false;
+    };
+    h.runTo(int64_t(100) * kSamplesPerTick);
+    REQUIRE(channelSounds(1));
+    REQUIRE(channelSounds(2));
+    h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kOn] = 0;
+    h.republish();
+    h.step();
+    CHECK_FALSE(channelSounds(1));
+    CHECK(channelSounds(2));
+    // Where the echoes would have come (every 1/8 for 3 repeats), it stays silent.
+    bool echoed = false;
+    while (h.sample < int64_t(4) * kPpq * kSamplesPerTick - 10) {
+        h.step();
+        echoed |= channelSounds(1);
+    }
+    CHECK_FALSE(echoed);
+}
+
 TEST_CASE("engine: one playhead running out of voices never takes another playhead's") {
     // Three voices per channel. Playhead 1 echoes its chord, far more than 3 voices; playhead 2 just plays it.
     Song song = songWith({{0, 1920, 60}, {0, 1920, 64}, {0, 1920, 67}}, 4 * kPpq, 3);
@@ -1552,13 +1596,20 @@ TEST_CASE("engine: muting or unmuting one playhead leaves the others' sounding n
     REQUIRE(sounding(2) == 3);
     REQUIRE(sounding(3) == 3);
 
-    h.song.tracks[0].devices[0].playheads[0].mute = true;
+    REQUIRE(sounding(1) == 3);
+    auto setOn = [&h](int k, bool on) {
+        h.song.tracks[0].devices[0].playheads[size_t(k)].params[playheads::knob::kOn] = on ? 1.f : 0.f;
+    };
+    setOn(0, false);
     h.republish();
+    h.step();
+    CHECK(sounding(1) == 0); // its notes stop at once (Trello: "the current gate continues")
     h.runTo(int64_t(1200) * kSamplesPerTick);
+    CHECK(sounding(1) == 0);
     CHECK(sounding(2) == 3);
     CHECK(sounding(3) == 3);
 
-    h.song.tracks[0].devices[0].playheads[0].mute = false;
+    setOn(0, true);
     h.republish();
     h.runTo(int64_t(1400) * kSamplesPerTick);
     CHECK(sounding(2) == 3);
@@ -1572,6 +1623,21 @@ TEST_CASE("engine: muting or unmuting one playhead leaves the others' sounding n
     h.republish();
     h.runTo(int64_t(1600) * kSamplesPerTick);
     CHECK(sounding(2) == 3);
+    CHECK(sounding(3) == 3);
+
+    // The second playhead off, then one more added in front: the third moves to the place the second had, and the
+    // second (off) to the third's. Its notes follow it, so the off one's place stops nothing of the third's.
+    setOn(2, false); // the second of the first three, behind the added one
+    h.republish();
+    h.step();
+    CHECK(sounding(2) == 0);
+    CHECK(sounding(3) == 3);
+    Playhead another = devices::makePlayhead(h.song.newId<PlayheadId>(), 4);
+    another.channel = 5;
+    heads.insert(heads.begin(), another);
+    h.republish();
+    h.runTo(int64_t(1800) * kSamplesPerTick);
+    CHECK(sounding(2) == 0);
     CHECK(sounding(3) == 3);
 }
 
@@ -1701,7 +1767,7 @@ TEST_CASE("engine: changing a playhead's rate while it plays changes its speed, 
     CHECK(h.pitch() == 62);
     // Twice as fast from tick 1000: the 64 (at 1920) comes 460 ticks later; 2x from the start would play the 65 by
     // then.
-    float twice = devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10); // "2x"
+    float twice = choiceKnob(playheads::knob::kRate, "2x");
     h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kRate] = twice;
     h.republish();
     h.runTo(1480 * kSamplesPerTick);
@@ -1802,6 +1868,53 @@ TEST_CASE("engine: a Curve modulator moves a playhead setting while it plays") {
     CHECK(pitches == std::vector<int>{60, 72, 60});
 }
 
+TEST_CASE("engine: a curve or a lane on a playhead's On switches it off and on, cutting what it sounds") {
+    // A long note from the start and a short one halfway through beat 2. The playhead is off for beat 2.
+    Song song = songWith({{0, 3800, 60}, {1440, 100, 64}}, 8 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    ParamRef on{ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOn)};
+    SUBCASE("a curve") {
+        Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+        curve.length = curve.segmentEnd = 8 * kPpq;
+        // The middle is the On as set (on); a whole row down is off.
+        curve.points = {{0, 0.5f, CurveType::Hold, 0}, {960, 0, CurveType::Hold, 0}, {1920, 0.5f, CurveType::Hold, 0}};
+        Modulation route;
+        route.target = on;
+        route.amount = 1;
+        curve.routes.push_back(route);
+        song.tracks[0].modulators.push_back(curve);
+    }
+    SUBCASE("a knob lane") {
+        AutomationEnvelope lane = makeKnobLane(song.newId<AutomationId>(), on, "Playhead · On", 1, true, 0);
+        lane.points = {{0, 1, CurveType::Hold, 0}, {960, 0, CurveType::Hold, 0}, {1920, 1, CurveType::Hold, 0}};
+        song.tracks[0].automation.push_back(lane);
+    }
+    Harness h(song);
+    auto sounding = [&h] {
+        std::vector<int> out;
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v))
+                out.push_back(h.pitch(v));
+        return out;
+    };
+    h.runTo(900 * kSamplesPerTick);
+    CHECK(sounding() == std::vector<int>{60});
+    // Off: the long note stops within a control block, and the one in beat 2 never starts.
+    h.runTo(960 * kSamplesPerTick + 64);
+    CHECK(sounding().empty());
+    h.runTo(1460 * kSamplesPerTick);
+    CHECK(sounding().empty());
+    // On again: it plays what it reaches next, not the note it cut.
+    h.runTo(1940 * kSamplesPerTick);
+    CHECK(sounding().empty());
+    // Round again (the clip is two bars), it plays from the start.
+    h.runTo((8 * kPpq + 20) * kSamplesPerTick);
+    CHECK(sounding() == std::vector<int>{60});
+}
+
 /// A Curve on a Transpose's octaves: the first bar of its drawing as set, the second an octave up.
 Modulator octaveCurve(Song& song, Device& transpose, Tick segmentStart = 0) {
     const devices::ParamInfo& octaves = devices::deviceInfo(DeviceType::Transpose).params[chain::knob::kOctaves];
@@ -1882,9 +1995,9 @@ TEST_CASE("engine: playheads play exactly the notes their settings say, whatever
     const devices::TypeInfo& info = devices::playheadInfo();
     using namespace playheads::knob;
     int checked = 0;
-    for (int rate : {4, 7, 10, 12})
+    for (const char* rate : {"1/2x", "1x", "2x", "4x"})
         for (int direction : {0, 1, 2})
-            for (int repeat : {0, 3})
+            for (const char* repeat : {"Off", "1/4"})
                 for (int order : {0, 1, 4}) {
                     Song song = songWith({{0, 120, 60}, {960, 120, 62}, {1920, 120, 64}, {2880, 120, 65}}, 4 * kPpq,
                                          kAutoVoices);
@@ -1893,11 +2006,11 @@ TEST_CASE("engine: playheads play exactly the notes their settings say, whatever
                     auto set = [&](int k, float v) {
                         p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v);
                     };
-                    set(kRate, float(rate));
+                    p.params[kRate] = choiceKnob(kRate, rate);
                     set(kDirection, float(direction));
-                    set(kRepeatSize, float(repeat));
+                    p.params[kRepeatSize] = choiceKnob(kRepeatSize, repeat);
                     set(kOrder, float(order));
-                    set(kOrderStep, 3); // 1/4
+                    p.params[kOrderStep] = choiceKnob(kOrderStep, "1/4");
                     d.playheads.push_back(p);
                     song.tracks[0].devices.push_back(d);
 
@@ -1949,8 +2062,7 @@ TEST_CASE("engine: a Motion device before the playheads moves the note inside th
         Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
         Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
         Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-        p.params[playheads::knob::kRate] =
-            devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10);
+        p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, "2x");
         heads.playheads.push_back(p);
         Device motion = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
         motion.params[chain::knob::kMotionTime] =
@@ -2033,7 +2145,7 @@ TEST_CASE("engine: a note's pitch curve keeps pace with the playhead crossing it
     song.clips.begin()->second.notes[0].pitchExpr = {{0, 0, 0}, {1, 12, 0}}; // an octave up across the note
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
     Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-    p.params[playheads::knob::kRate] = devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 4);
+    p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, "1/2x");
     d.playheads.push_back(p); // "1/2x": it takes 1920 ticks to cross the 960-tick note
     song.tracks[0].devices.push_back(d);
     Harness h(song);
@@ -2053,7 +2165,7 @@ TEST_CASE("engine: it tells the editor where each playhead is, as a changed rate
     h.runTo(1000 * kSamplesPerTick);
     CHECK(h.engine.playheadPosition(0, 0) == doctest::Approx(1000).epsilon(0.02));
     h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kRate] =
-        devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], 10); // "2x" from here on
+        choiceKnob(playheads::knob::kRate, "2x"); // from here on
     h.republish();
     h.runTo(1480 * kSamplesPerTick);
     // 1000 + 2 x 480, not 2 x 1480 as the new rate alone would say.
@@ -2104,22 +2216,21 @@ int countStarts(Harness& h, int pitch, int64_t samples) {
 
 TEST_CASE("engine: playheads play a clip's first note on every pass, at any speed and tempo") {
     for (double tempo : {1.0, 1.37, 0.91, 1.113}) {
-        for (int rate : {7, 4, 6, 8, 10}) { // 1x, 1/2x, 3/4x, 4/3x, 2x
+        for (const char* rate : {"1x", "1/2x", "3/4x", "4/3x", "2x"}) {
             // Launcher loop.
             Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
             song.clips.begin()->second.loopMode = LoopMode::Loop;
             Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
             Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-            p.params[playheads::knob::kRate] =
-                devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], float(rate));
+            p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, rate);
             d.playheads.push_back(p);
             song.tracks[0].devices.push_back(d);
             Harness h(song);
             h.engine.setTempo(kBpm * tempo);
-            double speed[] = {0, 0, 0, 0, 0.5, 0, 0.75, 1, 4.0 / 3, 0, 2};
+            double speed = playheads::playheadRate(playheads::choiceIndex(playheads::rateNames(), rate));
             int64_t bars = 12;
             int starts = countStarts(h, 60, int64_t(bars * 4 * kPpq * kSamplesPerTick / tempo) - 50);
-            int expected = int(std::ceil(bars * speed[rate] - 1e-9));
+            int expected = int(std::ceil(bars * speed - 1e-9));
             if (starts != expected)
                 MESSAGE("launcher tempo " << tempo << " rate " << rate << ": " << starts << " of " << expected);
             CHECK(starts == expected);
@@ -2156,22 +2267,21 @@ TEST_CASE("engine: timeline playheads play the first note again after the song l
 
 TEST_CASE("engine: back-to-back notes of one pitch start again each time, across the loop, with or without playheads") {
     for (bool heads : {false, true}) {
-        for (int rate : {7, 4, 10}) {
+        for (const char* rate : {"1x", "1/2x", "2x"}) {
             Song song =
                 songWith({{0, 960, 60}, {960, 960, 60}, {1920, 960, 60}, {2880, 960, 60}}, 4 * kPpq, kAutoVoices);
             song.clips.begin()->second.loopMode = LoopMode::Loop;
             if (heads) {
                 Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
                 Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
-                p.params[playheads::knob::kRate] =
-                    devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], float(rate));
+                p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, rate);
                 d.playheads.push_back(p);
                 song.tracks[0].devices.push_back(d);
-            } else if (rate != 7) {
+            } else if (std::string(rate) != "1x") {
                 continue;
             }
             Harness h(song);
-            double speed = rate == 4 ? 0.5 : rate == 10 ? 2 : 1;
+            double speed = playheads::playheadRate(playheads::choiceIndex(playheads::rateNames(), rate));
             int starts = countStarts(h, 60, int64_t(3 * 4 * kPpq * kSamplesPerTick) - 50);
             int expected = int(std::ceil(12 * speed - 1e-9));
             if (starts != expected)
@@ -2182,14 +2292,15 @@ TEST_CASE("engine: back-to-back notes of one pitch start again each time, across
 }
 
 TEST_CASE("engine: one to three playheads at any speed start the first note on the first sample") {
-    for (int r = 0; r < 15; r++) {
+    const int rates = int(playheads::rateNames().size());
+    for (int r = 0; r < rates; r++) {
         for (int heads = 1; heads <= 3; heads++) {
             Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
             Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
             for (int k = 0; k < heads; k++) {
                 Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), k);
-                p.params[playheads::knob::kRate] =
-                    devices::normalize(devices::playheadInfo().params[playheads::knob::kRate], float((r + k * 3) % 15));
+                p.params[playheads::knob::kRate] = devices::normalize(
+                    devices::playheadInfo().params[playheads::knob::kRate], float((r + k * 3) % rates));
                 d.playheads.push_back(p);
             }
             song.tracks[0].devices.push_back(d);
