@@ -194,5 +194,8 @@ The clip chip on the left of the header works as in the piano roll: rename, loop
   level input.
 - The poly jacks at the bottom carry all 16 outputs, one channel per output. **AUTO** carries the drum track's
   automation lanes.
+- Patch each drum module's output back into the **IN** row of its strip: the kit is mixed into the drum track, with
+  one fader, pan and meter in the [mixer](18-mixer.md). For an effect on the whole kit, patch the **AUDIO** block's
+  **OUT** into it and the effect back into its **IN**.
 
 See [The modules](02-modules.md#drum-out).

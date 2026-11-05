@@ -1,5 +1,7 @@
 #include "PianoRoll.hpp"
 
+#include "AudioEditor.hpp"
+
 #include "../../model/DeviceTypes.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -252,6 +254,8 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     timeMap->visible = false;
     curveView = new CurveView(ctx, *this);
     curveView->visible = false;
+    audioEditor = new AudioEditor(ctx);
+    audioEditor->visible = false;
     addChild(grid);
     addChild(keys);
     addChild(lanes);
@@ -261,6 +265,7 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     addChild(clipLane);
     addChild(timeMap);
     addChild(curveView);
+    addChild(audioEditor);
 
     EditorContext* c = &ctx;
     ToolButton::Options lower;
@@ -401,6 +406,25 @@ bool PianoRollView::layoutToolbar(float header) {
     maximizeButton->box.pos = rack::math::Vec(right - kMaximizeButton, (header - kMaximizeButton) / 2);
     right -= kMaximizeButton + 6;
     right -= headerReserve;
+    // The audio editor has no notes to draw, hear, transform or key: its header is the clip chip and the pane's own
+    // buttons, the same as for notes.
+    if (audioMode()) {
+        for (rack::widget::Widget* w :
+             {(rack::widget::Widget*)hearButton, (rack::widget::Widget*)overflowButton,
+              (rack::widget::Widget*)viewButton, (rack::widget::Widget*)notesButton, (rack::widget::Widget*)kitButton,
+              (rack::widget::Widget*)keyButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,
+              (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select,
+              (rack::widget::Widget*)drumSwitch.first, (rack::widget::Widget*)drumSwitch.second,
+              (rack::widget::Widget*)devicesToggle})
+            w->visible = false;
+        toolbarLeft = right;
+        return false;
+    }
+    // Back from the audio editor, everything it hid comes back, Devices too.
+    for (rack::widget::Widget* w :
+         {(rack::widget::Widget*)hearButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,
+          (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select, (rack::widget::Widget*)devicesToggle})
+        w->visible = true;
     const Track* t = track();
     bool drum = t && t->type == TrackType::Drum;
     float limit = devicesToggle->box.getRight() + 6;
@@ -502,10 +526,22 @@ void PianoRollView::layout() {
     // The label stays inside the lane, however short the lane gets (the in-panel editor).
     lowerButton->box =
         rack::math::Rect(2, body + gridHeight + tabs + 2, std::min(kKeyboardWidth, side) - 4, std::min(30.f, lane - 4));
+    bool audio = audioMode();
+    audioEditor->visible = audio;
+    if (audio) {
+        keys->visible = lanes->visible = ruler->visible = grid->visible = false;
+        values->visible = expression->visible = clipLane->visible = lowerButton->visible = false;
+        timeMap->visible = curveView->visible = false; // a playhead's lower pane belongs to the notes
+        audioEditor->box = rack::math::Rect(0, header, box.size.x, std::max(0.f, box.size.y - header));
+        audioEditor->clip = source.clip;
+    } else {
+        ruler->visible = grid->visible = true;
+    }
     // The clip chip first, sized to its words, then Devices; the toolbar fills from the right. A narrow header
     // shortens the chip to the track's name, so snap and key keep their room.
     auto placeChip = [this](bool shortText) {
-        placeClipChip(ctx, clipChip, source.clip, shortText, box.size.x);
+        placeClipChip(ctx, clipChip, source.clip, shortText, box.size.x - headerLeft);
+        clipChip->box.pos.x += headerLeft;
         devicesToggle->box = rack::math::Rect(clipChip->box.getRight() + 4, 3, kDevicesToggleWidth, kPaneHeader - 6);
     };
     placeChip(false);
@@ -513,6 +549,11 @@ void PianoRollView::layout() {
         placeChip(true);
         layoutToolbar(kPaneHeader);
     }
+}
+
+bool PianoRollView::audioMode() {
+    const Clip* c = clip();
+    return c && c->audio;
 }
 
 bool PianoRollView::anyNoteInView() {

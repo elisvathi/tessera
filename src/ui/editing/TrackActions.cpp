@@ -1,6 +1,9 @@
 #include "TrackActions.hpp"
 
 #include "../widgets/MenuTextField.hpp"
+#include "../Theme.hpp"
+#include "AudioActions.hpp"
+#include "BounceActions.hpp"
 
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -274,6 +277,11 @@ void appendAddLaneItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track,
     if (owner.track.valid())
         menu->addChild(
             rack::createMenuItem("Automate a knob: touch it in the rack", "", [c, track] { automateKnob(*c, track); }));
+    // A track that makes sound can move its own fader and pan (§7.3).
+    if (TesseraModule* m = ctx.module(); m && owner.track.valid() && m->soundIndex(track) >= 0) {
+        menu->addChild(rack::createMenuItem("Volume (the fader)", "", [c, track] { automateMix(*c, track, false); }));
+        menu->addChild(rack::createMenuItem("Pan", "", [c, track] { automateMix(*c, track, true); }));
+    }
     menu->addChild(rack::createSubmenuItem("MIDI control", "", [c, track, owner](rack::ui::Menu* sub) {
         sub->addChild(rack::createMenuLabel("Records it when the track records"));
         for (MidiControl control : commonMidiControls())
@@ -290,6 +298,30 @@ void appendAddLaneItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track,
                 c->toast("A CC number is 0 to 127");
         }));
     }));
+}
+
+void automateMix(EditorContext& ctx, TrackId track, bool pan) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const Song& song = m->song();
+    const Track* t = song.findTrack(track);
+    bool master = track == song.master.id;
+    if (!t && !(master && !pan))
+        return;
+    LaneDrive drive = pan ? LaneDrive::Pan : LaneDrive::Volume;
+    ctx.view().openAutomation.insert(track.value);
+    for (const AutomationEnvelope& l : *lanesOf(song, LaneOwner::ofTrack(track)))
+        if (l.drive == drive)
+            return;
+    AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), 0, t ? t->color : theme::kMasterColor);
+    lane.name = pan ? "Pan" : "Volume";
+    lane.drive = drive;
+    lane.rangeMin = 0;
+    lane.rangeMax = 1;
+    float volumeDb = t ? t->channel.volumeDb : song.master.volumeDb;
+    lane.points = {{0, pan ? (t->channel.pan + 1) / 2 : faderPosOfDb(volumeDb)}};
+    m->perform(addLane(song, LaneOwner::ofTrack(track), lane));
 }
 
 void automateKnob(EditorContext& ctx, TrackId track) {
@@ -504,6 +536,7 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
         full));
     menu->addChild(rack::createMenuItem(
         "Add drum track", shortcutLabel(Action::AddDrumTrack), [c] { add(*c, TrackType::Drum); }, full));
+    menu->addChild(rack::createMenuItem("Add audio track", "", [c] { add(*c, TrackType::Audio); }, full));
     menu->addChild(rack::createMenuItem(
         "Duplicate", shortcutLabel(Action::Duplicate), [c] { duplicateSelected(*c); }, !canAdd(song, ids.size())));
     if (full)
@@ -538,6 +571,15 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     menu->addChild(rack::createSubmenuItem("Add automation lane", "", [c, first](rack::ui::Menu* sub) {
         appendAddLaneItems(sub, *c, first, LaneOwner::ofTrack(first));
     }));
+    if (ids.size() == 1) {
+        TrackId id = clicked;
+        menu->addChild(rack::createMenuItem(
+            track->type == TrackType::Drum ? "Add a Drum Out for this track" : "Add a Track Out for this track", "",
+            [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
+        if (m->soundIndex(id) >= 0)
+            menu->addChild(rack::createMenuItem("Bounce to a new audio track…", shortcutLabel(Action::Bounce),
+                                                [c, id] { bounceActions::openDialog(*c, id); }));
+    }
     menu->addChild(
         rack::createSubmenuItem("Input", inputLabel(song, *track),
                                 [c, first = ids.front()](rack::ui::Menu* sub) { appendInputItems(sub, *c, first); }));

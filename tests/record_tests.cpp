@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/engine/Metronome.hpp"
 #include "../src/engine/Recorder.hpp"
 #include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Json.hpp"
@@ -1079,6 +1080,41 @@ TEST_CASE("lane record state: the track arm decides, then the lane's source") {
     CHECK(laneOutputLabel(makeMidiLane(AutomationId(1), {MidiControl::Kind::PitchBend, 0}, 0, 0)) == "V/OCT");
 }
 
+TEST_CASE("a fader or pan lane records on an armed track: its source is the track's own control") {
+    Song song = recordSong();
+    AutomationEnvelope fader = makeLane(song.newId<AutomationId>(), 0, 0);
+    fader.drive = LaneDrive::Volume;
+    AutomationEnvelope pan = fader;
+    pan.id = song.newId<AutomationId>();
+    pan.drive = LaneDrive::Pan;
+    LaneOwner armed = LaneOwner::ofTrack(song.tracks[0].id), idle = LaneOwner::ofTrack(song.tracks[1].id);
+    CHECK(laneRecordState(song, armed, fader, 0, nullptr) == LaneRecordState::Records);
+    CHECK(laneRecordState(song, armed, pan, 0, nullptr) == LaneRecordState::Records);
+    CHECK(laneRecordState(song, idle, fader, 0, nullptr) == LaneRecordState::Off);
+    fader.noRecord = true;
+    CHECK(laneRecordState(song, armed, fader, 0, nullptr) == LaneRecordState::Kept);
+}
+
+TEST_CASE("a fader moved while recording writes its lane, and the lane keeps its curve elsewhere") {
+    Song song = recordSong();
+    AutomationEnvelope fader = makeLane(song.newId<AutomationId>(), 0, 0);
+    fader.drive = LaneDrive::Volume;
+    fader.points = {{0, 0.75f, CurveType::Linear, 0}};
+    song.tracks[0].automation.push_back(fader);
+    FakeHost host(song);
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(laneReading(t, t.automation[0], kPpq, 0.75f, 0));
+    rec.handle(laneReading(t, t.automation[0], kPpq + kPpq / 2, 0.5f, 0.1));
+    rec.handle(laneReading(t, t.automation[0], 2 * kPpq, 0.4f, 0.2));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    const AutomationEnvelope& lane = host.song_.tracks[0].automation[0];
+    CHECK(evaluate(lane, 0) == doctest::Approx(0.75f));
+    CHECK(evaluate(lane, 2 * kPpq) == doctest::Approx(0.4f).epsilon(0.01));
+}
+
 TEST_CASE("capture keeps what the keys played and the controls moved during the phrase") {
     Song song = recordSong();
     addTrackMidiLane(song, cc(1), 0);
@@ -1353,4 +1389,22 @@ TEST_CASE("recorder: a take of only a track lane's control makes no clip") {
     rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
     CHECK(!slotClip(host.song_, 0, 0));
     CHECK(host.song_.tracks[0].automation[0].points.size() == 2);
+}
+
+TEST_CASE("the metronome clicks on a trigger, louder at first, higher on the bar, and dies away") {
+    Metronome click;
+    CHECK(click.next(48000) == 0);
+    click.trigger(true);
+    float peak = 0;
+    for (int i = 0; i < 200; i++)
+        peak = std::max(peak, std::abs(click.next(48000)));
+    CHECK(peak > 5.f);
+    for (int i = 0; i < 4800; i++)
+        click.next(48000);
+    CHECK(std::abs(click.next(48000)) < 1e-3f);
+    RecordSettings s;
+    s.metronome = MetronomeMode::Recording;
+    s.metronomeDb = -6;
+    json::Ref j(s.toJson());
+    CHECK(RecordSettings::fromJson(j.get()) == s);
 }

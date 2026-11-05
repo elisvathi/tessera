@@ -30,6 +30,28 @@ DrumOutModule::DrumOutModule() : OutputModuleBase(TrackType::Drum) {
         configOutput(TIMBRE_OUTPUT + i, lane + " timbre")->description = kTimbreHelp;
         configOutput(PRESS_OUTPUT + i, lane + " pressure")->description = kPressHelp;
     }
+    for (int i = 0; i < kTrigJacks; i++)
+        configInput(LANE_IN_INPUT + i, "Lane " + std::to_string(i + 1) + " audio")->description =
+            "The sound of the drum on this lane (its module's output), mixed into the drum track and its OUT. A poly "
+            "cable is summed";
+    const char* outHelp = "The kit's sound before the drum track's fader (every lane IN mixed), for an effect: patch "
+                          "it out and the effect's output back into IN. 10 V is full scale (0 dB)";
+    configOutput(KIT_OUT_L_OUTPUT, "Kit OUT left")->description = outHelp;
+    configOutput(KIT_OUT_R_OUTPUT, "Kit OUT right")->description = outHelp;
+    const char* inHelp = "An effect on the kit coming back, or a stereo drum machine: mixed into the drum track before "
+                         "its fader. With one side patched, both sides hear it";
+    configInput(KIT_IN_L_INPUT, "Kit IN left")->description = inHelp;
+    configInput(KIT_IN_R_INPUT, "Kit IN right")->description = inHelp;
+    configLight(KIT_IN_LIGHT, "Kit IN level")->description = "Green while audio comes back, red above 0 dB";
+    AudioPorts ports;
+    ports.outL = KIT_OUT_L_OUTPUT;
+    ports.outR = KIT_OUT_R_OUTPUT;
+    ports.inL = KIT_IN_L_INPUT;
+    ports.inR = KIT_IN_R_INPUT;
+    ports.inLight = KIT_IN_LIGHT;
+    ports.sourceFirst = LANE_IN_INPUT;
+    ports.sourceCount = kTrigJacks;
+    setAudioPorts(ports);
     lightDivider.setDivision(kLightDivision);
 }
 

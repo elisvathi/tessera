@@ -1,5 +1,7 @@
 #include "LauncherPanel.hpp"
 
+#include "../editing/AudioActions.hpp"
+
 #include "../../model/LauncherCommands.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -87,6 +89,38 @@ LauncherPanel::Hit LauncherPanel::hitTest(Vec pos) {
     hit.track = owner.rows[size_t(row)].track;
     hit.part = slotDraw::launchRect(cell).contains(pos) ? Hit::Part::Launch : Hit::Part::Body;
     return hit;
+}
+
+void LauncherPanel::onPathDrop(const PathDropEvent& e) {
+    TesseraModule* m = ctx.module();
+    if (!m) {
+        InteractiveView::onPathDrop(e);
+        return;
+    }
+    Hit h = hitTest(e.pos);
+    const Track* t = m->song().findTrack(h.track);
+    // Ctrl/Cmd+drop on an audio clip replaces its file.
+    if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL && !e.paths.empty() && t && h.scene >= 0 &&
+        h.scene < int(t->slots.size()) && t->slots[size_t(h.scene)].clip) {
+        const Clip* clip = m->song().findClip(*t->slots[size_t(h.scene)].clip);
+        if (clip && clip->audio) {
+            audioActions::replaceFile(ctx, clip->id, e.paths.front());
+            e.consume(this);
+            return;
+        }
+    }
+    AudioDropTarget target;
+    if (t && t->type == TrackType::Audio && h.scene >= 0) {
+        target.kind = AudioDropTarget::Kind::Slot;
+        target.track = t->id;
+        target.slot = h.scene;
+    } else {
+        target.kind = AudioDropTarget::Kind::NewTracks;
+        target.index = t ? m->song().trackIndex(t->id) + 1 : int(m->song().tracks.size());
+        target.timeline = false;
+    }
+    audioActions::dropAudio(ctx, e.paths, target);
+    e.consume(this);
 }
 
 // ---- Dragging -----------------------------------------------------------------------------------------------

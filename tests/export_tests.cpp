@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/model/AudioEdits.hpp"
 #include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Chord.hpp"
 #include "../src/model/DawProject.hpp"
@@ -788,4 +789,28 @@ TEST_CASE("import: channel controls become clip lanes") {
     CHECK(clip.automation[0].name == "Mod wheel (CC 1)");
     CHECK(clip.automation[0].outputIndex == 0);
     CHECK(clip.automation[1].drive == LaneDrive::Pressure);
+}
+
+TEST_CASE("dawproject: an audio track's clips point at their files inside the project, warped to the clip tempo") {
+    Song song = makeDefaultSong();
+    ImportedAudio file;
+    file.source.name = "Drum loop.wav";
+    file.source.sampleRate = 48000;
+    file.source.frames = 96000; // 2 s
+    file.tempo = 120;
+    AudioDropTarget target;
+    target.index = int(song.tracks.size());
+    target.at = 4 * kPpq;
+    ImportResult made;
+    importAudio(song, {file}, target, [&song] { return song.nextId++; }, &made)->apply(song);
+    Context ctx{120, "Song"};
+    std::string xml = dawproject::projectXml(song, Options(), ctx, "2.0.0");
+    CHECK(xml.find("contentType=\"audio\"") != std::string::npos);
+    CHECK(xml.find("<File path=\"audio/Drum loop.wav\"/>") != std::string::npos);
+    CHECK(xml.find("<Clip time=\"4.0\" duration=\"4.0\"") != std::string::npos);
+    // Four beats at 120 BPM are the file's two seconds.
+    CHECK(xml.find("<Warp time=\"4.0\" contentTime=\"2.0\"/>") != std::string::npos);
+    std::map<std::string, std::string> files =
+        zip::read(dawproject::build(song, Options(), ctx, "2.0.0", {{"audio/Drum loop.wav", "RIFF"}}));
+    CHECK(files["audio/Drum loop.wav"] == "RIFF");
 }

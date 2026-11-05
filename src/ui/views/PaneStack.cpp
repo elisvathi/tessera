@@ -30,7 +30,6 @@ void PaneStack::layout() {
     using rack::math::Rect;
     ViewState& view = ctx.view();
     rack::math::Vec size = box.size;
-
     if (view.maximized == Pane::Top) {
         top->box = Rect(0, 0, size.x, size.y);
         top->visible = true;

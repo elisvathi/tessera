@@ -113,6 +113,15 @@ void Registry::removeOutput(OutputModuleBase* output) {
     eraseValue(outputList, output);
 }
 
+std::vector<OutputModuleBase*> Registry::outputsOf(int64_t sourceId) const {
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<OutputModuleBase*> out;
+    for (OutputModuleBase* o : outputList)
+        if (o->binding().sourceId == sourceId)
+            out.push_back(o);
+    return out;
+}
+
 bool Registry::hasOutputFor(int64_t sourceId, TrackId track) const {
     std::lock_guard<std::mutex> lock(mutex);
     return std::any_of(outputList.begin(), outputList.end(), [&](OutputModuleBase* o) {

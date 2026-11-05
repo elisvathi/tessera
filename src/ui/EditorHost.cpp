@@ -1,4 +1,10 @@
 #include "EditorHost.hpp"
+#include "../module/OutputModuleBase.hpp"
+#include "editing/BounceActions.hpp"
+#include "editing/ExportAudio.hpp"
+#include "editing/Sources.hpp"
+
+#include "editing/AudioActions.hpp"
 
 #include "../module/TesseraModule.hpp"
 #include "Theme.hpp"
@@ -121,7 +127,11 @@ bool EditorHost::handleKey(const rack::widget::Widget::KeyBaseEvent& e) {
     // clicked pane, Ctrl+A then Ctrl+D over the notes selected and copied every track.
     if (EditorPane* hovered = paneUnderMouse())
         ctx.view().focus = hovered->pane();
-    Scope scope = ctx.view().focus == Pane::Top && arrangerPane() ? Scope::TopPane : Scope::DetailPane;
+    // The mixer has no keys of its own yet: while the lower pane shows it, only the keys that work everywhere act.
+    bool mixerShown = ctx.module() && ctx.module()->makesSound() && ctx.view().mixerOpen;
+    Scope scope = ctx.view().focus == Pane::Top && arrangerPane()        ? Scope::TopPane
+                  : ctx.view().focus == Pane::Detail && mixerShown ? Scope::Everywhere
+                                                                   : Scope::DetailPane;
     std::optional<Action> action = findAction({e.key, e.keyName, mods}, scope);
     if (!action)
         return false;
@@ -164,6 +174,33 @@ void EditorHost::showNotices() {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
+    // A bounce or export in progress: what it does, with Cancel (Stop cancels too).
+    std::string status = m->captureStatus();
+    if (!status.empty())
+        ctx.toast(status, "Cancel", [m] { m->cancelCapture(); });
+    else if (!m->takeProblem.empty()) {
+        ctx.toast(m->takeProblem);
+        m->takeProblem.clear();
+    } else if (!m->exportResult.empty()) {
+        ctx.toast(m->exportResult);
+        m->exportResult.clear();
+    }
+    // A new second source plays at once, mixed with the first (§7.8).
+    const TesseraModule::NewSource& news = m->newSource();
+    bool freshSource = noticesSeen && news.serial != sourceNewsSeen;
+    sourceNewsSeen = news.serial;
+    if (freshSource)
+        if (const Track* t = m->song().findTrack(news.track); t || news.track == m->song().master.id) {
+            std::string name = t ? t->name : "Master";
+            TrackId track = news.track;
+            int64_t newest = news.module;
+            ctx.toast(name + " has " + std::to_string(news.count) + " sources now. " + (news.count == 2 ? "Both play" : "All play"), "Use only the new one",
+                      [m, track, newest] {
+                          for (const sources::Row& r : sources::rowsOf(*m, track))
+                              if (!r.countedOnce && (!r.module || r.module->id != newest) && r.level.use)
+                                  sources::set(*m, track, r, {r.level.db, false}, "Use only the new source");
+                      });
+        }
     const TesseraModule::UnlinkedControls& u = m->unlinkedControls();
     // An editor opened after a report doesn't bring up the old news.
     bool fresh = noticesSeen && u.serial != unlinkedSeen;
@@ -249,13 +286,14 @@ void EditorHost::runAction(Action action) {
     case Action::Redo:
         APP->history->redo();
         return;
-    case Action::SwitchPane:
+    case Action::SwitchPane: {
         if (!arrangerPane())
             return;
         view.focus = view.focus == Pane::Top ? Pane::Detail : Pane::Top;
         if (view.maximized)
             view.maximized = view.focus;
         return;
+    }
     case Action::WidenClips:
         if (!arrangerPane())
             return;
@@ -360,6 +398,22 @@ void EditorHost::runAction(Action action) {
     case Action::ExportMidi:
         exportMidi::openSong(ctx);
         return;
+    case Action::ToggleMixer:
+        // The lower pane shows the notes or the mixer; F4 switches, as the switch in its header does.
+        if (!ctx.module() || !ctx.module()->makesSound())
+            return;
+        view.mixerOpen = !view.mixerOpen;
+        view.focus = Pane::Detail;
+        return;
+    case Action::ExportAudio:
+        exportAudio::openDialog(ctx);
+        return;
+    case Action::Bounce:
+        bounceActions::openDialog(ctx, ctx.state().selectedTrack);
+        return;
+    case Action::ImportAudio:
+        audioActions::importDialog(ctx);
+        return;
     case Action::KeyboardPlay:
         state.keyboardPlay = !state.keyboardPlay;
         if (!state.keyboardPlay)
@@ -376,6 +430,8 @@ void EditorHost::runAction(Action action) {
         // (the overlay closes).
         if (ctx.dragging)
             ctx.dragging->cancelGesture();
+        else if (ctx.view().showSends.valid())
+            ctx.view().setShowSends(TrackId(), EditorContext::now());
         else if (state.curveFocusNote.valid()) {
             state.curveFocusNote = NoteId();
             state.curveFocusClip = ClipId();

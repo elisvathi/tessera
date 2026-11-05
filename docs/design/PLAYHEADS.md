@@ -1,6 +1,6 @@
 # PLAYHEADS.md — Several playheads reading one clip (design, for review)
 
-Status: built, with the changes recorded in DECISIONS §94 (the card, curves on any setting, the Motion device).
+Status: built, with the changes recorded in DECISIONS §131 (the card, curves on any setting, the Motion device).
 Where this design and DECISIONS disagree, DECISIONS wins.
 Mockups: claude.ai canvas "Tessera Playheads proposals" (boards A–E and the final board "F · Final").
 
@@ -296,7 +296,7 @@ Notes can move while the clip plays. A few notes rise one scale step each pass a
 and later in the bar. Velocities swell over eight bars. The written notes never change: the motion is played on
 top of them, the same way on every play and every export. It works with or without playheads.
 
-> **Changed 30 Oct 2026:** motion groups became the **Motion device** (see DECISIONS §94). Notes join a Motion device
+> **Changed 30 Oct 2026:** motion groups became the **Motion device** (see DECISIONS §131). Notes join a Motion device
 > instead of a clip's group; it can sit before Playheads (notes move inside the clip, playheads read them there),
 > after them, or in one playhead's own devices. What follows is the original group design.
 
@@ -483,7 +483,7 @@ Each step builds, passes tests and can be used before the next.
 ## 12. Redesign after trying it (30 Oct, dropped)
 
 > **Dropped 30 Oct 2026:** the rack of strips, presets and "Starts at" were turned down. The card kept one row of
-> uniform cells, segment bars on the ruler and a curve per setting in the lower pane (DECISIONS §94). Kept here as a
+> uniform cells, segment bars on the ruler and a curve per setting in the lower pane (DECISIONS §131). Kept here as a
 > record.
 
 Mockups: canvas boards "G · Redesign: the playhead rack" and "H · Redesign: first use, presets, looping and one-shot

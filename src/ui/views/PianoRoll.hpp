@@ -28,6 +28,7 @@ class TimeMapView;
 class CurveView;
 class ToolButton;
 class LaneTabs;
+class AudioEditor;
 
 /// The detail pane: the piano roll for the selected track's clip (EDITOR_UX §4). On a drum track it is the drum
 /// editor (EDITOR_UX §5): lane headers stand in for the keys, one row per lane in the lanes' order.
@@ -40,6 +41,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// Room the in-panel editor's "Full editor" button takes at the header's right end while this pane is on top.
     float headerReserve = 0;
+    /// Room kept free at the left end of the header, for the pane's Notes | Mixer switch.
+    float headerLeft = 0;
 
     bool handleAction(Action action) override;
     void layout() override;
@@ -155,6 +158,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// Creates an empty clip on the selected track (the "double-click to create" empty state).
     void createClip();
+    /// The shown clip is an audio clip: the audio editor takes the notes' place under the same header (§6.4).
+    bool audioMode();
 
   private:
     void applyZoomLimits();
@@ -200,6 +205,7 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ToolButton* overflowButton;                     // a narrow header: Notes and View in one "⋯"
     ToolButton* hearButton;                         // hear notes while editing: on screen, since it is switched often
     ToolButton* maximizeButton;
+    AudioEditor* audioEditor;
     ToolButton* devicesToggle;
     float toolbarLeft = 0;
 

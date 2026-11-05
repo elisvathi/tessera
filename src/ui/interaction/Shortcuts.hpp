@@ -48,6 +48,7 @@ enum class Action {
     Split,
     Glue,
     MakeUnique,
+    Bounce,
     Quantize,
     QuantizeDialog,
     TransposeUp,
@@ -95,6 +96,7 @@ enum class Action {
     MaximizePane,
     WidenClips,
     ToggleDevices,
+    ToggleMixer,
     ToggleDrumView,
     // Tracks
     AddInstrumentTrack,
@@ -109,6 +111,8 @@ enum class Action {
     // General
     Help,
     ExportMidi,
+    ExportAudio,
+    ImportAudio,
     Close,
     Count
 };

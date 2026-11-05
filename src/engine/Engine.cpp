@@ -2327,6 +2327,7 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
                 state.autoVolts[size_t(o)] = 0;
                 state.autoChanges++;
             }
+        state.mixAutomated = {};
         return;
     }
     // A track silenced by mute or a solo contributes no lanes, exactly as its muted lanes would: channels with
@@ -2399,6 +2400,12 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
         if (volts != state.autoVolts[o])
             state.autoChanges++;
         state.autoVolts[o] = volts;
+    }
+    // Fader and pan lanes: their value (0..1) while one plays; with none, the strip's own setting applies.
+    for (size_t o : {size_t(kVolumeLaneSlot), size_t(kPanLaneSlot)}) {
+        state.mixAutomated[o - kVolumeLaneSlot] = have[o];
+        if (have[o])
+            state.autoValue[o] += (target[o] - state.autoValue[o]) * state.slewAlpha[o];
     }
 }
 

@@ -19,7 +19,7 @@
 
 namespace tessera {
 
-enum class Pane { Top, Detail };
+enum class Pane { Top, Detail, Mixer };
 
 /// Where an editor is shown: the full-window overlay, or inside the widened Tessera panel.
 enum class Surface { Overlay, Panel };
@@ -79,6 +79,21 @@ struct ViewState {
     bool drumLanes = true;          // drum tracks show lanes and step cells (G switches to the keys)
     float launcherPanelWidth = 233; // px: the clips beside the timeline, three scenes by default
     bool clipsWide = false;         // performing: the clips take the width, the timeline folds to a strip (F2)
+    bool mixerOpen = false;         // the mixer pane under the notes pane; folded to its tab by default
+    float mixerHeight = 260;        // px when open
+    // Show sends (§7.6): the mixer's faders show the sends to this track. Not saved. The faders glide from what
+    // they showed before (`sendsFrom`: the previous target, or none for volumes) since `sendsSince`.
+    TrackId showSends;
+    TrackId sendsFrom;
+    double sendsSince = -1;
+    /// Enters Show sends for `track`, or leaves it with an invalid ID.
+    void setShowSends(TrackId track, double now) {
+        if (track == showSends)
+            return;
+        sendsFrom = showSends;
+        showSends = track;
+        sendsSince = now;
+    }
 
     // A zero zoom means "not set yet": the view fits its content the first time it opens.
     TimeAxis::State arranger{0, 0};
@@ -134,7 +149,7 @@ struct KeyPreview {
 };
 
 struct EditorState {
-    static constexpr int kPanelMinHp = 24; // the controls alone
+    static constexpr int kPanelMinHp = 26; // the controls alone (24 before MAIN, DECISIONS §103)
     static constexpr int kPanelEditorMinHp = 48;
     static constexpr int kPanelMaxHp = 160;
 
@@ -170,6 +185,9 @@ struct EditorState {
     ChordStamp chord;                           // Draw places this chord
     NoteSelection selection;                    // session only
     arrange::IdSet clipSelection;               // arranger instances, session only
+    // The timeline clips the last audio drop made. Their title bars show the big form ("92 BPM · 2 bars ·
+    // Stretch") for as long as they are what is selected. Session only.
+    arrange::IdSet freshAudio;
     AutoSelection autoSelection;                // session only
     std::optional<autoEdits::Shape> stampShape; // armed: the next drag in a lane stamps this shape
     ArrangerRange range;                        // the arranger's time selection, session only

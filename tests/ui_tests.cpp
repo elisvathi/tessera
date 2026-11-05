@@ -441,6 +441,27 @@ TEST_CASE("an editor layout saved by milestone 3 loads as the overlay view") {
     CHECK(s.panelHp == EditorState::kPanelMaxHp);
 }
 
+TEST_CASE("the mixer shares the notes pane: older saves that had it as its own pane load into the notes pane") {
+    EditorState s;
+    s.overlay.mixerOpen = true;
+    s.overlay.maximized = Pane::Detail;
+    json::Ref j(s.toJson());
+    EditorState t = EditorState::fromJson(j.get());
+    CHECK(t.overlay.mixerOpen);
+    CHECK(t.overlay.maximized == Pane::Detail);
+
+    json::Ref old(json_loads(R"({"overlay": {"mixerOpen": true, "mixerMax": true}})", 0, nullptr));
+    EditorState o = EditorState::fromJson(old.get());
+    CHECK(o.overlay.mixerOpen);
+    CHECK(o.overlay.maximized == Pane::Detail);
+
+    json::Ref pane(json_loads(R"({"overlay": {"focus": "mixer", "maximized": "mixer"}})", 0, nullptr));
+    EditorState p = EditorState::fromJson(pane.get());
+    CHECK(p.overlay.focus == Pane::Detail);
+    CHECK(p.overlay.maximized == Pane::Detail);
+    CHECK(p.overlay.mixerOpen);
+}
+
 TEST_CASE("the device browser finds devices by name and by what they do") {
     auto found = [](const std::string& query) {
         std::vector<std::string> names;

@@ -62,6 +62,7 @@ std::vector<ActionInfo> buildTable() {
         {Ac::Split, "Edit", "Split", {C("e", Ctl)}},
         {Ac::Glue, "Edit", "Glue", {C("j", Ctl)}},
         {Ac::MakeUnique, "Edit", "Make unique", {C("u", Ctl)}},
+        {Ac::Bounce, "Edit", "Bounce the selected track to a new audio track", {C("b", Ctl)}},
         {Ac::Quantize, "Edit", "Quantize", {C("q")}},
         {Ac::QuantizeDialog, "Edit", "Quantize…", {C("q", S)}},
         {Ac::TransposeUp, "Edit", "Transpose up (a key step with scale snap)", {K(GLFW_KEY_UP)}},
@@ -109,6 +110,7 @@ std::vector<ActionInfo> buildTable() {
         {Ac::MaximizePane, "View", "Maximize pane", {K(GLFW_KEY_TAB, S)}},
         {Ac::WidenClips, "View", "Widen / narrow the clips beside the timeline", {K(GLFW_KEY_F2)}},
         {Ac::ToggleDevices, "View", "Device strip above the notes", {K(GLFW_KEY_F3)}},
+        {Ac::ToggleMixer, "View", "Show the mixer or the notes in the lower pane", {K(GLFW_KEY_F4)}},
         {Ac::ToggleDrumView, "View", "Drum lanes / keys", {C("g")}, Sc::DetailPane},
 
         {Ac::AddInstrumentTrack, "Tracks", "Add instrument track", {C("t", Ctl)}},
@@ -123,6 +125,8 @@ std::vector<ActionInfo> buildTable() {
 
         {Ac::Help, "General", "Shortcut help", {C("/", S)}},
         {Ac::ExportMidi, "General", "Export MIDI…", {C("e", Ctl | S)}},
+        {Ac::ExportAudio, "General", "Export audio…", {C("e", Ctl | A)}},
+        {Ac::ImportAudio, "General", "Import audio…", {C("o", Ctl | S)}},
         {Ac::Close, "General", "Close editor", {K(GLFW_KEY_ESCAPE)}},
     };
 }
@@ -177,6 +181,8 @@ std::string keyName(const KeyChord& c) {
         return "F2";
     case GLFW_KEY_F3:
         return "F3";
+    case GLFW_KEY_F4:
+        return "F4";
     default:
         return "?";
     }

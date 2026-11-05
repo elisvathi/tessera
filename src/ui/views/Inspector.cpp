@@ -1,5 +1,11 @@
 #include "Inspector.hpp"
 
+#include "../../model/Sends.hpp"
+#include "../editing/SendActions.hpp"
+
+#include "../editing/AudioActions.hpp"
+#include "AudioClipDraw.hpp"
+
 #include "../../model/Arrangement.hpp"
 #include "../../model/DeviceCommands.hpp"
 #include "../../model/DeviceLookup.hpp"
@@ -376,7 +382,7 @@ void Inspector::click(Vec pos, int button, Modifiers mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT)
         for (const SettingRow& s : settingRows)
             if (s.rect.contains(Vec(pos.x, pos.y + scroll))) {
-                openSetting(s.which);
+                openSetting(s.which, s.target);
                 return;
             }
     const Region* hit = regionAt(pos);
@@ -532,7 +538,7 @@ float Inspector::row(NVGcontext* vg, float y, const std::string& label, const st
 }
 
 float Inspector::settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value,
-                            Setting which) {
+                            Setting which, uint64_t target) {
     const theme::Palette& c = theme::colors();
     draw::TextStyle l{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle v{theme::fonts::ui(), theme::metrics::kTextUi, c.text0, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
@@ -551,19 +557,25 @@ float Inspector::settingRow(NVGcontext* vg, float y, const std::string& label, c
     nvgStrokeColor(vg, c.text1);
     nvgStrokeWidth(vg, 1.2f);
     nvgStroke(vg);
-    settingRows.push_back({Rect(kPad, y, box.size.x - 2 * kPad, kRowHeight), which});
+    settingRows.push_back({Rect(kPad, y, box.size.x - 2 * kPad, kRowHeight), which, target});
     return y + kRowHeight;
 }
 
-void Inspector::openSetting(Setting which) {
+void Inspector::openSetting(Setting which, uint64_t target) {
     TesseraModule* m = ctx.module();
     const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;
     if (!t)
         return;
     rack::ui::Menu* menu = rack::createMenu();
-    if (which == Setting::Voices) {
+    if (which == Setting::Send) {
+        sendActions::appendSendItems(menu, ctx, t->id, TrackId(target));
+    } else if (which == Setting::AddSend) {
+        sendActions::appendAddSendItems(menu, ctx, t->id);
+    } else if (which == Setting::Voices) {
         menu->addChild(rack::createMenuLabel("Voices"));
         trackActions::appendVoicesItems(menu, ctx, {t->id});
+    } else if (which == Setting::Audio) {
+        audioActions::appendAudioClipMenu(menu, ctx, clipActions::shownClip(ctx, *t));
     } else if (which == Setting::Input) {
         trackActions::appendInputItems(menu, ctx, t->id);
     } else {
@@ -852,6 +864,122 @@ void Inspector::drawView(const DrawArgs& args) {
     nvgRestore(vg);
 }
 
+void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    const Clip* clip = song.findClip(clipActions::shownClip(ctx, t));
+    y = section(vg, y, "CLIP");
+    if (!clip || !clip->audio) {
+        row(vg, y, "No clip", "");
+        return;
+    }
+    const AudioContent& a = *clip->audio;
+    int uses = song.clipUses(clip->id);
+    y = row(vg, y, "Name", clip->name.empty() ? "Untitled" : clip->name);
+    if (uses > 1)
+        y = row(vg, y, "Settings", "all " + std::to_string(uses) + " copies");
+    static const char* const kFollow[] = {"Stretch", "Repitch", "Off (own speed)"};
+    static const char* const kSound[] = {"Drums", "Melody", "Voice", "Full mix"};
+    char tempo[32];
+    snprintf(tempo, sizeof tempo, "%.4g BPM", a.sourceTempo);
+    y = settingRow(vg, y, "Gain", audioDraw::dbText(a.gainDb), Setting::Audio);
+    y = settingRow(vg, y, "Follow tempo", kFollow[int(a.follow)], Setting::Audio);
+    y = settingRow(vg, y, "Sound type", kSound[int(a.sound)], Setting::Audio);
+    y = settingRow(vg, y, "Clip tempo", tempo, Setting::Audio);
+    // Only a Stretch clip keeps its own pitch: Repitch and Off clips change pitch with their speed.
+    if (a.follow == TempoFollow::Stretch)
+        y = settingRow(vg, y, "Pitch", audioDraw::pitchText(a), Setting::Audio);
+    y = settingRow(vg, y, "Reverse", a.reverse ? "On" : "Off", Setting::Audio);
+    y = row(vg, y, "Length", bars(clip->length, song.timeSig));
+    y = row(vg, y, "Loop", clip->loopMode == LoopMode::Loop ? "On" : "Off");
+    audioDraw::ClipState state = audioDraw::stateOf(*m, *clip);
+    if (const AudioSource* src = state.source) {
+        char file[96];
+        snprintf(file, sizeof file, "%.1f s · %.1f kHz · %s", src->seconds(), src->sampleRate / 1000,
+                 src->channels == 1 ? "mono" : "stereo");
+        y = row(vg, y, "File", src->name);
+        y = row(vg, y, "", file);
+        if (src->fileChannels > src->channels)
+            y = row(vg, y, "", std::to_string(src->fileChannels) + " channels mixed down to " +
+                                   std::to_string(src->channels));
+    }
+    std::string st = audioDraw::stateText(state);
+    if (!st.empty())
+        y = row(vg, y, "State", st == "!" ? "Couldn't make the stretched version" : st);
+
+    const ArrangerClip* instance = nullptr;
+    if (ctx.state().clipSelection.size() == 1)
+        for (const ArrangerClip& i : t.arrangement)
+            if (ctx.state().clipSelection.count(i.id) && i.clip == clip->id)
+                instance = &i;
+    if (instance) {
+        y += kSectionGap;
+        y = section(vg, y, "INSTANCE");
+        y = row(vg, y, "Start", timeline::positionText(double(instance->position), song.timeSig));
+        y = row(vg, y, "Length", bars(instance->length, song.timeSig));
+        y = row(vg, y, "Offset", bars(instance->offset, song.timeSig));
+        double bpm = m->tempo() > 0 ? m->tempo() : 120;
+        auto fade = [&](const Fade& f) {
+            if (f.length == 0)
+                return std::string("None");
+            char text[48];
+            snprintf(text, sizeof text, "%.0f ms · curve %+.0f%%", double(f.length) * secondsPerTick(bpm) * 1000,
+                     double(f.curve) * 100);
+            return std::string(text);
+        };
+        // Where the instance overlaps a neighbour, the crossfade takes that side's fade (§6.3).
+        auto crossfade = [&](bool before) -> std::pair<std::string, std::string> {
+            for (const ArrangerClip& o : t.arrangement) {
+                if (o.id == instance->id || o.muted)
+                    continue;
+                Tick shared = before ? std::min(instanceEnd(o), instanceEnd(*instance)) - instance->position
+                                     : std::min(instanceEnd(o), instanceEnd(*instance)) - o.position;
+                bool side = before ? o.position < instance->position : o.position > instance->position;
+                if (!side || shared <= 0)
+                    continue;
+                const Clip* other = song.findClip(o.clip);
+                char text[48];
+                snprintf(text, sizeof text, "Crossfade · %.0f ms", double(shared) * secondsPerTick(bpm) * 1000);
+                return {text, "with " + (other && !other->name.empty() ? other->name : std::string("a clip"))};
+            }
+            return {};
+        };
+        auto fadeRows = [&](const char* label, bool before, const Fade& f) {
+            auto [cross, with] = crossfade(before);
+            y = row(vg, y, label, cross.empty() ? fade(f) : cross);
+            if (!with.empty())
+                y = row(vg, y, "", with);
+        };
+        fadeRows("Fade in", true, instance->fadeIn);
+        fadeRows("Fade out", false, instance->fadeOut);
+        y = row(vg, y, "Muted", instance->muted ? "Yes" : "No");
+    }
+}
+
+float Inspector::drawSends(NVGcontext* vg, float y, const Track& t) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    std::vector<TrackId> from = sendersTo(song, t.id);
+    // Only tracks that make sound send or receive; the others keep the inspector as it was.
+    if (m->soundIndex(t.id) < 0 && t.sends.empty())
+        return y;
+    y += kSectionGap;
+    y = section(vg, y, "SENDS");
+    for (const Send& s : t.sends)
+        if (const Track* to = song.findTrack(s.to))
+            y = settingRow(vg, y, to->name, audioDraw::dbText(s.db) + (s.preFader ? " · before fader" : " · after fader"),
+                           Setting::Send, s.to.value);
+    y = settingRow(vg, y, "Send to", "+", Setting::AddSend);
+    if (!from.empty()) {
+        std::string names;
+        for (TrackId id : from)
+            if (const Track* f = song.findTrack(id))
+                names += (names.empty() ? "" : ", ") + f->name;
+        y = row(vg, y, "Gets sends from", names);
+    }
+    return y;
+}
+
 void Inspector::drawFacts(NVGcontext* vg, float y) {
     settingRows.clear();
     TesseraModule* m = ctx.module();
@@ -864,6 +992,19 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     // The track's settings you can change here, instead of only from its right-click menu.
     y = section(vg, y, "TRACK");
     y = row(vg, y, "Name", t->name);
+    if (t->type == TrackType::Audio) {
+        // An audio track plays through the mixer to MAIN: no voices, inputs or output modules yet (Phase 2).
+        y = row(vg, y, "Volume", audioDraw::dbText(t->channel.volumeDb));
+        char pan[24];
+        snprintf(pan, sizeof pan, t->channel.pan == 0 ? "Centre" : t->channel.pan < 0 ? "%.0f%% left" : "%.0f%% right",
+                 double(std::abs(t->channel.pan) * 100));
+        y = row(vg, y, "Pan", pan);
+        y = row(vg, y, "Output", m->mainPatched() ? "MAIN" : "MAIN (not patched)");
+        y = drawSends(vg, y, *t);
+        y += kSectionGap;
+        drawAudioClipFacts(vg, y, *t);
+        return;
+    }
     if (t->type == TrackType::Instrument)
         y = settingRow(vg, y, "Voices", trackActions::voicesLabel(song, *t), Setting::Voices);
     y = settingRow(vg, y, "Input", trackActions::inputLabel(song, *t), Setting::Input);
@@ -886,6 +1027,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
                                    box.size.x - 2 * kPad));
         y += kRowHeight - 4;
     }
+    y = drawSends(vg, y, *t);
     y += kSectionGap;
 
     const Clip* clip = song.findClip(clipActions::shownClip(ctx, *t));

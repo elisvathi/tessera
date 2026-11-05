@@ -355,7 +355,7 @@ A knob takes up to four modulations. Modulation adds to the knob's own value (or
 
 ### Sending a modulator out as CV
 
-In the popover, **CV out ▾** sends the modulator out of Tessera (for a Curve: **Moves ▾** › **CV out…**, or right-click
+In the popover, **CV out ▾** sends the modulator out of Roll (for a Curve: **Moves ▾** › **CV out…**, or right-click
 its row):
 
 - To an **AUTO output** of a track: the value is added to that AUTO channel on its Track Out, Drum Out and Auto Out.

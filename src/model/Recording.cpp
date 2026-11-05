@@ -27,6 +27,10 @@ json_t* RecordSettings::toJson() const {
     setBool(j, "toKey", toKey);
     setBool(j, "mpe", mpe);
     setBool(j, "newControlLanes", newControlLanes);
+    static const char* const kMetronome[] = {"off", "countIn", "recording", "always"};
+    setString(j, "metronome", kMetronome[int(metronome)]);
+    setNumber(j, "metronomeDb", metronomeDb);
+    setInt(j, "recordOffset", recordOffsetSamples);
     return j;
 }
 
@@ -46,6 +50,13 @@ RecordSettings RecordSettings::fromJson(const json_t* j) {
     s.toKey = getBool(j, "toKey", s.toKey);
     s.mpe = getBool(j, "mpe", s.mpe);
     s.newControlLanes = getBool(j, "newControlLanes", s.newControlLanes);
+    std::string metronome = getString(j, "metronome", "off");
+    s.metronome = metronome == "countIn"     ? MetronomeMode::CountIn
+                  : metronome == "recording" ? MetronomeMode::Recording
+                  : metronome == "always"    ? MetronomeMode::Always
+                                             : MetronomeMode::Off;
+    s.metronomeDb = std::clamp(getFloat(j, "metronomeDb", s.metronomeDb), -60.f, 0.f);
+    s.recordOffsetSamples = int(std::clamp<int64_t>(getInt(j, "recordOffset", 0), 0, 96000));
     return s;
 }
 
@@ -225,6 +236,9 @@ LaneRecordState laneRecordState(const Song& song, LaneOwner owner, const Automat
         return LaneRecordState::Kept;
     if (lane.midi.valid() || lane.paramTarget.valid())
         return LaneRecordState::Records;
+    // A fader or pan lane records the track's own control, moved in the mixer or the track row.
+    if (lane.drive == LaneDrive::Volume || lane.drive == LaneDrive::Pan || lane.drive == LaneDrive::Send)
+        return owner.track.valid() ? LaneRecordState::Records : LaneRecordState::Off;
     // A clip lane records what its track's lane on the same output reads.
     const AutomationEnvelope* source = &lane;
     if (owner.clip.valid()) {
@@ -279,6 +293,12 @@ std::string laneOutputLabel(const AutomationEnvelope& lane) {
         return "V/OCT";
     case LaneDrive::Pressure:
         return "PRESS";
+    case LaneDrive::Volume:
+        return "fader";
+    case LaneDrive::Send:
+        return "send";
+    case LaneDrive::Pan:
+        return "pan";
     case LaneDrive::Auto:
     default:
         return "AUTO " + std::to_string(lane.outputIndex + 1);

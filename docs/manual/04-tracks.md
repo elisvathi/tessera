@@ -3,12 +3,14 @@
 A track is one part of your song: a bass line, chords, a lead, drums. Each track has its own clips, its own notes
 and its own output module. A song has 1 to 64 tracks.
 
-## Two kinds of track
+## Three kinds of track
 
 - **Instrument tracks** play notes with pitch. Each plays through a **Track Out**. A track can play up to 16 notes
   at once.
 - **Drum tracks** play drum sounds. Each sound is a "lane" with its own trigger output. They play through a
   **Drum Out**. Drum tracks open in the drum editor. See [Drums](09-drums.md).
+- **Audio tracks** play audio files: loops, hits, recordings. They play out of **MAIN L** and **MAIN R** on the
+  Tessera panel, through the mixer. Dropping a file makes one. See [Audio](17-audio.md).
 
 A new song has three instrument tracks and one drum track.
 
@@ -20,11 +22,14 @@ Each track has a header row on the left:
 
 - **The colour tile** with the track number. A drum track also shows a small drum.
 - **The name.** Double-click it to rename. Enter keeps the new name, Esc cancels.
-- **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Add a
-  Track Out (or Drum Out) and pick this track.
+- **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Click it
+  to add a Track Out (a Drum Out for a drum track) bound to this track, in the first free space right of Roll.
+  The track menu has the same command, **Add a Track Out for this track**, for any track. Both are one undo step.
 - **Arm** (the ring): arms the track for recording. It turns red while armed. See [Recording](11-recording.md).
 - **The lanes arrow** (▸): shows the track's automation lanes under it. It is dim until the track has lanes.
 - **M** mutes the track. **S** solos it.
+- **The level line** (audio tracks): a second line with the volume, its dB value and a pan knob. See
+  [The mixer](18-mixer.md#levels-in-the-track-rows).
 
 Click a header to select the track. The piano roll then shows its clip.
 
@@ -34,6 +39,7 @@ Click a header to select the track. The piano roll then shows its clip.
 |---|---|
 | Add an instrument track | **Ctrl+T**, or **+ Add track** under the last track |
 | Add a drum track | **Ctrl+Shift+T** (with the mouse over the song pane), or **+ Add track → Drum** |
+| Add an audio track | **+ Add track → Audio track**, or drop an audio file (see [Audio](17-audio.md)) |
 | Add a track at a spot | Right-click empty space in the headers or the timeline |
 | Add an instrument track quickly | Double-click empty header space |
 | Duplicate a track | **Ctrl+D** after clicking its header, or the track menu. The copy gets its own clips. |
@@ -41,7 +47,7 @@ Click a header to select the track. The piano roll then shows its clip.
 
 New tracks go right after the selected one.
 
-When you delete a track, an output module that played it shows **Track missing** and goes quiet. Undo the delete and
+When you delete a track, an output module that played it shows **Track deleted** and goes quiet. Undo the delete and
 it plays again. Clips that only that track used are deleted with it; clips shared with other tracks stay.
 
 ## Selecting several tracks
@@ -83,7 +89,7 @@ Right-click a track header for its menu.
 
 | Item | What it does |
 |---|---|
-| **Add instrument track / Add drum track** | Adds a track after this one. |
+| **Add instrument track / Add drum track / Add audio track** | Adds a track after this one. |
 | **Duplicate / Delete / Rename** | As above. |
 | **Colour** | One of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
 | **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and with playheads each channel gets its own voices (more for one faster than 1x). Or pick a fixed number from 1 to 16 (with playheads, for each channel). |

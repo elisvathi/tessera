@@ -8,6 +8,7 @@
 #include "../interaction/Snap.hpp"
 #include "../widgets/Draw.hpp"
 #include "../widgets/MenuTextField.hpp"
+#include "AudioClipDraw.hpp"
 
 #include <map>
 
@@ -557,6 +558,9 @@ std::string AutomationEditor::valueText(const LaneFrame& f, float value) const {
             ctx.module() ? deviceActions::infoOf(ctx.module()->song(), l->paramTarget) : nullptr;
         return info ? devices::format(*info, value) : "Target missing";
     }
+    if (l)
+        if (std::string mix = audioDraw::mixLaneText(*l, value); !mix.empty())
+            return mix;
     char text[32];
     snprintf(text, sizeof(text), "%.2f V", l ? double(toVolts(*l, value)) : double(value));
     return text;
@@ -1051,9 +1055,13 @@ void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, 
     menu->addChild(rack::createCheckMenuItem(
         "Mute", "", [mute = lane->mute] { return mute; },
         edit("Toggle lane mute", [](AutomationEnvelope& l) { l.mute = !l.mute; })));
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createMenuLabel("Recording (when the track records)"));
-    appendRecordingItems(menu, ctx, owner, *lane, edit);
+    // The master has no arm, so its lane never records.
+    bool masterLane = owner.track.valid() && owner.track == m->song().master.id;
+    if (!masterLane) {
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createMenuLabel("Recording (when the track records)"));
+        appendRecordingItems(menu, ctx, owner, *lane, edit);
+    }
 
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Points (the selected ones, or all)"));
@@ -1079,7 +1087,8 @@ void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, 
     }));
 
     menu->addChild(new rack::ui::MenuSeparator);
-    if (owner.track.valid() && !knob) {
+    // The engine plays track lanes only; the master's lane moves its fader and nothing else.
+    if (owner.track.valid() && !knob && !masterLane) {
         menu->addChild(rack::createMenuLabel("Knobs this lane turns (no cable needed)"));
         auto* learn = rack::createMenuItem("Map another knob: touch it in the rack", "", [c, owner, id] {
             if (TesseraModule* m = c->module())

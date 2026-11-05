@@ -1,5 +1,7 @@
 #include "EditorWindow.hpp"
 
+#include "views/MixerPane.hpp"
+
 #include "../module/TesseraModule.hpp"
 #include "Theme.hpp"
 #include "interaction/Cursors.hpp"
@@ -67,6 +69,7 @@ EditorWindow::EditorWindow(int64_t moduleId) : EditorHost(moduleId, Surface::Ove
     detailArea->addChild(detail);
     detailArea->addChild(inspector);
     panes = new PaneStack(ctx, top, detailArea, kMinPaneHeight, [this] { runAction(Action::MaximizePane); });
+    detail->setMixer(new MixerPane(ctx, false));
 
     content->addChild(panes);
     content->addChild(transport);

@@ -102,6 +102,11 @@ exactly with the notes on the output modules.
 | **EOC** | "End of cycle": a trigger each time the song loop wraps around. |
 | **BAR** | A trigger on every bar. |
 | **CLICK** | A trigger on every beat: 10 V on the first beat of the bar, 5 V on the others. Use it as a metronome. It also clicks during the count-in. |
+| **MAIN L** / **MAIN R** | The Master: every audio track mixed, after the Master fader. 10 V is full scale (0 dB), what Rack's Audio module sends to your sound card at full volume. See [Audio](17-audio.md). |
+
+MAIN sits in its own column at the right of the plate, with a two-bar meter beside it: one bar per side, red above
+0 dB. An amber dot above the meter means the Master plays but nothing is patched into MAIN. Hover over MAIN to read
+the Master's peak level.
 
 ### The module menu
 
@@ -112,7 +117,8 @@ Right-click the Roll panel for these settings.
 | Item | What it does |
 |---|---|
 | **Open editor** | Same as the EDITOR button. |
-| **File** | New song, open and save project files, import MIDI files, export MIDI and DAWproject. See [Files](14-files.md). |
+| **Connect MAIN to Audio module** | Shown when the song has audio, MAIN has no cable and the patch has an Audio module: patches MAIN L and R into its first two inputs. See [Audio](17-audio.md#hearing-it-main-l-and-main-r). |
+| **File** | New song, open and save project files, import MIDI and audio files, export MIDI and DAWproject. See [Files](14-files.md). |
 | **MIDI input (for recording)** | The MIDI device and channel Roll listens to. |
 | **Panel editor** | Widens the panel to show a small editor in the rack: Off, 48, 80 or 120 HP. See [The editor](03-editor.md#the-editor-inside-the-panel). |
 | **Colour scheme** | The look of the editor and panels. See [The editor](03-editor.md#colour-schemes). |
@@ -129,8 +135,9 @@ Right-click the Roll panel for these settings.
 
 ![The Track Out module](images/track-out.png)
 
-Track Out plays one **instrument track**. Each jack is polyphonic: one channel per voice. The number of channels
-follows the track's **Voices** setting (by default, as many as the track ever plays at once).
+Track Out plays one track: an instrument track, a drum track, an audio track, or the **Master**. The note jacks are
+on the top plate, the **AUDIO** section below them. The note jacks are polyphonic: one channel per voice. The number
+of channels follows the track's **Voices** setting (by default, as many as the track ever plays at once).
 
 | Jack | What it sends |
 |---|---|
@@ -141,12 +148,29 @@ follows the track's **Voices** setting (by default, as many as the track ever pl
 | **TIMB** | Timbre curve of each note, 0 to 10 V (see [Shaping notes](08-shaping-notes.md#bends-timbre-and-pressure)). |
 | **PRESS** | Pressure curve of each note, 0 to 10 V. |
 | **AUTO** | The track's automation lanes, one channel per AUTO lane, already in volts. |
+| **OUT L / OUT R** | The track's sound before its fader, for an effect: an audio track's clips, or the master mix. 10 V is full scale (0 dB). |
+| **IN L / IN R** (inputs) | Audio mixed into the track before its fader, at full level. Patch an effect's output here. With one side patched, both sides hear it; a poly cable is summed. |
+
+**An effect on a track**: patch **OUT L/R** into the effect and the effect's output back into **IN L/R**. You hear
+the track's sound together with what comes back, through the track's fader in the [mixer](18-mixer.md). The light
+between IN L and IN R is green while audio comes back, red above 0 dB. A cable into IN of a note track gives that
+track a strip in the mixer: plug a synth's output in, and the track has a fader, pan and meter like an audio track.
+Several Track Outs can bring sound to one track; each is a source with its own **Use** and **Level** in the
+right-click menu (see [Several sources on one track](18-mixer.md#several-sources-on-one-track)). The screen shows
+**IN OFF** or the level while they change the sound.
+
+**Jacks that do nothing for the track are dim**: the note jacks on an audio track or the master, and OUT on an
+instrument track (for now; on a drum track OUT carries what its Drum Out's lane INs bring in). Hover a dim jack and its tooltip says why; a cable on a dim jack gets an amber ring. **AUTO** works
+for every track. Bypassing a Track Out never sends IN to OUT: what comes back simply drops out.
 
 **The screen** shows the Roll's name, the track number in the track's colour, and the track name. It shows
-"No source" when no Roll is found, and "Track missing" when the track was deleted. A Track Out never jumps to
-another track by itself: undo the delete, or pick a track, and it plays again.
+"No source" when no Roll is found, and "Track deleted" (amber) when its track was deleted: IN is then ignored and
+the IN light turns amber while a cable still brings audio. "Roll bypassed" means its Roll is bypassed and
+nothing plays. A Track Out never jumps to another track by itself: undo the delete, or pick a track, and it plays
+again.
 
-**The arrow buttons** step through the instrument tracks. Each step can be undone.
+**The arrow buttons** step through the tracks, the master last. Each step can be undone. The screen shows **M** and
+"Master" for the master.
 
 **The channel** shows on the last line of the screen: **All channels**, or one channel and who plays on it ("Ch 2 ·
 Playhead 2"). Click the screen to pick it. With one channel picked, the Track Out plays only the notes on that channel;
@@ -167,25 +191,27 @@ together, the Track Out fills its 16 with the voices that are sounding, the firs
 the poly channel it used before when it can, so each playhead tends to stay in the same place, and one that doesn't
 fit isn't sent. For every voice, use a Track Out per channel.
 
-**Right-click** for the **Source** (which Tessera, by instance name), **Track** and **Channel** menus.
+**Right-click** for the **Source** (which Roll, by instance name), **Track** and **Channel** menus.
 
 ![The Track Out menu: Source and Track](images/track-out-menu.png)
 
 - **Follow the track selected in the editor** makes the Track Out play whatever track you select. This is useful to
-  try one synth with every part. Picking a track or pressing an arrow turns it off.
+  try one synth with every part. Picking a track or pressing an arrow turns it off. While it follows, OUT and IN
+  do nothing.
+- A new Track Out picks the track selected in the editor when nothing plays it yet; otherwise the first note track
+  without an output.
 - Several Track Outs can play the same track. They all send the same thing.
 
-You can also put a **drum track** on a Track Out. You get one channel per drum output, with the lane's note as
-V/OCT.
+On a **drum track**, you get one channel per drum output, with the lane's note as V/OCT.
 
 ## Drum Out
 
 ![The Drum Out module](images/drum-out.png)
 
 Drum Out plays one **drum track**. Each of the outputs 1 to 8 has a strip, like a mixer channel. On top is a chip
-with the output's number in the colour of the lane that plays there. Under it are five jacks, one per row. The rows
-are named once, at the left: **TRIG**, **VEL**, **PITCH**, **TIMBRE** and **PRESS**. Hover a jack to see which drum
-it is, for example "Snare pitch".
+with the output's number in the colour of the lane that plays there. Under it are five jacks and an input, one per
+row. The rows are named once, at the left: **TRIG**, **VEL**, **PITCH**, **TIMBRE**, **PRESS** and **IN**. Hover a
+jack to see which drum it is, for example "Snare pitch".
 
 | Jack | What it sends |
 |---|---|
@@ -194,8 +220,19 @@ it is, for example "Snare pitch".
 | **PITCH** row | How far the hit is tuned away from normal, 1 V per octave: +12 semitones is +1 V. 0 V when the hit has no pitch. Patch it to a drum module's tune input. |
 | **TIMBRE** row | The hit's timbre, 0 to 10 V. 0 V when it has none. |
 | **PRESS** row | The hit's pressure, 0 to 10 V. 0 V when it has none. |
+| **IN** row (inputs) | The sound of the drum on that lane: patch the drum module's output here. It is mixed into the drum track at the lane's own level and pan, set in the [mixer](18-mixer.md#drum-lanes). A poly cable is summed. |
 | **TRIGS**, **VEL**, **PITCH**, **TIMBRE**, **PRESS** | The same for all 16 outputs, on poly cables, one channel per output. |
 | **AUTO** | The track's automation lanes, one channel per lane. |
+
+**The AUDIO block** at the top right is the whole kit's, like Track Out's audio section:
+
+| Jack | What it does |
+|---|---|
+| **OUT L / R** | The kit's sound before the drum track's fader: every lane **IN** mixed. Patch it into an effect for the whole kit. |
+| **IN L / R** (inputs) | The effect coming back, or a stereo drum machine. Mixed into the drum track before its fader. With one side patched, both sides hear it. The light beside it is green while audio comes in, red above 0 dB. |
+
+What comes in on **IN L / R** never goes back out of OUT, so an effect loop can't feed back. With anything patched
+into an IN, the drum track gets a strip in the [mixer](18-mixer.md), with a fader, pan and meter for the whole kit.
 
 Lanes on outputs 9 to 16 reach only the poly jacks. A lane sends a short 1 ms trigger by default, a gate of a set
 length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings).
@@ -203,8 +240,8 @@ length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings).
 Velocity, pitch, timbre and pressure hold until the lane's next hit. A hit's pitch, timbre and pressure can be one
 value or a curve that moves across the hit. See [Pitch, timbre and pressure](09-drums.md#pitch-timbre-and-pressure).
 
-The screen, arrows and menu work like Track Out's, channel included: the channel shows beside the track number
-("Ch: all"), and with one channel picked each lane sends only the hits on that channel. A new Drum Out picks the first
+The screen, arrows and menu work like Track Out's, channel included: the channel shows on the screen's last line,
+under the track name, and with one channel picked each lane sends only the hits on that channel. A new Drum Out picks the first
 drum track with no output yet.
 
 ## Auto Out

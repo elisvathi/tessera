@@ -34,6 +34,9 @@ class TrackHeaders : public InteractiveView {
     DropTarget dropTargetAt(float y);
     /// Opens the inline name field over a row.
     void startRename(int row);
+    /// The thin Master row under the add row: shown once the song has something that reaches the master.
+    static constexpr float kMasterRowHeight = 22;
+    bool showsMaster() const;
 
   protected:
     void step() override;
@@ -61,7 +64,11 @@ class TrackHeaders : public InteractiveView {
         Empty,
         LaneMute,
         LaneState, // the mark that says whether the lane records: not a button
-        AddLane
+        AddLane,
+        Level, // an audio track's level bar: its fader and meter in one (docs/design/AUDIO_MIXER.md §7.5)
+        Pan,
+        Master,     // the Master row, outside its level bar
+        MasterLevel // the Master row's level bar
     };
     struct Hit {
         int row = -1;
@@ -82,12 +89,22 @@ class TrackHeaders : public InteractiveView {
     rack::math::Rect muteRect(float top, float height);
     rack::math::Rect soloRect(float top, float height);
     rack::math::Rect nameRect(int row);
+    /// The second line of a track that makes sound: the level bar, its dB value and the pan knob. Empty rects for
+    /// tracks that make no sound, and rows too short for a second line.
+    rack::math::Rect levelRect(const Track& t, int row, float top, float height);
+    rack::math::Rect panRect(const Track& t, int row, float top, float height);
+    void drawLevelLine(NVGcontext* vg, const Track& t, int row, float top, float height);
     void drawTrackRow(NVGcontext* vg, int row, float top, float height);
     void drawGroupRow(NVGcontext* vg, int row, float top, float height);
     /// An automation lane's header: name, output, value now, mute. And the "+ Add lane" row under them.
     void drawLaneRow(NVGcontext* vg, int row, float top, float height);
     void drawAddLaneRow(NVGcontext* vg, int row, float top, float height);
     void drawAddRow(NVGcontext* vg);
+    rack::math::Rect masterRowRect();
+    rack::math::Rect masterLevelRect();
+    /// The Master row's lanes arrow, between its name and its level bar.
+    rack::math::Rect masterLanesRect();
+    void drawMasterRow(NVGcontext* vg);
     /// The "+ Add track" row right after the last track.
     rack::math::Rect addRowRect();
     void openAddMenu();

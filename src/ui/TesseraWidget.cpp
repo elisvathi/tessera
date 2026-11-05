@@ -8,6 +8,7 @@
 #include "TesseraDisplay.hpp"
 #include "Theme.hpp"
 #include "Vsync.hpp"
+#include "editing/AudioActions.hpp"
 #include "editing/ProjectFile.hpp"
 #include "widgets/Draw.hpp"
 #include "widgets/Lights.hpp"
@@ -25,10 +26,10 @@ using rack::math::Rect;
 using rack::math::Vec;
 using namespace rack::componentlibrary;
 
-constexpr int kHp = 24;
+constexpr int kHp = 26;
 
-// Layout in mm. The panel is 121.92 x 128.5.
-const Rect kDisplay(6, 13, 109.92f, 34);
+// Layout in mm. The panel is 132.08 x 128.5: 26 HP since MAIN joined as a ninth jack column (DECISIONS §103).
+const Rect kDisplay(6, 13, 120.08f, 34);
 constexpr float kControlRow = 57;
 constexpr float kSceneRow = 72;
 const Vec kEditorButton(77, kControlRow);
@@ -64,11 +65,73 @@ constexpr float kJackRow2 = 113;
 constexpr float kInputCol[3] = {12, 25, 38};
 constexpr float kRecordCol[2] = {53, 65.5f};
 constexpr float kOutputCol[3] = {84, 97, 110};
+constexpr float kMainCol = 123; // 13 mm on, like every column
+constexpr float kTempoCol = 108;
 const Rect kRecordBox(45.5f, 84, 27.5f, 37.5f);
-const Rect kOutputPlate(77, 84, 40, 37.5f);
+const Rect kOutputPlate(77, 84, 53, 37.5f);
+// The two-bar meter beside MAIN, its dividing line before it, and the "not patched" dot above it.
+const Rect kMainMeter(116.2f, 86, 14, 34);
 constexpr float kStopAllCol = 54; // its label is wide
 constexpr float kFillCol = 93;
 constexpr float kPlaysCol = 76;
+
+/// MAIN's meter on the output plate: the master's two sides as bars from -60 to +6 dB, red above 0 dB. An amber
+/// dot above them while the master plays but MAIN has no cable. A thin line sets MAIN apart from the transport
+/// outputs.
+struct MainMeter : rack::widget::Widget {
+    static constexpr int kSegments = 10;
+    TesseraModule* module = nullptr;
+
+    void draw(const DrawArgs& args) override {
+        const theme::Palette& c = theme::panelColors();
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, 0, rack::mm2px(1.f), rack::mm2px(0.35f), box.size.y - rack::mm2px(2.f));
+        nvgFillColor(args.vg, c.line1);
+        nvgFill(args.vg);
+        drawBars(args.vg, false);
+    }
+    void drawLayer(const DrawArgs& args, int layer) override {
+        if (layer == 1) {
+            drawBars(args.vg, true);
+            if (module && module->masterSounding() && !module->mainPatched()) {
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, rack::mm2px(12.6f), rack::mm2px(0.6f), rack::mm2px(0.85f));
+                nvgFillColor(args.vg, theme::panelColors().queue);
+                nvgFill(args.vg);
+            }
+        }
+        Widget::drawLayer(args, layer);
+    }
+
+  private:
+    /// The unlit segments (`lit` false) or the lit ones.
+    void drawBars(NVGcontext* vg, bool lit) {
+        const theme::Palette& c = theme::panelColors();
+        float top = rack::mm2px(3.5f), bottom = rack::mm2px(31.5f);
+        float gap = rack::mm2px(0.35f);
+        float seg = (bottom - top - gap * (kSegments - 1)) / kSegments;
+        for (int side = 0; side < 2; side++) {
+            float volts = module ? module->audioPlayer().masterLevel(side) : 0.f;
+            float db = gainToDb(volts / kFullScaleVolts);
+            // -60 dB to +6 dB over the segments; the top one is over 0 dB.
+            int litCount = db <= -60 ? 0 : std::min(kSegments, int(std::ceil((db + 60) / 66 * kSegments)));
+            float x = rack::mm2px(11.4f + side * 1.15f);
+            for (int i = 0; i < kSegments; i++) {
+                bool on = i < litCount;
+                if (on != lit)
+                    continue;
+                NVGcolor col = !on ? theme::recessed(c, c.bg1, 0.5f)
+                               : i == kSegments - 1 ? c.record
+                               : i >= kSegments - 3 ? c.queue
+                                                    : c.play;
+                nvgBeginPath(vg);
+                nvgRect(vg, x, bottom - (i + 1) * seg - i * gap, rack::mm2px(0.85f), seg);
+                nvgFillColor(vg, col);
+                nvgFill(vg);
+            }
+        }
+    }
+};
 
 /// PLAYS: what the tracks play, the clips or the timeline. One switch with two halves; the lit half plays, and a
 /// click on a half picks it. Same param as the editor's Plays switch.
@@ -140,6 +203,17 @@ struct PlaysSwitch : rack::app::Switch {
 
 } // namespace
 
+/// The toast after a drop of audio files on the panel.
+std::string audioDropMessage(const TesseraModule::AudioDropResult& r) {
+    std::string text = audioActions::dropMessage(r.imported, r.failed, r.made.skipped);
+    if (r.tempoSet) {
+        char buf[64];
+        snprintf(buf, sizeof buf, " · Song set to %.4g BPM", r.newTempo);
+        text += buf;
+    }
+    return text;
+}
+
 struct TesseraWidget : rack::app::ModuleWidget {
     explicit TesseraWidget(TesseraModule* module) {
         using M = TesseraModule;
@@ -159,7 +233,7 @@ struct TesseraWidget : rack::app::ModuleWidget {
                                                                         M::LOOP_LIGHT, "LOOP");
         panel.lightParam<VCVLightButton<MediumSimpleLight<AccentLight>>>(Vec(kButtonCol[4], kControlRow), M::TAP_PARAM,
                                                                          M::BEAT_LIGHT, "TAP");
-        panel.param<RoundLargeBlackKnob>(Vec(100, kControlRow + 1), M::BPM_PARAM, "TEMPO", 10);
+        panel.param<RoundLargeBlackKnob>(Vec(kTempoCol, kControlRow + 1), M::BPM_PARAM, "TEMPO", 10);
 
         panel.param<VCVButton>(Vec(kButtonCol[0], kSceneRow), M::SCENE_PREV_PARAM, "PREV");
         panel.param<VCVButton>(Vec(kButtonCol[1], kSceneRow), M::SCENE_NEXT_PARAM, "NEXT");
@@ -202,6 +276,12 @@ struct TesseraWidget : rack::app::ModuleWidget {
         panel.output(Vec(kOutputCol[0], kJackRow2), M::EOC_OUTPUT, "EOC");
         panel.output(Vec(kOutputCol[1], kJackRow2), M::BAR_OUTPUT, "BAR");
         panel.output(Vec(kOutputCol[2], kJackRow2), M::CLICK_OUTPUT, "CLICK");
+        panel.output(Vec(kMainCol, kJackRow1), M::MAIN_L_OUTPUT, "MAIN L");
+        panel.output(Vec(kMainCol, kJackRow2), M::MAIN_R_OUTPUT, "MAIN R");
+        auto* meter = new MainMeter;
+        meter->module = module;
+        meter->box = Rect(rack::mm2px(kMainMeter.pos), rack::mm2px(kMainMeter.size));
+        addChild(meter);
 
         rightScrews = panel.rightScrews();
         controlsWidth = box.size.x;
@@ -222,6 +302,12 @@ struct TesseraWidget : rack::app::ModuleWidget {
             m->uiStep();
             // Undo, redo and patch loads change the saved width; follow it.
             applyWidth(m->editor().panelHp);
+            // A patch saved when the panel was 24 HP has its right neighbour where MAIN now is: push it aside
+            // once, the way the in-panel editor does when it widens the panel.
+            if (!madeRoom && parent && APP->scene && APP->scene->rack) {
+                madeRoom = true;
+                APP->scene->rack->setModulePosForce(this, box.pos);
+            }
         }
         ModuleWidget::step();
     }
@@ -231,6 +317,34 @@ struct TesseraWidget : rack::app::ModuleWidget {
         if (module && e.action == GLFW_PRESS)
             Registry::get().touch(static_cast<TesseraModule*>(module));
         ModuleWidget::onButton(e);
+    }
+
+    void onPathDrop(const PathDropEvent& e) override {
+        // Dropped on the panel: one new audio track per file, on the timeline at bar 1 or in the first slot,
+        // following what plays (§6.5).
+        auto* m = static_cast<TesseraModule*>(module);
+        if (!m || (editor && editor->visible && editor->box.contains(e.pos))) {
+            ModuleWidget::onPathDrop(e);
+            return;
+        }
+        if (!audioActions::confirmSize(e.paths)) {
+            e.consume(this);
+            return;
+        }
+        AudioDropTarget target;
+        target.kind = AudioDropTarget::Kind::NewTracks;
+        target.index = int(m->song().tracks.size());
+        target.timeline = m->playMode() == PlayMode::Arranger;
+        target.at = 0;
+        TesseraModule::AudioDropResult r = m->importAudioFiles(e.paths, target);
+        std::string text = audioDropMessage(r);
+        if (!text.empty()) {
+            if (EditorContext* c = EditorWindow::contextFor(m->id))
+                c->toast(text);
+            else if (r.imported.empty())
+                osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, text.c_str());
+        }
+        e.consume(this);
     }
 
     void onHoverKey(const HoverKeyEvent& e) override {
@@ -253,6 +367,12 @@ struct TesseraWidget : rack::app::ModuleWidget {
 
         menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createMenuItem("Open editor", "", [this] { openEditor(); }));
+        if (hasAudio(m->song()) && !m->mainPatched() && audioActions::audioModuleInPatch())
+            menu->addChild(rack::createMenuItem("Connect MAIN to Audio module", "", [m] {
+                std::string text = audioActions::connectMainToAudio(m);
+                if (EditorContext* c = EditorWindow::contextFor(m->id))
+                    c->toast(text);
+            }));
         int64_t id = m->id;
         menu->addChild(rack::createSubmenuItem("File", "", [this, m, id](rack::ui::Menu* sub) {
             projectFile::appendFileMenu(
@@ -348,6 +468,8 @@ struct TesseraWidget : rack::app::ModuleWidget {
     }
 
   private:
+    bool madeRoom = false;
+
     /// Lays out the panel for `hp`: the controls stay put, the editor fills the rest, screws follow the edge.
     void applyWidth(int hp) {
         float width = hp * rack::RACK_GRID_WIDTH;

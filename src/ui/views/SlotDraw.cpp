@@ -1,5 +1,7 @@
 #include "SlotDraw.hpp"
 
+#include "AudioClipDraw.hpp"
+
 #include "../../model/Arrangement.hpp"
 #include "../../model/DeviceLookup.hpp"
 #include "../../model/DrumKit.hpp"
@@ -266,19 +268,40 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     std::string label = draw::ellipsize(vg, name, clip->name.empty() ? "Clip" : clip->name, body.size.x - kTextPad);
     draw::text(vg, name, body.pos.x + 3, body.getCenter().y, label);
-    // The notes in miniature, in the room the name leaves; with playheads, where they go over one pass of the clip
-    // instead (its notes as written aren't what plays).
+    // The notes (or the waveform) in miniature, in the room the name leaves; with playheads, where they go over one
+    // pass of the clip instead (its notes as written aren't what plays).
     float previewLeft = body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
     const std::vector<DrumLane>* lanes = track->type == TrackType::Drum ? &track->drumLanes : nullptr;
     Rect preview(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6);
-    if (const Device* readers = activePlayheads(*track)) {
+    const Device* readers = clip->audio ? nullptr : activePlayheads(*track);
+    if (clip->audio) {
+        audioDraw::ClipState state = audioDraw::stateOf(*ctx.module(), *clip);
+        std::string mark = audioDraw::stateText(state);
+        if (!mark.empty() && body.getRight() - previewLeft >= kMinPreviewWidth) {
+            draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler - 1,
+                                  audioDraw::stateWarns(state) ? c.queue : c.onTile, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+            draw::text(vg, small, body.getRight() - 3, body.getCenter().y, mark);
+            preview.size.x -= draw::textWidth(vg, small, mark) + 4;
+        }
+        if (preview.size.x >= kMinPreviewWidth && state.source) {
+            const AudioContent& a = *clip->audio;
+            double from = double(clip->playStart()), span = double(clip->playEnd() - clip->playStart());
+            audioDraw::drawWaveform(vg, preview, preview.pos.x, preview.getRight(), state, a.gainDb,
+                                    nvgTransRGBAf(c.onTile, kPreviewAlpha), [&](float x, double& f0, double& f1) {
+                                        double u0 = from + span * double(x - preview.pos.x) / double(preview.size.x);
+                                        double u1 = u0 + span / double(preview.size.x);
+                                        audioDraw::framesOfTicks(*clip, *state.source, u0, u1, f0, f1);
+                                        return true;
+                                    });
+        }
+    } else if (readers) {
         drawHatch(vg, body, body.getRight(), nvgTransRGBAf(c.onTile, 0.12f));
         // Clear of the playhead mark at the right.
         preview.size.x -= theme::metrics::kPlayheadMarkWidth + 4;
         if (preview.size.x >= kMinPreviewWidth)
             drawPlayheadPaths(vg, song, *track, *readers, *clip, preview, preview.pos.x, preview.getRight(), 0,
                               double(clipSpan(*clip, lanes).length()), nvgTransRGBAf(c.onTile, 0.2f), 1);
-    } else if (preview.size.x >= kMinPreviewWidth) {
+    } else if (body.getRight() - previewLeft >= kMinPreviewWidth) {
         drawNotePreview(vg, *clip, lanes, preview, nvgTransRGBAf(c.onTile, kPreviewAlpha));
     }
     nvgRestore(vg);
