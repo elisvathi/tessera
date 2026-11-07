@@ -143,7 +143,7 @@ struct TesseraWidget : rack::app::ModuleWidget {
     explicit TesseraWidget(TesseraModule* module) {
         using M = TesseraModule;
         setModule(module);
-        PanelBuilder panel(this, kHp, "TESSERA");
+        PanelBuilder panel(this, kHp, "ROLL");
 
         auto* display = new TesseraDisplay(module);
         display->box = Rect(rack::mm2px(kDisplay.pos), rack::mm2px(kDisplay.size));
@@ -299,8 +299,8 @@ struct TesseraWidget : rack::app::ModuleWidget {
         menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createMenuLabel("Instance name"));
         menu->addChild(new MenuTextField(m->instanceName(), [m](const std::string& text) {
-            std::string name = text.empty() ? "Tessera" : text;
-            withModuleUndo(m, "rename Tessera", [&] { m->setInstanceName(Registry::get().uniqueSourceName(name)); });
+            std::string name = text.empty() ? "Roll" : text;
+            withModuleUndo(m, "rename Roll", [&] { m->setInstanceName(Registry::get().uniqueSourceName(name)); });
         }));
 
         std::vector<std::string> divisions;
@@ -409,4 +409,4 @@ struct TesseraWidget : rack::app::ModuleWidget {
 
 } // namespace tessera
 
-rack::plugin::Model* modelTessera = rack::createModel<tessera::TesseraModule, tessera::TesseraWidget>("Tessera");
+rack::plugin::Model* modelTessera = rack::createModel<tessera::TesseraModule, tessera::TesseraWidget>("Roll");

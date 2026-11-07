@@ -31,7 +31,7 @@ Move it onto a lane, or delete it.
 - **Keys** shows them on the piano keys as plain notes, like any piano roll, with all 128 notes. The keys of the
   lanes carry the lanes' names. Use it for free timing, long notes, or notes on no lane.
 
-Zoom, selection and tools carry over when you switch. Tessera remembers your choice.
+Zoom, selection and tools carry over when you switch. Roll remembers your choice.
 
 ## Making a beat
 

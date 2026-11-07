@@ -30,7 +30,7 @@ std::string pick(osdialog_file_action action, const std::string& suggested) {
 }
 
 std::string defaultName(TesseraModule* m) {
-    std::string name = m->instanceName().empty() ? "Tessera" : m->instanceName();
+    std::string name = m->instanceName().empty() ? m->model->name : m->instanceName();
     for (char& ch : name)
         if (!std::isalnum((unsigned char)ch) && ch != ' ' && ch != '-' && ch != '_')
             ch = '_';

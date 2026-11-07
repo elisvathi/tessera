@@ -2,20 +2,20 @@
 
 ## Saving with the patch
 
-Tessera saves everything inside your Rack patch: the song, the transport settings, the editor layout and the output
+Roll saves everything inside your Rack patch: the song, the transport settings, the editor layout and the output
 modules' tracks. Save the patch as usual. Rack's module presets (right-click → **Preset**) also save and load the
 whole song.
 
 ## The File menu
 
-Click **Tessera ▾** at the top left of the editor. The module's right-click menu has the same items under **File**,
+Click **Roll ▾** at the top left of the editor. The module's right-click menu has the same items under **File**,
 so you can use them without opening the editor.
 
-![The Tessera menu: files and colour schemes](images/file-menu.png)
+![The Roll menu: files and colour schemes](images/file-menu.png)
 
 | Item | What it does |
 |---|---|
-| **New song** | Starts again: an empty song, the default tempo and loop, Plays set to Clips. One undo step brings the old song back. Your tools, snap and layout stay. If the song has anything in it, Tessera asks first: click **OK** to replace it. |
+| **New song** | Starts again: an empty song, the default tempo and loop, Plays set to Clips. One undo step brings the old song back. Your tools, snap and layout stay. If the song has anything in it, Roll asks first: click **OK** to replace it. |
 | **Open project…** | Opens a `.tessera` project file in place of the current song. It asks first in the same way. |
 | **Save project** | Saves to the project file you opened or saved last (its name shows in the menu). |
 | **Save project as…** | Saves a new `.tessera` file. |
@@ -26,7 +26,7 @@ so you can use them without opening the editor.
 
 ## Project files (.tessera)
 
-A project file holds one Tessera's song on its own, outside the patch: tracks, clips, scenes, devices, automation,
+A project file holds one Roll's song on its own, outside the patch: tracks, clips, scenes, devices, automation,
 tempo, loop, Plays, the instance name and the editor layout. Use it to keep songs, share them, or move a song to
 another patch.
 
@@ -43,7 +43,7 @@ an empty slot and choose **Load a Tessera clip file…** (or **Replace with Tess
 
 Export your music as a Standard MIDI File, to open it in any music program.
 
-- **The song** (or the tracks selected in the headers): **Tessera ▾ → Export MIDI…** or **Ctrl+Shift+E**.
+- **The song** (or the tracks selected in the headers): **Roll ▾ → Export MIDI…** or **Ctrl+Shift+E**.
 - **One clip, or the selected clips**: right-click a clip in the clips panel or on the timeline and choose **Export as
   MIDI…**. You choose one file per clip, or one file with a track per clip.
 
@@ -67,16 +67,16 @@ Click **Export…**, choose where to save, and a message tells you what was writ
 patch.
 
 **What is in the file:** a MIDI file of type 1 at 960 ticks per beat. The first track holds the song name, tempo,
-time signature, markers and the loop (as "Loop start" and "Loop end" cue points). Then one track per Tessera track, in
+time signature, markers and the loop (as "Loop start" and "Loop end" cue points). Then one track per Roll track, in
 order, named after it. Clips are written as they play on the timeline: with their loops, stretch, transpose and
 velocity.
 
 ## Exporting DAWproject
 
-DAWproject is an open file format that several music programs can open. **Tessera ▾ → Export DAWproject…**
+DAWproject is an open file format that several music programs can open. **Roll ▾ → Export DAWproject…**
 writes:
 
-- one track per Tessera track, with its name and colour;
+- one track per Roll track, with its name and colour;
 - the timeline clips where they are, with their notes (as MIDI export plays them, using the same Timing, Note
   operators and Devices choices);
 - the clips panel's clips as scenes (looping);
@@ -94,7 +94,7 @@ There are three ways in. Each is one undo step.
 |---|---|
 | Right-click an **empty slot** → **Import MIDI file…** | One clip in that slot. |
 | Right-click **empty timeline space** → **Import MIDI file here…** | One clip placed where you clicked. |
-| **Tessera ▾ → Import MIDI file as tracks…** | A new track for each part, with its clip on the timeline at bar 1 and in its first slot. The file's time signature and tempo are used too. |
+| **Roll ▾ → Import MIDI file as tracks…** | A new track for each part, with its clip on the timeline at bar 1 and in its first slot. The file's time signature and tempo are used too. |
 
 - Each MIDI track's channels are its parts. A file with several parts asks which one to import, or all of them as one
   clip. An MPE part (each note on its own channel) is one part.

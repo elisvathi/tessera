@@ -57,7 +57,7 @@ it plays again. Clips that only that track used are deleted with it; clips share
 - **S** solos a track: only soloed tracks play. Clicking **S** on another track adds it to the solo.
 - **Shift+click S** solos only this track and un-solos the others.
 - **Alt+S** adds the selected tracks to the solo.
-- The **Tracks** submenu in Tessera's module menu also mutes and solos, without opening the editor.
+- The **Tracks** submenu in Roll's module menu also mutes and solos, without opening the editor.
 
 ## Reordering and groups
 

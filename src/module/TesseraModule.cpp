@@ -994,7 +994,7 @@ void TesseraModule::onAdd(const AddEvent& e) {
     // A duplicated module arrives with its original's name; give it its own so name lookups stay unambiguous.
     TesseraModule* sameName = registry.findSourceByName(name);
     if (name.empty() || (sameName && sameName != this))
-        name = registry.uniqueSourceName(name.empty() ? "Tessera" : name);
+        name = registry.uniqueSourceName(name.empty() ? "Roll" : name);
     registry.addSource(this);
     registry.touch(this);
     // A different saved ID means this is a pasted or duplicated copy. Output modules pasted along with it

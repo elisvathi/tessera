@@ -10,7 +10,7 @@ patch.
 ## Chapters
 
 1. [Getting started](01-getting-started.md): your first sound in five minutes.
-2. [The modules](02-modules.md): Tessera, Track Out, Drum Out and Auto Out, their jacks and menus.
+2. [The modules](02-modules.md): Roll, Track Out, Drum Out and Auto Out, their jacks and menus.
 3. [The editor](03-editor.md): the layout, moving around, undo, and the small editor inside the panel.
 4. [Tracks](04-tracks.md): adding, naming, muting, grouping, and what a track plays.
 5. [Clips and scenes](05-clips-and-scenes.md): launching clips live, scenes, and the Plays switch.
@@ -37,7 +37,7 @@ patch.
 | **Launch** | Start a clip (or a scene) playing. |
 | **V/OCT** | A pitch voltage: 1 volt per octave. 0 V is middle C (C4). |
 | **Gate** | A voltage that is high (10 V) while a note is held and low (0 V) when it is not. |
-| **Poly cable** | One cable that carries up to 16 voices, one per channel. Tessera plays chords this way. |
+| **Poly cable** | One cable that carries up to 16 voices, one per channel. Roll plays chords this way. |
 | **Velocity** | How hard a note is played, from 0 to 100%. Sent as 0 to 10 V. |
 | **Snap** | Notes and clips jump to the nearest grid line while you draw or drag them. |
 | **Undo** | Ctrl+Z (Cmd+Z on a Mac) takes back the last change. Every change in Tessera can be undone. |

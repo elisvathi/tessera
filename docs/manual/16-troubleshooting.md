@@ -13,12 +13,12 @@ Check these in order:
    the playhead.
 4. **Is the track muted, or another track soloed?** Look at **M** and **S** in the track headers.
 5. **Is a note muted?** Muted notes are hatched. Right-click them and choose **Mute / unmute**.
-6. **Is Tessera bypassed?** A bypassed Tessera sends no gates.
+6. **Is Roll bypassed?** A bypassed Roll sends no gates.
 
 ## The output module says "No source" or "Track missing"
 
-- **No source**: it can't find its Tessera. Right-click it and pick one under **Source**. This happens when the
-  Tessera was deleted, or after pasting the output module alone into another patch.
+- **No source**: it can't find its Roll. Right-click it and pick one under **Source**. This happens when the
+  Roll was deleted, or after pasting the output module alone into another patch.
 - **Track missing**: its track was deleted. Undo the delete, or pick another track with the arrows or the **Track**
   menu. Output modules never switch tracks by themselves.
 
@@ -26,7 +26,7 @@ Check these in order:
 
 - Keys go to the pane **under the mouse**. Move the mouse over the notes for note keys, over the song pane for track
   and clip keys.
-- In the panel editor, keys only reach Tessera while the mouse is over the panel.
+- In the panel editor, keys only reach Roll while the mouse is over the panel.
 - While **keyboard play** (Ctrl+K) is on, letter keys play notes instead of switching tools. Press Ctrl+K to stop.
 - While typing in a field (a name, a value), keys go to the field.
 
@@ -38,7 +38,7 @@ Choose **Auto**. Also check that your oscillator and envelope are polyphonic.
 ## Notes play at the wrong pitch
 
 - Check that Track Out's **V/OCT** goes to the oscillator's V/OCT input, not FM.
-- Tune the oscillator: Tessera sends 0 V for C4.
+- Tune the oscillator: Roll sends 0 V for C4.
 - A **Transpose** device, a timeline clip's **Transpose**, or a **pitch bend** on the notes also change the pitch.
 
 ## The music doesn't follow my external clock
@@ -90,11 +90,11 @@ corner button, or open the **Full editor**.
 
 ## The editor is too small or too big
 
-Right-click the Tessera panel and pick **Editor size**.
+Right-click the Roll panel and pick **Editor size**.
 
-## Several Tesseras: which one does an output module follow?
+## Several Rolls: which one does an output module follow?
 
-Give each Tessera its own **Instance name** (module menu). Output modules show the name on their screen, and the
+Give each Roll its own **Instance name** (module menu). Output modules show the name on their screen, and the
 **Source** menu lists the names.
 
 ## Where is…
@@ -107,7 +107,7 @@ Give each Tessera its own **Instance name** (module menu). Output modules show t
 | Count-in | The ▾ next to the record button |
 | Ghost notes | **View ▾** in the notes header |
 | Flats instead of sharps | **View ▾ → Name notes with flats** |
-| Colour scheme | **Tessera ▾ → Colour scheme** |
+| Colour scheme | **Roll ▾ → Colour scheme** |
 | Quantize | **Notes ▾ → Quantize…**, or **Q** |
 | Clip length | The clip chip at the left of the notes header |
 | Launch quantize | **Launch 1 bar ▾** above the track names |

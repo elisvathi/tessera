@@ -1,7 +1,7 @@
 # 12. Automation
 
 Automation is a curve that changes a value over time: a filter opening during the chorus, a slow fade, a wobble.
-Tessera sends each curve as a voltage, and it can also turn knobs on other modules directly, with no cable.
+Roll sends each curve as a voltage, and it can also turn knobs on other modules directly, with no cable.
 
 ## Two kinds of lane
 
@@ -102,7 +102,7 @@ records. To map a knob to a lane you already have:
 
 While the song plays, the knob follows the lane. Each mapped knob is listed in the lane menu, where you can set how far
 the lane turns it: **Full range**, **Lower half**, **Upper half**, **Middle half** or **Reversed**. A knob only moves when the lane's value changes, so a still lane never fights your
-hand. If the knob is already mapped by another module, Tessera asks before taking it over.
+hand. If the knob is already mapped by another module, Roll asks before taking it over.
 
 Mappings are saved with the patch. They work even if no output module plays the track.
 
@@ -146,7 +146,7 @@ What a lane records from (lane menu, **Records from**):
 - **A MIDI control**: pick it by name, or choose **Another: move it on your controller**. Moving a control while
   recording also makes its lane in the clip for you (see [Recording](11-recording.md#expression-and-controls)).
 - **The mapped knob**: the lane's first mapped knob, turned by hand.
-- **AUTO REC input**: a channel of the **AUTO** input on the Tessera panel. **AUTO REC channel** picks which one
+- **AUTO REC input**: a channel of the **AUTO** input on the Roll panel. **AUTO REC channel** picks which one
   (at first, the lane's own AUTO channel), so one mono cable is enough.
 
 **Learn: move a MIDI control or touch a knob** waits for the first thing you move and makes it the source.
@@ -171,4 +171,4 @@ To protect a lane, choose **Don't record this lane (keep what's there)** in its 
 Each pass is drawn in red while it records. When recording stops (or the loop wraps), it is thinned to a few points.
 While you record a mapped knob, its playback pauses so your hand wins.
 
-Device knobs inside Tessera can be automated too. See [Devices](13-devices.md#automating-a-device-knob).
+Device knobs inside Roll can be automated too. See [Devices](13-devices.md#automating-a-device-knob).

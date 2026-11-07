@@ -217,7 +217,7 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
     EditorContext* c = &ctx;
 
     // The instance menu: file actions and the colour scheme.
-    auto instance = options(Icon::None, "Tessera",
+    auto instance = options(Icon::None, "Roll",
                             "Open and save projects, export MIDI and DAWproject files, "
                             "choose the colour scheme",
                             [c] {

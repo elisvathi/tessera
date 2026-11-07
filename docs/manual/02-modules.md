@@ -2,20 +2,20 @@
 
 This chapter explains every knob, button, jack and menu on the four modules.
 
-![Tessera, three Track Outs, a Drum Out and an Auto Out](images/tessera-panel.png)
+![Roll, three Track Outs, a Drum Out and an Auto Out](images/tessera-panel.png)
 
-## Tessera
+## Roll
 
-Tessera is the sequencer. It holds the song and plays it. You can use the panel alone for playing and launching
+Roll is the sequencer. It holds the song and plays it. You can use the panel alone for playing and launching
 scenes, but you write the music in the editor.
 
-![The Tessera panel with numbered parts](images/tessera-panel-numbered.png)
+![The Roll panel with numbered parts](images/tessera-panel-numbered.png)
 
 ### 1. The display
 
-The display shows what Tessera is doing:
+The display shows what Roll is doing:
 
-- **Top line:** the instance name (for example "Tessera" or "Drums B"), the selected scene ("SCENE 1 INTRO") and
+- **Top line:** the instance name (for example "Roll" or "Drums B"), the selected scene ("SCENE 1 INTRO") and
   what plays (**CLIPS** or **TIMELINE**).
 - **Middle:** a small picture of the song (one coloured line per track) and the notes of the selected clip.
 - **Bottom line:** the song position (bar.beat.sixteenth), the selected track and clip, and the tempo. With an
@@ -105,19 +105,19 @@ exactly with the notes on the output modules.
 
 ### The module menu
 
-Right-click the Tessera panel for these settings.
+Right-click the Roll panel for these settings.
 
-![The Tessera module menu](images/tessera-menu.png)
+![The Roll module menu](images/tessera-menu.png)
 
 | Item | What it does |
 |---|---|
 | **Open editor** | Same as the EDITOR button. |
 | **File** | New song, open and save project files, import MIDI files, export MIDI and DAWproject. See [Files](14-files.md). |
-| **MIDI input (for recording)** | The MIDI device and channel Tessera listens to. |
+| **MIDI input (for recording)** | The MIDI device and channel Roll listens to. |
 | **Panel editor** | Widens the panel to show a small editor in the rack: Off, 48, 80 or 120 HP. See [The editor](03-editor.md#the-editor-inside-the-panel). |
 | **Colour scheme** | The look of the editor and panels. See [The editor](03-editor.md#colour-schemes). |
 | **Editor size** | The size of the full editor: Auto (follows Rack's zoom) or 75% to 200%. |
-| **Instance name** | The name the output modules show. Give each Tessera its own name when you use more than one. |
+| **Instance name** | The name the output modules show. Give each Roll its own name when you use more than one. |
 | **CLOCK output** | The rate of the CLOCK output. |
 | **CLOCK input** | The PPQN of the CLOCK input. |
 | **Tracks** | Mute and solo each track without opening the editor. |
@@ -141,13 +141,13 @@ follows the track's **Voices** setting (by default, as many as the track ever pl
 | **PRESS** | Pressure curve of each note, 0 to 10 V. |
 | **AUTO** | The track's automation lanes, one channel per AUTO lane, already in volts. |
 
-**The screen** shows the Tessera's name, the track number in the track's colour, and the track name. It shows
-"No source" when no Tessera is found, and "Track missing" when the track was deleted. A Track Out never jumps to
+**The screen** shows the Roll's name, the track number in the track's colour, and the track name. It shows
+"No source" when no Roll is found, and "Track missing" when the track was deleted. A Track Out never jumps to
 another track by itself: undo the delete, or pick a track, and it plays again.
 
 **The arrow buttons** step through the instrument tracks. Each step can be undone.
 
-**Right-click** for the **Source** (which Tessera, by instance name) and **Track** menus.
+**Right-click** for the **Source** (which Roll, by instance name) and **Track** menus.
 
 ![The Track Out menu: Source and Track](images/track-out-menu.png)
 
@@ -195,17 +195,17 @@ lane's name and a bar with its value right now. It works with instrument and dru
 Use it when you want each curve on its own cable without a poly splitter. The poly **AUTO** jack on Track Out and
 Drum Out sends the same values.
 
-## How output modules find Tessera
+## How output modules find Roll
 
-You never connect a cable from Tessera to an output module. Instead:
+You never connect a cable from Roll to an output module. Instead:
 
-- A new output module follows the Tessera you clicked last, on its first track of the right kind that has no output
-  yet. With one Tessera in the patch, you never have to pick it.
+- A new output module follows the Roll you clicked last, on its first track of the right kind that has no output
+  yet. With one Roll in the patch, you never have to pick it.
 - The binding is saved in the patch.
-- When you copy and paste a Tessera together with its output modules, the pasted outputs follow the new copy. An
+- When you copy and paste a Roll together with its output modules, the pasted outputs follow the new copy. An
   output module pasted alone keeps following the original.
-- You can have several Tesseras in one patch. Give each a different **Instance name** so you can tell them apart in
+- You can have several Rolls in one patch. Give each a different **Instance name** so you can tell them apart in
   the **Source** menu.
-- All outputs of all tracks run exactly one sample behind Tessera, so every track stays in time with the others, in
+- All outputs of all tracks run exactly one sample behind Roll, so every track stays in time with the others, in
   any order and on any number of threads.
-- When Tessera is bypassed or removed, every gate goes low. No note is left hanging.
+- When Roll is bypassed or removed, every gate goes low. No note is left hanging.

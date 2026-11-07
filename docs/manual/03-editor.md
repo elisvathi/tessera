@@ -4,7 +4,7 @@ The editor is where you write music. This chapter shows its parts, how to move a
 
 ## Opening and closing
 
-- Click **EDITOR** on the Tessera panel, or right-click the panel and pick **Open editor**.
+- Click **EDITOR** on the Roll panel, or right-click the panel and pick **Open editor**.
 - The editor covers the whole Rack window. While it is open, the rack behind it doesn't react to the mouse or keys.
   **Ctrl+S** still saves the patch.
 - Click **×** in the top-right corner to close it, or press **Esc**. Esc first cancels a drag, then clears the
@@ -16,7 +16,7 @@ There is also a smaller editor inside the panel itself. See [The editor inside t
 
 ![The editor with numbered parts](images/editor-overview-numbered.png)
 
-1. **Transport bar.** From the left: the **Tessera ▾** menu (files and colour schemes), play ▶, stop ■, record ●
+1. **Transport bar.** From the left: the **Roll ▾** menu (files and colour schemes), play ▶, stop ■, record ●
    with its settings ▾, loop ⟳, the song position, the tempo, and **4/4 ▾** (time signature and swing). In its menu,
    **Beats per bar** (1 to 16) and **Beat unit** (1/2, 1/4, 1/8, 1/16) are picked on their own, so 7/8 or 11/16 is two
    clicks away. **Swing** uses the usual scale: 50% is straight, 66% the triplet feel, 75% the hardest; type any value
@@ -142,7 +142,7 @@ right after you scroll, then comes back.
   transport bar do the same.
 - One drag is one undo step, however long it was.
 - Undo also brings back what was selected.
-- Tessera uses Rack's own undo list, so **Edit → Undo** in Rack's menu works too.
+- Roll uses Rack's own undo list, so **Edit → Undo** in Rack's menu works too.
 
 ## Help
 
@@ -154,7 +154,7 @@ Every button shows a tooltip after half a second, with its key in brackets.
 
 ## The editor inside the panel
 
-Tessera's panel can grow wider to hold a small editor right in the rack. Drag the panel's right edge, or right-click
+Roll's panel can grow wider to hold a small editor right in the rack. Drag the panel's right edge, or right-click
 the panel and choose **Panel editor → 48, 80 or 120 HP**. Modules to the right move out of the way. Narrow it below
 about 36 HP and it folds back to 24 HP. One undo restores the width and the neighbours.
 
@@ -171,7 +171,7 @@ about 36 HP and it folds back to 24 HP. One undo restores the width and the neig
 
 ## Colour schemes
 
-Choose a look in **Tessera ▾ → Colour scheme** (or the module menu). The choice applies to every Tessera and its
+Choose a look in **Roll ▾ → Colour scheme** (or the module menu). The choice applies to every Roll and its
 panels.
 
 - **Follow Rack** (the default): **Plaster** (light) when Rack uses light panels, **Slate** (dark) when it uses dark
@@ -183,7 +183,7 @@ panels.
 
 ![The editor in the light Plaster scheme](images/editor-light.png)
 
-In **View ▾** in the notes header, **Name notes with flats** writes Db instead of C#, everywhere in Tessera.
+In **View ▾** in the notes header, **Name notes with flats** writes Db instead of C#, everywhere in Roll.
 
 ## Editor size
 

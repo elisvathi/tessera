@@ -21,7 +21,7 @@ constexpr float kNumberSize = 28;
 void TrackOutDisplay::gather() {
     if (!module) {
         status = BindingStatus::Bound;
-        sourceName = "Tessera";
+        sourceName = "Roll";
         trackName = "Track 1";
         trackNumber = 1;
         trackColor = trackColorForIndex(0);

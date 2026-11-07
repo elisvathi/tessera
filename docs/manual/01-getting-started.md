@@ -9,24 +9,23 @@ your patch.
 
 | Module | Width | What it does |
 |---|---|---|
-| **Tessera** | 24 HP (or wider) | The sequencer. It holds the song, the transport (play, stop, tempo) and the editor. |
+| **Roll** | 24 HP (or wider) | The sequencer. It holds the song, the transport (play, stop, tempo) and the editor. |
 | **Track Out** | 6 HP | The outputs of one instrument track: pitch, gate, velocity and more. |
 | **Drum Out** | 20 HP | The outputs of one drum track: a strip of trigger, velocity, pitch, timbre and pressure jacks for each drum sound. |
 | **Auto Out** | 8 HP | The automation curves of one track, on eight separate jacks. |
 
-The output modules don't need to sit next to Tessera. Put each one next to the modules it plays, anywhere in the
-rack. Each output module finds its Tessera by itself.
+The output modules don't need to sit next to Roll. Put each one next to the modules it plays, anywhere in the
+rack. Each output module finds its Roll by itself.
 
-## Step 1: add Tessera
+## Step 1: add Roll
 
-Right-click an empty spot in the rack to open Rack's module browser. Type **Tessera**. You will see the four
-modules. Click **Tessera** to add it.
+Right-click an empty spot in the rack to open Rack's module browser. Type **Roll** and click **Roll** to add it.
 
 ![Rack's module browser showing the four Tessera modules](images/module-browser.png)
 
 ## Step 2: add a Track Out
 
-Open the browser again and add a **Track Out**. It connects to your Tessera at once. Its screen shows the Tessera's
+Open the browser again and add a **Track Out**. It connects to your Roll at once. Its screen shows the Roll's
 name, the track number and the track name ("1 Track 1").
 
 A new Track Out always picks the first track that has no output yet. So if you add three Track Outs, they take
@@ -34,7 +33,7 @@ tracks 1, 2 and 3. You can change the track later with the arrow buttons.
 
 ## Step 3: patch a simple voice
 
-Tessera makes no sound by itself. It tells other modules which notes to play. Here is the smallest voice, built
+Roll makes no sound by itself. It tells other modules which notes to play. Here is the smallest voice, built
 from VCV's free **Fundamental** modules:
 
 1. Track Out **V/OCT** to the VCO's **V/OCT** input. This sets the pitch.
@@ -43,18 +42,18 @@ from VCV's free **Fundamental** modules:
 4. ADSR **ENV** to the VCA's level input (the jack above IN).
 5. VCA **OUT** to Rack's **Audio** module, so you can hear it.
 
-![Tessera, a Track Out and a simple VCO, ADSR and VCA voice, patched](images/first-patch.png)
+![Roll, a Track Out and a simple VCO, ADSR and VCA voice, patched](images/first-patch.png)
 
 > **Tip:** Track Out sends one voice per poly channel. A chord of three notes uses three channels. Fundamental's VCO,
 > ADSR and VCA are polyphonic, so chords just work.
 
 ## Step 4: open the editor
 
-Click **EDITOR** on the Tessera panel. The editor fills the Rack window.
+Click **EDITOR** on the Roll panel. The editor fills the Rack window.
 
-![The editor of a new Tessera: four empty tracks](images/fresh-editor.png)
+![The editor of a new Roll: four empty tracks](images/fresh-editor.png)
 
-A new Tessera has four tracks: three instrument tracks and one drum track. It has no clips yet. The top half shows
+A new Roll has four tracks: three instrument tracks and one drum track. It has no clips yet. The top half shows
 the song (tracks, clips and the timeline). The bottom half shows the notes of the selected track.
 
 Press **Esc** or click **×** (top right) to close the editor. Your song stays as it is.
@@ -80,7 +79,7 @@ it through your voice. Press **Space** again to stop.
 
 ## Step 7: save
 
-Tessera saves everything inside your Rack patch. Save the patch as usual (**Ctrl+S** in Rack). When you open the
+Roll saves everything inside your Rack patch. Save the patch as usual (**Ctrl+S** in Rack). When you open the
 patch again, the song, the editor layout and the output modules' tracks come back.
 
 You can also save the song on its own as a project file. See [Files, export and import](14-files.md).

@@ -1443,3 +1443,20 @@ Why: the library displays a module as "<plugin> <name>", so the old names read a
 
 Impact: patches saved before this change lose their Track Out, Drum Out and Auto Out modules (the main
 Tessera module kept its slug). The plugin was not yet in the library, so no user patches exist.
+
+## 95. The flagship module is "Roll"; "Tessera" stays the plugin and brand name (7 Nov)
+
+VCV's library review (issue #989) reopened the plugin because the plugin slug and name matched the main
+module's slug and name: the library and Rack's browser would show "Tessera Tessera". Instead of renaming
+the plugin, the main module is renamed to **Roll** (the piano roll), in `plugin.json` and in its
+`createModel` call. The plugin slug, name and brand stay "Tessera"; Track Out, Drum Out and Auto Out keep
+their names. The browser now shows "Tessera > Roll", like "Audible Instruments > Braids".
+
+Why: "Tessera" stays the brand that future modules can live under, and the module gets a name that says
+what it is.
+
+Impact: the `brand` field is what Rack's browser shows as the brand prefix; the VCV Library site prefixes
+modules with the plugin *name*. Both read fine now. Patches saved before this change lose their main
+module (its slug changed from `Tessera` to `Roll`); the plugin was not yet in the library, so no user
+patches exist. The song-title default in MIDI/DAWproject export stays "Tessera" (the product name);
+instance-name fallbacks and the panel title follow the module name.

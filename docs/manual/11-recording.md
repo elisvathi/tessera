@@ -1,13 +1,13 @@
 # 11. Recording
 
-You can play notes into Tessera from a MIDI keyboard, from CV and gates in your patch, or from your computer keyboard.
-Tessera records them into clips.
+You can play notes into Roll from a MIDI keyboard, from CV and gates in your patch, or from your computer keyboard.
+Roll records them into clips.
 
 ## Where notes come from
 
 | Source | How to set it up |
 |---|---|
-| **MIDI** | Right-click the Tessera panel, **MIDI input (for recording)**, and pick the driver, device and channel. The record button's ▾ menu has the same item. |
+| **MIDI** | Right-click the Roll panel, **MIDI input (for recording)**, and pick the driver, device and channel. The record button's ▾ menu has the same item. |
 | **CV** | Patch the **V/OCT**, **GATE** and (optionally) **VEL** inputs in the panel's lower box. They are polyphonic: each channel is one voice. A note starts when its gate rises above 1 V. Without a VEL cable, notes get 80%. |
 | **Computer keyboard** | Press **Ctrl+K** in the editor. See [Keyboard play](#keyboard-play). |
 
@@ -131,10 +131,10 @@ With input quantize on, the recording is first saved as played, then quantized a
 
 ## Capture: keep what you just played
 
-Tessera always listens. When you play something good without recording, press **Capture**: **Ctrl+Shift+R**, or the
+Roll always listens. When you play something good without recording, press **Capture**: **Ctrl+Shift+R**, or the
 record button's ▾ menu.
 
-- Tessera keeps the last 64 bars of notes played while not recording.
+- Roll keeps the last 64 bars of notes played while not recording.
 - Capture turns your last phrase (back to a gap of 4 bars of silence) into a clip on the selected track.
 - It keeps what you played on the keys (aftertouch, MPE) and the controls you moved during the phrase (bend, mod
   wheel, pedals, CCs), as a recording does. Each control's lane starts where the control was when the phrase began.

@@ -3,7 +3,7 @@
 
 Run it with an output folder: `demo_patch.py build/manual-rack`. It writes demo.vcv (a small song with its output
 modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the modules zoomed in), first.vcv
-(Tessera, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Tessera alone) and
+(Roll, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Roll alone) and
 polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own) and hitvalues.vcv
 (the Drums track open on its Pitch lane: the snares tuned up step by step, the second a shaped curve, the hats with
 timbre).
@@ -142,7 +142,7 @@ def make_song():
 
 
 def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track="Lead", note_lane=None):
-    """The Tessera module with the song; params are play, reset, loop, tap, BPM, scene buttons, Plays, rec, fill."""
+    """The Roll module with the song; params are play, reset, loop, tap, BPM, scene buttons, Plays, rec, fill."""
     params = [0.0] * 12
     params[4] = 112.0
     params[9] = 1.0 if plays_timeline else 0.0
@@ -150,14 +150,14 @@ def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track
           "overlay": {"openAutomation": [TRACK_IDS["Chords"]]}}
     if note_lane:
         ui["overlay"]["noteLane"] = note_lane
-    return {"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera", "version": "2.0.0",
+    return {"id": TESSERA_ID, "plugin": "Tessera", "model": "Roll", "version": "2.0.0",
             "params": [{"value": v, "id": i} for i, v in enumerate(params)], "pos": [0, 0],
-            "data": {"schema": 6, "name": "Tessera", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
+            "data": {"schema": 6, "name": "Roll", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
 
 
 def output_module(mid, model, track, x):
     """A Track Out, Drum Out or Auto Out bound to `track` of the demo Tessera."""
-    data = {"source": TESSERA_ID, "sourceName": "Tessera", "track": TRACK_IDS[track],
+    data = {"source": TESSERA_ID, "sourceName": "Roll", "track": TRACK_IDS[track],
             "followSelected": False}
     return {"id": mid, "plugin": "Tessera", "model": model, "version": "2.0.0", "params": [], "pos": [x, 0],
             "data": data}
@@ -229,7 +229,7 @@ def main():
     values, beat = hit_values_song()
     (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, 24, False, "Drums", "pitch")] +
                                                          outputs(24))))
-    (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Tessera",
+    (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Roll",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
 
 

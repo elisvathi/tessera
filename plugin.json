@@ -1,7 +1,7 @@
 {
   "slug": "Tessera",
   "name": "Tessera",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "license": "GPL-3.0-or-later",
   "brand": "Tessera",
   "author": "elis.vathi",
@@ -15,27 +15,27 @@
   "minRackVersion": "2.4.0",
   "modules": [
     {
-      "slug": "Tessera",
-      "name": "Tessera",
+      "slug": "Roll",
+      "name": "Roll",
       "description": "Piano roll, clip launcher and arranger with up to 64 polyphonic tracks",
       "tags": ["Sequencer", "Polyphonic", "Clock generator"]
     },
     {
       "slug": "TrackOut",
       "name": "Track Out",
-      "description": "The outputs of one Tessera instrument track, anywhere in the patch",
+      "description": "The outputs of one Roll instrument track, anywhere in the patch",
       "tags": ["Sequencer", "Polyphonic", "Utility"]
     },
     {
       "slug": "DrumOut",
       "name": "Drum Out",
-      "description": "The lane triggers of one Tessera drum track, anywhere in the patch",
+      "description": "The lane triggers of one Roll drum track, anywhere in the patch",
       "tags": ["Sequencer", "Drum", "Utility"]
     },
     {
       "slug": "AutoOut",
       "name": "Auto Out",
-      "description": "A Tessera track's automation lanes, one labelled jack each, anywhere in the patch",
+      "description": "A Roll track's automation lanes, one labelled jack each, anywhere in the patch",
       "tags": ["Sequencer", "Utility"]
     }
   ]

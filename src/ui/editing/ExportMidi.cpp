@@ -201,7 +201,7 @@ void openSong(EditorContext& ctx) {
             return;
         }
         std::vector<TrackId> chosen = choices.selectedOnly ? selected : std::vector<TrackId>();
-        std::string title = mod->instanceName().empty() ? "Tessera" : mod->instanceName();
+        std::string title = mod->instanceName().empty() ? mod->model->name : mod->instanceName();
         std::string path = pickPath(title);
         if (path.empty())
             return;
@@ -326,7 +326,7 @@ void openDawProject(EditorContext& ctx) {
         saved.includeMuted = options.includeMuted;
         saved.noteChannels = options.noteChannels;
         saved.laneCc = options.laneCc;
-        std::string title = mod->instanceName().empty() ? "Tessera" : mod->instanceName();
+        std::string title = mod->instanceName().empty() ? mod->model->name : mod->instanceName();
         std::string path = pickPath(title, "DAWproject:dawproject", ".dawproject");
         if (path.empty())
             return;

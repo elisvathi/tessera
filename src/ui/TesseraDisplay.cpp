@@ -265,7 +265,7 @@ void TesseraDisplay::drawHeader(NVGcontext* vg, Rect r) {
         }
     }
     draw::TextStyle title{fonts::uiStrong(), metrics::kTextUi, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    std::string name = module ? module->instanceName() : "Tessera";
+    std::string name = module ? module->instanceName() : "Roll";
     draw::text(vg, title, r.pos.x, cy, draw::ellipsize(vg, title, name, right - r.pos.x - 4));
 }
 

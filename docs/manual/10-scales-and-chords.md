@@ -1,6 +1,6 @@
 # 10. Keys, scales and chords
 
-A key (such as A minor) helps you stay in tune: Tessera can light up the right rows, snap notes to them, or hide the
+A key (such as A minor) helps you stay in tune: Roll can light up the right rows, snap notes to them, or hide the
 others. Nothing is forced until you choose a key.
 
 ## Choosing a key
@@ -23,7 +23,7 @@ Harmonic, Bebop Dominant, and **Chromatic (no key)** to turn the key off.
 - **Move with the key**: notes keep their place in the scale. A melody in C major becomes the same melody in D major.
 - **Keep pitches**: notes stay where they are.
 
-Tessera remembers your choice. Drum clips never move.
+Roll remembers your choice. Drum clips never move.
 
 A clip with its own key shows "(clip)" in the header. To go back to the song's key, open the picker on **This clip**
 and choose **Same as song**.

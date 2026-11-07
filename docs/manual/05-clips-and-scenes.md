@@ -117,7 +117,7 @@ past the end of a looping clip, the clip grows to hold them, in whole bars.
 
 ### Scenes from the panel
 
-The Tessera panel can launch scenes without the editor: **PREV** and **NEXT** pick a scene, **LAUNCH** starts it,
+The Roll panel can launch scenes without the editor: **PREV** and **NEXT** pick a scene, **LAUNCH** starts it,
 **STOP ALL** stops all clips. The **SCENE** and **LAUNCH** inputs do the same from CV, so a sequencer or a MIDI
 keyboard can switch your song's parts. The picked scene shows on the display and is outlined in the editor.
 

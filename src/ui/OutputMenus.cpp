@@ -44,7 +44,7 @@ class TrackMenuItem : public rack::ui::MenuItem {
 void appendSourceMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what) {
     std::vector<TesseraModule*> sources = Registry::get().sources();
     if (sources.empty()) {
-        menu->addChild(rack::createMenuLabel("No Tessera in this patch"));
+        menu->addChild(rack::createMenuLabel("No Roll in this patch"));
         return;
     }
     for (TesseraModule* src : sources) {
