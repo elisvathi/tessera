@@ -19,9 +19,51 @@ CXXFLAGS += -std=c++17
 # -Wextra would flag every such line.
 CXXFLAGS += -Wno-missing-field-initializers
 
+# Faster local builds. Rack's release toolchain sets CROSS_COMPILE, so the published plugin is built as it always was.
+ifndef CROSS_COMPILE
+
+# An explicit -jN on the command line still wins.
+ifeq (,$(filter -j%,$(MAKEFLAGS)))
+MAKEFLAGS += -j$(shell nproc)
+endif
+
+# Reuses earlier results after a rebase or branch switch, which touch every file without changing most of them.
+CCACHE := $(shell command -v ccache 2>/dev/null)
+ifneq (,$(CCACHE))
+CXX := $(CCACHE) $(CXX)
+TEST_CXX := $(CCACHE) c++
+export CCACHE_SLOPPINESS := pch_defines,time_macros
+# Lets git worktrees of this repo share one cache.
+export CCACHE_BASEDIR := $(CURDIR)
+endif
+
+FAST_LINKER := $(firstword $(shell command -v mold 2>/dev/null) $(shell command -v ld.lld 2>/dev/null))
+ifneq (,$(FAST_LINKER))
+LDFLAGS += -fuse-ld=$(if $(findstring mold,$(FAST_LINKER)),mold,lld)
+TEST_LINK_FLAGS := -fuse-ld=$(if $(findstring mold,$(FAST_LINKER)),mold,lld)
+endif
+
+# Parsing rack.hpp is most of the work for a file in these folders, so it is parsed once. `private` keeps the flag off
+# the header's own compile, which make would otherwise inherit from the objects that depend on it.
+PCH_HEADER := build/pch/rack_pch.hpp
+PCH := $(PCH_HEADER).gch
+PCH_OBJECTS := $(filter build/src/ui/% build/src/module/%,$(OBJECTS))
+
+$(PCH_HEADER):
+	@mkdir -p $(@D)
+	@echo '#include <rack.hpp>' > $@
+
+$(PCH): $(PCH_HEADER) $(RACK_DIR)/include/rack.hpp Makefile
+	$(CXX) $(CXXFLAGS) -x c++-header -c -o $@ $<
+
+$(PCH_OBJECTS): $(PCH)
+$(PCH_OBJECTS): private CXXFLAGS += -include $(PCH_HEADER) -Winvalid-pch
+
+endif
+
 # Unit tests: the model and engine build without Rack, so tests are a plain native binary.
 TEST_CXX ?= c++
-TEST_FLAGS ?= -std=c++17 -O1 -g -Wall -Wextra -Wno-missing-field-initializers -pthread -fsanitize=address,undefined
+TEST_FLAGS ?= -std=c++17 -O1 -g1 -Wall -Wextra -Wno-missing-field-initializers -pthread -fsanitize=address,undefined
 # The model uses jansson (Rack's JSON library); tests link a system copy (Arch: jansson, Debian: libjansson-dev,
 # Homebrew: jansson).
 TEST_LIBS ?= $(shell pkg-config --cflags --libs jansson 2>/dev/null || echo -ljansson)
@@ -61,13 +103,16 @@ $(TEST_OBJ_DIR)/%.o: %.cpp | $(TEST_INCLUDE)/GLFW
 	$(TEST_CXX) $(TEST_FLAGS) -MMD -MP -isystem $(TEST_INCLUDE) $(shell pkg-config --cflags jansson 2>/dev/null) \
 		$(DEP_FLAGS) -c -o $@ $<
 
+# The tests themselves are plain calls and checks: optimising them costs more compile time than it saves at run time.
+$(TEST_OBJ_DIR)/tests/%.o: TEST_FLAGS += -O0
+
 # Stretching and decoding are slow without optimisation.
 $(TEST_OBJ_DIR)/src/audio/stretch/%.o: TEST_FLAGS += -O2
 $(TEST_OBJ_DIR)/src/audio/DrLibs.o: TEST_FLAGS += -O2
 
 $(TEST_BIN): $(TEST_OBJECTS)
 	@mkdir -p $(dir $@)
-	$(TEST_CXX) $(TEST_FLAGS) -o $@ $(TEST_OBJECTS) $(TEST_LIBS)
+	$(TEST_CXX) $(TEST_FLAGS) $(TEST_LINK_FLAGS) -o $@ $(TEST_OBJECTS) $(TEST_LIBS)
 
 -include $(TEST_OBJECTS:.o=.d)
 

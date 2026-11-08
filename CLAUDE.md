@@ -35,9 +35,9 @@ Don't read these up front. Open the part that matches the task, and search with 
 ## Build and test
 
 ```sh
-RACK_DIR=~/Rack-SDK make -j16           # build the plugin
-RACK_DIR=~/Rack-SDK make -j16 test      # unit tests (doctest, no Rack needed)
-RACK_DIR=~/Rack-SDK make -j16 install   # install into the local Rack; restart Rack to load it
+RACK_DIR=~/Rack-SDK make           # build the plugin (uses every core by itself)
+RACK_DIR=~/Rack-SDK make test      # unit tests (doctest, no Rack needed)
+RACK_DIR=~/Rack-SDK make install   # install into the local Rack; restart Rack to load it
 ```
 
 ## Conventions
