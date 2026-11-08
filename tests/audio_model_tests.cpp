@@ -1,5 +1,7 @@
 #include "doctest.h"
 
+#include "../src/model/LauncherCommands.hpp"
+
 #include "../src/model/ArrangementEdits.hpp"
 #include "../src/model/AudioEdits.hpp"
 #include "../src/model/AutomationEdits.hpp"
@@ -608,6 +610,32 @@ TEST_CASE("the audio window sets what part of the file a clip plays; a whole-win
     setAudioWindow(song, id, 0, 144000)->apply(song);
     CHECK(song.findClip(id)->loopStart == 2 * kPpq);
     CHECK(song.findClip(id)->loopEnd == 4 * kPpq);
+}
+
+TEST_CASE("glue rejoins split audio pieces that have their own clips, unless one was changed") {
+    AudioLanes f;
+    arrange::Placed whole = f.at(0, 8);
+    f.song.findTrack(f.track)->arrangement = {whole.clip};
+    arrange::IdSet right;
+    arrange::Layout parts =
+        arrange::split(arrange::layoutOf(f.song), {whole.clip.id}, 3 * kPpq, f.song.clips, f.ids(), &right);
+    arrange::replaceArrangement(f.song, "split", arrange::layoutOf(f.song), parts)->apply(f.song);
+    Clip copy = copyClip(*f.song.findClip(f.clip), [&] { return f.song.nextId++; });
+    ClipId own = copy.id;
+    AddClip(std::move(copy)).apply(f.song);
+    f.song.findTrack(f.track)->arrangement[1].clip = own;
+    arrange::IdSet both = arrange::idsOf(arrange::layoutOf(f.song));
+
+    SUBCASE("the same settings glue") {
+        CommandPtr cmd = arrange::glue(f.song, both, [&] { return f.song.nextId++; });
+        REQUIRE(cmd);
+        applyAndCheckUndo(f.song, *cmd);
+        CHECK(f.song.findTrack(f.track)->arrangement.size() == 1);
+    }
+    SUBCASE("a changed piece stays apart") {
+        f.song.findClip(own)->audio->gainDb = -6;
+        CHECK_FALSE(arrange::glue(f.song, both, [&] { return f.song.nextId++; }));
+    }
 }
 
 TEST_CASE("glue joins the split parts of one audio clip back into one, and leaves other audio alone") {

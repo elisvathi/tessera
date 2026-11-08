@@ -37,7 +37,7 @@ void DetailPane::setMixer(MixerPane* m) {
     for (bool toMixer : {false, true}) {
         ToolButton::Options o;
         o.text = toMixer ? "Mixer" : "Notes";
-        o.tooltip = withShortcut(toMixer ? "Show the mixer in this pane" : "Show the notes in this pane",
+        o.tooltip = withShortcut(toMixer ? "Show the mixer in this pane" : "Show the selected clip in this pane",
                                  Action::ToggleMixer);
         o.action = [c, toMixer] {
             c->view().mixerOpen = toMixer;
@@ -117,6 +117,11 @@ void DetailPane::layout() {
 }
 
 void DetailPane::step() {
+    if (notesTab) {
+        TesseraModule* m = ctx.module();
+        const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;
+        notesTab->setText(t && t->type == TrackType::Audio ? "Audio" : "Notes");
+    }
     layout();
     EditorPane::step();
 }

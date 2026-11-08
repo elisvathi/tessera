@@ -18,7 +18,7 @@ ClipId shownClip(EditorContext& ctx, const Track& track);
 /// The scene index holding `clip` on `track`, or -1.
 int slotOf(const Track& track, ClipId clip);
 
-/// Selects a clip (and its track) for the detail editor.
+/// Selects a clip (and its track) for the detail editor, and shows that editor if the mixer had the pane.
 void select(EditorContext& ctx, TrackId track, ClipId clip);
 /// Creates a one-bar clip in an empty slot and selects it.
 void create(EditorContext& ctx, TrackId track, int slot);

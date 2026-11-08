@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include "../src/model/ArrangementEdits.hpp"
+#include "../src/model/LauncherCommands.hpp"
 
 #include <algorithm>
 
@@ -297,6 +298,34 @@ TEST_CASE("duplicates are linked; deleting the last use of a clip removes it unt
     CHECK(f.song.findClip(f.clip) == nullptr);
     remove->revert(f.song);
     CHECK(f.song.findClip(f.clip) != nullptr);
+}
+
+TEST_CASE("link identical clips makes copies with the same content share one clip") {
+    Fixture f;
+    f.add(f.t0, 0, kBeat);
+    ArrangementId b = f.add(f.t0, 2 * kBeat, kBeat);
+    Clip copy = copyClip(*f.song.findClip(f.clip), f.next());
+    copy.name = "Another name";
+    ClipId copied = copy.id;
+    f.perform(std::make_unique<AddClip>(std::move(copy)));
+    Layout l = layoutOf(f.song);
+    for (Placed& p : l)
+        if (p.clip.id == b)
+            p.clip.clip = copied;
+    f.perform(replaceArrangement(f.song, "Own clip", layoutOf(f.song), l));
+    auto heard = played(f.song, f.t0);
+
+    SUBCASE("a changed copy stays apart") {
+        f.song.findClip(copied)->notes[0].pitch++;
+        CHECK_FALSE(linkIdenticalClips(f.song, f.t0));
+    }
+    SUBCASE("copies that match are linked") {
+        f.perform(linkIdenticalClips(f.song, f.t0));
+        CHECK(f.song.clipUses(f.clip) == 2);
+        CHECK(f.song.findClip(copied) == nullptr);
+        CHECK(played(f.song, f.t0) == heard);
+        CHECK_FALSE(linkIdenticalClips(f.song, f.t0));
+    }
 }
 
 TEST_CASE("glue bakes several instances into one clip that plays the same") {

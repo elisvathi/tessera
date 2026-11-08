@@ -2222,3 +2222,22 @@ modules with the plugin *name*. Both read fine now. Patches saved before this ch
 module (its slug changed from `Tessera` to `Roll`); the plugin was not yet in the library, so no user
 patches exist. The song-title default in MIDI/DAWproject export stays "Tessera" (the product name);
 instance-name fallbacks and the panel title follow the module name.
+
+## 135. Small editor and menu changes (9 Nov)
+
+- **Vsync is gone.** The module-menu switch did nothing the user could see.
+- **Editor size moved** from the module's right-click menu to the full editor's Roll menu, where its effect can be seen.
+- **Clicking any clip leaves the mixer** and shows that clip. The tab reads "Audio" when an audio track is selected.
+- **Whole-number device knobs snap** while dragged, so the knob shows the value that plays.
+- **A new timeline opens on bar 1**, even when the song doesn't fit in the view.
+
+## 136. Copies are independent by default (9 Nov)
+
+This replaces "Linked by default" in the timeline section.
+
+- **Ctrl/Cmd+drag, Ctrl/Cmd+D and Paste make independent copies.** Ctrl/Cmd+Alt+drag makes a linked one. A clip dragged
+  between the clips panel and the timeline stays linked, as before.
+- **Link identical clips** (a track's menu) links the timeline clips on that track that play the same thing. Names and
+  colours don't count.
+- **Splitting an audio clip gives each piece its own clip**, so changing one leaves the others alone. Glue compares what
+  the pieces play, so pieces with the same settings still rejoin.

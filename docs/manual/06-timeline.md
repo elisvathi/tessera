@@ -31,10 +31,12 @@ changes.
 - **Drag** a clip to move it. Drag up or down to move it to another track.
 - Clips snap to the grid, and also to nearby clip edges, markers, the loop ends and the playhead.
 - **Alt** while dragging: no snapping. **Shift**: move only across time, or only across tracks.
-- **Ctrl+drag**: a linked copy.
-- **Ctrl+Alt+drag**: an independent copy (its own clip).
-- **Ctrl+D**: a linked copy right after the selection.
+- **Ctrl+drag**: an independent copy (its own clip).
+- **Ctrl+Alt+drag**: a linked copy.
+- **Ctrl+D**: an independent copy right after the selection. **Paste** makes independent copies too.
 - **Ctrl+U** (**Make unique**): gives each selected tile its own copy of the clip, so you can change it alone.
+- **Link identical clips** (right-click a track): tiles on that track that play exactly the same thing become linked.
+- **Splitting an audio clip** gives each piece its own clip. Pieces with the same settings still glue back together.
 - **Left / Right arrows** nudge by the grid. **Shift+Left / Right** nudge by a bar.
 
 ## Changing a clip's length and content

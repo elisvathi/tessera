@@ -608,7 +608,7 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
         return nullptr;
     Tool tool = ctx.state().tool;
     // Ctrl/Cmd+drag (with or without Alt) from empty space selects with any tool. From a clip, Ctrl/Cmd+drag makes
-    // a linked copy and Ctrl/Cmd+Alt+drag an independent one (DECISIONS §41).
+    // an independent copy and Ctrl/Cmd+Alt+drag a linked one (DECISIONS §136).
     if (mods.ctrl && hit.part == Part::None)
         return clipGestures::rubberBand(*this, pos, mods);
     if (tool == Tool::Erase)

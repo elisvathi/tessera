@@ -615,14 +615,17 @@ CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId) {
     if (!first || end <= start)
         return nullptr;
     if (first->audio) {
-        // Audio glues without rendering only where the parts are pieces of one clip, end to end, each playing on
-        // from where the last stopped (a split undone by hand). Other audio waits for rendering (Phase 3).
+        // Audio glues without rendering only where the parts are pieces of one recording with the same settings, end
+        // to end, each playing on from where the last stopped (a split undone by hand). Split pieces are separate
+        // clips, so they are compared by what they play. Other audio waits for rendering (Phase 3).
         std::sort(chosen.begin(), chosen.end(),
                   [](const Placed& a, const Placed& b) { return a.clip.position < b.clip.position; });
         for (size_t i = 0; i < chosen.size(); i++) {
             const ArrangerClip& a = chosen[i].clip;
             // Parts playing different takes (a comp) only glue by rendering.
-            if (a.clip != first->id || a.muted || a.take != chosen.front().clip.take)
+            const Clip* part = song.findClip(a.clip);
+            if (!part || !(part->audio == first->audio) || part->length != first->length || a.muted ||
+                a.take != chosen.front().clip.take)
                 return nullptr;
             if (i > 0) {
                 const ArrangerClip& prev = chosen[i - 1].clip;
@@ -682,6 +685,45 @@ CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId) {
     compound->add(std::make_unique<AddClip>(std::move(glued)));
     compound->add(replaceArrangement(song, "Glue clips", before, after));
     return compound;
+}
+
+namespace {
+
+/// A clip with its IDs, name and colour taken out, so two clips compare equal when they play the same.
+Clip contentOf(Clip clip) {
+    clip.id = ClipId();
+    clip.name.clear();
+    clip.color = {};
+    clip.ownColor = {};
+    uint64_t index = 0;
+    for (Note& n : clip.notes)
+        n.id = NoteId(++index);
+    for (AutomationEnvelope& a : clip.automation)
+        a.id = AutomationId(++index);
+    return clip;
+}
+
+} // namespace
+
+CommandPtr linkIdenticalClips(const Song& song, TrackId track) {
+    Layout before = layoutOf(song);
+    Layout after = before;
+    std::vector<std::pair<ClipId, Clip>> kept;
+    bool changed = false;
+    for (Placed& p : after) {
+        const Clip* c = p.track == track ? song.findClip(p.clip.clip) : nullptr;
+        if (!c)
+            continue;
+        Clip content = contentOf(*c);
+        auto same = std::find_if(kept.begin(), kept.end(), [&](const auto& k) { return k.second == content; });
+        if (same == kept.end()) {
+            kept.emplace_back(c->id, std::move(content));
+        } else if (same->first != c->id) {
+            p.clip.clip = same->first;
+            changed = true;
+        }
+    }
+    return changed ? replaceArrangement(song, "Link identical clips", before, after) : nullptr;
 }
 
 CommandPtr makeUnique(const Song& song, const IdSet& ids, const NextId& nextId) {

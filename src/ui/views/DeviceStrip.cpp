@@ -102,6 +102,8 @@ class KnobDrag : public DragGesture {
         : strip(strip), ctx(ctx), ref(ref), start(start), value(start), info(std::move(info)), press(press) {}
     void update(Vec pos, Modifiers mods) override {
         value = std::clamp(start + (press.y - pos.y) / kKnobPx * (mods.shift ? 0.2f : 1.f), 0.f, 1.f);
+        if (info.kind == devices::ParamInfo::Kind::Integer)
+            value = devices::normalize(info, devices::display(info, value));
         strip.knobPreview = std::make_pair(ref, value);
         if (TesseraModule* m = ctx.module())
             m->holdKnob(ref, value);

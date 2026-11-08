@@ -13,7 +13,7 @@ class ArrangerLanes;
 namespace arrangeActions {
 
 void deleteSelected(ArrangerLanes& lanes);
-/// Copies the selection right after itself, as linked instances (Ctrl/Cmd+D).
+/// Copies the selection right after itself, each copy with its own clip (Ctrl/Cmd+D).
 void duplicateSelected(ArrangerLanes& lanes);
 /// Splits the selected clips at `at`; with nothing selected, the clips `at` falls in on the selected track.
 void split(ArrangerLanes& lanes, Tick at);

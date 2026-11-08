@@ -140,7 +140,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Alt while dragging | No snapping |
 | Shift while dragging | One direction only, or fine values |
 | Ctrl+drag | Copy what you drag |
-| Ctrl+Alt+drag a timeline clip | Independent (unlinked) copy |
+| Ctrl+Alt+drag a timeline clip | Linked copy |
 | Ctrl+drag from empty space | Selection box, with any tool |
 | Shift+click / Ctrl+click | Add to / toggle in the selection |
 | Alt+drag a note or a clip's body | Note: velocity. Timeline clip: slip the content. |

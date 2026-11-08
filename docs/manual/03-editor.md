@@ -58,8 +58,9 @@ more room.
   restores the panes.
 - Each pane has a **maximize** button in its top-right corner. Double-clicking the line between the panes does the
   same.
-- Once something makes sound, the lower pane's header starts with **Notes | Mixer**: the lower pane shows the notes
-  or the [mixer](18-mixer.md), never both. **F4** switches.
+- Once something makes sound, the lower pane's header starts with **Notes | Mixer** (**Audio | Mixer** when an audio
+  track is selected): the lower pane shows the clip or the [mixer](18-mixer.md), never both. **F4** switches, and
+  clicking any clip goes back to it.
 - **F2** widens the clips beside the timeline (handy when performing). Press it again to narrow them.
 - **F3** opens the device strip above the notes. See [Devices](13-devices.md).
 
@@ -196,5 +197,5 @@ In **View ▾** in the notes header, **Name notes with flats** writes Db instead
 
 ## Editor size
 
-Right-click the panel and pick **Editor size** to make the full editor larger or smaller: **Auto** follows Rack's own
+In the full editor, click the **Roll ▾** menu at the top left and pick **Editor size** to make the editor larger or smaller: **Auto** follows Rack's own
 zoom, or choose 75% to 200%.

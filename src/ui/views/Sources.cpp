@@ -15,6 +15,14 @@ namespace tessera {
 
 namespace {
 
+/// The instance of `clip` playing at `tick`. Overlapping clips all play, so asking for "the" clip would miss some.
+const ArrangerClip* instanceOfClipAt(const Track& track, Tick tick, ClipId clip) {
+    for (const ArrangerClip& a : track.arrangement)
+        if (a.clip == clip && tick >= a.position && tick < instanceEnd(a))
+            return &a;
+    return nullptr;
+}
+
 constexpr int kSongMarginBars = 8;
 constexpr int kMinSongBars = 32;
 constexpr int kMinFitBars = 16;
@@ -181,7 +189,7 @@ double ClipSource::playhead() {
     // Arranger mode: where the timeline plays this clip right now.
     if (m->playMode() == PlayMode::Arranger && !status.overridden) {
         double song = m->playheadTicks();
-        if (const ArrangerClip* a = instanceAt(*t, Tick(song)); a && a->clip == clip)
+        if (const ArrangerClip* a = instanceOfClipAt(*t, Tick(song), clip))
             if (std::optional<double> u = clipTimeAt(*current(), *a, song, lanes()))
                 return *u;
     }
@@ -221,7 +229,7 @@ double ClipSource::elapsed() {
     if (m->playMode() == PlayMode::Arranger && !status.overridden) {
         // A timeline clip: it starts where it begins the clip, and runs slower when it is stretched.
         double song = m->playheadTicks();
-        if (const ArrangerClip* a = instanceAt(*track, Tick(song)); a && a->clip == clip->id) {
+        if (const ArrangerClip* a = instanceOfClipAt(*track, Tick(song), clip->id)) {
             double stretch = a->stretch > 0 ? double(a->stretch) : 1.0;
             return double(normalizeOffset(*clip, a->offset) - clipSpan(*clip).start) +
                    (song - double(a->position)) / stretch;
@@ -255,7 +263,7 @@ const ArrangerClip* ClipSource::seekInstance() {
         return nullptr;
     if (const ArrangerClip* a = instance())
         return a;
-    if (const ArrangerClip* a = instanceAt(*t, Tick(m->playheadTicks())); a && a->clip == clip)
+    if (const ArrangerClip* a = instanceOfClipAt(*t, Tick(m->playheadTicks()), clip))
         return a;
     for (const ArrangerClip& a : t->arrangement)
         if (a.clip == clip)

@@ -532,6 +532,8 @@ class TesseraModule : public rack::engine::Module {
         int capture = -1; // index into captures
         double quietSince = -1;
         bool restoreLauncher = false;
+        bool restoreLoop = false;
+        bool reachedEnd = false; // the playhead has passed `to`
         bool started = false; // the transport has been seen playing
         bool armed = false;   // its tap is armed (after the jump to the start)
         bool keep = false;    // it reached its end: keep the file

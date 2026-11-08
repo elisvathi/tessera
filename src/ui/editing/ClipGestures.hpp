@@ -15,9 +15,9 @@ class ArrangerLanes;
 namespace clipGestures {
 
 /// Drag a clip's body: moves the selection in time and across tracks (snaps to the grid and to nearby edges;
-/// Alt: free; Shift: one axis). Ctrl/Cmd copies as linked instances; with `uniqueCopy` (Ctrl/Cmd+Alt at the
-/// press) the copies get their own clips.
-std::unique_ptr<DragGesture> move(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed, bool uniqueCopy);
+/// Alt: free; Shift: one axis). Ctrl/Cmd copies, each copy with its own clip; with `linkedCopy` (Ctrl/Cmd+Alt at
+/// the press) the copies play the same clips.
+std::unique_ptr<DragGesture> move(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed, bool linkedCopy);
 /// Alt+drag a clip's body: slides the content inside the selected clips; the clips stay put.
 std::unique_ptr<DragGesture> slip(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed);
 /// Drag the right edge: longer or shorter (a looping clip repeats). With `stretch` (Alt), the content is

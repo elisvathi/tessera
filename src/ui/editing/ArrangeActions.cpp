@@ -9,6 +9,7 @@
 
 #include "../../model/ArrangementEdits.hpp"
 #include "../../model/AudioEdits.hpp"
+#include "../../model/LauncherCommands.hpp"
 #include "../../model/TrackCommands.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../interaction/Shortcuts.hpp"
@@ -81,7 +82,31 @@ void duplicateSelected(ArrangerLanes& lanes) {
     Layout after =
         arrange::duplicate(before, ids, end - start, songOrder(moduleOf(lanes)->song()), 0, idSource(lanes), &added);
     after = lanes.settle(after, added, idSource(lanes));
-    lanes.commit("Duplicate " + arrange::countClips(ids.size()), before, after, added);
+    std::vector<Clip> copies;
+    NextId next = moduleOf(lanes)->ids();
+    for (arrange::Placed& p : after) {
+        const Clip* c = added.count(p.clip.id) ? moduleOf(lanes)->song().findClip(p.clip.clip) : nullptr;
+        if (!c)
+            continue;
+        copies.push_back(copyClip(*c, next));
+        p.clip.clip = copies.back().id;
+    }
+    lanes.commit("Duplicate " + arrange::countClips(ids.size()), before, after, added, std::move(copies));
+}
+
+/// Gives each audio piece in `pieces` a clip of its own, so changing one piece leaves the others alone. Returns the new
+/// clips, which the commit adds to the song.
+static std::vector<Clip> separateAudioPieces(Layout& layout, const IdSet& pieces, TesseraModule& m) {
+    std::vector<Clip> made;
+    NextId next = m.ids();
+    for (arrange::Placed& p : layout) {
+        const Clip* c = pieces.count(p.clip.id) ? m.song().findClip(p.clip.clip) : nullptr;
+        if (!c || !c->audio)
+            continue;
+        made.push_back(copyClip(*c, next));
+        p.clip.clip = made.back().id;
+    }
+    return made;
 }
 
 void split(ArrangerLanes& lanes, Tick at) {
@@ -98,9 +123,10 @@ void split(ArrangerLanes& lanes, Tick at) {
     Layout after = arrange::split(before, ids, at, m->song().clips, idSource(lanes), &right);
     if (right.empty())
         return;
+    std::vector<Clip> pieces = separateAudioPieces(after, right, *m);
     IdSet select = lanes.selection();
     select.insert(right.begin(), right.end());
-    lanes.commit("Split " + arrange::countClips(right.size()), before, after, select);
+    lanes.commit("Split " + arrange::countClips(right.size()), before, after, select, std::move(pieces));
 }
 
 namespace {
@@ -189,8 +215,9 @@ void splitAtTransients(ArrangerLanes& lanes, ArrangementId instance) {
     }
     if (made.empty())
         return;
+    std::vector<Clip> pieces = separateAudioPieces(after, made, *m);
     made.insert(instance);
-    lanes.commit("Split at transients", before, after, made);
+    lanes.commit("Split at transients", before, after, made, std::move(pieces));
 }
 
 void makeTriggers(ArrangerLanes& lanes, ArrangementId instance) {
@@ -402,6 +429,7 @@ void paste(ArrangerLanes& lanes, bool atMouse) {
     Layout after = before;
     IdSet added;
     std::vector<Clip> restored;
+    NextId next = m->ids();
     for (const auto& [rowOffset, item] : clipboard.items) {
         int row = base + rowOffset;
         if (row >= int(order.size()))
@@ -416,6 +444,10 @@ void paste(ArrangerLanes& lanes, bool atMouse) {
                 restored.push_back(*kept);
         }
         arrange::Placed p{order[size_t(row)], item};
+        if (const Clip* source = song.findClip(item.clip)) {
+            restored.push_back(copyClip(*source, next));
+            p.clip.clip = restored.back().id;
+        }
         p.clip.id = lanes.newInstanceId();
         p.clip.position = std::max<Tick>(0, at + item.position);
         after.push_back(p);
@@ -617,6 +649,10 @@ void appendLaneMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, TrackId track, T
         l->selection() = {id};
         clipActions::select(l->context(), track, clip);
     }));
+    if (t->type == TrackType::Audio)
+        menu->addChild(rack::createMenuItem("Import audio file here…", "", [l, track, at] {
+            audioActions::importToTimeline(l->context(), track, at);
+        }));
     menu->addChild(rack::createMenuItem("Import MIDI file here…", "", [l, track, at] {
         std::string path = importMidi::pickFile(); // the dialog blocks; check the module again after it
         if (path.empty() || !l->context().module())

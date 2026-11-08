@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include "model/Scale.hpp"
 #include "ui/Theme.hpp"
-#include "ui/Vsync.hpp"
 
 rack::plugin::Plugin* pluginInstance;
 
@@ -17,7 +16,6 @@ json_t* settingsToJson() {
     json_t* root = json_object();
     json_object_set_new(root, "colourScheme", json_string(tessera::theme::schemeId(tessera::theme::scheme())));
     json_object_set_new(root, "flats", json_boolean(tessera::accidentals() == tessera::Accidentals::Flats));
-    json_object_set_new(root, "vsync", json_boolean(tessera::vsync::wanted()));
     return root;
 }
 
@@ -25,7 +23,6 @@ void settingsFromJson(json_t* root) {
     using tessera::theme::Scheme;
     tessera::setAccidentals(json_is_true(json_object_get(root, "flats")) ? tessera::Accidentals::Flats
                                                                          : tessera::Accidentals::Sharps);
-    tessera::vsync::setWanted(json_is_true(json_object_get(root, "vsync")));
     json_t* scheme = json_object_get(root, "colourScheme");
     if (const char* id = json_string_value(scheme)) {
         tessera::theme::setScheme(tessera::theme::schemeFromId(id));

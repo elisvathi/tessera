@@ -159,7 +159,9 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
     std::filesystem::path dir = std::filesystem::temp_directory_path() / ("tessera-" + std::to_string(id));
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
-    c.path = (dir / (t->name + " (bounce).wav")).string();
+    std::string fileName = t->name + " (bounce).wav";
+    std::replace(fileName.begin(), fileName.end(), '/', '-');
+    c.path = (dir / fileName).string();
     c.writer = captureWriter->start(c.ring, c.path, rate, CaptureWriter::Format::Float32);
     captures.push_back(std::move(c));
     BounceJob job;
@@ -172,6 +174,9 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
     // It plays the timeline, from a bar early so delays and reverbs are already sounding.
     job.restoreLauncher = playMode() == PlayMode::Launcher;
     params[MODE_PARAM].setValue(1.f);
+    // A loop would keep the playhead from ever reaching the end of the bounce.
+    job.restoreLoop = loopEnabled();
+    params[LOOP_PARAM].setValue(0.f);
     requestSeek(double(std::max<Tick>(0, from - ticksPerBar(songData.timeSig))));
     if (!playing())
         requestTransport(kRequestPlay);
@@ -515,6 +520,8 @@ void TesseraModule::cancelCapture() {
     captures.erase(captures.begin() + bounce->capture);
     if (bounce->restoreLauncher)
         params[MODE_PARAM].setValue(0.f);
+    if (bounce->restoreLoop)
+        params[LOOP_PARAM].setValue(1.f);
     bounce.reset();
     requestTransport(kRequestStop);
 }
@@ -565,6 +572,8 @@ void TesseraModule::bounceStep() {
     if (playing())
         job.started = true;
     double now = playheadTicks();
+    if (now >= double(job.to))
+        job.reachedEnd = true;
     Tick bar = ticksPerBar(songData.timeSig);
     if (!c.finishing) {
         if (job.untilSilent && state == AudioPlayer::TapState::Running && now >= double(job.to)) {
@@ -581,15 +590,18 @@ void TesseraModule::bounceStep() {
                 player->disarmTap(c.tap);
             }
         } else if (state == AudioPlayer::TapState::Done) {
-            // Done at its end, or stopped by hand before it: Stop cancels a bounce.
-            job.keep = !job.untilSilent && now >= double(job.to) - 1;
+            // Done at its end, or stopped by hand. Stop before the end cancels; after it (an effect tail that never
+            // goes quiet) it keeps what was played.
+            job.keep = job.reachedEnd || (!job.untilSilent && now >= double(job.to) - 1);
             if (!job.keep) {
+                exportResult = "Bounce cancelled: it was stopped before its end";
                 cancelCapture();
                 return;
             }
             c.finishing = true;
             player->disarmTap(c.tap);
         } else if (job.started && !playing()) {
+            exportResult = "Bounce cancelled: it was stopped before its end";
             cancelCapture();
             return;
         }
@@ -606,18 +618,23 @@ void TesseraModule::bounceStep() {
     bounce.reset();
     if (done.restoreLauncher)
         params[MODE_PARAM].setValue(0.f);
+    if (done.restoreLoop)
+        params[LOOP_PARAM].setValue(1.f);
     const Track* t = songData.findTrack(done.track);
     if (!t || frames == 0) {
         std::error_code ec;
         std::filesystem::remove(path, ec);
+        exportResult = "Bounce failed: no sound was recorded";
         return;
     }
     double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
     AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
     std::error_code ec;
     std::filesystem::remove(path, ec);
-    if (!imp.ok)
+    if (!imp.ok) {
+        exportResult = "Bounce failed: the recorded file couldn't be read";
         return;
+    }
     ImportedAudio f;
     f.source = imp.source;
     f.source.volts = kFullScaleVolts;
@@ -636,15 +653,19 @@ void TesseraModule::bounceStep() {
     std::string name = t->name + " (bounce)";
     ImportResult made;
     CommandPtr command = importAudio(songData, {f}, target, ids(), &made);
-    if (!command)
+    if (!command) {
+        exportResult = "Bounce failed: there is no room for another track";
         return;
-    auto compound = std::make_unique<CompoundCommand>("Bounce " + t->name);
+    }
+    // Adding the track can move the song's tracks in memory, so `t` is not used after the apply below.
+    std::string title = "Bounce " + t->name;
+    auto compound = std::make_unique<CompoundCommand>(title);
     TrackId original = done.track;
     compound->add(std::move(command));
     NoteSelection before = editorState.selection;
     compound->apply(songData);
     // Name the new track, and mute the original when asked, in the same undo step.
-    auto more = std::make_unique<CompoundCommand>("Bounce " + t->name);
+    auto more = std::make_unique<CompoundCommand>(title);
     if (!made.tracks.empty())
         if (CommandPtr rename = setTrackField(songData, made.tracks[0], &Track::name, name, "Rename"))
             more->add(std::move(rename));
@@ -661,6 +682,7 @@ void TesseraModule::bounceStep() {
     APP->history->push(complex);
     if (!made.tracks.empty())
         editorState.selectedTrack = made.tracks[0];
+    exportResult = "Bounced to a new track: " + name;
 }
 
 void TesseraModule::importTakes(const std::vector<Take>& takes) {

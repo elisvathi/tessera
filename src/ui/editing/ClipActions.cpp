@@ -125,6 +125,7 @@ void select(EditorContext& ctx, TrackId track, ClipId clip) {
     state.selectedTrack = track;
     state.selectedTracks = {track};
     state.selectedClip = clip;
+    ctx.view().mixerOpen = false;
 }
 
 void editTogether(EditorContext& ctx, const std::vector<ClipId>& clips, TrackId track, ClipId open) {
@@ -543,8 +544,11 @@ void appendEmptySlotMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track
         rack::createMenuItem("Load a Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
     menu->addChild(
         rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
-    menu->addChild(rack::createMenuItem("Stop track", "", [c, track] { c->module()->stopTrack(track); }));
     const Track* t = c->module()->song().findTrack(track);
+    if (t && t->type == TrackType::Audio)
+        menu->addChild(rack::createMenuItem("Import audio file…", "",
+                                            [c, track, slot] { audioActions::importToSlot(*c, track, slot); }));
+    menu->addChild(rack::createMenuItem("Stop track", "", [c, track] { c->module()->stopTrack(track); }));
     bool stop = !t || slot < 0 || slot >= int(t->slots.size()) || t->slots[size_t(slot)].stop;
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createCheckMenuItem(

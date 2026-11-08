@@ -20,6 +20,9 @@ Drag one or more files from your computer and drop them:
 
 Or use **File → Import audio…** (**Ctrl+Shift+O**): the file goes on a new track at the playhead's bar.
 
+You can also pick a file from a menu. Right-click an audio track for **Import audio file…**, an empty spot on its
+timeline for **Import audio file here…**, or an empty slot for **Import audio file…**.
+
 Tessera reads **WAV, AIFF, FLAC and MP3**. A file with more than two channels is mixed down to stereo; its clip says
 "6→2" (six channels into two). A file Tessera can't read is skipped, and a message says which one.
 
@@ -231,7 +234,8 @@ clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B
 - **Mute the original afterwards** (on by default).
 - It plays in real time, from a bar before the start so delays and reverbs are already sounding, and records the
   track's sound before its fader. A message says how far it is ("Bouncing Bass · bar 3 of 8") with **Cancel**;
-  **Stop** cancels too, and a cancelled bounce leaves nothing behind.
+  **Stop** before the end cancels too, and a cancelled bounce leaves nothing behind. **Stop** after the end, while a tail
+  is still ringing, keeps what was played. The loop is off during a bounce and comes back afterwards.
 - The result is a new audio track under the original, "Bass (bounce)", in one undo step.
 
 ## Exporting audio

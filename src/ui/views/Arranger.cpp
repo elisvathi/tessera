@@ -253,8 +253,11 @@ void ArrangerView::syncFromState() {
         restored = true;
         if (state.arranger.pxPerTick > 0)
             viewport.time.restore(state.arranger);
-        else
+        else {
             viewport.time.showRange(0, double(source.fitEnd()));
+            // showRange centres what doesn't fit, but a new timeline always opens on bar 1.
+            viewport.time.restore({0, viewport.time.pxPerTick()});
+        }
     }
 }
 

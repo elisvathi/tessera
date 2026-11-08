@@ -45,6 +45,16 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
 /// at the playhead's bar or in their first slots, following what plays.
 void importDialog(EditorContext& ctx);
 
+/// A track's or an empty place's menu: picks a file and imports it onto this audio track, at the playhead's bar on the
+/// timeline or into the first empty slot, following what plays.
+void importToTrack(EditorContext& ctx, TrackId track);
+
+/// The timeline's menu: picks a file and imports it onto this audio track at `at`.
+void importToTimeline(EditorContext& ctx, TrackId track, Tick at);
+
+/// An empty slot's menu: picks a file and imports it into this slot of an audio track.
+void importToSlot(EditorContext& ctx, TrackId track, int slot);
+
 /// File ▸ Remove unused audio: takes out the sources no clip plays, as one undo step, and says how many.
 void removeUnused(EditorContext& ctx);
 

@@ -95,7 +95,7 @@ corner button, or open the **Full editor**.
 
 ## The editor is too small or too big
 
-Right-click the Roll panel and pick **Editor size**.
+Open the full editor, click the **Roll ▾** menu at the top left and pick **Editor size**.
 
 ## Several Rolls: which one does an output module follow?
 
@@ -113,7 +113,6 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Ghost notes | **View ▾** in the notes header |
 | Flats instead of sharps | **View ▾ → Name notes with flats** |
 | Colour scheme | **Roll ▾ → Colour scheme** |
-| Vsync (moving lines tear) | Right-click the Roll module → **Vsync (smooth moving lines)** |
 | Quantize | **Notes ▾ → Quantize…**, or **Q** |
 | Clip length | The clip chip at the left of the notes header |
 | Launch quantize | **Launch 1 bar ▾** above the track names |

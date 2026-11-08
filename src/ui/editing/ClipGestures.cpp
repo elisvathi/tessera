@@ -116,8 +116,8 @@ class SelectionGesture : public ClipGesture {
 
 class MoveGesture : public SelectionGesture {
   public:
-    MoveGesture(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool unique)
-        : SelectionGesture(lanes, press, grabbed), unique(unique), order(lanes.trackOrder()) {
+    MoveGesture(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool linked)
+        : SelectionGesture(lanes, press, grabbed), linked(linked), order(lanes.trackOrder()) {
         if (const arrange::Placed* p = arrange::find(before, grabbed))
             pressIndex = int(std::find(order.begin(), order.end(), p->track) - order.begin());
     }
@@ -151,11 +151,11 @@ class MoveGesture : public SelectionGesture {
         if (dy == 0)
             rows = 0;
 
-        Tick start = lanes.snapMove(anchor.position, dt, anchor.length, mods.alt && !unique, ids);
+        Tick start = lanes.snapMove(anchor.position, dt, anchor.length, mods.alt && !linked, ids);
         delta = std::max(start, Tick(0)) - anchor.position;
         trackDelta = rows;
         // Once Ctrl is down the drag stays a copy: letting go of Ctrl just before the mouse must not move the original.
-        copying = copying || unique || mods.ctrl;
+        copying = copying || linked || mods.ctrl;
 
         pool.restart();
         Layout after;
@@ -186,8 +186,7 @@ class MoveGesture : public SelectionGesture {
             return;
         }
         std::vector<Clip> newClips;
-        if (unique) {
-            // Ctrl/Cmd+Alt: each copy plays its own new clip.
+        if (copying && !linked) {
             NextId next = lanes.context().module()->ids();
             for (arrange::Placed& p : result) {
                 const Clip* c = resultIds.count(p.clip.id) ? song().findClip(p.clip.clip) : nullptr;
@@ -197,7 +196,7 @@ class MoveGesture : public SelectionGesture {
                 p.clip.clip = newClips.back().id;
             }
         }
-        std::string verb = !copying ? "Move " : unique ? "Copy " : "Duplicate ";
+        std::string verb = !copying ? "Move " : linked ? "Duplicate " : "Copy ";
         lanes.commit(verb + arrange::countClips(ids.size()), before, result, resultIds, std::move(newClips));
     }
 
@@ -212,14 +211,14 @@ class MoveGesture : public SelectionGesture {
                 text += "  " + t->name;
         if (!copying)
             return text;
-        return (unique ? "Copy  " : "Linked copy  ") + text;
+        return (linked ? "Linked copy  " : "Copy  ") + text;
     }
     CursorShape cursor() const override { return CursorShape::Move; }
 
   private:
     TrackId slotTrack; // over an empty launcher panel slot
     int slotScene = 0;
-    bool unique;
+    bool linked;
     std::vector<TrackId> order;
     int pressIndex = 0;
     AxisLock lock;
@@ -823,8 +822,8 @@ class RubberBandGesture : public ClipGesture {
 
 } // namespace
 
-std::unique_ptr<DragGesture> move(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool uniqueCopy) {
-    return std::make_unique<MoveGesture>(lanes, press, grabbed, uniqueCopy);
+std::unique_ptr<DragGesture> move(ArrangerLanes& lanes, Vec press, ArrangementId grabbed, bool linkedCopy) {
+    return std::make_unique<MoveGesture>(lanes, press, grabbed, linkedCopy);
 }
 std::unique_ptr<DragGesture> slip(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
     return std::make_unique<SlipGesture>(lanes, press, grabbed);

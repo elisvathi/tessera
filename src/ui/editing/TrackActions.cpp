@@ -583,6 +583,21 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     menu->addChild(
         rack::createSubmenuItem("Input", inputLabel(song, *track),
                                 [c, first = ids.front()](rack::ui::Menu* sub) { appendInputItems(sub, *c, first); }));
+    const Track* importer = ctx.module()->song().findTrack(clicked);
+    if (importer && importer->type == TrackType::Audio) {
+        EditorContext* edit = &ctx;
+        menu->addChild(rack::createMenuItem("Import audio file…", "",
+                                            [edit, clicked] { audioActions::importToTrack(*edit, clicked); }));
+    }
+    EditorContext* linkContext = &ctx;
+    menu->addChild(rack::createMenuItem(
+        "Link identical clips", "",
+        [linkContext, clicked] {
+            if (TesseraModule* m = linkContext->module())
+                if (CommandPtr command = arrange::linkIdenticalClips(m->song(), clicked))
+                    m->perform(std::move(command));
+        },
+        !arrange::linkIdenticalClips(ctx.module()->song(), clicked)));
     appendRecordMenu(menu, ctx, ids);
 
     menu->addChild(new rack::ui::MenuSeparator);

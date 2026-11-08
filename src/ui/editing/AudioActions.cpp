@@ -219,17 +219,61 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
                                             [m, key] { m->audioStore()->retry(key); }));
 }
 
-void importDialog(EditorContext& ctx) {
-    TesseraModule* m = ctx.module();
-    if (!m)
-        return;
+/// Asks for one audio file; empty when the user cancels. The dialog blocks, so callers look up the module afterwards.
+static std::string pickAudioFile() {
     osdialog_filters* filters = osdialog_filters_parse("Audio:wav,wave,aif,aiff,aifc,flac,mp3");
     char* chosen = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, filters);
     osdialog_filters_free(filters);
     if (!chosen)
-        return;
+        return "";
     std::string path = chosen;
     std::free(chosen);
+    return path;
+}
+
+void importToTimeline(EditorContext& ctx, TrackId track, Tick at) {
+    std::string path = pickAudioFile();
+    if (path.empty() || !ctx.module())
+        return;
+    AudioDropTarget target;
+    target.kind = AudioDropTarget::Kind::Track;
+    target.track = track;
+    target.at = at;
+    dropAudio(ctx, {path}, target);
+}
+
+void importToSlot(EditorContext& ctx, TrackId track, int slot) {
+    std::string path = pickAudioFile();
+    if (path.empty() || !ctx.module())
+        return;
+    AudioDropTarget target;
+    target.kind = AudioDropTarget::Kind::Slot;
+    target.track = track;
+    target.slot = slot;
+    dropAudio(ctx, {path}, target);
+}
+
+void importToTrack(EditorContext& ctx, TrackId track) {
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(track) : nullptr;
+    if (!t)
+        return;
+    if (m->playMode() == PlayMode::Arranger) {
+        Tick bar = ticksPerBar(m->song().timeSig);
+        importToTimeline(ctx, track, Tick(m->playheadTicks() / double(bar)) * bar);
+        return;
+    }
+    int slot = 0;
+    while (slot < int(t->slots.size()) && t->slots[size_t(slot)].clip)
+        slot++;
+    importToSlot(ctx, track, slot);
+}
+
+void importDialog(EditorContext& ctx) {
+    std::string path = pickAudioFile();
+    TesseraModule* m = ctx.module();
+    if (path.empty() || !m)
+        return;
     const Song& song = m->song();
     AudioDropTarget target;
     target.kind = AudioDropTarget::Kind::NewTracks;
