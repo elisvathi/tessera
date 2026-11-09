@@ -1,5 +1,7 @@
 #include "AudioClipDraw.hpp"
 
+#include "../../model/AudioRegions.hpp"
+
 #include "../../engine/AudioSnapshotBuilder.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -63,18 +65,46 @@ void drawWaveform(NVGcontext* vg, rack::math::Rect body, float left, float right
         float half = laneH / 2 - 0.5f;
         for (float x = x0; x < x1; x += 1) {
             double from, to;
-            if (!framesAt(x, from, to))
+            float extraDb = 0;
+            if (!framesAt(x, from, to, extraDb))
                 continue;
             float lo, hi;
             peaks->range(ch, std::min(from, to), std::max(from, to), lo, hi);
-            lo = std::clamp(lo * gain, -1.f, 1.f);
-            hi = std::clamp(hi * gain, -1.f, 1.f);
+            float columnGain = extraDb != 0 ? gain * dbToGain(extraDb) : gain;
+            lo = std::clamp(lo * columnGain, -1.f, 1.f);
+            hi = std::clamp(hi * columnGain, -1.f, 1.f);
             float y0 = mid - hi * half, y1 = mid - lo * half;
             nvgRect(vg, x, y0, 1, std::max(0.75f, y1 - y0));
         }
     }
     nvgFillColor(vg, color);
     nvgFill(vg);
+}
+
+bool framesOfTicks(const Clip& clip, const AudioSource& s, double u0, double u1, double& from, double& to,
+                   float& extraDb) {
+    const AudioContent& a = *clip.audio;
+    if (a.regions.empty()) {
+        double perTick = framesPerTick(a, s.sampleRate);
+        if (a.reverse) {
+            double end = double(a.sourceStart) + double(clip.length) * perTick;
+            from = end - u1 * perTick;
+            to = end - u0 * perTick;
+        } else {
+            from = warpedFrame(a, u0, s.sampleRate);
+            to = warpedFrame(a, u1, s.sampleRate);
+        }
+        return true;
+    }
+    const AudioRegion* r = regions::at(a.regions, u0);
+    if (!r)
+        return false;
+    extraDb = r->gainDb;
+    double first = regions::frameAt(a, *r, u0, s.sampleRate);
+    double last = regions::frameAt(a, *r, std::min(u1, double(r->end())), s.sampleRate);
+    from = std::min(first, last);
+    to = std::max(first, last);
+    return true;
 }
 
 std::string dbText(float db) {

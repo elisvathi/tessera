@@ -45,6 +45,27 @@ inline double warpedPrepared(const std::vector<std::pair<double, double>>& warps
     return warps[i - 1].second + (tick - warps[i - 1].first) * s;
 }
 
+/// A timeline instance of an audio clip, in song ticks, with its fades and the overlaps it crossfades over.
+struct AudioInstancePlay {
+    uint64_t id = 0; // ArrangementId value
+    int clip = -1;   // index into AudioSnapshot::clips
+    double position = 0;
+    double length = 0;  // clip ticks (song ticks for every clip but Off ones, §5.4)
+    double offset = 0;  // clip tick at the start
+    Fade fadeIn, fadeOut;
+    // Song ticks shared with the instance before and after it: the overlap is the crossfade.
+    double overlapIn = 0, overlapOut = 0;
+};
+
+/// One part of a clip's edit list as the engine plays it (docs/design/AUDIO_EDITING.md §2). `span` holds its place in
+/// clip ticks, its fades and its crossfades, so it shares the timeline's envelope code.
+struct AudioRegionPlay {
+    AudioInstancePlay span;
+    int clip = -1;      // index into AudioSnapshot::clips: what it plays (another entry when it plays backwards)
+    double shift = 0;   // added to the clip tick, it gives the tick to read from `clip`
+    float gain = 1;     // the part's own gain, on top of the clip's
+};
+
 /// One audio clip as the engine plays it.
 struct AudioClipPlay {
     uint64_t clip = 0; // ClipId value
@@ -64,6 +85,8 @@ struct AudioClipPlay {
     bool seamDip = false;
     // Warp markers as (clip tick, prepared frame); empty when none. The render, when there is one, is straight.
     std::vector<std::pair<double, double>> warps;
+    // The clip's unmuted parts, by start; empty for a clip with no edits, which plays straight through.
+    std::vector<AudioRegionPlay> regions;
 
     /// The prepared frame clip tick `tick` plays when not rendered, and prepared frames per tick there.
     double framesAt(double tick, double& rate) const {
@@ -78,18 +101,6 @@ struct AudioClipPlay {
     double songTicksPerTick(double songTempo) const {
         return follow == TempoFollow::Off && clipTempo > 0 ? songTempo / clipTempo : 1.0;
     }
-};
-
-/// A timeline instance of an audio clip, in song ticks, with its fades and the overlaps it crossfades over.
-struct AudioInstancePlay {
-    uint64_t id = 0; // ArrangementId value
-    int clip = -1;   // index into AudioSnapshot::clips
-    double position = 0;
-    double length = 0;  // clip ticks (song ticks for every clip but Off ones, §5.4)
-    double offset = 0;  // clip tick at the start
-    Fade fadeIn, fadeOut;
-    // Song ticks shared with the instance before and after it: the overlap is the crossfade.
-    double overlapIn = 0, overlapOut = 0;
 };
 
 /// The most sends one track plays; more are kept in the song but not heard.

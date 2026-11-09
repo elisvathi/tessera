@@ -873,7 +873,10 @@ int AudioPlayer::wanted(const Engine& engine, const AudioTrackPlay& track, Track
                 continue;
             }
             float env = envelopeOf(a, t, s, seamEnvelope(c, u, s, wrapped));
-            out[size_t(n++)] = {a.id, a.clip, u, ticksPerSample / s, env};
+            if (c.regions.empty())
+                out[size_t(n++)] = {a.id, a.clip, u, ticksPerSample / s, env};
+            else
+                n = addRegions(c, u, s, ticksPerSample / s, env, a.id, run, peek, out, n);
         }
         return n;
     }
@@ -903,8 +906,35 @@ int AudioPlayer::wanted(const Engine& engine, const AudioTrackPlay& track, Track
         env = std::min(env, (span - (u - c.loopStart)) * s * secondsPerSongTick / kEdgeFadeSeconds);
     else
         env = std::min(env, double(seamEnvelope(c, u, s, elapsed / s >= span)));
+    if (!c.regions.empty())
+        return addRegions(c, u, s, ticksPerSample / s, float(env), slotKey(slot, c.clip), run, peek, out, 0);
     out[0] = {slotKey(slot, c.clip), ci, u, ticksPerSample / s, float(env)};
     return 1;
+}
+
+int AudioPlayer::addRegions(const AudioClipPlay& c, double u, double ticksPerClip, double tickRate, float envelope,
+                            uint64_t key, TrackRun& run, bool peek, std::array<Wanted, 2>& out, int n) const {
+    const std::vector<AudioRegionPlay>& parts = c.regions;
+    // Playback moves on a little between look-ups, so the last answer is nearly always still right.
+    size_t after = run.partCursor;
+    if (after == 0 || after > parts.size() || parts[after - 1].span.position > u ||
+        (after < parts.size() && parts[after].span.position <= u))
+        after = size_t(std::upper_bound(parts.begin(), parts.end(), u, [](double t, const AudioRegionPlay& r) {
+                           return t < r.span.position;
+                       }) -
+                       parts.begin());
+    if (!peek)
+        run.partCursor = after;
+    // At most two parts overlap, so only the last two that have started can still sound.
+    for (size_t i = after; i-- > 0 && after - i <= 2 && n < 2;) {
+        const AudioRegionPlay& r = parts[i];
+        if (u >= r.span.position + r.span.length)
+            continue;
+        double songTick = r.span.position + (u - r.span.position) * ticksPerClip;
+        float env = envelope * envelopeOf(r.span, songTick, ticksPerClip, 1);
+        out[size_t(n++)] = {key ^ (r.span.id * 0x9E3779B97F4A7C15ull), r.clip, u + r.shift, tickRate, env, r.gain};
+    }
+    return n;
 }
 
 void AudioPlayer::positionIn(const AudioClipPlay& c, bool rendered, const Wanted& w, double& target, double& rate) {
@@ -924,7 +954,7 @@ void AudioPlayer::place(Voice& v, const Wanted& w) const {
     const AudioClipPlay& c = snapshot->clips[size_t(w.clip)];
     double target = 0;
     positionIn(c, v.rendered, w, target, v.rate);
-    v.gain = c.gain * w.envelope;
+    v.gain = c.gain * w.gain * w.envelope;
     v.lastTick = w.tick;
     if (v.exact)
         v.frame++;
@@ -969,7 +999,7 @@ void AudioPlayer::startVoice(TrackRun& run, const Wanted& w, float fadeSeconds) 
     v.exact = std::abs(v.rate - 1) < 1e-9;
     v.pos = target;
     v.frame = int64_t(std::llround(target));
-    v.gain = c.gain * w.envelope;
+    v.gain = c.gain * w.gain * w.envelope;
     v.lastTick = w.tick;
     float samples = float(std::max(1.0, double(fadeSeconds) * sampleRate));
     // A clip starting from silence (its own edge fade at 0) needs no second fade on top.
@@ -1026,7 +1056,7 @@ void AudioPlayer::follow(TrackRun& run, const std::array<Wanted, 2>& want, int c
         }
         if (v.free) {
             advance(v);
-            v.gain = c.gain * w.envelope;
+            v.gain = c.gain * w.gain * w.envelope;
             v.lastTick = w.tick;
         } else {
             place(v, w);

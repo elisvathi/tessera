@@ -470,6 +470,30 @@ json_t* audioToJson(const AudioContent& a) {
         }
         set(j, "takes", takes);
     }
+    if (!a.regions.empty()) {
+        json_t* regions = json_array();
+        for (const AudioRegion& r : a.regions) {
+            json_t* rj = json_object();
+            set(rj, "id", idJson(r.id));
+            setInt(rj, "start", r.start);
+            setInt(rj, "length", r.length);
+            setInt(rj, "frame", r.sourceFrame);
+            if (r.take >= 0)
+                setInt(rj, "take", r.take);
+            if (r.gainDb != 0)
+                setNumber(rj, "gain", r.gainDb);
+            if (r.muted)
+                setBool(rj, "muted", true);
+            if (r.reverse)
+                setBool(rj, "reverse", true);
+            if (r.fadeIn.length != 0 || r.fadeIn.curve != 0)
+                set(rj, "fadeIn", fadeToJson(r.fadeIn));
+            if (r.fadeOut.length != 0 || r.fadeOut.curve != 0)
+                set(rj, "fadeOut", fadeToJson(r.fadeOut));
+            json_array_append_new(regions, rj);
+        }
+        set(j, "regions", regions);
+    }
     return j;
 }
 
@@ -491,6 +515,20 @@ AudioContent audioFromJson(const json_t* j) {
     });
     forEach(get(j, "takes"), [&](const json_t* tj) {
         a.takes.push_back({readId<AudioSourceId>(get(tj, "source")), getInt(tj, "start", 0)});
+    });
+    forEach(get(j, "regions"), [&](const json_t* rj) {
+        AudioRegion r;
+        r.id = readId<AudioRegionId>(get(rj, "id"));
+        r.start = getInt(rj, "start", r.start);
+        r.length = getInt(rj, "length", r.length);
+        r.sourceFrame = getInt(rj, "frame", r.sourceFrame);
+        r.take = saturate<int>(getInt(rj, "take", r.take));
+        r.gainDb = getFloat(rj, "gain", r.gainDb);
+        r.muted = getBool(rj, "muted", r.muted);
+        r.reverse = getBool(rj, "reverse", r.reverse);
+        r.fadeIn = fadeFromJson(get(rj, "fadeIn"));
+        r.fadeOut = fadeFromJson(get(rj, "fadeOut"));
+        a.regions.push_back(r);
     });
     return a;
 }

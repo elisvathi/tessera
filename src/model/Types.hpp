@@ -49,6 +49,7 @@ using DeviceId = Id<struct DeviceTag>;
 using ModulatorId = Id<struct ModulatorTag>;
 using PlayheadId = Id<struct PlayheadTag>;
 using AudioSourceId = Id<struct AudioSourceTag>;
+using AudioRegionId = Id<struct AudioRegionTag>;
 
 struct TimeSig {
     int num = 4;

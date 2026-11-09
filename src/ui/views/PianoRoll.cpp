@@ -1094,6 +1094,8 @@ void PianoRollView::notePress(rack::math::Vec pos) {
 }
 
 bool PianoRollView::handleAction(Action action) {
+    if (audioMode() && audioEditor->handleAction(action))
+        return true;
     if (action == Action::Delete && curvePaneFocus && curveView->visible) {
         curveView->deletePicked();
         return true;

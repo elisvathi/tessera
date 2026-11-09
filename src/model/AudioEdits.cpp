@@ -1,5 +1,7 @@
 #include "AudioEdits.hpp"
 
+#include "AudioRegions.hpp"
+
 #include "LauncherCommands.hpp"
 #include "TrackColors.hpp"
 
@@ -107,9 +109,23 @@ CommandPtr reverseAudio(const Song& song, ClipId clip) {
     const Clip* c = song.findClip(clip);
     if (!c || !c->audio)
         return nullptr;
-    bool reverse = !c->audio->reverse;
+    bool edited = !c->audio->regions.empty();
+    bool reverse = edited ? !c->audio->regions.front().reverse : !c->audio->reverse;
     auto all = std::make_unique<CompoundCommand>(reverse ? "Reverse" : "Play forwards");
-    all->add(editAudio(song, clip, [reverse](AudioContent& a) { a.reverse = reverse; }, all->name()));
+    all->add(editAudio(song, clip, [&](AudioContent& a) {
+        if (!edited) {
+            a.reverse = reverse;
+            return;
+        }
+        // Each part goes to the mirrored place, backwards, so the whole clip plays back to front.
+        for (AudioRegion& r : a.regions) {
+            r.start = c->length - r.end();
+            r.reverse = !r.reverse;
+            std::swap(r.fadeIn, r.fadeOut);
+        }
+        std::sort(a.regions.begin(), a.regions.end(),
+                  [](const AudioRegion& x, const AudioRegion& y) { return x.start < y.start; });
+    }, all->name()));
     // Clip tick u plays frame end - u (reversed) instead of start + u, so a copy playing ticks [o, o + n) moves to
     // [L - o - n, L - o): the same audio, backwards. Only where no loop wrap is involved.
     const Tick total = c->length;
@@ -164,13 +180,18 @@ CommandPtr setAudioWindow(const Song& song, ClipId clip, int64_t start, int64_t 
 float clipPeak(const Clip& clip, const AudioSource& source, const PeakCache& peaks) {
     if (!clip.audio || peaks.empty())
         return 0;
-    double from = double(clip.audio->sourceStart);
-    double to = from + double(clip.length) * framesPerTick(*clip.audio, source.sampleRate);
     float peak = 0;
-    for (int ch = 0; ch < peaks.channels(); ch++) {
-        float lo = 0, hi = 0;
-        peaks.range(ch, from, to, lo, hi);
-        peak = std::max({peak, std::abs(lo), std::abs(hi)});
+    for (const AudioRegion& r : regions::of(clip, source.sampleRate)) {
+        if (r.muted)
+            continue;
+        double a = regions::frameAt(*clip.audio, r, double(r.start), source.sampleRate);
+        double b = regions::frameAt(*clip.audio, r, double(r.end()), source.sampleRate);
+        float gain = dbToGain(r.gainDb);
+        for (int ch = 0; ch < peaks.channels(); ch++) {
+            float lo = 0, hi = 0;
+            peaks.range(ch, std::min(a, b), std::max(a, b), lo, hi);
+            peak = std::max({peak, std::abs(lo) * gain, std::abs(hi) * gain});
+        }
     }
     return peak;
 }
@@ -211,7 +232,19 @@ CommandPtr setClipTempo(const Song& song, ClipId id, double bpm) {
     char label[48];
     snprintf(label, sizeof label, "Clip tempo %.1f BPM", bpm);
     auto out = std::make_unique<CompoundCommand>(label);
-    out->add(editAudio(song, id, [&](AudioContent& a) { a.sourceTempo = bpm; }, label));
+    double scale = c->audio->follow != TempoFollow::Off ? bpm / old : 1;
+    out->add(editAudio(song, id, [&](AudioContent& a) {
+        a.sourceTempo = bpm;
+        // The same audio covers more or fewer ticks, so each part keeps playing what it played.
+        auto scaled = [scale](Tick t) { return Tick(std::llround(double(t) * scale)); };
+        for (AudioRegion& r : a.regions) {
+            Tick end = scaled(r.end());
+            r.start = scaled(r.start);
+            r.length = std::max<Tick>(1, end - r.start);
+            r.fadeIn.length = scaled(r.fadeIn.length);
+            r.fadeOut.length = scaled(r.fadeOut.length);
+        }
+    }, label));
 
     // An Off clip plays at its own speed whatever its tempo says, so its length stays. A Stretch or Repitch clip
     // keeps playing the same audio: at a higher clip tempo that audio covers more ticks.
@@ -399,6 +432,7 @@ std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::
     std::vector<Tick> out;
     if (!clip.audio || clip.audio->reverse)
         return out;
+    std::vector<AudioRegion> parts = regions::of(clip, fileRate);
     const AudioContent& a = *clip.audio;
     double perTick = framesPerTick(a, fileRate);
     if (perTick <= 0)
@@ -408,7 +442,16 @@ std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::
     double start = double(clip.playStart()), period = double(clip.loopEnd - clip.loopStart);
     double from = double(at.offset), to = double(at.offset + at.length);
     for (int64_t f : transients) {
-        double t = warpedTick(a, double(f), fileRate); // clip ticks
+        double t = -1; // clip ticks; a hit plays once however its part was moved
+        for (const AudioRegion& r : parts) {
+            if (r.muted || r.reverse)
+                continue;
+            double offset = warpedTick(a, double(f), fileRate) - warpedTick(a, double(r.sourceFrame), fileRate);
+            if (offset >= 0 && offset < double(r.length)) {
+                t = double(r.start) + offset;
+                break;
+            }
+        }
         if (t < 0 || t >= double(clip.length))
             continue;
         // Play position u (clip ticks since the clip's play start) for each time it comes round.
@@ -490,6 +533,7 @@ CommandPtr replaceAudioFile(const Song& song, ClipId clip, ImportedAudio file, c
     AudioContent after = *c->audio;
     after.source = file.source.id;
     after.sourceStart = 0;
+    after.regions.clear();
     after.sourceTempo = file.tempo > 0 ? file.tempo : c->audio->sourceTempo;
     auto out = std::make_unique<CompoundCommand>("Replace file with " + file.source.name);
     out->add(std::make_unique<AddAudioSources>(std::vector<AudioSource>{file.source}));

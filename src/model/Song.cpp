@@ -300,6 +300,8 @@ void normalizeAutomation(std::vector<AutomationEnvelope>& lanes, IdRepair& ids) 
 
 void normalizeParams(std::vector<float>& params, const std::vector<devices::ParamInfo>& table);
 
+void normalizeFade(Fade& fade, Tick most);
+
 void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
     if (clip.length < 1)
         clip.length = ticksPerBar(ts);
@@ -341,6 +343,25 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
                 (kept.empty() || (m.tick > kept.back().tick && m.frame > kept.back().frame)))
                 kept.push_back(m);
         a.warps = kept;
+        // Parts stay inside the clip and in order; a part with no length would never play.
+        std::vector<AudioRegion> parts;
+        for (AudioRegion r : a.regions) {
+            r.start = std::clamp<Tick>(r.start, 0, clip.length);
+            r.length = std::clamp<Tick>(r.length, 0, clip.length - r.start);
+            if (r.length <= 0)
+                continue;
+            ids.fix(r.id);
+            r.sourceFrame = std::max<int64_t>(0, r.sourceFrame);
+            r.gainDb = std::isfinite(r.gainDb) ? std::clamp(r.gainDb, kSilentDb, kMaxClipGainDb) : 0.f;
+            normalizeFade(r.fadeIn, r.length);
+            normalizeFade(r.fadeOut, r.length);
+            parts.push_back(r);
+        }
+        std::stable_sort(parts.begin(), parts.end(),
+                         [](const AudioRegion& x, const AudioRegion& y) { return x.start < y.start; });
+        a.regions = parts;
+        if (!a.regions.empty())
+            a.reverse = false;
     }
 }
 

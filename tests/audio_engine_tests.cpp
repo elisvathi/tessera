@@ -1,5 +1,7 @@
 #include "doctest.h"
 
+#include "../src/model/AudioRegions.hpp"
+
 #include "../src/engine/AudioPlayer.hpp"
 #include "../src/engine/AudioSnapshotBuilder.hpp"
 #include "../src/engine/FrameRing.hpp"
@@ -190,6 +192,99 @@ TEST_CASE("a reversed clip plays its window of the file back to front") {
     CHECK(out[1000] == doctest::Approx(kVolts * (48000 - 1000 - 1) / kRate).epsilon(1e-3));
     CHECK(out[12000] == doctest::Approx(kVolts * (48000 - 12000 - 1) / kRate).epsilon(1e-3));
     CHECK(out[12000] < out[1000]);
+}
+
+namespace {
+
+/// `rig`'s clip cut at each of `at` (ticks), stored as its parts.
+regions::List cutClip(Rig& rig, std::vector<Tick> at) {
+    regions::NewId newId = [&] { return AudioRegionId(rig.song.nextId++); };
+    regions::List list = regions::of(rig.audioClip(), kRate);
+    for (AudioRegion& r : list)
+        r.id = newId();
+    for (Tick t : at)
+        list = regions::cut(list, *rig.audioClip().audio, t, kRate, newId);
+    return list;
+}
+
+/// Stores `list` as `rig`'s parts and rebuilds what the player plays.
+void store(Rig& rig, const regions::List& list) {
+    regions::setRegions(rig.song, rig.clip, list, "Edit", [&] { return rig.song.nextId++; })->apply(rig.song);
+    rig.rebuild();
+}
+
+} // namespace
+
+TEST_CASE("a plain cut changes nothing you can hear") {
+    Rig rig(2.0, dc);
+    store(rig, cutClip(rig, {1920}));
+    rig.engine->play();
+    std::vector<float> out = rig.run(48000);
+    CHECK(biggestStep({out.begin() + 2000, out.end() - 2000}) < 0.001f);
+}
+
+TEST_CASE("a gap is silent and a moved part plays its own audio in its new place") {
+    Rig rig(4.0, ramp);
+    regions::List list = cutClip(rig, {960, 1920});
+    // Part 2 played from frame 24000; it now sits 960 ticks later, leaving a gap.
+    regions::List two{list[0], list[1]};
+    two[1].start = 1920 + 480;
+    store(rig, two);
+    rig.engine->play();
+    std::vector<float> out = rig.run(96000);
+    CHECK(out[12000] == doctest::Approx(kVolts * 12000 / kRate).epsilon(1e-3)); // part 1 as before
+    CHECK(out[36000] == doctest::Approx(0).epsilon(1e-6));                      // the gap
+    // 100 ms into the moved part: frame 24000 + 4800.
+    CHECK(out[60000 + 4800] == doctest::Approx(kVolts * 28800 / kRate).epsilon(1e-3));
+}
+
+TEST_CASE("a part can be muted, turned down and played backwards") {
+    Rig rig(2.0, ramp);
+    regions::List list = cutClip(rig, {960, 1920});
+    list[0].gainDb = -6.0206f;
+    list[1].muted = true;
+    list[2].reverse = true;
+    store(rig, list);
+    rig.engine->play();
+    std::vector<float> out = rig.run(90000);
+    CHECK(out[12000] == doctest::Approx(0.5 * kVolts * 12000 / kRate).epsilon(1e-3));
+    CHECK(out[36000] == doctest::Approx(0).epsilon(1e-6));
+    // The last part plays frames 96000 down to 48000 from sample 48000: at sample 72000, frame 72000.
+    CHECK(out[72000] == doctest::Approx(kVolts * 72000 / kRate).epsilon(2e-3));
+    CHECK(out[60000] > out[80000]);
+}
+
+TEST_CASE("parts that overlap crossfade without a click") {
+    Rig rig(2.0, dc);
+    regions::List list = cutClip(rig, {1920});
+    regions::List overlap = list;
+    overlap[1] = regions::trimStart(list, list[1].id, 1500, *rig.audioClip().audio, kRate, 96000)[1];
+    store(rig, overlap);
+    rig.engine->play();
+    std::vector<float> out = rig.run(48000);
+    CHECK(biggestStep({out.begin() + 2000, out.end() - 2000}) < 0.02f);
+    float lowest = *std::min_element(out.begin() + 2000, out.end() - 2000);
+    CHECK(lowest > float(kVolts) * 0.65f);
+}
+
+TEST_CASE("a launched clip plays its parts too") {
+    Rig rig(2.0, ramp, false);
+    regions::List list = cutClip(rig, {960});
+    list[1].gainDb = kSilentDb;
+    store(rig, list);
+    rig.mode = PlayMode::Launcher;
+    int slot = -1;
+    for (size_t i = 0; i < rig.audioTrack().slots.size(); i++)
+        if (rig.audioTrack().slots[i].clip)
+            slot = int(i);
+    REQUIRE(slot >= 0);
+    rig.engine->launch({LaunchEvent::Kind::Slot, rig.track.value, slot, true});
+    rig.engine->play();
+    std::vector<float> out = rig.run(48000);
+    float early = *std::max_element(out.begin() + 2000, out.begin() + 20000);
+    float late = *std::max_element(out.begin() + 26000, out.end());
+    CHECK(early > 0);
+    CHECK(late == doctest::Approx(0).epsilon(1e-6));
 }
 
 TEST_CASE("a song without audio tracks costs the player nothing") {
@@ -669,6 +764,42 @@ TEST_CASE("a missing file plays silence") {
     std::vector<float> out = rig.run(4800);
     CHECK(biggestStep(out) == 0);
     CHECK(out.back() == 0);
+}
+
+TEST_CASE("performance: clips cut into many parts stay inside their budget") {
+    auto secondOf = [](int tracks, int cuts) {
+        Rig rig(8.0, [](int64_t i) { return std::sin(double(i) * 0.05); });
+        if (cuts > 0) {
+            std::vector<Tick> at;
+            for (int i = 1; i <= cuts; i++)
+                at.push_back(Tick(i) * rig.audioClip().length / Tick(cuts + 1));
+            regions::List list = cutClip(rig, at);
+            // A gain per part stops the parts joining back up, so the player really walks them all.
+            for (size_t i = 0; i < list.size(); i++)
+                list[i].gainDb = float(i % 3) * -0.5f;
+            store(rig, list);
+        }
+        Track proto = rig.audioTrack();
+        for (int t = 1; t < tracks; t++) {
+            Track copy = proto;
+            copy.id = rig.song.newId<TrackId>();
+            for (ArrangerClip& a : copy.arrangement)
+                a.id = rig.song.newId<ArrangementId>();
+            rig.song.tracks.push_back(copy);
+        }
+        rig.rebuild();
+        rig.engine->play();
+        auto start = std::chrono::steady_clock::now();
+        for (int s = 0; s < 48000; s++)
+            rig.step();
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() * 100;
+    };
+    double plain = secondOf(16, 0);
+    double cut = secondOf(16, 100);
+    MESSAGE("16 audio tracks: " << plain << "% of a core plain, " << cut << "% with 100 parts each");
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
+    CHECK(cut - plain < 1.5); // measured on 9 Nov: 0.5 to 1.1, nearly all of it the 2 ms fades at each seam
+#endif
 }
 
 TEST_CASE("performance: playing and mixing audio tracks stays inside its budget (§8.8)") {

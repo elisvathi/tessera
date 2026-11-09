@@ -2,10 +2,13 @@
 
 #include "AudioPlayer.hpp"
 
+#include "../model/AudioRegions.hpp"
 #include "../model/Sends.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <tuple>
 
 namespace tessera {
 
@@ -47,19 +50,23 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             snap.buffers.push_back(b);
     };
 
-    // One entry per audio clip any audio track uses.
-    // One entry per audio clip and take that plays (a copy picking another take plays that take's file).
-    std::vector<std::pair<ClipId, int>> clipIds;
-    auto clipIndex = [&](ClipId id, int take = -1) -> int {
+    // One entry per audio clip, take and direction that plays: a copy picking another take plays that take's file,
+    // and a part played backwards reads the reversed buffer.
+    std::vector<std::tuple<ClipId, int, bool>> clipIds;
+    std::function<int(ClipId, int, bool)> clipIndex = [&](ClipId id, int take, bool backwards) -> int {
         const Clip* clip = song.findClip(id);
         if (!clip || !clip->audio)
             return -1;
         if (take >= int(clip->audio->takes.size()))
             take = -1;
-        auto it = std::find(clipIds.begin(), clipIds.end(), std::make_pair(id, take));
+        auto it = std::find(clipIds.begin(), clipIds.end(), std::make_tuple(id, take, backwards));
         if (it != clipIds.end())
             return int(it - clipIds.begin());
-        const AudioContent a = takeContent(*clip->audio, take);
+        AudioContent a = takeContent(*clip->audio, take);
+        if (backwards) {
+            a.reverse = true;
+            a.warps.clear();
+        }
         AudioClipPlay c;
         c.clip = id.value;
         c.clipTempo = a.sourceTempo;
@@ -108,9 +115,68 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         } else {
             c.gain = 0;
         }
-        clipIds.push_back({id, take});
+        clipIds.push_back({id, take, backwards});
         snap.clips.push_back(c);
-        return int(snap.clips.size()) - 1;
+        int index = int(snap.clips.size()) - 1;
+        if (backwards || clip->audio->regions.empty())
+            return index;
+        const AudioSource* src = song.findSource(a.source);
+        if (!src)
+            return index;
+        // Each part reads either this entry or its backwards twin, moved to the place in the file it plays.
+        std::vector<AudioRegionPlay> parts;
+        double ticksScale = snap.clips[size_t(index)].songTicksPerTick(tempo);
+        double perTick = snap.clips[size_t(index)].framesPerTick;
+        double sourcePerTick = framesPerTick(a, src->sampleRate);
+        for (const AudioRegion& r : clip->audio->regions) {
+            if (r.muted)
+                continue;
+            AudioRegionPlay p;
+            p.span.id = r.id.value;
+            p.span.position = double(r.start);
+            p.span.length = double(r.length);
+            p.span.fadeIn = r.fadeIn;
+            p.span.fadeOut = r.fadeOut;
+            p.gain = dbToGain(r.gainDb);
+            p.clip = r.reverse ? clipIndex(id, take, true) : index;
+            if (p.clip < 0)
+                continue;
+            if (r.reverse) {
+                const AudioClipPlay& twin = snap.clips[size_t(p.clip)];
+                const AudioBuffer* b = twin.prepared;
+                double scale = sourcePerTick > 0 ? perTick / sourcePerTick : 1;
+                double frames = b ? double(b->frames) : double(src->frames) * scale;
+                double firstFrame = frames - (double(r.sourceFrame) * scale + double(r.length) * perTick);
+                p.shift = perTick > 0 ? (firstFrame - twin.startFrame) / perTick - double(r.start) : 0;
+            } else {
+                p.shift = regions::shift(a, r, src->sampleRate);
+            }
+            // A plain cut changes nothing you can hear, so a part that simply plays on from the last one joins it.
+            if (!parts.empty()) {
+                AudioRegionPlay& last = parts.back();
+                constexpr double kSameAudioTicks = 0.1; // the rounding of a frame
+                if (last.span.position + last.span.length == p.span.position && last.clip == p.clip &&
+                    std::abs(last.shift - p.shift) < kSameAudioTicks && last.gain == p.gain &&
+                    last.span.fadeOut.length == 0 && p.span.fadeIn.length == 0) {
+                    last.span.length += p.span.length;
+                    last.span.fadeOut = p.span.fadeOut;
+                    continue;
+                }
+            }
+            parts.push_back(p);
+        }
+        // Where neighbours overlap, the overlap is their crossfade, as on the timeline. Song ticks, as the envelope wants.
+        for (size_t i = 0; i + 1 < parts.size(); i++) {
+            AudioInstancePlay& x = parts[i].span;
+            AudioInstancePlay& y = parts[i + 1].span;
+            double overlap = x.position + x.length - y.position;
+            if (overlap > 0) {
+                x.overlapOut = overlap * ticksScale;
+                y.overlapIn = overlap * ticksScale;
+            }
+        }
+        snap.clips[size_t(index)].regions = std::move(parts);
+        return index;
     };
 
     // Who is heard (§4.5): mute silences a track and its sends; solo follows the sends, so a soloed track's effect
@@ -158,11 +224,11 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             tp.sending = down || up;
         }
         for (const ClipSlot& s : t.slots)
-            tp.slots.push_back(s.clip ? clipIndex(*s.clip) : -1);
+            tp.slots.push_back(s.clip ? clipIndex(*s.clip, -1, false) : -1);
         for (const ArrangerClip& a : t.arrangement) {
             if (a.muted)
                 continue;
-            int ci = clipIndex(a.clip, a.take);
+            int ci = clipIndex(a.clip, a.take, false);
             if (ci < 0)
                 continue;
             AudioInstancePlay ip;

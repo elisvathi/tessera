@@ -349,6 +349,20 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       "Bypassed": the clip's notes as written.
 - [ ] Swing at 100%: off-beat 1/16s play later (listen or watch the gate); the notes stay on the grid in the editor.
 
+## Audio editor: parts (docs/design/AUDIO_EDITING.md)
+- [ ] A clip with no cuts looks as before: the rest of the file dim on both sides. Dragging its body slips the audio,
+      edges trim it, beat lines set the tempo.
+- [ ] C, click: a cut. Playing it sounds the same as before the cut, with no click at the cut.
+- [ ] Drag a part: it moves on the grid, leaving a gap that is silent. Alt+drag slips the audio inside it.
+- [ ] Drag a part's edge back out: the hidden audio returns. It stops at the file's end.
+- [ ] Del leaves a gap. Shift+Del closes it, and a timeline copy that played the whole clip gets shorter.
+- [ ] Drag one part over another: an X and a crossfade. Drag the handle at a seam: the crossfade gets longer.
+- [ ] Top strip sets a part's level; corners set fades; the fade's dot bends it; the waveform shows each.
+- [ ] Right-click: Reverse plays that part backwards; Mute silences it.
+- [ ] Ctrl+Alt+drag a clip to make a linked copy: cut one and the other shows the cut; the editor says "∞ 2 copies".
+      Ctrl+drag makes an independent copy, and a cut in it changes only it. Make unique breaks the link.
+- [ ] Every edit is one undo step. Save and reload keep the parts. Tempo changes keep each part on its audio.
+
 ## Project files and DAWproject (docs/DECISIONS.md §39)
 - [ ] The editor's File button and the module's right-click File submenu show the same items: Open project…,
       Save project (the file's name once it has one), Save project as…, Export MIDI…, Export DAWproject….

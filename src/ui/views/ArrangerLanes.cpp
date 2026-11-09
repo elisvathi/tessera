@@ -1368,14 +1368,13 @@ void ArrangerLanes::drawAudioBody(NVGcontext* vg, const Clip& clip, const Arrang
     NVGcolor wave = nvgLerpRGBA(theme::track(color), c.text0, 0.35f);
     wave.a = theme::metrics::kWaveformAlpha * alpha;
     const AudioSource* src = state.source;
-    audioDraw::drawWaveform(vg, body, 0, box.size.x, state, gainDb, wave, [&](float x, double& from, double& to) {
+    audioDraw::drawWaveform(vg, body, 0, box.size.x, state, gainDb, wave, [&](float x, double& from, double& to, float& extraDb) {
         double u0, u1;
         if (!src || !clipTick(time().xToTick(x), u0))
             return false;
         if (!clipTick(time().xToTick(x + 1), u1) || u1 < u0)
             u1 = clip.loopMode == LoopMode::Loop ? double(clip.loopEnd) : double(clip.length);
-        audioDraw::framesOfTicks(clip, *src, u0, u1, from, to);
-        return true;
+        return audioDraw::framesOfTicks(clip, *src, u0, u1, from, to, extraDb);
     });
 
     // Fades shade what they hide: the area over the curve.

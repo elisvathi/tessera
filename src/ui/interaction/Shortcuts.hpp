@@ -42,6 +42,7 @@ enum class Action {
     PasteAtMouse,
     Duplicate,
     Delete,
+    DeleteClosingGap,
     SelectAll,
     SelectNone,
     SelectInvert,

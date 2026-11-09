@@ -64,6 +64,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Alt+Left / Right / Up / Down | Select the next note in that direction |
 | Ctrl+Shift+T | Transform box on / off (*notes pane*) |
 | Ctrl+Shift+Delete | Delete time: the range closes up (*song pane*) |
+| Shift+Delete | Delete parts of an audio clip and close the gap (*audio editor*) |
 | Ctrl+Shift+I | Insert silence as long as the range (*song pane*) |
 
 ## View

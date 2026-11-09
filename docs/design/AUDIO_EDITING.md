@@ -1,6 +1,6 @@
 # Audio editing, takes and project files
 
-Status: **agreed 9 Nov 2026.** Built: the split rule (§1) and phase 1, files (§6). Phases 2 to 4 are still to do.
+Status: **agreed 9 Nov 2026.** Built: the split rule (§1), phase 1, files (§6), and phase 2, parts (§2, §3). Phases 3 and 4 are still to do.
 Where this document and DECISIONS.md disagree, DECISIONS.md wins.
 
 Mockups: `docs/design/mockups/audio-editing/index.html`.
@@ -42,7 +42,7 @@ Files never change. An edit changes a list inside the clip that says which part 
 struct AudioRegion {           // one piece of the clip's edit list
     RegionId id;
     Tick start = 0, length = 0; // where it sits, in clip ticks
-    int take = 0;               // which take it plays
+    int take = -1;              // which take it plays: -1 the clip's own
     int64_t sourceFrame = 0;    // the frame of that take that plays at `start`
     float gainDb = 0;
     bool muted = false, reverse = false;
@@ -67,8 +67,9 @@ back.
 - A clip with no edits takes the path it takes today, plus one check.
 - Stretched audio is rendered per file, so moving or cutting a part needs no new render. A reversed region uses the
   reversed render that already exists. Each take in use has its own render.
-- **Budget**: clips with no edits cost what they cost today. 16 tracks with 100 regions each add at most 0.2% of a
-  core. A benchmark in `audio_engine_tests.cpp` fails above that. At most 1024 regions per clip.
+- **Budget**: clips with no edits cost one extra check. 16 tracks with 100 parts each, a seam every 80 ms on every
+  track, add at most 1.5% of a core. Measured on 9 Nov at 0.5 to 1.1%, nearly all of it the 2 ms fades at each seam. The
+  first estimate of 0.2% didn't allow for those. A benchmark in `audio_engine_tests.cpp` fails above the budget.
 - Waveforms on the timeline, audio export, bounce and glue all read `regionsOf()`. DAWproject export writes one audio
   clip per region.
 
@@ -91,11 +92,12 @@ looks as it does today: the unused file before and after it stays visible, dim.
 | Normalise | Clip menu | Clip |
 | Fades | Drag a part's top corners, curve dot as on the timeline | Clip |
 | Crossfade a seam | Drag the handle on the seam | Clip |
-| Mute, Reverse a part | M, clip menu | Clip |
+| Mute, Reverse a part | Right-click; the Mute tool (T) mutes with a click | Clip |
 | Hear it while stopped | Click the ruler | Nothing changes |
 
 The header holds the clip's settings: tempo, Stretch, sound type, pitch, gain, reverse, **Takes**, **∞ 3 copies**, the
-Select and Slice tools. In the narrow panel editor they fold into one **Clip ▾**, as `AUDIO_UX.md` A2 describes.
+Select and Slice tools. In the narrow panel editor they fold into one **Clip ▾**, as `AUDIO_UX.md` A2 describes. The
+header settings are phase 4. Until then **∞ 3 copies** and **Make unique** sit at the right end of the ruler.
 
 Pitch stays per clip for now. A pitch per part would need a stretched render per part.
 

@@ -27,8 +27,9 @@ struct ClipState {
 /// The state of `clip` in `module` now.
 ClipState stateOf(TesseraModule& module, const Clip& clip);
 
-/// Source frames [from, to) shown in the column at `x`; false where the clip shows nothing.
-using FramesAt = std::function<bool(float x, double& from, double& to)>;
+/// Source frames [from, to) shown in the column at `x`, and any extra level of that column in dB (`extraDb`, 0 when
+/// left alone); false where the clip shows nothing.
+using FramesAt = std::function<bool(float x, double& from, double& to, float& extraDb)>;
 
 /// The waveform of `clip` over `body`: lowest and highest sample per pixel column, a stereo file as two halves,
 /// scaled by the clip gain (`gainDb`, so a drag previews live). Missing files show stripes instead. Columns outside
@@ -50,20 +51,10 @@ std::string stateText(const ClipState& state);
 /// Whether a state wants an amber warning mark.
 bool stateWarns(const ClipState& state);
 
-/// The source frames that clip ticks [u0, u1) play, lowest first: back to front for a reversed clip, whose window
-/// of the file runs from its end.
-inline void framesOfTicks(const Clip& clip, const AudioSource& s, double u0, double u1, double& from, double& to) {
-    const AudioContent& a = *clip.audio;
-    double perTick = framesPerTick(a, s.sampleRate);
-    if (a.reverse) {
-        double end = double(a.sourceStart) + double(clip.length) * perTick;
-        from = end - u1 * perTick;
-        to = end - u0 * perTick;
-    } else {
-        from = warpedFrame(a, u0, s.sampleRate);
-        to = warpedFrame(a, u1, s.sampleRate);
-    }
-}
+/// The source frames that clip ticks [u0, u1) play, lowest first, and the level of the part playing there. False in a
+/// gap between parts or over a muted part, where nothing plays.
+bool framesOfTicks(const Clip& clip, const AudioSource& s, double u0, double u1, double& from, double& to,
+                   float& extraDb);
 
 /// A Stretch clip's pitch: "0 st", "+2 st", "−3 st 25 ct".
 std::string pitchText(const AudioContent& a);

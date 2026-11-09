@@ -210,11 +210,13 @@ class AudioPlayer {
         double tick = 0;     // clip tick
         double tickRate = 0; // clip ticks per sample
         float envelope = 1;
+        float gain = 1; // the part's own gain: unlike the envelope, a steady value says nothing about fades
     };
 
     struct TrackRun {
         std::array<Voice, kVoicesPerTrack> voices{};
         size_t cursor = 0; // first timeline instance that may play
+        size_t partCursor = 0; // where the last look-up of a clip's parts ended, the likely answer for the next
         int engineIndex = -1;
         float gainL = 0, gainR = 0, stepL = 0, stepR = 0; // fader and pan, ramping
         float outGain = 0, outStep = 0;     // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
@@ -240,6 +242,10 @@ class AudioPlayer {
 
     /// What should play on `track` at song tick `t`, with the launched clip `elapsed` ticks in. With `peek` it only
     /// looks (ahead), leaving the track's cursor alone.
+    /// Adds to `out` the parts of `c` that play at clip tick `u`, starting from `n` entries; returns the new count.
+    /// `key` is what plays the clip, so each part gets its own voice key.
+    int addRegions(const AudioClipPlay& c, double u, double ticksPerClip, double tickRate, float envelope, uint64_t key,
+                   TrackRun& run, bool peek, std::array<Wanted, 2>& out, int n) const;
     int wanted(const Engine& engine, const AudioTrackPlay& track, TrackRun& run, std::array<Wanted, 2>& out, double t,
                double elapsed, bool peek);
     /// Whether the track's voices can step on unchanged for the rest of the block (see process()).

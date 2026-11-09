@@ -1,7 +1,9 @@
 #pragma once
 
 #include "../interaction/InteractiveView.hpp"
+#include "../interaction/Shortcuts.hpp"
 
+#include "../../model/AudioRegions.hpp"
 #include "../../model/AudioSource.hpp"
 #include "../../model/Song.hpp"
 
@@ -10,9 +12,9 @@
 namespace tessera {
 
 /// The audio editor: what the lower pane shows for an audio clip, in the piano roll's place under the same header
-/// (docs/design/AUDIO_MIXER.md §6.4). Its x axis is file time: the whole file runs across, the part the clip plays
-/// (its window) bright and the rest dim. Dragging the window slips it through the file, its edges trim it, and the
-/// beat ruler on top sets the clip tempo: drag a beat line and the grid stretches from beat 1.
+/// (docs/design/AUDIO_EDITING.md §3). Its x axis is the clip's own time. The clip's parts sit along it, each cut, moved,
+/// trimmed, faded and crossfaded on its own; the rest of the file shows dim before the first part and after the last.
+/// Every edit changes the clip, so linked copies follow and the files never change.
 class AudioEditor : public InteractiveView {
   public:
     explicit AudioEditor(EditorContext& ctx) : InteractiveView(ctx) {}
@@ -22,15 +24,34 @@ class AudioEditor : public InteractiveView {
 
     void step() override;
     EditorContext& context() { return ctx; }
+    /// Delete, Delete closing the gap, Split and Select all, on the selected parts. False for any other action.
+    bool handleAction(Action action);
 
     // ---- For the drags ----
 
-    /// What is under a point: the window, one of its edges, or a beat line of the ruler.
-    enum class Part { None, Window, LeftEdge, RightEdge, Beat, Warp };
+    /// What is under a point.
+    enum class Part {
+        None,
+        Body,      // a part's waveform: moves it, or slips it when it fills the clip
+        LeftEdge,  // the edges trim
+        RightEdge,
+        Gain,      // the strip along a part's top
+        FadeIn,    // the top corners set the fades
+        FadeOut,
+        FadeInCurve, // the dot in the middle of a fade bends it
+        FadeOutCurve,
+        Seam,       // the handle where two parts meet makes their crossfade longer
+        Beat,       // a beat line of the ruler
+        Flag,       // beat 1's flag in the ruler
+        Warp,       // a warp marker's handle
+        MakeUnique, // the button beside "∞ 3 copies"
+    };
     struct Hit {
         Part part = Part::None;
-        int beat = 0; // Beat: which beat line (1 is the first after beat 1)
+        int beat = 0;  // Beat: which beat line (1 is the first after beat 1)
         int warp = -1; // Warp: which marker
+        AudioRegionId region;
+        AudioRegionId next; // Seam: the part after the seam
     };
     Hit hitTest(rack::math::Vec pos);
 
@@ -38,21 +59,35 @@ class AudioEditor : public InteractiveView {
     const Clip* shownClip();
     AudioContent shownAudio();
     const AudioSource* source();
-    /// Source frames the clip's window covers, [start, end), as a drag previews them.
-    std::pair<double, double> window();
-    /// Source frames per beat at the clip tempo (the shown one, while a drag changes it).
-    double framesPerBeat();
+    /// The clip's parts as a drag previews them; one over the whole clip when it has no edits.
+    regions::List parts();
+    /// Whether the clip is one plain stretch of its file, so its edges and body change the clip itself.
+    bool plainClip();
+    /// The selected parts.
+    regions::Ids& selection() { return selected; }
+    /// Source frames per clip tick.
+    double framesPerClipTick();
+    /// The snap step in ticks at this zoom, 0 when snapping is off.
+    Tick gridStep();
 
-    double frameToX(double frame) const { return (frame - left) / framesPerPx; }
-    double xToFrame(double x) const { return left + x * framesPerPx; }
-    double pixelFrames() const { return framesPerPx; }
+    double tickToX(double tick) const { return (tick - left) / ticksPerPx; }
+    double xToTick(double x) const { return left + x * ticksPerPx; }
+    double pixelTicks() const { return ticksPerPx; }
+    /// Keeps the same audio under the same pixels after clip tick 0 moved by `ticks` (a trim of the clip's start).
+    void shiftAxis(double ticks) { left -= ticks; }
+    /// Keeps the same audio under the same pixels after the clip's ticks were scaled (a new clip tempo).
+    void scaleAxis(double factor) {
+        left *= factor;
+        ticksPerPx *= factor;
+    }
 
-    /// What a drag shows before it commits: another start in the file, another window, another tempo.
+    /// What a drag shows before it commits.
     struct Preview {
         std::optional<int64_t> sourceStart;
-        std::optional<std::pair<int64_t, int64_t>> window;
         std::optional<double> tempo;
         std::optional<std::vector<WarpMarker>> warps;
+        std::optional<regions::List> regions;
+        std::optional<float> gainDb;
     };
     Preview preview;
 
@@ -69,13 +104,36 @@ class AudioEditor : public InteractiveView {
 
   private:
     void drawRuler(NVGcontext* vg, rack::math::Rect r);
+    void drawPart(NVGcontext* vg, const AudioRegion& r, rack::math::Rect wave, uint32_t color);
+    void drawCopies(NVGcontext* vg, rack::math::Rect wave);
     /// The timeline copy of the clip that playback and "play from here" use: the selected one, else the first.
     const ArrangerClip* instance();
     rack::math::Rect waveRect() const;
+    /// The part `id`, or null.
+    static const AudioRegion* find(const regions::List& list, AudioRegionId id);
+    /// Clip ticks where the file starts and ends, seen from the first and last part: as far as the view can go.
+    std::pair<double, double> reach(const regions::List& list);
+    /// The right-click menu of part `id`.
+    void partMenu(const Hit& hit, Tick at);
+    /// Cuts every part `at` falls in.
+    void cutAt(Tick at);
+    /// Cuts part `id` at each of `ticks`, as one undo step.
+    void cutManyAt(const std::vector<Tick>& ticks);
+    /// Cuts the part at `at` at every hit of its audio.
+    void cutAtHits(AudioRegionId id);
+    /// Cuts part `id` every `step` ticks.
+    void cutEvery(AudioRegionId id, Tick step);
+    /// Removes the parts `ids`. With `close`, later parts move up and the clip gets shorter.
+    void removeParts(const regions::Ids& ids, bool close);
+    /// Stores `list`, named `name`, as one undo step.
+    void store(const regions::List& list, const std::string& name);
 
-    double left = 0;          // the source frame at x = 0
-    double framesPerPx = 100; // zoom
-    ClipId fitted;            // the clip the view was last fitted to
+    regions::Ids selected;
+    rack::math::Rect uniqueButton;
+
+    double left = 0;         // the clip tick at x = 0
+    double ticksPerPx = 8;   // zoom
+    ClipId fitted;           // the clip the view was last fitted to
     double fittedWidth = 0;
 };
 

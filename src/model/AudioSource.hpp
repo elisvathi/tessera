@@ -78,6 +78,37 @@ struct AudioTake {
     bool operator==(const AudioTake& o) const { return source == o.source && sourceStart == o.sourceStart; }
 };
 
+/// A fade at one end of a timeline instance or of a part of a clip. `curve` bends it: 0 is straight (equal power in a crossfade).
+struct Fade {
+    Tick length = 0;
+    float curve = 0; // -1..1
+
+    bool operator==(const Fade& o) const { return length == o.length && curve == o.curve; }
+    bool operator!=(const Fade& o) const { return !(*this == o); }
+};
+
+/// One part of a clip's edit list: which stretch of a take plays when, inside the clip. Files never change, so a cut,
+/// a move or a fade is only a change to this list (docs/design/AUDIO_EDITING.md §2).
+struct AudioRegion {
+    AudioRegionId id;
+    Tick start = 0, length = 0; // where it sits, in clip ticks
+    int take = -1;              // which take it plays: -1 the clip's own, k its takes[k]
+    // The frame of the take that plays at `start`. A reversed part plays backwards from its span's end, so this is
+    // the lowest frame it plays.
+    int64_t sourceFrame = 0;
+    float gainDb = 0; // added to the clip's gain
+    bool muted = false, reverse = false;
+    Fade fadeIn, fadeOut;
+
+    Tick end() const { return start + length; }
+
+    bool operator==(const AudioRegion& o) const {
+        return id == o.id && start == o.start && length == o.length && take == o.take && sourceFrame == o.sourceFrame &&
+               gainDb == o.gainDb && muted == o.muted && reverse == o.reverse && fadeIn == o.fadeIn &&
+               fadeOut == o.fadeOut;
+    }
+};
+
 /// What an audio clip plays of its source.
 struct AudioContent {
     AudioSourceId source;
@@ -95,6 +126,9 @@ struct AudioContent {
     // Takes recorded over this clip besides its own (take 1); a timeline copy picks one (ArrangerClip::take), so
     // splitting the clip and picking per part comps them.
     std::vector<AudioTake> takes;
+    // The clip's edit list, sorted by start. Empty means one part over the whole clip, as every unedited clip has; with
+    // parts here, `reverse` is off and each part says for itself.
+    std::vector<AudioRegion> regions;
 
     /// Pitch factor of the semitones and cents (2 = an octave up).
     double pitchFactor() const { return std::exp2((semitones + double(cents) / 100) / 12); }
@@ -102,7 +136,7 @@ struct AudioContent {
     bool operator==(const AudioContent& o) const {
         return source == o.source && sourceStart == o.sourceStart && follow == o.follow && sound == o.sound &&
                sourceTempo == o.sourceTempo && gainDb == o.gainDb && semitones == o.semitones && cents == o.cents &&
-               reverse == o.reverse && warps == o.warps && takes == o.takes;
+               reverse == o.reverse && warps == o.warps && takes == o.takes && regions == o.regions;
     }
 };
 
@@ -202,15 +236,6 @@ inline Tick ticksForFrames(const AudioContent& a, int64_t frames, double sampleR
 inline double songTicksPerClipTick(const AudioContent& a, double songTempo) {
     return a.follow == TempoFollow::Off && a.sourceTempo > 0 ? songTempo / a.sourceTempo : 1.0;
 }
-
-/// A fade at one end of a timeline instance. `curve` bends it: 0 is straight (equal power in a crossfade).
-struct Fade {
-    Tick length = 0;
-    float curve = 0; // -1..1
-
-    bool operator==(const Fade& o) const { return length == o.length && curve == o.curve; }
-    bool operator!=(const Fade& o) const { return !(*this == o); }
-};
 
 /// A track's mixer strip settings.
 struct Channel {

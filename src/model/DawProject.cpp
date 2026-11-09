@@ -1,5 +1,7 @@
 #include "DawProject.hpp"
 
+#include "AudioRegions.hpp"
+
 #include "Arrangement.hpp"
 #include "AudioSource.hpp"
 #include "AutomationEdits.hpp"
@@ -188,37 +190,66 @@ void audioClips(Xml& x, const Song& song, const Track& t, const Options& o, doub
             continue;
         double k = songTicksPerClipTick(c, songTempo);
         double secondsPerClipTick = secondsPerTick(c.sourceTempo);
-        double fileStart = double(c.sourceStart) / src->sampleRate;
+        // One exported clip: `length` clip ticks from `playStart` at song tick `time`, reading the file from `contentStart`.
+        auto emit = [&](double time, double length, double playStart, double contentStart, double contentLength,
+                        bool loops, Tick fadeIn, Tick fadeOut) {
+            Attrs attrs{{"time", beats(time)},
+                        {"duration", beats(length * k)},
+                        {"playStart", beats(playStart)},
+                        {"name", clip->name.empty() ? src->name : clip->name},
+                        {"color", color(clip->shownColor(t.color))},
+                        {"fadeTimeUnit", "beats"},
+                        {"fadeInTime", beats(double(fadeIn) * k)},
+                        {"fadeOutTime", beats(double(fadeOut) * k)}};
+            if (loops) {
+                attrs.push_back({"loopStart", beats(double(clip->loopStart))});
+                attrs.push_back({"loopEnd", beats(double(clip->loopEnd))});
+            }
+            if (a.muted)
+                attrs.push_back({"enable", "false"});
+            x.open("Clip", attrs);
+            x.open("Warps", {{"id", x.id()}, {"timeUnit", "beats"}, {"contentTimeUnit", "seconds"}});
+            x.open("Audio", {{"id", x.id()},
+                             {"algorithm", c.follow == TempoFollow::Repitch ? "repitch" : "stretch"},
+                             {"channels", std::to_string(src->channels)},
+                             {"duration", num(src->seconds())},
+                             {"sampleRate", std::to_string(int(src->sampleRate))},
+                             {"timeUnit", "seconds"}});
+            x.leaf("File", {{"path", paths[src->id.value]}});
+            x.close("Audio");
+            x.leaf("Warp", {{"time", "0.0"}, {"contentTime", num(contentStart)}});
+            x.leaf("Warp", {{"time", beats(contentLength)},
+                            {"contentTime", num(contentStart + contentLength * secondsPerClipTick)}});
+            x.close("Warps");
+            x.close("Clip");
+        };
         bool looping = clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart;
-        Attrs attrs{{"time", beats(double(a.position))},
-                    {"duration", beats(double(a.length) * k)},
-                    {"playStart", beats(double(a.offset))},
-                    {"name", clip->name.empty() ? src->name : clip->name},
-                    {"color", color(clip->shownColor(t.color))},
-                    {"fadeTimeUnit", "beats"},
-                    {"fadeInTime", beats(double(a.fadeIn.length) * k)},
-                    {"fadeOutTime", beats(double(a.fadeOut.length) * k)}};
-        if (looping) {
-            attrs.push_back({"loopStart", beats(double(clip->loopStart))});
-            attrs.push_back({"loopEnd", beats(double(clip->loopEnd))});
+        if (clip->audio->regions.empty()) {
+            emit(double(a.position), double(a.length), double(a.offset), double(c.sourceStart) / src->sampleRate,
+                 double(clip->length), looping, a.fadeIn.length, a.fadeOut.length);
+            continue;
         }
-        if (a.muted)
-            attrs.push_back({"enable", "false"});
-        x.open("Clip", attrs);
-        x.open("Warps", {{"id", x.id()}, {"timeUnit", "beats"}, {"contentTimeUnit", "seconds"}});
-        x.open("Audio", {{"id", x.id()},
-                         {"algorithm", c.follow == TempoFollow::Repitch ? "repitch" : "stretch"},
-                         {"channels", std::to_string(src->channels)},
-                         {"duration", num(src->seconds())},
-                         {"sampleRate", std::to_string(int(src->sampleRate))},
-                         {"timeUnit", "seconds"}});
-        x.leaf("File", {{"path", paths[src->id.value]}});
-        x.close("Audio");
-        x.leaf("Warp", {{"time", "0.0"}, {"contentTime", num(fileStart)}});
-        x.leaf("Warp", {{"time", beats(double(clip->length))},
-                        {"contentTime", num(fileStart + double(clip->length) * secondsPerClipTick)}});
-        x.close("Warps");
-        x.close("Clip");
+        // An edited clip goes across as what it plays: a clip for each stretch of a part, in each pass of a loop.
+        Tick done = 0, u = a.offset;
+        while (done < a.length) {
+            Tick passEnd = looping && u < clip->loopEnd ? clip->loopEnd : clip->length;
+            Tick stop = std::min(passEnd, u + a.length - done);
+            if (stop <= u)
+                break;
+            for (const AudioRegion& r : clip->audio->regions) {
+                Tick from = std::max(u, r.start), to = std::min(stop, r.end());
+                if (r.muted || r.reverse || to <= from)
+                    continue;
+                double first = regions::frameAt(c, r, double(from), src->sampleRate);
+                emit(double(a.position) + double(done + from - u) * k, double(to - from), 0, first / src->sampleRate,
+                     double(to - from), false, from == r.start ? r.fadeIn.length : 0,
+                     to == r.end() ? r.fadeOut.length : 0);
+            }
+            done += stop - u;
+            u = looping ? clip->loopStart : stop;
+            if (!looping && u >= clip->length)
+                break;
+        }
     }
     x.close("Clips");
 }

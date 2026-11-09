@@ -56,6 +56,7 @@ std::vector<ActionInfo> buildTable() {
         {Ac::PasteAtMouse, "Edit", "Paste at mouse", {C("v", Ctl | S)}},
         {Ac::Duplicate, "Edit", "Duplicate", {C("d", Ctl)}},
         {Ac::Delete, "Edit", "Delete", {K(GLFW_KEY_DELETE), K(GLFW_KEY_BACKSPACE)}},
+        {Ac::DeleteClosingGap, "Edit", "Delete parts of a clip and close the gap", {K(GLFW_KEY_DELETE, S)}, Sc::DetailPane},
         {Ac::SelectAll, "Edit", "Select all", {C("a", Ctl)}},
         {Ac::SelectNone, "Edit", "Select none", {C("a", Ctl | S)}},
         {Ac::SelectInvert, "Edit", "Invert selection", {C("i", Ctl)}},

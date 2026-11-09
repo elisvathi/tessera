@@ -2366,7 +2366,23 @@ confirms that presets, selections and copy and paste carry JSON only (`ModuleWid
 ## 148. Audio edits live in the clip; takes too (9 Nov, agreed, not built yet)
 
 - Del in the audio editor leaves a gap; Shift+Del closes it.
-- Every loop pass on an audio track is kept as a take, whatever the record mode.
-- The clip holds the take choice, so linked copies play one comp. This will replace `ArrangerClip::take` (§129).
+- Every loop pass on an audio track is kept as a take, whatever the record mode (not built yet).
+- The clip holds the take choice, so linked copies play one comp. This will replace `ArrangerClip::take` (§129; not
+  built yet).
+- **Built (phase 2): parts.** `AudioContent::regions`: empty means one part over the whole clip. With parts, `reverse`
+  is off and each part says for itself. A clip's parts play through one table per clip (`AudioClipPlay::regions`), and
+  a part played backwards reads a second entry for the reversed buffer. A plain cut joins back up in the snapshot, so
+  it changes nothing you can hear.
+- **The editor's x axis is the clip's time**, for all clips: one code path. Warp marker handles are grabbed in the
+  ruler only, so a part can be dragged under its markers. This replaces §128's "window and edge drags are off with
+  markers"; the tempo drag stays off.
+- **A plain clip keeps its old gestures.** While a clip has no cuts, reverse or markers, dragging its body slips it
+  through the file and its edges change where it starts and ends (`setAudioWindow`). Top-strip gain on such a clip is the
+  clip's gain, so one concept stays one control.
+- **A part reaching past the clip's end makes the clip longer.** Its left edge stops at tick 0. Timeline copies keep
+  their length, as they do for an edge drag on a plain clip.
+- A clip always keeps at least one part: deleting the last says how to remove the clip, because an empty list means
+  "the whole clip".
+- **Budget**: 16 tracks with 100 parts each add at most 1.5% of a core (measured 0.5 to 1.1%, mostly the seam fades).
 
 Details: `docs/design/AUDIO_EDITING.md`.

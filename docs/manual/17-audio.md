@@ -141,22 +141,44 @@ clip's name and menu on the left, the maximize button on the right.
 
 ![The audio editor with a drum loop](images/audio-editor.png)
 
-- **Across the pane runs the whole file.** The part the clip plays (its window) is bright, the rest dim. Its edges
-  have small grips.
-- **Drag the window** sideways to play another part of the file, just as long. The readout says where it starts:
-  "Start in file 0:01.250". **Shift** moves finely.
-- **Drag an edge** of the window to start or end the clip elsewhere in the file. Edges catch the beat lines; **Alt**
-  moves freely.
-- **The ruler on top shows the clip's beats and bars.** Beat 1 has a **1** flag where the clip starts. **Drag any
-  other beat line** to set the clip tempo: the beats stretch from beat 1 so that the beat you hold lands where you
-  let go ("112 → 103 BPM"). Use it to line the grid up with the drum hits.
+- **Across the pane runs the clip's own time.** The ruler on top shows its beats and bars, and beat 1 has a **1** flag
+  where the clip starts. The rest of the file shows dim before and after the clip, so you can see what a trim would
+  bring back.
+- **The ruler sets the clip tempo.** Drag any beat line other than beat 1: the beats stretch from beat 1 so that the
+  beat you hold lands where you let go ("112 → 103 BPM"). Use it to line the grid up with the drum hits.
 - **Click in the ruler** (away from the beat lines) to play from there: the song plays from that point of the clip's
-  timeline copy (the selected copy, or the first). While the timeline plays it, a green line shows where it is in
-  the file.
+  timeline copy (the selected copy, or the first). While the timeline plays it, a green line shows where it is.
 - A loop over part of the clip shows as two amber lines.
-- **Scroll** to move through the file, **Ctrl+scroll** to zoom, **double-click** the ruler to see the whole file.
+- **Scroll** to move, **Ctrl+scroll** to zoom, **double-click** the ruler to see the whole file.
 
-Like the clip menu, these change the clip, so every linked copy follows.
+### Cutting and shaping a clip
+
+Nothing here changes your audio file. Tessera keeps a list of which part of the file plays when, so you can undo or
+change any of it later. If you split the clip on the timeline, you get separate clips; if you cut it here, it stays
+one clip.
+
+| Do this | How |
+|---|---|
+| Cut | Press **C** for the Slice tool and click, or **Ctrl+E** with the mouse where you want the cut. The line shows where. |
+| Cut many times | Right-click a part ▸ **Cut at…**: every hit, every 1/16, every 1/8, every beat. **Shift+click** with the Slice tool opens the same menu. |
+| Select | Click a part. **Shift+click** adds or removes one. **Ctrl+A** selects them all. |
+| Move a part | Drag it. It snaps to the grid; **Alt** moves it freely. |
+| Trim a part | Drag its edge. Trimming back out brings back the audio you hid. |
+| Slip | **Alt+drag** a part: it stays where it is and plays another stretch of its file. |
+| Delete | **Delete** leaves a gap, so the timing stays. **Shift+Delete** closes the gap and makes the clip shorter. |
+| Level | Drag the strip along a part's top up or down. |
+| Fade | Drag a part's top corner. The dot in the middle of a fade bends it. |
+| Crossfade | Drag one part over another, or drag the small handle where two parts meet. |
+| Mute or reverse | Right-click a part. The Mute tool (**T**) mutes with a click, the Erase tool deletes with a click. |
+
+A clip you haven't cut works as one piece: dragging its body plays another part of the file, just as long, and its edges
+start or end the clip elsewhere in the file. **Shift** moves finely, and edges catch the beat lines.
+
+### Linked copies
+
+These edits belong to the clip, so every linked copy of it changes too. Above the waveform the editor says **∞ 3 copies:
+edits change all**, with **Make unique** beside it. An independent copy has its own list and changes alone. It still
+plays the same file, so it takes no extra space.
 
 ## The inspector
 
@@ -280,12 +302,12 @@ audio between markers stretches (keeping its pitch) so each pinned hit lands whe
 
 - In the audio editor, **double-click a hit** on the waveform: a marker pins it to the nearest 1/16 note (hold
   **Alt** to pin it where it is). The first marker also pins the clip's start, so only that hit moves. Markers show
-  as a line through the hit with a handle in the ruler, and the ruler's beats bend to follow them.
-- **Drag a marker** left or right to move the beat it pins its hit to, in 1/16 steps (**Alt** for free).
-- **Right-click a marker** to remove it, or all of them.
+  as a line through the hit with a handle in the ruler, and the audio between them stretches to fit.
+- **Drag a marker's handle** left or right to move the beat it pins its hit to, in 1/16 steps (**Alt** for free).
+- **Right-click a marker's handle** to remove it, or all of them.
 - **Pin every hit to the nearest 1/16** (the clip's right-click menu) does it for the whole clip in one go, from the
   hits Tessera found; **Remove warp markers** undoes the warping.
-- While a clip has markers, its window, edges and tempo can't be dragged in the audio editor: remove the markers
+- While a clip has markers, its tempo can't be dragged in the audio editor: remove the markers
   first. A reversed clip ignores its markers.
 
 ## Latency and the recording offset
