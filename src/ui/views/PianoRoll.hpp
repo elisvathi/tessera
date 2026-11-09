@@ -29,6 +29,7 @@ class CurveView;
 class ToolButton;
 class LaneTabs;
 class AudioEditor;
+class AudioHeader;
 
 /// The detail pane: the piano roll for the selected track's clip (EDITOR_UX §4). On a drum track it is the drum
 /// editor (EDITOR_UX §5): lane headers stand in for the keys, one row per lane in the lanes' order.
@@ -210,6 +211,7 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ToolButton* hearButton;                         // hear notes while editing: on screen, since it is switched often
     ToolButton* maximizeButton;
     AudioEditor* audioEditor;
+    std::shared_ptr<AudioHeader> audioHeader;
     ToolButton* devicesToggle;
     float toolbarLeft = 0;
 

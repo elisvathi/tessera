@@ -16,6 +16,17 @@ class OutputModuleBase;
 
 namespace audioActions {
 
+/// The items of each part of an audio clip's settings, for the clip menu's submenus and the audio editor's header.
+void appendFollowItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendSoundItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendPitchItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendTempoItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendGainItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+/// Quantize's settings (grid, strength, which hits), Quantize itself and Remove markers.
+void appendWarpItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+/// Pins clip `clip`'s hits to the grid at the set strength, across every take it plays, as one undo step.
+void quantizeClip(EditorContext& ctx, ClipId clip);
+
 /// Whether the patch has one of Rack's Audio modules, for offering the Connect helper.
 bool audioModuleInPatch();
 

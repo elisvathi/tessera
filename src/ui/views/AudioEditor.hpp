@@ -46,8 +46,7 @@ class AudioEditor : public InteractiveView {
         Beat,       // a beat line of the ruler
         Flag,       // beat 1's flag in the ruler
         Warp,       // a warp marker's handle
-        MakeUnique, // the button beside "∞ 3 copies"
-        TakesButton, // shows or hides the take rows
+        Range,       // the ruler's upper strip: a drag picks a time range, a click plays
         TakeRow,     // a take's row: a drag makes that stretch play it
         TakeHear,    // a row's Hear button
     };
@@ -69,6 +68,17 @@ class AudioEditor : public InteractiveView {
     regions::List parts();
     /// The sample rate and length of the files the clip plays.
     regions::Files files();
+    /// Shows or hides the take rows, and whether they show.
+    void toggleTakes();
+    bool takesShown() const { return takesOpen; }
+    /// Gives the selected timeline copy its own clip.
+    void makeClipUnique();
+    /// Whether the clip is on the timeline.
+    bool onTimeline() { return instance() != nullptr; }
+    /// Sets the time range picked in the ruler, in clip ticks; empty clears it.
+    void setRange(std::optional<std::pair<Tick, Tick>> value) { range = value; }
+    /// A click in the ruler: plays the song from there, or previews the clip alone while stopped.
+    void rulerClick(rack::math::Vec pos, Modifiers mods);
     /// Whether the clip is one plain stretch of its file, so its edges and body change the clip itself.
     bool plainClip();
     /// The selected parts.
@@ -114,7 +124,6 @@ class AudioEditor : public InteractiveView {
   private:
     void drawRuler(NVGcontext* vg, rack::math::Rect r);
     void drawPart(NVGcontext* vg, const AudioRegion& r, rack::math::Rect wave, uint32_t color);
-    void drawCopies(NVGcontext* vg, rack::math::Rect wave);
     /// The take rows under the comp, newest first.
     void drawTakeRows(NVGcontext* vg);
     /// How many take rows show: the takes of the clip, its own included, or none while they are hidden.
@@ -132,8 +141,18 @@ class AudioEditor : public InteractiveView {
     rack::math::Rect hearRect(rack::math::Rect row) const;
     /// The right-click menu of a take's row.
     void takeMenu(int take);
-    /// Stops Hear, if this editor started it.
+    /// Stops Hear and any preview.
     void stopHearing();
+    /// What Delete and Copy act on: the range picked in the ruler, else the span of the selected parts.
+    std::optional<std::pair<Tick, Tick>> activeRange();
+    /// Puts what the active range holds on the clipboard. False when there is nothing to copy.
+    bool copyActive();
+    /// Lays the clipboard in at tick `at`, as one undo step.
+    void pasteAt(Tick at);
+    /// Copy, Paste, Duplicate and Crop for the right-click menus.
+    void appendRangeItems(rack::ui::Menu* menu);
+    /// The drift ticks under a hit at `tick`: from where it is to the nearest grid line.
+    void drawDrift(NVGcontext* vg, double tick, rack::math::Rect wave);
     /// The timeline copy of the clip that playback and "play from here" use: the selected one, else the first.
     const ArrangerClip* instance();
     rack::math::Rect waveRect();
@@ -157,7 +176,7 @@ class AudioEditor : public InteractiveView {
     void store(const regions::List& list, const std::string& name);
 
     regions::Ids selected;
-    rack::math::Rect uniqueButton, takesButton;
+    std::optional<std::pair<Tick, Tick>> range; // the time range picked in the ruler, in clip ticks
     bool takesOpen = false;
     float rowsScroll = 0; // px the rows have scrolled by, when more of them fit than the pane can show
 

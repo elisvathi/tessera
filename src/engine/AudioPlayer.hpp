@@ -68,6 +68,24 @@ class AudioPlayer {
     }
     float masterLevel(int side) const { return masterMeter[size_t(side & 1)].load(std::memory_order_relaxed); }
     /// The highest master peak (volts) since the last clearClip(), for the clip light.
+    /// Plays clip `clip` alone from clip tick `tick` through track `track`, while the transport is stopped (UI thread).
+    /// It stops by itself at the clip's end or when the transport starts.
+    void startPreview(uint64_t clip, uint64_t track, double tick) {
+        previewClip.store(clip, std::memory_order_relaxed);
+        previewTrack.store(track, std::memory_order_relaxed);
+        previewFrom.store(tick, std::memory_order_relaxed);
+        previewAsked.fetch_add(1, std::memory_order_release);
+        previewOn.store(true, std::memory_order_relaxed);
+    }
+    void stopPreview() {
+        previewClip.store(0, std::memory_order_relaxed);
+        previewAsked.fetch_add(1, std::memory_order_release);
+        previewOn.store(false, std::memory_order_relaxed);
+    }
+    bool previewing() const { return previewOn.load(std::memory_order_relaxed); }
+    /// The clip tick a preview has reached.
+    double previewTick() const { return previewAt.load(std::memory_order_relaxed); }
+
     float masterClipPeak() const { return clipPeak.load(std::memory_order_relaxed); }
     void clearClip() { clipPeak.store(0, std::memory_order_relaxed); }
 
@@ -242,6 +260,10 @@ class AudioPlayer {
 
     /// What should play on `track` at song tick `t`, with the launched clip `elapsed` ticks in. With `peek` it only
     /// looks (ahead), leaving the track's cursor alone.
+    /// Takes in a preview request, and finds its clip and track in the snapshot. Each block.
+    void pollPreview(bool playing);
+    /// What a preview plays now, and moves it on one sample.
+    int previewWanted(TrackRun& run, std::array<Wanted, 2>& out);
     /// Adds to `out` the parts of `c` that play at clip tick `u`, starting from `n` entries; returns the new count.
     /// `key` is what plays the clip, so each part gets its own voice key.
     int addRegions(const AudioClipPlay& c, double u, double ticksPerClip, double tickRate, float envelope, uint64_t key,
@@ -350,6 +372,15 @@ class AudioPlayer {
     std::array<std::atomic<float>, kMaxTracks> autoVolume{}, autoPan{};
     std::array<std::atomic<float>, 2> masterMeter{};
     std::atomic<float> clipPeak{0};
+    std::atomic<uint64_t> previewClip{0}, previewTrack{0};
+    std::atomic<double> previewFrom{0}, previewAt{0};
+    std::atomic<uint32_t> previewAsked{0};
+    std::atomic<bool> previewOn{false};
+    uint32_t previewSeen = 0;
+    bool previewFind = false; // the snapshot changed: look the clip and track up again
+    int previewClipIndex = -1, previewTrackIndex = -1;
+    double previewU = 0;
+    int64_t previewSamples = 0;
     std::atomic<uint64_t> clipsPanTrack{0};
     std::atomic<float> clipsPanValue{0};
     struct Hold {

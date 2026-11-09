@@ -392,26 +392,6 @@ CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps
     }, name);
 }
 
-CommandPtr quantizeAudio(const Song& song, ClipId clip, const std::vector<int64_t>& transients, double fileRate,
-                         Tick grid) {
-    const Clip* c = song.findClip(clip);
-    if (!c || !c->audio || grid <= 0)
-        return nullptr;
-    // Warped from the clip as it plays now, without its old markers moving things twice.
-    AudioContent plain = *c->audio;
-    std::vector<WarpMarker> warps;
-    for (int64_t f : transients) {
-        double t = warpedTick(plain, double(f), fileRate);
-        if (t < 0 || t > double(c->length))
-            continue;
-        double snapped = std::round(t / double(grid)) * double(grid);
-        if (!warps.empty() && snapped <= warps.back().tick)
-            continue;
-        warps.push_back({snapped, f});
-    }
-    return setWarps(song, clip, warps, "Quantize audio");
-}
-
 std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,
                            double fileRate, double songTempo, int take) {
     std::vector<Tick> out;

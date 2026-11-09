@@ -159,6 +159,7 @@ void AudioPlayer::releaseHolds() {
 void AudioPlayer::setSnapshot(const AudioSnapshot* next) {
     if (next == snapshot)
         return;
+    previewFind = true;
     // Each track keeps its voices and its ramping gains, found again by ID: tracks may have moved.
     static_assert(kMaxTracks * 2 <= 256, "ghost runs fit");
     size_t oldCount = snapshot ? snapshot->tracks.size() + ghosts : ghosts;
@@ -416,6 +417,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         startBlock(engine);
 
     bool playing = engine.isPlaying();
+    if (blockPos == 0)
+        pollPreview(playing);
     double song = engine.position(), play = engine.playPosition();
     double dPlay = play - lastPlay, dSong = song - lastSong;
     tempo = engine.tempo() > 0 ? engine.tempo() : 120;
@@ -441,7 +444,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
     for (size_t i = 0; i < count + ghosts; i++) {
         TrackRun& run = runs[i];
         if (run.resting) {
-            if (undisturbed && (run.engineIndex < 0 || engine.playingSlot(size_t(run.engineIndex)) == run.slot)) {
+            if (undisturbed && int(i) != previewTrackIndex &&
+                (run.engineIndex < 0 || engine.playingSlot(size_t(run.engineIndex)) == run.slot)) {
                 // Silence still goes out: OUT and the delay line would otherwise repeat an old sample.
                 const AudioTrackPlay& tp = snapshot->tracks[i];
                 if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks) {
@@ -478,6 +482,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                 n = wanted(engine, snapshot->tracks[i], run, want, song, engineElapsed(engine, run), false);
                 if (blockPos == 0)
                     run.steady = steadyAhead(engine, snapshot->tracks[i], run, want, n, song);
+            } else if (int(i) == previewTrackIndex && i < count && !playing) {
+                n = previewWanted(run, want);
             }
             follow(run, want, n);
             wantedNow = n;
@@ -909,6 +915,73 @@ int AudioPlayer::wanted(const Engine& engine, const AudioTrackPlay& track, Track
     if (!c.regions.empty())
         return addRegions(c, u, s, ticksPerSample / s, float(env), slotKey(slot, c.clip), run, peek, out, 0);
     out[0] = {slotKey(slot, c.clip), ci, u, ticksPerSample / s, float(env)};
+    return 1;
+}
+
+void AudioPlayer::pollPreview(bool playing) {
+    uint32_t asked = previewAsked.load(std::memory_order_acquire);
+    bool fresh = asked != previewSeen;
+    previewSeen = asked;
+    if (playing && previewClipIndex >= 0) {
+        previewClipIndex = previewTrackIndex = -1;
+        previewOn.store(false, std::memory_order_relaxed);
+    }
+    if (playing)
+        return;
+    if (!fresh && !previewFind)
+        return;
+    previewFind = false;
+    uint64_t clip = previewClip.load(std::memory_order_relaxed);
+    uint64_t track = previewTrack.load(std::memory_order_relaxed);
+    previewClipIndex = previewTrackIndex = -1;
+    if (clip != 0 && snapshot) {
+        // At most a few hundred clips, and only when a preview starts or the snapshot changes: no allocation.
+        for (size_t i = 0; i < snapshot->clips.size() && previewClipIndex < 0; i++)
+            if (snapshot->clips[i].clip == clip)
+                previewClipIndex = int(i);
+        for (size_t i = 0; i < snapshot->tracks.size() && i < kMaxTracks && previewTrackIndex < 0; i++)
+            if (snapshot->tracks[i].id.value == track)
+                previewTrackIndex = int(i);
+    }
+    if (previewClipIndex < 0 || previewTrackIndex < 0) {
+        previewClipIndex = previewTrackIndex = -1;
+        if (fresh)
+            previewOn.store(false, std::memory_order_relaxed);
+        return;
+    }
+    if (fresh) {
+        previewU = previewFrom.load(std::memory_order_relaxed);
+        previewSamples = 0;
+    }
+}
+
+int AudioPlayer::previewWanted(TrackRun& run, std::array<Wanted, 2>& out) {
+    constexpr uint64_t kPreviewKey = 0xA0D10C11ull << 32;
+    const AudioClipPlay& c = snapshot->clips[size_t(previewClipIndex)];
+    double s = c.songTicksPerTick(tempo);
+    double rate = ticksPerSample / s;
+    double u = previewU;
+    bool wrapped = false;
+    if (c.looping && c.loopEnd > c.loopStart && u >= c.loopEnd) {
+        u = c.loopStart + positiveMod(u - c.loopStart, c.loopEnd - c.loopStart);
+        wrapped = true;
+    } else if (!c.looping && u >= c.length) {
+        previewClipIndex = previewTrackIndex = -1;
+        previewOn.store(false, std::memory_order_relaxed);
+        return 0;
+    }
+    double seconds = double(previewSamples) / sampleRate;
+    double env = std::min(1.0, seconds / kEdgeFadeSeconds);
+    if (!c.looping)
+        env = std::min(env, (c.length - u) * s * 60.0 / (tempo * double(kPpq)) / kEdgeFadeSeconds);
+    else
+        env = std::min(env, double(seamEnvelope(c, u, s, wrapped)));
+    previewU += rate;
+    previewSamples++;
+    previewAt.store(u, std::memory_order_relaxed);
+    if (!c.regions.empty())
+        return addRegions(c, u, s, rate, float(env), kPreviewKey, run, false, out, 0);
+    out[0] = {kPreviewKey, previewClipIndex, u, rate, float(env)};
     return 1;
 }
 

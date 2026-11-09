@@ -363,6 +363,14 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Ctrl+drag makes an independent copy, and a cut in it changes only it. Make unique breaks the link.
 - [ ] Every edit is one undo step. Save and reload keep the parts. Tempo changes keep each part on its audio.
 
+## Audio editor: utilities
+- [ ] The header shows tempo, Stretch, sound, pitch, gain, ◀, Warp, Takes (with takes) and ∞ copies. Each works. A narrow panel editor folds them into Clip.
+- [ ] Drag along the ruler's top: a range. Delete empties it, Shift+Delete closes it up. Ctrl+C, Ctrl+V, Ctrl+D work on it and on selected parts.
+- [ ] Right-click ▸ Crop to selection keeps only that stretch, from the clip's start.
+- [ ] Render to new file: the clip sounds the same, with a new "Rendered" take. Undo brings the edits back.
+- [ ] Stopped: Alt+click the ruler plays the clip alone, with a green line. Click again stops it. Starting the song stops it.
+- [ ] A short line under each hit shows drift, amber when far. Q moves hits, Shift+Q opens the settings; Q on selected timeline audio clips works.
+
 ## Takes and comping (docs/design/AUDIO_EDITING.md §4)
 - [ ] Loop-record over an audio clip in Merge, Stack and Replace: every pass becomes a take, and the clip plays the newest.
 - [ ] Alt+T shows the rows, newest first. Drag across a row: that stretch plays that take, in its colour, one undo step.

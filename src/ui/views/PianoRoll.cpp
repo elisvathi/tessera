@@ -1,6 +1,7 @@
 #include "PianoRoll.hpp"
 
 #include "AudioEditor.hpp"
+#include "AudioHeader.hpp"
 
 #include "../../model/DeviceTypes.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -266,6 +267,7 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
     addChild(timeMap);
     addChild(curveView);
     addChild(audioEditor);
+    audioHeader = std::make_shared<AudioHeader>(ctx, this, audioEditor);
 
     EditorContext* c = &ctx;
     ToolButton::Options lower;
@@ -417,9 +419,10 @@ bool PianoRollView::layoutToolbar(float header) {
               (rack::widget::Widget*)drumSwitch.first, (rack::widget::Widget*)drumSwitch.second,
               (rack::widget::Widget*)devicesToggle})
             w->visible = false;
-        toolbarLeft = right;
+        toolbarLeft = audioHeader->layout(clipChip->box.getRight() + 8, right, y, kToolButton);
         return false;
     }
+    audioHeader->hide();
     // Back from the audio editor, everything it hid comes back, Devices too.
     for (rack::widget::Widget* w :
          {(rack::widget::Widget*)hearButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,

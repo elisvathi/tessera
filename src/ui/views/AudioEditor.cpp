@@ -8,6 +8,7 @@
 #include "../interaction/Snap.hpp"
 #include "../widgets/Draw.hpp"
 #include "../widgets/MenuTextField.hpp"
+#include "../editing/AudioActions.hpp"
 #include "AudioClipDraw.hpp"
 
 #include <cmath>
@@ -35,7 +36,9 @@ constexpr float kTakeRowHeight = 44;   // a take's row, when there is room for t
 constexpr float kMinTakeRowHeight = 22;
 constexpr float kRowsShare = 0.6f;     // of the pane, at most, so the comp stays visible
 constexpr float kHearWidth = 38, kHearHeight = 16;
-constexpr float kButtonRow = 16;       // the buttons at the right end of the ruler
+constexpr float kBeatBand = 9;         // the ruler's lower strip, where beat lines are grabbed; above it a drag picks a range
+constexpr float kFlagHeight = 14;
+constexpr double kDriftQuietMs = 5, kDriftFarMs = 15; // a hit this far off its grid line is dim / amber
 
 /// "0:01.250": a place in the file.
 std::string timeText(double frames, double rate) {
@@ -541,6 +544,47 @@ class SeamGesture : public PartsGesture {
     regions::List result;
 };
 
+/// Drags along the ruler's upper strip: picks a time range for Delete, Copy and Crop. Without moving, it is a click,
+/// which plays from there.
+class RangeGesture : public DragGesture {
+  public:
+    RangeGesture(AudioEditor& view, Vec press, Modifiers mods) : view(view), press(press), pressMods(mods) {}
+    void update(Vec pos, Modifiers mods) override {
+        moved = moved || std::fabs(pos.x - press.x) > 3;
+        if (!moved)
+            return;
+        Tick step = mods.alt ? 0 : view.gridStep();
+        auto snap = [&](double t) { return step > 0 ? snapPosition(t, step) : Tick(std::llround(t)); };
+        Tick a = snap(view.xToTick(press.x)), b = snap(view.xToTick(pos.x));
+        Tick length = 0;
+        if (const Clip* c = view.shownClip())
+            length = c->length;
+        from = std::clamp(std::min(a, b), Tick(0), length);
+        to = std::clamp(std::max(a, b), Tick(0), length);
+        view.setRange(to > from ? std::make_optional(std::make_pair(from, to)) : std::nullopt);
+    }
+    void commit() override {
+        if (!moved) {
+            view.setRange(std::nullopt);
+            view.rulerClick(press, pressMods);
+        }
+    }
+    void cancel() override { view.setRange(std::nullopt); }
+    std::string readout() const override {
+        char text[32];
+        snprintf(text, sizeof text, "%.2f beats", double(to - from) / double(kPpq));
+        return text;
+    }
+    CursorShape cursor() const override { return CursorShape::IBeam; }
+
+  private:
+    AudioEditor& view;
+    Vec press;
+    Modifiers pressMods;
+    bool moved = false;
+    Tick from = 0, to = 0;
+};
+
 /// Drags across a take's row: that stretch of the clip now plays that take.
 class CompGesture : public PartsGesture {
   public:
@@ -589,6 +633,94 @@ void AudioEditor::stopHearing() {
     TesseraModule* m = ctx.module();
     if (m && m->heardTakeClip().valid())
         m->setHeardTake(ClipId(), -1);
+    if (m && m->audioPlayer().previewing())
+        m->audioPlayer().stopPreview();
+}
+
+void AudioEditor::toggleTakes() {
+    takesOpen = !takesOpen;
+    rowsScroll = 0;
+    if (!takesOpen)
+        stopHearing();
+}
+
+void AudioEditor::makeClipUnique() {
+    TesseraModule* m = ctx.module();
+    if (const ArrangerClip* a = instance(); m && a)
+        m->perform(arrange::makeUnique(m->song(), {a->id}, m->ids()));
+}
+
+std::optional<std::pair<Tick, Tick>> AudioEditor::activeRange() {
+    if (range)
+        return range;
+    Tick from = std::numeric_limits<Tick>::max(), to = 0;
+    for (const AudioRegion& r : parts())
+        if (selected.count(r.id)) {
+            from = std::min(from, r.start);
+            to = std::max(to, r.end());
+        }
+    if (to > from)
+        return std::make_pair(from, to);
+    return std::nullopt;
+}
+
+namespace {
+
+/// Parts copied in the audio editor. Session only, and shared by both editors.
+regions::Copied clipboard;
+
+} // namespace
+
+bool AudioEditor::copyActive() {
+    std::optional<std::pair<Tick, Tick>> active = activeRange();
+    if (!active || !source())
+        return false;
+    TesseraModule* m = ctx.module();
+    regions::NewId newId = [m] { return m->newId<AudioRegionId>(); };
+    regions::Copied copied = regions::copyRange(parts(), shownAudio(), active->first, active->second, files(), newId);
+    if (copied.parts.empty())
+        return false;
+    clipboard = std::move(copied);
+    return true;
+}
+
+void AudioEditor::pasteAt(Tick at) {
+    TesseraModule* m = ctx.module();
+    if (!m || !source() || clipboard.parts.empty())
+        return;
+    regions::NewId newId = [m] { return m->newId<AudioRegionId>(); };
+    regions::List list = parts();
+    regions::Ids pasted;
+    if (!regions::paste(list, shownAudio(), clipboard, at, files(), newId, &pasted)) {
+        ctx.toast("These parts play a file this clip doesn't have, or its tempo is different");
+        return;
+    }
+    store(list, "Paste parts");
+    selected = pasted;
+    range.reset();
+}
+
+void AudioEditor::appendRangeItems(rack::ui::Menu* menu) {
+    bool has = activeRange().has_value();
+    menu->addChild(rack::createMenuItem("Copy", shortcutLabel(Action::Copy), [this] { copyActive(); }, !has));
+    Tick step = gridStep();
+    double tick = xToTick(localMouse().x);
+    Tick at = step > 0 ? snapPosition(tick, step) : Tick(std::llround(tick));
+    menu->addChild(rack::createMenuItem("Paste", shortcutLabel(Action::Paste), [this, at] { pasteAt(at); },
+                                        clipboard.parts.empty()));
+    menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate), [this] {
+        if (std::optional<std::pair<Tick, Tick>> active = activeRange(); active && copyActive())
+            pasteAt(active->second);
+    }, !has));
+    menu->addChild(rack::createMenuItem("Crop to selection", "", [this] {
+        TesseraModule* m = ctx.module();
+        if (std::optional<std::pair<Tick, Tick>> active = activeRange(); active && m) {
+            m->perform(regions::cropToRange(m->song(), clip, active->first, active->second, m->ids()));
+            range.reset();
+            selected.clear();
+            fit();
+        }
+    }, !has));
 }
 
 regions::Files AudioEditor::files() {
@@ -740,6 +872,7 @@ void AudioEditor::step() {
         if (clip != fitted)
             stopHearing();
         selected.clear();
+        range.reset();
         rowsScroll = 0;
         fit();
     } else if (width > 1 && fittedWidth > 1 && width != fittedWidth) {
@@ -756,14 +889,6 @@ AudioEditor::Hit AudioEditor::hitTest(Vec pos) {
     const AudioSource* src = source();
     if (!c || !src)
         return hit;
-    if (takesButton.size.x > 0 && takesButton.contains(pos)) {
-        hit.part = Part::TakesButton;
-        return hit;
-    }
-    if (uniqueButton.size.x > 0 && uniqueButton.contains(pos)) {
-        hit.part = Part::MakeUnique;
-        return hit;
-    }
     if (int row = rowAt(pos); row >= 0) {
         hit.take = takeOfRow(row);
         hit.part = hearRect(rowRect(row)).contains(pos) ? Part::TakeHear : Part::TakeRow;
@@ -794,6 +919,9 @@ AudioEditor::Hit AudioEditor::hitTest(Vec pos) {
                 }
             }
         }
+        if (hit.part == Part::Warp)
+            return hit;
+        hit.part = Part::Range;
         if (markers)
             return hit;
         TesseraModule* m = ctx.module();
@@ -801,10 +929,10 @@ AudioEditor::Hit AudioEditor::hitTest(Vec pos) {
         if (perBeat <= 0)
             return hit;
         int k = int(std::lround(xToTick(pos.x) / perBeat));
-        if (k >= 1 && std::fabs(tickToX(k * perBeat) - pos.x) <= kBeatHit) {
+        if (k >= 1 && pos.y >= kRulerHeight - kBeatBand && std::fabs(tickToX(k * perBeat) - pos.x) <= kBeatHit) {
             hit.part = Part::Beat;
             hit.beat = k;
-        } else if (k == 0 && plainClip() && std::fabs(tickToX(0) - pos.x) <= kEdgeHit) {
+        } else if (k == 0 && plainClip() && pos.y <= kFlagHeight && std::fabs(tickToX(0) - pos.x) <= kEdgeHit) {
             hit.part = Part::Flag;
         }
         return hit;
@@ -893,14 +1021,16 @@ std::unique_ptr<DragGesture> AudioEditor::startGesture(Vec pos, int button, Modi
         return std::make_unique<WarpGesture>(*this, pos, hit.warp, hit.take);
     case Part::TakeRow:
         return std::make_unique<CompGesture>(*this, pos, hit.take);
+    case Part::Range:
+        return std::make_unique<RangeGesture>(*this, pos, mods);
     case Part::Flag:
         return std::make_unique<SlipGesture>(*this, pos);
     default:
         break;
     }
-    if (toolClicks || hit.part == Part::None || hit.part == Part::MakeUnique || hit.part == Part::TakesButton ||
-        hit.part == Part::TakeHear)
+    if (toolClicks || hit.part == Part::None || hit.part == Part::TakeHear)
         return nullptr;
+    range.reset();
     bool plain = plainClip();
     switch (hit.part) {
     case Part::LeftEdge:
@@ -1104,6 +1234,8 @@ void AudioEditor::partMenu(const Hit& hit, Tick at) {
     }));
     menu->addChild(new rack::ui::MenuSeparator);
     regions::Ids ids = selected.count(id) ? selected : regions::Ids{id};
+    appendRangeItems(menu);
+    menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete),
                                         [this, ids] { removeParts(ids, false); }));
     menu->addChild(rack::createMenuItem("Delete and close the gap", shortcutLabel(Action::DeleteClosingGap),
@@ -1136,25 +1268,15 @@ void AudioEditor::click(Vec pos, int button, Modifiers mods) {
             menu->addChild(rack::createMenuItem("Remove all markers", "", [m, id, take] {
                 m->perform(setWarps(m->song(), id, {}, "Remove warp markers", take));
             }));
-        } else if (pos.y >= kRulerHeight && hit.part != Part::None && hit.part != Part::MakeUnique) {
+        } else if (hit.part == Part::Range) {
+            appendRangeItems(rack::createMenu());
+        } else if (pos.y >= kRulerHeight && hit.part != Part::None) {
             partMenu(hit, at);
         }
         return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return;
-    if (hit.part == Part::MakeUnique) {
-        if (const ArrangerClip* a = instance())
-            m->perform(arrange::makeUnique(m->song(), {a->id}, m->ids()));
-        return;
-    }
-    if (hit.part == Part::TakesButton) {
-        takesOpen = !takesOpen;
-        rowsScroll = 0;
-        if (!takesOpen)
-            stopHearing();
-        return;
-    }
     if (hit.part == Part::TakeHear) {
         bool same = m->heardTakeClip() == clip && m->heardTakeIndex() == hit.take;
         m->setHeardTake(same ? ClipId() : clip, hit.take);
@@ -1182,14 +1304,38 @@ void AudioEditor::click(Vec pos, int button, Modifiers mods) {
         }
         return;
     }
-    // A click in the ruler plays from there, on the timeline copy of the clip (§6.4).
-    if (hit.part != Part::None)
+}
+
+void AudioEditor::rulerClick(Vec pos, Modifiers mods) {
+    TesseraModule* m = ctx.module();
+    if (!m || !source())
         return;
+    AudioPlayer& player = m->audioPlayer();
+    if (player.previewing()) {
+        player.stopPreview();
+        return;
+    }
     const ArrangerClip* a = instance();
+    // Stopped, a click on a clip that isn't on the timeline, or Alt+click on any, plays the clip alone.
+    if (!m->playing() && (mods.alt || !a)) {
+        const Clip* c = shownClip();
+        TrackId owner;
+        for (const Track& t : m->song().tracks) {
+            bool plays = std::any_of(t.slots.begin(), t.slots.end(), [&](const ClipSlot& s) { return s.clip == clip; }) ||
+                         std::any_of(t.arrangement.begin(), t.arrangement.end(),
+                                     [&](const ArrangerClip& x) { return x.clip == clip; });
+            if (plays && !owner.valid())
+                owner = t.id;
+        }
+        if (owner.valid() && c)
+            player.startPreview(clip.value, owner.value, std::clamp(xToTick(pos.x), 0.0, double(c->length)));
+        return;
+    }
     if (!a) {
         ctx.toast("This clip isn't on the timeline: launch it to hear it");
         return;
     }
+    // A click in the ruler plays from there, on the timeline copy of the clip (§6.4).
     double perClip = songTicksPerClipTick(shownAudio(), m->tempo() > 0 ? m->tempo() : 120);
     double tick = double(a->position) + std::max(0.0, xToTick(pos.x) - double(a->offset)) * perClip;
     tick = std::min(tick, double(instanceEnd(*a)));
@@ -1203,20 +1349,64 @@ bool AudioEditor::handleAction(Action action) {
         return false;
     switch (action) {
     case Action::Delete:
-        removeParts(selected, false);
+    case Action::Cut: {
+        if (action == Action::Cut)
+            copyActive();
+        if (range) {
+            regions::NewId newId = [m] { return m->newId<AudioRegionId>(); };
+            regions::List rest = regions::clearRange(parts(), shownAudio(), range->first, range->second, files(), newId);
+            if (rest.empty()) {
+                ctx.toast("A clip keeps at least one part. To remove it, delete the clip on the timeline");
+                return true;
+            }
+            store(rest, "Delete range");
+            range.reset();
+            selected.clear();
+        } else {
+            removeParts(selected, false);
+        }
         return true;
+    }
     case Action::DeleteClosingGap:
-        removeParts(selected, true);
+        if (range) {
+            m->perform(regions::closeRange(m->song(), clip, range->first, range->second, m->ids()));
+            range.reset();
+            selected.clear();
+        } else {
+            removeParts(selected, true);
+        }
+        return true;
+    case Action::Copy:
+        if (!copyActive())
+            ctx.toast("Pick a range in the ruler, or select a part, to copy it");
+        return true;
+    case Action::Paste:
+    case Action::PasteAtMouse: {
+        Vec mouse = localMouse();
+        Tick step = gridStep();
+        std::optional<std::pair<Tick, Tick>> active = activeRange();
+        double tick = box.zeroPos().contains(mouse) || !active ? xToTick(mouse.x) : double(active->second);
+        pasteAt(step > 0 ? snapPosition(tick, step) : Tick(std::llround(tick)));
+        return true;
+    }
+    case Action::Duplicate: {
+        std::optional<std::pair<Tick, Tick>> active = activeRange();
+        if (active && copyActive())
+            pasteAt(active->second);
+        return true;
+    }
+    case Action::Quantize:
+        audioActions::quantizeClip(ctx, clip);
+        return true;
+    case Action::QuantizeDialog:
+        audioActions::appendWarpItems(rack::createMenu(), ctx, clip);
         return true;
     case Action::ToggleTakes:
         if (shownClip()->audio->takes.empty()) {
             ctx.toast("This clip has one take. Record over it to add more");
             return true;
         }
-        takesOpen = !takesOpen;
-        rowsScroll = 0;
-        if (!takesOpen)
-            stopHearing();
+        toggleTakes();
         return true;
     case Action::TransposeUp:
     case Action::TransposeDown: {
@@ -1303,7 +1493,7 @@ void AudioEditor::doubleClick(Vec pos, Modifiers mods) {
 CursorShape AudioEditor::hoverCursor(Vec pos, Modifiers mods) {
     Part part = hitTest(pos).part;
     Tool tool = ctx.state().tool;
-    if (pos.y >= kRulerHeight && part != Part::None && part != Part::MakeUnique && tool == Tool::Slice)
+    if (pos.y >= kRulerHeight && part != Part::None && tool == Tool::Slice)
         return CursorShape::Crosshair;
     switch (part) {
     case Part::LeftEdge:
@@ -1320,11 +1510,10 @@ CursorShape AudioEditor::hoverCursor(Vec pos, Modifiers mods) {
     case Part::Body:
     case Part::Flag:
         return CursorShape::Move;
-    case Part::MakeUnique:
-    case Part::TakesButton:
     case Part::TakeHear:
         return CursorShape::Hand;
     case Part::TakeRow:
+    case Part::Range:
         return CursorShape::IBeam;
     default:
         return CursorShape::Arrow;
@@ -1499,39 +1688,23 @@ void AudioEditor::drawPart(NVGcontext* vg, const AudioRegion& r, Rect wave, uint
     }
 }
 
-void AudioEditor::drawCopies(NVGcontext* vg, Rect wave) {
-    uniqueButton = takesButton = Rect();
+void AudioEditor::drawDrift(NVGcontext* vg, double tick, Rect wave) {
     TesseraModule* m = ctx.module();
-    const Clip* cl = shownClip();
-    if (!m || !cl)
+    double grid = double(ctx.state().audioQuantize.grid);
+    if (!m || grid <= 0)
+        return;
+    double target = std::round(tick / grid) * grid;
+    float x0 = float(tickToX(tick)), x1 = float(tickToX(target));
+    double ms = std::fabs(tick - target) * 60000.0 / ((m->tempo() > 0 ? m->tempo() : 120) * double(kPpq));
+    if (std::fabs(x1 - x0) < 1 || ms < 0.5)
         return;
     const theme::Palette& c = theme::colors();
-    float x = wave.getRight() - 8;
-    draw::TextStyle button{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    // In the ruler, so nothing covers a part's top corners.
-    if (!cl->audio->takes.empty()) {
-        static constexpr float kWidth = 62;
-        takesButton = Rect(x - kWidth, 3, kWidth, kButtonRow);
-        draw::roundedRect(vg, takesButton, theme::metrics::kRadiusItem, takesOpen ? c.select : c.bg2);
-        draw::TextStyle label = button;
-        if (takesOpen)
-            label.color = c.ink;
-        draw::text(vg, label, takesButton.getCenter().x, takesButton.getCenter().y,
-                   "Takes " + std::to_string(cl->audio->takes.size() + 1));
-        x -= kWidth + 6;
-    }
-    int uses = m->song().clipUses(clip);
-    if (uses <= 1)
-        return;
-    if (instance()) {
-        static constexpr float kWidth = 76;
-        uniqueButton = Rect(x - kWidth, 3, kWidth, kButtonRow);
-        draw::roundedRect(vg, uniqueButton, theme::metrics::kRadiusItem, c.bg2);
-        draw::text(vg, button, uniqueButton.getCenter().x, uniqueButton.getCenter().y, "Make unique");
-        x -= kWidth + 6;
-    }
-    draw::TextStyle small{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.queue, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP};
-    draw::text(vg, small, x, 5, "∞ " + std::to_string(uses) + " copies: edits change all");
+    NVGcolor color = ms > kDriftFarMs ? c.queue : ms < kDriftQuietMs ? nvgTransRGBAf(c.text2, 0.5f) : c.text1;
+    float y = wave.getBottom() - 8;
+    nvgBeginPath(vg);
+    nvgRect(vg, std::min(x0, x1), y, std::fabs(x1 - x0), 1.5f);
+    nvgFillColor(vg, color);
+    nvgFill(vg);
 }
 
 void AudioEditor::drawTakeRows(NVGcontext* vg) {
@@ -1631,7 +1804,6 @@ void AudioEditor::drawView(const DrawArgs& args) {
     const Clip* cl = shownClip();
     const AudioSource* src = source();
     if (!m || !cl || !src) {
-        uniqueButton = takesButton = Rect();
         draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextUi, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
         draw::text(vg, hint, box.size.x / 2, box.size.y / 2, "Select an audio clip to edit it here");
         return;
@@ -1703,6 +1875,7 @@ void AudioEditor::drawView(const DrawArgs& args) {
         }
     }
     // Transients: a small mark under the waveform where each hit starts (Split at transients cuts there).
+    std::vector<double> hits;
     nvgBeginPath(vg);
     for (const AudioRegion& r : list) {
         const SourceStatus& st = state.statusOf(r.take);
@@ -1725,10 +1898,14 @@ void AudioEditor::drawView(const DrawArgs& args) {
             nvgLineTo(vg, x - 3, y);
             nvgLineTo(vg, x + 3, y);
             nvgClosePath(vg);
+            hits.push_back(tick);
         }
     }
     nvgFillColor(vg, nvgTransRGBAf(c.text0, 0.6f));
     nvgFill(vg);
+    // How far each hit is from the grid, before Quantize moves it.
+    for (double tick : hits)
+        drawDrift(vg, tick, wave);
     // Warp markers: a line through the hit they pin, with a handle in the ruler. Each shows with the part that plays it.
     for (const AudioRegion& r : list) {
         if (r.reverse)
@@ -1767,8 +1944,15 @@ void AudioEditor::drawView(const DrawArgs& args) {
             nvgFill(vg);
         }
     }
-    drawCopies(vg, wave);
     drawTakeRows(vg);
+    // The time range picked in the ruler.
+    if (range) {
+        float x0 = float(tickToX(double(range->first))), x1 = float(tickToX(double(range->second)));
+        nvgBeginPath(vg);
+        nvgRect(vg, x0, 0, x1 - x0, wave.getBottom());
+        nvgFillColor(vg, nvgTransRGBAf(c.select, 0.2f));
+        nvgFill(vg);
+    }
     // What the clip does, in words.
     std::string note = a.takes.empty() ? src->name : "Comp";
     std::string st = audioDraw::stateText(state);
@@ -1776,6 +1960,14 @@ void AudioEditor::drawView(const DrawArgs& args) {
         note += "  " + st;
     draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
     draw::text(vg, small, 6, wave.pos.y + 2, note);
+    // Where a preview has got to.
+    if (m->audioPlayer().previewing()) {
+        float x = float(tickToX(m->audioPlayer().previewTick()));
+        nvgBeginPath(vg);
+        nvgRect(vg, x - 0.5f, 0, 1, box.size.y);
+        nvgFillColor(vg, c.play);
+        nvgFill(vg);
+    }
     // Where playback is in the clip, while the timeline copy plays.
     if (const ArrangerClip* inst = instance(); inst && m->playing() && m->playMode() == PlayMode::Arranger) {
         double t = m->playheadTicks();

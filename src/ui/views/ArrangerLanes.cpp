@@ -529,6 +529,17 @@ bool ArrangerLanes::clipAction(Action action) {
     case Action::Glue:
         arrangeActions::glueSelected(*this);
         return true;
+    case Action::Quantize: {
+        // Selected audio clips: their hits to the grid, each clip once however many copies are selected.
+        std::set<uint64_t> clips;
+        for (const arrange::Placed& p : committed())
+            if (selection().count(p.clip.id))
+                if (const Clip* c = m->song().findClip(p.clip.clip); c && c->audio)
+                    clips.insert(c->id.value);
+        for (uint64_t id : clips)
+            audioActions::quantizeClip(ctx, ClipId(id));
+        return !clips.empty();
+    }
     case Action::MakeUnique:
         arrangeActions::makeUniqueSelected(*this);
         return true;

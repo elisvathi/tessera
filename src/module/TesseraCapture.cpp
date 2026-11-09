@@ -330,7 +330,6 @@ bool TesseraModule::glueAudio(TrackId track, const std::vector<ArrangementId>& i
     solo.master.volumeDb = 0;
     solo.master.automation.clear();
     solo.master.mix = SourceLevel{};
-    double rate = audioRate.load() > 0 ? double(audioRate.load()) : 48000;
     double bpm = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
     auto job = std::make_unique<GlueJob>();
     job->track = track;
@@ -340,6 +339,12 @@ bool TesseraModule::glueAudio(TrackId track, const std::vector<ArrangementId>& i
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     job->path = (dir / (t->name + " glued.wav")).string();
+    startOfflineRender(std::move(job), solo, from, to, bpm);
+    return true;
+}
+
+void TesseraModule::startOfflineRender(std::unique_ptr<GlueJob> job, const Song& solo, Tick from, Tick to, double bpm) {
+    double rate = audioRate.load() > 0 ? double(audioRate.load()) : 48000;
     // The snapshot holds the samples it plays, so the worker needs nothing else from the UI thread.
     BusSlots slots;
     slots.sync(solo);
@@ -351,6 +356,8 @@ bool TesseraModule::glueAudio(TrackId track, const std::vector<ArrangementId>& i
         engine.setSampleRate(float(rate));
         engine.setTempo(bpm);
         engine.setSnapshot(notes.get());
+        // An engine starts in launcher mode, where a timeline-only song plays nothing.
+        engine.setPlayMode(PlayMode::Arranger);
         engine.seek(double(from));
         engine.play();
         AudioPlayer player;
@@ -376,8 +383,55 @@ bool TesseraModule::glueAudio(TrackId track, const std::vector<ArrangementId>& i
         raw->done = true;
     });
     glue = std::move(job);
+}
+
+bool TesseraModule::renderClip(ClipId clipId) {
+    const Clip* clip = songData.findClip(clipId);
+    const Track* owner = nullptr;
+    for (const Track& t : songData.tracks) {
+        bool plays = std::any_of(t.slots.begin(), t.slots.end(), [&](const ClipSlot& s) { return s.clip == clipId; }) ||
+                     std::any_of(t.arrangement.begin(), t.arrangement.end(),
+                                 [&](const ArrangerClip& a) { return a.clip == clipId; });
+        if (plays && !owner)
+            owner = &t;
+    }
+    if (!clip || !clip->audio || !owner || glue || !audio)
+        return false;
+    Song solo = songData;
+    Clip* only = solo.findClip(clipId);
+    only->audio->gainDb = 0;
+    only->audio->semitones = 0;
+    only->audio->cents = 0;
+    only->loopMode = LoopMode::Off;
+    Track* track = solo.findTrack(owner->id);
+    ArrangerClip whole;
+    whole.id = ArrangementId(solo.nextId++);
+    whole.clip = clipId;
+    whole.length = only->length;
+    track->arrangement = {whole};
+    track->slots.clear();
+    track->channel = Channel{};
+    track->clips = SourceLevel{};
+    track->mute = track->solo = false;
+    track->sends.clear();
+    track->automation.clear();
+    solo.tracks = {*track};
+    solo.master.volumeDb = 0;
+    solo.master.automation.clear();
+    solo.master.mix = SourceLevel{};
+    // At the clip's own tempo a tick of the render is a tick of the clip, so the new take lines up.
+    double bpm = only->audio->sourceTempo;
+    auto job = std::make_unique<GlueJob>();
+    job->track = owner->id;
+    job->renderClip = clipId;
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / ("tessera-" + std::to_string(id));
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    job->path = (dir / (clip->name + " rendered.wav")).string();
+    startOfflineRender(std::move(job), solo, 0, only->length, bpm);
     return true;
 }
+
 
 void TesseraModule::glueStep() {
     if (!glue || !glue->done)
@@ -393,6 +447,30 @@ void TesseraModule::glueStep() {
     std::filesystem::remove(job->path, ec);
     if (!imp.ok)
         return;
+    if (job->renderClip.valid()) {
+        // The new file is another take of the clip, which now plays it whole. Undo brings the edits back.
+        if (!songData.findClip(job->renderClip))
+            return;
+        AudioSource src = imp.source;
+        src.id = newId<AudioSourceId>();
+        src.volts = kFullScaleVolts;
+        auto compound = std::make_unique<CompoundCommand>("Render to new file");
+        NoteSelection before = editorState.selection;
+        auto step = [&](CommandPtr cmd) {
+            if (cmd) {
+                cmd->apply(songData);
+                compound->add(std::move(cmd));
+            }
+        };
+        step(std::make_unique<AddAudioSources>(std::vector<AudioSource>{src}));
+        step(regions::addTake(songData, job->renderClip, AudioTake{src.id, 0, "Rendered", {}}, ids()));
+        int take = int(songData.findClip(job->renderClip)->audio->takes.size()) - 1;
+        step(regions::useTake(songData, job->renderClip, take, ids()));
+        publish(ChangeSet::all());
+        audio->sync(songData);
+        APP->history->push(new CommandAction(id, std::move(compound), before, editorState.selection));
+        return;
+    }
     ImportedAudio f;
     f.source = imp.source;
     f.source.volts = kFullScaleVolts;

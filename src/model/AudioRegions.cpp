@@ -304,6 +304,189 @@ List retake(const List& list, const Ids& ids, int take, const AudioContent& a, c
     return out;
 }
 
+List clearRange(const List& list, const AudioContent& a, Tick from, Tick to, const Files& files, const NewId& newId) {
+    List out;
+    for (const AudioRegion& r : list) {
+        if (r.end() <= from || r.start >= to) {
+            out.push_back(r);
+            continue;
+        }
+        if (r.start < from) {
+            AudioRegion left = withEnd(r, from, a, files);
+            left.fadeOut = Fade{};
+            out.push_back(left);
+        }
+        if (r.end() > to) {
+            AudioRegion right = withStart(r, to, a, files);
+            right.fadeIn = Fade{};
+            if (r.start < from)
+                right.id = newId();
+            out.push_back(right);
+        }
+    }
+    return out;
+}
+
+Copied copyRange(const List& list, const AudioContent& a, Tick from, Tick to, const Files& files, const NewId& newId) {
+    Copied out;
+    out.tempo = a.sourceTempo;
+    out.length = to - from;
+    for (const AudioRegion& r : list) {
+        if (r.end() <= from || r.start >= to)
+            continue;
+        AudioRegion part = r;
+        if (part.start < from) {
+            part = withStart(part, from, a, files);
+            part.fadeIn = Fade{};
+        }
+        if (part.end() > to) {
+            part = withEnd(part, to, a, files);
+            part.fadeOut = Fade{};
+        }
+        part.start -= from;
+        part.id = newId();
+        out.parts.push_back(part);
+        out.sources.push_back(takeContent(a, part.take).source);
+    }
+    return out;
+}
+
+bool paste(List& list, const AudioContent& a, const Copied& copied, Tick at, const Files& files, const NewId& newId,
+           Ids* pasted) {
+    if (std::abs(copied.tempo - a.sourceTempo) > 1e-6)
+        return false;
+    Ids added;
+    List next = list;
+    for (size_t i = 0; i < copied.parts.size(); i++) {
+        AudioRegion part = copied.parts[i];
+        int take = -2;
+        if (a.source == copied.sources[i])
+            take = -1;
+        for (size_t k = 0; take == -2 && k < a.takes.size(); k++)
+            if (a.takes[k].source == copied.sources[i])
+                take = int(k);
+        if (take == -2)
+            return false;
+        part.take = take;
+        part.start += at;
+        part.id = newId();
+        added.insert(part.id);
+        next.push_back(part);
+    }
+    std::stable_sort(next.begin(), next.end(), startsBefore);
+    list = settle(next, added, a, files, newId);
+    if (pasted)
+        *pasted = added;
+    return true;
+}
+
+namespace {
+
+/// Stores `list` and makes the clip `length` long, shortening a loop over the whole clip and the timeline copies that
+/// played the whole clip. `moved` says where an old tick of the clip ends up.
+CommandPtr storeWithLength(const Song& song, const Clip& c, List list, Tick length, const std::function<Tick(Tick)>& moved,
+                           const std::string& name, const NextId& nextId) {
+    auto out = std::make_unique<CompoundCommand>(name);
+    out->add(editAudio(song, c.id, [&](AudioContent& a) {
+        a.reverse = false;
+        for (AudioRegion& r : list)
+            if (!r.id.valid())
+                r.id = AudioRegionId(nextId());
+        a.regions = list;
+    }, name));
+    if (c.loopStart == 0 && c.loopEnd >= c.length) {
+        out->add(setClipField(song, c.id, &Clip::loopEnd, length, name));
+    } else {
+        Tick loopEnd = std::clamp<Tick>(moved(c.loopEnd), 1, length);
+        out->add(setClipField(song, c.id, &Clip::loopStart, std::clamp<Tick>(moved(c.loopStart), 0, loopEnd - 1), name));
+        out->add(setClipField(song, c.id, &Clip::loopEnd, loopEnd, name));
+    }
+    out->add(setClipField(song, c.id, &Clip::length, length, name));
+    arrange::Layout layout = arrange::layoutOf(song), changed = layout;
+    for (arrange::Placed& p : changed)
+        if (p.clip.clip == c.id) {
+            if (p.clip.offset == 0 && p.clip.length == c.length)
+                p.clip.length = length;
+            else
+                p.clip.offset = std::clamp<Tick>(moved(p.clip.offset), 0, length - 1);
+        }
+    out->add(arrange::replaceArrangement(song, name, layout, changed));
+    return out;
+}
+
+} // namespace
+
+CommandPtr closeRange(const Song& song, ClipId clip, Tick from, Tick to, const NextId& nextId) {
+    const Clip* c = song.findClip(clip);
+    if (!c || !c->audio || to <= from)
+        return nullptr;
+    Files files = filesOf(song, *c->audio);
+    NewId newId = [&] { return AudioRegionId(nextId()); };
+    List list = clearRange(of(*c, files), *c->audio, from, to, files, newId);
+    if (list.empty())
+        return nullptr;
+    Tick span = std::min(to, c->length) - from;
+    if (span >= c->length)
+        return nullptr;
+    for (AudioRegion& r : list)
+        if (r.start >= to)
+            r.start -= span;
+    auto moved = [&](Tick t) { return t <= from ? t : t >= to ? t - span : from; };
+    return storeWithLength(song, *c, list, c->length - span, moved, "Delete time in clip", nextId);
+}
+
+CommandPtr cropToRange(const Song& song, ClipId clip, Tick from, Tick to, const NextId& nextId) {
+    const Clip* c = song.findClip(clip);
+    if (!c || !c->audio || to <= from)
+        return nullptr;
+    Files files = filesOf(song, *c->audio);
+    NewId newId = [&] { return AudioRegionId(nextId()); };
+    Copied kept = copyRange(of(*c, files), *c->audio, from, std::min(to, c->length), files, newId);
+    if (kept.parts.empty())
+        return nullptr;
+    auto moved = [&](Tick t) { return std::clamp<Tick>(t - from, 0, kept.length); };
+    return storeWithLength(song, *c, kept.parts, kept.length, moved, "Crop clip", nextId);
+}
+
+CommandPtr quantize(const Song& song, ClipId clip, const std::map<int, TakeHits>& hits, const QuantizeSettings& settings) {
+    const Clip* c = song.findClip(clip);
+    if (!c || !c->audio || settings.grid <= 0)
+        return nullptr;
+    const AudioContent& a = *c->audio;
+    Files files = filesOf(song, a);
+    List parts = of(*c, files);
+    double grid = double(settings.grid);
+    auto out = std::make_unique<CompoundCommand>("Quantize audio");
+    for (const auto& [take, found] : hits) {
+        std::vector<WarpMarker> warps;
+        for (const AudioRegion& r : parts) {
+            if (r.take != take || r.reverse || r.muted)
+                continue;
+            double shiftTicks = shift(a, r, files);
+            // The part's first frame is pinned where it is, so only its hits move and the part stays in its place.
+            bool pinned = false;
+            for (size_t i = 0; i < found.frames.size(); i++) {
+                if (i < found.levels.size() && found.levels[i] < settings.minLevel)
+                    continue;
+                double t = takeTick(a, take, double(found.frames[i]), files) - shiftTicks;
+                if (t < double(r.start) || t >= double(r.end()))
+                    continue;
+                // A grid line outside the part would pull the hit out of it.
+                double target = std::round(t / grid) * grid;
+                if (target < double(r.start) || target >= double(r.end()))
+                    continue;
+                if (!pinned) {
+                    warps.push_back({double(r.start) + shiftTicks, r.sourceFrame});
+                    pinned = true;
+                }
+                warps.push_back({t + (target - t) * double(settings.strength) + shiftTicks, found.frames[i]});
+            }
+        }
+        out->add(setWarps(song, clip, warps, "Quantize audio", take));
+    }
+    return out->empty() ? nullptr : std::move(out);
+}
+
 CommandPtr useTake(const Song& song, ClipId clip, int take, const NextId& nextId) {
     const Clip* c = song.findClip(clip);
     if (!c || !c->audio)

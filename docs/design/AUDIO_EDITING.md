@@ -1,6 +1,6 @@
 # Audio editing, takes and project files
 
-Status: **agreed 9 Nov 2026.** Built: the split rule (§1), phase 1, files (§6), phase 2, parts (§2, §3), and phase 3, takes (§4). Phase 4 is still to do.
+Status: **agreed 9 Nov 2026.** Built: the split rule (§1), phase 1, files (§6), phase 2, parts (§2, §3), phase 3, takes (§4), and phase 4, utilities (§3).
 Where this document and DECISIONS.md disagree, DECISIONS.md wins.
 
 Mockups: `docs/design/mockups/audio-editing/index.html`.
@@ -96,8 +96,8 @@ looks as it does today: the unused file before and after it stays visible, dim.
 | Hear it while stopped | Click the ruler | Nothing changes |
 
 The header holds the clip's settings: tempo, Stretch, sound type, pitch, gain, reverse, **Takes**, **∞ 3 copies**, the
-Select and Slice tools. In the narrow panel editor they fold into one **Clip ▾**, as `AUDIO_UX.md` A2 describes. The
-header settings are phase 4. Until then **∞ 3 copies** and **Make unique** sit at the right end of the ruler.
+Select and Slice tools. In the narrow panel editor they fold into one **Clip ▾**, as `AUDIO_UX.md` A2 describes. A drag
+along the ruler's upper strip picks a range; beat lines are grabbed in its lower strip.
 
 Pitch stays per clip for now. A pitch per part would need a stretched render per part.
 

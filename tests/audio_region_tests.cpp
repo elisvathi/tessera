@@ -460,3 +460,106 @@ TEST_CASE("older songs keep playing the take each timeline copy picked") {
     CHECK(back.findClip(arr[1].clip)->audio->regions[0].take == 1);
     CHECK(back.findClip(arr[1].clip)->audio->takes.size() == 2);
 }
+
+TEST_CASE("a time range can be cleared, copied, pasted and closed up") {
+    Parts p;
+    regions::Files files = p.files();
+    regions::NewId newId = p.newId;
+    regions::List whole = regions::of(p.theClip(), files);
+    SUBCASE("clearing cuts the parts back and leaves a gap") {
+        regions::List out = regions::clearRange(whole, p.audio(), 1000, 2000, files, newId);
+        REQUIRE(out.size() == 2);
+        CHECK(out[0].end() == 1000);
+        CHECK(out[1].start == 2000);
+        CHECK(out[1].sourceFrame == 2000 * 25);
+    }
+    SUBCASE("copy and paste plays the same audio somewhere else") {
+        regions::Copied copied = regions::copyRange(whole, p.audio(), 1000, 2000, files, newId);
+        REQUIRE(copied.parts.size() == 1);
+        CHECK(copied.length == 1000);
+        CHECK(copied.parts[0].start == 0);
+        CHECK(copied.parts[0].sourceFrame == 1000 * 25);
+        regions::List list = regions::clearRange(whole, p.audio(), 4000, 5000, files, newId);
+        regions::Ids pasted;
+        REQUIRE(regions::paste(list, p.audio(), copied, 4000, files, newId, &pasted));
+        CHECK(pasted.size() == 1);
+        REQUIRE(list.size() == 3);
+        CHECK(list[1].start == 4000);
+        CHECK(list[1].sourceFrame == 1000 * 25);
+    }
+    SUBCASE("a clip with other files or another tempo can't take the paste") {
+        regions::Copied copied = regions::copyRange(whole, p.audio(), 1000, 2000, files, newId);
+        copied.sources[0] = AudioSourceId(99999);
+        regions::List list = whole;
+        CHECK_FALSE(regions::paste(list, p.audio(), copied, 0, files, newId));
+        copied = regions::copyRange(whole, p.audio(), 1000, 2000, files, newId);
+        copied.tempo = 90;
+        CHECK_FALSE(regions::paste(list, p.audio(), copied, 0, files, newId));
+    }
+    SUBCASE("closing a range shortens the clip and its whole timeline copies") {
+        CommandPtr cmd = regions::closeRange(p.song, p.clip, 1000, 2000, p.next);
+        REQUIRE(cmd);
+        Song before = p.song;
+        cmd->apply(p.song);
+        CHECK(p.theClip().length == 6680);
+        CHECK(p.theClip().loopEnd == 6680);
+        REQUIRE(p.audio().regions.size() == 2);
+        CHECK(p.audio().regions[1].start == 1000);
+        CHECK(p.audio().regions[1].sourceFrame == 2000 * 25);
+        CHECK(p.song.findTrack(p.track)->arrangement[0].length == 6680);
+        cmd->revert(p.song);
+        CHECK(p.song == before);
+    }
+    SUBCASE("crop keeps only the range, from tick 0") {
+        CommandPtr cmd = regions::cropToRange(p.song, p.clip, 1000, 3000, p.next);
+        REQUIRE(cmd);
+        cmd->apply(p.song);
+        CHECK(p.theClip().length == 2000);
+        REQUIRE(p.audio().regions.size() == 1);
+        CHECK(p.audio().regions[0].start == 0);
+        CHECK(p.audio().regions[0].sourceFrame == 1000 * 25);
+    }
+}
+
+TEST_CASE("Quantize moves hits toward the grid by its strength, and leaves quiet ones alone") {
+    Parts p;
+    // Hits 20 ticks after beat 2 (500 frames late) and 8 ticks after beat 4.
+    regions::TakeHits hits{{960 * 25 + 500, 2880 * 25 + 200}, {1.f, 0.2f}};
+    SUBCASE("full strength") {
+        regions::quantize(p.song, p.clip, {{-1, hits}}, {kPpq, 1, 0})->apply(p.song);
+        REQUIRE(p.audio().warps.size() == 3); // the part's start, pinned, then the two hits
+        CHECK(p.audio().warps[0].tick == doctest::Approx(0));
+        CHECK(p.audio().warps[1].tick == doctest::Approx(960));
+        CHECK(p.audio().warps[2].tick == doctest::Approx(2880));
+    }
+    SUBCASE("half strength goes half way") {
+        regions::quantize(p.song, p.clip, {{-1, hits}}, {kPpq, 0.5f, 0})->apply(p.song);
+        CHECK(p.audio().warps[1].tick == doctest::Approx(970));
+    }
+    SUBCASE("quiet hits stay out") {
+        regions::quantize(p.song, p.clip, {{-1, hits}}, {kPpq, 1, 0.5f})->apply(p.song);
+        CHECK(p.audio().warps.size() == 2);
+    }
+    SUBCASE("a moved part's hit lands on the grid where the part now is") {
+        regions::List list = p.cutAt({1920});
+        list[1].start = 3000;
+        list[1].length = 4680;
+        regions::setRegions(p.song, p.clip, list, "Move", p.next)->apply(p.song);
+        // 860 ticks into the part: clip tick 3860, 20 past the grid line at 3840.
+        regions::TakeHits late{{(1920 + 860) * 25}, {}};
+        regions::quantize(p.song, p.clip, {{-1, late}}, {kPpq, 1, 0})->apply(p.song);
+        REQUIRE(p.audio().warps.size() == 2);
+        const AudioRegion& moved = p.audio().regions[1];
+        CHECK(regions::shift(p.audio(), moved, p.files()) == doctest::Approx(1920 - 3000)); // the part stayed put
+        double clipTick = p.audio().warps[1].tick - regions::shift(p.audio(), moved, p.files());
+        CHECK(clipTick == doctest::Approx(3840).epsilon(0.001));
+    }
+    SUBCASE("a grid line outside the part leaves the hit alone") {
+        regions::List list = p.cutAt({1920});
+        list[1].start = 3000;
+        list[1].length = 4680;
+        regions::setRegions(p.song, p.clip, list, "Move", p.next)->apply(p.song);
+        regions::TakeHits early{{(1920 + 40) * 25}, {}};
+        CHECK_FALSE(regions::quantize(p.song, p.clip, {{-1, early}}, {kPpq, 1, 0}));
+    }
+}

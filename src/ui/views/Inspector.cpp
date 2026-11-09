@@ -889,7 +889,7 @@ void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
     // Only a Stretch clip keeps its own pitch: Repitch and Off clips change pitch with their speed.
     if (a.follow == TempoFollow::Stretch)
         y = settingRow(vg, y, "Pitch", audioDraw::pitchText(a), Setting::Audio);
-    y = settingRow(vg, y, "Reverse", a.reverse ? "On" : "Off", Setting::Audio);
+    y = settingRow(vg, y, "Reverse", regions::playsBackwards(a) ? "On" : "Off", Setting::Audio);
     y = row(vg, y, "Length", bars(clip->length, song.timeSig));
     y = row(vg, y, "Loop", clip->loopMode == LoopMode::Loop ? "On" : "Off");
     audioDraw::ClipState state = audioDraw::stateOf(*m, *clip);

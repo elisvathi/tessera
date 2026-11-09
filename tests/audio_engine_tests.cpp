@@ -1084,6 +1084,24 @@ TEST_CASE("each part of a comp plays its own take, and Hear plays one whole with
     CHECK(rig.song == before);
 }
 
+TEST_CASE("a preview plays a clip alone while stopped, and stops when the transport starts") {
+    Rig rig(2.0, ramp, false);
+    rig.player->startPreview(rig.clip.value, rig.track.value, 960);
+    CHECK(rig.player->previewing());
+    std::vector<float> out = rig.run(4800);
+    CHECK(out[2400] == doctest::Approx(kVolts * (24000 + 2400) / kRate).epsilon(1e-3));
+    CHECK(rig.player->previewTick() == doctest::Approx(960 + 4799.0 / 25).epsilon(0.01));
+    rig.player->stopPreview();
+    rig.run(4000);
+    CHECK(rig.run(100).back() == doctest::Approx(0).epsilon(1e-6));
+
+    rig.player->startPreview(rig.clip.value, rig.track.value, 0);
+    rig.run(1000);
+    rig.engine->play();
+    rig.run(200);
+    CHECK_FALSE(rig.player->previewing());
+}
+
 TEST_CASE("a silent audio track wakes up on time for a clip that starts inside a block") {
     Rig rig(1.0, [](int64_t) { return 0.5f; });
     // 1000 ticks is 25000 samples at 120 BPM and 48 kHz: 8 samples into a 32-sample block.

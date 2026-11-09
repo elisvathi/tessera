@@ -370,6 +370,9 @@ class TesseraModule : public rack::engine::Module {
     /// one new file on a worker thread, then puts it in their place as one undo step. False when they aren't all
     /// audio on one track, or a glue already runs.
     bool glueAudio(TrackId track, const std::vector<ArrangementId>& instances);
+    /// Render to new file: plays clip `clip`'s edits into a new file, which becomes the take the whole clip plays. The
+    /// clip's gain and pitch stay settings, so they aren't baked in. One undo step. False when a glue or render is running.
+    bool renderClip(ClipId clip);
     /// Stops a bounce or export and leaves nothing behind.
     void cancelCapture();
     /// True while a bounce records.
@@ -594,6 +597,7 @@ class TesseraModule : public rack::engine::Module {
         std::vector<ArrangementId> instances;
         Tick from = 0;
         std::string path;
+        ClipId renderClip; // set for Render to new file, which puts the result back into this clip
         std::thread worker;
         std::atomic<bool> done{false}, ok{false};
         ~GlueJob() {
@@ -602,6 +606,8 @@ class TesseraModule : public rack::engine::Module {
         }
     };
     std::unique_ptr<GlueJob> glue;
+    /// Plays `solo` from `from` to `to` at `bpm` on a worker thread, writing `job`'s file. `job` then waits for glueStep().
+    void startOfflineRender(std::unique_ptr<GlueJob> job, const Song& solo, Tick from, Tick to, double bpm);
     struct FileJob {
         std::thread worker;
         std::atomic<bool> done{false}, ok{false};

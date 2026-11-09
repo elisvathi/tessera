@@ -2393,4 +2393,10 @@ confirms that presets, selections and copy and paste carry JSON only (`ModuleWid
   "the whole clip".
 - **Budget**: 16 tracks with 100 parts each add at most 1.5% of a core (measured 0.5 to 1.1%, mostly the seam fades).
 
+- **Built (phase 4).** The header chips (`AudioHeader`), a time range in the ruler's upper strip (beat lines moved to its
+  lower strip), Copy, Paste, Duplicate, Crop, Render to new file (a new take; the clip's gain and pitch stay settings, so
+  they aren't baked in), preview while stopped, and Quantize with a grid, a strength and a loudness threshold. Quantize
+  places markers in the part's own place in the clip, per take. Paste needs the same file and clip tempo, since a
+  part holds frames.
+
 Details: `docs/design/AUDIO_EDITING.md`.

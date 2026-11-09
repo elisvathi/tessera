@@ -825,13 +825,13 @@ TEST_CASE("warp markers pin file frames to clip ticks; between them the file str
     const AudioContent& c = *song.findClip(clip)->audio;
     double perTick = framesPerTick(c, song.findSource(c.source)->sampleRate);
     std::vector<int64_t> hits{int64_t(c.sourceStart + (kPpq + 30) * perTick), int64_t(c.sourceStart + (2 * kPpq + 20) * perTick)};
-    CommandPtr q = quantizeAudio(song, clip, hits, song.findSource(c.source)->sampleRate, kPpq / 4);
+    CommandPtr q = regions::quantize(song, clip, {{-1, regions::TakeHits{hits, {}}}}, {kPpq / 4, 1, 0});
     REQUIRE(q);
     q->apply(song);
     const AudioContent& w = *song.findClip(clip)->audio;
-    REQUIRE(w.warps.size() == 2);
-    CHECK(w.warps[0].tick == kPpq);
-    CHECK(w.warps[1].tick == 2 * kPpq);
+    REQUIRE(w.warps.size() == 3); // the clip's start stays pinned, then the two hits
+    CHECK(w.warps[1].tick == kPpq);
+    CHECK(w.warps[2].tick == 2 * kPpq);
     CHECK(throughJson(song) == song);
 }
 

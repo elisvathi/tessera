@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../model/AudioRegions.hpp"
 #include "../model/ArrangementEdits.hpp"
 #include "../model/AutomationEdits.hpp"
 #include "../model/Chord.hpp"
@@ -184,6 +185,7 @@ struct EditorState {
     float lastVelocity = 0.8f;
     uint8_t lastChannel = 1;  // ...and its channel
     bool audition = true;     // play notes as they are drawn or moved
+    regions::QuantizeSettings audioQuantize; // what Q does to audio: its grid, strength and loudest-hits threshold
     bool transformBox = true; // show the stretch frame around multi-note selections
     bool noteBadges = true;   // chance, repeats and conditions drawn on notes
     bool showSwing = true;    // swing ticks on moved notes and swung grid lines in the piano roll

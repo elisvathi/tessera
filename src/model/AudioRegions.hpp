@@ -5,6 +5,7 @@
 #include "TrackCommands.hpp"
 
 #include <functional>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -80,6 +81,44 @@ List comp(const List& list, const AudioContent& a, int take, Tick from, Tick to,
 /// Parts `ids` play take `take` instead, in the same place, lined up as recorded.
 List retake(const List& list, const Ids& ids, int take, const AudioContent& a, const Files& files);
 
+/// Ticks [from, to) go silent: parts there are cut back or removed. Later parts stay where they are.
+List clearRange(const List& list, const AudioContent& a, Tick from, Tick to, const Files& files, const NewId& newId);
+
+/// Parts copied from a clip, starting at tick 0, with the file each one plays.
+struct Copied {
+    List parts;
+    std::vector<AudioSourceId> sources; // one per part
+    double tempo = 120;
+    Tick length = 0;
+};
+/// The parts of ticks [from, to), cut to that range.
+Copied copyRange(const List& list, const AudioContent& a, Tick from, Tick to, const Files& files, const NewId& newId);
+/// `list` with `copied` laid in at tick `at`, following the overlap rule; the pasted parts' IDs go in `pasted`. False
+/// when this clip doesn't hold a file the parts play or has another tempo, as the frames would not line up.
+bool paste(List& list, const AudioContent& a, const Copied& copied, Tick at, const Files& files, const NewId& newId,
+           Ids* pasted = nullptr);
+
+/// Ticks [from, to) are taken out and the time closes up: later parts move earlier, the clip gets shorter, and timeline
+/// copies that played the whole clip shrink with it. Null when nothing would be left.
+CommandPtr closeRange(const Song& song, ClipId clip, Tick from, Tick to, const NextId& nextId);
+/// Only ticks [from, to) stay, starting at tick 0. Timeline copies that played the whole clip shrink with it.
+CommandPtr cropToRange(const Song& song, ClipId clip, Tick from, Tick to, const NextId& nextId);
+
+/// How Quantize moves a clip's hits (docs/design/AUDIO_UX.md A3).
+struct QuantizeSettings {
+    Tick grid = kPpq / 4;
+    float strength = 1; // 0..1: how far each hit moves toward the grid
+    float minLevel = 0; // 0..1: quieter hits than this stay where they are
+};
+/// The hits of one take: where they start, and how loud each is (0..1; empty means all count).
+struct TakeHits {
+    std::vector<int64_t> frames;
+    std::vector<float> levels;
+};
+/// Pins each hit to the grid with warp markers: the parts playing a take move its hits, wherever they sit in the clip.
+/// One undo step; null when nothing changes.
+CommandPtr quantize(const Song& song, ClipId clip, const std::map<int, TakeHits>& hits, const QuantizeSettings& settings);
+
 /// Stores `list` as the clip's parts, as one undo step named `name`. A list reaching past the clip's end makes the clip
 /// longer, and a loop over the whole clip follows. Null when nothing changed.
 CommandPtr setRegions(const Song& song, ClipId clip, List list, const std::string& name, const NextId& nextId);
@@ -96,6 +135,9 @@ CommandPtr addTake(const Song& song, ClipId clip, AudioTake take, const NextId& 
 CommandPtr removeTake(const Song& song, ClipId clip, int take);
 /// Renames take `take`. An empty name means its number.
 CommandPtr renameTake(const Song& song, ClipId clip, int take, const std::string& name);
+
+/// Whether the clip plays back to front: reversed as a whole, or with its first part reversed.
+inline bool playsBackwards(const AudioContent& a) { return a.regions.empty() ? a.reverse : a.regions.front().reverse; }
 
 /// A take's name: its own, or "Take 2", where take -1 is "Take 1".
 std::string takeName(const AudioContent& a, int take);

@@ -6,6 +6,7 @@
 #include "../../plugin.hpp"
 #include "../../engine/AudioSnapshotBuilder.hpp"
 #include "../EditorContext.hpp"
+#include "../interaction/Shortcuts.hpp"
 #include "../views/AudioClipDraw.hpp"
 #include "../widgets/MenuTextField.hpp"
 
@@ -56,6 +57,190 @@ void addCable(rack::engine::Module* from, int out, rack::engine::Module* to, int
 
 } // namespace
 
+/// Edits clip `id`'s audio settings as one undo step.
+static void editClip(EditorContext* c, ClipId id, const std::string& name, const std::function<void(AudioContent&)>& change) {
+    TesseraModule* mod = c->module();
+    if (mod)
+        mod->perform(editAudio(mod->song(), id, change, name));
+}
+
+void appendFollowItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
+    static const char* const kFollow[] = {"Stretch: keeps its pitch", "Repitch: faster and higher, like tape",
+                                          "Off: its own speed and pitch"};
+    EditorContext* c = &ctx;
+    for (int i = 0; i < 3; i++) {
+        const Clip* cl = c->module()->song().findClip(clipId);
+        bool on = cl && cl->audio && int(cl->audio->follow) == i;
+        menu->addChild(rack::createCheckMenuItem(kFollow[i], "", [on] { return on; }, [c, clipId, i] {
+            editClip(c, clipId, "Follow tempo", [i](AudioContent& a) { a.follow = TempoFollow(i); });
+        }));
+    }
+}
+
+void appendSoundItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
+    static const SoundType kSounds[] = {SoundType::Drums, SoundType::Melody, SoundType::Voice, SoundType::FullMix};
+    static const char* const kSoundNames[] = {"Drums: keeps attacks sharp", "Melody: smooth, for one instrument",
+                                              "Voice: keeps a voice's character", "Full mix: a balance"};
+    EditorContext* c = &ctx;
+    for (int i = 0; i < 4; i++) {
+        const Clip* cl = c->module()->song().findClip(clipId);
+        bool on = cl && cl->audio && cl->audio->sound == kSounds[i];
+        SoundType s = kSounds[i];
+        menu->addChild(rack::createCheckMenuItem(kSoundNames[i], "", [on] { return on; }, [c, clipId, s] {
+            editClip(c, clipId, "Sound type", [s](AudioContent& a) { a.sound = s; });
+        }));
+    }
+}
+
+void appendPitchItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
+    EditorContext* c = &ctx;
+    const Clip* clip = c->module() ? c->module()->song().findClip(clipId) : nullptr;
+    if (!clip || !clip->audio)
+        return;
+    AudioContent now = *clip->audio;
+    auto setPitch = [c, clipId](int st, float ct) {
+        editClip(c, clipId, "Pitch", [st, ct](AudioContent& a) {
+            a.semitones = int8_t(std::clamp(st, -24, 24));
+            a.cents = std::clamp(ct, -50.f, 50.f);
+        });
+    };
+    for (int st : {12, 7, 5, 2, 1, 0, -1, -2, -5, -7, -12}) {
+        char t[16];
+        snprintf(t, sizeof t, st == 0 ? "0 st" : "%+d st", st);
+        bool on = now.semitones == st && now.cents == 0;
+        menu->addChild(rack::createCheckMenuItem(t, "", [on] { return on; }, [setPitch, st] { setPitch(st, 0); }));
+    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Type semitones, like -3 or 2.5 (Enter)"));
+    char typed[24];
+    snprintf(typed, sizeof typed, "%.4g", now.semitones + double(now.cents) / 100);
+    menu->addChild(new MenuTextField(typed, [setPitch](const std::string& text) {
+        double v = std::clamp(std::atof(text.c_str()), -24.0, 24.0);
+        int st = int(std::lround(v));
+        setPitch(st, float((v - st) * 100));
+    }));
+}
+
+void appendTempoItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
+    EditorContext* c = &ctx;
+    TesseraModule* m = c->module();
+    const Clip* clip = m ? m->song().findClip(clipId) : nullptr;
+    if (!clip || !clip->audio)
+        return;
+    double tempo = clip->audio->sourceTempo;
+    auto setTempo = [c, clipId](double bpm) {
+        TesseraModule* mod = c->module();
+        mod->perform(setClipTempo(mod->song(), clipId, bpm));
+    };
+    const AudioSource* src = m->song().sourceOf(*clip);
+    AudioStore* store = m->audioStore();
+    double guess = src && store ? store->status(src->id).guess.bpm : 0;
+    auto item = [&](double bpm, const std::string& why) {
+        char t[48];
+        snprintf(t, sizeof t, "%.4g BPM", bpm);
+        menu->addChild(rack::createCheckMenuItem(t, why, [tempo, bpm] { return std::abs(tempo - bpm) < 1e-6; },
+                                                 [setTempo, bpm] { setTempo(bpm); }));
+    };
+    if (guess > 0)
+        item(guess, "the guess");
+    item(tempo * 2, "\u00d72");
+    item(tempo / 2, "\u00f72");
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Type a tempo (Enter)"));
+    char now[24];
+    snprintf(now, sizeof now, "%.4g", tempo);
+    menu->addChild(new MenuTextField(now, [setTempo](const std::string& text) {
+        double bpm = std::atof(text.c_str());
+        if (bpm > 0)
+            setTempo(bpm);
+    }));
+}
+
+void appendGainItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
+    EditorContext* c = &ctx;
+    const Clip* clip = c->module() ? c->module()->song().findClip(clipId) : nullptr;
+    if (!clip || !clip->audio)
+        return;
+    float now = clip->audio->gainDb;
+    auto setGain = [c, clipId](float db) {
+        editClip(c, clipId, "Clip gain", [db](AudioContent& a) { a.gainDb = db; });
+    };
+    for (float db : {6.f, 3.f, 0.f, -3.f, -6.f, -12.f})
+        menu->addChild(rack::createCheckMenuItem(audioDraw::dbText(db), "", [now, db] { return now == db; },
+                                                 [setGain, db] { setGain(db); }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Type a level in dB (Enter)"));
+    char typed[24];
+    snprintf(typed, sizeof typed, "%.2f", double(now));
+    menu->addChild(new MenuTextField(typed, [setGain](const std::string& text) { setGain(float(std::atof(text.c_str()))); }));
+}
+
+void appendWarpItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
+    EditorContext* c = &ctx;
+    regions::QuantizeSettings& q = ctx.state().audioQuantize;
+    menu->addChild(rack::createMenuItem("Quantize hits", shortcutLabel(Action::Quantize), [c, clipId] { quantizeClip(*c, clipId); }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Grid"));
+    struct Choice { const char* name; Tick grid; };
+    for (Choice g : {Choice{"1/8", kPpq / 2}, Choice{"1/16", kPpq / 4}, Choice{"1/16 triplet", kPpq / 6}, Choice{"1/32", kPpq / 8}})
+        menu->addChild(rack::createCheckMenuItem(g.name, "", [&q, g] { return q.grid == g.grid; }, [&q, g] { q.grid = g.grid; }));
+    menu->addChild(rack::createMenuLabel("Strength"));
+    for (int percent : {50, 75, 100})
+        menu->addChild(rack::createCheckMenuItem(std::to_string(percent) + "%", "",
+                                                 [&q, percent] { return std::abs(q.strength * 100 - percent) < 0.5f; },
+                                                 [&q, percent] { q.strength = float(percent) / 100; }));
+    menu->addChild(rack::createMenuLabel("Hits louder than"));
+    for (int percent : {0, 25, 50, 75})
+        menu->addChild(rack::createCheckMenuItem(percent == 0 ? "All hits" : std::to_string(percent) + "% of the loudest", "",
+                                                 [&q, percent] { return std::abs(q.minLevel * 100 - percent) < 0.5f; },
+                                                 [&q, percent] { q.minLevel = float(percent) / 100; }));
+    const Clip* clip = c->module() ? c->module()->song().findClip(clipId) : nullptr;
+    if (clip && clip->audio && !clip->audio->warps.empty()) {
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createMenuItem("Remove warp markers", std::to_string(clip->audio->warps.size()), [c, clipId] {
+            editClip(c, clipId, "Remove warp markers", [](AudioContent& a) { a.warps.clear(); });
+        }));
+    }
+}
+
+void quantizeClip(EditorContext& ctx, ClipId clipId) {
+    TesseraModule* m = ctx.module();
+    const Clip* clip = m ? m->song().findClip(clipId) : nullptr;
+    AudioStore* store = m ? m->audioStore() : nullptr;
+    if (!clip || !clip->audio || !store)
+        return;
+    regions::Files files = regions::filesOf(m->song(), *clip->audio);
+    std::map<int, regions::TakeHits> hits;
+    for (const AudioRegion& r : regions::of(*clip, files)) {
+        if (hits.count(r.take))
+            continue;
+        SourceStatus st = store->status(takeContent(*clip->audio, r.take).source);
+        if (!st.transients || st.sampleRate <= 0)
+            continue;
+        regions::TakeHits& h = hits[r.take];
+        h.frames = *st.transients;
+        float loudest = 0;
+        for (int64_t f : h.frames) {
+            float lo = 0, hi = 0;
+            if (st.peaks)
+                st.peaks->range(0, double(f), double(f) + 0.02 * st.sampleRate, lo, hi);
+            float level = std::max(std::fabs(lo), std::fabs(hi));
+            h.levels.push_back(level);
+            loudest = std::max(loudest, level);
+        }
+        for (float& l : h.levels)
+            l = loudest > 0 ? l / loudest : 1;
+    }
+    if (hits.empty()) {
+        ctx.toast("No hits found yet: the file is still loading");
+        return;
+    }
+    if (CommandPtr cmd = regions::quantize(m->song(), clipId, hits, ctx.state().audioQuantize))
+        m->perform(std::move(cmd));
+    else
+        ctx.toast("The hits are already where Quantize would put them");
+}
+
 void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
     TesseraModule* m = ctx.module();
     const Clip* clip = m ? m->song().findClip(clipId) : nullptr;
@@ -71,34 +256,15 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Audio" + all));
 
-    bool reversed = clip->audio->reverse;
+    bool reversed = regions::playsBackwards(*clip->audio);
     menu->addChild(rack::createCheckMenuItem(
         "Reverse", "", [reversed] { return reversed; },
         [c, clipId] {
             TesseraModule* mod = c->module();
             mod->perform(reverseAudio(mod->song(), clipId));
         }));
-    // Warp: pin every hit to the nearest 1/16, or let the file play straight again (§3.5).
-    std::shared_ptr<const std::vector<int64_t>> hits;
-    double hitRate = 0;
-    if (const AudioSource* src = m->song().sourceOf(*clip))
-        if (AudioStore* store = m->audioStore()) {
-            SourceStatus st = store->status(src->id);
-            hits = st.transients;
-            hitRate = st.sampleRate;
-        }
-    menu->addChild(rack::createMenuItem(
-        "Pin every hit to the nearest 1/16", hits ? "warp markers" : "",
-        [c, clipId, hits, hitRate] {
-            TesseraModule* mod = c->module();
-            if (CommandPtr q = quantizeAudio(mod->song(), clipId, *hits, hitRate, kPpq / 4))
-                mod->perform(std::move(q));
-        },
-        !hits || reversed));
-    if (!clip->audio->warps.empty())
-        menu->addChild(rack::createMenuItem("Remove warp markers", std::to_string(clip->audio->warps.size()), [edit] {
-            edit("Remove warp markers", [](AudioContent& a) { a.warps.clear(); });
-        }));
+    menu->addChild(rack::createSubmenuItem("Warp", clip->audio->warps.empty() ? "" : std::to_string(clip->audio->warps.size()),
+                                           [c, clipId](rack::ui::Menu* sub) { appendWarpItems(sub, *c, clipId); }));
     // Normalise reads the waveform, so it waits until the file is loaded.
     float peak = 0;
     if (AudioStore* store = m->audioStore()) {
@@ -120,89 +286,21 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
         },
         !(peak > 0)));
 
-    static const char* const kFollow[] = {"Stretch: keeps its pitch", "Repitch: faster and higher, like tape",
-                                          "Off: its own speed and pitch"};
-    menu->addChild(rack::createSubmenuItem("Follow tempo", "", [c, clipId, edit](rack::ui::Menu* sub) {
-        for (int i = 0; i < 3; i++) {
-            const Clip* cl = c->module()->song().findClip(clipId);
-            bool on = cl && cl->audio && int(cl->audio->follow) == i;
-            sub->addChild(rack::createCheckMenuItem(kFollow[i], "", [on] { return on; }, [edit, i] {
-                edit("Follow tempo", [i](AudioContent& a) { a.follow = TempoFollow(i); });
-            }));
-        }
-    }));
-    static const SoundType kSounds[] = {SoundType::Drums, SoundType::Melody, SoundType::Voice, SoundType::FullMix};
-    static const char* const kSoundNames[] = {"Drums: keeps attacks sharp", "Melody: smooth, for one instrument",
-                                              "Voice: keeps a voice's character", "Full mix: a balance"};
-    menu->addChild(rack::createSubmenuItem("Sound type", "", [c, clipId, edit](rack::ui::Menu* sub) {
-        for (int i = 0; i < 4; i++) {
-            const Clip* cl = c->module()->song().findClip(clipId);
-            bool on = cl && cl->audio && cl->audio->sound == kSounds[i];
-            SoundType s = kSounds[i];
-            sub->addChild(rack::createCheckMenuItem(kSoundNames[i], "", [on] { return on; }, [edit, s] {
-                edit("Sound type", [s](AudioContent& a) { a.sound = s; });
-            }));
-        }
-    }));
-
-    if (clip->audio->follow == TempoFollow::Stretch) {
-        AudioContent now = *clip->audio;
-        menu->addChild(rack::createSubmenuItem("Pitch", audioDraw::pitchText(now), [edit, now](rack::ui::Menu* sub) {
-            auto setPitch = [edit](int st, float ct) {
-                edit("Pitch", [st, ct](AudioContent& a) {
-                    a.semitones = int8_t(std::clamp(st, -24, 24));
-                    a.cents = std::clamp(ct, -50.f, 50.f);
-                });
-            };
-            for (int st : {12, 7, 5, 2, 1, 0, -1, -2, -5, -7, -12}) {
-                char t[16];
-                snprintf(t, sizeof t, st == 0 ? "0 st" : "%+d st", st);
-                bool on = now.semitones == st && now.cents == 0;
-                sub->addChild(
-                    rack::createCheckMenuItem(t, "", [on] { return on; }, [setPitch, st] { setPitch(st, 0); }));
-            }
-            sub->addChild(new rack::ui::MenuSeparator);
-            sub->addChild(rack::createMenuLabel("Type semitones, like -3 or 2.5 (Enter)"));
-            char typed[24];
-            snprintf(typed, sizeof typed, "%.4g", now.semitones + double(now.cents) / 100);
-            sub->addChild(new MenuTextField(typed, [setPitch](const std::string& text) {
-                double v = std::clamp(std::atof(text.c_str()), -24.0, 24.0);
-                int st = int(std::lround(v));
-                setPitch(st, float((v - st) * 100));
-            }));
+    menu->addChild(rack::createSubmenuItem("Follow tempo", "",
+                                           [c, clipId](rack::ui::Menu* sub) { appendFollowItems(sub, *c, clipId); }));
+    menu->addChild(rack::createSubmenuItem("Sound type", "",
+                                           [c, clipId](rack::ui::Menu* sub) { appendSoundItems(sub, *c, clipId); }));
+    if (clip->audio->follow == TempoFollow::Stretch)
+        menu->addChild(rack::createSubmenuItem("Pitch", audioDraw::pitchText(*clip->audio), [c, clipId](rack::ui::Menu* sub) {
+            appendPitchItems(sub, *c, clipId);
         }));
-    }
-
-    double tempo = clip->audio->sourceTempo;
-    auto setTempo = [c, clipId](double bpm) {
-        TesseraModule* mod = c->module();
-        mod->perform(setClipTempo(mod->song(), clipId, bpm));
-    };
     char label[48];
-    snprintf(label, sizeof label, "%.4g BPM", tempo);
-    menu->addChild(rack::createSubmenuItem("Clip tempo", label, [tempo, setTempo, m, clip](rack::ui::Menu* sub) {
-        const AudioSource* src = m->song().sourceOf(*clip);
-        AudioStore* store = m->audioStore();
-        double guess = src && store ? store->status(src->id).guess.bpm : 0;
-        auto item = [&](double bpm, const std::string& why) {
-            char t[48];
-            snprintf(t, sizeof t, "%.4g BPM", bpm);
-            sub->addChild(rack::createCheckMenuItem(t, why, [tempo, bpm] { return std::abs(tempo - bpm) < 1e-6; },
-                                                    [setTempo, bpm] { setTempo(bpm); }));
-        };
-        if (guess > 0)
-            item(guess, "the guess");
-        item(tempo * 2, "\u00d72");
-        item(tempo / 2, "\u00f72");
-        sub->addChild(new rack::ui::MenuSeparator);
-        sub->addChild(rack::createMenuLabel("Type a tempo (Enter)"));
-        char now[24];
-        snprintf(now, sizeof now, "%.4g", tempo);
-        sub->addChild(new MenuTextField(now, [setTempo](const std::string& text) {
-            double bpm = std::atof(text.c_str());
-            if (bpm > 0)
-                setTempo(bpm);
-        }));
+    snprintf(label, sizeof label, "%.4g BPM", clip->audio->sourceTempo);
+    menu->addChild(rack::createSubmenuItem("Clip tempo", label,
+                                           [c, clipId](rack::ui::Menu* sub) { appendTempoItems(sub, *c, clipId); }));
+    menu->addChild(rack::createMenuItem("Render to new file", "bakes in its cuts and fades", [c, clipId] {
+        if (TesseraModule* mod = c->module(); mod && !mod->renderClip(clipId))
+            c->toast("Wait for the last render to finish");
     }));
     if (clip->audio->gainDb != 0)
         menu->addChild(rack::createMenuItem("Gain back to 0 dB", audioDraw::dbText(clip->audio->gainDb), [edit] {
