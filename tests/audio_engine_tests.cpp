@@ -258,7 +258,7 @@ TEST_CASE("parts that overlap crossfade without a click") {
     Rig rig(2.0, dc);
     regions::List list = cutClip(rig, {1920});
     regions::List overlap = list;
-    overlap[1] = regions::trimStart(list, list[1].id, 1500, *rig.audioClip().audio, kRate, 96000)[1];
+    overlap[1] = regions::trimStart(list, list[1].id, 1500, *rig.audioClip().audio, regions::Files(kRate, 96000))[1];
     store(rig, overlap);
     rig.engine->play();
     std::vector<float> out = rig.run(48000);
@@ -1045,15 +1045,43 @@ TEST_CASE("a timeline copy can play another take of its clip: its file, from the
     rig.engine->play();
     rig.run(4800);
     CHECK(rig.run(100).back() == doctest::Approx(kVolts).epsilon(1e-3)); // take 1, the clip's own
-    for (ArrangerClip& a : rig.audioTrack().arrangement)
-        a.take = 0;
+    regions::useTake(rig.song, rig.clip, 0, [&] { return rig.song.nextId++; })->apply(rig.song);
     rig.rebuild();
     CHECK(rig.run(4800).back() == doctest::Approx(kVolts / 2).epsilon(1e-3));
     CHECK(unusedSources(rig.song).empty()); // a take's file is in use
     json::Ref j(songToJson(rig.song));
     Song back = songFromJson(j.get(), Song::kSchemaVersion);
     CHECK(back.findClip(rig.clip)->audio->takes.size() == 1);
-    CHECK(back.findTrack(rig.track)->arrangement.front().take == 0);
+    CHECK(back.findClip(rig.clip)->audio->regions[0].take == 0);
+}
+
+TEST_CASE("each part of a comp plays its own take, and Hear plays one whole without changing the song") {
+    Rig rig(1.0, [](int64_t) { return 1.0; });
+    AudioSource second = rig.song.audioSources[0];
+    second.id = rig.song.newId<AudioSourceId>();
+    rig.song.audioSources.push_back(second);
+    rig.buffers.sources[second.id.value] = bufferOf(second.frames, [](int64_t) { return 0.5; });
+    rig.song.findClip(rig.clip)->audio->takes = {{second.id, 0, "", {}}};
+    regions::NewId newId = [&] { return AudioRegionId(rig.song.nextId++); };
+    regions::Files files = regions::filesOf(rig.song, *rig.audioClip().audio);
+    regions::List list = regions::comp(regions::of(rig.audioClip(), files), *rig.audioClip().audio, 0, 960, 1440, files, newId);
+    store(rig, list);
+    Song before = rig.song;
+    rig.engine->play();
+    std::vector<float> out = rig.run(40000);
+    CHECK(out[12000] == doctest::Approx(kVolts).epsilon(1e-3));
+    CHECK(out[30000] == doctest::Approx(kVolts / 2).epsilon(1e-3));
+
+    MixPlan plan;
+    plan.hearClip = rig.clip;
+    plan.hearTake = 0;
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    rig.engine->seek(0);
+    std::vector<float> heard = rig.run(16000);
+    CHECK(heard[12000] == doctest::Approx(kVolts / 2).epsilon(1e-3));
+    CHECK(rig.song == before);
 }
 
 TEST_CASE("a silent audio track wakes up on time for a clip that starts inside a block") {

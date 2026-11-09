@@ -1,6 +1,6 @@
 # Audio editing, takes and project files
 
-Status: **agreed 9 Nov 2026.** Built: the split rule (§1), phase 1, files (§6), and phase 2, parts (§2, §3). Phases 3 and 4 are still to do.
+Status: **agreed 9 Nov 2026.** Built: the split rule (§1), phase 1, files (§6), phase 2, parts (§2, §3), and phase 3, takes (§4). Phase 4 is still to do.
 Where this document and DECISIONS.md disagree, DECISIONS.md wins.
 
 Mockups: `docs/design/mockups/audio-editing/index.html`.

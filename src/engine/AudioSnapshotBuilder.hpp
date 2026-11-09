@@ -56,6 +56,8 @@ struct MixPlan {
     std::vector<Return> returns;
     std::vector<std::pair<TrackId, int>> busSlots;
     std::vector<TrackId> inputSolo; // tracks where an output module's input is soloed, so their clips aren't heard
+    ClipId hearClip;                // Hear: this clip plays take `hearTake` whole for now, in place of its comp
+    int hearTake = -1;
 
     bool feeds(TrackId track) const {
         for (const Return& r : returns)

@@ -4,6 +4,7 @@
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
 #include "Json.hpp"
+#include "LauncherCommands.hpp"
 #include "Modulators.hpp"
 #include "Playheads.hpp"
 
@@ -435,6 +436,26 @@ AudioSource sourceFromJson(const json_t* j) {
     return s;
 }
 
+json_t* warpsToJson(const std::vector<WarpMarker>& list) {
+    json_t* warps = json_array();
+    for (const WarpMarker& m : list) {
+        json_t* mj = json_array();
+        json_array_append_new(mj, json_real(m.tick));
+        json_array_append_new(mj, json_integer(json_int_t(m.frame)));
+        json_array_append_new(warps, mj);
+    }
+    return warps;
+}
+
+std::vector<WarpMarker> warpsFromJson(const json_t* j) {
+    std::vector<WarpMarker> out;
+    forEach(j, [&](const json_t* mj) {
+        if (json_array_size(mj) == 2)
+            out.push_back({json_number_value(json_array_get(mj, 0)), int64_t(json_integer_value(json_array_get(mj, 1)))});
+    });
+    return out;
+}
+
 json_t* audioToJson(const AudioContent& a) {
     json_t* j = json_object();
     set(j, "source", idJson(a.source));
@@ -450,22 +471,18 @@ json_t* audioToJson(const AudioContent& a) {
         setNumber(j, "cents", a.cents);
     if (a.reverse)
         setBool(j, "reverse", true);
-    if (!a.warps.empty()) {
-        json_t* warps = json_array();
-        for (const WarpMarker& m : a.warps) {
-            json_t* mj = json_array();
-            json_array_append_new(mj, json_real(m.tick));
-            json_array_append_new(mj, json_integer(json_int_t(m.frame)));
-            json_array_append_new(warps, mj);
-        }
-        set(j, "warps", warps);
-    }
+    if (!a.warps.empty())
+        set(j, "warps", warpsToJson(a.warps));
     if (!a.takes.empty()) {
         json_t* takes = json_array();
         for (const AudioTake& tk : a.takes) {
             json_t* tj = json_object();
             set(tj, "source", idJson(tk.source));
             setInt(tj, "start", tk.sourceStart);
+            if (!tk.name.empty())
+                setString(tj, "name", tk.name);
+            if (!tk.warps.empty())
+                set(tj, "warps", warpsToJson(tk.warps));
             json_array_append_new(takes, tj);
         }
         set(j, "takes", takes);
@@ -508,13 +525,11 @@ AudioContent audioFromJson(const json_t* j) {
     a.semitones = saturate<int8_t>(getInt(j, "semitones", a.semitones));
     a.cents = getFloat(j, "cents", a.cents);
     a.reverse = getBool(j, "reverse", a.reverse);
-    forEach(get(j, "warps"), [&](const json_t* mj) {
-        if (json_array_size(mj) == 2)
-            a.warps.push_back({json_number_value(json_array_get(mj, 0)),
-                               int64_t(json_integer_value(json_array_get(mj, 1)))});
-    });
+    a.warps = warpsFromJson(get(j, "warps"));
     forEach(get(j, "takes"), [&](const json_t* tj) {
-        a.takes.push_back({readId<AudioSourceId>(get(tj, "source")), getInt(tj, "start", 0)});
+        AudioTake take{readId<AudioSourceId>(get(tj, "source")), getInt(tj, "start", 0), getString(tj, "name", ""),
+                       warpsFromJson(get(tj, "warps"))};
+        a.takes.push_back(std::move(take));
     });
     forEach(get(j, "regions"), [&](const json_t* rj) {
         AudioRegion r;
@@ -580,8 +595,6 @@ json_t* arrangerClipToJson(const ArrangerClip& a) {
         set(j, "fadeIn", fadeToJson(a.fadeIn));
     if (a.fadeOut != Fade{})
         set(j, "fadeOut", fadeToJson(a.fadeOut));
-    if (a.take >= 0)
-        setInt(j, "take", a.take);
     return j;
 }
 
@@ -599,7 +612,6 @@ ArrangerClip arrangerClipFromJson(const json_t* j) {
     a.layer = int8_t(std::clamp<int64_t>(getInt(j, "layer", a.layer), 0, kMaxStackLayer));
     a.fadeIn = fadeFromJson(get(j, "fadeIn"));
     a.fadeOut = fadeFromJson(get(j, "fadeOut"));
-    a.take = saturate<int8_t>(getInt(j, "take", -1));
     return a;
 }
 
@@ -1475,6 +1487,78 @@ void splitLegacyRandom(Song& s) {
 
 } // namespace
 
+namespace {
+
+/// `clip` plays take `take` from now on: the form a clip with a choice of take has had since takes moved into the clip.
+void playOldTake(Clip& clip, int take) {
+    AudioContent& a = *clip.audio;
+    if (take < 0 || size_t(take) >= a.takes.size())
+        return;
+    if (a.regions.empty()) {
+        AudioRegion r;
+        r.length = clip.length;
+        r.take = take;
+        r.reverse = a.reverse;
+        r.sourceFrame = a.takes[size_t(take)].sourceStart;
+        a.reverse = false;
+        a.regions = {r};
+        return;
+    }
+    for (AudioRegion& r : a.regions)
+        if (r.take < 0) {
+            r.take = take;
+            r.sourceFrame += a.takes[size_t(take)].sourceStart - a.sourceStart;
+        }
+}
+
+/// Songs saved before takes moved into the clip name the take on each timeline copy. Each copy keeps playing what it
+/// played: copies of a clip that picked different takes get clips of their own.
+void applyOldTakeChoices(Song& s, const json_t* tracksJ) {
+    std::map<uint64_t, int> picked;
+    forEach(tracksJ, [&](const json_t* tj) {
+        forEach(get(tj, "arrangement"), [&](const json_t* aj) {
+            int take = int(getInt(aj, "take", -1));
+            if (take >= 0)
+                picked[readId<ArrangementId>(get(aj, "id")).value] = take;
+        });
+    });
+    if (picked.empty())
+        return;
+    // The take each clip keeps: the first use decides, and a launcher slot always plays the clip's own.
+    std::map<ClipId, int> kept;
+    std::map<std::pair<ClipId, int>, ClipId> copies;
+    for (const Track& t : s.tracks)
+        for (const ClipSlot& slot : t.slots)
+            if (slot.clip)
+                kept.emplace(*slot.clip, -1);
+    NextId nextId = [&] { return s.nextId++; };
+    for (Track& t : s.tracks)
+        for (ArrangerClip& a : t.arrangement) {
+            auto choice = picked.find(a.id.value);
+            int take = choice == picked.end() ? -1 : choice->second;
+            auto [owner, fresh] = kept.emplace(a.clip, take);
+            if (fresh || owner->second == take)
+                continue;
+            auto [made, isNew] = copies.emplace(std::make_pair(a.clip, take), ClipId());
+            if (isNew) {
+                const Clip* source = s.findClip(a.clip);
+                if (!source || !source->audio)
+                    continue;
+                Clip copy = copyClip(*source, nextId);
+                playOldTake(copy, take);
+                made->second = copy.id;
+                s.clips.emplace(copy.id, std::move(copy));
+            }
+            if (made->second.valid())
+                a.clip = made->second;
+        }
+    for (const auto& [clip, take] : kept)
+        if (Clip* c = s.findClip(clip); c && c->audio)
+            playOldTake(*c, take);
+}
+
+} // namespace
+
 Song songFromJson(const json_t* songJ, int schemaVersion) {
     Song s;
     if (!json_is_object(songJ)) {
@@ -1512,6 +1596,7 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
             s.clips.emplace(c.id, std::move(c));
     });
     forEach(get(j, "tracks"), [&](const json_t* tj) { s.tracks.push_back(trackFromJson(tj)); });
+    applyOldTakeChoices(s, get(j, "tracks"));
     motionGroupsToDevices(get(j, "clips"), s);
     forEach(get(j, "groups"), [&](const json_t* gj) {
         TrackGroup g;

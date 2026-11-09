@@ -796,10 +796,9 @@ void TesseraModule::importTakes(const std::vector<Take>& takes) {
         std::filesystem::remove(take.path, ec);
         if (!imp.ok)
             continue;
-        // Stack mode: a take that starts where an audio clip starts (a loop pass) becomes another take of that clip,
-        // and that copy plays it; splitting the clip and picking a take per part comps them (§3.5). Only a clip at
-        // the tempo the take was recorded at, so the take lines up with it.
-        if (!take.slot && recorder.settings.arranger == ArrangerRecordMode::Stack) {
+        // A take that starts where an audio clip starts (a loop pass) becomes another take of that clip, in every
+        // record mode, so a pass is never lost. Only a clip at the tempo the take was recorded at, so it lines up.
+        if (!take.slot) {
             const ArrangerClip* over = nullptr;
             for (const ArrangerClip& a : t->arrangement)
                 if (a.offset == 0 && std::abs(double(a.position - take.at)) <= double(kPpq / 8))
@@ -812,7 +811,6 @@ void TesseraModule::importTakes(const std::vector<Take>& takes) {
                 src.id = newId<AudioSourceId>();
                 src.volts = kFullScaleVolts;
                 ClipId clipId = over->clip;
-                ArrangementId instance = over->id;
                 // The take's frame at the clip's start: the take may have started a little before it.
                 int64_t start = std::max<int64_t>(
                     0, std::llround(double(over->position - take.at) * secondsPerTick(songTempo) * src.sampleRate));
@@ -827,9 +825,7 @@ void TesseraModule::importTakes(const std::vector<Take>& takes) {
                     }
                 };
                 step(std::make_unique<AddAudioSources>(std::vector<AudioSource>{src}));
-                step(editAudio(songData, clipId, [&](AudioContent& a) { a.takes.push_back({src.id, start}); },
-                               "Record take"));
-                step(setInstanceTake(songData, take.track, instance, index));
+                step(regions::addTake(songData, clipId, AudioTake{src.id, start, "", {}}, ids()));
                 publish(ChangeSet::all());
                 complex->push(new CommandAction(id, std::move(stack), before, editorState.selection));
                 continue;

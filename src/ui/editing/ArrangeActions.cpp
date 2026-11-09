@@ -1,4 +1,6 @@
 #include "ArrangeActions.hpp"
+
+#include <set>
 #include "BounceActions.hpp"
 
 #include "AudioActions.hpp"
@@ -135,33 +137,36 @@ Hits hitsOf(TesseraModule& m, ArrangementId instance) {
     AudioStore* store = m.audioStore();
     if (!clip || !clip->audio || !store)
         return h;
-    // The hits of the take this copy plays.
-    Clip taken;
-    if (h.at->take >= 0) {
-        taken = *clip;
-        taken.audio = takeContent(*clip->audio, h.at->take);
-        clip = &taken;
-    }
-    SourceStatus status = store->status(clip->audio->source);
-    if (!status.transients || status.sampleRate <= 0)
-        return h;
+    // Every take this clip plays has its own file, so its own hits.
+    regions::Files files = regions::filesOf(m.song(), *clip->audio);
+    regions::List parts = regions::of(*clip, files);
+    std::set<int> takes;
+    for (const AudioRegion& r : parts)
+        takes.insert(r.take);
     double tempo = m.tempo() > 0 ? m.tempo() : 120;
-    h.ticks = hitTicks(*clip, *h.at, *status.transients, status.sampleRate, tempo);
-    // Loudness: the waveform's peak just after each hit, against the loudest of them.
-    double perTick = framesPerTick(*clip->audio, status.sampleRate);
-    for (Tick t : h.ticks) {
-        float peak = 0.8f;
-        if (status.peaks && perTick > 0) {
+    std::vector<std::pair<Tick, float>> found;
+    for (int take : takes) {
+        SourceStatus status = store->status(takeContent(*clip->audio, take).source);
+        if (!status.transients || status.sampleRate <= 0)
+            continue;
+        for (Tick t : hitTicks(*clip, *h.at, *status.transients, status.sampleRate, tempo, take)) {
+            // Loudness: the waveform's peak just after each hit, against the loudest of them.
+            float peak = 0.8f;
             double clipTick = double(h.at->offset) + double(t - h.at->position);
             if (clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart)
-                clipTick = double(clip->loopStart) +
-                           std::fmod(clipTick, double(clip->loopEnd - clip->loopStart));
-            int64_t frame = clip->audio->sourceStart + int64_t(clipTick * perTick);
-            int64_t span = int64_t(0.02 * status.sampleRate);
-            float lo = 0, hi = 0;
-            status.peaks->range(0, frame, frame + span, lo, hi);
-            peak = std::max(std::fabs(lo), std::fabs(hi));
+                clipTick = double(clip->loopStart) + std::fmod(clipTick, double(clip->loopEnd - clip->loopStart));
+            if (const AudioRegion* r = regions::at(parts, clipTick); r && status.peaks) {
+                double frame = regions::frameAt(*clip->audio, *r, clipTick, files);
+                float lo = 0, hi = 0;
+                status.peaks->range(0, frame, frame + 0.02 * status.sampleRate, lo, hi);
+                peak = std::max(std::fabs(lo), std::fabs(hi));
+            }
+            found.push_back({t, peak});
         }
+    }
+    std::sort(found.begin(), found.end());
+    for (const auto& [t, peak] : found) {
+        h.ticks.push_back(t);
         h.level.push_back(peak);
     }
     float most = h.level.empty() ? 1.f : *std::max_element(h.level.begin(), h.level.end());
@@ -519,30 +524,27 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [l] { deleteSelected(*l); }));
     menu->addChild(rack::createMenuItem("Split here", shortcutLabel(Action::Split), [l, at] { split(*l, at); }));
     menu->addChild(rack::createMenuItem("Glue", shortcutLabel(Action::Glue), [l] { glueSelected(*l); }));
-    // Takes (§3.5): which take this copy plays; split the clip first to pick one per part.
+    // Takes: the whole clip plays one, in every linked copy. The audio editor mixes them.
     if (const Clip* ac = m->song().findClip(placed->clip.clip); audio && ac && ac->audio && !ac->audio->takes.empty()) {
-        TrackId owner = placed->track;
-        int current = placed->clip.take;
         int count = int(ac->audio->takes.size()) + 1;
         ClipId clipId = ac->id;
         menu->addChild(rack::createSubmenuItem(
-            "Take", "take " + std::to_string(current + 2) + " of " + std::to_string(count),
-            [c, owner, clicked, current, count, clipId](rack::ui::Menu* sub) {
-                sub->addChild(rack::createMenuLabel("This copy plays"));
+            "Take", regions::playingText(*ac), [c, count, clipId](rack::ui::Menu* sub) {
+                TesseraModule* mm = c->module();
+                const Clip* shown = mm ? mm->song().findClip(clipId) : nullptr;
+                if (!shown || !shown->audio)
+                    return;
+                sub->addChild(rack::createMenuLabel("The whole clip plays"));
+                std::string playing = regions::playingText(*shown);
                 for (int k = -1; k < count - 1; k++)
                     sub->addChild(rack::createCheckMenuItem(
-                        "Take " + std::to_string(k + 2), "", [current, k] { return current == k; },
-                        [c, owner, clicked, k] {
-                            TesseraModule* mm = c->module();
-                            mm->perform(setInstanceTake(mm->song(), owner, clicked, k));
+                        regions::takeName(*shown->audio, k), "",
+                        [playing, k] { return playing == "take " + std::to_string(k + 2); },
+                        [c, clipId, k] {
+                            TesseraModule* mod = c->module();
+                            mod->perform(regions::useTake(mod->song(), clipId, k, mod->ids()));
                         }));
-                sub->addChild(new rack::ui::MenuSeparator);
-                sub->addChild(rack::createMenuItem("Every copy plays this take", "", [c, clipId, current] {
-                    TesseraModule* mm = c->module();
-                    if (CommandPtr cmd = useTakeEverywhere(mm->song(), clipId, current))
-                        mm->perform(std::move(cmd));
-                }));
-                sub->addChild(rack::createMenuLabel("Split the clip to pick a take per part"));
+                sub->addChild(rack::createMenuLabel("The audio editor mixes takes (Alt+T)"));
             }));
     }
     if (audio) {

@@ -390,6 +390,13 @@ class TesseraModule : public rack::engine::Module {
     /// Find, when the user accepts a different recording: copies `path` in and points source `id` at it, as one undo
     /// step. False when the file isn't audio Tessera reads.
     bool relinkAudioSource(AudioSourceId id, const std::string& path);
+    /// Hear: clip `clip` plays take `take` whole for now, without changing the song. An invalid clip ends it.
+    void setHeardTake(ClipId clip, int take) {
+        heardClip = clip;
+        heardTake = take;
+    }
+    ClipId heardTakeClip() const { return heardClip; }
+    int heardTakeIndex() const { return heardTake; }
     /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
     /// False when the file isn't audio Tessera reads.
     bool replaceAudioFile(ClipId clip, const std::string& path);
@@ -607,6 +614,8 @@ class TesseraModule : public rack::engine::Module {
         }
     };
     std::unique_ptr<FileJob> fileJob;
+    ClipId heardClip;
+    int heardTake = -1;
     /// Reports on a running file job and finishes it once it ends. Each UI frame.
     void fileJobStep();
     /// Set while a patch from a newer Tessera is loaded: its audio may be listed in a way this version can't read.

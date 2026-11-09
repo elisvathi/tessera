@@ -536,6 +536,8 @@ void PianoRollView::layout() {
         audioEditor->clip = source.clip;
     } else {
         ruler->visible = grid->visible = true;
+        if (TesseraModule* m = ctx.module(); m && m->heardTakeClip().valid())
+            m->setHeardTake(ClipId(), -1);
     }
     // The clip chip first, sized to its words, then Devices; the toolbar fills from the right. A narrow header
     // shortens the chip to the track's name, so snap and key keep their room.

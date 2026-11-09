@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ArrangementEdits.hpp"
+#include "AudioRegions.hpp"
 #include "AudioAnalysis.hpp"
 #include "Commands.hpp"
 #include "TrackCommands.hpp"
@@ -114,6 +115,8 @@ CommandPtr nudgeClipGain(const Song& song, const std::vector<ClipId>& clips, flo
 /// The loudest sample of the part of its file `clip` plays, as a share of the file's full scale (0..1), read from
 /// the source's waveform. 0 when the clip isn't audio or plays silence.
 float clipPeak(const Clip& clip, const AudioSource& source, const PeakCache& peaks);
+/// clipPeak() over every take a comp plays: `peaksOf` gives each take's waveform, null while it loads.
+float clipPeak(const Clip& clip, const regions::Files& files, const std::function<const PeakCache*(int take)>& peaksOf);
 /// Normalise: sets the clip gain so its loudest sample reaches the file's full scale (`peak` from clipPeak()), for
 /// every copy of the clip. Null when the clip is silent or already there.
 CommandPtr normaliseClip(const Song& song, ClipId clip, float peak);
@@ -145,24 +148,18 @@ CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, con
 /// A drum track's lane IN level and pan (`lane` 0..7, the Drum Out output). Null when nothing changed.
 CommandPtr setDrumInput(const Song& song, TrackId track, int lane, Channel channel, const std::string& name);
 
-/// The warp markers of audio clip `clip` (§3.5), cleaned up as normalize does (rising ticks and frames). One undo
-/// step; null when nothing changed.
-CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps, const std::string& name);
+/// The warp markers of take `take` of audio clip `clip` (-1 its own, §3.5), cleaned up as normalize does (rising ticks
+/// and frames). One undo step; null when nothing changed.
+CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps, const std::string& name, int take = -1);
 /// Pins every hit (transients, in the file's frames) of `clip` to the nearest `grid` ticks: a marker per hit, so
 /// the audio plays in time with the grid. Hits closer than half a grid step to the one before are left alone.
 CommandPtr quantizeAudio(const Song& song, ClipId clip, const std::vector<int64_t>& transients, double fileRate,
                          Tick grid);
 
-/// Takes (§3.5): which take a timeline copy of an audio clip plays (-1 the clip's own). One undo step; null when
-/// unchanged.
-CommandPtr setInstanceTake(const Song& song, TrackId track, ArrangementId instance, int take);
-/// Every timeline copy of `clip` plays take `take`. One undo step; null when none changes.
-CommandPtr useTakeEverywhere(const Song& song, ClipId clip, int take);
-
-/// Where a timeline audio clip's hits fall, in song ticks, from its file's transients (frames at `fileRate`): each
-/// pass of a looping clip has its own. Reversed clips have none for now.
+/// Where a timeline audio clip's hits fall, in song ticks, from the transients of take `take` (frames at `fileRate`):
+/// each pass of a looping clip has its own. Reversed clips have none for now.
 std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,
-                           double fileRate, double songTempo);
+                           double fileRate, double songTempo, int take = -1);
 
 /// The sources no clip uses, and a command that removes them. Null when there are none.
 std::vector<AudioSourceId> unusedSources(const Song& song);

@@ -376,6 +376,7 @@ void TesseraModule::audioStep() {
         planKey = planKey * 1000003u + track.value * 31u + uint64_t(slot + 1);
     for (TrackId track : plan.inputSolo)
         planKey = planKey * 1000003u + track.value * 17u + 1;
+    planKey = planKey * 1000003u + plan.hearClip.value * 7u + uint64_t(plan.hearTake + 2);
     bool planChanged = planKey != audioPlanKey;
     if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved && !planChanged) {
         if (releaseHolds) {
@@ -438,6 +439,8 @@ MixPlan TesseraModule::currentMixPlan() const {
         if (o->sourceSetting().solo)
             plan.inputSolo.push_back(o->boundTrack());
     }
+    plan.hearClip = heardClip;
+    plan.hearTake = heardTake;
     return plan;
 }
 

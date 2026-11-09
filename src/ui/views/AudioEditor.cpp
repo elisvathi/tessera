@@ -7,6 +7,7 @@
 #include "../Theme.hpp"
 #include "../interaction/Snap.hpp"
 #include "../widgets/Draw.hpp"
+#include "../widgets/MenuTextField.hpp"
 #include "AudioClipDraw.hpp"
 
 #include <cmath>
@@ -30,6 +31,11 @@ constexpr double kFine = 0.1;
 constexpr double kGainDbPerPx = 0.1;
 constexpr float kGainSnapDb = 0.6f;
 constexpr double kCurvePerPx = 1.0 / 60;
+constexpr float kTakeRowHeight = 44;   // a take's row, when there is room for them all
+constexpr float kMinTakeRowHeight = 22;
+constexpr float kRowsShare = 0.6f;     // of the pane, at most, so the comp stays visible
+constexpr float kHearWidth = 38, kHearHeight = 16;
+constexpr float kButtonRow = 16;       // the buttons at the right end of the ruler
 
 /// "0:01.250": a place in the file.
 std::string timeText(double frames, double rate) {
@@ -50,9 +56,9 @@ regions::NewId previewIds() {
 /// between the markers either side stretches to fit.
 class WarpGesture : public DragGesture {
   public:
-    WarpGesture(AudioEditor& view, Vec press, int index) : view(view), press(press), index(index) {
+    WarpGesture(AudioEditor& view, Vec press, int index, int take) : view(view), press(press), index(index), take(take) {
         if (const Clip* c = view.shownClip())
-            warps = c->audio->warps;
+            warps = regions::warpsOf(*c->audio, take);
     }
     void update(Vec pos, Modifiers mods) override {
         if (index < 0 || index >= int(warps.size()))
@@ -66,12 +72,13 @@ class WarpGesture : public DragGesture {
         std::vector<WarpMarker> next = warps;
         next[size_t(index)].tick = std::clamp(tick, lo, hi);
         view.preview.warps = next;
+        view.preview.warpsTake = take;
         shown = next[size_t(index)].tick;
     }
     void commit() override {
         TesseraModule* m = view.context().module();
         if (view.preview.warps && m)
-            m->perform(setWarps(m->song(), view.clip, *view.preview.warps, "Move warp marker"));
+            m->perform(setWarps(m->song(), view.clip, *view.preview.warps, "Move warp marker", take));
         view.preview = {};
     }
     void cancel() override { view.preview = {}; }
@@ -91,7 +98,7 @@ class WarpGesture : public DragGesture {
   private:
     AudioEditor& view;
     Vec press;
-    int index;
+    int index, take;
     std::vector<WarpMarker> warps;
     double shown = 0;
 };
@@ -245,10 +252,7 @@ class PartsGesture : public DragGesture {
   public:
     PartsGesture(AudioEditor& view, Vec press, std::string name)
         : view(view), press(press), name(std::move(name)), before(view.parts()) {
-        if (const AudioSource* src = view.source()) {
-            rate = src->sampleRate;
-            fileFrames = src->frames;
-        }
+        files = view.files();
         audio = view.shownAudio();
     }
     void cancel() override { view.preview = {}; }
@@ -283,8 +287,7 @@ class PartsGesture : public DragGesture {
     std::string name;
     regions::List before;
     AudioContent audio;
-    double rate = 48000;
-    int64_t fileFrames = 0;
+    regions::Files files;
 };
 
 /// Moves the selected parts along the clip. Where they land follows the overlap rule, shown while dragging.
@@ -301,14 +304,14 @@ class MoveGesture : public PartsGesture {
         double d = dragged(pos, mods);
         Tick step = mods.alt ? 0 : view.gridStep();
         delta = step > 0 ? snapMoveDelta(anchor, d, step) : Tick(std::llround(d));
-        show(regions::settle(regions::move(before, ids, delta, clipLength), ids, audio, rate, previewIds()));
+        show(regions::settle(regions::move(before, ids, delta, clipLength), ids, audio, files, previewIds()));
     }
     void commit() override {
         if (delta == 0) {
             view.preview = {};
             return;
         }
-        store(regions::settle(regions::move(before, ids, delta, clipLength), ids, audio, rate, realIds()));
+        store(regions::settle(regions::move(before, ids, delta, clipLength), ids, audio, files, realIds()));
     }
     std::string readout() const override {
         char text[32];
@@ -327,15 +330,19 @@ class PartSlipGesture : public PartsGesture {
   public:
     PartSlipGesture(AudioEditor& view, Vec press, AudioRegionId id) : PartsGesture(view, press, "Slip part"), id(id) {}
     void update(Vec pos, Modifiers mods) override {
-        frames = -std::llround(dragged(pos, mods) * framesPerTick(audio, rate));
-        result = regions::slip(before, id, frames, audio, rate, fileFrames);
+        const AudioRegion* part = nullptr;
+        for (const AudioRegion& r : before)
+            if (r.id == id)
+                part = &r;
+        frames = -std::llround(dragged(pos, mods) * framesPerTick(audio, files.rateOf(part ? part->take : -1)));
+        result = regions::slip(before, id, frames, audio, files);
         show(result);
     }
     void commit() override { store(result); }
     std::string readout() const override {
         for (const AudioRegion& r : result)
             if (r.id == id)
-                return "Start in file " + timeText(double(r.sourceFrame), rate);
+                return "Start in file " + timeText(double(r.sourceFrame), files.rateOf(r.take));
         return "";
     }
     CursorShape cursor() const override { return CursorShape::Move; }
@@ -358,16 +365,16 @@ class PartEdgeGesture : public PartsGesture {
     }
     void update(Vec pos, Modifiers mods) override {
         Tick to = snapped(double(from) + dragged(pos, mods), mods);
-        moved = leftEdge ? regions::trimStart(before, id, to, audio, rate, fileFrames)
-                         : regions::trimEnd(before, id, to, audio, rate, fileFrames);
-        show(regions::settle(moved, {id}, audio, rate, previewIds()));
+        moved = leftEdge ? regions::trimStart(before, id, to, audio, files)
+                         : regions::trimEnd(before, id, to, audio, files);
+        show(regions::settle(moved, {id}, audio, files, previewIds()));
     }
     void commit() override {
         if (moved.empty()) {
             view.preview = {};
             return;
         }
-        store(regions::settle(moved, {id}, audio, rate, realIds()));
+        store(regions::settle(moved, {id}, audio, files, realIds()));
     }
     std::string readout() const override {
         for (const AudioRegion& r : moved)
@@ -509,8 +516,8 @@ class SeamGesture : public PartsGesture {
         Tick overlap = firstEnd - secondStart;
         double d = std::max(dragged(pos, mods), -double(overlap) / 2);
         Tick tick = mods.alt ? Tick(std::llround(d)) : std::max(snapped(d, mods), -overlap / 2);
-        result = regions::trimEnd(before, first, firstEnd + tick, audio, rate, fileFrames);
-        result = regions::trimStart(result, second, secondStart - tick, audio, rate, fileFrames);
+        result = regions::trimEnd(before, first, firstEnd + tick, audio, files);
+        result = regions::trimStart(result, second, secondStart - tick, audio, files);
         show(result);
     }
     void commit() override { store(result.empty() ? before : result); }
@@ -534,7 +541,61 @@ class SeamGesture : public PartsGesture {
     regions::List result;
 };
 
+/// Drags across a take's row: that stretch of the clip now plays that take.
+class CompGesture : public PartsGesture {
+  public:
+    CompGesture(AudioEditor& view, Vec press, int take) : PartsGesture(view, press, "Comp"), take(take) {}
+    void update(Vec pos, Modifiers mods) override {
+        moved = moved || std::fabs(pos.x - press.x) > 2;
+        const Clip* c = view.shownClip();
+        if (!c)
+            return;
+        Tick a = snapped(view.xToTick(press.x), mods), b = snapped(view.xToTick(pos.x), mods);
+        auto [first, last] = regions::takeSpan(*c, take, files);
+        from = std::clamp(std::min(a, b), first, last);
+        to = std::clamp(std::max(a, b), first, last);
+        if (to > from)
+            show(regions::comp(before, audio, take, from, to, files, previewIds()));
+        else
+            view.preview = {};
+    }
+    void commit() override {
+        view.preview = {};
+        if (to > from) {
+            name = "Comp: " + regions::takeName(audio, take);
+            store(regions::comp(before, audio, take, from, to, files, realIds()));
+        } else if (moved) {
+            view.context().toast(regions::takeName(audio, take) + " has no audio here");
+        }
+    }
+    std::string readout() const override {
+        char text[48];
+        snprintf(text, sizeof text, "%.2f beats", double(to - from) / double(kPpq));
+        return regions::takeName(audio, take) + " · " + text;
+    }
+    CursorShape cursor() const override { return CursorShape::IBeam; }
+
+  private:
+    int take;
+    Tick from = 0, to = 0;
+    bool moved = false;
+};
+
 } // namespace
+
+AudioEditor::~AudioEditor() { stopHearing(); }
+
+void AudioEditor::stopHearing() {
+    TesseraModule* m = ctx.module();
+    if (m && m->heardTakeClip().valid())
+        m->setHeardTake(ClipId(), -1);
+}
+
+regions::Files AudioEditor::files() {
+    TesseraModule* m = ctx.module();
+    const Clip* c = shownClip();
+    return m && c ? regions::filesOf(m->song(), *c->audio) : regions::Files();
+}
 
 const Clip* AudioEditor::shownClip() {
     TesseraModule* m = ctx.module();
@@ -547,8 +608,12 @@ AudioContent AudioEditor::shownAudio() {
     AudioContent a = c ? *c->audio : AudioContent();
     if (preview.sourceStart)
         a.sourceStart = *preview.sourceStart;
-    if (preview.warps)
-        a.warps = *preview.warps;
+    if (preview.warps) {
+        if (preview.warpsTake >= 0 && size_t(preview.warpsTake) < a.takes.size())
+            a.takes[size_t(preview.warpsTake)].warps = *preview.warps;
+        else
+            a.warps = *preview.warps;
+    }
     if (preview.gainDb)
         a.gainDb = *preview.gainDb;
     return a;
@@ -569,7 +634,7 @@ regions::List AudioEditor::parts() {
         return {};
     Clip shown = *c;
     shown.audio = shownAudio();
-    return regions::of(shown, src->sampleRate);
+    return regions::of(shown, files());
 }
 
 bool AudioEditor::plainClip() {
@@ -596,24 +661,66 @@ const AudioRegion* AudioEditor::find(const regions::List& list, AudioRegionId id
 }
 
 std::pair<double, double> AudioEditor::reach(const regions::List& list) {
-    const AudioSource* src = source();
-    if (list.empty() || !src)
+    if (list.empty() || !source())
         return {0, 1};
     AudioContent a = shownAudio();
-    double perTick = std::max(framesPerTick(a, src->sampleRate), 1e-9);
+    regions::Files f = files();
     const AudioRegion& first = list.front();
     const AudioRegion& last = list.back();
-    double from = first.reverse ? double(first.end()) - (double(src->frames) - double(first.sourceFrame)) / perTick
-                                : double(first.start) + warpedTick(a, 0, src->sampleRate) -
-                                      warpedTick(a, double(first.sourceFrame), src->sampleRate);
-    double to = last.reverse ? double(last.end()) + double(last.sourceFrame) / perTick
-                             : double(last.start) + warpedTick(a, double(src->frames), src->sampleRate) -
-                                   warpedTick(a, double(last.sourceFrame), src->sampleRate);
+    // Clip tick of frame `frame`, seen from part `r`.
+    auto tickOf = [&](const AudioRegion& r, double frame) {
+        return double(r.start) + regions::takeTick(a, r.take, frame, f) - regions::takeTick(a, r.take, double(r.sourceFrame), f);
+    };
+    double perFirst = std::max(framesPerTick(a, f.rateOf(first.take)), 1e-9);
+    double perLast = std::max(framesPerTick(a, f.rateOf(last.take)), 1e-9);
+    double from = first.reverse ? double(first.end()) - (double(f.framesOf(first.take)) - double(first.sourceFrame)) / perFirst
+                                : tickOf(first, 0);
+    double to = last.reverse ? double(last.end()) + double(last.sourceFrame) / perLast
+                             : tickOf(last, double(f.framesOf(last.take)));
     return {std::min(from, double(first.start)), std::max(to, double(last.end()))};
 }
 
-Rect AudioEditor::waveRect() const {
-    return Rect(0, kRulerHeight, box.size.x, std::max(0.f, box.size.y - kRulerHeight));
+int AudioEditor::takeRowCount() {
+    const Clip* c = shownClip();
+    return takesOpen && c && !c->audio->takes.empty() ? int(c->audio->takes.size()) + 1 : 0;
+}
+
+float AudioEditor::rowsHeight() {
+    int n = takeRowCount();
+    if (n == 0)
+        return 0;
+    float body = std::max(0.f, box.size.y - kRulerHeight);
+    return std::min(float(n) * kTakeRowHeight, body * kRowsShare);
+}
+
+float AudioEditor::rowHeight() {
+    int n = takeRowCount();
+    return n > 0 ? std::max(kMinTakeRowHeight, rowsHeight() / float(n)) : 0;
+}
+
+Rect AudioEditor::rowRect(int index) {
+    float h = rowHeight();
+    return Rect(0, box.size.y - rowsHeight() + float(index) * h - rowsScroll, box.size.x, h);
+}
+
+int AudioEditor::takeOfRow(int index) { return takeRowCount() - 2 - index; }
+
+int AudioEditor::rowAt(Vec pos) {
+    int n = takeRowCount();
+    if (n == 0 || pos.y < box.size.y - rowsHeight())
+        return -1;
+    for (int i = 0; i < n; i++)
+        if (rowRect(i).contains(pos))
+            return i;
+    return -1;
+}
+
+Rect AudioEditor::hearRect(Rect row) const {
+    return Rect(6, row.pos.y + (row.size.y - kHearHeight) / 2, kHearWidth, kHearHeight);
+}
+
+Rect AudioEditor::waveRect() {
+    return Rect(0, kRulerHeight, box.size.x, std::max(0.f, box.size.y - kRulerHeight - rowsHeight()));
 }
 
 void AudioEditor::fit() {
@@ -630,7 +737,10 @@ void AudioEditor::fit() {
 void AudioEditor::step() {
     float width = box.size.x;
     if (clip != fitted || (fittedWidth <= 1 && width > 1)) {
+        if (clip != fitted)
+            stopHearing();
         selected.clear();
+        rowsScroll = 0;
         fit();
     } else if (width > 1 && fittedWidth > 1 && width != fittedWidth) {
         // A resize (a pane maximised or restored, the inspector opened) keeps the same part of the clip in view.
@@ -646,33 +756,46 @@ AudioEditor::Hit AudioEditor::hitTest(Vec pos) {
     const AudioSource* src = source();
     if (!c || !src)
         return hit;
+    if (takesButton.size.x > 0 && takesButton.contains(pos)) {
+        hit.part = Part::TakesButton;
+        return hit;
+    }
     if (uniqueButton.size.x > 0 && uniqueButton.contains(pos)) {
         hit.part = Part::MakeUnique;
         return hit;
     }
+    if (int row = rowAt(pos); row >= 0) {
+        hit.take = takeOfRow(row);
+        hit.part = hearRect(rowRect(row)).contains(pos) ? Part::TakeHear : Part::TakeRow;
+        return hit;
+    }
     AudioContent a = shownAudio();
+    regions::Files f = files();
     regions::List list = parts();
     if (pos.y < kRulerHeight) {
-        if (!a.warps.empty()) {
-            double best = 6;
-            for (const AudioRegion& r : list) {
-                if (r.reverse)
+        bool markers = false;
+        double best = 6;
+        for (const AudioRegion& r : list) {
+            const std::vector<WarpMarker>& warps = regions::warpsOf(a, r.take);
+            markers = markers || !warps.empty();
+            if (r.reverse)
+                continue;
+            double shift = regions::shift(a, r, f);
+            for (size_t i = 0; i < warps.size(); i++) {
+                double t = warps[i].tick - shift;
+                if (t < double(r.start) || t > double(r.end()))
                     continue;
-                double shift = regions::shift(a, r, src->sampleRate);
-                for (size_t i = 0; i < a.warps.size(); i++) {
-                    double t = a.warps[i].tick - shift;
-                    if (t < double(r.start) || t > double(r.end()))
-                        continue;
-                    double d = std::fabs(tickToX(t) - pos.x);
-                    if (d <= best) {
-                        best = d;
-                        hit.part = Part::Warp;
-                        hit.warp = int(i);
-                    }
+                double d = std::fabs(tickToX(t) - pos.x);
+                if (d <= best) {
+                    best = d;
+                    hit.part = Part::Warp;
+                    hit.warp = int(i);
+                    hit.take = r.take;
                 }
             }
-            return hit;
         }
+        if (markers)
+            return hit;
         TesseraModule* m = ctx.module();
         double perBeat = m ? double(ticksPerBeat(m->song().timeSig)) : 0;
         if (perBeat <= 0)
@@ -767,13 +890,16 @@ std::unique_ptr<DragGesture> AudioEditor::startGesture(Vec pos, int button, Modi
     case Part::Beat:
         return std::make_unique<BeatGesture>(*this, pos, hit.beat);
     case Part::Warp:
-        return std::make_unique<WarpGesture>(*this, pos, hit.warp);
+        return std::make_unique<WarpGesture>(*this, pos, hit.warp, hit.take);
+    case Part::TakeRow:
+        return std::make_unique<CompGesture>(*this, pos, hit.take);
     case Part::Flag:
         return std::make_unique<SlipGesture>(*this, pos);
     default:
         break;
     }
-    if (toolClicks || hit.part == Part::None || hit.part == Part::MakeUnique)
+    if (toolClicks || hit.part == Part::None || hit.part == Part::MakeUnique || hit.part == Part::TakesButton ||
+        hit.part == Part::TakeHear)
         return nullptr;
     bool plain = plainClip();
     switch (hit.part) {
@@ -841,17 +967,17 @@ void AudioEditor::store(const regions::List& list, const std::string& name) {
 
 void AudioEditor::cutManyAt(const std::vector<Tick>& ticks) {
     TesseraModule* m = ctx.module();
-    const AudioSource* src = source();
-    if (!m || !src)
+    if (!m || !source())
         return;
     AudioContent a = shownAudio();
+    regions::Files f = files();
     regions::List list = parts();
     regions::NewId newId = [m] { return m->newId<AudioRegionId>(); };
     for (AudioRegion& r : list)
         if (!r.id.valid())
             r.id = newId();
     for (Tick t : ticks)
-        list = regions::cut(list, a, t, src->sampleRate, newId);
+        list = regions::cut(list, a, t, f, newId);
     store(list, "Cut audio");
 }
 
@@ -859,22 +985,26 @@ void AudioEditor::cutAt(Tick at) { cutManyAt({at}); }
 
 void AudioEditor::cutAtHits(AudioRegionId id) {
     TesseraModule* m = ctx.module();
-    const AudioSource* src = source();
     AudioStore* store = m ? m->audioStore() : nullptr;
-    if (!src || !store)
+    if (!store || !source())
         return;
-    SourceStatus st = store->status(src->id);
     regions::List list = parts();
     const AudioRegion* r = find(list, id);
-    if (!st.transients || !r || r->reverse) {
+    AudioContent a = shownAudio();
+    if (!r || r->reverse) {
         ctx.toast("No hits found in this part yet");
         return;
     }
-    AudioContent a = shownAudio();
-    double shift = regions::shift(a, *r, src->sampleRate);
+    SourceStatus st = store->status(takeContent(a, r->take).source);
+    if (!st.transients) {
+        ctx.toast("No hits found in this part yet");
+        return;
+    }
+    regions::Files f = files();
+    double shift = regions::shift(a, *r, f);
     std::vector<Tick> ticks;
-    for (int64_t f : *st.transients) {
-        double t = warpedTick(a, double(f), src->sampleRate) - shift;
+    for (int64_t frame : *st.transients) {
+        double t = regions::takeTick(a, r->take, double(frame), f) - shift;
         if (t > double(r->start) && t < double(r->end()))
             ticks.push_back(Tick(std::llround(t)));
     }
@@ -913,6 +1043,28 @@ void AudioEditor::removeParts(const regions::Ids& ids, bool close) {
     else
         store(rest, "Delete part");
     selected.clear();
+}
+
+void AudioEditor::takeMenu(int take) {
+    TesseraModule* m = ctx.module();
+    const Clip* c = shownClip();
+    if (!m || !c)
+        return;
+    ClipId id = clip;
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(regions::takeName(*c->audio, take)));
+    menu->addChild(rack::createMenuItem("Use for the whole clip", "",
+                                        [m, id, take] { m->perform(regions::useTake(m->song(), id, take, m->ids())); }));
+    if (take < 0)
+        return;
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Name"));
+    menu->addChild(new MenuTextField(c->audio->takes[size_t(take)].name, [m, id, take](const std::string& text) {
+        m->perform(regions::renameTake(m->song(), id, take, text));
+    }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuItem("Delete this take", "",
+                                        [m, id, take] { m->perform(regions::removeTake(m->song(), id, take)); }));
 }
 
 void AudioEditor::partMenu(const Hit& hit, Tick at) {
@@ -960,27 +1112,29 @@ void AudioEditor::partMenu(const Hit& hit, Tick at) {
 
 void AudioEditor::click(Vec pos, int button, Modifiers mods) {
     TesseraModule* m = ctx.module();
-    const AudioSource* src = source();
-    if (!m || !src)
+    if (!m || !source())
         return;
     Hit hit = hitTest(pos);
     Tick step = mods.alt ? 0 : gridStep();
     Tick at = step > 0 ? snapPosition(xToTick(pos.x), step) : Tick(std::llround(xToTick(pos.x)));
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         const Clip* c = shownClip();
-        if (hit.part == Part::Warp && c) {
-            std::vector<WarpMarker> warps = c->audio->warps;
+        if (hit.part == Part::TakeRow || hit.part == Part::TakeHear) {
+            takeMenu(hit.take);
+        } else if (hit.part == Part::Warp && c) {
+            int take = hit.take;
+            std::vector<WarpMarker> warps = regions::warpsOf(*c->audio, take);
             int index = hit.warp;
             ClipId id = clip;
             rack::ui::Menu* menu = rack::createMenu();
             menu->addChild(rack::createMenuLabel("Warp marker"));
-            menu->addChild(rack::createMenuItem("Remove this marker", "", [m, id, warps, index] {
+            menu->addChild(rack::createMenuItem("Remove this marker", "", [m, id, warps, index, take] {
                 std::vector<WarpMarker> rest = warps;
                 rest.erase(rest.begin() + index);
-                m->perform(setWarps(m->song(), id, rest, "Remove warp marker"));
+                m->perform(setWarps(m->song(), id, rest, "Remove warp marker", take));
             }));
-            menu->addChild(rack::createMenuItem("Remove all markers", "", [m, id] {
-                m->perform(setWarps(m->song(), id, {}, "Remove warp markers"));
+            menu->addChild(rack::createMenuItem("Remove all markers", "", [m, id, take] {
+                m->perform(setWarps(m->song(), id, {}, "Remove warp markers", take));
             }));
         } else if (pos.y >= kRulerHeight && hit.part != Part::None && hit.part != Part::MakeUnique) {
             partMenu(hit, at);
@@ -992,6 +1146,18 @@ void AudioEditor::click(Vec pos, int button, Modifiers mods) {
     if (hit.part == Part::MakeUnique) {
         if (const ArrangerClip* a = instance())
             m->perform(arrange::makeUnique(m->song(), {a->id}, m->ids()));
+        return;
+    }
+    if (hit.part == Part::TakesButton) {
+        takesOpen = !takesOpen;
+        rowsScroll = 0;
+        if (!takesOpen)
+            stopHearing();
+        return;
+    }
+    if (hit.part == Part::TakeHear) {
+        bool same = m->heardTakeClip() == clip && m->heardTakeIndex() == hit.take;
+        m->setHeardTake(same ? ClipId() : clip, hit.take);
         return;
     }
     if (pos.y >= kRulerHeight) {
@@ -1042,6 +1208,41 @@ bool AudioEditor::handleAction(Action action) {
     case Action::DeleteClosingGap:
         removeParts(selected, true);
         return true;
+    case Action::ToggleTakes:
+        if (shownClip()->audio->takes.empty()) {
+            ctx.toast("This clip has one take. Record over it to add more");
+            return true;
+        }
+        takesOpen = !takesOpen;
+        rowsScroll = 0;
+        if (!takesOpen)
+            stopHearing();
+        return true;
+    case Action::TransposeUp:
+    case Action::TransposeDown: {
+        // The take above or below in the rows, for the selected parts.
+        const Clip* c = shownClip();
+        regions::List list = parts();
+        if (c->audio->takes.empty() || selected.empty())
+            return false;
+        const AudioRegion* first = nullptr;
+        for (const AudioRegion& r : list)
+            if (selected.count(r.id) && !first)
+                first = &r;
+        if (!first)
+            return false;
+        int newest = int(c->audio->takes.size()) - 1;
+        int take = std::clamp(first->take + (action == Action::TransposeUp ? 1 : -1), -1, newest);
+        if (take == first->take)
+            return true;
+        auto [from, to] = regions::takeSpan(*c, take, files());
+        if (first->end() <= from || first->start >= to) {
+            ctx.toast(regions::takeName(*c->audio, take) + " has no audio here");
+            return true;
+        }
+        store(regions::retake(list, selected, take, shownAudio(), files()), "Use " + regions::takeName(*c->audio, take));
+        return true;
+    }
     case Action::SelectAll:
         selected.clear();
         for (const AudioRegion& r : parts())
@@ -1069,34 +1270,34 @@ void AudioEditor::doubleClick(Vec pos, Modifiers mods) {
     }
     TesseraModule* m = ctx.module();
     const Clip* c = shownClip();
-    const AudioSource* src = source();
-    if (!m || !c || !src || hit.part != Part::Body)
+    if (!m || !c || !source() || hit.part != Part::Body)
         return;
     regions::List list = parts();
     const AudioRegion* r = find(list, hit.region);
     if (!r || r->reverse)
         return;
     AudioContent a = *c->audio;
-    double frame = regions::frameAt(a, *r, xToTick(pos.x), src->sampleRate);
+    regions::Files f = files();
+    double frame = regions::frameAt(a, *r, xToTick(pos.x), f);
     if (AudioStore* store = m->audioStore())
-        if (SourceStatus st = store->status(c->audio->source); st.transients) {
-            double best = 12 * ticksPerPx * framesPerTick(a, src->sampleRate);
-            for (int64_t f : *st.transients)
-                if (std::fabs(double(f) - frame) < best) {
-                    best = std::fabs(double(f) - frame);
-                    frame = double(f);
+        if (SourceStatus st = store->status(takeContent(a, r->take).source); st.transients) {
+            double best = 12 * ticksPerPx * framesPerTick(a, f.rateOf(r->take));
+            for (int64_t frameHit : *st.transients)
+                if (std::fabs(double(frameHit) - frame) < best) {
+                    best = std::fabs(double(frameHit) - frame);
+                    frame = double(frameHit);
                 }
         }
-    double shift = regions::shift(a, *r, src->sampleRate);
-    double tick = warpedTick(a, frame, src->sampleRate) - shift;
+    double shift = regions::shift(a, *r, f);
+    double tick = regions::takeTick(a, r->take, frame, f) - shift;
     if (!mods.alt)
         tick = std::round(tick / double(kPpq / 4)) * double(kPpq / 4);
-    std::vector<WarpMarker> warps = a.warps;
-    // Without markers yet, the clip's start is pinned where it is, so only the hit moves.
+    std::vector<WarpMarker> warps = regions::warpsOf(a, r->take);
+    // Without markers yet, the part's start is pinned where it is, so only the hit moves.
     if (warps.empty() && tick + shift > 0)
-        warps.push_back({0, a.sourceStart});
+        warps.push_back({0, int64_t(std::llround(regions::takeFrame(a, r->take, 0, f)))});
     warps.push_back({tick + shift, int64_t(std::llround(frame))});
-    m->perform(setWarps(m->song(), clip, warps, "Add warp marker"));
+    m->perform(setWarps(m->song(), clip, warps, "Add warp marker", r->take));
 }
 
 CursorShape AudioEditor::hoverCursor(Vec pos, Modifiers mods) {
@@ -1120,13 +1321,25 @@ CursorShape AudioEditor::hoverCursor(Vec pos, Modifiers mods) {
     case Part::Flag:
         return CursorShape::Move;
     case Part::MakeUnique:
+    case Part::TakesButton:
+    case Part::TakeHear:
         return CursorShape::Hand;
+    case Part::TakeRow:
+        return CursorShape::IBeam;
     default:
         return CursorShape::Arrow;
     }
 }
 
 void AudioEditor::wheel(Vec pos, Vec delta, Modifiers mods) {
+    // Over rows that don't all fit, the wheel moves through them.
+    if (rowAt(pos) >= 0 && !mods.ctrl && !mods.alt) {
+        float spare = float(takeRowCount()) * rowHeight() - rowsHeight();
+        if (spare > 0) {
+            rowsScroll = std::clamp(rowsScroll - float(delta.y), 0.f, spare);
+            return;
+        }
+    }
     auto [from, to] = reach(parts());
     double span = std::max(1.0, to - from);
     if (mods.ctrl || mods.alt) {
@@ -1195,27 +1408,30 @@ void AudioEditor::drawPart(NVGcontext* vg, const AudioRegion& r, Rect wave, uint
     const theme::Palette& c = theme::colors();
     TesseraModule* m = ctx.module();
     const Clip* cl = shownClip();
-    const AudioSource* src = source();
-    if (!m || !cl || !src)
+    if (!m || !cl || !source())
         return;
     float xs = float(tickToX(double(r.start))), xe = float(tickToX(double(r.end())));
     if (xe < 0 || xs > box.size.x)
         return;
     bool isSelected = selected.count(r.id) > 0;
     Rect inside(xs, wave.pos.y, xe - xs, wave.size.y);
-    draw::roundedRect(vg, inside, theme::metrics::kRadiusItem, theme::track(color, r.muted ? 0.07f : 0.18f));
     AudioContent a = shownAudio();
+    bool hasTakes = !a.takes.empty();
+    NVGcolor tint = hasTakes ? theme::takeColor(r.take) : theme::track(color);
+    draw::roundedRect(vg, inside, theme::metrics::kRadiusItem, nvgTransRGBAf(tint, r.muted ? 0.07f : 0.18f));
     audioDraw::ClipState state = audioDraw::stateOf(*m, *cl);
-    NVGcolor bright = r.muted ? nvgTransRGBAf(c.text2, 0.4f) : nvgLerpRGBA(theme::track(color), c.text0, 0.35f);
-    double perTick = framesPerTick(a, src->sampleRate);
-    double fileFrames = double(src->frames);
+    state.status = state.statusOf(r.take);
+    regions::Files f = state.files;
+    NVGcolor bright = r.muted ? nvgTransRGBAf(c.text2, 0.4f) : nvgLerpRGBA(tint, c.text0, 0.35f);
+    double perTick = framesPerTick(a, f.rateOf(r.take));
+    double fileFrames = double(f.framesOf(r.take));
     audioDraw::drawWaveform(vg, wave, std::max(0.f, xs), std::min(box.size.x, xe), state, a.gainDb + r.gainDb, bright,
-                            [&](float x, double& from, double& to, float&) {
-                                double f0 = regions::frameAt(a, r, xToTick(x), src->sampleRate);
+                            [&](float x, audioDraw::Column& column) {
+                                double f0 = regions::frameAt(a, r, xToTick(x), f);
                                 double f1 = f0 + (r.reverse ? -1 : 1) * ticksPerPx * perTick;
-                                from = std::min(f0, f1);
-                                to = std::max(f0, f1);
-                                return to > 0 && from < fileFrames;
+                                column.from = std::min(f0, f1);
+                                column.to = std::max(f0, f1);
+                                return column.to > 0 && column.from < fileFrames;
                             });
     // Fades shade what they hide, as on the timeline.
     auto shade = [&](double fromTick, double length, bool in, float curve) {
@@ -1254,11 +1470,11 @@ void AudioEditor::drawPart(NVGcontext* vg, const AudioRegion& r, Rect wave, uint
         for (float x : {xs, xe}) {
             nvgBeginPath(vg);
             nvgRect(vg, x - 1, wave.pos.y, 2, wave.size.y);
-            nvgFillColor(vg, theme::track(color));
+            nvgFillColor(vg, tint);
             nvgFill(vg);
             nvgBeginPath(vg);
             nvgRect(vg, x - 3, wave.getCenter().y - 10, 6, 20);
-            nvgFillColor(vg, theme::track(color));
+            nvgFillColor(vg, tint);
             nvgFill(vg);
         }
     if (isSelected) {
@@ -1269,8 +1485,10 @@ void AudioEditor::drawPart(NVGcontext* vg, const AudioRegion& r, Rect wave, uint
         nvgStroke(vg);
     }
     std::string words;
+    if (hasTakes)
+        words = "T" + std::to_string(r.take + 2);
     if (r.gainDb != 0)
-        words = audioDraw::dbText(r.gainDb);
+        words += (words.empty() ? "" : "  ") + audioDraw::dbText(r.gainDb);
     if (r.muted)
         words += words.empty() ? "Muted" : "  Muted";
     if (r.reverse)
@@ -1282,27 +1500,124 @@ void AudioEditor::drawPart(NVGcontext* vg, const AudioRegion& r, Rect wave, uint
 }
 
 void AudioEditor::drawCopies(NVGcontext* vg, Rect wave) {
-    uniqueButton = Rect();
+    uniqueButton = takesButton = Rect();
     TesseraModule* m = ctx.module();
-    if (!m)
+    const Clip* cl = shownClip();
+    if (!m || !cl)
         return;
+    const theme::Palette& c = theme::colors();
+    float x = wave.getRight() - 8;
+    draw::TextStyle button{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    // In the ruler, so nothing covers a part's top corners.
+    if (!cl->audio->takes.empty()) {
+        static constexpr float kWidth = 62;
+        takesButton = Rect(x - kWidth, 3, kWidth, kButtonRow);
+        draw::roundedRect(vg, takesButton, theme::metrics::kRadiusItem, takesOpen ? c.select : c.bg2);
+        draw::TextStyle label = button;
+        if (takesOpen)
+            label.color = c.ink;
+        draw::text(vg, label, takesButton.getCenter().x, takesButton.getCenter().y,
+                   "Takes " + std::to_string(cl->audio->takes.size() + 1));
+        x -= kWidth + 6;
+    }
     int uses = m->song().clipUses(clip);
     if (uses <= 1)
         return;
-    const theme::Palette& c = theme::colors();
-    draw::TextStyle small{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.queue, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP};
-    float x = wave.getRight() - 8;
-    // In the ruler, so it never covers a part's top corners.
     if (instance()) {
-        static constexpr float kButtonWidth = 76, kButtonHeight = 16;
-        uniqueButton = Rect(x - kButtonWidth, 3, kButtonWidth, kButtonHeight);
+        static constexpr float kWidth = 76;
+        uniqueButton = Rect(x - kWidth, 3, kWidth, kButtonRow);
         draw::roundedRect(vg, uniqueButton, theme::metrics::kRadiusItem, c.bg2);
-        draw::TextStyle button{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0,
-                               NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
         draw::text(vg, button, uniqueButton.getCenter().x, uniqueButton.getCenter().y, "Make unique");
-        x -= kButtonWidth + 6;
+        x -= kWidth + 6;
     }
+    draw::TextStyle small{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.queue, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP};
     draw::text(vg, small, x, 5, "∞ " + std::to_string(uses) + " copies: edits change all");
+}
+
+void AudioEditor::drawTakeRows(NVGcontext* vg) {
+    int n = takeRowCount();
+    TesseraModule* m = ctx.module();
+    const Clip* cl = shownClip();
+    if (n == 0 || !m || !cl)
+        return;
+    const theme::Palette& c = theme::colors();
+    AudioContent a = shownAudio();
+    regions::List list = parts();
+    audioDraw::ClipState state = audioDraw::stateOf(*m, *cl);
+    regions::Files f = state.files;
+    float top = box.size.y - rowsHeight();
+    nvgSave(vg);
+    nvgIntersectScissor(vg, 0, top, box.size.x, rowsHeight());
+    for (int i = 0; i < n; i++) {
+        Rect row = rowRect(i);
+        if (row.getBottom() < top || row.pos.y > box.size.y)
+            continue;
+        int take = takeOfRow(i);
+        NVGcolor tint = theme::takeColor(take);
+        nvgBeginPath(vg);
+        nvgRect(vg, 0, row.pos.y + row.size.y - 1, box.size.x, 1);
+        nvgFillColor(vg, c.line1);
+        nvgFill(vg);
+        Rect body = row.shrink(Vec(0, 1));
+        audioDraw::ClipState rowState = state;
+        rowState.status = state.statusOf(take);
+        double perTick = framesPerTick(a, f.rateOf(take));
+        double fileFrames = double(f.framesOf(take));
+        auto columns = [&](float x, audioDraw::Column& column) {
+            double u = xToTick(x);
+            if (u < 0 || u >= double(cl->length))
+                return false;
+            double f0 = regions::takeFrame(a, take, u, f);
+            column.from = f0;
+            column.to = f0 + ticksPerPx * perTick;
+            return column.to > 0 && column.from < fileFrames;
+        };
+        // Bright where the comp plays this take.
+        std::vector<std::pair<float, float>> used;
+        for (const AudioRegion& r : list)
+            if (r.take == take && !r.muted)
+                used.push_back({float(tickToX(double(r.start))), float(tickToX(double(r.end())))});
+        for (const auto& [x0, x1] : used)
+            draw::roundedRect(vg, Rect(x0, body.pos.y, x1 - x0, body.size.y), 2, nvgTransRGBAf(tint, 0.22f));
+        float x0 = std::max(0.f, float(tickToX(0))), x1 = std::min(box.size.x, float(tickToX(double(cl->length))));
+        audioDraw::drawWaveform(vg, body, x0, x1, rowState, a.gainDb, nvgTransRGBAf(c.text2, 0.45f), columns);
+        NVGcolor bright = nvgLerpRGBA(tint, c.text0, 0.35f);
+        for (const auto& [ux0, ux1] : used)
+            audioDraw::drawWaveform(vg, body, std::max(x0, ux0), std::min(x1, ux1), rowState, a.gainDb, bright, columns);
+        // No audio here: the pass stopped early, or started late.
+        auto [first, last] = regions::takeSpan(*cl, take, f);
+        auto hatch = [&](double fromTick, double toTick) {
+            float hx0 = std::max(0.f, float(tickToX(fromTick))), hx1 = std::min(box.size.x, float(tickToX(toTick)));
+            if (hx1 <= hx0)
+                return;
+            nvgSave(vg);
+            nvgIntersectScissor(vg, hx0, body.pos.y, hx1 - hx0, body.size.y);
+            nvgBeginPath(vg);
+            for (float s = hx0 - body.size.y; s < hx1; s += 8) {
+                nvgMoveTo(vg, s, body.getBottom());
+                nvgLineTo(vg, s + body.size.y, body.pos.y);
+            }
+            nvgStrokeWidth(vg, 1);
+            nvgStrokeColor(vg, c.line2);
+            nvgStroke(vg);
+            nvgRestore(vg);
+        };
+        if (last <= first) {
+            hatch(0, double(cl->length));
+        } else {
+            hatch(0, double(first));
+            hatch(double(last), double(cl->length));
+        }
+        Rect hear = hearRect(row);
+        bool lit = m->heardTakeClip() == clip && m->heardTakeIndex() == take;
+        draw::roundedRect(vg, hear, theme::metrics::kRadiusItem, lit ? c.play : c.bg2);
+        draw::TextStyle hearText{theme::fonts::ui(), theme::metrics::kTextRuler, lit ? c.ink : c.text0,
+                                 NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::text(vg, hearText, hear.getCenter().x, hear.getCenter().y, "Hear");
+        draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        draw::text(vg, name, hear.getRight() + 6, hear.getCenter().y, regions::takeName(a, take));
+    }
+    nvgRestore(vg);
 }
 
 void AudioEditor::drawView(const DrawArgs& args) {
@@ -1316,7 +1631,7 @@ void AudioEditor::drawView(const DrawArgs& args) {
     const Clip* cl = shownClip();
     const AudioSource* src = source();
     if (!m || !cl || !src) {
-        uniqueButton = Rect();
+        uniqueButton = takesButton = Rect();
         draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextUi, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
         draw::text(vg, hint, box.size.x / 2, box.size.y / 2, "Select an audio clip to edit it here");
         return;
@@ -1331,20 +1646,23 @@ void AudioEditor::drawView(const DrawArgs& args) {
     AudioContent a = shownAudio();
     audioDraw::ClipState state = audioDraw::stateOf(*m, *cl);
     regions::List list = parts();
-    double perTick = framesPerTick(a, src->sampleRate);
-    double fileFrames = double(src->frames);
+    regions::Files f = state.files;
 
     // The rest of the file, dim, before the first part and after the last.
     if (!list.empty()) {
         NVGcolor dim = nvgTransRGBAf(c.text2, 0.35f);
         auto ghost = [&](const AudioRegion& r, float from, float to) {
-            audioDraw::drawWaveform(vg, wave, std::max(0.f, from), std::min(box.size.x, to), state, a.gainDb, dim,
-                                    [&](float x, double& f0, double& f1, float&) {
-                                        double first = regions::frameAt(a, r, xToTick(x), src->sampleRate);
+            audioDraw::ClipState ghostState = state;
+            ghostState.status = state.statusOf(r.take);
+            double perTick = framesPerTick(a, f.rateOf(r.take));
+            double fileFrames = double(f.framesOf(r.take));
+            audioDraw::drawWaveform(vg, wave, std::max(0.f, from), std::min(box.size.x, to), ghostState, a.gainDb, dim,
+                                    [&](float x, audioDraw::Column& column) {
+                                        double first = regions::frameAt(a, r, xToTick(x), f);
                                         double last = first + (r.reverse ? -1 : 1) * ticksPerPx * perTick;
-                                        f0 = std::min(first, last);
-                                        f1 = std::max(first, last);
-                                        return f1 > 0 && f0 < fileFrames;
+                                        column.from = std::min(first, last);
+                                        column.to = std::max(first, last);
+                                        return column.to > 0 && column.from < fileFrames;
                                     });
         };
         ghost(list.front(), 0, float(tickToX(double(list.front().start))));
@@ -1385,41 +1703,38 @@ void AudioEditor::drawView(const DrawArgs& args) {
         }
     }
     // Transients: a small mark under the waveform where each hit starts (Split at transients cuts there).
-    if (AudioStore* store = m->audioStore())
-        if (SourceStatus st = store->status(cl->audio->source); st.transients) {
-            nvgBeginPath(vg);
-            for (const AudioRegion& r : list) {
-                if (r.muted)
-                    continue;
-                double low = std::min(regions::frameAt(a, r, double(r.start), src->sampleRate),
-                                      regions::frameAt(a, r, double(r.end()), src->sampleRate));
-                double high = std::max(regions::frameAt(a, r, double(r.start), src->sampleRate),
-                                       regions::frameAt(a, r, double(r.end()), src->sampleRate));
-                double shift = r.reverse ? 0 : regions::shift(a, r, src->sampleRate);
-                for (int64_t f : *st.transients) {
-                    if (double(f) < low || double(f) >= high)
-                        continue;
-                    double tick = r.reverse ? double(r.end()) - (double(f) - double(r.sourceFrame)) / perTick
-                                            : warpedTick(a, double(f), src->sampleRate) - shift;
-                    float x = float(tickToX(tick));
-                    if (x < 0 || x > box.size.x)
-                        continue;
-                    float y = wave.getBottom();
-                    nvgMoveTo(vg, x, y - 6);
-                    nvgLineTo(vg, x - 3, y);
-                    nvgLineTo(vg, x + 3, y);
-                    nvgClosePath(vg);
-                }
-            }
-            nvgFillColor(vg, nvgTransRGBAf(c.text0, 0.6f));
-            nvgFill(vg);
+    nvgBeginPath(vg);
+    for (const AudioRegion& r : list) {
+        const SourceStatus& st = state.statusOf(r.take);
+        if (r.muted || !st.transients)
+            continue;
+        double perTick = framesPerTick(a, f.rateOf(r.take));
+        double first = regions::frameAt(a, r, double(r.start), f), last = regions::frameAt(a, r, double(r.end()), f);
+        double low = std::min(first, last), high = std::max(first, last);
+        double shift = r.reverse ? 0 : regions::shift(a, r, f);
+        for (int64_t frame : *st.transients) {
+            if (double(frame) < low || double(frame) >= high)
+                continue;
+            double tick = r.reverse ? double(r.end()) - (double(frame) - double(r.sourceFrame)) / perTick
+                                    : regions::takeTick(a, r.take, double(frame), f) - shift;
+            float x = float(tickToX(tick));
+            if (x < 0 || x > box.size.x)
+                continue;
+            float y = wave.getBottom();
+            nvgMoveTo(vg, x, y - 6);
+            nvgLineTo(vg, x - 3, y);
+            nvgLineTo(vg, x + 3, y);
+            nvgClosePath(vg);
         }
+    }
+    nvgFillColor(vg, nvgTransRGBAf(c.text0, 0.6f));
+    nvgFill(vg);
     // Warp markers: a line through the hit they pin, with a handle in the ruler. Each shows with the part that plays it.
     for (const AudioRegion& r : list) {
         if (r.reverse)
             continue;
-        double shift = regions::shift(a, r, src->sampleRate);
-        for (const WarpMarker& w : a.warps) {
+        double shift = regions::shift(a, r, f);
+        for (const WarpMarker& w : regions::warpsOf(a, r.take)) {
             double t = w.tick - shift;
             if (t < double(r.start) || t > double(r.end()))
                 continue;
@@ -1453,8 +1768,9 @@ void AudioEditor::drawView(const DrawArgs& args) {
         }
     }
     drawCopies(vg, wave);
+    drawTakeRows(vg);
     // What the clip does, in words.
-    std::string note = src->name;
+    std::string note = a.takes.empty() ? src->name : "Comp";
     std::string st = audioDraw::stateText(state);
     if (!st.empty())
         note += "  " + st;

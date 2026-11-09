@@ -59,6 +59,10 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             return -1;
         if (take >= int(clip->audio->takes.size()))
             take = -1;
+        // Hear (§4): this clip plays one take whole for now, whatever its parts say.
+        bool heard = plan.hearClip == id && !backwards && take < 0;
+        if (heard)
+            take = plan.hearTake;
         auto it = std::find(clipIds.begin(), clipIds.end(), std::make_tuple(id, take, backwards));
         if (it != clipIds.end())
             return int(it - clipIds.begin());
@@ -118,16 +122,15 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         clipIds.push_back({id, take, backwards});
         snap.clips.push_back(c);
         int index = int(snap.clips.size()) - 1;
-        if (backwards || clip->audio->regions.empty())
+        if (backwards || take >= 0 || heard || clip->audio->regions.empty())
             return index;
         const AudioSource* src = song.findSource(a.source);
         if (!src)
             return index;
+        regions::Files files = regions::filesOf(song, *clip->audio);
         // Each part reads either this entry or its backwards twin, moved to the place in the file it plays.
         std::vector<AudioRegionPlay> parts;
         double ticksScale = snap.clips[size_t(index)].songTicksPerTick(tempo);
-        double perTick = snap.clips[size_t(index)].framesPerTick;
-        double sourcePerTick = framesPerTick(a, src->sampleRate);
         for (const AudioRegion& r : clip->audio->regions) {
             if (r.muted)
                 continue;
@@ -138,18 +141,18 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             p.span.fadeIn = r.fadeIn;
             p.span.fadeOut = r.fadeOut;
             p.gain = dbToGain(r.gainDb);
-            p.clip = r.reverse ? clipIndex(id, take, true) : index;
+            p.clip = clipIndex(id, r.take, r.reverse);
             if (p.clip < 0)
                 continue;
             if (r.reverse) {
                 const AudioClipPlay& twin = snap.clips[size_t(p.clip)];
-                const AudioBuffer* b = twin.prepared;
-                double scale = sourcePerTick > 0 ? perTick / sourcePerTick : 1;
-                double frames = b ? double(b->frames) : double(src->frames) * scale;
-                double firstFrame = frames - (double(r.sourceFrame) * scale + double(r.length) * perTick);
-                p.shift = perTick > 0 ? (firstFrame - twin.startFrame) / perTick - double(r.start) : 0;
+                double perSourceTick = framesPerTick(*clip->audio, files.rateOf(r.take));
+                double scale = perSourceTick > 0 ? twin.framesPerTick / perSourceTick : 1;
+                double frames = twin.prepared ? double(twin.prepared->frames) : double(files.framesOf(r.take)) * scale;
+                double firstFrame = frames - (double(r.sourceFrame) * scale + double(r.length) * twin.framesPerTick);
+                p.shift = twin.framesPerTick > 0 ? (firstFrame - twin.startFrame) / twin.framesPerTick - double(r.start) : 0;
             } else {
-                p.shift = regions::shift(a, r, src->sampleRate);
+                p.shift = regions::shift(*clip->audio, r, files);
             }
             // A plain cut changes nothing you can hear, so a part that simply plays on from the last one joins it.
             if (!parts.empty()) {
@@ -228,7 +231,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         for (const ArrangerClip& a : t.arrangement) {
             if (a.muted)
                 continue;
-            int ci = clipIndex(a.clip, a.take, false);
+            int ci = clipIndex(a.clip, -1, false);
             if (ci < 0)
                 continue;
             AudioInstancePlay ip;

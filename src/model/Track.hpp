@@ -49,12 +49,11 @@ struct ArrangerClip {
     int8_t layer = 0;        // stacking order among overlapping clips: a lower layer takes a higher sub-row first
     // Audio clips only. Where two instances overlap, the overlap is their crossfade and these curves shape it.
     Fade fadeIn, fadeOut;
-    int8_t take = -1; // audio: the take this copy plays, -1 the clip's own, k the clip's takes[k] (comping)
 
     bool operator==(const ArrangerClip& o) const {
         return id == o.id && clip == o.clip && position == o.position && length == o.length && offset == o.offset &&
                muted == o.muted && transpose == o.transpose && velocityScale == o.velocityScale &&
-               stretch == o.stretch && layer == o.layer && fadeIn == o.fadeIn && fadeOut == o.fadeOut && take == o.take;
+               stretch == o.stretch && layer == o.layer && fadeIn == o.fadeIn && fadeOut == o.fadeOut;
     }
 };
 

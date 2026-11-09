@@ -126,7 +126,7 @@ neighbour, to make one; move them apart and it is gone.
 - Clips that only touch get no crossfade. Every clip edge gets a tiny fade, so a cut never clicks.
 
 These rules hold for audio tracks whatever the **Stack** setting says (Stack is for note clips). Recording in
-**Stack** mode over an audio clip adds takes to that clip, see [Takes and comping](#takes-and-comping).
+Recording over an audio clip adds takes to it, see [Takes and comping](#takes-and-comping).
 
 ### Replacing a file
 
@@ -234,21 +234,28 @@ Several armed audio tracks record at once. An armed audio track never records no
 
 ### Takes and comping
 
-With **Recording over arranger clips** set to **Stack**, recording over an audio clip keeps every pass inside that
-clip instead of making a new clip each time. Set a loop over the clip (or record a first pass that makes it), record
-a few passes, and each pass that starts where the clip starts becomes its next **take**: take 2, take 3 and so on.
-The clip plays the newest take, and its title shows which one ("take 3").
+Record over an audio clip in a loop and every pass is kept. A pass that starts where the clip starts becomes its next
+**take**: take 2, take 3 and so on, whatever **Recording over arranger clips** says. The clip plays the newest take,
+and its title shows which one ("take 3"). Takes need the clip to be at the song tempo the take was recorded at.
 
-To pick the best parts of each pass (comping):
+To pick the best parts of each pass (comping), select the clip and press **Alt+T** or click **Takes** at the right end
+of the audio editor's ruler. The takes show as rows under the waveform, newest first, lined up with the clip.
 
-1. **Split** the clip where the takes should change (**Ctrl+E**, or right-click ▸ **Split here**).
-2. Right-click each part ▸ **Take** and pick the take that part plays. The waveform shows that take.
-3. **Every copy plays this take** (in the same menu) sets every copy of the clip to the take this one plays.
+![Three takes in the audio editor, comped](images/audio-takes.png)
 
-Picking a take is one undo step and is saved with the patch. Glue the parts back together when you are done: parts
-that play different takes are glued into one new file, which plays exactly what you hear. A take plays without the
-clip's warp markers, which belong to take 1. A take only joins a clip at the song tempo it was recorded at;
-otherwise the pass becomes a new clip, as it does in Merge and Replace.
+- The top of the pane shows the **Comp**: what plays. Each part has the colour and number of its take.
+- **Drag across a take's row** to make that stretch play that take. Neighbouring parts on the same take join up. Each drag is
+  one undo step. The seams get the same short fade as any cut; to crossfade one, drag its handle.
+- **Hear** on a row plays that take in place of the comp, in time with the song, so you can compare passes. It changes
+  nothing in the song. Click it again to go back.
+- **Up** and **Down** switch the selected parts to the take above or below.
+- A row is hatched where that pass has no audio, because it stopped early.
+- Right-click a row to **Use for the whole clip**, name the take, or **Delete this take**. A deleted take's file stays
+  until **Remove unused audio**.
+
+The clip holds the comp, so every linked copy plays it. Timeline clips that used to pick their own take keep playing it when an
+older song opens: copies of a clip that played different takes become separate clips. Right-click a clip on the timeline ▸ **Take**
+to make the whole clip play one take. Each take keeps its own warp markers.
 
 ## Bouncing a track to audio
 

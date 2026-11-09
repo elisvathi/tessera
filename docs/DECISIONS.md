@@ -1936,7 +1936,7 @@ Why: built to the spec; these are the places it left open or where the code sugg
 - **Clip menu** ▸ Take: pick per copy, or "Every copy plays this take". Title shows "take N" when a clip has takes.
 - Takes count as in use (Remove unused audio, the Audio files list), export to DAWproject as the picked file, and
   drive hits for Split at transients. Glue without rendering needs one take for all parts, so a comp glues by
-  rendering. The audio editor still shows take 1.
+  rendering. The audio editor still shows take 1. (§148 moves the take choice into the clip.)
 
 ## 130. Reverse keeps a split clip's cuts (5 Nov, Trello "Reverse of a sliced clip doesn't keep the cuts")
 
@@ -2366,9 +2366,17 @@ confirms that presets, selections and copy and paste carry JSON only (`ModuleWid
 ## 148. Audio edits live in the clip; takes too (9 Nov, agreed, not built yet)
 
 - Del in the audio editor leaves a gap; Shift+Del closes it.
-- Every loop pass on an audio track is kept as a take, whatever the record mode (not built yet).
-- The clip holds the take choice, so linked copies play one comp. This will replace `ArrangerClip::take` (§129; not
-  built yet).
+- Every loop pass on an audio track is kept as a take, whatever the record mode: a take that starts where an audio
+  clip starts joins that clip. This replaces §119's "passes replace each other".
+- **The clip holds the take choice**, so linked copies play one comp. `ArrangerClip::take`, "Every copy plays this
+  take" and comping by splitting are gone (§129). Loading an older song moves each copy's take into its clip; copies of a
+  clip that picked different takes get clips of their own.
+- **Each part names its take** (`AudioRegion::take`). A clip playing one take from end to end is a single whole-clip
+  part. A new take moves such a clip on to itself; a comp stays as it is, so a late pass can't undo your work.
+- **Each take has its own warp markers** and a name (`AudioTake`). `regions::Files` holds each take's sample rate and
+  length, since a take can be recorded at another rate than the clip's own file.
+- **Hear** goes through the mix plan (`MixPlan::hearClip`), so it rebuilds what plays without changing the song.
+- The timeline's clip menu keeps **Take** for the whole clip; the rows do the mixing.
 - **Built (phase 2): parts.** `AudioContent::regions`: empty means one part over the whole clip. With parts, `reverse`
   is off and each part says for itself. A clip's parts play through one table per clip (`AudioClipPlay::regions`), and
   a part played backwards reads a second entry for the reversed buffer. A plain cut joins back up in the snapshot, so

@@ -340,11 +340,10 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
             const AudioContent& a = *clip->audio;
             double from = double(clip->playStart()), span = double(clip->playEnd() - clip->playStart());
             audioDraw::drawWaveform(vg, preview, preview.pos.x, preview.getRight(), state, a.gainDb,
-                                    nvgTransRGBAf(c.onTile, kPreviewAlpha), [&](float x, double& f0, double& f1, float& extraDb) {
+                                    nvgTransRGBAf(c.onTile, kPreviewAlpha), [&](float x, audioDraw::Column& column) {
                                         double u0 = from + span * double(x - preview.pos.x) / double(preview.size.x);
                                         double u1 = u0 + span / double(preview.size.x);
-                                        return audioDraw::framesOfTicks(*clip, *state.source, u0, u1, f0, f1,
-                                                                        extraDb);
+                                        return audioDraw::framesOfTicks(*clip, state, u0, u1, column);
                                     });
         }
     } else if (readers) {

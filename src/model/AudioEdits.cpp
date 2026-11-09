@@ -178,18 +178,24 @@ CommandPtr setAudioWindow(const Song& song, ClipId clip, int64_t start, int64_t 
 }
 
 float clipPeak(const Clip& clip, const AudioSource& source, const PeakCache& peaks) {
-    if (!clip.audio || peaks.empty())
+    regions::Files files(source.sampleRate, source.frames);
+    return clipPeak(clip, files, [&](int take) { return take < 0 ? &peaks : nullptr; });
+}
+
+float clipPeak(const Clip& clip, const regions::Files& files, const std::function<const PeakCache*(int take)>& peaksOf) {
+    if (!clip.audio)
         return 0;
     float peak = 0;
-    for (const AudioRegion& r : regions::of(clip, source.sampleRate)) {
-        if (r.muted)
+    for (const AudioRegion& r : regions::of(clip, files)) {
+        const PeakCache* peaks = r.muted ? nullptr : peaksOf(r.take);
+        if (!peaks || peaks->empty())
             continue;
-        double a = regions::frameAt(*clip.audio, r, double(r.start), source.sampleRate);
-        double b = regions::frameAt(*clip.audio, r, double(r.end()), source.sampleRate);
+        double a = regions::frameAt(*clip.audio, r, double(r.start), files);
+        double b = regions::frameAt(*clip.audio, r, double(r.end()), files);
         float gain = dbToGain(r.gainDb);
-        for (int ch = 0; ch < peaks.channels(); ch++) {
+        for (int ch = 0; ch < peaks->channels(); ch++) {
             float lo = 0, hi = 0;
-            peaks.range(ch, std::min(a, b), std::max(a, b), lo, hi);
+            peaks->range(ch, std::min(a, b), std::max(a, b), lo, hi);
             peak = std::max({peak, std::abs(lo) * gain, std::abs(hi) * gain});
         }
     }
@@ -372,39 +378,18 @@ CommandPtr setSongSource(const Song& song, TrackId track, SourceLevel level, con
     return setTrackField(song, track, &Track::clips, level, name);
 }
 
-CommandPtr setInstanceTake(const Song& song, TrackId track, ArrangementId instance, int take) {
-    const Track* t = song.findTrack(track);
-    if (!t)
-        return nullptr;
-    std::vector<ArrangerClip> arr = t->arrangement;
-    for (ArrangerClip& a : arr)
-        if (a.id == instance)
-            a.take = int8_t(take);
-    return setTrackField(song, track, &Track::arrangement, arr,
-                         take < 0 ? "Play take 1" : "Play take " + std::to_string(take + 2));
-}
-
-CommandPtr useTakeEverywhere(const Song& song, ClipId clip, int take) {
-    auto all = std::make_unique<CompoundCommand>(take < 0 ? "Play take 1" : "Play take " + std::to_string(take + 2));
-    for (const Track& t : song.tracks) {
-        std::vector<ArrangerClip> arr = t.arrangement;
-        for (ArrangerClip& a : arr)
-            if (a.clip == clip)
-                a.take = int8_t(take);
-        all->add(setTrackField(song, t.id, &Track::arrangement, arr, "Take"));
-    }
-    if (all->empty())
-        return nullptr;
-    return all;
-}
-
-CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps, const std::string& name) {
+CommandPtr setWarps(const Song& song, ClipId clip, std::vector<WarpMarker> warps, const std::string& name, int take) {
     std::stable_sort(warps.begin(), warps.end(), [](const WarpMarker& x, const WarpMarker& y) { return x.tick < y.tick; });
     std::vector<WarpMarker> kept;
     for (const WarpMarker& m : warps)
         if (kept.empty() || (m.tick > kept.back().tick && m.frame > kept.back().frame))
             kept.push_back(m);
-    return editAudio(song, clip, [&](AudioContent& a) { a.warps = kept; }, name);
+    return editAudio(song, clip, [&](AudioContent& a) {
+        if (take >= 0 && size_t(take) < a.takes.size())
+            a.takes[size_t(take)].warps = kept;
+        else
+            a.warps = kept;
+    }, name);
 }
 
 CommandPtr quantizeAudio(const Song& song, ClipId clip, const std::vector<int64_t>& transients, double fileRate,
@@ -428,11 +413,12 @@ CommandPtr quantizeAudio(const Song& song, ClipId clip, const std::vector<int64_
 }
 
 std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::vector<int64_t>& transients,
-                           double fileRate, double songTempo) {
+                           double fileRate, double songTempo, int take) {
     std::vector<Tick> out;
     if (!clip.audio || clip.audio->reverse)
         return out;
     std::vector<AudioRegion> parts = regions::of(clip, fileRate);
+    regions::Files files(fileRate);
     const AudioContent& a = *clip.audio;
     double perTick = framesPerTick(a, fileRate);
     if (perTick <= 0)
@@ -444,9 +430,9 @@ std::vector<Tick> hitTicks(const Clip& clip, const ArrangerClip& at, const std::
     for (int64_t f : transients) {
         double t = -1; // clip ticks; a hit plays once however its part was moved
         for (const AudioRegion& r : parts) {
-            if (r.muted || r.reverse)
+            if (r.muted || r.reverse || r.take != take)
                 continue;
-            double offset = warpedTick(a, double(f), fileRate) - warpedTick(a, double(r.sourceFrame), fileRate);
+            double offset = regions::takeTick(a, take, double(f), files) - regions::takeTick(a, take, double(r.sourceFrame), files);
             if (offset >= 0 && offset < double(r.length)) {
                 t = double(r.start) + offset;
                 break;

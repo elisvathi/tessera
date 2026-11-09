@@ -15,6 +15,7 @@ ClipState stateOf(TesseraModule& module, const Clip& clip) {
     if (!clip.audio)
         return s;
     s.source = module.song().findSource(clip.audio->source);
+    s.files = regions::filesOf(module.song(), *clip.audio);
     AudioStore* store = module.audioStore();
     if (!s.source) {
         s.status.state = SourceState::Missing;
@@ -25,6 +26,8 @@ ClipState stateOf(TesseraModule& module, const Clip& clip) {
         return s;
     }
     s.status = store->status(clip.audio->source);
+    for (const AudioTake& t : clip.audio->takes)
+        s.takes.push_back(store->status(t.source));
     RenderKey key;
     double tempo = module.tempo() > 0 ? module.tempo() : 120;
     if (wantsRender(*clip.audio, tempo, key))
@@ -64,13 +67,14 @@ void drawWaveform(NVGcontext* vg, rack::math::Rect body, float left, float right
         float mid = body.pos.y + laneH * (float(ch) + 0.5f);
         float half = laneH / 2 - 0.5f;
         for (float x = x0; x < x1; x += 1) {
-            double from, to;
-            float extraDb = 0;
-            if (!framesAt(x, from, to, extraDb))
+            Column column;
+            if (!framesAt(x, column))
                 continue;
             float lo, hi;
-            peaks->range(ch, std::min(from, to), std::max(from, to), lo, hi);
-            float columnGain = extraDb != 0 ? gain * dbToGain(extraDb) : gain;
+            const PeakCache* source = column.peaks ? column.peaks : peaks;
+            source->range(std::min(ch, source->channels() - 1), std::min(column.from, column.to),
+                          std::max(column.from, column.to), lo, hi);
+            float columnGain = column.extraDb != 0 ? gain * dbToGain(column.extraDb) : gain;
             lo = std::clamp(lo * columnGain, -1.f, 1.f);
             hi = std::clamp(hi * columnGain, -1.f, 1.f);
             float y0 = mid - hi * half, y1 = mid - lo * half;
@@ -81,30 +85,32 @@ void drawWaveform(NVGcontext* vg, rack::math::Rect body, float left, float right
     nvgFill(vg);
 }
 
-bool framesOfTicks(const Clip& clip, const AudioSource& s, double u0, double u1, double& from, double& to,
-                   float& extraDb) {
+bool framesOfTicks(const Clip& clip, const ClipState& state, double u0, double u1, Column& column) {
     const AudioContent& a = *clip.audio;
+    const regions::Files& files = state.files;
     if (a.regions.empty()) {
-        double perTick = framesPerTick(a, s.sampleRate);
+        double perTick = framesPerTick(a, files.rate);
         if (a.reverse) {
             double end = double(a.sourceStart) + double(clip.length) * perTick;
-            from = end - u1 * perTick;
-            to = end - u0 * perTick;
+            column.from = end - u1 * perTick;
+            column.to = end - u0 * perTick;
         } else {
-            from = warpedFrame(a, u0, s.sampleRate);
-            to = warpedFrame(a, u1, s.sampleRate);
+            column.from = warpedFrame(a, u0, files.rate);
+            column.to = warpedFrame(a, u1, files.rate);
         }
         return true;
     }
     const AudioRegion* r = regions::at(a.regions, u0);
     if (!r)
         return false;
-    extraDb = r->gainDb;
-    double first = regions::frameAt(a, *r, u0, s.sampleRate);
-    double last = regions::frameAt(a, *r, std::min(u1, double(r->end())), s.sampleRate);
-    from = std::min(first, last);
-    to = std::max(first, last);
-    return true;
+    column.extraDb = r->gainDb;
+    double first = regions::frameAt(a, *r, u0, files);
+    double last = regions::frameAt(a, *r, std::min(u1, double(r->end())), files);
+    column.from = std::min(first, last);
+    column.to = std::max(first, last);
+    if (r->take >= 0)
+        column.peaks = state.statusOf(r->take).peaks.get();
+    return r->take < 0 || column.peaks;
 }
 
 std::string dbText(float db) {

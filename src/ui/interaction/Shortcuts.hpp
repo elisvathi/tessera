@@ -43,6 +43,7 @@ enum class Action {
     Duplicate,
     Delete,
     DeleteClosingGap,
+    ToggleTakes,
     SelectAll,
     SelectNone,
     SelectInvert,

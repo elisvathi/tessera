@@ -363,6 +363,14 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Ctrl+drag makes an independent copy, and a cut in it changes only it. Make unique breaks the link.
 - [ ] Every edit is one undo step. Save and reload keep the parts. Tempo changes keep each part on its audio.
 
+## Takes and comping (docs/design/AUDIO_EDITING.md §4)
+- [ ] Loop-record over an audio clip in Merge, Stack and Replace: every pass becomes a take, and the clip plays the newest.
+- [ ] Alt+T shows the rows, newest first. Drag across a row: that stretch plays that take, in its colour, one undo step.
+- [ ] Hear plays that take in time with the song; clicking it again goes back; the song is unchanged. Closing the editor stops it.
+- [ ] A pass that stopped early shows hatching, and dragging only there says it has no audio.
+- [ ] A comp plays the same on a linked copy. Right-click a clip ▸ Take makes the whole clip play one take.
+- [ ] Open a patch from before 9 Nov that had takes picked per copy: each copy still plays its take.
+
 ## Project files and DAWproject (docs/DECISIONS.md §39)
 - [ ] The editor's File button and the module's right-click File submenu show the same items: Open project…,
       Save project (the file's name once it has one), Save project as…, Export MIDI…, Export DAWproject….

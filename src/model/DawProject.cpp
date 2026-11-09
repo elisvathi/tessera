@@ -183,16 +183,15 @@ void audioClips(Xml& x, const Song& song, const Track& t, const Options& o, doub
         if (a.muted && !o.includeMuted)
             continue;
         const Clip* clip = song.findClip(a.clip);
-        // A copy that plays another take exports that take's file.
-        const AudioContent c = clip && clip->audio ? takeContent(*clip->audio, a.take) : AudioContent{};
-        const AudioSource* src = clip && clip->audio ? song.findSource(c.source) : nullptr;
-        if (!src)
+        const AudioContent c = clip && clip->audio ? *clip->audio : AudioContent{};
+        const AudioSource* own = clip && clip->audio ? song.findSource(c.source) : nullptr;
+        if (!own)
             continue;
         double k = songTicksPerClipTick(c, songTempo);
         double secondsPerClipTick = secondsPerTick(c.sourceTempo);
         // One exported clip: `length` clip ticks from `playStart` at song tick `time`, reading the file from `contentStart`.
-        auto emit = [&](double time, double length, double playStart, double contentStart, double contentLength,
-                        bool loops, Tick fadeIn, Tick fadeOut) {
+        auto emit = [&](const AudioSource* src, double time, double length, double playStart, double contentStart,
+                        double contentLength, bool loops, Tick fadeIn, Tick fadeOut) {
             Attrs attrs{{"time", beats(time)},
                         {"duration", beats(length * k)},
                         {"playStart", beats(playStart)},
@@ -225,7 +224,7 @@ void audioClips(Xml& x, const Song& song, const Track& t, const Options& o, doub
         };
         bool looping = clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart;
         if (clip->audio->regions.empty()) {
-            emit(double(a.position), double(a.length), double(a.offset), double(c.sourceStart) / src->sampleRate,
+            emit(own, double(a.position), double(a.length), double(a.offset), double(c.sourceStart) / own->sampleRate,
                  double(clip->length), looping, a.fadeIn.length, a.fadeOut.length);
             continue;
         }
@@ -240,8 +239,12 @@ void audioClips(Xml& x, const Song& song, const Track& t, const Options& o, doub
                 Tick from = std::max(u, r.start), to = std::min(stop, r.end());
                 if (r.muted || r.reverse || to <= from)
                     continue;
-                double first = regions::frameAt(c, r, double(from), src->sampleRate);
-                emit(double(a.position) + double(done + from - u) * k, double(to - from), 0, first / src->sampleRate,
+                const AudioContent tc = takeContent(c, r.take);
+                const AudioSource* src = song.findSource(tc.source);
+                if (!src)
+                    continue;
+                double first = regions::frameAt(c, r, double(from), regions::filesOf(song, c));
+                emit(src, double(a.position) + double(done + from - u) * k, double(to - from), 0, first / src->sampleRate,
                      double(to - from), false, from == r.start ? r.fadeIn.length : 0,
                      to == r.end() ? r.fadeOut.length : 0);
             }

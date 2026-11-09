@@ -24,7 +24,9 @@ class AudioEditor : public InteractiveView {
 
     void step() override;
     EditorContext& context() { return ctx; }
-    /// Delete, Delete closing the gap, Split and Select all, on the selected parts. False for any other action.
+    ~AudioEditor() override;
+    /// Delete, Delete closing the gap, Split, Select all, the take of the selected parts, and Show takes. False for any
+    /// other action.
     bool handleAction(Action action);
 
     // ---- For the drags ----
@@ -45,11 +47,15 @@ class AudioEditor : public InteractiveView {
         Flag,       // beat 1's flag in the ruler
         Warp,       // a warp marker's handle
         MakeUnique, // the button beside "∞ 3 copies"
+        TakesButton, // shows or hides the take rows
+        TakeRow,     // a take's row: a drag makes that stretch play it
+        TakeHear,    // a row's Hear button
     };
     struct Hit {
         Part part = Part::None;
         int beat = 0;  // Beat: which beat line (1 is the first after beat 1)
         int warp = -1; // Warp: which marker
+        int take = -1; // Warp, TakeRow, TakeHear: which take
         AudioRegionId region;
         AudioRegionId next; // Seam: the part after the seam
     };
@@ -61,6 +67,8 @@ class AudioEditor : public InteractiveView {
     const AudioSource* source();
     /// The clip's parts as a drag previews them; one over the whole clip when it has no edits.
     regions::List parts();
+    /// The sample rate and length of the files the clip plays.
+    regions::Files files();
     /// Whether the clip is one plain stretch of its file, so its edges and body change the clip itself.
     bool plainClip();
     /// The selected parts.
@@ -86,6 +94,7 @@ class AudioEditor : public InteractiveView {
         std::optional<int64_t> sourceStart;
         std::optional<double> tempo;
         std::optional<std::vector<WarpMarker>> warps;
+        int warpsTake = -1; // the take `warps` belongs to
         std::optional<regions::List> regions;
         std::optional<float> gainDb;
     };
@@ -106,9 +115,28 @@ class AudioEditor : public InteractiveView {
     void drawRuler(NVGcontext* vg, rack::math::Rect r);
     void drawPart(NVGcontext* vg, const AudioRegion& r, rack::math::Rect wave, uint32_t color);
     void drawCopies(NVGcontext* vg, rack::math::Rect wave);
+    /// The take rows under the comp, newest first.
+    void drawTakeRows(NVGcontext* vg);
+    /// How many take rows show: the takes of the clip, its own included, or none while they are hidden.
+    int takeRowCount();
+    /// The height all the rows may use, and of one row.
+    float rowsHeight();
+    float rowHeight();
+    /// Row `index`, 0 the newest take, in view coordinates.
+    rack::math::Rect rowRect(int index);
+    /// The take row `index` shows (-1 the clip's own).
+    int takeOfRow(int index);
+    /// Which row `pos` is over, -1 when none.
+    int rowAt(rack::math::Vec pos);
+    /// The Hear button of row rect `row`.
+    rack::math::Rect hearRect(rack::math::Rect row) const;
+    /// The right-click menu of a take's row.
+    void takeMenu(int take);
+    /// Stops Hear, if this editor started it.
+    void stopHearing();
     /// The timeline copy of the clip that playback and "play from here" use: the selected one, else the first.
     const ArrangerClip* instance();
-    rack::math::Rect waveRect() const;
+    rack::math::Rect waveRect();
     /// The part `id`, or null.
     static const AudioRegion* find(const regions::List& list, AudioRegionId id);
     /// Clip ticks where the file starts and ends, seen from the first and last part: as far as the view can go.
@@ -129,7 +157,9 @@ class AudioEditor : public InteractiveView {
     void store(const regions::List& list, const std::string& name);
 
     regions::Ids selected;
-    rack::math::Rect uniqueButton;
+    rack::math::Rect uniqueButton, takesButton;
+    bool takesOpen = false;
+    float rowsScroll = 0; // px the rows have scrolled by, when more of them fit than the pane can show
 
     double left = 0;         // the clip tick at x = 0
     double ticksPerPx = 8;   // zoom

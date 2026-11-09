@@ -101,10 +101,14 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
         }));
     // Normalise reads the waveform, so it waits until the file is loaded.
     float peak = 0;
-    if (const AudioSource* src = m->song().sourceOf(*clip))
-        if (AudioStore* store = m->audioStore())
-            if (std::shared_ptr<const PeakCache> peaks = store->status(src->id).peaks)
-                peak = clipPeak(*clip, *src, *peaks);
+    if (AudioStore* store = m->audioStore()) {
+        std::vector<std::shared_ptr<const PeakCache>> held;
+        const Clip& shown = *clip;
+        peak = clipPeak(shown, regions::filesOf(m->song(), *shown.audio), [&](int take) -> const PeakCache* {
+            held.push_back(store->status(takeContent(*shown.audio, take).source).peaks);
+            return held.back().get();
+        });
+    }
     menu->addChild(rack::createMenuItem(
         "Normalise", peak > 0 ? "loudest sample to full scale" : "",
         [c, clipId, peak] {

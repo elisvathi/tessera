@@ -335,14 +335,19 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
         clampValue<int8_t>(a.semitones, -24, 24);
         a.cents = std::isfinite(a.cents) ? std::clamp(a.cents, -50.f, 50.f) : 0.f;
         // Warp markers keep both their ticks and their frames rising: anything else would play backwards.
-        std::stable_sort(a.warps.begin(), a.warps.end(),
-                         [](const WarpMarker& x, const WarpMarker& y) { return x.tick < y.tick; });
-        std::vector<WarpMarker> kept;
-        for (const WarpMarker& m : a.warps)
-            if (std::isfinite(m.tick) && m.frame >= 0 &&
-                (kept.empty() || (m.tick > kept.back().tick && m.frame > kept.back().frame)))
-                kept.push_back(m);
-        a.warps = kept;
+        auto cleanWarps = [](std::vector<WarpMarker>& warps) {
+            std::stable_sort(warps.begin(), warps.end(),
+                             [](const WarpMarker& x, const WarpMarker& y) { return x.tick < y.tick; });
+            std::vector<WarpMarker> kept;
+            for (const WarpMarker& m : warps)
+                if (std::isfinite(m.tick) && m.frame >= 0 &&
+                    (kept.empty() || (m.tick > kept.back().tick && m.frame > kept.back().frame)))
+                    kept.push_back(m);
+            warps = kept;
+        };
+        cleanWarps(a.warps);
+        for (AudioTake& t : a.takes)
+            cleanWarps(t.warps);
         // Parts stay inside the clip and in order; a part with no length would never play.
         std::vector<AudioRegion> parts;
         for (AudioRegion r : a.regions) {
@@ -352,6 +357,7 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
                 continue;
             ids.fix(r.id);
             r.sourceFrame = std::max<int64_t>(0, r.sourceFrame);
+            r.take = r.take >= int(a.takes.size()) ? -1 : std::max(-1, r.take);
             r.gainDb = std::isfinite(r.gainDb) ? std::clamp(r.gainDb, kSilentDb, kMaxClipGainDb) : 0.f;
             normalizeFade(r.fadeIn, r.length);
             normalizeFade(r.fadeOut, r.length);
@@ -591,14 +597,8 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
             a.layer = 0;
             normalizeFade(a.fadeIn, a.length);
             normalizeFade(a.fadeOut, a.length - a.fadeIn.length);
-            const Clip* clip = song.findClip(a.clip);
-            int takes = clip && clip->audio ? int(clip->audio->takes.size()) : 0;
-            if (a.take >= takes)
-                a.take = -1;
-            a.take = std::max<int8_t>(-1, a.take);
         } else {
             a.fadeIn = a.fadeOut = Fade{};
-            a.take = -1;
         }
     }
     std::stable_sort(arr.begin(), arr.end(), [](const ArrangerClip& a, const ArrangerClip& b) {

@@ -307,11 +307,12 @@ def drum_loop(path, bpm=112.0, bars=2, rate=44100):
     return n
 
 
-def audio_patch(out, crossfade=False):
+def audio_patch(out, crossfade=False, takes=False):
     """Writes audio.vcv: the demo with a "Loop" audio track playing a drum loop on the timeline from bar 5 and in
     the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer showing in the lower pane.
     With `crossfade` it writes crossfade.vcv instead: two copies of the loop overlapping by a bar, the second one
-    reversed, and a curved fade in on the first, with the notes showing in the lower pane."""
+    reversed, and a curved fade in on the first, with the notes showing in the lower pane. With `takes` it writes
+    takes.vcv: the same loop with two more takes, the newest one a pass that stopped early, and the notes showing."""
     song, _ = make_song()
     name = "Drum loop 112 BPM.wav"
     file = "audio/00000000-" + name
@@ -343,12 +344,17 @@ def audio_patch(out, crossfade=False):
                                "arrangement": places, "automation": [], "channel": {"volume": -3.0, "pan": 0.0}})
         song["clips"].append(loop)
         song["audioSources"] = [source]
+        if takes:
+            second = dict(source, id=ids.take())
+            third = dict(source, id=ids.take(), frames=int(frames * 0.7))
+            song["audioSources"] += [second, third]
+            loop["audio"]["takes"] = [{"source": second["id"], "start": 14000}, {"source": third["id"], "start": 28000}]
         song["master"] = {"id": ids.take(), "volume": 0.0}
         song["nextId"] = ids.next + 10
         tessera = tessera_module(song, loop, PANEL_HP, True, "Loop")
-        tessera["data"]["ui"]["overlay"].update({"mixerOpen": not crossfade, "mixerHeight": 300.0})
+        tessera["data"]["ui"]["overlay"].update({"mixerOpen": not (crossfade or takes), "mixerHeight": 300.0})
         (root / "patch.json").write_text(json.dumps(patch([tessera] + outputs(PANEL_HP))))
-        name = "crossfade.vcv" if crossfade else "audio.vcv"
+        name = "crossfade.vcv" if crossfade else "takes.vcv" if takes else "audio.vcv"
         subprocess.run(["tar", "--zstd", "-cf", str(out / name), "-C", tmp, "patch.json", "modules"], check=True)
 
 
@@ -379,6 +385,7 @@ def main():
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
     audio_patch(out)
     audio_patch(out, crossfade=True)
+    audio_patch(out, takes=True)
 
 
 if __name__ == "__main__":
