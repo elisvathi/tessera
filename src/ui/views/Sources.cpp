@@ -380,14 +380,15 @@ void ClipSource::setPlayheadSegment(uint64_t id, double start, double end) {
     const Clip* c = current();
     if (!m || !c)
         return;
-    ClipSpan span = clipSpan(*c, lanes());
+    std::pair<Tick, Tick> follows = playheadSpan(*c, lanes());
     double step = double(kPpq) / 4;
     using namespace playheads::knob;
     const devices::TypeInfo& info = devices::playheadInfo();
     int from = std::clamp(int(std::lround(start / step)), 0, playheads::kMaxRegionSteps);
     int length = std::clamp(int(std::lround((end - start) / step)), 1, playheads::kMaxRegionSteps);
-    // Covering exactly the clip's loop is stored as "follow the clip", so it moves with the loop.
-    if (std::abs(start - double(span.start)) < 1 && std::abs(end - double(span.end)) < 1)
+    // Covering exactly what "follow the clip" covers is stored as that, so it moves with the loop. Any other span must
+    // stay as dragged, so this compares with the same span the segment shows when it follows.
+    if (std::abs(start - double(follows.first)) < 1 && std::abs(end - double(follows.first + follows.second)) < 1)
         from = length = 0;
     Song work = m->song();
     auto both = std::make_unique<CompoundCommand>("Move playhead segment");

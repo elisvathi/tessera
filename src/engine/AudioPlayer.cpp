@@ -513,10 +513,14 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                         retR += rr;
                     }
                 }
+            if (tp.hearRollIn) {
+                retL += rack.rollInL;
+                retR += rack.rollInR;
+            }
             sl += retL;
             sr += retR;
-            run.inL = srcL + retL;
-            run.inR = srcR + retR;
+            run.inL = tp.rollIn ? rack.rollInL : srcL + retL;
+            run.inR = tp.rollIn ? rack.rollInR : srcR + retR;
             run.soundL = sl;
             run.soundR = sr;
             run.gainL += run.stepL;

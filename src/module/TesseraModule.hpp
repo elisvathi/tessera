@@ -94,6 +94,8 @@ class TesseraModule : public rack::engine::Module {
         AUTO_REC_INPUT,
         FILL_INPUT,
         CLOCK_INPUT,
+        ROLL_IN_L_INPUT,
+        ROLL_IN_R_INPUT,
         INPUTS_LEN
     };
     // New ports go last, so saved patches keep their cables.

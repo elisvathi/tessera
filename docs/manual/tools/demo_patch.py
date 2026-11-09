@@ -28,7 +28,7 @@ BAR = 4 * BEAT
 TESSERA_ID = 1001
 TRACK_IDS = {"Bass": 1, "Chords": 2, "Lead": 3, "Drums": 4, "Loop": 5}
 COLORS = {"Bass": 0x4498E8, "Chords": 0xDA743C, "Lead": 0x9B7FE2, "Drums": 0x1AAE74, "Loop": 0xD79628}
-PANEL_HP = 26  # Tessera's own width
+PANEL_HP = 30  # Tessera's own width
 
 # The model's 16 track colours (src/model/TrackColors.hpp); a kit lane takes colour (output * 5) % 16, as new kits do.
 TRACK_COLORS = [0xEF806F, 0xE88949, 0xD79628, 0xBDA422, 0x9AB140, 0x6DBA67, 0x2DC08E, 0x00C0B4,

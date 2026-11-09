@@ -73,7 +73,7 @@ hats.
 
 ### 8. Inputs
 
-The inputs sit on the left: the top row controls the transport, the row below it scenes and fill. The four jacks
+The inputs sit on the left: the top row controls the transport, the row below it scenes and fill. The six jacks
 in the box named **RECORD** are for recording.
 
 | Input | What it does |
@@ -88,6 +88,7 @@ in the box named **RECORD** are for recording.
 | **GATE** | Record input: a note starts when the gate rises above 1 V and ends when it falls below 0.1 V. A new pitch on V/OCT while the gate stays high starts a new note. |
 | **VEL** | Record input: velocity, 0 to 10 V. Without a cable, notes get 80%. |
 | **AUTO** | Records automation. Poly: channel 1 goes to AUTO lane 1, channel 2 to lane 2, and so on. See [Automation](12-automation.md#recording-automation). |
+| **IN L**, **IN R** | Audio to record, for an audio track whose **Record from** is **Roll IN L and R**. With only one patched, the other follows it. See [Audio](17-audio.md#recording-audio). |
 
 ### 9. Outputs
 

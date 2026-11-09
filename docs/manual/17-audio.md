@@ -190,7 +190,9 @@ Full scale (0 dB) is 10 V, the level Rack's Audio module sends to your sound car
 ## Recording audio
 
 An audio track records what comes in on its Track Out's **IN**: a microphone or an instrument through Rack's Audio
-module, or any module's output. Its clips are never recorded into the take.
+module, or any module's output. To record from the jacks on Roll instead, right-click the track and set **Record from** to
+**Roll IN L and R**. If only one of those two is patched, the other follows it. Roll IN is heard while the track is armed
+and **Monitor while armed** is on. Its clips are never recorded into the take.
 
 1. Patch the sound into the **IN** of a Track Out bound to the audio track.
 2. **Arm** the track (the ring in its header turns red).
@@ -225,7 +227,7 @@ otherwise the pass becomes a new clip, as it does in Merge and Replace.
 
 **Bounce** records a track's sound, with the effects patched on its Track Out, onto a new audio track: a synth part
 becomes audio you can cut and move, and the rack is free for something else. Right-click the track (or one of its
-clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B** with the track selected.
+clips on the timeline) ▸ **Bounce audio to a new track…**, or press **Ctrl+B** with the track selected.
 
 - **Length**: **Selected clips** (from the first selected clip's start to the last one's end), **Selected area**
   (the timeline range you drew), or **Until silent** (from the selection or the playhead, on past the end until the

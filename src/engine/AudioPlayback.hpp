@@ -117,6 +117,8 @@ struct AudioTrackPlay {
     float volume = 1;                          // the fader as a gain
     float pan = 0;
     bool audible = true; // heard: its fader output reaches the master (mute and solo applied)
+    bool rollIn = false;     // it records Roll's own IN jacks instead of its Track Out IN
+    bool hearRollIn = false; // armed and monitoring, so those jacks are heard on this track
     bool own = true;     // its own sound (clips, lane INs) plays; off when muted or soloed away (§4.5)
     bool sending = true; // its sends play
     std::vector<SendPlay> sends; // receivers always come later in `tracks`

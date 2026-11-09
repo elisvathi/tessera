@@ -40,7 +40,7 @@ const char* const kTrackTypes[] = {"instrument", "drum", "audio"};
 const char* const kTempoFollow[] = {"stretch", "repitch", "off"};
 // In SoundType's order.
 const char* const kSoundTypes[] = {"drums", "melody", "voice", "fullMix"};
-const char* const kRecordInputs[] = {"any", "cv", "midi"};
+const char* const kRecordInputs[] = {"any", "cv", "midi", "rollIn"};
 const char* const kListenSources[] = {"none", "external", "trackAfter", "trackBefore"};
 const char* const kAutoSources[] = {"knob", "cv"};
 const char* const kAutoRecordModes[] = {"touch", "latch", "write"};

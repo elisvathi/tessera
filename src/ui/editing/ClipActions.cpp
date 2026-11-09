@@ -503,7 +503,7 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
             mod->song(), track, id, at, [mod] { return mod->newId<ArrangementId>(); }, c->state().stackClips));
     }));
     if (!clip->isAudio())
-        menu->addChild(rack::createMenuItem("Bounce to a new track…", "", [c, track, id, slot] {
+        menu->addChild(rack::createMenuItem("Bounce notes to a new track…", "", [c, track, id, slot] {
             bounceActions::openClipDialog(*c, track, id, slot);
         }));
     menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate),

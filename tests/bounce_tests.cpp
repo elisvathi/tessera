@@ -2,6 +2,9 @@
 
 #include "../src/model/BounceNotes.hpp"
 #include "../src/model/DeviceCommands.hpp"
+#include "../src/model/Serialize.hpp"
+
+#include <jansson.h>
 
 using namespace tessera;
 
@@ -142,4 +145,84 @@ TEST_CASE("a notes bounce refuses an empty span and audio tracks") {
     CHECK_FALSE(bounceNotes(f.song, what, 120, f.next()));
     what.from = what.to;
     CHECK_FALSE(bounceNotes(f.song, what, 120, f.next()));
+}
+
+TEST_CASE("an audio track's Roll IN source survives a save and load") {
+    BounceSong f;
+    f.song.tracks[0].type = TrackType::Audio;
+    f.song.tracks[0].recordInput = RecordInput::RollIn;
+    json_t* saved = songToJson(f.song);
+    Song loaded = songFromJson(saved, Song::kSchemaVersion);
+    json_decref(saved);
+    CHECK(loaded.tracks[0].recordInput == RecordInput::RollIn);
+}
+
+namespace {
+
+/// A lane on AUTO channel 2 going from a quarter to three quarters over the bar.
+AutomationEnvelope cvLane(Song& song) {
+    AutomationEnvelope lane;
+    lane.id = AutomationId(song.nextId++);
+    lane.name = "Cutoff";
+    lane.outputIndex = 2;
+    AutoPoint a, b;
+    a.t = 0;
+    a.value = 0.25f;
+    b.t = 4 * kPpq;
+    b.value = 0.75f;
+    lane.points = {a, b};
+    return lane;
+}
+
+} // namespace
+
+TEST_CASE("a notes bounce brings the track's CV lanes across") {
+    BounceSong f;
+    f.song.findTrack(f.track)->automation.push_back(cvLane(f.song));
+    NoteBounce what;
+    what.track = f.track;
+    what.to = 4 * kPpq;
+    NoteBounceMade made;
+    bounceNotes(f.song, what, 120, f.next(), &made)->apply(f.song);
+    const Track& track = *f.song.findTrack(made.track);
+    REQUIRE(track.automation.size() == 1);
+    CHECK(track.automation[0].name == "Cutoff");
+    CHECK(track.automation[0].outputIndex == 2);
+    REQUIRE_FALSE(track.automation[0].points.empty());
+    CHECK(track.automation[0].points.front().value == doctest::Approx(0.25f));
+    CHECK(evaluate(track.automation[0], double(2 * kPpq)) == doctest::Approx(0.5f).epsilon(0.03));
+}
+
+TEST_CASE("a notes bounce of a panel clip keeps the clip's CV lanes") {
+    BounceSong f;
+    f.song.findClip(f.clipId)->automation.push_back(cvLane(f.song));
+    NoteBounce what;
+    what.track = f.track;
+    what.clip = f.clipId;
+    NoteBounceMade made;
+    bounceNotes(f.song, what, 120, f.next(), &made)->apply(f.song);
+    const Clip* clip = f.song.findClip(made.clip);
+    REQUIRE(clip->automation.size() == 1);
+    CHECK(clip->automation[0].points.front().value == doctest::Approx(0.25f));
+    CHECK(clip->automation[0].id != f.song.findClip(f.clipId)->automation[0].id);
+}
+
+TEST_CASE("a notes bounce plays a lane that turns a device knob into the notes") {
+    BounceSong f;
+    DeviceId device;
+    addDevice(f.song, f.track, DeviceType::Transpose, 0, f.next(), &device)->apply(f.song);
+    AutomationEnvelope lane;
+    lane.id = AutomationId(f.song.nextId++);
+    lane.paramTarget = ParamRef{ParamRef::Kind::Device, device.value, uint16_t(devices::knob::kSemitones)};
+    AutoPoint up;
+    up.value = 1;
+    lane.points = {up};
+    f.song.findTrack(f.track)->automation.push_back(lane);
+    NoteBounce what;
+    what.track = f.track;
+    what.to = 4 * kPpq;
+    NoteBounceMade made;
+    bounceNotes(f.song, what, 120, f.next(), &made)->apply(f.song);
+    CHECK(f.song.findClip(made.clip)->notes.front().pitch == 60 + 24);
+    CHECK(f.song.findTrack(made.track)->automation.empty());
 }

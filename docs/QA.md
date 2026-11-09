@@ -57,7 +57,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 
 ## In-panel editor
 - [ ] Drag Tessera's right edge: the panel widens in HP steps, neighbours are pushed aside; narrow it below
-      ~36 HP and it folds back to 24 HP. Ctrl/Cmd+Z restores width and neighbour positions in one step.
+      ~40 HP and it folds back to 30 HP. Ctrl/Cmd+Z restores width and neighbour positions in one step.
 - [ ] Module menu > Panel editor: Off / 48 / 80 / 120 HP do the same.
 - [ ] The panel shows the arranger above the piano roll; Arranger / Both / Piano roll switch the view, and
       the splitter, Tab and Shift+Tab work as in the overlay.

@@ -103,16 +103,19 @@ The inspector's **Output** row says which output module plays the track, or "Non
 
 ## Bounce notes to a new track
 
-Right-click a note or drum track, a clip on the timeline or a clip in the clips panel, and choose **Bounce to a new
-track…** (**Ctrl+B** with the track selected). It takes no time and nothing has to play.
+Right-click a note or drum track, a clip on the timeline or a clip in the clips panel, and choose **Bounce notes to a
+new track…**. It takes no time and nothing has to play. **Ctrl+B** opens this on a track that makes no sound.
 
 - **Length**: the selected clips, the selected area or the whole track. Clips you didn't select stay out.
 - **Notes**: **As it plays** has the devices and playheads applied. **As written** is the clip's own notes.
 - **Playheads**: all of them, each on its own channel on the one new track, or just one.
 
+Automation comes along. Lanes that turn a device or playhead knob are already in the notes (**As it plays**). Lanes that
+drive an AUTO jack come across to the new track, one per jack, with the clip's own lanes combined in.
+
 The result is one clip on a new track under the original, with no devices, in one undo step. A clip from the clips
-panel lands in the same scene on the new track. To bounce what a track sounds like instead, choose **Bounce the sound
-instead…** at the bottom of that menu (see [Audio](17-audio.md)).
+panel lands in the same scene on the new track. To bounce what a track sounds like, choose **Bounce audio to a new
+track…** (see [Audio](17-audio.md)).
 
 ## A track that plays another track (Input)
 

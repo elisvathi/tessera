@@ -2267,4 +2267,14 @@ This replaces "Linked by default" in the timeline section.
 - **Notes bounce is instant**, from the code MIDI export uses: nothing has to play, and clips you didn't select stay out.
 - **One clip on a new track**, no devices, each playhead on its own channel, or one playhead alone. A panel clip lands in
   the same scene on the new track. There is no "mute afterwards": that is for the audio bounce.
+- **Automation:** lanes on device and playhead knobs are baked into the notes. Lanes on AUTO jacks are copied to the new
+  track, one per jack, sampled with clip lanes combined; a panel clip keeps its own lanes. Copies don't take over the
+  other modules' knobs that the source lane maps.
 - **Limit:** it can't capture live moves (knobs turned or clips launched while playing).
+
+## 140. Roll IN and the 30 HP panel (9 Nov)
+
+- **Roll is 30 HP**, with IN L and R as a third column in the RECORD box, on the same even grid. Old patches widen to 30 HP
+  and may overlap the module beside Roll.
+- **The meter sits about 3 mm clear of the MAIN jacks.**
+- **An audio track records its Track Out IN or Roll IN** (Record from). Roll IN is heard while armed with monitoring on.

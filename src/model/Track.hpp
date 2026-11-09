@@ -13,8 +13,9 @@ namespace tessera {
 
 enum class TrackType : uint8_t { Instrument, Drum, Audio };
 
-/// Where an armed track takes its notes from (DESIGN.md §14).
-enum class RecordInput : uint8_t { Any, Cv, Midi };
+/// Where an armed track records from (DESIGN.md §14). Note tracks use Any, Cv or Midi. An audio track records its
+/// Track Out IN (Any) or Roll's own IN jacks (RollIn).
+enum class RecordInput : uint8_t { Any, Cv, Midi, RollIn };
 
 /// What a track plays besides its clips, all the time (no arming needed): nothing, the external inputs (recordInput
 /// and midiChannel say which), or another track's notes after or before that track's devices. The notes go through

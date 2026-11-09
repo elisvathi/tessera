@@ -42,6 +42,7 @@ class AudioPlayer {
         const ReturnBus* returns = nullptr;
         AudioOutFrame* out = nullptr;
         int64_t frame = 0;
+        float rollInL = 0, rollInR = 0; // Roll's own IN jacks, in volts
     };
 
     /// Plays one sample: reads the engine's transport after its process(), plays the clips, mixes. `left` and

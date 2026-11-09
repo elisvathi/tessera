@@ -1010,7 +1010,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     if (t->type != TrackType::Audio)
         y = settingRow(vg, y, "Input", trackActions::inputLabel(song, *t), Setting::Input);
     static const char* const inputs[] = {"Any input", "REC CV inputs", "MIDI"};
-    std::string recording = inputs[int(t->recordInput)];
+    std::string recording = t->type == TrackType::Audio ? "" : inputs[int(t->recordInput)];
     if (t->recordInput != RecordInput::Cv)
         recording += t->midiChannel == 0 ? ", all channels" : ", ch " + std::to_string(t->midiChannel);
     if (t->armed)

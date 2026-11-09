@@ -146,6 +146,8 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         tp.clipsGain = t.clips.use ? dbToGain(t.clips.db) : 0.f;
         tp.pan = t.channel.pan;
         tp.audible = tp.own = tp.sending = !t.mute;
+        tp.rollIn = t.type == TrackType::Audio && t.recordInput == RecordInput::RollIn;
+        tp.hearRollIn = tp.rollIn && t.armed && t.monitor;
         if (!t.mute && anySolo && !soloed(t)) {
             bool down = downstream(t), up = upstream(t);
             tp.own = up && !down;

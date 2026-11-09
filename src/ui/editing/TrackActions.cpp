@@ -463,6 +463,23 @@ void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vecto
     menu->addChild(rack::createCheckMenuItem(
         "Armed for recording", "", [c, ids] { return trackFlag(*c, ids.front(), &Track::armed); },
         [c, ids] { toggleArm(*c, ids.front(), true); }));
+    if (track->type == TrackType::Audio) {
+        static const std::pair<RecordInput, const char*> sources[] = {{RecordInput::Any, "Its Track Out IN"},
+                                                                      {RecordInput::RollIn, "Roll IN L and R"}};
+        std::string now = track->recordInput == RecordInput::RollIn ? "Roll IN" : "Track Out IN";
+        menu->addChild(rack::createSubmenuItem("Record from", now, [c, ids](rack::ui::Menu* sub) {
+            for (const auto& [input, name] : sources) {
+                RecordInput value = input;
+                sub->addChild(rack::createCheckMenuItem(
+                    name, "",
+                    [c, ids, value] {
+                        const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+                        return t && t->recordInput == value;
+                    },
+                    [c, ids, value] { setField(*c, ids, &Track::recordInput, value, "Set record input"); }));
+            }
+        }));
+    }
     if (track->type != TrackType::Audio) {
         static const char* const inputs[] = {"Any (CV and MIDI)", "REC CV inputs", "MIDI"};
         std::string channel =
@@ -579,11 +596,12 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
         menu->addChild(rack::createMenuItem(
             track->type == TrackType::Drum ? "Add a Drum Out for this track" : "Add a Track Out for this track", "",
             [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
-        bool audioTrack = track->type == TrackType::Audio;
-        if (!audioTrack || m->soundIndex(id) >= 0)
-            menu->addChild(rack::createMenuItem(audioTrack ? "Bounce to a new audio track…" : "Bounce to a new track…",
-                                                shortcutLabel(Action::Bounce),
-                                                [c, id] { bounceActions::openDialog(*c, id); }));
+        if (m->soundIndex(id) >= 0)
+            menu->addChild(rack::createMenuItem("Bounce audio to a new track…", shortcutLabel(Action::Bounce),
+                                                [c, id] { bounceActions::openAudioDialog(*c, id); }));
+        if (track->type != TrackType::Audio)
+            menu->addChild(rack::createMenuItem("Bounce notes to a new track…", "",
+                                                [c, id] { bounceActions::openNotes(*c, id); }));
     }
     if (track->type != TrackType::Audio)
         menu->addChild(

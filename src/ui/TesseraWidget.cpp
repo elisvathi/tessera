@@ -25,10 +25,10 @@ using rack::math::Rect;
 using rack::math::Vec;
 using namespace rack::componentlibrary;
 
-constexpr int kHp = 26;
+constexpr int kHp = 30;
 
 // Layout in mm. The panel is 132.08 x 128.5: 26 HP since MAIN joined as a ninth jack column (DECISIONS §103).
-const Rect kDisplay(6, 13, 120.08f, 34);
+const Rect kDisplay(6, 13, 140.4f, 34);
 constexpr float kControlRow = 57;
 constexpr float kSceneRow = 72;
 const Vec kEditorButton(77, kControlRow);
@@ -61,14 +61,15 @@ constexpr float kButtonCol[5] = {12, 25, 38, 51, 64};
 constexpr float kJackRow1 = 95.5f;
 constexpr float kJackRow2 = 113;
 constexpr float kInputCol[3] = {12, 25, 38};
-constexpr float kRecordCol[2] = {53, 65.5f};
-constexpr float kOutputCol[3] = {84, 97, 110};
-constexpr float kMainCol = 123; // 13 mm on, like every column
-constexpr float kTempoCol = 108;
-const Rect kRecordBox(45.5f, 84, 27.5f, 37.5f);
-const Rect kOutputPlate(77, 84, 53, 37.5f);
+constexpr float kRecordCol[3] = {53, 65.5f, 78};
+constexpr float kOutputCol[3] = {96.5f, 109.5f, 122.5f};
+constexpr float kMainCol = 135.5f; // 13 mm on, like every column
+constexpr float kTempoCol = 122.5f;
+const Rect kRecordBox(45.5f, 84, 40, 37.5f);
+const Rect kOutputPlate(89.5f, 84, 60.5f, 37.5f);
 // The two-bar meter beside MAIN, its dividing line before it, and the "not patched" dot above it.
-const Rect kMainMeter(116.2f, 86, 14, 34);
+const Rect kMainMeter(128.7f, 86, 19, 34);
+constexpr float kMeterBars = 14.3f; // from the meter's left edge: clear of the MAIN jacks
 constexpr float kStopAllCol = 54; // its label is wide
 constexpr float kFillCol = 93;
 constexpr float kPlaysCol = 76;
@@ -93,7 +94,7 @@ struct MainMeter : rack::widget::Widget {
             drawBars(args.vg, true);
             if (module && module->masterSounding() && !module->mainPatched()) {
                 nvgBeginPath(args.vg);
-                nvgCircle(args.vg, rack::mm2px(12.6f), rack::mm2px(0.6f), rack::mm2px(0.85f));
+                nvgCircle(args.vg, rack::mm2px(kMeterBars + 1.2f), rack::mm2px(0.6f), rack::mm2px(0.85f));
                 nvgFillColor(args.vg, theme::panelColors().queue);
                 nvgFill(args.vg);
             }
@@ -113,7 +114,7 @@ struct MainMeter : rack::widget::Widget {
             float db = gainToDb(volts / kFullScaleVolts);
             // -60 dB to +6 dB over the segments; the top one is over 0 dB.
             int litCount = db <= -60 ? 0 : std::min(kSegments, int(std::ceil((db + 60) / 66 * kSegments)));
-            float x = rack::mm2px(11.4f + side * 1.15f);
+            float x = rack::mm2px(kMeterBars + side * 1.15f);
             for (int i = 0; i < kSegments; i++) {
                 bool on = i < litCount;
                 if (on != lit)
@@ -266,6 +267,8 @@ struct TesseraWidget : rack::app::ModuleWidget {
         panel.input(Vec(kRecordCol[1], kJackRow1), M::REC_GATE_INPUT, "GATE");
         panel.input(Vec(kRecordCol[0], kJackRow2), M::REC_VEL_INPUT, "VEL");
         panel.input(Vec(kRecordCol[1], kJackRow2), M::AUTO_REC_INPUT, "AUTO");
+        panel.input(Vec(kRecordCol[2], kJackRow1), M::ROLL_IN_L_INPUT, "IN L");
+        panel.input(Vec(kRecordCol[2], kJackRow2), M::ROLL_IN_R_INPUT, "IN R");
 
         panel.art().addPlate(kOutputPlate);
         panel.output(Vec(kOutputCol[0], kJackRow1), M::CLOCK_OUTPUT, "CLOCK");

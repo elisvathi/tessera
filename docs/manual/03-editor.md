@@ -166,7 +166,7 @@ Every button shows a tooltip after half a second, with its key in brackets.
 
 Roll's panel can grow wider to hold a small editor right in the rack. Drag the panel's right edge, or right-click
 the panel and choose **Panel editor → 48, 80 or 120 HP**. Modules to the right move out of the way. Narrow it below
-about 36 HP and it folds back to 24 HP. One undo restores the width and the neighbours.
+about 40 HP and it folds back to 30 HP. One undo restores the width and the neighbours.
 
 ![The editor inside an 80 HP panel](images/panel-editor.png)
 

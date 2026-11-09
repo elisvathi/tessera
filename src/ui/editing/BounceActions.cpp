@@ -76,8 +76,7 @@ Tick lastEnd(const Track& t) {
 
 } // namespace
 
-/// The real-time bounce of a track's sound onto a new audio track.
-static void openSoundDialog(EditorContext& ctx, TrackId track) {
+void openAudioDialog(EditorContext& ctx, TrackId track) {
     TesseraModule* m = ctx.module();
     const Track* t = m ? m->song().findTrack(track) : nullptr;
     if (!t)
@@ -255,19 +254,17 @@ static void openNotesDialog(EditorContext& ctx, TrackId track, ClipId clip, int 
         c->state().selectedTracks = {made.track};
         c->toast("Bounced to a new track: " + name);
     }));
-    if (!panelClip && m->soundIndex(track) >= 0) {
-        menu->addChild(new rack::ui::MenuSeparator);
-        menu->addChild(
-            rack::createMenuItem("Bounce the sound instead…", "", [c, track] { openSoundDialog(*c, track); }));
-    }
 }
 
+void openNotes(EditorContext& ctx, TrackId track) { openNotesDialog(ctx, track, ClipId(), 0); }
+
 void openDialog(EditorContext& ctx, TrackId track) {
-    const Track* t = ctx.module() ? ctx.module()->song().findTrack(track) : nullptr;
-    if (t && t->type != TrackType::Audio)
-        openNotesDialog(ctx, track, ClipId(), 0);
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(track) : nullptr;
+    if (t && t->type != TrackType::Audio && m->soundIndex(track) < 0)
+        openNotes(ctx, track);
     else
-        openSoundDialog(ctx, track);
+        openAudioDialog(ctx, track);
 }
 
 void openClipDialog(EditorContext& ctx, TrackId track, ClipId clip, int slot) {

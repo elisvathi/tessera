@@ -568,13 +568,13 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
         menu->addChild(rack::createMenuItem("Make triggers from audio", "", [l, clicked] { makeTriggers(*l, clicked); }));
     }
     const Track* ownerTrack = c->module() ? c->module()->song().findTrack(placed->track) : nullptr;
-    bool audioOwner = ownerTrack && ownerTrack->type == TrackType::Audio;
-    if (ownerTrack && (!audioOwner || c->module()->soundIndex(placed->track) >= 0)) {
-        TrackId owner = placed->track;
-        menu->addChild(rack::createMenuItem(audioOwner ? "Bounce to a new audio track…" : "Bounce to a new track…",
-                                            shortcutLabel(Action::Bounce),
-                                            [c, owner] { bounceActions::openDialog(*c, owner); }));
-    }
+    TrackId owner = placed->track;
+    if (ownerTrack && c->module()->soundIndex(owner) >= 0)
+        menu->addChild(rack::createMenuItem("Bounce audio to a new track…", shortcutLabel(Action::Bounce),
+                                            [c, owner] { bounceActions::openAudioDialog(*c, owner); }));
+    if (ownerTrack && ownerTrack->type != TrackType::Audio)
+        menu->addChild(rack::createMenuItem("Bounce notes to a new track…", "",
+                                            [c, owner] { bounceActions::openNotes(*c, owner); }));
     menu->addChild(rack::createMenuItem(
         "Make unique", shortcutLabel(Action::MakeUnique), [l] { makeUniqueSelected(*l); }, uses <= 1));
     bool muted = placed->clip.muted;

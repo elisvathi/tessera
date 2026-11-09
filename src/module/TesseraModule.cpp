@@ -92,6 +92,8 @@ TesseraModule::TesseraModule() : clockDivisionIndex(kDefaultClockDivision) {
         "Stopped: count in (menu) and record. Playing: punch in. Recording: punch out";
     configInput(REC_VOCT_INPUT, "Record V/OCT")->description = "Pitch of the notes to record, per poly channel";
     configInput(REC_GATE_INPUT, "Record gate")->description = "A note per poly channel while high (above 1 V)";
+    configInput(ROLL_IN_L_INPUT, "Audio IN left")->description = "For an audio track set to record from Roll IN";
+    configInput(ROLL_IN_R_INPUT, "Audio IN right")->description = "Follows left when only left is patched";
     configInput(REC_VEL_INPUT, "Record velocity")->description = "0-10 V per poly channel; 8 V without a cable";
     configInput(AUTO_REC_INPUT, "Automation record")->description =
         "Poly: channel N is recorded into armed lanes on AUTO channel N whose source is this input";
@@ -1129,6 +1131,12 @@ void TesseraModule::process(const ProcessArgs& args) {
     float mainL = 0, mainR = 0;
     if (player->active()) {
         AudioPlayer::Rack rack{&bus->returns(), bus->beginAudioWrite(args.frame), args.frame};
+        // A poly cable is summed to stereo; each side follows the other when only one is patched, as on Track Out.
+        bool hasL = inputs[ROLL_IN_L_INPUT].isConnected(), hasR = inputs[ROLL_IN_R_INPUT].isConnected();
+        float inL = hasL ? inputs[ROLL_IN_L_INPUT].getVoltageSum() : 0.f;
+        float inR = hasR ? inputs[ROLL_IN_R_INPUT].getVoltageSum() : 0.f;
+        rack.rollInL = hasL ? inL : inR;
+        rack.rollInR = hasR ? inR : inL;
         player->process(engine, mainL, mainR, rack);
         bus->publishAudio(args.frame);
     }

@@ -149,7 +149,7 @@ struct KeyPreview {
 };
 
 struct EditorState {
-    static constexpr int kPanelMinHp = 26; // the controls alone (24 before MAIN, DECISIONS §103)
+    static constexpr int kPanelMinHp = 30; // the controls alone (24 before MAIN, DECISIONS §103)
     static constexpr int kPanelEditorMinHp = 48;
     static constexpr int kPanelMaxHp = 160;
 
