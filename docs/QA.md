@@ -165,7 +165,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       clicking it brings the track back. Stopping a track also takes it over.
 - [ ] Drag a clip: snaps to the grid and to nearby clip edges, markers, loop and playhead; Alt is free; Shift
       locks an axis; dragging up/down moves it to other tracks (readout shows the track).
-- [ ] Ctrl/Cmd+drag: linked copy (link badge on both). Ctrl/Cmd+Alt+drag: independent copy.
+- [ ] Ctrl/Cmd+drag: independent copy. Ctrl/Cmd+Alt+drag: linked copy (link badge on both).
 - [ ] Right edge: a looping clip repeats (seam notches); Alt+right edge stretches (×factor shown). Left edge
       trims, content stays put. Alt+drag body slips the content.
 - [ ] Header strip: drag down/up changes velocity scale (percentage shown on the clip).
@@ -397,7 +397,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Closed, a track with devices shows the chain in a thin bar; clicking it opens the strip.
 - [ ] + Add device, the + between cards and the Add device tile open the browser: type "delay" (Echo), "arp",
       "humanize" (Random); ↑ ↓ and Enter add it; Esc closes. The footer says where it goes.
-- [ ] Each of the nine devices changes what you hear: Transpose, Scale (in and out of key), Velocity, Note
+- [ ] Each device changes what you hear (Note Repeat: see the 9 Nov section): Transpose, Scale (in and out of key), Velocity, Note
       Length (fixed, legato), Chord (on a one-note melody: a chord, with Voices on Auto), Arpeggiator (on the
       grid, patterns, Hold), Echo (repeats fade), Random (different each pass, the same on the same pass), Note
       Filter (range, every Nth). Bypass (power button): the notes pass unchanged.
@@ -570,9 +570,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Click a Curve modulator's row: only the lower pane opens (no popover); click again: the note lane comes back.
       The pane's top row shows Moves ▾ with what it moves; its menu removes a setting, starts mapping (Map to more
       knobs), and opens CV out…. A new Curve from + Add opens the pane only. Other modulators still open their popover.
-- [ ] Timeline on a track with playheads: each clip shows diagonal lines and one band per playhead with its path
-      (1x forward: a ramp per pass; backward falls; ping-pong zigzags; repeats show steps back); no notes. An off
-      playhead's path is faint. A stretched or offset clip draws its paths as it plays them. Launcher slots show the
+- [ ] Timeline on a track with playheads: each clip shows one band per playhead, with a block wherever it
+      is over a note; too short for bands, the paths show instead (1x forward: a ramp per pass; backward falls;
+      ping-pong zigzags). An off playhead is faint. A stretched or offset clip draws them as it plays them. Launcher slots show the
       same over one pass. Bypassing the Playheads device brings the notes back.
 
 ## Audio, Phase 1a (docs/design/AUDIO_MIXER.md)
@@ -625,8 +625,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       bypassed (the menu says which). Click the chip: Add a Track Out for this track; Show Track Out in the rack
       scrolls the rack to it (same zoom) and flashes its screen.
 - [ ] Two Track Outs on one track, each with its own synth on IN: patching the second toasts "… has 2 sources now.
-      Both play"; "Use only the new one" turns the first off. The chip reads "2 sources"; its list has a tick, meter,
-      Level slider and Show in the rack per source. A Level drag is heard at once and is one undo step; the Track
+      Both play"; "Use only the new one" turns the first off. The chip reads "2 sources" and each input has a strip beside the track's;
+      its arrow folds them. A fader drag is heard at once and is one undo step; the Track
       Out screen shows "IN -6.0 dB" / "IN OFF". The same cable into a third Track Out's IN: "counted once", no
       louder. Save and reload: levels stay. The Track Out's right-click menu has the same Use and Level.
 - [ ] Sends: a Reverb track with its Track Out OUT → reverb → IN. On Lead's strip click "+" ▸ Reverb: the faders
@@ -645,9 +645,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Loop on: each pass is a clip. Playing clips: the take lands in the first empty slot. Two armed tracks: two
       clips, one undo step.
 - [ ] Bounce: select a note track's clips (voice on its Track Out IN, through an effect), Ctrl+B: the dialog lists
-      Selected clips and Until silent; Bounce plays from a bar before with "Bouncing … · bar n of m" and Cancel. At
-      the end a "… (bounce)" track sits under it, in time with the original, which is muted. Undo removes both
-      changes. Stop during a bounce: nothing is left. Until silent on a reverb tail: it stops a second after quiet.
+      Selected clips and Until silent; Bounce plays from a bar before with "Bouncing … · bar n of m" and Stop. The
+      "… (bounce)" track appears at once with the take growing on it, in time with the original, which is muted at
+      the end. Undo removes both changes. Stop partway keeps what was played. Until silent on a reverb tail: it stops a second after quiet.
 - [ ] Export audio (Ctrl+Alt+E), master and stems, 24-bit: pick a file; it plays from the start with "Exporting ·
       bar n of m"; at the end the master file and a stem per sounding track are there, as long as the song (or
       the loop), no metronome. A muted track has no stem. Clips mode: it records until Stop. Stop early on the
@@ -703,3 +703,18 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] File → Remove unused audio after deleting an audio track: one undo step; undo brings the clips back.
 - [ ] In the in-panel editor (80 HP), the mixer shows in the lower pane and plays the same.
 - [ ] A song without audio: no Notes | Mixer switch, no change in Rack's CPU meter against the previous version.
+
+## Bug batch, 9 Nov
+
+- [ ] New Roll: the timeline opens on bar 1. Octaves on Transpose snaps while dragged.
+- [ ] Mixer open, click a MIDI clip and an audio clip: each brings its editor back. The tab reads Audio with an audio track selected.
+- [ ] Ctrl+drag, Ctrl+D, paste: independent copies. Ctrl+Alt+drag: linked. Link identical clips links matching timeline clips.
+- [ ] A note clip won't move, paste or drag onto an audio track, or the other way round. An audio track's menu has no Input, MIDI channel, Create clip or Import MIDI.
+- [ ] Split an audio clip, change one piece's gain: the other stays. Same settings: Glue rejoins them.
+- [ ] Bounce audio: the new track shows at once; Stop on the message keeps what played; only that track plays; solo buttons and the loop are as they were afterwards. With Selected clips, an unselected overlapping clip stays out.
+- [ ] Bounce notes: instant, one clip, a new track with no devices; all playheads on their channels or one alone; As written; CV lanes come across; a panel clip lands in the same scene. A knob lane is baked into the notes.
+- [ ] A playhead segment dragged to the clip's full length stays there while playing.
+- [ ] 30 HP panel: IN L and R in RECORD; meter clear of MAIN. Record from Roll IN, from another track and from Master mix each make a take.
+- [ ] Audio track with OUT → effect → IN: Clips and IN strips show; muting Clips leaves the effect playing; S on an input solos it and its track, one undo step; pan moves live.
+- [ ] Lower pane under 200 px: knob strips, level knob drags, M and S work.
+- [ ] Note Repeat on a held chord: the whole chord repeats at Rate; Gate shortens hits; Decay fades them; a live-played chord stops when released.

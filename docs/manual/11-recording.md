@@ -21,7 +21,8 @@ A track records only when it is **armed**.
 
 In the track menu (or the inspector's **Recording** chip):
 
-- **Record from**: **Any** (CV and MIDI), **REC CV inputs**, or **MIDI**.
+- **Record from**: **Any** (CV and MIDI), **REC CV inputs**, or **MIDI**. Audio tracks have their own choices: see
+  [Recording audio](17-audio.md#recording-audio).
 - **MIDI channel**: all channels, or one channel from 1 to 16. So two players on two MIDI channels can record to two
   tracks.
 - **Monitor while armed** (on by default): an armed track plays what comes in through its own outputs and devices, so

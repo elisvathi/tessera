@@ -206,6 +206,9 @@ sixteenths; **Let ring** lets the note it was playing ring on and plays only not
 Every setting can also be moved by a modulator or an automation lane, as on any device. Moving **Rate** while it plays
 speeds the playhead up or slows it down from where it is.
 
+A clip read by playheads shows one band per playhead, with a block wherever that playhead is over a note, so you can see
+how many there are and the rhythm of each. When the clip is too short for bands, the playheads' paths are drawn instead.
+
 Playheads read launched clips and timeline clips alike. On the timeline, each clip starts its playheads again, from
 where that clip begins (a clip that starts partway in starts the playheads partway in), and a stretched clip slows them
 down. MIDI export with **Devices: Applied** writes what the playheads play, each playhead on its channel; **Bypassed**

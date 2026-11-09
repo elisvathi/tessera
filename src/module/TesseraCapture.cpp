@@ -175,22 +175,7 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
     job.untilSilent = untilSilent;
     job.muteOriginal = muteOriginal;
     job.capture = int(captures.size()) - 1;
-    // Only this track plays, so nothing else reaches the effects patched after it. This is a passing playback state,
-    // put back when the bounce ends, so it is not an undo step.
-    for (Track& other : songData.tracks) {
-        if (other.solo)
-            job.soloBefore.push_back(other.id);
-        other.solo = other.id == track;
-        // With clips selected, only those play: an unselected clip stacked over them stays out of the bounce.
-        if (other.id != track || only.empty())
-            continue;
-        for (ArrangerClip& a : other.arrangement)
-            if (!a.muted && std::find(only.begin(), only.end(), a.id) == only.end()) {
-                a.muted = true;
-                job.mutedClips.push_back(a.id);
-            }
-    }
-    publish(ChangeSet::all());
+    job.only = only;
     // The new track shows from the start, with the bounce growing on it. `t` is not used after this: adding a track
     // can move the song's tracks in memory.
     int index = songData.trackIndex(track) + 1;
@@ -225,6 +210,7 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
     if (!playing())
         requestTransport(kRequestPlay);
     bounce = job;
+    publish(ChangeSet::all()); // from here on it plays only what it records
     return true;
 }
 
@@ -566,21 +552,24 @@ void TesseraModule::cancelCapture() {
         params[MODE_PARAM].setValue(0.f);
     if (bounce->restoreLoop)
         params[LOOP_PARAM].setValue(1.f);
-    restoreBounceSolo(*bounce);
     removeBounceTrack(*bounce);
     exportResult = "Bounce cancelled";
     bounce.reset();
+    publish(ChangeSet::all());
     requestTransport(kRequestStop);
 }
 
-void TesseraModule::restoreBounceSolo(const BounceJob& job) {
-    for (Track& t : songData.tracks) {
-        t.solo = std::find(job.soloBefore.begin(), job.soloBefore.end(), t.id) != job.soloBefore.end();
+Song TesseraModule::songAsBounceHears(const BounceJob& job) const {
+    Song heard = songData;
+    for (Track& t : heard.tracks) {
+        t.solo = t.id == job.track;
+        if (t.id != job.track || job.only.empty())
+            continue;
         for (ArrangerClip& a : t.arrangement)
-            if (std::find(job.mutedClips.begin(), job.mutedClips.end(), a.id) != job.mutedClips.end())
-                a.muted = false;
+            if (std::find(job.only.begin(), job.only.end(), a.id) == job.only.end())
+                a.muted = true;
     }
-    publish(ChangeSet::all());
+    return heard;
 }
 
 void TesseraModule::removeBounceTrack(const BounceJob& job) {
@@ -687,7 +676,7 @@ void TesseraModule::bounceStep() {
         params[MODE_PARAM].setValue(0.f);
     if (done.restoreLoop)
         params[LOOP_PARAM].setValue(1.f);
-    restoreBounceSolo(done);
+    publish(ChangeSet::all());
     const Track* t = songData.findTrack(done.track);
     if (!t || frames == 0) {
         std::error_code ec;

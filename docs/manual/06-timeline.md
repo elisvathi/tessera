@@ -12,7 +12,8 @@ lines: its notes as written aren't what plays.
 - **Drag a clip from the clips panel** onto a track. It lands where you drop it, snapped to the grid.
 - With the **Draw** tool (D): drag in an empty row to make an empty clip that long, or click for a one-bar clip.
 - **Double-click** an empty row for a one-bar clip.
-- Right-click an empty row for **Paste**, **Place launcher clip** and **Import MIDI file here…**.
+- Right-click an empty row for **Paste**, **Place launcher clip**, and **Import MIDI file here…** (note and drum tracks) or
+  **Import audio file here…** (audio tracks).
 - In a clip's menu in the clips panel: **Place in arrangement at playhead**.
 
 A clip on the timeline points to a clip, the same way a slot does. Many tiles can point to one clip: they are
@@ -78,6 +79,7 @@ Right-click a clip on the timeline:
 | **Colour** | **Track colour** or one of 16 colours, for every selected clip (and the clip's other copies and its slot). |
 | **Move up a row**, **Move down a row** | For overlapping clips: swaps the clip with the one in the row above or below. |
 | **Export as MIDI…** | Saves the clip (or the selected clips) as a MIDI file. |
+| **Bounce audio to a new track…**, **Bounce notes to a new track…** | See [Audio](17-audio.md) and [Tracks](04-tracks.md#bounce-notes-to-a-new-track). |
 | **Split here**, **Glue**, **Make unique** | As above. |
 | **Mute** | Silences this tile. Muted tiles are drawn dim. |
 | **Transpose**, **Velocity** | Per tile. The clip itself doesn't change. |

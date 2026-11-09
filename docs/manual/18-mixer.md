@@ -26,8 +26,9 @@ comes back on a Track Out's or Drum Out's IN. From top to bottom:
 1. **The name**, under a bar in the track's colour. Click it to select the track.
 2. **The source**: where the sound comes from. **Clips** for an audio track's clips; **IN · Track Out** or
    **IN · Drum Out** for a note track whose voice comes back on that module's IN; **2 sources** when the track has
-   more than one (see [Several sources on one track](#several-sources-on-one-track)). In amber: **Missing file** when
-   a clip's file is gone, **Bypassed** when a module that brings the sound is bypassed. Click it for a menu: **Add a
+   more than one: then the arrow beside it folds the track's input strips (see
+   [Several sources on one track](#several-sources-on-one-track)). In amber: **Missing file** when
+   a clip's file is gone, **Bypassed** when a module that brings the sound is bypassed. With one source, click it for a menu: **Add a
    Track Out for this track** places a new Track Out (a Drum Out for a drum track) bound to it, right of Roll;
    **Show Track Out in the rack** scrolls the rack to the module and makes its screen flash.
 3. **Pan**: drag it to move the sound left or right. Double-click centres it.

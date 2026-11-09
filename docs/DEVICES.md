@@ -58,7 +58,7 @@ Velocity · 3 modulators"; clicking it opens the strip. The in-panel editor star
 - **+ between cards** (faint until hovered) and the **Add device** tile at the end open the **device browser**:
   a searchable list. Typing filters by name and by purpose ("delay" finds Echo, "loose" finds Humanize); ↑ ↓
   choose, Enter adds, Esc closes; each entry has a one-line description; groups Pitch (Transpose, Scale, Chord),
-  Rhythm (Arpeggiator, Echo, Note Length), Feel (Velocity, Humanize, Random, Note Filter); the footer says where the device
+  Rhythm (Arpeggiator, Echo, Note Length, Note Repeat), Feel (Velocity, Humanize, Random, Note Filter); the footer says where the device
   will go. Drag a card by its header to reorder; Ctrl/Cmd+drag copies; Delete removes the selected card.
 - **Knobs:** drag up/down (Shift fine), double-click resets, click the value to type it, right-click for a menu
   (reset, type a value, modulate with ▸, remove modulation ▸, and automation once it is built). The knob draws
@@ -156,6 +156,7 @@ append-only so saved patches keep working. Values are stored normalized (0..1) a
 | **Chord** | adds notes | chord type (or intervals), inversion, spread (close / open / drop-2), in key |
 | **Arpeggiator** | plays held notes one at a time | pattern (up, down, up-down, random, as played, chord), rate (sync, triplet, dotted), gate, octaves, steps, swing, velocity (as played / accent pattern), hold |
 | **Echo** | repeats notes (MIDI delay) | time (sync), repeats, velocity decay, pitch per repeat, gate |
+| **Note Repeat** | plays every note again while it lasts, chords included | rate, gate 5–100%, decay 0–100% |
 | **Humanize** | loosens the feel each pass | timing (later only, up to 1/32), velocity ±, length ± |
 | **Random** | varies notes each pass | pitch ± (in key), chance to drop |
 | **Note Filter** | lets some notes through | pitch range, velocity range, every Nth / skip pattern, channel (Any or 1–16: one part of a clip) |

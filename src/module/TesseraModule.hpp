@@ -543,8 +543,7 @@ class TesseraModule : public rack::engine::Module {
         bool restoreLauncher = false;
         bool restoreLoop = false;
         bool reachedEnd = false; // the playhead has passed `to`
-        std::vector<TrackId> soloBefore; // the tracks soloed before the bounce soloed its own
-        std::vector<ArrangementId> mutedClips; // this track's clips silenced because they weren't selected
+        std::vector<ArrangementId> only; // with clips selected, the only clips of this track that sound
         TrackId placed;          // the new track, made when the bounce starts so it shows at once
         rack::history::ComplexAction* placedAction = nullptr; // its undo step; the finished clip joins it
         bool started = false; // the transport has been seen playing
@@ -554,8 +553,9 @@ class TesseraModule : public rack::engine::Module {
     std::optional<BounceJob> bounce;
     /// Takes away the track a bounce made at its start, when the bounce ends with nothing to put on it.
     void removeBounceTrack(const BounceJob& job);
-    /// Puts back the solo buttons and clip mutes as they were before a bounce played only what it records.
-    void restoreBounceSolo(const BounceJob& job);
+    /// The song as a running bounce plays it: only its track, and with clips selected only those clips. A copy, so the
+    /// song itself, and any patch saved meanwhile, never holds this passing state.
+    Song songAsBounceHears(const BounceJob& job) const;
     struct ExportJob {
         std::vector<int> captures; // the master first, then the stems
         std::vector<std::string> skipped; // muted tracks, left out of the stems

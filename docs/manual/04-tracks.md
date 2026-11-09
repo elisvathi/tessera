@@ -94,8 +94,14 @@ Right-click a track header for its menu.
 | **Colour** | One of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
 | **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and with playheads each channel gets its own voices (more for one faster than 1x). Or pick a fixed number from 1 to 16 (with playheads, for each channel). |
 | **Show automation lanes / Add automation lane** | See [Automation](12-automation.md). |
-| **Input** | What the track plays besides its clips. See below. |
-| **Armed for recording, Record from, MIDI channel, Monitor while armed** | See [Recording](11-recording.md). |
+| **Bounce audio to a new track…** | Records what the track sounds like onto a new audio track. Shown when the track makes sound. See [Audio](17-audio.md). |
+| **Bounce notes to a new track…** | Note and drum tracks. Makes a new track from the notes, at once. See below. |
+| **Import audio file…** | Audio tracks. Puts a file on this track. See [Audio](17-audio.md). |
+| **Link identical clips** | Timeline clips on this track that play exactly the same thing become linked. Greyed out when none match. |
+| **Input** | Note and drum tracks. What the track plays besides its clips. See below. |
+| **Armed for recording, Monitor while armed** | See [Recording](11-recording.md). |
+| **Record from** | Note and drum tracks: see [Recording](11-recording.md). Audio tracks: see [Audio](17-audio.md#recording-audio). |
+| **MIDI channel** | Note and drum tracks: see [Recording](11-recording.md). |
 | **Group** | Groups the selected tracks. |
 
 Voices, Input and the recording settings are also in the inspector's **TRACK** section when no notes are selected.

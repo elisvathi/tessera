@@ -90,8 +90,10 @@ Right-click a clip in a slot:
 | **Length** | **×2 longer** (half speed), **×½ shorter** (double speed), or a typed percentage. Notes, loop and automation all stretch, and every timeline use grows or shrinks with it. |
 | **Save as / Replace with Tessera clip file…** | A `.tessera-clip` file, to reuse a clip in another patch. |
 
-Right-click an **empty slot** for: **Create clip**, **Load a Tessera clip file…**, **Import MIDI file…**, **Stop
-track** and **Stop button**. An empty slot normally has a stop button (the small square): launching its scene stops
+On a note clip, **Bounce notes to a new track…** makes a new clip from what it plays, on a new track in the same scene.
+
+Right-click an **empty slot** for: **Create clip** and **Import MIDI file…** (note and drum tracks), **Import audio
+file…** (audio tracks), **Load a Tessera clip file…**, **Stop track** and **Stop button**. An empty slot normally has a stop button (the small square): launching its scene stops
 that track. Turn **Stop button** off and the slot is blank: its scene leaves that track playing whatever it plays, and
 clicking the slot does nothing. Use it for a part that should keep going while other scenes change.
 

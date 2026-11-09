@@ -392,7 +392,7 @@ void TesseraModule::audioStep() {
     // Keep a second longer what the last snapshot used and this one won't.
     std::vector<std::shared_ptr<const AudioBuffer>> keep;
     const AudioSnapshot* last = audioSnapshots.latest();
-    AudioBuild build = buildAudioSnapshot(songData, *audio, double(audioRate.load()) > 0 ? audioRate.load() : 48000,
+    AudioBuild build = buildAudioSnapshot(bounce ? songAsBounceHears(*bounce) : songData, *audio, double(audioRate.load()) > 0 ? audioRate.load() : 48000,
                                           audioTempo, {}, plan);
     soundTracks.clear();
     soundGroups.clear();
@@ -1075,7 +1075,10 @@ float TesseraModule::modulatorOutput(ModulatorId id) const {
 void TesseraModule::publish(const ChangeSet& changes) {
     revision++;
     slots.sync(songData);
-    snapshots.publish(snapshotBuilder.build(songData, slots, changes));
+    if (bounce)
+        snapshots.publish(snapshotBuilder.build(songAsBounceHears(*bounce), slots, changes));
+    else
+        snapshots.publish(snapshotBuilder.build(songData, slots, changes));
 }
 
 void TesseraModule::perform(CommandPtr command, std::optional<NoteSelection> selectionAfter) {

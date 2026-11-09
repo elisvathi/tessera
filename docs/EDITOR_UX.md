@@ -354,7 +354,7 @@ instead of pitch rows (DESIGN.md §9). Differences:
 | Gesture | Result |
 |---|---|
 | Drag body | Move (snaps; can move across tracks — vertical move shows the target track highlight) |
-| Ctrl/Cmd + drag | Duplicate (as an independent copy; Alt+Ctrl/Cmd+drag makes a linked instance) |
+| Ctrl/Cmd + drag | Duplicate (as an independent copy; Alt+Ctrl/Cmd+drag makes a linked instance). A clip stays on tracks of its own kind, audio or notes |
 | Drag right edge | Lengthen/shorten. Looping clips repeat their content; non-looping clips reveal empty space |
 | Drag left edge | Trim the start (adjusts offset); content stays in place on the timeline |
 | **Alt + drag right edge** | Time-stretch the instance's content: notes are scaled in time; the clip's stretch factor is stored on the instance |
