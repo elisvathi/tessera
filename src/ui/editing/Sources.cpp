@@ -266,4 +266,40 @@ void appendModuleItems(rack::ui::Menu* menu, OutputModuleBase* module) {
     menu->addChild(new LevelSlider(target));
 }
 
+SourceLevel inputLevel(EditorContext& ctx, TrackId track, int64_t module) {
+    return Target{module, ctx.module()->id, track}.level();
+}
+
+void commitInput(EditorContext& ctx, TrackId track, int64_t module, SourceLevel next, const std::string& name) {
+    Target{module, ctx.module()->id, track}.commit(next, name);
+}
+
+void previewInput(EditorContext& ctx, TrackId track, int64_t module, float db, float pan) {
+    Target{module, ctx.module()->id, track}.preview(db);
+    if (module < 0)
+        ctx.module()->audioPlayer().holdClipsPan(track.value, pan);
+    else if (OutputModuleBase* o = moduleById(module))
+        o->holdSourcePan(pan);
+}
+
+void endInputPreview(EditorContext& ctx, TrackId track, int64_t module) {
+    if (OutputModuleBase* o = moduleById(module)) {
+        o->holdSourceLevel(std::nullopt);
+        o->holdSourcePan(std::nullopt);
+    } else if (module < 0) {
+        ctx.module()->releaseChannelHolds();
+    }
+}
+
+bool anyInputSolo(EditorContext& ctx, TrackId track) {
+    TesseraModule* m = ctx.module();
+    const Track* t = m->song().findTrack(track);
+    if (t && t->clips.solo)
+        return true;
+    for (OutputModuleBase* o : m->sourceModules(track))
+        if (o->sourceSetting().solo)
+            return true;
+    return false;
+}
+
 } // namespace tessera::sources

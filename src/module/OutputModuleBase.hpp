@@ -88,6 +88,10 @@ class OutputModuleBase : public rack::engine::Module {
     void setSourceSetting(SourceLevel level);
     /// Plays a Level at once while the sources list drags it, before the drag is committed; nullopt ends it.
     void holdSourceLevel(std::optional<float> db) { heldLevelDb = db; }
+    /// Plays a pan at once while a mixer strip drags it, before the drag is committed; nullopt ends it.
+    void holdSourcePan(std::optional<float> pan);
+    /// False while another input of its track is soloed. UI thread.
+    void setHeardBySolo(bool heard);
     /// What it brings in now, after its Level (volts, a peak falling 20 dB a second), for the sources list.
     float inputLevel() const { return inputMeter.load(std::memory_order_relaxed); }
     /// "Counted once": its IN takes the same cable as another source of the same track, so it adds nothing. Set by
@@ -155,6 +159,9 @@ class OutputModuleBase : public rack::engine::Module {
     bool sourcesFresh = true;
     SourceLevel setting;
     std::optional<float> heldLevelDb;
+    std::optional<float> heldPan;
+    bool heardBySolo = true;
+    std::atomic<float> inputPanL{1}, inputPanR{1};
     bool countedOnce = false;
     std::atomic<float> inputTarget{1}; // Level as a gain, 0 when not in use or counted once
     float inputGain = 1;

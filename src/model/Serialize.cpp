@@ -40,7 +40,7 @@ const char* const kTrackTypes[] = {"instrument", "drum", "audio"};
 const char* const kTempoFollow[] = {"stretch", "repitch", "off"};
 // In SoundType's order.
 const char* const kSoundTypes[] = {"drums", "melody", "voice", "fullMix"};
-const char* const kRecordInputs[] = {"any", "cv", "midi", "rollIn"};
+const char* const kRecordInputs[] = {"any", "cv", "midi", "rollIn", "track"};
 const char* const kListenSources[] = {"none", "external", "trackAfter", "trackBefore"};
 const char* const kAutoSources[] = {"knob", "cv"};
 const char* const kAutoRecordModes[] = {"touch", "latch", "write"};
@@ -52,7 +52,7 @@ const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
 const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord",    "arpeggiator",
                                     "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads",
-                                    "motion"};
+                                    "motion", "noteRepeat"};
 const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note", "curve"};
 // "motion" (a clip's motion group, before 30 Oct 2026) reads as "device": each group became a Motion device with
 // the group's ID.
@@ -485,6 +485,10 @@ json_t* sourceLevelToJson(const SourceLevel& l) {
     setNumber(j, "volume", l.db);
     if (!l.use)
         set(j, "use", json_false());
+    if (l.pan != 0)
+        json_object_set_new(j, "pan", json_real(l.pan));
+    if (l.solo)
+        json_object_set_new(j, "solo", json_true());
     return j;
 }
 
@@ -492,6 +496,9 @@ SourceLevel sourceLevelFromJson(const json_t* j) {
     SourceLevel l;
     l.db = getFloat(j, "volume", l.db);
     l.use = getBool(j, "use", l.use);
+    if (const json_t* pan = json_object_get(j, "pan"))
+        l.pan = std::clamp(float(json_number_value(pan)), -1.f, 1.f);
+    l.solo = json_is_true(json_object_get(j, "solo"));
     return l;
 }
 
@@ -845,6 +852,8 @@ json_t* trackToJson(const Track& t) {
     setBool(j, "armed", t.armed);
     setBool(j, "monitor", t.monitor);
     setString(j, "recordInput", enumName(t.recordInput, kRecordInputs));
+    if (t.recordFrom.valid())
+        set(j, "recordFrom", idJson(t.recordFrom));
     setInt(j, "midiChannel", t.midiChannel);
     if (t.listen != ListenSource::None) {
         setString(j, "listen", enumName(t.listen, kListenSources));
@@ -918,6 +927,7 @@ Track trackFromJson(const json_t* j) {
     t.armed = getBool(j, "armed", t.armed);
     t.monitor = getBool(j, "monitor", t.monitor);
     t.recordInput = enumFromName(get(j, "recordInput"), kRecordInputs, t.recordInput);
+    t.recordFrom = readId<TrackId>(get(j, "recordFrom"));
     t.midiChannel = saturate<int8_t>(getInt(j, "midiChannel", t.midiChannel));
     t.listen = enumFromName(get(j, "listen"), kListenSources, t.listen);
     t.listenTrack = readId<TrackId>(get(j, "listenTrack"));

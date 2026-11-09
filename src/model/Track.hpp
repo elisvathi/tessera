@@ -14,8 +14,8 @@ namespace tessera {
 enum class TrackType : uint8_t { Instrument, Drum, Audio };
 
 /// Where an armed track records from (DESIGN.md §14). Note tracks use Any, Cv or Midi. An audio track records its
-/// Track Out IN (Any) or Roll's own IN jacks (RollIn).
-enum class RecordInput : uint8_t { Any, Cv, Midi, RollIn };
+/// Track Out IN (Any), Roll's own IN jacks (RollIn) or another track's sound (OtherTrack, see Track::recordFrom).
+enum class RecordInput : uint8_t { Any, Cv, Midi, RollIn, OtherTrack };
 
 /// What a track plays besides its clips, all the time (no arming needed): nothing, the external inputs (recordInput
 /// and midiChannel say which), or another track's notes after or before that track's devices. The notes go through
@@ -98,6 +98,7 @@ struct Track {
     int8_t midiChannel = 0;    // 1..16, or 0 for every channel
     ListenSource listen = ListenSource::None;
     TrackId listenTrack; // the track listened to, for TrackAfter / TrackBefore
+    TrackId recordFrom;  // the track (or the master) an audio track records, for RecordInput::OtherTrack
     float gateLengthScale = 1; // 0..1, legato vs staccato at the output
     int8_t transpose = 0;
     std::vector<DrumLane> drumLanes;            // drum tracks only, up to kMaxDrumLanes
@@ -121,11 +122,11 @@ struct Track {
         return id == o.id && name == o.name && color == o.color && type == o.type && polyphony == o.polyphony &&
                mute == o.mute && solo == o.solo && armed == o.armed && monitor == o.monitor &&
                recordInput == o.recordInput && midiChannel == o.midiChannel && listen == o.listen &&
-               listenTrack == o.listenTrack && gateLengthScale == o.gateLengthScale && transpose == o.transpose &&
-               drumLanes == o.drumLanes && slots == o.slots && arrangement == o.arrangement &&
-               automation == o.automation && devices == o.devices && modulators == o.modulators &&
-               channel == o.channel && drumInputs == o.drumInputs && clips == o.clips && sends == o.sends &&
-               latencySamples == o.latencySamples;
+               listenTrack == o.listenTrack && recordFrom == o.recordFrom && gateLengthScale == o.gateLengthScale &&
+               transpose == o.transpose && drumLanes == o.drumLanes && slots == o.slots &&
+               arrangement == o.arrangement && automation == o.automation && devices == o.devices &&
+               modulators == o.modulators && channel == o.channel && drumInputs == o.drumInputs && clips == o.clips &&
+               sends == o.sends && latencySamples == o.latencySamples;
     }
 };
 

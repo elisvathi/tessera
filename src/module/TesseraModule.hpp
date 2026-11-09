@@ -328,6 +328,8 @@ class TesseraModule : public rack::engine::Module {
     /// The output modules whose audio inputs bring sound to `track` (or the master) now, by place in the rack: left
     /// to right, then top to bottom (§7.8). UI thread; the pointers are good for this frame only.
     std::vector<OutputModuleBase*> sourceModules(TrackId track) const;
+    /// Tells each output module whether another input of its track is soloed. UI thread, every frame.
+    void applyInputSolo();
     /// A track that just got a second source: the editors toast it once (§7.8, "A new second source plays at once").
     struct NewSource {
         uint64_t serial = 0;

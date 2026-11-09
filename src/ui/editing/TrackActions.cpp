@@ -467,6 +467,11 @@ void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vecto
         static const std::pair<RecordInput, const char*> sources[] = {{RecordInput::Any, "Its Track Out IN"},
                                                                       {RecordInput::RollIn, "Roll IN L and R"}};
         std::string now = track->recordInput == RecordInput::RollIn ? "Roll IN" : "Track Out IN";
+        if (track->recordInput == RecordInput::OtherTrack) {
+            const Song& song = c->module()->song();
+            const Track* from = song.findTrack(track->recordFrom);
+            now = from ? from->name : track->recordFrom == song.master.id ? "Master mix" : "Missing track";
+        }
         menu->addChild(rack::createSubmenuItem("Record from", now, [c, ids](rack::ui::Menu* sub) {
             for (const auto& [input, name] : sources) {
                 RecordInput value = input;
@@ -478,6 +483,33 @@ void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vecto
                     },
                     [c, ids, value] { setField(*c, ids, &Track::recordInput, value, "Set record input"); }));
             }
+            sub->addChild(new rack::ui::MenuSeparator);
+            sub->addChild(rack::createMenuLabel("Another track, before its fader"));
+            TrackId self = ids.front();
+            auto addSource = [c, sub, self](TrackId from, const std::string& name) {
+                sub->addChild(rack::createCheckMenuItem(
+                    name, "",
+                    [c, self, from] {
+                        const Track* t = c->module() ? c->module()->song().findTrack(self) : nullptr;
+                        return t && t->recordInput == RecordInput::OtherTrack && t->recordFrom == from;
+                    },
+                    [c, self, from] {
+                        TesseraModule* m = c->module();
+                        if (!m)
+                            return;
+                        auto compound = std::make_unique<CompoundCommand>("Set record input");
+                        compound->add(setTrackField(m->song(), self, &Track::recordInput, RecordInput::OtherTrack,
+                                                    "Set record input"));
+                        compound->add(setTrackField(m->song(), self, &Track::recordFrom, from, "Set record input"));
+                        if (!compound->empty())
+                            m->perform(std::move(compound));
+                    }));
+            };
+            TesseraModule* module = c->module();
+            for (const Track& other : module->song().tracks)
+                if (other.id != self && module->soundIndex(other.id) >= 0)
+                    addSource(other.id, other.name);
+            addSource(module->song().master.id, "Master mix");
         }));
     }
     if (track->type != TrackType::Audio) {

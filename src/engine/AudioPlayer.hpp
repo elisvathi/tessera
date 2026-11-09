@@ -77,6 +77,11 @@ class AudioPlayer {
     void hold(uint64_t track, float volumeGain, float pan, uint8_t parts);
     /// Holds an audio track's clips (or, for the master's ID, its mix) at `gain` while a source Level drag runs.
     void holdClips(uint64_t track, float gain);
+    /// Holds an audio track's clips at `pan` while a drag moves the pan of its Clips strip. releaseHolds() ends it.
+    void holdClipsPan(uint64_t track, float pan) {
+        clipsPanValue.store(pan, std::memory_order_relaxed);
+        clipsPanTrack.store(track, std::memory_order_release);
+    }
     /// Holds the send from `track` to `to` at `gain` while a drag moves it (Show sends, a send knob).
     void holdSend(uint64_t track, uint64_t to, float gain);
     /// The send from `track` to `to` a drag holds now, as a gain, for recording it into its lane. UI thread.
@@ -211,6 +216,7 @@ class AudioPlayer {
         float gainL = 0, gainR = 0, stepL = 0, stepR = 0; // fader and pan, ramping
         float outGain = 0, outStep = 0; // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
         float clipsGain = 1, clipsStep = 0; // the clips' source Level
+        float clipsPanL = 1, clipsPanR = 1;
         // Into the master: what came back on IN (heard), and its own sound (heard and own). One ramp per signal, so a
         // mute never multiplies two ramps into a click.
         float heardGain = 0, heardStep = 0;
@@ -328,6 +334,8 @@ class AudioPlayer {
     std::array<std::atomic<float>, kMaxTracks> autoVolume{}, autoPan{};
     std::array<std::atomic<float>, 2> masterMeter{};
     std::atomic<float> clipPeak{0};
+    std::atomic<uint64_t> clipsPanTrack{0};
+    std::atomic<float> clipsPanValue{0};
     struct Hold {
         std::atomic<uint64_t> track{0};
         std::atomic<float> volume{1}, pan{0}, clips{1}, send{0};

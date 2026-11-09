@@ -276,7 +276,19 @@ void TesseraModule::playMidiEvent(const MidiEvent& e) {
     }
 }
 
+void TesseraModule::applyInputSolo() {
+    const std::vector<OutputModuleBase*>& outputs = Registry::get().outputsOf(id);
+    for (OutputModuleBase* o : outputs) {
+        const Track* t = songData.findTrack(o->boundTrack());
+        bool anySolo = t && t->clips.solo;
+        for (OutputModuleBase* other : outputs)
+            anySolo |= other->boundTrack() == o->boundTrack() && other->sourceSetting().solo;
+        o->setHeardBySolo(!anySolo || o->sourceSetting().solo);
+    }
+}
+
 void TesseraModule::uiStep() {
+    applyInputSolo();
     snapshots.collect();
     sourcesStep();
     audioStep();
@@ -361,6 +373,8 @@ void TesseraModule::audioStep() {
         planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1) * 2 + (r.source ? 1 : 0);
     for (const auto& [track, slot] : plan.busSlots)
         planKey = planKey * 1000003u + track.value * 31u + uint64_t(slot + 1);
+    for (TrackId track : plan.inputSolo)
+        planKey = planKey * 1000003u + track.value * 17u + 1;
     bool planChanged = planKey != audioPlanKey;
     if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved && !planChanged) {
         if (releaseHolds) {
@@ -419,6 +433,8 @@ MixPlan TesseraModule::currentMixPlan() const {
             plan.returns.push_back({o->boundTrack(), slot, true});
         if (int slot = o->activeReturn(); slot >= 0)
             plan.returns.push_back({o->boundTrack(), slot, false});
+        if (o->sourceSetting().solo)
+            plan.inputSolo.push_back(o->boundTrack());
     }
     return plan;
 }

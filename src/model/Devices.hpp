@@ -26,6 +26,7 @@ enum NoteLength { kMode, kScaleBy, kLength, kOverlap };
 enum ChordDevice { kChord, kInKey, kInversion, kVoicing, kStrum };
 enum Arpeggiator { kPattern, kRate, kGate, kArpOctaves, kSwing, kArpVelocity, kHold };
 enum Echo { kTime, kRepeats, kDecay, kEchoPitch, kEchoGate };
+enum NoteRepeat { kRepeatRate, kRepeatGate, kRepeatDecay };
 enum Random { kRandomPitch, kRandomInKey, kDrop };
 enum Humanize { kHumanizeTiming, kHumanizeVelocity, kHumanizeLength };
 enum Groove { kGrooveSwing, kGrooveGrid };
@@ -181,6 +182,8 @@ class Chain {
     void chord(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     void arpeggiator(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     void echo(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
+    /// Plays every note again at its Rate for as long as it lasts, so a chord repeats as a chord.
+    void noteRepeat(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     void random(const Message& m, const DeviceSlot& d, const Context& c, Output& out);
     /// Velocity ±, a later start and a longer or shorter note, a little different on every pass but repeatable.
     void humanize(const Message& m, const DeviceSlot& d, const Context& c, Output& out);

@@ -113,6 +113,7 @@ struct AudioTrackPlay {
     std::vector<int> returns; // return bus slots mixed in after OUT (an effect coming back), at 0 dB (§2)
     std::vector<AudioInstancePlay> instances; // sorted by position
     std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
+    float clipsPan = 0;                        // the clips' own place left and right, as an input of the track
     float clipsGain = 1;                       // the clips as a source (§7.8): their Level, 0 when not in use
     float volume = 1;                          // the fader as a gain
     float pan = 0;

@@ -103,6 +103,7 @@ struct ViewState {
     double launcherScrollX = 0;              // px across the track columns
     double launcherScrollY = 0;              // px down the scenes
     std::map<uint64_t, double> trackHeights; // by TrackId value
+    std::set<uint64_t> foldedInputs;         // tracks whose input strips are folded in the mixer, session only
     std::set<uint64_t> foldedGroups;         // by GroupId value
     std::set<uint64_t> openAutomation;       // tracks showing their automation lanes, by TrackId value
     std::map<uint64_t, double> laneHeights;  // by AutomationId value

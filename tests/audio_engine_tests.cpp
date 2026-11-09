@@ -444,6 +444,33 @@ TEST_CASE("OUT carries a track's clips before its fader; what comes back on IN j
     CHECK(master->l == doctest::Approx(left).epsilon(1e-3));
 }
 
+TEST_CASE("turning Clips off leaves OUT sending them, so an effect keeps playing without the dry sound") {
+    Rig rig(4.0, dc);
+    rig.audioTrack().clips.use = false;
+    MixPlan plan;
+    plan.busSlots = {{rig.track, 5}};
+    plan.returns = {{rig.track, 2}};
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    OutputBus bus;
+    ReturnBus& returns = bus.returns();
+    rig.engine->play();
+    float left = 0, right = 0;
+    for (int64_t n = 0; n < 24000; n++) {
+        returns.write(n, 2, rig.track, 1.f, 1.f); // the effect sends 1 V back on IN
+        rig.engine->setPlayMode(rig.mode);
+        rig.engine->process(rig.frames.data(), rig.events);
+        AudioPlayer::Rack rack{&returns, bus.beginAudioWrite(n), n};
+        rig.player->process(*rig.engine, left, right, rack);
+        bus.publishAudio(n);
+    }
+    const AudioOutFrame* out = bus.readAudio(24000, 5, rig.track);
+    REQUIRE(out);
+    CHECK(out->l == doctest::Approx(kVolts)); // the effect still gets the clips
+    CHECK(left == doctest::Approx(1).epsilon(1e-3)); // and only the effect is heard
+}
+
 TEST_CASE("a track's own sources go to OUT, an effect's return doesn't, so an effect loop never feeds back") {
     Song song = makeDefaultSong();
     FakeBuffers buffers;

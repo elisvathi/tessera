@@ -84,8 +84,11 @@ void TesseraModule::captureStep() {
         c.path = (dir / (t.name + " take " + std::to_string(++takeCounter) + ".wav")).string();
         c.writer = captureWriter->start(c.ring, c.path, rate, CaptureWriter::Format::Float32);
         AudioPlayer::TapSpec spec;
-        spec.track = t.id;
-        spec.kind = AudioPlayer::TapKind::In;
+        bool fromTrack = t.recordInput == RecordInput::OtherTrack && t.recordFrom.valid();
+        spec.track = fromTrack ? t.recordFrom : t.id;
+        spec.kind = !fromTrack                          ? AudioPlayer::TapKind::In
+                    : t.recordFrom == songData.master.id ? AudioPlayer::TapKind::Master
+                                                         : AudioPlayer::TapKind::Sound;
         spec.whileRecording = true;
         spec.ring = c.ring.get();
         player->armTap(tap, spec);

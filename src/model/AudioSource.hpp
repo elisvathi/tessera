@@ -237,8 +237,10 @@ struct Send {
 struct SourceLevel {
     float db = 0; // kSilentDb..kMaxFaderDb
     bool use = true;
+    float pan = 0;     // -1..1
+    bool solo = false; // heard alone among the inputs of its track
 
-    bool operator==(const SourceLevel& o) const { return db == o.db && use == o.use; }
+    bool operator==(const SourceLevel& o) const { return db == o.db && use == o.use && pan == o.pan && solo == o.solo; }
     bool operator!=(const SourceLevel& o) const { return !(*this == o); }
 };
 

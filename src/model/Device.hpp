@@ -24,9 +24,10 @@ enum class DeviceType : uint8_t {
     Humanize,
     Groove,
     Playheads, // reads the clip with several playheads; first in the chain but for Motion (docs/design/PLAYHEADS.md)
-    Motion     // moves the notes that joined it a little on every pass; may sit before Playheads
+    Motion,    // moves the notes that joined it a little on every pass; may sit before Playheads
+    NoteRepeat // plays every note again and again while it lasts, chords included
 };
-constexpr int kDeviceTypeCount = 13;
+constexpr int kDeviceTypeCount = 14;
 
 enum class ModulatorType : uint8_t { Lfo, Envelope, Steps, Random, Ramp, Macro, Note, Curve };
 constexpr int kModulatorTypeCount = 8;

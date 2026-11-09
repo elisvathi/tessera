@@ -151,6 +151,7 @@ bool AudioPlayer::held(uint64_t track, bool pan, float& value) const {
 }
 
 void AudioPlayer::releaseHolds() {
+    clipsPanTrack.store(0, std::memory_order_release);
     for (Hold& h : holds)
         h.track.store(0, std::memory_order_release);
 }
@@ -280,6 +281,10 @@ void AudioPlayer::startBlock(const Engine& engine) {
         autoFlags[i].store(automated, std::memory_order_relaxed);
         float clips = t.clipsGain;
         held(t.id.value, volume, pan, clips);
+        float clipsPan = clipsPanTrack.load(std::memory_order_acquire) == t.id.value
+                             ? clipsPanValue.load(std::memory_order_relaxed)
+                             : t.clipsPan;
+        balanceGains(clipsPan, runs[i].clipsPanL, runs[i].clipsPanR);
         float l = 0, r = 0;
         balanceGains(pan, l, r);
         l *= volume;
@@ -476,8 +481,11 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         if (i < count) {
             const AudioTrackPlay& tp = snapshot->tracks[i];
             run.clipsGain += run.clipsStep;
-            sl *= run.clipsGain;
-            sr *= run.clipsGain;
+            // OUT feeds the effects patched after this track, so it takes the clips before their Level: the Clips
+            // strip changes what is heard directly, and an effect keeps playing with the dry sound off.
+            float dryL = sl, dryR = sr;
+            sl *= run.clipsGain * run.clipsPanL;
+            sr *= run.clipsGain * run.clipsPanR;
             // The track's own sources join its clips; OUT carries them before the fader; what comes back on IN joins
             // after OUT, so an effect loop never feeds back (§2, §8.4).
             float srcL = 0, srcR = 0;
@@ -499,7 +507,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             float ownL = sl, ownR = sr;
             sl *= run.outGain;
             sr *= run.outGain;
-            float outL = sl + sendBus[i][0], outR = sr + sendBus[i][1];
+            float outL = (dryL + srcL) * run.outGain + sendBus[i][0],
+                  outR = (dryR + srcR) * run.outGain + sendBus[i][1];
             sendBus[i] = {0.f, 0.f};
             run.outPeak = std::max(run.outPeak, std::max(std::abs(outL), std::abs(outR)));
             if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)

@@ -47,21 +47,25 @@ Track Outs on one track, each with its own synth, to layer them. Each is a **sou
 When you patch a second source, a message says so: "Lead has 2 sources now. Both play", with **Use only the new
 one** to switch the others off.
 
-With two or more sources (or one you turned down or off), the strip's source reads **2 sources**. Click it for the
-list, with one entry per source: **Clips** first on an audio track (**Mix** on the Master), then each module by its
-place in the rack, **Track Out 1**, **Track Out 2**, **Drum Out**.
+With two or more sources, each gets its own narrow strip next to the track's strip: **Clips** on an audio track, and
+**IN** (or **IN 1**, **IN 2**) for each Track Out. Each has a fader, pan, **M**, **S** and a meter. The track's own strip is
+the master amount for all of them. The arrow on the track's source label folds the strips away.
 
-- **Click a source's name** to use it or not (the tick). A source not in use is silent, without pulling a cable.
-- **Level** sets how loud that source is, from -inf to +6 dB. Drag it; double-click for 0 dB. Each change is one
-  undo step.
-- A small meter shows what each source brings in, and **Show … in the rack** finds its module.
-- **Counted once**: when one cable feeds the INs of two Track Outs on the same track, the second adds nothing. The
-  list says "same cable as another source · counted once".
-- With every source off, the strip reads **No source in use** and the track is silent.
+- **M** silences that input, without pulling a cable. **Clips** muted or turned down changes only what you hear directly:
+  the track's OUT keeps sending the clips to an effect. So you can keep the reverb and drop the dry sound.
+- **S** plays that input alone, and solos its track too.
+- Right-click an **IN** strip's name for **Show this module in the rack**.
+- **Counted once**: when one cable feeds the INs of two Track Outs on the same track, the second adds nothing.
 
 A Track Out's **Use** and **Level** are kept in the module and also sit in its right-click menu, under **As a source
 of its track**. Its screen shows **IN OFF** or the level (like **IN -6.0 dB**) while they change the sound. They go
 with the module when you move, duplicate or delete it.
+
+## A short mixer
+
+When the pane is less than about 200 px tall, for example in the in-panel editor, the strips change shape. Each has a level
+knob, with what is sounding on the ring inside it, a pan knob, **M** and **S**. Drag the level knob up or down; everything
+else works the same.
 
 ## Sending to other tracks
 

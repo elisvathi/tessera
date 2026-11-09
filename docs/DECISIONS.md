@@ -2278,3 +2278,22 @@ This replaces "Linked by default" in the timeline section.
   and may overlap the module beside Roll.
 - **The meter sits about 3 mm clear of the MAIN jacks.**
 - **An audio track records its Track Out IN or Roll IN** (Record from). Roll IN is heard while armed with monitoring on.
+
+## 141. Every input of a track has its own strip (9 Nov)
+
+Replaces the list behind "2 sources" for tracks, and the "turn Clips down for a pure insert" note in §96.
+
+- **A track with two or more inputs shows a narrow strip for each**, with fader, pan, mute, solo and meter. Its own strip is
+  the master amount.
+- **OUT takes the clips before their Level.** The Clips strip changes what is heard directly, so an effect keeps
+  playing with the dry sound off.
+- **Solo on an input plays it alone and solos its track**, as one undo step.
+- **Below 200 px tall the mixer uses knob strips**, so every track still fits.
+
+## 142. Playhead bands, Note Repeat, recording another track (9 Nov)
+
+- **A timeline clip read by playheads shows one band per playhead**, with a block wherever that playhead is over a note.
+  When the bands would be too thin, the path lines stay.
+- **Note Repeat** is its own device, because repeating a held chord should be easy to find. It replays every note at its
+  Rate for as long as the note lasts.
+- **An audio track can also record another track or the master mix**, before its fader, alongside Track Out IN and Roll IN.

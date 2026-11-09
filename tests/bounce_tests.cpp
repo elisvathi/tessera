@@ -1,7 +1,9 @@
 #include "doctest.h"
 
 #include "../src/model/BounceNotes.hpp"
+#include "../src/model/Render.hpp"
 #include "../src/model/DeviceCommands.hpp"
+#include "../src/model/Devices.hpp"
 #include "../src/model/Serialize.hpp"
 
 #include <jansson.h>
@@ -213,7 +215,7 @@ TEST_CASE("a notes bounce plays a lane that turns a device knob into the notes")
     addDevice(f.song, f.track, DeviceType::Transpose, 0, f.next(), &device)->apply(f.song);
     AutomationEnvelope lane;
     lane.id = AutomationId(f.song.nextId++);
-    lane.paramTarget = ParamRef{ParamRef::Kind::Device, device.value, uint16_t(devices::knob::kSemitones)};
+    lane.paramTarget = ParamRef{ParamRef::Kind::Device, device.value, uint16_t(chain::knob::kSemitones)};
     AutoPoint up;
     up.value = 1;
     lane.points = {up};
@@ -225,4 +227,27 @@ TEST_CASE("a notes bounce plays a lane that turns a device knob into the notes")
     bounceNotes(f.song, what, 120, f.next(), &made)->apply(f.song);
     CHECK(f.song.findClip(made.clip)->notes.front().pitch == 60 + 24);
     CHECK(f.song.findTrack(made.track)->automation.empty());
+}
+
+TEST_CASE("note repeat plays a whole chord again at its rate for as long as it lasts") {
+    BounceSong f;
+    Clip& clip = *f.song.findClip(f.clipId);
+    clip.notes.resize(1);
+    clip.notes[0].length = kPpq;
+    Note third = clip.notes[0];
+    third.id = NoteId(f.song.nextId++);
+    third.pitch = 64;
+    clip.notes.push_back(third);
+    addDevice(f.song, f.track, DeviceType::NoteRepeat, 0, f.next())->apply(f.song);
+
+    render::Options options;
+    std::vector<render::ExportNote> played = render::trackNotes(f.song, f.track, options, render::Context{120, ""});
+    REQUIRE(played.size() == 8); // a beat of 1/16s, two notes each
+    int low = 0, high = 0;
+    for (const render::ExportNote& n : played) {
+        (n.pitch == 60 ? low : high)++;
+        CHECK(n.end - n.start == doctest::Approx(double(kPpq) / 8));
+    }
+    CHECK(low == 4);
+    CHECK(high == 4);
 }

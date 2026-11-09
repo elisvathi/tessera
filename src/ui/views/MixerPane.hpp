@@ -53,6 +53,11 @@ class MixerPane : public InteractiveView {
     struct Strip {
         TrackId track;
         bool master = false;
+        static constexpr int kInputStrip = 100;
+        bool isInput() const { return lane >= kInputStrip; }
+        bool knob = false; // a short pane: `fader` is a level knob
+        int64_t inputModule = -1; // an input strip's output module; -1 = the track's clips
+        std::string label;        // an input strip's name
         int lane = -1; // a drum track's lane IN (Drum Out output 0..7): a narrow strip after its track's
         GroupId group; // a group's strip, after its last track's (§3.5)
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
@@ -85,6 +90,7 @@ class MixerPane : public InteractiveView {
     std::optional<NVGcolor> laneColor(const Strip& s, bool pan) const;
     void showHeld(TrackId track, float volumeDb, float pan) { held[track.value] = {volumeDb, pan}; }
     void clearHeld() {
+        releaseInputPreview();
         held.clear();
         heldLanes.clear();
         heldSends.clear();
@@ -118,6 +124,15 @@ class MixerPane : public InteractiveView {
     void drawGroupStrip(NVGcontext* vg, const Strip& s, const TrackGroup& g);
     /// A drum lane IN's narrow strip: the lane's name and colour, pan, fader, meter and level.
     void drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t);
+    /// A strip in a short pane: level and pan knobs instead of a fader.
+    void drawKnobStrip(NVGcontext* vg, const Strip& s);
+    /// How loud a strip is now, in volts.
+    float stripLevel(const Strip& s) const;
+    /// Whether `track` shows a strip per input: two or more inputs on a note or audio track.
+    bool hasInputStrips(TrackId track) const;
+    /// Ends the live level and pan of the input strip being dragged, if any.
+    void releaseInputPreview();
+    std::optional<std::pair<TrackId, int64_t>> previewedInput;
     void drawMeter(NVGcontext* vg, rack::math::Rect r, float left, float right);
     /// The peaks the meters hold for 1.5 s, by strip key.
     float heldPeak(uint64_t key, float level);

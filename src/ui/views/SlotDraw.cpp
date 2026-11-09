@@ -147,6 +147,52 @@ void drawHatch(NVGcontext* vg, Rect r, float right, NVGcolor color) {
     nvgRestore(vg);
 }
 
+/// The note under clip position `pos`, as its index in `notes` (sorted by start); -1 when there is none.
+static int noteUnder(const std::vector<Note>& notes, double pos) {
+    auto after =
+        std::upper_bound(notes.begin(), notes.end(), pos, [](double t, const Note& n) { return t < double(n.start); });
+    int index = int(after - notes.begin()) - 1;
+    // A long note can start before several short ones, so look back a little.
+    for (int i = index; i >= 0 && i > index - 8; i--)
+        if (!notes[size_t(i)].muted && double(notes[size_t(i)].end()) > pos)
+            return i;
+    return -1;
+}
+
+/// One playhead's band on a clip: a tint of its colour, with a block wherever it is over a note. It shows how many
+/// playheads there are and the rhythm of each at a glance.
+static void drawPlayheadBand(NVGcontext* vg, const Clip& clip, const playheads::Motion& motion, NVGcolor color,
+                             Rect band, float x0, float x1, int samples, double e0, double de) {
+    NVGcolor tint = color;
+    tint.a *= 0.14f;
+    nvgBeginPath(vg);
+    nvgRect(vg, x0, band.pos.y, x1 - x0, band.size.y);
+    nvgFillColor(vg, tint);
+    nvgFill(vg);
+    float inset = std::min(2.f, band.size.y / 4);
+    nvgBeginPath(vg);
+    int open = -1;
+    float openX = x0;
+    auto closeBlock = [&](float x) {
+        if (open >= 0)
+            nvgRoundedRect(vg, openX, band.pos.y + inset, std::max(1.f, x - openX - 1), band.size.y - 2 * inset, 1);
+    };
+    for (int i = 0; i <= samples; i++) {
+        float x = x0 + (x1 - x0) * float(i) / float(samples);
+        double pos = playheads::positionAt(motion, e0 + double(i) * de);
+        int under = std::isfinite(pos) ? noteUnder(clip.notes, pos) : -1;
+        if (under != open) {
+            closeBlock(x);
+            open = under;
+            openX = x;
+        }
+    }
+    closeBlock(x1);
+    color.a *= 0.85f;
+    nvgFillColor(vg, color);
+    nvgFill(vg);
+}
+
 void drawPlayheadPaths(NVGcontext* vg, const Song& song, const Track& track, const Device& device, const Clip& clip,
                        Rect area, float x0, float x1, double e0, double e1, NVGcolor line, float alpha) {
     namespace m = theme::metrics;
@@ -175,6 +221,13 @@ void drawPlayheadPaths(NVGcontext* vg, const Song& song, const Track& track, con
             nvgRect(vg, area.pos.x, top - 1, area.size.x, 1);
             nvgFillColor(vg, line);
             nvgFill(vg);
+        }
+        if (bands) {
+            NVGcolor bandColor = theme::playheadColor(p.color);
+            bandColor.a = alpha * (playheads::heardAsSet(device.playheads, p) ? 1.f : 0.3f);
+            drawPlayheadBand(vg, clip, motion, bandColor, Rect(area.pos.x, top, area.size.x, h), x0, x1, samples, e0,
+                             de);
+            continue;
         }
         // How far the playhead can move between two samples (0..1 of its segment): more is a jump, left undrawn.
         double reach = 3 * std::abs(motion.rate) * de / motion.regionLength + 0.02;

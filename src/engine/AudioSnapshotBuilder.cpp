@@ -143,7 +143,10 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             if (track == t.id)
                 tp.busSlot = slot;
         tp.volume = dbToGain(t.channel.volumeDb);
-        tp.clipsGain = t.clips.use ? dbToGain(t.clips.db) : 0.f;
+        bool othersSoloed = !t.clips.solo &&
+                            std::find(plan.inputSolo.begin(), plan.inputSolo.end(), t.id) != plan.inputSolo.end();
+        tp.clipsGain = t.clips.use && !othersSoloed ? dbToGain(t.clips.db) : 0.f;
+        tp.clipsPan = t.clips.pan;
         tp.pan = t.channel.pan;
         tp.audible = tp.own = tp.sending = !t.mute;
         tp.rollIn = t.type == TrackType::Audio && t.recordInput == RecordInput::RollIn;

@@ -42,6 +42,17 @@ void set(TesseraModule& m, TrackId track, const Row& row, SourceLevel level, con
 /// Show in the rack; then Add a Track Out for this track.
 void openList(EditorContext& ctx, TrackId track);
 
+/// The setting of one input of `track`: an output module's, or (`module` -1) the track's clips.
+SourceLevel inputLevel(EditorContext& ctx, TrackId track, int64_t module);
+/// Saves an input's setting as one undo step named `name`.
+void commitInput(EditorContext& ctx, TrackId track, int64_t module, SourceLevel next, const std::string& name);
+/// Plays a level and pan at once while a mixer strip is dragged, before the commit.
+void previewInput(EditorContext& ctx, TrackId track, int64_t module, float db, float pan);
+/// Ends previewInput().
+void endInputPreview(EditorContext& ctx, TrackId track, int64_t module);
+/// Whether any input of `track` is soloed.
+bool anyInputSolo(EditorContext& ctx, TrackId track);
+
 /// Use and a Level slider for one output module, for its own right-click menu (one value shown in two places).
 void appendModuleItems(rack::ui::Menu* menu, OutputModuleBase* module);
 

@@ -192,7 +192,7 @@ Full scale (0 dB) is 10 V, the level Rack's Audio module sends to your sound car
 An audio track records what comes in on its Track Out's **IN**: a microphone or an instrument through Rack's Audio
 module, or any module's output. To record from the jacks on Roll instead, right-click the track and set **Record from** to
 **Roll IN L and R**. If only one of those two is patched, the other follows it. Roll IN is heard while the track is armed
-and **Monitor while armed** is on. Its clips are never recorded into the take.
+and **Monitor while armed** is on. **Record from** can also take **Another track**, before its fader, or the **Master mix**. Its clips are never recorded into the take.
 
 1. Patch the sound into the **IN** of a Track Out bound to the audio track.
 2. **Arm** the track (the ring in its header turns red).

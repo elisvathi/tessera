@@ -189,6 +189,9 @@ void Chain::dispatch(const Message& m, const Context& c, Output& out) {
     case DeviceType::Echo:
         echo(m, d, c, out);
         break;
+    case DeviceType::NoteRepeat:
+        noteRepeat(m, d, c, out);
+        break;
     case DeviceType::Random:
         random(m, d, c, out);
         break;
@@ -615,6 +618,49 @@ void Chain::echo(const Message& m, const DeviceSlot& d, const Context& c, Output
     post(stage + 1, Kind::On, note, note.start, out);
     if (k < repeats)
         post(stage, Kind::Echo, m.note, m.time + time, out, uint8_t(k + 1));
+}
+
+// ---- Note Repeat ----------------------------------------------------------------------------------------------
+
+void Chain::noteRepeat(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
+    int stage = m.stage;
+    DeviceState& s = states[size_t(stage)];
+    double rate = std::max(1.0, double(devices::rateTicks(choiceOf(d, knob::kRepeatRate), c.timeSig)));
+    double hit = std::max(1.0, rate * double(shown(d, knob::kRepeatGate)) / 100);
+    auto heldAt = [&](uint32_t id) {
+        for (int i = 0; i < s.heldCount; i++)
+            if (s.held[size_t(i)].note.id == id)
+                return i;
+        return -1;
+    };
+    if (m.kind == Kind::End || m.kind == Kind::Expire) {
+        // Only a note still being played has an end to wait for; the repeats it made are short notes of their own.
+        if (int i = heldAt(m.note.id); i >= 0) {
+            std::move(s.held.begin() + i + 1, s.held.begin() + s.heldCount, s.held.begin() + i);
+            s.heldCount--;
+        }
+        return;
+    }
+    if (m.kind != Kind::On && m.kind != Kind::Echo) {
+        forward(m, out);
+        return;
+    }
+    bool first = m.kind == Kind::On;
+    double at = first ? m.note.start : m.time;
+    if (first && m.note.open() && s.heldCount < kMaxHeld)
+        s.held[size_t(s.heldCount++)] = {m.note, s.arrivals++, true};
+    bool going = m.note.open() ? heldAt(m.note.id) >= 0 : at < m.note.end - 1e-6;
+    if (!going)
+        return;
+    int k = first ? 0 : m.step;
+    ChainNote note = m.note;
+    note.id = newId();
+    note.velocity = m.note.velocity * std::pow(1 - shown(d, knob::kRepeatDecay) / 100, float(k));
+    note.start = at;
+    note.end = m.note.open() ? at + hit : std::min(m.note.end, at + hit);
+    note.origin = m.note.origin + double(k) * rate;
+    post(stage + 1, Kind::On, note, note.start, out);
+    post(stage, Kind::Echo, m.note, at + rate, out, uint8_t(std::min(k + 1, 255)));
 }
 
 // ---- Random ---------------------------------------------------------------------------------------------------

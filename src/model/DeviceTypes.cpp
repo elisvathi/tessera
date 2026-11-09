@@ -77,6 +77,9 @@ std::vector<TypeInfo> buildDevices() {
          choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
          number("Swing", 0, 100, 0, "%"), choice("Velocity", {"As played", "Fixed", "Accent"}, 0),
          toggle("Hold", false)}};
+    t[size_t(DeviceType::NoteRepeat)] = {"Note Repeat",
+                                         {choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 100, 50, "%"),
+                                          number("Decay", 0, 100, 0, "%")}};
     t[size_t(DeviceType::Echo)] = {"Echo",
                                    {choice("Time", rates(), kRateEighth), integer("Repeats", 1, 16, 3),
                                     number("Decay", 0, 100, 30, "%"), integer("Pitch", -12, 12, 0, "st"),
@@ -113,6 +116,8 @@ std::vector<TypeInfo> buildDevices() {
     about(DeviceType::Chord, "Pitch", "turns each note into a chord", "harmony triad stack voicing");
     about(DeviceType::Arpeggiator, "Rhythm", "plays held notes one at a time", "arp pattern sequence");
     about(DeviceType::Echo, "Rhythm", "repeats notes, fading out", "delay repeat feedback");
+    about(DeviceType::NoteRepeat, "Rhythm", "plays every note again while it lasts, chords too",
+          "repeat retrigger ratchet stutter roll");
     about(DeviceType::NoteLength, "Rhythm", "shorter, longer or legato notes", "gate legato duration staccato");
     about(DeviceType::Velocity, "Feel", "softer, harder, or within a range", "dynamics accent compress loudness");
     about(DeviceType::Humanize, "Feel", "loosens timing, velocity and length a little on every pass",

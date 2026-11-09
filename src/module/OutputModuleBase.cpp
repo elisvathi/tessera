@@ -1,4 +1,5 @@
 #include "OutputModuleBase.hpp"
+#include "../engine/AudioPlayer.hpp"
 
 #include "../engine/AudioPlayer.hpp"
 #include "../model/AudioSource.hpp"
@@ -105,7 +106,8 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         l = r;
     int slot = returnSlot.load(std::memory_order_relaxed);
     if (on && slot >= 0 && (hasL || hasR)) {
-        float gl = l * inputGain, gr = r * inputGain;
+        float gl = l * inputGain * inputPanL.load(std::memory_order_relaxed);
+        float gr = r * inputGain * inputPanR.load(std::memory_order_relaxed);
         inputPeak = std::max(inputPeak, std::max(std::fabs(gl), std::fabs(gr)));
         b->returns().write(args.frame, slot, track, gl, gr);
     }
@@ -264,7 +266,11 @@ void OutputModuleBase::refreshBinding() {
     audioOn.store(src && !bindingData.followSelected && status() == BindingStatus::Bound);
     trackGone.store(src && status() == BindingStatus::TrackMissing);
     float levelDb = heldLevelDb ? *heldLevelDb : setting.db;
-    inputTarget.store(setting.use && !countedOnce ? dbToGain(levelDb) : 0.f, std::memory_order_relaxed);
+    float panL = 1, panR = 1;
+    balanceGains(heldPan ? *heldPan : setting.pan, panL, panR);
+    inputPanL.store(panL, std::memory_order_relaxed);
+    inputPanR.store(panR, std::memory_order_relaxed);
+    inputTarget.store(setting.use && !countedOnce && heardBySolo ? dbToGain(levelDb) : 0.f, std::memory_order_relaxed);
     // The sources' levels and pans: the drum track's lane IN settings, or what a drag in the mixer holds.
     if (audioPorts.sourceCount > 0) {
         const Track* t = src ? src->song().findTrack(bindingData.track) : nullptr;
@@ -313,6 +319,18 @@ void OutputModuleBase::stepTrack(int delta) {
     auto it = std::find(tracks.begin(), tracks.end(), bindingData.track);
     int index = it == tracks.end() ? (delta > 0 ? 0 : n - 1) : (int(it - tracks.begin()) + delta % n + n) % n;
     bind(*src, tracks[index]);
+}
+
+void OutputModuleBase::holdSourcePan(std::optional<float> pan) {
+    heldPan = pan;
+    refreshBinding();
+}
+
+void OutputModuleBase::setHeardBySolo(bool heard) {
+    if (heardBySolo == heard)
+        return;
+    heardBySolo = heard;
+    refreshBinding();
 }
 
 void OutputModuleBase::setSourceSetting(SourceLevel level) {
@@ -365,6 +383,10 @@ json_t* OutputModuleBase::dataToJson() {
         json_object_set_new(root, "level", json_real(setting.db));
     if (!setting.use)
         json_object_set_new(root, "use", json_false());
+    if (setting.pan != 0)
+        json_object_set_new(root, "sourcePan", json_real(setting.pan));
+    if (setting.solo)
+        json_object_set_new(root, "sourceSolo", json_true());
     return root;
 }
 
@@ -381,6 +403,9 @@ void OutputModuleBase::dataFromJson(json_t* root) {
     if (json_t* j = json_object_get(root, "level"); json_is_number(j))
         setting.db = std::clamp(float(json_number_value(j)), kSilentDb, kMaxFaderDb);
     setting.use = !json_is_false(json_object_get(root, "use"));
+    if (const json_t* pan = json_object_get(root, "sourcePan"))
+        setting.pan = std::clamp(float(json_number_value(pan)), -1.f, 1.f);
+    setting.solo = json_is_true(json_object_get(root, "sourceSolo"));
 }
 
 } // namespace tessera
