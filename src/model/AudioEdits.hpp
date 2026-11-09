@@ -41,6 +41,22 @@ class RemoveAudioSources : public Command {
     std::vector<AudioSource> sources;
 };
 
+/// Points a source at another file (Find, when the user accepts a different recording). Undo points it back.
+class SetAudioSource : public Command {
+  public:
+    SetAudioSource(AudioSource before, AudioSource after) : before(std::move(before)), after(std::move(after)) {}
+
+    void apply(Song& song) override { set(song, after); }
+    void revert(Song& song) override { set(song, before); }
+    std::string name() const override { return "Use another audio file"; }
+    ChangeSet changes() const override { return ChangeSet::all(); }
+
+  private:
+    static void set(Song& song, const AudioSource& value);
+
+    AudioSource before, after;
+};
+
 /// Changes what an audio clip plays: gain, pitch, follow tempo, sound type, start in the file.
 class SetAudioContent : public Command {
   public:

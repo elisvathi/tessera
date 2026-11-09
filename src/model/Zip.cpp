@@ -33,7 +33,7 @@ uint32_t get32(const std::string& in, size_t at) { return get16(in, at) | get16(
 
 } // namespace
 
-uint32_t crc32(const std::string& data) {
+uint32_t crc32Add(uint32_t crc, const char* data, size_t size) {
     static const std::array<uint32_t, 256> table = [] {
         std::array<uint32_t, 256> t{};
         for (uint32_t i = 0; i < 256; i++) {
@@ -44,11 +44,13 @@ uint32_t crc32(const std::string& data) {
         }
         return t;
     }();
-    uint32_t c = 0xFFFFFFFFu;
-    for (char ch : data)
-        c = table[(c ^ uint8_t(ch)) & 0xFF] ^ (c >> 8);
+    uint32_t c = crc ^ 0xFFFFFFFFu;
+    for (size_t i = 0; i < size; i++)
+        c = table[(c ^ uint8_t(data[i])) & 0xFF] ^ (c >> 8);
     return c ^ 0xFFFFFFFFu;
 }
+
+uint32_t crc32(const std::string& data) { return crc32Add(0, data.data(), data.size()); }
 
 std::string store(const std::vector<std::pair<std::string, std::string>>& files) {
     std::string out, central;

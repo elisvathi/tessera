@@ -335,7 +335,7 @@ void TesseraModule::setupAudioFolder() {
                              audioFolder);
         // Loading a patch (nothing to undo yet) drops files no source uses: "Remove unused audio" leaves them for
         // undo until then.
-        if (!APP->history->canUndo())
+        if (!APP->history->canUndo() && !savedByNewerVersion)
             removeUnusedFiles(songData, audioFolder);
     }
     if (!audio)
@@ -587,6 +587,23 @@ TesseraModule::AudioDropResult TesseraModule::importAudioFiles(const std::vector
     }
     APP->history->push(complex);
     return result;
+}
+
+bool TesseraModule::relinkAudioSource(AudioSourceId id, const std::string& path) {
+    setupAudioFolder();
+    const AudioSource* before = songData.findSource(id);
+    if (!audio || !before)
+        return false;
+    double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
+    if (!imp.ok)
+        return false;
+    AudioSource after = imp.source;
+    after.id = id;
+    after.tempo = before->tempo;
+    after.volts = before->volts;
+    perform(std::make_unique<SetAudioSource>(*before, after));
+    return true;
 }
 
 bool TesseraModule::replaceAudioFile(ClipId clip, const std::string& path) {
@@ -1556,7 +1573,8 @@ void TesseraModule::dataFromJson(json_t* root) {
     // Older patches without a song keep the current one.
     if (const json_t* songJ = json_object_get(root, "song")) {
         int schema = int(json::getInt(root, "schema", Song::kSchemaVersion));
-        if (schema > Song::kSchemaVersion)
+        savedByNewerVersion = schema > Song::kSchemaVersion;
+        if (savedByNewerVersion)
             WARN("Tessera: patch uses song schema %d, newer than this build (%d); loading what it can", schema,
                  Song::kSchemaVersion);
         songData = songFromJson(songJ, schema);

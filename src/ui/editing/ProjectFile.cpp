@@ -2,6 +2,8 @@
 #include "ExportAudio.hpp"
 #include "ImportMidi.hpp"
 
+#include "../../audio/ProjectBundle.hpp"
+#include "../../model/Serialize.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../ModuleUndo.hpp"
 #include "../interaction/Shortcuts.hpp"
@@ -15,6 +17,7 @@ namespace tessera::projectFile {
 namespace {
 
 constexpr const char* kFilters = "Tessera project:tessera";
+constexpr const char* kStillBusy = "Still working on the last file. Try again in a moment.";
 
 /// The path the user picks, ending in ".tessera"; empty when cancelled.
 std::string pick(osdialog_file_action action, const std::string& suggested) {
@@ -39,46 +42,108 @@ std::string defaultName(TesseraModule* m) {
     return name + ".tessera";
 }
 
-/// The folder beside a project file that holds its audio: "Song.tessera" keeps it in "Song audio".
+/// The folder where a project saved before projects held their audio keeps it: "Song.tessera" has "Song audio".
 std::string audioFolderOf(const std::string& projectPath) {
     return rack::system::join(rack::system::getDirectory(projectPath),
                               rack::system::getStem(projectPath) + " audio");
 }
 
+/// A progress report for a file job, sent only when the percentage changes.
+std::function<void(float)> percentTicker(TesseraModule* m, const std::string& text) {
+    auto shown = std::make_shared<int>(-1);
+    return [m, text, shown](float progress) {
+        int percent = int(progress * 100);
+        if (percent != *shown) {
+            *shown = percent;
+            m->fileMessage = text + " " + std::to_string(percent) + "%";
+        }
+    };
+}
+
+/// Shared ownership of a JSON value that a file job needs after this call returns.
+std::shared_ptr<json_t> holdJson(json_t* value) { return std::shared_ptr<json_t>(value, json_decref); }
+
 } // namespace
 
 void open(TesseraModule* m, Say say) {
+    if (m->fileJobRunning()) {
+        say(kStillBusy, true);
+        return;
+    }
     std::string path = pick(OSDIALOG_OPEN, m->projectPath);
     if (path.empty())
         return;
+    std::string name = rack::system::getFilename(path);
+    bool oneFile = bundle::isBundle(path);
     json_error_t error;
-    json_t* project = json_load_file(path.c_str(), 0, &error);
-    if (!project) {
-        say("Couldn't read " + rack::system::getFilename(path) + ": " + error.text, true);
+    json_t* loaded;
+    if (oneFile) {
+        std::string text;
+        loaded = bundle::readProject(path, text) ? json_loads(text.c_str(), 0, &error) : nullptr;
+        if (!loaded) {
+            say(name + " is damaged, so Roll couldn't open it", true);
+            return;
+        }
+    } else {
+        loaded = json_load_file(path.c_str(), 0, &error);
+        if (!loaded) {
+            say("Couldn't read " + name + ": " + error.text, true);
+            return;
+        }
+    }
+    std::shared_ptr<json_t> project = holdJson(loaded);
+    json_t* withSong = m->withProject(project.get(), path);
+    if (!withSong) {
+        say(name + " isn't a Tessera project", true);
         return;
     }
-    json_t* merged = m->withProject(project, path);
-    if (!merged) {
-        json_decref(project);
-        say(rack::system::getFilename(path) + " isn't a Tessera project", true);
+    std::shared_ptr<json_t> merged = holdJson(withSong);
+    auto apply = [m, project, merged] {
+        withModuleUndo(m, "open project", [&] {
+            m->dataFromJson(merged.get());
+            m->applyProjectTransport(project.get());
+        });
+    };
+
+    std::vector<bundle::Wanted> wanted;
+    if (oneFile) {
+        int schema = int(json_integer_value(json_object_get(merged.get(), "schema")));
+        Song incoming = songFromJson(json_object_get(merged.get(), "song"), schema > 0 ? schema : Song::kSchemaVersion);
+        for (const AudioSource& s : incoming.audioSources)
+            wanted.push_back({s.file, s.contentHash});
+    }
+    if (wanted.empty()) {
+        apply();
+        // A project from before projects held their audio: its files sit next to it, in "<name> audio".
+        if (!oneFile && hasAudio(m->song())) {
+            importFiles(m->song(), audioFolderOf(path), m->audioStorage());
+            if (AudioStore* store = m->audioStore())
+                store->retryMissing();
+        }
+        say("Opened " + name, false);
         return;
     }
-    withModuleUndo(m, "open project", [&] {
-        m->dataFromJson(merged);
-        m->applyProjectTransport(project);
-    });
-    // Its audio files sit next to it, in "<name> audio".
-    if (hasAudio(m->song())) {
-        importFiles(m->song(), audioFolderOf(path), m->audioStorage());
-        if (AudioStore* store = m->audioStore())
-            store->retryMissing();
-    }
-    json_decref(merged);
-    json_decref(project);
-    say("Opened " + rack::system::getFilename(path), false);
+    // The audio comes out first, so the song arrives with its files in place and never shows them as missing.
+    std::string storage = m->audioStorage();
+    m->startFileJob(
+        [path, wanted, storage](std::atomic<float>& progress) {
+            bundle::extract(path, wanted, storage, &progress);
+            return true;
+        },
+        percentTicker(m, "Opening " + name + "…"),
+        [m, apply, name](bool) {
+            apply();
+            if (AudioStore* store = m->audioStore())
+                store->retryMissing();
+            m->fileMessage = "Opened " + name;
+        });
 }
 
 void save(TesseraModule* m, bool as, Say say) {
+    if (m->fileJobRunning()) {
+        say(kStillBusy, true);
+        return;
+    }
     std::string path = m->projectPath;
     if (as || path.empty()) {
         std::string suggested = path.empty() ? rack::system::join(rack::asset::user(""), defaultName(m)) : path;
@@ -86,17 +151,61 @@ void save(TesseraModule* m, bool as, Say say) {
         if (path.empty())
             return;
     }
+    std::string name = rack::system::getFilename(path);
     json_t* project = m->projectToJson();
-    int failed = json_dump_file(project, path.c_str(), JSON_INDENT(1) | JSON_REAL_PRECISION(9));
+    char* dumped = json_dumps(project, JSON_INDENT(1) | JSON_REAL_PRECISION(9));
     json_decref(project);
-    if (failed) {
+    if (!dumped) {
         say("Couldn't write " + path, true);
         return;
     }
-    m->projectPath = path;
-    if (hasAudio(m->song()))
-        exportFiles(m->song(), m->audioStorage(), audioFolderOf(path));
-    say("Saved " + rack::system::getFilename(path), false);
+    std::string text = dumped;
+    std::free(dumped);
+
+    // A song without audio stays a plain text file, exactly as before.
+    if (m->song().audioSources.empty()) {
+        if (!bundle::writeText(path, text)) {
+            say("Couldn't write " + path, true);
+            return;
+        }
+        m->projectPath = path;
+        say("Saved " + name, false);
+        return;
+    }
+
+    std::string storage = m->audioStorage();
+    std::vector<bundle::AudioEntry> audio;
+    int missing = 0;
+    for (const AudioSource& s : m->song().audioSources) {
+        std::string file = rack::system::join(storage, s.file);
+        if (rack::system::exists(file))
+            audio.push_back({s.file, file});
+        else
+            missing++;
+    }
+    if (missing > 0) {
+        std::string question = std::to_string(missing) + (missing == 1 ? " audio file is" : " audio files are") +
+                               " missing and won't be in the project.\n\nSave anyway?";
+        if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK_CANCEL, question.c_str()) != 1)
+            return;
+    }
+    bool oldFolder = rack::system::isDirectory(audioFolderOf(path));
+    std::string folderName = rack::system::getFilename(audioFolderOf(path));
+    m->startFileJob(
+        [path, text, audio](std::atomic<float>& progress) { return bundle::write(path, text, audio, &progress); },
+        percentTicker(m, "Saving " + name + "…"),
+        [m, path, name, oldFolder, folderName](bool ok) {
+            if (!ok) {
+                m->fileMessage.clear();
+                std::string problem = "Couldn't save " + name + ". The disk may be full. Any older copy is unchanged.";
+                osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, problem.c_str());
+                return;
+            }
+            m->projectPath = path;
+            m->fileMessage = "Saved " + name + " with its audio";
+            if (oldFolder)
+                m->fileMessage += ". The folder '" + folderName + "' is no longer needed";
+        });
 }
 
 void newSong(TesseraModule* m, Say say) {

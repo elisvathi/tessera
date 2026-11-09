@@ -183,6 +183,9 @@ void EditorHost::showNotices() {
     else if (!m->takeProblem.empty()) {
         ctx.toast(m->takeProblem);
         m->takeProblem.clear();
+    } else if (!m->fileMessage.empty()) {
+        ctx.toast(m->fileMessage);
+        m->fileMessage.clear();
     } else if (!m->exportResult.empty()) {
         ctx.toast(m->exportResult);
         m->exportResult.clear();

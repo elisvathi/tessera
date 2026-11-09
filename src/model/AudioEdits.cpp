@@ -62,6 +62,12 @@ void RemoveAudioSources::revert(Song& song) {
         insertSource(song, s);
 }
 
+void SetAudioSource::set(Song& song, const AudioSource& value) {
+    for (AudioSource& s : song.audioSources)
+        if (s.id == value.id)
+            s = value;
+}
+
 void SetAudioContent::set(Song& song, const AudioContent& value) const {
     if (Clip* c = song.findClip(clip))
         if (c->audio)
@@ -565,7 +571,7 @@ CommandPtr importAudio(const Song& song, std::vector<ImportedAudio> files, const
             out->add(std::make_unique<AddClip>(std::move(c)));
         }
         after = arrange::resolveOverlaps(after, added, pool, [&] { return ArrangementId(nextId()); });
-        out->add(arrange::replaceArrangement(song, label, before, after));
+        out->add(arrange::replaceArrangement(song, label, before, after, nextId));
         break;
     }
     case AudioDropTarget::Kind::Slot: {

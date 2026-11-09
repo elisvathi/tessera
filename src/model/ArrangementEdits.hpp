@@ -106,6 +106,17 @@ class EditArrangement : public Command {
 /// One undo step from `before` to `after` (both full layouts). Null when nothing changed.
 CommandPtr replaceArrangement(const Song& song, const std::string& name, const Layout& before, const Layout& after);
 
+/// The instances of `cut` that are pieces of an audio clip the edit from `before` cut: a new instance that plays on
+/// from an old one on the same track, and that old one. A linked copy dropped inside its own clip plays something
+/// else, so it doesn't count.
+IdSet audioPieces(const Layout& before, const Layout& cut, const ClipPool& clips);
+/// Gives each instance of `layout` in `pieces` a clip of its own, unless it would be the clip's only user, so changing
+/// one piece leaves the others alone. Returns the new clips, which must join the song before the layout does.
+std::vector<Clip> separatePieces(Layout& layout, const IdSet& pieces, const Song& song, const NextId& nextId);
+/// replaceArrangement() for an edit that may cut audio clips: the pieces get their own clips in the same undo step.
+CommandPtr replaceArrangement(const Song& song, const std::string& name, const Layout& before, Layout after,
+                              const NextId& nextId);
+
 /// Makes a clip `factor` times as long (2 = half speed, 0.5 = double speed): its notes, loop and automation, and
 /// every timeline clip that uses it, so each still plays all of it. One undo step; null when nothing changes.
 CommandPtr scaleClip(const Song& song, ClipId clip, double factor);

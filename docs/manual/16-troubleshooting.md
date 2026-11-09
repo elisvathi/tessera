@@ -17,7 +17,7 @@ Check these in order:
 7. **An audio track?** Audio comes out of **MAIN L** and **MAIN R** on the Roll panel: patch them into the Audio
    module (right-click Roll: **Connect MAIN to Audio module**). An amber dot beside MAIN, and **MAIN not patched**
    in the mixer, mean nothing is patched there. A clip marked **Missing file** has lost its file: right-click it,
-   **Find file…**.
+   **Find in a folder…**.
 
 ## The output module says "No source", "Track deleted" or "Roll bypassed"
 

@@ -11,6 +11,8 @@
 namespace tessera::zip {
 
 uint32_t crc32(const std::string& data);
+/// Continues a CRC-32 with more bytes, for files too large to hold in memory. Start from 0.
+uint32_t crc32Add(uint32_t crc, const char* data, size_t size);
 
 /// The archive bytes holding `files` (name, contents) in order.
 std::string store(const std::vector<std::pair<std::string, std::string>>& files);

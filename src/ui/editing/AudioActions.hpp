@@ -72,8 +72,9 @@ void replaceFileDialog(EditorContext& ctx, ClipId clip);
 /// Gives the dropped file to audio clip `clip` (a Ctrl/Cmd+drop on the clip), with a toast.
 void replaceFile(EditorContext& ctx, ClipId clip, const std::string& path);
 
-/// Asks for a missing source's file and copies it into the patch under the source's name, then loads it.
-void findFile(EditorContext& ctx, AudioSourceId source);
+/// Finds every missing file: first in the other Tesseras of this patch, then in a folder the user picks, by content
+/// and name. Asks before using a file with the right name and other content.
+void findMissing(EditorContext& ctx);
 /// The sources whose files aren't in patch storage.
 std::vector<AudioSourceId> missingSources(TesseraModule& module);
 

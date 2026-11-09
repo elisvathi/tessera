@@ -359,6 +359,15 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Opening a file that isn't a project says so and changes nothing (in the toast, or a message box when the
       editor is closed).
 - [ ] Output modules keep their tracks when a project saved from this patch is reopened.
+- [ ] A song with audio: Save project as… makes one file, with no "<name> audio" folder. Rename it, move it to another
+      folder, add a new Roll in a new patch and Open project…: the clips play.
+- [ ] A song with no audio saves as plain text you can read.
+- [ ] A project made before 9 Nov with a "<name> audio" folder opens and plays. Saving it says the folder is no longer
+      needed, makes one file, and leaves the folder alone.
+- [ ] While a big project saves, the editor keeps working and the message counts up.
+- [ ] Load a preset of a Roll with audio into another patch: "Missing file". Find… on a folder holding the WAVs brings
+      them all back with one dialog, even a renamed one. A same-named file with other audio asks first, and undo
+      points the clip back.
 - [ ] Export DAWproject…: open the file in a DAW that reads DAWproject: one track per Tessera track with its name
       and colour; arranger clips where they are, with their notes; launcher clips as scenes (looping); tempo, time
       signature, markers. Devices "Applied": the arpeggio is in the notes. Automation "As CC": the lanes appear as

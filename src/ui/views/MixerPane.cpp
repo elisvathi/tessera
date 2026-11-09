@@ -760,7 +760,7 @@ void MixerPane::step() {
     if (ctx.state().showSends.valid() && !ctx.state().mixerOpen)
         ctx.state().setShowSends(TrackId(), EditorContext::now());
     layout();
-    // Once a loaded patch has settled, say if files are missing (§8.7): one toast, with Find… for the first.
+    // Once a loaded patch has settled, say if files are missing (§8.7): one toast, with Find….
     if (TesseraModule* m = ctx.module())
         if (AudioStore* store = m->audioStore(); store && store->idle()) {
             std::vector<AudioSourceId> missing = audioActions::missingSources(*m);
@@ -768,11 +768,10 @@ void MixerPane::step() {
                 missingTold = missing.size();
                 if (!missing.empty()) {
                     EditorContext* c = &ctx;
-                    AudioSourceId first = missing.front();
                     std::string text = missing.size() == 1
                                            ? "1 audio file is missing"
                                            : std::to_string(missing.size()) + " audio files are missing";
-                    ctx.toast(text, "Find…", [c, first] { audioActions::findFile(*c, first); });
+                    ctx.toast(text, "Find…", [c] { audioActions::findMissing(*c); });
                 }
             }
         }

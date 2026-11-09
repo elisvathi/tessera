@@ -1,5 +1,7 @@
 #include "doctest.h"
 
+#include "../src/model/RangeEdits.hpp"
+
 #include "../src/model/LauncherCommands.hpp"
 
 #include "../src/model/ArrangementEdits.hpp"
@@ -610,6 +612,97 @@ TEST_CASE("the audio window sets what part of the file a clip plays; a whole-win
     setAudioWindow(song, id, 0, 144000)->apply(song);
     CHECK(song.findClip(id)->loopStart == 2 * kPpq);
     CHECK(song.findClip(id)->loopEnd == 4 * kPpq);
+}
+
+TEST_CASE("every way of cutting an audio clip leaves pieces that don't share a clip") {
+    AudioLanes f;
+    NextId next = [&] { return f.song.nextId++; };
+    arrange::Placed whole = f.at(0, 8);
+    Track& track = *f.song.findTrack(f.track);
+    track.arrangement = {whole.clip};
+    Song original = f.song;
+    auto uses = [&](ClipId c) { return f.song.clipUses(c); };
+
+    SUBCASE("split: the left part keeps the clip, the right gets its own, same file") {
+        arrange::IdSet right;
+        arrange::Layout before = arrange::layoutOf(f.song);
+        arrange::Layout after = arrange::split(before, {whole.clip.id}, 3 * kPpq, f.song.clips, f.ids(), &right);
+        CommandPtr cmd = arrange::replaceArrangement(f.song, "Split", before, after, next);
+        REQUIRE(cmd);
+        applyAndCheckUndo(f.song, *cmd);
+        const auto& arr = f.song.findTrack(f.track)->arrangement;
+        REQUIRE(arr.size() == 2);
+        CHECK(arr[0].clip == f.clip);
+        CHECK(arr[1].clip != f.clip);
+        CHECK(f.song.findClip(arr[1].clip)->audio == f.song.findClip(f.clip)->audio);
+        CHECK(uses(f.clip) == 1);
+    }
+    SUBCASE("split of a linked clip: both parts leave, the other copy stays on the clip") {
+        ArrangerClip other = whole.clip;
+        other.id = ArrangementId(f.song.nextId++);
+        other.position = 16 * kPpq;
+        f.song.findTrack(f.track)->arrangement.push_back(other);
+        arrange::Layout before = arrange::layoutOf(f.song);
+        arrange::Layout after = arrange::split(before, {whole.clip.id}, 3 * kPpq, f.song.clips, f.ids());
+        arrange::replaceArrangement(f.song, "Split", before, after, next)->apply(f.song);
+        const auto& arr = f.song.findTrack(f.track)->arrangement;
+        REQUIRE(arr.size() == 3);
+        CHECK(arr[0].clip != f.clip);
+        CHECK(arr[1].clip != f.clip);
+        CHECK(arr[0].clip != arr[1].clip);
+        CHECK(arr[2].clip == f.clip);
+        CHECK(uses(f.clip) == 1);
+    }
+    SUBCASE("a clip dropped inside: the two sides don't share") {
+        Clip inner = *f.song.findClip(f.clip);
+        inner.id = ClipId(f.song.nextId++);
+        AddClip(inner).apply(f.song);
+        arrange::Placed drop = f.at(3, 5);
+        drop.clip.clip = inner.id;
+        arrange::Layout before = arrange::layoutOf(f.song);
+        arrange::Layout after = before;
+        after.push_back(drop);
+        after = arrange::settleAudio(after, {drop.clip.id}, f.song.clips, f.ids());
+        arrange::replaceArrangement(f.song, "Drop", before, after, next)->apply(f.song);
+        const auto& arr = f.song.findTrack(f.track)->arrangement;
+        REQUIRE(arr.size() == 3);
+        CHECK(arr[0].clip == f.clip);
+        CHECK(arr[1].clip == inner.id);
+        CHECK(arr[2].clip != f.clip);
+    }
+    SUBCASE("a linked copy dropped inside its own clip stays linked; the sides leave") {
+        arrange::Placed drop = f.at(3, 5);
+        arrange::Layout before = arrange::layoutOf(f.song);
+        arrange::Layout after = before;
+        after.push_back(drop);
+        after = arrange::settleAudio(after, {drop.clip.id}, f.song.clips, f.ids());
+        arrange::replaceArrangement(f.song, "Drop", before, after, next)->apply(f.song);
+        const auto& arr = f.song.findTrack(f.track)->arrangement;
+        REQUIRE(arr.size() == 3);
+        CHECK(arr[0].clip != f.clip);
+        CHECK(arr[1].clip == f.clip);
+        CHECK(arr[2].clip != f.clip);
+        CHECK(arr[0].clip != arr[2].clip);
+    }
+    SUBCASE("delete time: the pieces either side of the range don't share") {
+        CommandPtr cmd = rangeEdits::deleteTime(f.song, {f.track}, 2 * kPpq, 4 * kPpq, next);
+        REQUIRE(cmd);
+        applyAndCheckUndo(f.song, *cmd);
+        const auto& arr = f.song.findTrack(f.track)->arrangement;
+        REQUIRE(arr.size() == 2);
+        CHECK(arr[0].clip != arr[1].clip);
+    }
+    SUBCASE("delete range and insert silence too") {
+        rangeEdits::clearRange(f.song, {f.track}, 2 * kPpq, 4 * kPpq, next)->apply(f.song);
+        auto arr = f.song.findTrack(f.track)->arrangement;
+        REQUIRE(arr.size() == 2);
+        CHECK(arr[0].clip != arr[1].clip);
+        f.song = original;
+        rangeEdits::insertSilence(f.song, {f.track}, 2 * kPpq, 2 * kPpq, next)->apply(f.song);
+        arr = f.song.findTrack(f.track)->arrangement;
+        REQUIRE(arr.size() == 2);
+        CHECK(arr[0].clip != arr[1].clip);
+    }
 }
 
 TEST_CASE("glue rejoins split audio pieces that have their own clips, unless one was changed") {

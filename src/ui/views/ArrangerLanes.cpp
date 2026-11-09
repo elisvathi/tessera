@@ -367,7 +367,7 @@ void ArrangerLanes::commit(const std::string& name, const arrange::Layout& befor
     if (!m)
         return;
     auto compound = std::make_unique<CompoundCommand>(name);
-    CommandPtr edit = arrange::replaceArrangement(m->song(), name, before, after);
+    CommandPtr edit = arrange::replaceArrangement(m->song(), name, before, after, m->ids());
     if (!edit)
         return;
     for (Clip& c : newClips)

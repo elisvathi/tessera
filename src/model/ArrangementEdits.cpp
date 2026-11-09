@@ -536,6 +536,64 @@ CommandPtr replaceArrangement(const Song& song, const std::string& name, const L
     return compound;
 }
 
+IdSet audioPieces(const Layout& before, const Layout& cut, const ClipPool& clips) {
+    IdSet old, pieces;
+    for (const Placed& p : before)
+        old.insert(p.clip.id);
+    for (const Placed& p : cut) {
+        const Clip* clip = old.count(p.clip.id) ? nullptr : clipOf(clips, p.clip.clip);
+        if (!clip || !clip->audio)
+            continue;
+        std::optional<double> plays = clipTimeAt(*clip, p.clip, double(p.clip.position));
+        for (const Placed& b : before) {
+            if (b.track != p.track || b.clip.clip != p.clip.clip || p.clip.position < b.clip.position ||
+                p.clip.position >= instanceEnd(b.clip))
+                continue;
+            std::optional<double> wasPlaying = clipTimeAt(*clip, b.clip, double(p.clip.position));
+            if (plays && wasPlaying && std::fabs(*plays - *wasPlaying) < 1) {
+                pieces.insert(p.clip.id);
+                pieces.insert(b.clip.id);
+            }
+        }
+    }
+    return pieces;
+}
+
+std::vector<Clip> separatePieces(Layout& layout, const IdSet& pieces, const Song& song, const NextId& nextId) {
+    std::vector<Clip> made;
+    std::map<ClipId, int> uses;
+    for (const Placed& p : layout)
+        uses[p.clip.clip]++;
+    for (auto& [clip, count] : uses) {
+        for (const Track& t : song.tracks)
+            for (const ClipSlot& s : t.slots)
+                count += s.clip == clip;
+    }
+    // From the end, so a plain split leaves the left part on the clip it had.
+    for (auto p = layout.rbegin(); p != layout.rend(); ++p) {
+        const Clip* clip = pieces.count(p->clip.id) ? song.findClip(p->clip.clip) : nullptr;
+        if (!clip || !clip->audio || uses[clip->id] <= 1)
+            continue;
+        uses[clip->id]--;
+        made.push_back(copyClip(*clip, nextId));
+        p->clip.clip = made.back().id;
+    }
+    return made;
+}
+
+CommandPtr replaceArrangement(const Song& song, const std::string& name, const Layout& before, Layout after,
+                              const NextId& nextId) {
+    std::vector<Clip> made = separatePieces(after, audioPieces(before, after, song.clips), song, nextId);
+    CommandPtr edit = replaceArrangement(song, name, before, after);
+    if (made.empty())
+        return edit;
+    auto compound = std::make_unique<CompoundCommand>(name);
+    for (Clip& c : made)
+        compound->add(std::make_unique<AddClip>(std::move(c)));
+    compound->add(std::move(edit));
+    return compound;
+}
+
 CommandPtr placeClip(const Song& song, TrackId track, ClipId clip, Tick position, const IdSource& newId, bool stack) {
     const Clip* c = song.findClip(clip);
     if (!c || !song.findTrack(track))
@@ -554,7 +612,7 @@ CommandPtr placeClip(const Song& song, TrackId track, ClipId clip, Tick position
     after.push_back(p);
     after = stack ? settleAudio(after, {p.clip.id}, song.clips, newId)
                   : resolveOverlaps(after, {p.clip.id}, song.clips, newId);
-    return replaceArrangement(song, "Place clip", before, after);
+    return replaceArrangement(song, "Place clip", before, after, [&] { return newId().value; });
 }
 
 CommandPtr drawClip(const Song& song, TrackId track, Tick position, Tick length, ClipId clip, ArrangementId instance,
@@ -597,7 +655,7 @@ CommandPtr placeNewClip(const Song& song, TrackId track, Tick position, Clip cli
     }
     auto compound = std::make_unique<CompoundCommand>(name);
     compound->add(std::make_unique<AddClip>(std::move(clip)));
-    compound->add(replaceArrangement(song, name, before, after));
+    compound->add(replaceArrangement(song, name, before, after, [&] { return newId().value; }));
     return compound;
 }
 

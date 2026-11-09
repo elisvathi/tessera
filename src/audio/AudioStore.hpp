@@ -160,11 +160,22 @@ class AudioStore : public AudioBuffers {
 /// from), when the copy there has the source's content hash. Returns how many it copied (DECISIONS §102).
 int copyMissingFiles(const Song& song, const std::string& from, const std::string& to);
 
-/// Copies the song's audio files from patch storage into `folder` (flat), for a saved project file. Returns how many.
-int exportFiles(const Song& song, const std::string& storage, const std::string& folder);
-/// The other way, for an opened project: copies files from `folder` into patch storage when they are missing there
-/// and match their source's hash. Returns how many.
+/// For a project saved before projects held their audio: copies files from its `folder` into patch storage when they
+/// are missing there and match their source's hash. Returns how many.
 int importFiles(const Song& song, const std::string& folder, const std::string& storage);
+
+/// What findInFolder() did.
+struct FolderSearch {
+    int found = 0;
+    /// A file with a missing source's name but other content, for the user to accept or not.
+    std::vector<std::pair<AudioSourceId, std::string>> lookalikes;
+};
+
+/// Looks through `folder` and its subfolders for every source in `missing` and copies what it finds into `storage`
+/// under the source's own name. A file counts when its content matches, whatever it is called; a file with the right
+/// name and other content is only reported. Slow on a big folder, so it runs on a worker thread.
+FolderSearch findInFolder(const std::vector<AudioSource>& missing, const std::string& folder,
+                          const std::string& storage, std::atomic<float>* progress = nullptr);
 
 /// Removes the files in `folder`/audio that no source of the song uses, as a loaded patch does. Returns how many.
 int removeUnusedFiles(const Song& song, const std::string& folder);

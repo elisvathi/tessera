@@ -56,8 +56,39 @@ std::vector<TesseraModule::LiveTake> TesseraModule::liveTakes() const {
     return out;
 }
 
+bool TesseraModule::startFileJob(std::function<bool(std::atomic<float>&)> work, std::function<void(float)> tick,
+                                 std::function<void(bool)> finish) {
+    if (fileJob)
+        return false;
+    auto job = std::make_unique<FileJob>();
+    job->tick = std::move(tick);
+    job->finish = std::move(finish);
+    FileJob* raw = job.get();
+    job->worker = std::thread([raw, work = std::move(work)] {
+        raw->ok = work(raw->progress);
+        raw->done = true;
+    });
+    fileJob = std::move(job);
+    return true;
+}
+
+void TesseraModule::fileJobStep() {
+    if (!fileJob)
+        return;
+    if (!fileJob->done) {
+        if (fileJob->tick)
+            fileJob->tick(fileJob->progress.load(std::memory_order_relaxed));
+        return;
+    }
+    fileJob->worker.join();
+    std::unique_ptr<FileJob> job = std::move(fileJob);
+    if (job->finish)
+        job->finish(job->ok);
+}
+
 void TesseraModule::captureStep() {
     glueStep();
+    fileJobStep();
     if (!audio || !player->active())
         return;
     if (!captureWriter)

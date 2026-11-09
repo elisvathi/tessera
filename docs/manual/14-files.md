@@ -3,8 +3,13 @@
 ## Saving with the patch
 
 Roll saves everything inside your Rack patch: the song, the transport settings, the editor layout, the output
-modules' tracks and the audio files your audio clips play. Save the patch as usual. Rack's module presets (right-click → **Preset**) also save and load the
-whole song.
+modules' tracks and the audio files your audio clips play. Save the patch as usual. You can move, rename or send the
+patch file: the audio is inside it.
+
+Rack's module presets (right-click → **Preset**) also save and load the whole song, except its audio files. Rack saves
+only settings in a preset, in a saved selection, and when you copy and paste into another patch. Load one in another
+patch and its clips show **Missing file**, with [**Find…**](17-audio.md#finding-missing-audio) to bring them back. To
+take a song with its audio to another patch, use a project file.
 
 ## The File menu
 
@@ -36,8 +41,13 @@ another patch.
 
 It doesn't hold what belongs to the patch: the MIDI device, the panel's width and the editor size.
 
-A song with audio keeps its files in a folder next to the project file: saving "Song.tessera" also writes
-"Song audio". Keep the two together. Opening the project copies the files from that folder into the patch.
+A song with audio keeps its audio files inside the project file, so it is one file you can move, rename or send
+anywhere. Saving happens in the background, and the message at the bottom shows how far it is. If something goes wrong
+while saving, the older copy of the project stays as it was. A song with no audio is saved as plain text, as before.
+
+**Projects from before.** A project saved with an older version has its audio in a folder next to it: "Song.tessera"
+with "Song audio". It opens as it always did. The next time you save it, the audio goes inside the project file. The
+folder is left where it is, and you can delete it yourself once you've saved.
 
 Opening a project is one undo step. Output modules in the same patch keep their tracks.
 

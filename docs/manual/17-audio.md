@@ -102,6 +102,10 @@ undo step.
 The clip's settings (gain, follow tempo, sound type, tempo) belong to the clip, so every linked copy of it changes
 together. The inspector says **all 3 copies** when there are several.
 
+Cutting an audio clip always makes separate clips. After a **Split**, a clip dropped inside another, or a deleted
+range, each part has its own settings: turn one part down and the others stay as they were. If the clip you cut was
+linked, its parts leave the link and the other copies stay linked to each other.
+
 ### Overlaps are crossfades
 
 An audio track always has one row of clips: its clips never stack. Where two clips overlap, the overlap is a
@@ -170,11 +174,12 @@ For the track, it shows its **Volume**, **Pan** and **Output** (MAIN).
 | **Loading 40%** | The file is being read. | Silence until it is read, then the clip at once. |
 | **… 40%** | The stretched version is being made. | The quick, tape-like version. |
 | Amber **!** | The stretched version couldn't be made. The clip menu has **Try again**. | The quick version. |
-| **Missing file**, stripes | The file isn't in the patch any more. The clip menu has **Find file…**. | Silence. |
+| **Missing file**, stripes | The file isn't in the patch any more. The clip menu has **Find in a folder…**. | Silence. |
 | **6→2** | The file had six channels, mixed down to stereo. | The stereo mix. |
 | **own speed** | Follow tempo is Off. | The clip at its own speed. |
 
-When a patch loads with files missing, a message says how many, with **Find…** to point at the first one.
+When a patch loads with files missing, a message says how many, with **Find…** (see
+[Finding missing audio](#finding-missing-audio)).
 
 ## Hearing it: MAIN L and MAIN R
 
@@ -300,9 +305,18 @@ in. Tessera moves every take earlier by that much, so it lines up with the song.
 ## The Audio files list
 
 **File → Audio files…** lists every file the song holds: its length, mono or stereo, sample rate, its size in the
-patch and how many clips use it. Missing files come first, in the list's "missing" note, with **Find file…**.
+patch and how many clips use it. Missing files come first, in the list's "missing" note, with **Find in a folder…**.
 **Select its clips** selects the clips that play a file. At the bottom: how much audio the patch holds, and **Remove
 unused audio**.
+
+## Finding missing audio
+
+**Find…** brings back every missing file at once. It looks in the other Rolls in this patch first. If that isn't
+enough, it asks for a folder and searches it and the folders inside it.
+
+- A file counts when it holds the same recording, even if it has been renamed.
+- A file with the right name but different audio doesn't count on its own. Roll asks first: cuts and timing may not
+  line up. Undo points the clip back.
 
 ## Removing audio you don't use
 

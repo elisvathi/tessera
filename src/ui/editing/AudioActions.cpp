@@ -14,6 +14,7 @@
 #include <app/RackWidget.hpp>
 #include <app/Scene.hpp>
 #include <history.hpp>
+#include <patch.hpp>
 #include <osdialog.h>
 
 #include <filesystem>
@@ -208,8 +209,7 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
     // A missing file: point at it, and it is copied into the patch.
     if (const AudioSource* src = m->song().sourceOf(*clip))
         if (m->audioStore() && m->audioStore()->status(src->id).state == SourceState::Missing) {
-            AudioSourceId id = src->id;
-            menu->addChild(rack::createMenuItem("Find file…", src->name, [c, id] { findFile(*c, id); }));
+            menu->addChild(rack::createMenuItem("Find in a folder…", src->name, [c] { findMissing(*c); }));
         }
     RenderKey key;
     double songTempo = m->tempo() > 0 ? m->tempo() : 120;
@@ -339,28 +339,64 @@ std::string dropMessage(const std::vector<std::string>& imported, const std::vec
     return text;
 }
 
-void findFile(EditorContext& ctx, AudioSourceId source) {
+void findMissing(EditorContext& ctx) {
     TesseraModule* m = ctx.module();
-    const AudioSource* src = m ? m->song().findSource(source) : nullptr;
-    if (!src)
+    if (!m)
         return;
-    std::string file = src->file;
-    osdialog_filters* filters = osdialog_filters_parse("Audio:wav,wave,aif,aiff,aifc,flac,mp3");
-    char* chosen = osdialog_file(OSDIALOG_OPEN, nullptr, src->name.c_str(), filters);
-    osdialog_filters_free(filters);
-    if (!chosen)
-        return;
-    std::string from = chosen;
-    std::free(chosen);
-    std::string to = rack::system::join(m->audioStorage(), file);
-    rack::system::createDirectories(rack::system::getDirectory(to));
-    if (!rack::system::copy(from, to)) {
-        ctx.toast("Couldn't copy " + rack::system::getFilename(from) + " into the patch");
+    if (m->fileJobRunning()) {
+        ctx.toast("Still working on the last file. Try again in a moment.");
         return;
     }
-    if (AudioStore* store = m->audioStore())
-        store->retryMissing();
-    ctx.toast("Found " + rack::system::getFilename(from));
+    std::string storage = m->audioStorage();
+    for (TesseraModule* other : Registry::get().sources())
+        if (other != m)
+            copyMissingFiles(m->song(), rack::system::join(APP->patch->autosavePath, "modules", std::to_string(other->id)),
+                             storage);
+    std::vector<AudioSource> missing;
+    for (const AudioSource& s : m->song().audioSources)
+        if (!rack::system::exists(rack::system::join(storage, s.file)))
+            missing.push_back(s);
+    AudioStore* store = m->audioStore();
+    if (missing.empty()) {
+        if (store)
+            store->retryMissing();
+        ctx.toast("Found the audio in another Roll in this patch");
+        return;
+    }
+    char* chosen = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
+    if (!chosen)
+        return;
+    std::string folder = chosen;
+    std::free(chosen);
+    auto result = std::make_shared<FolderSearch>();
+    auto shown = std::make_shared<int>(-1);
+    size_t wanted = missing.size();
+    m->startFileJob(
+        [missing, folder, storage, result](std::atomic<float>& progress) {
+            *result = findInFolder(missing, folder, storage, &progress);
+            return true;
+        },
+        [m, shown](float progress) {
+            int percent = int(progress * 100);
+            if (percent != *shown) {
+                *shown = percent;
+                m->fileMessage = "Looking for audio… " + std::to_string(percent) + "%";
+            }
+        },
+        [m, result, wanted](bool) {
+            int found = result->found;
+            for (const auto& [id, path] : result->lookalikes) {
+                std::string question = "'" + rack::system::getFilename(path) +
+                                       "' has the right name, but it isn't the same recording. Cuts and timing may "
+                                       "not line up.\n\nUse it anyway?";
+                if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK_CANCEL, question.c_str()) == 1 &&
+                    m->relinkAudioSource(id, path))
+                    found++;
+            }
+            if (AudioStore* s = m->audioStore())
+                s->retryMissing();
+            m->fileMessage = "Found " + std::to_string(found) + " of " + std::to_string(wanted) + " audio files";
+        });
 }
 
 std::vector<AudioSourceId> missingSources(TesseraModule& m) {
@@ -476,7 +512,7 @@ void openAudioFiles(EditorContext& ctx) {
         AudioSourceId id = s->id;
         menu->addChild(rack::createSubmenuItem(s->name, facts, [c, id, lost, uses](rack::ui::Menu* sub) {
             if (lost)
-                sub->addChild(rack::createMenuItem("Find file…", "", [c, id] { findFile(*c, id); }));
+                sub->addChild(rack::createMenuItem("Find in a folder…", "", [c] { findMissing(*c); }));
             sub->addChild(rack::createMenuItem(
                 "Select its clips", "", [c, id] {
                     TesseraModule* mm = c->module();

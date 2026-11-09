@@ -94,21 +94,6 @@ void duplicateSelected(ArrangerLanes& lanes) {
     lanes.commit("Duplicate " + arrange::countClips(ids.size()), before, after, added, std::move(copies));
 }
 
-/// Gives each audio piece in `pieces` a clip of its own, so changing one piece leaves the others alone. Returns the new
-/// clips, which the commit adds to the song.
-static std::vector<Clip> separateAudioPieces(Layout& layout, const IdSet& pieces, TesseraModule& m) {
-    std::vector<Clip> made;
-    NextId next = m.ids();
-    for (arrange::Placed& p : layout) {
-        const Clip* c = pieces.count(p.clip.id) ? m.song().findClip(p.clip.clip) : nullptr;
-        if (!c || !c->audio)
-            continue;
-        made.push_back(copyClip(*c, next));
-        p.clip.clip = made.back().id;
-    }
-    return made;
-}
-
 void split(ArrangerLanes& lanes, Tick at) {
     TesseraModule* m = moduleOf(lanes);
     const Layout& before = lanes.committed();
@@ -123,10 +108,9 @@ void split(ArrangerLanes& lanes, Tick at) {
     Layout after = arrange::split(before, ids, at, m->song().clips, idSource(lanes), &right);
     if (right.empty())
         return;
-    std::vector<Clip> pieces = separateAudioPieces(after, right, *m);
     IdSet select = lanes.selection();
     select.insert(right.begin(), right.end());
-    lanes.commit("Split " + arrange::countClips(right.size()), before, after, select, std::move(pieces));
+    lanes.commit("Split " + arrange::countClips(right.size()), before, after, select);
 }
 
 namespace {
@@ -215,9 +199,8 @@ void splitAtTransients(ArrangerLanes& lanes, ArrangementId instance) {
     }
     if (made.empty())
         return;
-    std::vector<Clip> pieces = separateAudioPieces(after, made, *m);
     made.insert(instance);
-    lanes.commit("Split at transients", before, after, made, std::move(pieces));
+    lanes.commit("Split at transients", before, after, made);
 }
 
 void makeTriggers(ArrangerLanes& lanes, ArrangementId instance) {

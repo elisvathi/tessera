@@ -2239,8 +2239,10 @@ This replaces "Linked by default" in the timeline section.
   between the clips panel and the timeline stays linked, as before.
 - **Link identical clips** (a track's menu) links the timeline clips on that track that play the same thing. Names and
   colours don't count.
-- **Splitting an audio clip gives each piece its own clip**, so changing one leaves the others alone. Glue compares what
-  the pieces play, so pieces with the same settings still rejoin.
+- **Every cut of an audio clip gives each piece its own clip**, so changing one leaves the others alone: Split, Split at
+  transients, a clip dropped inside another, Delete range, Delete time and Insert silence. A piece of a linked clip
+  leaves the link too, and the other copies keep the clip. Glue compares what the pieces play, so pieces with the same
+  settings still rejoin.
 
 ## 137. A bounce shows its track from the start, and Stop keeps it (9 Nov)
 
@@ -2340,3 +2342,31 @@ Adds to §141.
   block ends. It still writes silence to OUT and its delay line, and its fader ramps jump to the block's end.
 - A transport change, a jump, a tempo change or a launch wakes it at once.
 
+## 147. A project with audio is one file; Find looks for all missing files (9 Nov)
+
+This replaces "Project files carry audio in a folder beside them" and "The project file stays plain JSON" in §106.
+
+- **A `.tessera` with audio is a ZIP** holding `project.json` and `audio/<hash>-<name>`, not compressed, ZIP64 past 4 GB.
+  Saving and opening run on a worker thread. Saving goes through a temporary file, so a failure leaves the old project
+  whole.
+- **Nothing existing breaks.** Plain JSON projects and their `<name> audio` folders open as before. A song with no audio
+  still saves as plain JSON. The first save of an old project with audio makes the one file and leaves the folder alone.
+- **A project holds every source the song lists**, so a project matches what the Audio files list shows.
+- **Find asks for a folder** and handles every missing file at once: by name and hash, then by hash alone for renamed
+  files. Other Tesseras in the patch come first. A file with the right name and other content needs a yes, and then the
+  source points at that file as one undo step (`SetAudioSource`). No original paths are saved, so a shared patch doesn't
+  reveal your folders.
+- **A file name read from a song can't leave the storage folder** (`safeAudioFile`), and extraction refuses such names.
+- **A patch from a newer Tessera never has files cleaned up** on load: audio it lists in a way this version can't read
+  would count as unused.
+
+Why: the user wants projects to survive being moved and renamed, without breaking existing files. Rack's own source
+confirms that presets, selections and copy and paste carry JSON only (`ModuleWidget::save`, `RackWidget::saveSelection`).
+
+## 148. Audio edits live in the clip; takes too (9 Nov, agreed, not built yet)
+
+- Del in the audio editor leaves a gap; Shift+Del closes it.
+- Every loop pass on an audio track is kept as a take, whatever the record mode.
+- The clip holds the take choice, so linked copies play one comp. This will replace `ArrangerClip::take` (§129).
+
+Details: `docs/design/AUDIO_EDITING.md`.

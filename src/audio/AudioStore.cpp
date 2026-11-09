@@ -91,23 +91,6 @@ int copyMissingFiles(const Song& song, const std::string& from, const std::strin
     return copied;
 }
 
-int exportFiles(const Song& song, const std::string& storage, const std::string& folder) {
-    std::error_code ec;
-    int copied = 0;
-    for (const AudioSource& s : song.audioSources) {
-        fs::path src = fs::path(storage) / s.file;
-        fs::path dest = fs::path(folder) / fs::path(s.file).filename();
-        if (!fs::exists(src, ec))
-            continue;
-        fs::create_directories(dest.parent_path(), ec);
-        if (fs::exists(dest, ec) && hashFile(dest.string()) == hashFile(src.string()))
-            continue;
-        if (fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec))
-            copied++;
-    }
-    return copied;
-}
-
 int importFiles(const Song& song, const std::string& folder, const std::string& storage) {
     std::error_code ec;
     int copied = 0;
@@ -123,6 +106,95 @@ int importFiles(const Song& song, const std::string& folder, const std::string& 
             copied++;
     }
     return copied;
+}
+
+/// Copies `from` to `to` through a temporary file, so a failed copy never looks like a found file.
+static bool copyWhole(const fs::path& from, const fs::path& to) {
+    std::error_code ec;
+    fs::create_directories(to.parent_path(), ec);
+    fs::path temporary = to;
+    temporary += ".part";
+    if (!fs::copy_file(from, temporary, fs::copy_options::overwrite_existing, ec))
+        return false;
+    fs::rename(temporary, to, ec);
+    if (ec)
+        fs::remove(temporary, ec);
+    return !ec;
+}
+
+FolderSearch findInFolder(const std::vector<AudioSource>& missing, const std::string& folder,
+                          const std::string& storage, std::atomic<float>* progress) {
+    // Bounds on what one click can cost in a folder the user picked by mistake, such as their home folder.
+    constexpr int kMaxDepth = 8;
+    constexpr size_t kMaxFiles = 20000;
+    constexpr uintmax_t kMaxHashedBytes = uintmax_t(32) << 30;
+
+    FolderSearch out;
+    std::vector<fs::path> files;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(fs::u8path(folder), fs::directory_options::skip_permission_denied, ec), end;
+    while (!ec && it != end && files.size() < kMaxFiles) {
+        if (it.depth() > kMaxDepth)
+            it.disable_recursion_pending();
+        std::error_code entry;
+        if (it->is_regular_file(entry) && !entry && looksLikeAudio(it->path().string()))
+            files.push_back(it->path());
+        it.increment(ec);
+    }
+
+    std::map<uint64_t, uint64_t> hashes; // of files already read, by index into `files`, to read each file once
+    auto hashOf = [&](size_t i) {
+        auto known = hashes.find(i);
+        if (known != hashes.end())
+            return known->second;
+        return hashes[i] = hashFile(files[i].string());
+    };
+    std::vector<bool> done(missing.size(), false);
+    auto take = [&](size_t source, size_t file) {
+        if (copyWhole(files[file], fs::u8path(storage) / fs::u8path(missing[source].file))) {
+            done[source] = true;
+            out.found++;
+        }
+    };
+
+    // Same name first: that is nearly every case, and it reads only those few files.
+    std::vector<std::pair<size_t, size_t>> sameName;
+    for (size_t s = 0; s < missing.size(); s++) {
+        std::string stored = fs::u8path(missing[s].file).filename().string();
+        for (size_t f = 0; f < files.size() && !done[s]; f++) {
+            std::string name = files[f].filename().string();
+            if (name != missing[s].name && name != stored)
+                continue;
+            if (missing[s].contentHash == 0 || hashOf(f) == missing[s].contentHash)
+                take(s, f);
+            else
+                sameName.push_back({s, f});
+        }
+    }
+
+    // Then by content, for a file that was renamed.
+    uintmax_t hashed = 0;
+    bool anyLeft = false;
+    for (size_t s = 0; s < missing.size(); s++)
+        anyLeft = anyLeft || (!done[s] && missing[s].contentHash != 0);
+    for (size_t f = 0; anyLeft && f < files.size() && hashed < kMaxHashedBytes; f++) {
+        std::error_code sizeError;
+        hashed += fs::file_size(files[f], sizeError);
+        uint64_t h = hashOf(f);
+        for (size_t s = 0; s < missing.size(); s++)
+            if (!done[s] && missing[s].contentHash != 0 && missing[s].contentHash == h)
+                take(s, f);
+        if (progress)
+            progress->store(float(f + 1) / float(files.size()), std::memory_order_relaxed);
+    }
+
+    std::vector<bool> told(missing.size(), false);
+    for (const auto& [s, f] : sameName)
+        if (!done[s] && !told[s]) {
+            told[s] = true;
+            out.lookalikes.push_back({missing[s].id, files[f].string()});
+        }
+    return out;
 }
 
 int removeUnusedFiles(const Song& song, const std::string& folder) {

@@ -619,7 +619,7 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
 
     auto out = std::make_unique<CompoundCommand>(takeName(take));
     out->add(std::make_unique<AddClip>(std::move(clip)));
-    out->add(arrange::replaceArrangement(song, "Record", before, after));
+    out->add(arrange::replaceArrangement(song, "Record", before, after, nextId));
     return out;
 }
 

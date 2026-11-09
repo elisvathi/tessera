@@ -16,6 +16,29 @@
 
 namespace tessera {
 
+bool isSafeAudioFile(const std::string& file) {
+    if (file.empty() || file.front() == '/' || file.find_first_of("\\:") != std::string::npos)
+        return false;
+    size_t start = 0;
+    while (start <= file.size()) {
+        size_t end = std::min(file.find('/', start), file.size());
+        std::string part = file.substr(start, end - start);
+        if (part.empty() || part == "." || part == "..")
+            return false;
+        start = end + 1;
+    }
+    return true;
+}
+
+std::string safeAudioFile(const std::string& file) {
+    if (file.empty() || isSafeAudioFile(file))
+        return file;
+    size_t cut = file.find_last_of("/\\");
+    std::string name = cut == std::string::npos ? file : file.substr(cut + 1);
+    std::replace(name.begin(), name.end(), ':', '_');
+    return "audio/" + (name.empty() || name == "." || name == ".." ? std::string("unnamed") : name);
+}
+
 using namespace json;
 
 namespace {
@@ -401,7 +424,7 @@ AudioSource sourceFromJson(const json_t* j) {
     AudioSource s;
     s.id = readId<AudioSourceId>(get(j, "id"));
     s.name = getString(j, "name", s.name);
-    s.file = getString(j, "file", s.file);
+    s.file = safeAudioFile(getString(j, "file", s.file));
     s.contentHash = std::strtoull(getString(j, "hash", "0").c_str(), nullptr, 16);
     s.channels = saturate<int>(getInt(j, "channels", s.channels));
     s.fileChannels = saturate<int>(getInt(j, "fileChannels", s.channels));

@@ -380,6 +380,16 @@ class TesseraModule : public rack::engine::Module {
     std::string captureStatus() const;
     /// Why the last take stopped early, once ("The disk is full: the take was kept up to there"); empty when not.
     std::string takeProblem;
+    /// How a project save, open or file search is going; shown as a message by the open editor.
+    std::string fileMessage;
+    /// Runs `work` on a worker thread: it copies audio and may take a while. `tick` gets its progress each UI frame,
+    /// and `finish` its result on the UI thread once it ends. False when another one is still running.
+    bool startFileJob(std::function<bool(std::atomic<float>&)> work, std::function<void(float)> tick,
+                      std::function<void(bool)> finish);
+    bool fileJobRunning() const { return fileJob != nullptr; }
+    /// Find, when the user accepts a different recording: copies `path` in and points source `id` at it, as one undo
+    /// step. False when the file isn't audio Tessera reads.
+    bool relinkAudioSource(AudioSourceId id, const std::string& path);
     /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
     /// False when the file isn't audio Tessera reads.
     bool replaceAudioFile(ClipId clip, const std::string& path);
@@ -585,6 +595,22 @@ class TesseraModule : public rack::engine::Module {
         }
     };
     std::unique_ptr<GlueJob> glue;
+    struct FileJob {
+        std::thread worker;
+        std::atomic<bool> done{false}, ok{false};
+        std::atomic<float> progress{0};
+        std::function<void(float)> tick;
+        std::function<void(bool)> finish;
+        ~FileJob() {
+            if (worker.joinable())
+                worker.join();
+        }
+    };
+    std::unique_ptr<FileJob> fileJob;
+    /// Reports on a running file job and finishes it once it ends. Each UI frame.
+    void fileJobStep();
+    /// Set while a patch from a newer Tessera is loaded: its audio may be listed in a way this version can't read.
+    bool savedByNewerVersion = false;
     /// Puts a finished glue in place. Each UI frame.
     void glueStep();
     std::atomic<bool> measureClick{false};
