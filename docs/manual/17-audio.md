@@ -233,9 +233,10 @@ clips on the timeline) ▸ **Bounce to a new audio track…**, or press **Ctrl+B
   listed; what you selected is picked for you.
 - **Mute the original afterwards** (on by default).
 - It plays in real time, from a bar before the start so delays and reverbs are already sounding, and records the
-  track's sound before its fader. A message says how far it is ("Bouncing Bass · bar 3 of 8") with **Cancel**;
-  **Stop** before the end cancels too, and a cancelled bounce leaves nothing behind. **Stop** after the end, while a tail
-  is still ringing, keeps what was played. The loop is off during a bounce and comes back afterwards.
+  track's sound before its fader. A message says how far it is ("Bouncing Bass · bar 3 of 8") with **Stop**;
+  the new track appears at once, with a red box growing on it. **Stop** ends it early and keeps what was played so
+  far. To throw it away, press **Ctrl+Z** afterwards. While it runs, only this track plays (it is soloed), with **Selected clips** only those clips, and the loop is
+  off; both come back afterwards.
 - The result is a new audio track under the original, "Bass (bounce)", in one undo step.
 
 ## Exporting audio

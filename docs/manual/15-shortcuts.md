@@ -88,7 +88,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | F2 | Widen / narrow the clips beside the timeline |
 | F3 | Device strip above the notes |
 | F4 | Show the mixer or the notes in the lower pane |
-| Ctrl+B | Bounce the selected track to a new audio track |
+| Ctrl+B | Bounce the selected track to a new track |
 | Ctrl+Alt+E | Export audio |
 | G | Drum lanes / keys (*notes pane*) |
 

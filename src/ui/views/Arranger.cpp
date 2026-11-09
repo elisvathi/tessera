@@ -237,7 +237,11 @@ void ArrangerView::syncFromState() {
             // Stacked clips need room: the track grows for as long as they overlap, without changing its setting.
             const Track* t = ctx.module() ? ctx.module()->song().findTrack(row.track) : nullptr;
             int stacks = arrange::stackOf(lanes->committed(), row.track, t && t->type == TrackType::Audio).rows;
-            heights.push_back(std::max(state.trackHeight(row.track), stacks > 1 ? stacks * kMinStackRow : 0.0));
+            // A track with a level line opens tall enough to show it. A height the user set stays.
+            double shown = state.trackHeight(row.track);
+            if (t && ctx.module()->soundIndex(t->id) >= 0 && !state.trackHeights.count(t->id.value))
+                shown = std::max(shown, double(theme::metrics::kLevelLineMinHeight));
+            heights.push_back(std::max(shown, stacks > 1 ? stacks * kMinStackRow : 0.0));
             break;
         }
         }

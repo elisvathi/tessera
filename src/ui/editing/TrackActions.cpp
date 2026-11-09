@@ -414,8 +414,8 @@ void appendInputItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId id) {
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Another track's notes"));
     for (const Track& other : m->song().tracks) {
-        if (other.id == id)
-            continue;
+        if (other.id == id || other.type == TrackType::Audio)
+            continue; // audio tracks have no notes to take
         TrackId from = other.id;
         bool loops = listensTo(m->song(), from, id);
         std::string current = track->listenTrack == from && track->listen == ListenSource::TrackAfter ? "after devices"
@@ -463,32 +463,35 @@ void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vecto
     menu->addChild(rack::createCheckMenuItem(
         "Armed for recording", "", [c, ids] { return trackFlag(*c, ids.front(), &Track::armed); },
         [c, ids] { toggleArm(*c, ids.front(), true); }));
-    static const char* const inputs[] = {"Any (CV and MIDI)", "REC CV inputs", "MIDI"};
-    std::string channel = track->midiChannel == 0 ? "all channels" : "channel " + std::to_string(track->midiChannel);
-    menu->addChild(
-        rack::createSubmenuItem("Record from", inputs[int(track->recordInput)], [c, ids](rack::ui::Menu* sub) {
-            for (int i = 0; i < 3; i++) {
-                RecordInput input = RecordInput(i);
+    if (track->type != TrackType::Audio) {
+        static const char* const inputs[] = {"Any (CV and MIDI)", "REC CV inputs", "MIDI"};
+        std::string channel =
+            track->midiChannel == 0 ? "all channels" : "channel " + std::to_string(track->midiChannel);
+        menu->addChild(
+            rack::createSubmenuItem("Record from", inputs[int(track->recordInput)], [c, ids](rack::ui::Menu* sub) {
+                for (int i = 0; i < 3; i++) {
+                    RecordInput input = RecordInput(i);
+                    sub->addChild(rack::createCheckMenuItem(
+                        inputs[i], "",
+                        [c, ids, input] {
+                            const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+                            return t && t->recordInput == input;
+                        },
+                        [c, ids, input] { setField(*c, ids, &Track::recordInput, input, "Set record input"); }));
+                }
+            }));
+        menu->addChild(rack::createSubmenuItem("MIDI channel", channel, [c, ids](rack::ui::Menu* sub) {
+            for (int ch = 0; ch <= 16; ch++) {
                 sub->addChild(rack::createCheckMenuItem(
-                    inputs[i], "",
-                    [c, ids, input] {
+                    ch == 0 ? "All channels" : "Channel " + std::to_string(ch), "",
+                    [c, ids, ch] {
                         const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
-                        return t && t->recordInput == input;
+                        return t && t->midiChannel == ch;
                     },
-                    [c, ids, input] { setField(*c, ids, &Track::recordInput, input, "Set record input"); }));
+                    [c, ids, ch] { setField(*c, ids, &Track::midiChannel, int8_t(ch), "Set MIDI channel"); }));
             }
         }));
-    menu->addChild(rack::createSubmenuItem("MIDI channel", channel, [c, ids](rack::ui::Menu* sub) {
-        for (int ch = 0; ch <= 16; ch++) {
-            sub->addChild(rack::createCheckMenuItem(
-                ch == 0 ? "All channels" : "Channel " + std::to_string(ch), "",
-                [c, ids, ch] {
-                    const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
-                    return t && t->midiChannel == ch;
-                },
-                [c, ids, ch] { setField(*c, ids, &Track::midiChannel, int8_t(ch), "Set MIDI channel"); }));
-        }
-    }));
+    }
     menu->addChild(rack::createCheckMenuItem(
         "Monitor while armed", "", [c, ids] { return trackFlag(*c, ids.front(), &Track::monitor); },
         [c, ids] {
@@ -576,13 +579,17 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
         menu->addChild(rack::createMenuItem(
             track->type == TrackType::Drum ? "Add a Drum Out for this track" : "Add a Track Out for this track", "",
             [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
-        if (m->soundIndex(id) >= 0)
-            menu->addChild(rack::createMenuItem("Bounce to a new audio track…", shortcutLabel(Action::Bounce),
+        bool audioTrack = track->type == TrackType::Audio;
+        if (!audioTrack || m->soundIndex(id) >= 0)
+            menu->addChild(rack::createMenuItem(audioTrack ? "Bounce to a new audio track…" : "Bounce to a new track…",
+                                                shortcutLabel(Action::Bounce),
                                                 [c, id] { bounceActions::openDialog(*c, id); }));
     }
-    menu->addChild(
-        rack::createSubmenuItem("Input", inputLabel(song, *track),
-                                [c, first = ids.front()](rack::ui::Menu* sub) { appendInputItems(sub, *c, first); }));
+    if (track->type != TrackType::Audio)
+        menu->addChild(
+            rack::createSubmenuItem("Input", inputLabel(song, *track), [c, first = ids.front()](rack::ui::Menu* sub) {
+                appendInputItems(sub, *c, first);
+            }));
     const Track* importer = ctx.module()->song().findTrack(clicked);
     if (importer && importer->type == TrackType::Audio) {
         EditorContext* edit = &ctx;

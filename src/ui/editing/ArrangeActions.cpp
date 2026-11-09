@@ -434,6 +434,13 @@ void paste(ArrangerLanes& lanes, bool atMouse) {
         int row = base + rowOffset;
         if (row >= int(order.size()))
             continue; // past the last track
+        const Clip* pasted = song.findClip(item.clip);
+        for (const Clip& c : clipboard.clips)
+            if (!pasted && c.id == item.clip)
+                pasted = &c;
+        const Track* onto = song.findTrack(order[size_t(row)]);
+        if (pasted && onto && pasted->audio.has_value() != (onto->type == TrackType::Audio))
+            continue; // a clip only goes on a track of its own kind
         if (!song.findClip(item.clip)) {
             auto kept = std::find_if(clipboard.clips.begin(), clipboard.clips.end(),
                                      [&](const Clip& c) { return c.id == item.clip; });
@@ -560,9 +567,12 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
         menu->addChild(rack::createMenuItem("Split at transients", "", [l, clicked] { splitAtTransients(*l, clicked); }));
         menu->addChild(rack::createMenuItem("Make triggers from audio", "", [l, clicked] { makeTriggers(*l, clicked); }));
     }
-    if (TesseraModule* m = c->module(); m && m->soundIndex(placed->track) >= 0) {
+    const Track* ownerTrack = c->module() ? c->module()->song().findTrack(placed->track) : nullptr;
+    bool audioOwner = ownerTrack && ownerTrack->type == TrackType::Audio;
+    if (ownerTrack && (!audioOwner || c->module()->soundIndex(placed->track) >= 0)) {
         TrackId owner = placed->track;
-        menu->addChild(rack::createMenuItem("Bounce to a new audio track…", shortcutLabel(Action::Bounce),
+        menu->addChild(rack::createMenuItem(audioOwner ? "Bounce to a new audio track…" : "Bounce to a new track…",
+                                            shortcutLabel(Action::Bounce),
                                             [c, owner] { bounceActions::openDialog(*c, owner); }));
     }
     menu->addChild(rack::createMenuItem(
@@ -638,38 +648,42 @@ void appendLaneMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, TrackId track, T
         return;
     ArrangerLanes* l = &lanes;
     menu->addChild(rack::createMenuLabel(t->name));
-    menu->addChild(rack::createMenuItem("Create clip here", "double-click", [l, track, at] {
-        TesseraModule* mod = l->context().module();
-        Tick bar = ticksPerBar(mod->song().timeSig);
-        ClipId clip = l->newClipId();
-        ArrangementId id = l->newInstanceId();
-        mod->perform(arrange::drawClip(
-            mod->song(), track, at, bar, clip, id, [l] { return l->newInstanceId(); },
-            l->context().state().stackClips));
-        l->selection() = {id};
-        clipActions::select(l->context(), track, clip);
-    }));
+    if (t->type != TrackType::Audio) {
+        menu->addChild(rack::createMenuItem("Create clip here", "double-click", [l, track, at] {
+            TesseraModule* mod = l->context().module();
+            Tick bar = ticksPerBar(mod->song().timeSig);
+            ClipId clip = l->newClipId();
+            ArrangementId id = l->newInstanceId();
+            mod->perform(arrange::drawClip(
+                mod->song(), track, at, bar, clip, id, [l] { return l->newInstanceId(); },
+                l->context().state().stackClips));
+            l->selection() = {id};
+            clipActions::select(l->context(), track, clip);
+        }));
+    }
     if (t->type == TrackType::Audio)
         menu->addChild(rack::createMenuItem("Import audio file here…", "", [l, track, at] {
             audioActions::importToTimeline(l->context(), track, at);
         }));
-    menu->addChild(rack::createMenuItem("Import MIDI file here…", "", [l, track, at] {
-        std::string path = importMidi::pickFile(); // the dialog blocks; check the module again after it
-        if (path.empty() || !l->context().module())
-            return;
-        importMidi::chooseClip(l->context(), path, [l, track, at](Clip clip) {
-            TesseraModule* mod = l->context().module();
-            if (!mod)
+    if (t->type != TrackType::Audio) {
+        menu->addChild(rack::createMenuItem("Import MIDI file here…", "", [l, track, at] {
+            std::string path = importMidi::pickFile(); // the dialog blocks; check the module again after it
+            if (path.empty() || !l->context().module())
                 return;
-            ClipId id = clip.id;
-            ArrangementId instance = l->newInstanceId();
-            mod->perform(arrange::placeNewClip(
-                mod->song(), track, at, std::move(clip), instance, [l] { return l->newInstanceId(); },
-                l->context().state().stackClips, "Import MIDI file"));
-            l->selection() = {instance};
-            clipActions::select(l->context(), track, id);
-        });
-    }));
+            importMidi::chooseClip(l->context(), path, [l, track, at](Clip clip) {
+                TesseraModule* mod = l->context().module();
+                if (!mod)
+                    return;
+                ClipId id = clip.id;
+                ArrangementId instance = l->newInstanceId();
+                mod->perform(arrange::placeNewClip(
+                    mod->song(), track, at, std::move(clip), instance, [l] { return l->newInstanceId(); },
+                    l->context().state().stackClips, "Import MIDI file"));
+                l->selection() = {instance};
+                clipActions::select(l->context(), track, id);
+            });
+        }));
+    }
     menu->addChild(rack::createMenuItem(
         "Paste", shortcutLabel(Action::Paste), [l] { paste(*l, false); }, clipboard.items.empty()));
     // The launcher's clips of this track, ready to drop here.

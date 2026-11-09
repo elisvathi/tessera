@@ -130,7 +130,8 @@ class MoveGesture : public SelectionGesture {
             if (p.x >= 0 && p.x < panel->box.size.x) {
                 LauncherPanel::Hit h = panel->hitTest(p);
                 const Track* t = song().findTrack(h.track);
-                bool empty = t && h.scene >= 0 && h.scene < int(t->slots.size()) && !t->slots[size_t(h.scene)].clip;
+                bool empty = t && clipActions::fitsTrack(song(), anchor.clip, h.track) && h.scene >= 0 &&
+                             h.scene < int(t->slots.size()) && !t->slots[size_t(h.scene)].clip;
                 if (empty && (h.part == LauncherPanel::Hit::Part::Body || h.part == LauncherPanel::Hit::Part::Launch)) {
                     slotTrack = h.track;
                     slotScene = h.scene;
@@ -153,7 +154,7 @@ class MoveGesture : public SelectionGesture {
 
         Tick start = lanes.snapMove(anchor.position, dt, anchor.length, mods.alt && !linked, ids);
         delta = std::max(start, Tick(0)) - anchor.position;
-        trackDelta = rows;
+        trackDelta = rowsFit(rows) ? rows : 0;
         // Once Ctrl is down the drag stays a copy: letting go of Ctrl just before the mouse must not move the original.
         copying = copying || linked || mods.ctrl;
 
@@ -218,6 +219,18 @@ class MoveGesture : public SelectionGesture {
   private:
     TrackId slotTrack; // over an empty launcher panel slot
     int slotScene = 0;
+    /// Whether moving the selection `rows` tracks keeps every clip on a track of its own kind, audio or notes.
+    bool rowsFit(int rows) {
+        for (const arrange::Placed& p : before) {
+            if (!ids.count(p.clip.id))
+                continue;
+            int at = int(std::find(order.begin(), order.end(), p.track) - order.begin()) + rows;
+            if (at >= 0 && at < int(order.size()) && !clipActions::fitsTrack(song(), p.clip.clip, order[size_t(at)]))
+                return false;
+        }
+        return true;
+    }
+
     bool linked;
     std::vector<TrackId> order;
     int pressIndex = 0;
@@ -714,7 +727,8 @@ class DrawGesture : public ClipGesture {
     void commit() override {
         lanes.clearPreview();
         TesseraModule* m = lanes.context().module();
-        if (!track.valid())
+        const Track* onto = m->song().findTrack(track);
+        if (!onto || onto->type == TrackType::Audio)
             return;
         m->perform(arrange::drawClip(m->song(), track, start, length, clip, instance,
                                      [this] { return lanes.newInstanceId(); }));

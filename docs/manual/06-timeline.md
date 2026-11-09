@@ -29,6 +29,7 @@ changes.
 ## Moving and copying
 
 - **Drag** a clip to move it. Drag up or down to move it to another track.
+- A clip stays on tracks of its own kind: note clips never go on an audio track, or audio clips on a note track.
 - Clips snap to the grid, and also to nearby clip edges, markers, the loop ends and the playhead.
 - **Alt** while dragging: no snapping. **Shift**: move only across time, or only across tracks.
 - **Ctrl+drag**: an independent copy (its own clip).

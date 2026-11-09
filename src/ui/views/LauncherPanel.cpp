@@ -146,7 +146,8 @@ class SlotDragGesture : public DragGesture {
         if (pos.x >= 0 && pos.x < panel.box.size.x) {
             LauncherPanel::Hit h = panel.hitTest(pos);
             if (h.part == LauncherPanel::Hit::Part::Launch || h.part == LauncherPanel::Hit::Part::Body)
-                target = h;
+                if (const TesseraModule* m = panel.ctx.module(); m && clipActions::fitsTrack(m->song(), clip, h.track))
+                    target = h;
         }
     }
     void commit() override {

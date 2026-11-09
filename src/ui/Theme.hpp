@@ -132,6 +132,7 @@ constexpr float kPlayheadBand = 7;
 constexpr float kPlayheadPathStep = 2;
 constexpr float kPlayheadPathWidth = 1.4f;
 constexpr float kSegmentGrip = 6; // the solid grips at the ends of the selected playhead's segment
+constexpr float kLevelLineMinHeight = 40; // shorter rows have no room for the second line
 constexpr float kSegmentRow = 16; // the piano roll ruler's row of playhead segments, when the track has playheads
 constexpr float kBranchCap = 3;   // the coloured cap on a device in a playhead's own chain
 constexpr float kTimeRuler = 20;

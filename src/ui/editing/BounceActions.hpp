@@ -13,5 +13,8 @@ namespace bounceActions {
 /// there is something like it), Mute the original afterwards, an estimate, and Bounce.
 void openDialog(EditorContext& ctx, TrackId track);
 
+/// A clip's menu in the clips panel: the notes bounce choices for this clip, to a new track in the same scene.
+void openClipDialog(EditorContext& ctx, TrackId track, ClipId clip, int slot);
+
 } // namespace bounceActions
 } // namespace tessera

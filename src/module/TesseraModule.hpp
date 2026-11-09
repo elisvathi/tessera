@@ -348,7 +348,8 @@ class TesseraModule : public rack::engine::Module {
     /// Bounce (§8.6): plays `track` from a bar before `from` and records its sound at IN, before the fader, onto a
     /// new audio track under it. It stops at `to`; with `untilSilent`, once past `to` the sound stays below -60 dB
     /// for a second (at most 8 bars on). False when a bounce or export already runs.
-    bool startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal);
+    bool startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal,
+                     const std::vector<ArrangementId>& only = {});
     /// Export audio (§8.6): the master, and with `stems` every heard track after its fader, into WAV files at
     /// `path` (stems beside it, "<name> - <track>.wav"). It follows Plays: on the timeline, the song (or the loop)
     /// from its start; with the clips, from now until Stop. False when a bounce or export already runs.
@@ -367,6 +368,10 @@ class TesseraModule : public rack::engine::Module {
     bool glueAudio(TrackId track, const std::vector<ArrangementId>& instances);
     /// Stops a bounce or export and leaves nothing behind.
     void cancelCapture();
+    /// True while a bounce records.
+    bool bouncing() const { return bounce.has_value(); }
+    /// Ends a bounce early, keeping what was played so far.
+    void stopBounce() { requestTransport(kRequestStop); }
     /// What runs now, for the progress line: "Bouncing Bass · bar 3 of 8". Empty when nothing does.
     std::string captureStatus() const;
     /// Why the last take stopped early, once ("The disk is full: the take was kept up to there"); empty when not.
@@ -534,11 +539,19 @@ class TesseraModule : public rack::engine::Module {
         bool restoreLauncher = false;
         bool restoreLoop = false;
         bool reachedEnd = false; // the playhead has passed `to`
+        std::vector<TrackId> soloBefore; // the tracks soloed before the bounce soloed its own
+        std::vector<ArrangementId> mutedClips; // this track's clips silenced because they weren't selected
+        TrackId placed;          // the new track, made when the bounce starts so it shows at once
+        rack::history::ComplexAction* placedAction = nullptr; // its undo step; the finished clip joins it
         bool started = false; // the transport has been seen playing
         bool armed = false;   // its tap is armed (after the jump to the start)
         bool keep = false;    // it reached its end: keep the file
     };
     std::optional<BounceJob> bounce;
+    /// Takes away the track a bounce made at its start, when the bounce ends with nothing to put on it.
+    void removeBounceTrack(const BounceJob& job);
+    /// Puts back the solo buttons and clip mutes as they were before a bounce played only what it records.
+    void restoreBounceSolo(const BounceJob& job);
     struct ExportJob {
         std::vector<int> captures; // the master first, then the stems
         std::vector<std::string> skipped; // muted tracks, left out of the stems

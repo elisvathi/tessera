@@ -101,7 +101,23 @@ Right-click a track header for its menu.
 Voices, Input and the recording settings are also in the inspector's **TRACK** section when no notes are selected.
 The inspector's **Output** row says which output module plays the track, or "None" with a hint.
 
+## Bounce notes to a new track
+
+Right-click a note or drum track, a clip on the timeline or a clip in the clips panel, and choose **Bounce to a new
+track…** (**Ctrl+B** with the track selected). It takes no time and nothing has to play.
+
+- **Length**: the selected clips, the selected area or the whole track. Clips you didn't select stay out.
+- **Notes**: **As it plays** has the devices and playheads applied. **As written** is the clip's own notes.
+- **Playheads**: all of them, each on its own channel on the one new track, or just one.
+
+The result is one clip on a new track under the original, with no devices, in one undo step. A clip from the clips
+panel lands in the same scene on the new track. To bounce what a track sounds like instead, choose **Bounce the sound
+instead…** at the bottom of that menu (see [Audio](17-audio.md)).
+
 ## A track that plays another track (Input)
+
+This is for note and drum tracks, and it only lists those: audio tracks have no notes to give or take, so an audio
+track has no **Input** item.
 
 A track can play notes from somewhere else, all the time, without being armed. Set this in **Input**:
 

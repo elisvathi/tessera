@@ -758,6 +758,8 @@ void ArrangerLanes::doubleClick(Vec pos, Modifiers mods) {
     TrackId track = trackOfRow(hit.row);
     if (!track.valid())
         return;
+    if (const Track* onto = m->song().findTrack(track); !onto || onto->type == TrackType::Audio)
+        return;
     // A one-bar clip in the bar that was double-clicked.
     Tick bar = ticksPerBar(owner.source.timeSig());
     Tick start = Tick(std::floor(std::max(0.0, time().xToTick(pos.x)) / double(bar))) * bar;

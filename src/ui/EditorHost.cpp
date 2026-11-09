@@ -174,9 +174,11 @@ void EditorHost::showNotices() {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
-    // A bounce or export in progress: what it does, with Cancel (Stop cancels too).
+    // A bounce in progress offers Stop, which keeps what was played. An export offers Cancel.
     std::string status = m->captureStatus();
-    if (!status.empty())
+    if (!status.empty() && m->bouncing())
+        ctx.toast(status, "Stop", [m] { m->stopBounce(); });
+    else if (!status.empty())
         ctx.toast(status, "Cancel", [m] { m->cancelCapture(); });
     else if (!m->takeProblem.empty()) {
         ctx.toast(m->takeProblem);

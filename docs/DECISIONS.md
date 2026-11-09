@@ -2241,3 +2241,30 @@ This replaces "Linked by default" in the timeline section.
   colours don't count.
 - **Splitting an audio clip gives each piece its own clip**, so changing one leaves the others alone. Glue compares what
   the pieces play, so pieces with the same settings still rejoin.
+
+## 137. A bounce shows its track from the start, and Stop keeps it (9 Nov)
+
+- **The new track is made when the bounce starts**, with the recording growing on it like a take. Undo takes away the
+  track and its clip in one step.
+- **Stop keeps what was played so far**, on the bounce message and the transport alike. Undo discards it.
+- **Only the bounced track plays during a bounce** (it is soloed and the others' solo buttons come back afterwards), so
+  nothing else reaches the effects patched after it. With **Selected clips**, the track's other clips are silent too.
+- **A track that makes sound opens tall enough for its level line**, which shows from 40 px. A height the user set
+  stays, even when it is shorter.
+
+## 138. Audio and notes stay apart (9 Nov)
+
+- **Clips only go on tracks of their own kind**: moving, copying, pasting and dragging to a slot all stop at the wrong
+  kind. Note clips can't be created on an audio track.
+- **Menus show what fits the track.** An audio track has no Input, Record from (notes), MIDI channel, Create clip or
+  Import MIDI items. A note track's Input lists only note and drum tracks.
+- An audio track can still take sound from a note track that makes sound: that is audio, not notes.
+
+## 139. Bounce notes; Record is for what comes from outside (9 Nov)
+
+- **Record takes what comes from outside; Bounce sends a track or clip to another track.** So Record from has no
+  "Another track" entry. Card "record from another track" is met by Bounce.
+- **Notes bounce is instant**, from the code MIDI export uses: nothing has to play, and clips you didn't select stay out.
+- **One clip on a new track**, no devices, each playhead on its own channel, or one playhead alone. A panel clip lands in
+  the same scene on the new track. There is no "mute afterwards": that is for the audio bounce.
+- **Limit:** it can't capture live moves (knobs turned or clips launched while playing).

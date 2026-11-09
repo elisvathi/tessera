@@ -43,10 +43,10 @@ std::vector<TesseraModule::LiveTake> TesseraModule::liveTakes() const {
         return out;
     double rate = audioRate.load() > 0 ? double(audioRate.load()) : 48000;
     for (const Capture& c : captures) {
-        if (c.kind != Capture::Kind::Take || player->tapState(c.tap) != AudioPlayer::TapState::Running)
+        if (c.kind == Capture::Kind::Export || player->tapState(c.tap) != AudioPlayer::TapState::Running)
             continue;
         LiveTake t;
-        t.track = c.track;
+        t.track = c.kind == Capture::Kind::Bounce && bounce ? bounce->placed : c.track;
         t.startTick = player->tapStart(c.tap);
         t.lengthTicks = double(captureWriter->written(c.writer)) / rate * (tempo() > 0 ? tempo() : 120) / 60.0 *
                         double(kPpq);
@@ -141,7 +141,8 @@ void TesseraModule::captureStep() {
     measureStep();
 }
 
-bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal) {
+bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSilent, bool muteOriginal,
+                                const std::vector<ArrangementId>& only) {
     const Track* t = songData.findTrack(track);
     if (!t || bounce || exporting || !audio || !player->active() || to <= from)
         return false;
@@ -171,6 +172,46 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
     job.untilSilent = untilSilent;
     job.muteOriginal = muteOriginal;
     job.capture = int(captures.size()) - 1;
+    // Only this track plays, so nothing else reaches the effects patched after it. This is a passing playback state,
+    // put back when the bounce ends, so it is not an undo step.
+    for (Track& other : songData.tracks) {
+        if (other.solo)
+            job.soloBefore.push_back(other.id);
+        other.solo = other.id == track;
+        // With clips selected, only those play: an unselected clip stacked over them stays out of the bounce.
+        if (other.id != track || only.empty())
+            continue;
+        for (ArrangerClip& a : other.arrangement)
+            if (!a.muted && std::find(only.begin(), only.end(), a.id) == only.end()) {
+                a.muted = true;
+                job.mutedClips.push_back(a.id);
+            }
+    }
+    publish(ChangeSet::all());
+    // The new track shows from the start, with the bounce growing on it. `t` is not used after this: adding a track
+    // can move the song's tracks in memory.
+    int index = songData.trackIndex(track) + 1;
+    std::string title = "Bounce " + t->name, placedName = t->name + " (bounce)";
+    NoteSelection selectionBefore = editorState.selection;
+    if (CommandPtr add = addTrack(songData, TrackType::Audio, index, ids())) {
+        auto made = std::make_unique<CompoundCommand>(title);
+        add->apply(songData);
+        made->add(std::move(add));
+        job.placed = songData.tracks[size_t(index)].id;
+        if (CommandPtr rename = setTrackField(songData, job.placed, &Track::name, placedName, "Rename")) {
+            rename->apply(songData);
+            made->add(std::move(rename));
+        }
+        publish(ChangeSet::all());
+        audio->sync(songData);
+        job.placedAction = new rack::history::ComplexAction;
+        job.placedAction->name = "bounce";
+        job.placedAction->push(new CommandAction(id, std::move(made), selectionBefore, editorState.selection));
+        APP->history->push(job.placedAction);
+        // Selecting it scrolls it into view, so a long track list can't hide it.
+        editorState.selectedTrack = job.placed;
+        editorState.selectedTracks = {job.placed};
+    }
     // It plays the timeline, from a bar early so delays and reverbs are already sounding.
     job.restoreLauncher = playMode() == PlayMode::Launcher;
     params[MODE_PARAM].setValue(1.f);
@@ -522,8 +563,37 @@ void TesseraModule::cancelCapture() {
         params[MODE_PARAM].setValue(0.f);
     if (bounce->restoreLoop)
         params[LOOP_PARAM].setValue(1.f);
+    restoreBounceSolo(*bounce);
+    removeBounceTrack(*bounce);
+    exportResult = "Bounce cancelled";
     bounce.reset();
     requestTransport(kRequestStop);
+}
+
+void TesseraModule::restoreBounceSolo(const BounceJob& job) {
+    for (Track& t : songData.tracks) {
+        t.solo = std::find(job.soloBefore.begin(), job.soloBefore.end(), t.id) != job.soloBefore.end();
+        for (ArrangerClip& a : t.arrangement)
+            if (std::find(job.mutedClips.begin(), job.mutedClips.end(), a.id) != job.mutedClips.end())
+                a.muted = false;
+    }
+    publish(ChangeSet::all());
+}
+
+void TesseraModule::removeBounceTrack(const BounceJob& job) {
+    if (!job.placed.valid() || !songData.findTrack(job.placed))
+        return;
+    rack::history::State* history = APP->history;
+    if (job.placedAction && !history->actions.empty() && history->actionIndex == int(history->actions.size()) &&
+        history->actions.back() == job.placedAction) {
+        // Nothing happened since: leave no undo step behind for a track that never held anything.
+        history->undo();
+        history->actions.pop_back();
+        delete job.placedAction;
+        return;
+    }
+    if (CommandPtr remove = removeTracks(songData, {job.placed}))
+        perform(std::move(remove));
 }
 
 std::string TesseraModule::captureStatus() const {
@@ -590,20 +660,14 @@ void TesseraModule::bounceStep() {
                 player->disarmTap(c.tap);
             }
         } else if (state == AudioPlayer::TapState::Done) {
-            // Done at its end, or stopped by hand. Stop before the end cancels; after it (an effect tail that never
-            // goes quiet) it keeps what was played.
-            job.keep = job.reachedEnd || (!job.untilSilent && now >= double(job.to) - 1);
-            if (!job.keep) {
-                exportResult = "Bounce cancelled: it was stopped before its end";
-                cancelCapture();
-                return;
-            }
+            // Done at its end, or stopped by hand: either way what was played stays. Cancel is what discards it.
+            job.keep = true;
             c.finishing = true;
             player->disarmTap(c.tap);
         } else if (job.started && !playing()) {
-            exportResult = "Bounce cancelled: it was stopped before its end";
-            cancelCapture();
-            return;
+            job.keep = true;
+            c.finishing = true;
+            player->disarmTap(c.tap);
         }
         if (c.finishing)
             requestTransport(kRequestStop);
@@ -620,11 +684,13 @@ void TesseraModule::bounceStep() {
         params[MODE_PARAM].setValue(0.f);
     if (done.restoreLoop)
         params[LOOP_PARAM].setValue(1.f);
+    restoreBounceSolo(done);
     const Track* t = songData.findTrack(done.track);
     if (!t || frames == 0) {
         std::error_code ec;
         std::filesystem::remove(path, ec);
-        exportResult = "Bounce failed: no sound was recorded";
+        removeBounceTrack(done);
+        exportResult = "Bounce stopped before any sound was recorded";
         return;
     }
     double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
@@ -632,6 +698,7 @@ void TesseraModule::bounceStep() {
     std::error_code ec;
     std::filesystem::remove(path, ec);
     if (!imp.ok) {
+        removeBounceTrack(done);
         exportResult = "Bounce failed: the recorded file couldn't be read";
         return;
     }
@@ -641,9 +708,11 @@ void TesseraModule::bounceStep() {
     f.tempo = songTempo;
     f.follow = TempoFollow::Stretch;
     f.sound = imp.guess.sound;
-    f.loop = !done.untilSilent;
+    f.loop = !done.untilSilent && done.reachedEnd;
+    bool onPlaced = done.placed.valid() && songData.findTrack(done.placed);
     AudioDropTarget target;
-    target.kind = AudioDropTarget::Kind::NewTracks;
+    target.kind = onPlaced ? AudioDropTarget::Kind::Track : AudioDropTarget::Kind::NewTracks;
+    target.track = done.placed;
     target.index = songData.trackIndex(done.track) + 1;
     target.timeline = true;
     // What came back on IN is late by Tessera's own delay and the track's: move it back into time.
@@ -654,6 +723,7 @@ void TesseraModule::bounceStep() {
     ImportResult made;
     CommandPtr command = importAudio(songData, {f}, target, ids(), &made);
     if (!command) {
+        removeBounceTrack(done);
         exportResult = "Bounce failed: there is no room for another track";
         return;
     }
@@ -679,8 +749,15 @@ void TesseraModule::bounceStep() {
     auto* complex = new rack::history::ComplexAction;
     complex->name = "bounce";
     complex->push(new CommandAction(id, std::move(compound), before, editorState.selection));
-    APP->history->push(complex);
-    if (!made.tracks.empty())
+    if (onPlaced && done.placedAction) {
+        // One undo step takes away the clip and the track together.
+        done.placedAction->push(complex);
+    } else {
+        APP->history->push(complex);
+    }
+    if (onPlaced)
+        editorState.selectedTrack = done.placed;
+    else if (!made.tracks.empty())
         editorState.selectedTrack = made.tracks[0];
     exportResult = "Bounced to a new track: " + name;
 }

@@ -18,6 +18,9 @@ ClipId shownClip(EditorContext& ctx, const Track& track);
 /// The scene index holding `clip` on `track`, or -1.
 int slotOf(const Track& track, ClipId clip);
 
+/// Whether a clip may go on a track: audio clips only on audio tracks, note clips only on note tracks.
+bool fitsTrack(const Song& song, ClipId clip, TrackId track);
+
 /// Selects a clip (and its track) for the detail editor, and shows that editor if the mixer had the pane.
 void select(EditorContext& ctx, TrackId track, ClipId clip);
 /// Creates a one-bar clip in an empty slot and selects it.

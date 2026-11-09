@@ -52,7 +52,6 @@ constexpr float kCompactHeight = 24;
 constexpr float kExpandedHeight = 96;
 constexpr float kRowTopPad = 6;
 constexpr float kAddRowHeight = 28;
-constexpr float kLevelLineMinHeight = 40; // shorter rows have no room for the second line
 constexpr float kLevelBarH = 6;
 constexpr float kLevelHitH = 12;
 constexpr float kPanSize = 16;
@@ -509,7 +508,7 @@ class HeaderPanGesture : public DragGesture {
 
 Rect TrackHeaders::levelRect(const Track& t, int row, float top, float h) {
     // Every track that makes sound has the second line (§7.9): audio tracks, and tracks whose IN brings audio back.
-    if (h < kLevelLineMinHeight || !ctx.module() || ctx.module()->soundIndex(t.id) < 0)
+    if (h < theme::metrics::kLevelLineMinHeight || !ctx.module() || ctx.module()->soundIndex(t.id) < 0)
         return Rect();
     float x = indentOf(owner.rows[size_t(row)]) + (compact() ? kTileWidthCompact : kTileWidth) + kNameGap;
     float right = box.size.x - kPad - kPanSize - 4 - kDbTextWidth;

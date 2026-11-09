@@ -1,6 +1,7 @@
 #include "ClipActions.hpp"
 
 #include "AudioActions.hpp"
+#include "BounceActions.hpp"
 #include "ImportMidi.hpp"
 
 #include "ExportMidi.hpp"
@@ -120,6 +121,12 @@ ClipId shownClip(EditorContext& ctx, const Track& track) {
     return song.findClip(id) ? id : ClipId();
 }
 
+bool fitsTrack(const Song& song, ClipId clip, TrackId track) {
+    const Clip* c = song.findClip(clip);
+    const Track* t = song.findTrack(track);
+    return c && t && c->audio.has_value() == (t->type == TrackType::Audio);
+}
+
 void select(EditorContext& ctx, TrackId track, ClipId clip) {
     EditorState& state = ctx.state();
     state.selectedTrack = track;
@@ -153,7 +160,8 @@ TrackId trackOf(const Song& song, ClipId clip) {
 void create(EditorContext& ctx, TrackId track, int slot) {
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
-    if (clipAt(song, track, slot))
+    const Track* onto = song.findTrack(track);
+    if (clipAt(song, track, slot) || !onto || onto->type == TrackType::Audio)
         return;
     m->perform(createClip(song, track, slot, ticksPerBar(song.timeSig), m->newId<ClipId>()));
     selectSlot(ctx, track, slot);
@@ -194,6 +202,11 @@ void remove(EditorContext& ctx, TrackId track, int slot) {
 void move(EditorContext& ctx, TrackId fromTrack, int fromSlot, TrackId toTrack, int toSlot, bool copy) {
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
+    if (const Clip* moved = clipAt(song, fromTrack, fromSlot); moved && !fitsTrack(song, moved->id, toTrack)) {
+        ctx.toast(moved->audio ? "An audio clip can only go on an audio track"
+                               : "A note clip can't go on an audio track");
+        return;
+    }
     m->perform(copy ? copySlotClip(song, fromTrack, fromSlot, toTrack, toSlot, m->ids())
                     : moveSlotClip(song, fromTrack, fromSlot, toTrack, toSlot));
     selectSlot(ctx, toTrack, toSlot);
@@ -489,6 +502,10 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         mod->perform(arrange::placeClip(
             mod->song(), track, id, at, [mod] { return mod->newId<ArrangementId>(); }, c->state().stackClips));
     }));
+    if (!clip->isAudio())
+        menu->addChild(rack::createMenuItem("Bounce to a new track…", "", [c, track, id, slot] {
+            bounceActions::openClipDialog(*c, track, id, slot);
+        }));
     menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate),
                                         [c, track, slot] { duplicate(*c, track, slot); }));
     if (!clip->isAudio())
@@ -539,13 +556,17 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
 void appendEmptySlotMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int slot) {
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuLabel("Empty slot"));
-    menu->addChild(rack::createMenuItem("Create clip", "double-click", [c, track, slot] { create(*c, track, slot); }));
+    const Track* t = c->module()->song().findTrack(track);
+    bool audioTrack = t && t->type == TrackType::Audio;
+    if (!audioTrack)
+        menu->addChild(
+            rack::createMenuItem("Create clip", "double-click", [c, track, slot] { create(*c, track, slot); }));
     menu->addChild(
         rack::createMenuItem("Load a Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
-    menu->addChild(
-        rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
-    const Track* t = c->module()->song().findTrack(track);
-    if (t && t->type == TrackType::Audio)
+    if (!audioTrack)
+        menu->addChild(
+            rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
+    if (audioTrack)
         menu->addChild(rack::createMenuItem("Import audio file…", "",
                                             [c, track, slot] { audioActions::importToSlot(*c, track, slot); }));
     menu->addChild(rack::createMenuItem("Stop track", "", [c, track] { c->module()->stopTrack(track); }));
