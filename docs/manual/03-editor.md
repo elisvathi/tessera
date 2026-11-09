@@ -171,7 +171,9 @@ about 40 HP and it folds back to 30 HP. One undo restores the width and the neig
 ![The editor inside an 80 HP panel](images/panel-editor.png)
 
 - It shows the same song and the same editing tools as the full editor, just smaller. Edits in one show at once in
-  the other. Each keeps its own zoom.
+  the other, and so does what you see: what is open, which pane is maximized, zoom and scroll, track heights and open automation lanes.
+  Close the full editor and the panel editor is where you left off. Only the header, clips, mixer and curve pane sizes
+  stay separate, since the windows differ.
 - Play, stop, record and loop sit at the top left. **Full editor** (a window with an arrow) and **maximize** sit at
   the top right.
 - When the song pane is narrower than 600 px and the timeline plays, the clips fold into a **CLIPS** tab. Click it to

@@ -159,7 +159,23 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
     Collect sink;
     size_t next = 0;
     double t = notes.empty() ? 0 : std::floor(notes.front().start / kBlock) * kBlock;
+    auto sinceClipAt = [&](double at) {
+        const ArrangerClip* under = instanceAt(track, Tick(at));
+        return under && !under->muted ? at - double(under->position) : NAN;
+    };
     while (t < until) {
+        // Curves depend on time alone, so as in the engine they are read for the end of the block and used in it: a
+        // step drawn where a note starts reaches that note. One tick short, so a step on the next block stays out.
+        double blockEnd = t + kBlock - 1;
+        clock.songTick = blockEnd;
+        for (Running& r : running) {
+            const Modulator& m = *r.modulator;
+            if (m.type != ModulatorType::Curve)
+                continue;
+            clock.sinceClip = r.followsNotes ? sinceClipAt(blockEnd) : NAN;
+            mods::Drawn drawn = mods::drawnOf(m);
+            r.state.out = mods::evaluate(m.type, m.id.value, m.params.data(), r.state, clock, nullptr, 0, &drawn);
+        }
         // Knobs: base plus modulation, from the modulators' outputs of the block before (as the engine does).
         for (auto& [owner, k] : knobs)
             k.value = k.base;
@@ -176,15 +192,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             if (!modulate)
                 setByTrack.push_back(&value);
         };
-        for (const AutomationEnvelope& lane : track.automation)
-            if (lane.paramTarget.valid() && !lane.mute)
-                laneSets(lane, evaluate(lane, t), false);
-        if (const ArrangerClip* inst = instanceAt(track, Tick(t)); inst && !inst->muted)
-            if (const Clip* clip = song.findClip(inst->clip))
-                if (std::optional<double> ct = clipTimeAt(*clip, *inst, t))
-                    for (const AutomationEnvelope& lane : clip->automation)
-                        if (lane.paramTarget.valid() && !lane.mute)
-                            laneSets(lane, evaluate(lane, *ct), lane.combine == CombineMode::Modulate);
+        forEachKnobLane(song, track, t, laneSets);
         for (const Running& r : running)
             for (const Modulation& route : r.modulator->routes) {
                 if (route.kind != Modulation::Kind::Param || perPassOnMotion(*r.modulator, route))
@@ -224,10 +232,11 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
         }
         clock.songTick = t;
         // Track curves count from the start of the timeline clip under the song; song curves from the song's start.
-        const ArrangerClip* under = instanceAt(track, Tick(t));
-        double sinceClip = under && !under->muted ? t - double(under->position) : NAN;
+        double sinceClip = sinceClipAt(t);
         for (Running& r : running) {
             const Modulator& m = *r.modulator;
+            if (m.type == ModulatorType::Curve)
+                continue;
             clock.sinceClip = r.followsNotes ? sinceClip : NAN;
             mods::Drawn drawn = mods::drawnOf(m);
             mods::evaluate(m.type, m.id.value, knobs[{int(ParamRef::Kind::Modulator), m.id.value}].value.data(),

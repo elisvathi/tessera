@@ -9,7 +9,7 @@ void EditorPane::onButton(const ButtonEvent& e) {
     Widget::onButton(e);
     if (e.action != GLFW_PRESS || !ctx.module())
         return;
-    ctx.view().focus = which; // clicking anywhere in a pane focuses it
+    ctx.state().focus = which; // clicking anywhere in a pane focuses it
 }
 
 void EditorPane::draw(const DrawArgs& args) {

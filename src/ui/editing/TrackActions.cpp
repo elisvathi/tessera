@@ -1,7 +1,7 @@
 #include "TrackActions.hpp"
 
-#include "../widgets/MenuTextField.hpp"
 #include "../Theme.hpp"
+#include "../widgets/MenuTextField.hpp"
 #include "AudioActions.hpp"
 #include "BounceActions.hpp"
 
@@ -207,7 +207,7 @@ AutomationId addAutomationLane(EditorContext& ctx, TrackId track) {
         return AutomationId(); // all 8 AUTO channels have a lane
     AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
     m->perform(addLane(m->song(), LaneOwner::ofTrack(track), lane));
-    ctx.view().openAutomation.insert(track.value);
+    ctx.state().openAutomation.insert(track.value);
     return lane.id;
 }
 
@@ -236,9 +236,9 @@ void addMidiLane(EditorContext& ctx, TrackId track, LaneOwner owner, MidiControl
         return;
     auto show = [&](AutomationId id) {
         if (owner.clip.valid())
-            ctx.view().lowerLane = id.value;
+            ctx.state().lowerLane = id.value;
         else
-            ctx.view().openAutomation.insert(track.value);
+            ctx.state().openAutomation.insert(track.value);
     };
     for (const AutomationEnvelope& l : *lanes)
         if (l.midi == control) {
@@ -272,7 +272,7 @@ void appendAddLaneItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track,
             return;
         AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
         m->perform(addLane(m->song(), owner, lane));
-        c->view().lowerLane = lane.id.value;
+        c->state().lowerLane = lane.id.value;
     }));
     if (owner.track.valid())
         menu->addChild(
@@ -310,7 +310,7 @@ void automateMix(EditorContext& ctx, TrackId track, bool pan) {
     if (!t && !(master && !pan))
         return;
     LaneDrive drive = pan ? LaneDrive::Pan : LaneDrive::Volume;
-    ctx.view().openAutomation.insert(track.value);
+    ctx.state().openAutomation.insert(track.value);
     for (const AutomationEnvelope& l : *lanesOf(song, LaneOwner::ofTrack(track)))
         if (l.drive == drive)
             return;
@@ -614,9 +614,9 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
 
     TrackId first = ids.front();
     menu->addChild(rack::createCheckMenuItem(
-        "Show automation lanes", "", [c, first] { return c->view().openAutomation.count(first.value) > 0; },
+        "Show automation lanes", "", [c, first] { return c->state().openAutomation.count(first.value) > 0; },
         [c, first] {
-            std::set<uint64_t>& open = c->view().openAutomation;
+            std::set<uint64_t>& open = c->state().openAutomation;
             if (!open.erase(first.value))
                 open.insert(first.value);
         }));
@@ -625,9 +625,9 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     }));
     if (ids.size() == 1) {
         TrackId id = clicked;
-        menu->addChild(rack::createMenuItem(
-            track->type == TrackType::Drum ? "Add a Drum Out for this track" : "Add a Track Out for this track", "",
-            [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
+        menu->addChild(rack::createMenuItem(track->type == TrackType::Drum ? "Add a Drum Out for this track"
+                                                                           : "Add a Track Out for this track",
+                                            "", [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
         if (m->soundIndex(id) >= 0)
             menu->addChild(rack::createMenuItem("Bounce audio to a new track…", shortcutLabel(Action::Bounce),
                                                 [c, id] { bounceActions::openAudioDialog(*c, id); }));
@@ -690,9 +690,9 @@ void appendGroupMenu(rack::ui::Menu* menu, EditorContext& ctx, GroupId group, st
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuLabel(g->name));
     menu->addChild(rack::createMenuItem("Rename", "double-click", startRename));
-    bool folded = ctx.view().foldedGroups.count(group.value) > 0;
+    bool folded = ctx.state().foldedGroups.count(group.value) > 0;
     menu->addChild(rack::createMenuItem(folded ? "Unfold" : "Fold", "", [c, group] {
-        std::set<uint64_t>& f = c->view().foldedGroups;
+        std::set<uint64_t>& f = c->state().foldedGroups;
         if (!f.erase(group.value))
             f.insert(group.value);
     }));

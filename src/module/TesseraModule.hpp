@@ -425,12 +425,12 @@ class TesseraModule : public rack::engine::Module {
     uint64_t activeTracks() const { return uiActiveTracks.load(std::memory_order_relaxed); }
 
   private:
-    void handleTransportControls(const ProcessArgs& args);
+    void handleTransportControls(const ProcessArgs& args, bool slowTick);
     /// CLOCK input: its tempo and pulses drive the song while a cable is patched.
-    void followClock(const ProcessArgs& args);
+    void followClock(const ProcessArgs& args, bool slowTick);
     void writeTransportOutputs(const ProcessArgs& args);
     void handleUiRequests();
-    void handleSceneControls();
+    void handleSceneControls(bool slowTick);
     void publishLauncherStatus();
     /// Queues the launcher state of a fresh song: each track plays its first clip.
     void launchFirstClips();
@@ -483,9 +483,9 @@ class TesseraModule : public rack::engine::Module {
     std::unique_ptr<AudioPlayer> player = std::make_unique<AudioPlayer>();
     Exchange<AudioSnapshot> audioSnapshots;
     uint64_t audioRevision = ~uint64_t(0), audioChanges = 0;
-    double audioTempo = 0;       // the tempo the snapshot's renders were picked for
-    double tempoSeen = 0;        // the tempo last time, to see it settle
-    double tempoSettleAt = 0;    // when the tempo last moved (seconds)
+    double audioTempo = 0;    // the tempo the snapshot's renders were picked for
+    double tempoSeen = 0;     // the tempo last time, to see it settle
+    double tempoSettleAt = 0; // when the tempo last moved (seconds)
     std::atomic<float> audioRate{0};
     std::atomic<bool> mainConnected{false};
     bool releaseHolds = false;
@@ -542,13 +542,13 @@ class TesseraModule : public rack::engine::Module {
         double quietSince = -1;
         bool restoreLauncher = false;
         bool restoreLoop = false;
-        bool reachedEnd = false; // the playhead has passed `to`
+        bool reachedEnd = false;         // the playhead has passed `to`
         std::vector<ArrangementId> only; // with clips selected, the only clips of this track that sound
-        TrackId placed;          // the new track, made when the bounce starts so it shows at once
+        TrackId placed;                  // the new track, made when the bounce starts so it shows at once
         rack::history::ComplexAction* placedAction = nullptr; // its undo step; the finished clip joins it
-        bool started = false; // the transport has been seen playing
-        bool armed = false;   // its tap is armed (after the jump to the start)
-        bool keep = false;    // it reached its end: keep the file
+        bool started = false;                                 // the transport has been seen playing
+        bool armed = false;                                   // its tap is armed (after the jump to the start)
+        bool keep = false;                                    // it reached its end: keep the file
     };
     std::optional<BounceJob> bounce;
     /// Takes away the track a bounce made at its start, when the bounce ends with nothing to put on it.
@@ -557,7 +557,7 @@ class TesseraModule : public rack::engine::Module {
     /// song itself, and any patch saved meanwhile, never holds this passing state.
     Song songAsBounceHears(const BounceJob& job) const;
     struct ExportJob {
-        std::vector<int> captures; // the master first, then the stems
+        std::vector<int> captures;        // the master first, then the stems
         std::vector<std::string> skipped; // muted tracks, left out of the stems
         Tick from = 0, to = 0;
         bool timeline = true;
@@ -658,6 +658,7 @@ class TesseraModule : public rack::engine::Module {
     std::atomic<int> clockInPpqn{24};
     std::atomic<bool> uiExternalClock{false};
     rack::dsp::ClockDivider launcherStatusDivider;
+    uint32_t slowTickCount = 0; // counts samples up to the next round of settings, buttons and lights
     rack::dsp::PulseGenerator resetPulse, eocPulse, barPulse, clickPulse;
     float clickLevel = 0;
     rack::dsp::PulseGenerator beatFlash;

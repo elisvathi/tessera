@@ -205,8 +205,8 @@ std::optional<expr::Curve> PianoRollView::shownCurve() {
 }
 
 std::optional<fields::Field> PianoRollView::drumValueField() {
-    std::optional<expr::Curve> curve = curveOf(ctx.view().noteLane);
-    if (!curve || ctx.view().lowerLane != 0 || !drumMode())
+    std::optional<expr::Curve> curve = curveOf(ctx.state().noteLane);
+    if (!curve || ctx.state().lowerLane != 0 || !drumMode())
         return std::nullopt;
     return valueFieldOf(*curve);
 }
@@ -490,8 +490,8 @@ void PianoRollView::layout() {
     float rulerHeight = std::min(Ruler::heightFor(source, ctx.surface), rest);
     rest -= rulerHeight;
     float lane = ctx.surface == Surface::Panel ? kLaneHeightPanel : kLaneHeightOverlay;
-    if (ctx.view().lowerLane == kCurveLane && curveView->hasCurve())
-        lane = ctx.view().curveHeight > 0                ? float(ctx.view().curveHeight)
+    if (ctx.state().lowerLane == kCurveLane && curveView->hasCurve())
+        lane = ctx.view().curveHeight > 0      ? float(ctx.view().curveHeight)
                : ctx.surface == Surface::Panel ? kCurveLaneHeightPanel
                                                : kCurveLaneHeightOverlay;
     float tabs = 0; // the lane's own label picks what it shows; no row of tabs
@@ -594,17 +594,17 @@ void PianoRollView::step() {
         updateDevicesToggle(ctx, devicesToggle);
         const Clip* shown = clip();
         const AutomationEnvelope* lowerLane =
-            shown ? findLane(song, LaneOwner::ofClip(shown->id), AutomationId(ctx.view().lowerLane)) : nullptr;
+            shown ? findLane(song, LaneOwner::ofClip(shown->id), AutomationId(ctx.state().lowerLane)) : nullptr;
         clipLane->lane = lowerLane ? lowerLane->id : AutomationId();
         clipLane->visible = lowerLane != nullptr;
-        bool curveShown = ctx.view().lowerLane == kCurveLane && curveView->hasCurve();
-        bool mapShown = curveShown || (ctx.view().lowerLane == kTimeMapLane && timeMap->device());
+        bool curveShown = ctx.state().lowerLane == kCurveLane && curveView->hasCurve();
+        bool mapShown = curveShown || (ctx.state().lowerLane == kTimeMapLane && timeMap->device());
         if (source.clip != pointsClip || state.tool != pointsTool) {
             curvePoints.clear();
             pointsClip = source.clip;
             pointsTool = state.tool;
         }
-        NoteLane noteLane = ctx.view().noteLane;
+        NoteLane noteLane = ctx.state().noteLane;
         std::optional<expr::Curve> curve = curveOf(noteLane);
         // Drum hits show their curves as one value each (stems); double-clicking a stem zooms onto its curve.
         std::optional<fields::Field> drumValues = drumValueField();
@@ -640,24 +640,33 @@ void PianoRollView::step() {
         pitch.setViewHeight(grid->box.size.y);
         updateRows();
 
+        bool drives = ctx.drivesView();
+        // The other editor's notes view may be taller: stay centred on the same rows.
+        auto followOtherEditor = [&] {
+            viewport.time.restore(state.detail);
+            double shift = state.pitchViewHeight > 0 && state.pitch.rowHeight > 0
+                               ? (state.pitchViewHeight - pitch.viewHeight()) / 2 / state.pitch.rowHeight
+                               : 0;
+            pitch.restore({state.pitch.top + shift, state.pitch.rowHeight});
+        };
         if (!restored) {
             restored = true;
             shownClip = source.clip;
             shownDrum = drumMode();
-            if (ctx.view().detail.pxPerTick > 0) {
-                viewport.time.restore(ctx.view().detail);
-                pitch.restore(ctx.view().pitch);
+            if (state.detail.pxPerTick > 0) {
+                followOtherEditor();
                 // The saved view may belong to another clip or a bigger window: never open on empty rows.
-                if (!anyNoteInView())
+                if (drives && !anyNoteInView())
                     grid->zoomToFit();
-            } else {
+            } else if (drives) {
                 grid->zoomToFit();
             }
         } else if (source.clip != shownClip || drumMode() != shownDrum) {
             // Opening another clip scrolls to its notes, not to C0 (EDITOR_UX §0); a drum track opens on its lanes.
             shownClip = source.clip;
             preview.reset();
-            grid->zoomToFit();
+            if (drives)
+                grid->zoomToFit();
         }
         shownDrum = drumMode();
 
@@ -665,12 +674,16 @@ void PianoRollView::step() {
         viewport.time.step(lastStep > 0 ? now - lastStep : 0);
         lastStep = now;
 
-        if (m->playing() && !ctx.followPaused())
-            if (auto left = followScroll(state.follow, source.playhead(), viewport.time))
-                viewport.time.scrollTo(*left);
-
-        ctx.view().detail = viewport.time.state();
-        ctx.view().pitch = pitch.state();
+        if (drives) {
+            if (m->playing() && !ctx.followPaused())
+                if (auto left = followScroll(state.follow, source.playhead(), viewport.time))
+                    viewport.time.scrollTo(*left);
+            state.detail = viewport.time.state();
+            state.pitch = pitch.state();
+            state.pitchViewHeight = pitch.viewHeight();
+        } else if (state.detail.pxPerTick > 0) {
+            followOtherEditor();
+        }
     }
     EditorPane::step();
 }
@@ -800,7 +813,7 @@ const Track* PianoRollView::track() {
 
 bool PianoRollView::drumMode() {
     const Track* t = track();
-    return t && t->type == TrackType::Drum && ctx.view().drumLanes;
+    return t && t->type == TrackType::Drum && ctx.state().drumLanes;
 }
 
 const DrumLane* PianoRollView::laneOf(int pitchValue) {
@@ -918,10 +931,10 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
     rack::ui::Menu* menu = rack::createMenu();
     auto noteLaneItem = [&](NoteLane lane) {
         menu->addChild(rack::createCheckMenuItem(
-            noteLaneName(lane), "", [c, lane] { return c->view().lowerLane == 0 && c->view().noteLane == lane; },
+            noteLaneName(lane), "", [c, lane] { return c->state().lowerLane == 0 && c->state().noteLane == lane; },
             [c, lane] {
-                c->view().lowerLane = 0;
-                c->view().noteLane = lane;
+                c->state().lowerLane = 0;
+                c->state().noteLane = lane;
             }));
     };
     if (withNoteLanes) {
@@ -941,9 +954,8 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
         if (withNoteLanes)
             menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createCheckMenuItem(
-            "Time map (playheads)", "", [c] { return c->view().lowerLane == kTimeMapLane; },
-            [c] { c->view().lowerLane = kTimeMapLane; }));
-
+            "Time map (playheads)", "", [c] { return c->state().lowerLane == kTimeMapLane; },
+            [c] { c->state().lowerLane = kTimeMapLane; }));
     }
     // Curve modulators this track hears (its own, its devices', the song's); a new one starts from a knob's label or
     // the modulator list.
@@ -958,7 +970,7 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
         }
         uint64_t id = mod.id.value;
         menu->addChild(rack::createCheckMenuItem(
-            mod.name, "", [c, id] { return c->view().lowerLane == kCurveLane && c->curveModulator == id; },
+            mod.name, "", [c, id] { return c->state().lowerLane == kCurveLane && c->state().curveModulator == id; },
             [c, id] { deviceActions::showCurve(*c, ModulatorId(id)); }));
     });
     ClipId clipId = shown->id;
@@ -968,8 +980,8 @@ void PianoRollView::openLowerMenu(bool withNoteLanes) {
     for (const AutomationEnvelope& l : shown->automation) {
         uint64_t id = l.id.value;
         menu->addChild(rack::createCheckMenuItem(
-            l.name, laneOutputLabel(l), [c, id] { return c->view().lowerLane == id; },
-            [c, id] { c->view().lowerLane = id; }));
+            l.name, laneOutputLabel(l), [c, id] { return c->state().lowerLane == id; },
+            [c, id] { c->state().lowerLane = id; }));
     }
     TrackId trackId = source.track;
     menu->addChild(rack::createSubmenuItem("Add clip lane", "", [c, trackId, clipId](rack::ui::Menu* sub) {
@@ -1077,7 +1089,15 @@ void PianoRollView::updateRows() {
 
 // ---- Keyboard -----------------------------------------------------------------------------------------------
 
+void PianoRollView::notePress(rack::math::Vec pos) {
+    curvePaneFocus = curveView->visible && curveView->box.contains(pos);
+}
+
 bool PianoRollView::handleAction(Action action) {
+    if (action == Action::Delete && curvePaneFocus && curveView->visible) {
+        curveView->deletePicked();
+        return true;
+    }
     if (automationFocus && clipLane->visible && clipLane->handleAction(action))
         return true;
     switch (action) {
@@ -1085,7 +1105,7 @@ bool PianoRollView::handleAction(Action action) {
         const Track* t = track();
         if (!t || t->type != TrackType::Drum)
             return false;
-        ctx.view().drumLanes = !ctx.view().drumLanes;
+        ctx.state().drumLanes = !ctx.state().drumLanes;
         return true;
     }
     case Action::GoToStart:

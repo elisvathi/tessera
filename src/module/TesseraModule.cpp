@@ -25,7 +25,8 @@ constexpr float kGateLow = 0.1f;
 constexpr float kGateHigh = 1.f;
 // Launcher state for the UI doesn't need every sample.
 constexpr uint32_t kLauncherStatusDivision = 32;
-constexpr uint32_t kMapDivision = 16; // mapped knobs follow automation at a 16th of the sample rate
+constexpr uint32_t kSlowTickSamples = 32; // samples between rounds of settings, buttons and lights
+constexpr uint32_t kMapDivision = 16;     // mapped knobs follow automation at a 16th of the sample rate
 // Rack knob mappings of modulators are told apart from lanes' by this bit (IDs never reach it).
 constexpr uint64_t kModulatorKey = uint64_t(1) << 62;
 constexpr uint32_t kSongModulatorColor = 0xFF8A3D; // the accent: song modulators belong to no track
@@ -392,8 +393,9 @@ void TesseraModule::audioStep() {
     // Keep a second longer what the last snapshot used and this one won't.
     std::vector<std::shared_ptr<const AudioBuffer>> keep;
     const AudioSnapshot* last = audioSnapshots.latest();
-    AudioBuild build = buildAudioSnapshot(bounce ? songAsBounceHears(*bounce) : songData, *audio, double(audioRate.load()) > 0 ? audioRate.load() : 48000,
-                                          audioTempo, {}, plan);
+    AudioBuild build =
+        buildAudioSnapshot(bounce ? songAsBounceHears(*bounce) : songData, *audio,
+                           double(audioRate.load()) > 0 ? audioRate.load() : 48000, audioTempo, {}, plan);
     soundTracks.clear();
     soundGroups.clear();
     for (const GroupPlay& gp : build.snapshot->groups)
@@ -402,8 +404,8 @@ void TesseraModule::audioStep() {
         soundTracks.push_back(tp.id);
     if (last)
         for (const auto& b : last->buffers)
-            if (!build.snapshot->holds(b.get()) &&
-                std::none_of(retiringBuffers.begin(), retiringBuffers.end(), [&](const auto& r) { return r.first == b; }))
+            if (!build.snapshot->holds(b.get()) && std::none_of(retiringBuffers.begin(), retiringBuffers.end(),
+                                                                [&](const auto& r) { return r.first == b; }))
                 retiringBuffers.push_back({b, now});
     retiringBuffers.erase(std::remove_if(retiringBuffers.begin(), retiringBuffers.end(),
                                          [&](const auto& r) { return now - r.second > 1.0; }),
@@ -1114,38 +1116,50 @@ void TesseraModule::process(const ProcessArgs& args) {
         player->setSampleRate(engineSampleRate);
         audioRate.store(engineSampleRate, std::memory_order_relaxed);
     }
-    if (const Snapshot* next = snapshots.poll())
-        engine.setSnapshot(next);
-    if (uint64_t held = heldKnobKey.load(std::memory_order_acquire)) {
-        ParamRef ref{held >> 63 ? ParamRef::Kind::Modulator : ParamRef::Kind::Device, held & 0xFFFFFFFFFFFFull,
-                     uint16_t((held >> 48) & 0x7FFF)};
-        engine.setKnobOverride(ref, heldKnobValue.load(std::memory_order_relaxed));
-    } else {
-        engine.clearKnobOverride();
+    // Settings, buttons, lights and what the UI reads run about 1500 times a second: nobody can press or see faster,
+    // and doing them on every sample was a fifth of this module's cost. Jacks that carry timing stay on every sample.
+    bool slowTick = slowTickCount == 0;
+    slowTickCount = (slowTickCount + 1) % kSlowTickSamples;
+    if (slowTick) {
+        if (const Snapshot* next = snapshots.poll())
+            engine.setSnapshot(next);
+        if (uint64_t held = heldKnobKey.load(std::memory_order_acquire)) {
+            ParamRef ref{held >> 63 ? ParamRef::Kind::Modulator : ParamRef::Kind::Device, held & 0xFFFFFFFFFFFFull,
+                         uint16_t((held >> 48) & 0x7FFF)};
+            engine.setKnobOverride(ref, heldKnobValue.load(std::memory_order_relaxed));
+        } else {
+            engine.clearKnobOverride();
+        }
+        // Before launches, so launches restored with a patch apply to the mode it was saved in.
+        engine.setPlayMode(params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher);
+        engine.setCapture(&captureEvents, captureArmed.load(std::memory_order_relaxed));
     }
-    // Before launches, so launches restored with a patch apply to the mode it was saved in.
-    engine.setPlayMode(params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher);
-    engine.setCapture(&captureEvents, captureArmed.load(std::memory_order_relaxed));
     writeTransportOutputs(args);
-    handleTransportControls(args);
-    handleUiRequests();
-    handleSceneControls();
-    engine.setLiveToKey(liveToKey.load(std::memory_order_relaxed));
-    engine.setNewControlLanes(newControlLanes.load(std::memory_order_relaxed));
-    engine.setReplaceTakes(replaceTakes.load(std::memory_order_relaxed));
-    bool fill = params[FILL_PARAM].getValue() > 0.5f || inputs[FILL_INPUT].getVoltage() > kGateHigh ||
-                editorFill.load(std::memory_order_relaxed);
-    engine.setFill(fill);
-    lights[FILL_LIGHT].setBrightness(fill);
+    handleTransportControls(args, slowTick);
+    if (slowTick)
+        handleUiRequests();
+    handleSceneControls(slowTick);
+    if (slowTick) {
+        engine.setLiveToKey(liveToKey.load(std::memory_order_relaxed));
+        engine.setNewControlLanes(newControlLanes.load(std::memory_order_relaxed));
+        engine.setReplaceTakes(replaceTakes.load(std::memory_order_relaxed));
+        bool fill = params[FILL_PARAM].getValue() > 0.5f || inputs[FILL_INPUT].getVoltage() > kGateHigh ||
+                    editorFill.load(std::memory_order_relaxed);
+        engine.setFill(fill);
+        lights[FILL_LIGHT].setBrightness(fill);
+    }
     readRecordInputs(args);
 
-    followClock(args);
-    engine.setLoopEnabled(params[LOOP_PARAM].getValue() > 0.5f);
-    engine.setClockDivision(kClockDivisions[clockDivisionIndex.load(std::memory_order_relaxed)].ticks);
+    followClock(args, slowTick);
+    if (slowTick) {
+        engine.setLoopEnabled(params[LOOP_PARAM].getValue() > 0.5f);
+        engine.setClockDivision(kClockDivisions[clockDivisionIndex.load(std::memory_order_relaxed)].ticks);
+    }
     engine.process(bus->beginWrite(args.frame), lastEvents);
     bus->publish(args.frame);
-    if (const AudioSnapshot* next = audioSnapshots.poll())
-        player->setSnapshot(next);
+    if (slowTick)
+        if (const AudioSnapshot* next = audioSnapshots.poll())
+            player->setSnapshot(next);
     // A song without audio skips the player: it costs what it did before audio existed.
     float mainL = 0, mainR = 0;
     if (player->active()) {
@@ -1161,7 +1175,7 @@ void TesseraModule::process(const ProcessArgs& args) {
     }
     // The metronome sounds on MAIN only: never on OUT, in bounces, exports or stems (§8.5).
     auto mode = MetronomeMode(metronomeMode.load(std::memory_order_relaxed));
-    bool clicking = mode == MetronomeMode::Always    ? engine.isPlaying() || engine.countingIn()
+    bool clicking = mode == MetronomeMode::Always      ? engine.isPlaying() || engine.countingIn()
                     : mode == MetronomeMode::Recording ? engine.recording() || engine.countingIn()
                     : mode == MetronomeMode::CountIn   ? engine.countingIn()
                                                        : false;
@@ -1174,7 +1188,6 @@ void TesseraModule::process(const ProcessArgs& args) {
     }
     outputs[MAIN_L_OUTPUT].setVoltage(mainL);
     outputs[MAIN_R_OUTPUT].setVoltage(mainR);
-    mainConnected.store(outputs[MAIN_L_OUTPUT].isConnected(), std::memory_order_relaxed);
     if (mapDivider.process()) {
         writeMappings();
         int channels = inputs[AUTO_REC_INPUT].getChannels();
@@ -1187,6 +1200,9 @@ void TesseraModule::process(const ProcessArgs& args) {
     if (launcherStatusDivider.process())
         publishLauncherStatus();
 
+    if (!slowTick)
+        return;
+    mainConnected.store(outputs[MAIN_L_OUTPUT].isConnected(), std::memory_order_relaxed);
     uiPlayhead.store(engine.position(), std::memory_order_relaxed);
     uiPendingSeek.store(engine.pendingSeek(), std::memory_order_relaxed);
     uiPlayTick.store(engine.playPosition(), std::memory_order_relaxed);
@@ -1196,24 +1212,25 @@ void TesseraModule::process(const ProcessArgs& args) {
     uiRecording.store(engine.recording(), std::memory_order_relaxed);
     uiCountingIn.store(engine.countingIn(), std::memory_order_relaxed);
 
+    float elapsed = args.sampleTime * float(kSlowTickSamples);
     lights[PLAY_LIGHT].setBrightness(engine.isPlaying());
     lights[LOOP_LIGHT].setBrightness(params[LOOP_PARAM].getValue());
     lights[MODE_LIGHT].setBrightness(params[MODE_PARAM].getValue());
-    lights[BEAT_LIGHT].setBrightness(beatFlash.process(args.sampleTime));
+    lights[BEAT_LIGHT].setBrightness(beatFlash.process(elapsed));
     // Steady while recording, blinking through the count-in.
-    recBlink = std::fmod(recBlink + args.sampleTime * 4.f, 1.f);
+    recBlink = std::fmod(recBlink + elapsed * 4.f, 1.f);
     lights[REC_LIGHT].setBrightness(engine.recording() ? 1.f : engine.countingIn() ? (recBlink < 0.5f) : 0.f);
 }
 
-void TesseraModule::handleTransportControls(const ProcessArgs& args) {
+void TesseraModule::handleTransportControls(const ProcessArgs& args, bool slowTick) {
     auto toggle = [this] { engine.isPlaying() ? engine.stop() : engine.play(); };
 
-    if (playButton.process(params[PLAY_PARAM].getValue() > 0.f))
+    if (slowTick && playButton.process(params[PLAY_PARAM].getValue() > 0.f))
         toggle();
-    if (recButton.process(params[REC_PARAM].getValue() > 0.f))
+    if (slowTick && recButton.process(params[REC_PARAM].getValue() > 0.f))
         engine.toggleRecord(countInBars.load(std::memory_order_relaxed));
 
-    bool resetNow = resetButton.process(params[RESET_PARAM].getValue() > 0.f);
+    bool resetNow = slowTick && resetButton.process(params[RESET_PARAM].getValue() > 0.f);
     resetNow |= resetInput.process(inputs[RESET_INPUT].getVoltage(), kGateLow, kGateHigh);
     if (resetNow) {
         engine.reset();
@@ -1232,18 +1249,20 @@ void TesseraModule::handleTransportControls(const ProcessArgs& args) {
         }
     }
 
-    if (tapButton.process(params[TAP_PARAM].getValue() > 0.f)) {
+    if (slowTick && tapButton.process(params[TAP_PARAM].getValue() > 0.f)) {
         double bpm = tapTempo.tap(double(args.frame) / args.sampleRate);
         if (bpm > 0)
             params[BPM_PARAM].setValue(float(std::clamp(bpm, Engine::kMinBpm, Engine::kMaxBpm)));
     }
 }
 
-void TesseraModule::followClock(const ProcessArgs& args) {
+void TesseraModule::followClock(const ProcessArgs& args, bool slowTick) {
     bool external = inputs[CLOCK_INPUT].isConnected();
-    uiExternalClock.store(external, std::memory_order_relaxed);
+    if (slowTick)
+        uiExternalClock.store(external, std::memory_order_relaxed);
     if (!external) {
-        engine.setTempo(params[BPM_PARAM].getValue());
+        if (slowTick)
+            engine.setTempo(params[BPM_PARAM].getValue());
         clockWasPlaying = engine.isPlaying();
         return;
     }
@@ -1296,12 +1315,12 @@ void TesseraModule::handleUiRequests() {
         engine.launch(launchEvent);
 }
 
-void TesseraModule::handleSceneControls() {
+void TesseraModule::handleSceneControls(bool slowTick) {
     int count = std::max(1, engine.sceneCount());
     int scene = std::min(sceneSelected.load(std::memory_order_relaxed), count - 1);
-    if (scenePrevButton.process(params[SCENE_PREV_PARAM].getValue() > 0.f))
+    if (slowTick && scenePrevButton.process(params[SCENE_PREV_PARAM].getValue() > 0.f))
         scene = std::max(0, scene - 1);
-    if (sceneNextButton.process(params[SCENE_NEXT_PARAM].getValue() > 0.f))
+    if (slowTick && sceneNextButton.process(params[SCENE_NEXT_PARAM].getValue() > 0.f))
         scene = std::min(count - 1, scene + 1);
     if (inputs[SCENE_INPUT].isConnected()) {
         float v = inputs[SCENE_INPUT].getVoltage();
@@ -1309,13 +1328,14 @@ void TesseraModule::handleSceneControls() {
         scene = rack::math::clamp(int(std::round(v / perScene)), 0, count - 1);
     }
     sceneSelected.store(scene, std::memory_order_relaxed);
-    uiSceneCount.store(count, std::memory_order_relaxed);
+    if (slowTick)
+        uiSceneCount.store(count, std::memory_order_relaxed);
 
-    bool launchNow = sceneLaunchButton.process(params[SCENE_LAUNCH_PARAM].getValue() > 0.f);
+    bool launchNow = slowTick && sceneLaunchButton.process(params[SCENE_LAUNCH_PARAM].getValue() > 0.f);
     launchNow |= launchInput.process(inputs[LAUNCH_INPUT].getVoltage(), kGateLow, kGateHigh);
     if (launchNow)
         engine.launch({LaunchEvent::Kind::Scene, 0, scene});
-    if (stopAllButton.process(params[STOP_ALL_PARAM].getValue() > 0.f))
+    if (slowTick && stopAllButton.process(params[STOP_ALL_PARAM].getValue() > 0.f))
         engine.launch({LaunchEvent::Kind::StopAll});
 }
 
@@ -1375,7 +1395,7 @@ void TesseraModule::writeTransportOutputs(const ProcessArgs& args) {
         beatFlash.trigger(kBeatFlashSeconds);
     }
     // Measuring the recording offset: one click, timed from this sample.
-    if (measureClick.exchange(false, std::memory_order_acq_rel)) {
+    if (measureClick.load(std::memory_order_relaxed) && measureClick.exchange(false, std::memory_order_acq_rel)) {
         clickPulse.trigger(kTriggerSeconds);
         clickLevel = 10.f;
     }

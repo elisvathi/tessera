@@ -368,8 +368,8 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
     right.push_back(button(options(Icon::Close, "", withShortcut("Close editor", Action::Close), onClose)));
 
     auto inspector = options(Icon::Inspector, "", withShortcut("Inspector", Action::ToggleInspector),
-                             [c] { c->view().inspectorOpen = !c->view().inspectorOpen; });
-    inspector.active = [c] { return c->module() && c->view().inspectorOpen; };
+                             [c] { c->state().inspectorOpen = !c->state().inspectorOpen; });
+    inspector.active = [c] { return c->module() && c->state().inspectorOpen; };
     right.push_back(button(inspector));
 
     // A small on/off icon: whether to follow is often toggled, how (page or scroll) is set once in View.

@@ -62,79 +62,29 @@ struct ArrangerRange {
     bool covers(TrackId id) const { return std::find(tracks.begin(), tracks.end(), id) != tracks.end(); }
 };
 
-/// Layout and view settings of one editor surface. The overlay and the panel each keep their own, so zooming
-/// one never moves the other.
+/// Layout and view settings of one editor surface. The overlay and the panel each keep their own, so
+/// sizing one window's panes never moves the other. Everything else is shared (EditorState).
 /// EditorState's lowerLane value for the playheads' time map (docs/design/PLAYHEADS.md §3.3); no lane ID is this.
 constexpr uint64_t kTimeMapLane = ~uint64_t(0);
 /// EditorState's lowerLane value for a Curve modulator's shape (EditorContext::curveModulator, curveTarget).
 constexpr uint64_t kCurveLane = ~uint64_t(0) - 1;
 
 struct ViewState {
-    float topFraction = 0.45f; // share of the height above the splitter
-    float headerWidth = 190;   // track header column, px at 100% scale
-    bool inspectorOpen = true;
-    Pane focus = Pane::Detail;
-    std::optional<Pane> maximized;
-    bool deviceStrip = true;        // the selected track's devices show above its notes (docs/DEVICES.md §1.1)
-    bool drumLanes = true;          // drum tracks show lanes and step cells (G switches to the keys)
+    float headerWidth = 190;        // track header column, px at 100% scale
     float launcherPanelWidth = 233; // px: the clips beside the timeline, three scenes by default
-    bool clipsWide = false;         // performing: the clips take the width, the timeline folds to a strip (F2)
-    bool mixerOpen = false;         // the mixer pane under the notes pane; folded to its tab by default
     float mixerHeight = 260;        // px when open
-    // Show sends (§7.6): the mixer's faders show the sends to this track. Not saved. The faders glide from what
-    // they showed before (`sendsFrom`: the previous target, or none for volumes) since `sendsSince`.
-    TrackId showSends;
-    TrackId sendsFrom;
-    double sendsSince = -1;
-    /// Enters Show sends for `track`, or leaves it with an invalid ID.
-    void setShowSends(TrackId track, double now) {
-        if (track == showSends)
-            return;
-        sendsFrom = showSends;
-        showSends = track;
-        sendsSince = now;
-    }
+    double launcherScrollX = 0;     // px across the track columns
+    double launcherScrollY = 0;     // px down the scenes
+    double curveHeight = 0;         // the curve pane's height when dragged, px; 0 = the default
 
-    // A zero zoom means "not set yet": the view fits its content the first time it opens.
-    TimeAxis::State arranger{0, 0};
-    TimeAxis::State detail{0, 0};
-    PitchAxis::State pitch{0, 0};
-    double trackScroll = 0;
-    double launcherScrollX = 0;              // px across the track columns
-    double launcherScrollY = 0;              // px down the scenes
-    std::map<uint64_t, double> trackHeights; // by TrackId value
-    std::set<uint64_t> foldedInputs;         // tracks whose input strips are folded in the mixer, session only
-    std::set<uint64_t> foldedGroups;         // by GroupId value
-    std::set<uint64_t> openAutomation;       // tracks showing their automation lanes, by TrackId value
-    std::map<uint64_t, double> laneHeights;  // by AutomationId value
-    uint64_t lowerLane = 0;                  // the piano roll's lower pane: 0 = a note lane, else a clip lane
-    double curveHeight = 0;                  // the curve pane's height when dragged, px; 0 = the default
-    NoteLane noteLane = NoteLane::Velocity;
-
-    double defaultTrackHeight = 48; // for tracks never resized in this view
-
-    double trackHeight(TrackId id) const {
-        auto it = trackHeights.find(id.value);
-        return it == trackHeights.end() ? defaultTrackHeight : it->second;
-    }
-    double laneHeight(AutomationId id) const {
-        auto it = laneHeights.find(id.value);
-        return it == laneHeights.end() ? defaultTrackHeight * 1.2 : it->second;
-    }
-
-    /// Forgets what belongs to one song: zoom and scroll, and sizes and folds kept per track, group or lane. The
-    /// layout (splitter, header width, inspector, maximized pane) stays.
+    /// Forgets the clips panel scroll, which belongs to one song. The pane layout stays.
     void forgetSong();
 
     /// Starting layout for the in-panel editor, which is only 380 px tall at 100% rack zoom.
     static ViewState compact() {
         ViewState v;
         v.headerWidth = 150;
-        v.defaultTrackHeight = 24; // the shortest a track row gets: a module is only 380 px tall
-        v.topFraction = 0.42f;
-        v.inspectorOpen = false;
         v.launcherPanelWidth = 160; // two scenes: the panel editor is small and the timeline needs room
-        v.deviceStrip = false;
         return v;
     }
 };
@@ -160,6 +110,70 @@ struct EditorState {
     std::vector<TrackId> selectedTracks; // header multi-selection, session only
     FollowMode follow = FollowMode::Page;
 
+    // Shared by both surfaces: what is open follows you too. Only zoom, scroll and sizes differ (ViewState).
+    bool deviceStrip = true; // the selected track's devices show above its notes (docs/DEVICES.md §1.1)
+    bool drumLanes = true;   // drum tracks show lanes and step cells (G switches to the keys)
+    bool mixerOpen = false;  // the notes pane shows the mixer
+    uint64_t lowerLane = 0;  // the piano roll's lower pane: 0 = a note lane, else a clip lane
+    NoteLane noteLane = NoteLane::Velocity;
+    // The panes.
+    float topFraction = 0.45f; // share of the height above the splitter
+    bool inspectorOpen = true;
+    Pane focus = Pane::Detail;
+    std::optional<Pane> maximized;
+    bool clipsWide = false; // performing: the clips take the width, the timeline folds to a strip (F2)
+    // Where the views are. One editor drives them (EditorContext::drivesView); the other copies. A zero zoom means
+    // "not set yet": the view fits its content the first time it opens.
+    TimeAxis::State arranger{0, 0};
+    TimeAxis::State detail{0, 0};
+    PitchAxis::State pitch{0, 0};
+    double pitchViewHeight = 0; // how tall the driving editor's notes view is: the other centres on the same rows
+    double trackScroll = 0;
+    TimeAxis::State curveTime{0, 0};                  // the curve pane's zoom and scroll, session only
+    uint64_t curveTimeFor = 0;                        // the ModulatorId `curveTime` belongs to
+    std::map<uint64_t, double> trackHeights;          // by TrackId value
+    std::map<uint64_t, double> laneHeights;           // by AutomationId value
+    std::set<uint64_t> foldedInputs;                  // tracks whose input strips are folded in the mixer, session only
+    std::set<uint64_t> foldedGroups;                  // by GroupId value
+    std::set<uint64_t> openAutomation;                // tracks showing their automation lanes, by TrackId value
+    static constexpr double kDefaultTrackHeight = 48; // for tracks never resized
+    // Show sends (§7.6): the mixer's faders show the sends to this track. Not saved. The faders glide from what
+    // they showed before (`sendsFrom`: the previous target, or none for volumes) since `sendsSince`.
+    TrackId showSends;
+    TrackId sendsFrom;
+    double sendsSince = -1;
+    /// Enters Show sends for `track`, or leaves it with an invalid ID.
+    void setShowSends(TrackId track, double now) {
+        if (track == showSends)
+            return;
+        sendsFrom = showSends;
+        showSends = track;
+        sendsSince = now;
+    }
+    /// How tall a track's row is: what it was dragged to, else the default.
+    double trackHeight(TrackId id) const {
+        auto it = trackHeights.find(id.value);
+        return it == trackHeights.end() ? kDefaultTrackHeight : it->second;
+    }
+    /// How tall an automation lane's row is.
+    double laneHeight(AutomationId id) const {
+        auto it = laneHeights.find(id.value);
+        return it == laneHeights.end() ? kDefaultTrackHeight * 1.2 : it->second;
+    }
+    // The device strip, session only: IDs, so nothing points into the song across frames.
+    uint64_t openModulator = 0;    // ModulatorId whose settings popover is open
+    uint64_t selectedDevice = 0;   // DeviceId of the selected card (Delete removes it)
+    uint64_t stripOpenedFor = 0;   // TrackId whose empty device strip was opened by hand
+    uint64_t selectedPlayhead = 0; // PlayheadId shown on the Playheads card, the ruler and the lower pane
+    // The Curve modulator the lower pane shows; when 0, the setting it would move once a point is drawn. Session only.
+    uint64_t curveModulator = 0;
+    ParamRef curveTarget;
+    TrackId curveOpenedOn; // the track selected when the curve pane opened
+
+    /// Closes the curve pane when another track was selected since it opened: a curve belongs to the track you opened
+    /// it on.
+    void closeCurveIfTrackChanged();
+
     float uiScale = 0; // overlay size; 0 = follow Rack's UI scale
     int panelHp = kPanelMinHp;
 
@@ -178,14 +192,14 @@ struct EditorState {
     render::Options exportOptions; // the MIDI export dialog's last settings
     TrackId ghostTrack;            // GhostSource::Track
     // Scale tools (DESIGN.md §13). They do nothing while the key is chromatic.
-    bool scaleHighlight = true;                 // tint scale rows, mark the root, flag notes outside the key
-    bool scaleSnap = false;                     // new and moved notes land on the key; Up/Down step through it
-    bool scaleFold = false;                     // only rows of the key are shown
-    bool keyMovesNotes = true;                  // a key change moves notes to the new key, same degrees
-    KeyPreview keyPreview;                      // session only
-    ChordStamp chord;                           // Draw places this chord
-    NoteSelection selection;                    // session only
-    arrange::IdSet clipSelection;               // arranger instances, session only
+    bool scaleHighlight = true;   // tint scale rows, mark the root, flag notes outside the key
+    bool scaleSnap = false;       // new and moved notes land on the key; Up/Down step through it
+    bool scaleFold = false;       // only rows of the key are shown
+    bool keyMovesNotes = true;    // a key change moves notes to the new key, same degrees
+    KeyPreview keyPreview;        // session only
+    ChordStamp chord;             // Draw places this chord
+    NoteSelection selection;      // session only
+    arrange::IdSet clipSelection; // arranger instances, session only
     // The timeline clips the last audio drop made. Their title bars show the big form ("92 BPM · 2 bars ·
     // Stretch") for as long as they are what is selected. Session only.
     arrange::IdSet freshAudio;
@@ -195,10 +209,10 @@ struct EditorState {
     // The drum hit whose curve the lower pane is zoomed onto (double-click its stem), session only. Esc goes back.
     ClipId curveFocusClip;
     NoteId curveFocusNote;
-    bool rangeTool = false;                     // drags in the arranger select time ranges
-    bool ripple = false;                        // edit mode: deleting closes gaps (EDITOR_UX §6.4)
-    bool stackClips = true;                     // overlapping clips on a track stack and play together
-    bool automationFollowsClips = true;         // moving or copying clips carries track automation
+    bool rangeTool = false;             // drags in the arranger select time ranges
+    bool ripple = false;                // edit mode: deleting closes gaps (EDITOR_UX §6.4)
+    bool stackClips = true;             // overlapping clips on a track stack and play together
+    bool automationFollowsClips = true; // moving or copying clips carries track automation
     // Playing notes into the editor (EDITOR_UX §4.2, §4.10). Session only.
     bool stepInput = false;    // played notes are written at the step cursor
     Tick stepCursor = 0;       // clip ticks

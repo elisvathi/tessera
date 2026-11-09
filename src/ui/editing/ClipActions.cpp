@@ -132,7 +132,7 @@ void select(EditorContext& ctx, TrackId track, ClipId clip) {
     state.selectedTrack = track;
     state.selectedTracks = {track};
     state.selectedClip = clip;
-    ctx.view().mixerOpen = false;
+    ctx.state().mixerOpen = false;
 }
 
 void editTogether(EditorContext& ctx, const std::vector<ClipId>& clips, TrackId track, ClipId open) {
@@ -142,7 +142,7 @@ void editTogether(EditorContext& ctx, const std::vector<ClipId>& clips, TrackId 
             unique.push_back(id);
     ctx.state().layered = unique.size() > 1 ? unique : std::vector<ClipId>();
     select(ctx, track, open);
-    ctx.view().focus = Pane::Detail;
+    ctx.state().focus = Pane::Detail;
 }
 
 TrackId trackOf(const Song& song, ClipId clip) {
@@ -227,8 +227,8 @@ void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipI
     EditorContext* c = &ctx;
     auto setColor = [c, clips](uint32_t color) {
         TesseraModule* mod = c->module();
-        std::string name = clips.size() == 1 ? "Change clip colour" : "Change colour of " +
-                                                                          std::to_string(clips.size()) + " clips";
+        std::string name =
+            clips.size() == 1 ? "Change clip colour" : "Change colour of " + std::to_string(clips.size()) + " clips";
         auto all = std::make_unique<CompoundCommand>(name);
         for (ClipId id : clips)
             all->add(setClipField(mod->song(), id, &Clip::ownColor, color, name));

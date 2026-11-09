@@ -19,7 +19,7 @@ class EditorPane : public rack::widget::Widget {
     virtual void layout() = 0;
 
     Pane pane() const { return which; }
-    bool focused() { return ctx.view().focus == which; }
+    bool focused() { return ctx.state().focus == which; }
 
     void onButton(const ButtonEvent& e) override;
     void draw(const DrawArgs& args) override;

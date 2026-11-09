@@ -15,6 +15,66 @@
 
 using namespace tessera;
 
+TEST_CASE("what is open is one state for both editors and survives a save") {
+    EditorState s;
+    s.deviceStrip = false;
+    s.lowerLane = 42;
+    s.mixerOpen = true;
+    json::Ref saved(s.toJson());
+    EditorState back = EditorState::fromJson(saved.get());
+    CHECK_FALSE(back.deviceStrip);
+    CHECK(back.lowerLane == 42);
+    CHECK(back.mixerOpen);
+}
+
+TEST_CASE("an older patch's open state comes from its surfaces") {
+    json::Ref old(json_loads(R"({"overlay": {"deviceStrip": false, "lowerLane": 7}, "panel": {"deviceStrip": true}})",
+                             0, nullptr));
+    EditorState s = EditorState::fromJson(old.get());
+    CHECK(s.deviceStrip);
+    CHECK(s.lowerLane == 7);
+}
+
+TEST_CASE("zoom, scroll, heights and open lanes are one state and survive a save") {
+    EditorState s;
+    s.detail = {480, 0.4};
+    s.pitch = {30, 18};
+    s.trackScroll = 72;
+    s.trackHeights[3] = 90;
+    s.openAutomation.insert(3);
+    json::Ref saved(s.toJson());
+    EditorState back = EditorState::fromJson(saved.get());
+    CHECK(back.detail == s.detail);
+    CHECK(back.pitch == s.pitch);
+    CHECK(back.trackScroll == 72);
+    CHECK(back.trackHeight(TrackId(3)) == 90);
+    CHECK(back.trackHeight(TrackId(4)) == EditorState::kDefaultTrackHeight);
+    CHECK(back.openAutomation.count(3) == 1);
+}
+
+TEST_CASE("an older patch's views come from the full editor's") {
+    json::Ref old(
+        json_loads(R"({"overlay": {"detail": [960, 0.3], "trackHeights": [[5, 80]]}, "panel": {"detail": [0, 0.9]}})",
+                   0, nullptr));
+    EditorState s = EditorState::fromJson(old.get());
+    CHECK(s.detail.pxPerTick == doctest::Approx(0.3));
+    CHECK(s.trackHeight(TrackId(5)) == 80);
+}
+
+TEST_CASE("the curve pane closes when another track is selected") {
+    EditorState s;
+    s.selectedTrack = TrackId(1);
+    s.curveOpenedOn = TrackId(1);
+    s.curveModulator = 9;
+    s.lowerLane = kCurveLane;
+    s.closeCurveIfTrackChanged();
+    CHECK(s.lowerLane == kCurveLane);
+    s.selectedTrack = TrackId(2);
+    s.closeCurveIfTrackChanged();
+    CHECK(s.lowerLane == 0);
+    CHECK(s.curveModulator == 0);
+}
+
 TEST_CASE("TimeAxis: zoom keeps the tick under the cursor in place") {
     TimeAxis axis;
     axis.setViewWidth(1000);
@@ -356,21 +416,20 @@ TEST_CASE("editor state survives a save and load, with separate overlay and pane
     s.uiScale = 1.25f;
     s.panelHp = 80;
     ViewState& v = s.overlay;
-    v.topFraction = 0.3f;
+    s.topFraction = 0.3f;
     v.headerWidth = 220;
-    v.inspectorOpen = false;
-    v.focus = Pane::Top;
-    v.maximized = Pane::Detail;
-    v.arranger = {3840, 0.02};
-    v.detail = {960, 0.3};
-    v.pitch = {40, 14};
-    v.trackScroll = 12;
-    v.trackHeights[7] = 96;
-    v.clipsWide = true;
+    s.inspectorOpen = false;
+    s.focus = Pane::Top;
+    s.maximized = Pane::Detail;
+    s.arranger = {3840, 0.02};
+    s.detail = {960, 0.3};
+    s.pitch = {40, 14};
+    s.trackScroll = 12;
+    s.trackHeights[7] = 96;
+    s.clipsWide = true;
     v.launcherScrollX = 30;
     v.launcherScrollY = 44;
     s.selectedClip = ClipId(12);
-    s.panel.detail = {0, 0.5};
     s.tool = Tool::Slice;
     s.snap.adaptive = false;
     s.snap.division = GridDivision::Eighth;
@@ -379,7 +438,6 @@ TEST_CASE("editor state survives a save and load, with separate overlay and pane
     s.lastLength = 720;
     s.lastVelocity = 0.42f;
     s.audition = false;
-    s.panel.pitch = {50, 10};
     s.scaleHighlight = false;
     s.scaleSnap = true;
     s.scaleFold = true;
@@ -403,28 +461,24 @@ TEST_CASE("editor state survives a save and load, with separate overlay and pane
     CHECK(t.scaleFold);
     CHECK(t.chord == s.chord);
     const ViewState& o = t.overlay;
-    CHECK(o.topFraction == v.topFraction);
+    CHECK(t.topFraction == s.topFraction);
     CHECK(o.headerWidth == v.headerWidth);
-    CHECK(o.inspectorOpen == v.inspectorOpen);
-    CHECK(o.focus == v.focus);
-    CHECK(o.maximized == v.maximized);
-    CHECK(o.arranger == v.arranger);
-    CHECK(o.detail == v.detail);
-    CHECK(o.pitch == v.pitch);
-    CHECK(o.trackScroll == v.trackScroll);
-    CHECK(o.clipsWide);
+    CHECK(t.inspectorOpen == s.inspectorOpen);
+    CHECK(t.focus == s.focus);
+    CHECK(t.maximized == s.maximized);
+    CHECK(t.arranger == s.arranger);
+    CHECK(t.detail == s.detail);
+    CHECK(t.pitch == s.pitch);
+    CHECK(t.trackScroll == s.trackScroll);
+    CHECK(t.clipsWide);
     CHECK(o.launcherScrollX == 30);
     CHECK(o.launcherScrollY == 44);
-    CHECK_FALSE(t.panel.clipsWide);
-    CHECK(o.trackHeight(TrackId(7)) == 96);
-    CHECK(o.trackHeight(TrackId(8)) == ViewState().defaultTrackHeight);
+    CHECK(t.trackHeight(TrackId(7)) == 96);
+    CHECK(t.trackHeight(TrackId(8)) == EditorState::kDefaultTrackHeight);
     CHECK(t.panel.headerWidth == ViewState::compact().headerWidth); // the panel keeps its compact defaults
-    CHECK(t.panel.detail == s.panel.detail);
-    CHECK(t.panel.pitch == s.panel.pitch);
-    CHECK(t.panel.arranger.pxPerTick == 0); // never set: fits on first open
 
     EditorState fallback = EditorState::fromJson(nullptr);
-    CHECK(fallback.overlay.topFraction == ViewState().topFraction);
+    CHECK(fallback.topFraction == EditorState().topFraction);
     CHECK(fallback.panelHp == EditorState::kPanelMinHp);
 }
 
@@ -433,9 +487,9 @@ TEST_CASE("an editor layout saved by milestone 3 loads as the overlay view") {
                                  "follow": "continuous", "selectedTrack": 4, "panelHp": 9999})",
                              0, nullptr));
     EditorState s = EditorState::fromJson(old.get());
-    CHECK(s.overlay.topFraction == doctest::Approx(0.3));
-    CHECK(s.overlay.focus == Pane::Top);
-    CHECK(s.overlay.detail.pxPerTick == doctest::Approx(0.3));
+    CHECK(s.topFraction == doctest::Approx(0.3));
+    CHECK(s.focus == Pane::Top);
+    CHECK(s.detail.pxPerTick == doctest::Approx(0.3));
     CHECK(s.follow == FollowMode::Continuous);
     CHECK(s.selectedTrack == TrackId(4));
     CHECK(s.panelHp == EditorState::kPanelMaxHp);
@@ -443,23 +497,23 @@ TEST_CASE("an editor layout saved by milestone 3 loads as the overlay view") {
 
 TEST_CASE("the mixer shares the notes pane: older saves that had it as its own pane load into the notes pane") {
     EditorState s;
-    s.overlay.mixerOpen = true;
-    s.overlay.maximized = Pane::Detail;
+    s.mixerOpen = true;
+    s.maximized = Pane::Detail;
     json::Ref j(s.toJson());
     EditorState t = EditorState::fromJson(j.get());
-    CHECK(t.overlay.mixerOpen);
-    CHECK(t.overlay.maximized == Pane::Detail);
+    CHECK(t.mixerOpen);
+    CHECK(t.maximized == Pane::Detail);
 
     json::Ref old(json_loads(R"({"overlay": {"mixerOpen": true, "mixerMax": true}})", 0, nullptr));
     EditorState o = EditorState::fromJson(old.get());
-    CHECK(o.overlay.mixerOpen);
-    CHECK(o.overlay.maximized == Pane::Detail);
+    CHECK(o.mixerOpen);
+    CHECK(o.maximized == Pane::Detail);
 
     json::Ref pane(json_loads(R"({"overlay": {"focus": "mixer", "maximized": "mixer"}})", 0, nullptr));
     EditorState p = EditorState::fromJson(pane.get());
-    CHECK(p.overlay.focus == Pane::Detail);
-    CHECK(p.overlay.maximized == Pane::Detail);
-    CHECK(p.overlay.mixerOpen);
+    CHECK(p.focus == Pane::Detail);
+    CHECK(p.maximized == Pane::Detail);
+    CHECK(p.mixerOpen);
 }
 
 TEST_CASE("the device browser finds devices by name and by what they do") {
@@ -500,10 +554,10 @@ TEST_CASE("a new song forgets the old one's selections and per-track views, and 
     s.range.from = 0;
     s.range.to = kPpq;
     s.range.tracks = {TrackId(7)};
-    s.overlay.trackHeights[7] = 90;
-    s.overlay.openAutomation.insert(7);
-    s.panel.laneHeights[4] = 50;
-    s.overlay.trackScroll = 120;
+    s.trackHeights[7] = 90;
+    s.openAutomation.insert(7);
+    s.laneHeights[4] = 50;
+    s.trackScroll = 120;
     // Preferences
     s.tool = Tool::Draw;
     s.scaleSnap = true;
@@ -518,10 +572,10 @@ TEST_CASE("a new song forgets the old one's selections and per-track views, and 
     CHECK(s.layered.empty());
     CHECK(s.ghosts == GhostSource::None);
     CHECK(s.range.empty());
-    CHECK(s.overlay.trackHeights.empty());
-    CHECK(s.overlay.openAutomation.empty());
-    CHECK(s.panel.laneHeights.empty());
-    CHECK(s.overlay.trackScroll == 0);
+    CHECK(s.trackHeights.empty());
+    CHECK(s.openAutomation.empty());
+    CHECK(s.laneHeights.empty());
+    CHECK(s.trackScroll == 0);
     CHECK(s.tool == Tool::Draw);
     CHECK(s.scaleSnap);
     CHECK(s.panelHp == 80);

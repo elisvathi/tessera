@@ -68,6 +68,9 @@ When the pane is less than about 200 px tall, for example in the in-panel editor
 knob, with what is sounding on the ring inside it, a pan knob, **M** and **S**. Drag the level knob up or down; everything
 else works the same.
 
+The knobs sit one above the other, spaced to fill the strip, with the level in dB when there is room for it. In a very short
+pane, under about 80 px, they sit side by side.
+
 ## Sending to other tracks
 
 To share one effect between tracks, send to it. Any track can receive sends: add a track, name it "Reverb", patch

@@ -73,16 +73,25 @@ struct ExportNote {
     int pitch;
     float velocity, release;
     uint8_t channel = 1;
+    std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr; // the note's own curves, across its length
 };
 /// Every note a track plays on the timeline with the chosen timing, operators and devices: what MIDI export writes
 /// for it (the whole song; muted clips only with `includeMuted`).
 std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Options& o, const Context& ctx);
 /// One clip played once from its start on its track, with the same choices (as renderClip).
 std::vector<ExportNote> clipNotes(const Song& song, TrackId track, ClipId clip, const Options& o, const Context& ctx);
-/// An AUTO channel's value (0..1) over [from, to) as MIDI export samples it, one entry per change; empty when no
-/// lane plays on the channel.
+/// An AUTO channel's value (0..1) over [from, to) as MIDI export samples it, one entry per change: its lanes, plus the
+/// modulators sent to it that move with the song. Empty when nothing plays on the channel.
 std::vector<std::pair<Tick, float>> laneSamples(const Song& song, TrackId track, int output, const Options& o,
                                                 Tick from, Tick to);
+/// The same for `clip` played once from its start on its track, ticks counted from there.
+std::vector<std::pair<Tick, float>> clipLaneSamples(const Song& song, TrackId track, ClipId clip, int output,
+                                                    const Options& o, Tick to);
+/// Whether a modulator that moves with the song is sent to AUTO channel `output` of `track`.
+bool modulatedOutput(const Song& song, TrackId track, int output);
+/// A track's pitch or pressure lane (`drive` says which) over [from, to), sampled as laneSamples does.
+std::vector<std::pair<Tick, float>> driveSamples(const Song& song, TrackId track, LaneDrive drive, const Options& o,
+                                                 Tick from, Tick to);
 
 /// The pitch playhead `p` first plays each of `clip`'s notes at, over pass `pass` of the clip (as if launched at the
 /// song's start, so synced modulators line up), by note index; -1 for notes it doesn't reach then. For the piano

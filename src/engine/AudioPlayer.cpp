@@ -174,6 +174,7 @@ void AudioPlayer::setSnapshot(const AudioSnapshot* next) {
                 break;
             }
         spare[j].cursor = 0;
+        spare[j].resting = false;
         runIds[j] = id;
     }
     // Tracks that went away keep fading out where nothing else needs the room.
@@ -249,6 +250,12 @@ void AudioPlayer::startBlock(const Engine& engine) {
             }
     };
     size_t count = snapshot ? std::min<size_t>(snapshot->tracks.size(), kMaxTracks) : 0;
+    for (size_t i = 0; i < count; i++)
+        runs[i].fed = false;
+    for (size_t i = 0; i < count; i++)
+        for (const SendPlay& s : snapshot->tracks[i].sends)
+            if (s.to >= 0 && s.to < int(kMaxTracks))
+                runs[size_t(s.to)].fed = true;
     for (size_t i = 0; i < count; i++) {
         const AudioTrackPlay& t = snapshot->tracks[i];
         float volume = t.volume, pan = t.pan;
@@ -422,7 +429,10 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
     if (blockPos == 0) {
         blockTempo = tempo;
         blockSteady = playing && !jumped;
+        blockPlaying = playing;
     }
+    // A silent track is only asked what should play once a block; these are what can change the answer sooner.
+    bool undisturbed = blockPos != 0 && playing == blockPlaying && !jumped && tempo == blockTempo;
     bool steady = blockPos != 0 && blockSteady && playing && !jumped && tempo == blockTempo;
     if (blockPos != 0 && !steady)
         blockSteady = false;
@@ -430,8 +440,32 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
     float masterL = 0, masterR = 0;
     for (size_t i = 0; i < count + ghosts; i++) {
         TrackRun& run = runs[i];
-        bool quick = steady && run.steady &&
-                     (run.slot < 0 || (run.engineIndex >= 0 && engine.playingSlot(size_t(run.engineIndex)) == run.slot));
+        if (run.resting) {
+            if (undisturbed && (run.engineIndex < 0 || engine.playingSlot(size_t(run.engineIndex)) == run.slot)) {
+                // Silence still goes out: OUT and the delay line would otherwise repeat an old sample.
+                const AudioTrackPlay& tp = snapshot->tracks[i];
+                if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks) {
+                    if (rack.out)
+                        rack.out[tp.busSlot] = {tp.id.value, 0.f, 0.f};
+                    if (float* mem = delays.load(std::memory_order_acquire)) {
+                        float* line = mem + size_t(tp.busSlot) * 2 * kMaxDelay;
+                        line[delayPos * 2] = 0;
+                        line[delayPos * 2 + 1] = 0;
+                    }
+                }
+                continue;
+            }
+            run.resting = false;
+            // Its gains are already at the end of this block; the samples left in it must not ramp them further.
+            if (blockPos != 0) {
+                run.stepL = run.stepR = run.outStep = run.heardStep = run.heardOwnStep = run.clipsStep = 0;
+                run.sendStep = {};
+            }
+        }
+        int wantedNow = 0;
+        bool quick =
+            steady && run.steady &&
+            (run.slot < 0 || (run.engineIndex >= 0 && engine.playingSlot(size_t(run.engineIndex)) == run.slot));
         if (quick) {
             for (Voice& v : run.voices)
                 if (v.on)
@@ -446,6 +480,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                     run.steady = steadyAhead(engine, snapshot->tracks[i], run, want, n, song);
             }
             follow(run, want, n);
+            wantedNow = n;
         }
 
         float sl = 0, sr = 0;
@@ -575,6 +610,19 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         run.stemR = sr;
         run.peakL = std::max(run.peakL, std::abs(sl));
         run.peakR = std::max(run.peakR, std::abs(sr));
+        if (blockPos == 0 && i < count && canRest(engine, snapshot->tracks[i], run, wantedNow, playing, song)) {
+            // Resting skips the ramps, so its gains go straight to where this block ends.
+            float rest = float(kBlock - 1);
+            run.resting = true;
+            run.gainL += run.stepL * rest;
+            run.gainR += run.stepR * rest;
+            run.outGain += run.outStep * rest;
+            run.heardGain += run.heardStep * rest;
+            run.heardOwnGain += run.heardOwnStep * rest;
+            run.clipsGain += run.clipsStep * rest;
+            for (size_t k = 0; k < size_t(kMaxSendsPerTrack); k++)
+                run.sendGain[k] += run.sendStep[k] * rest;
+        }
         int group = i < count ? snapshot->tracks[i].group : -1;
         if (group >= 0 && group < int(kMaxTracks)) {
             groupRuns[size_t(group)].busL += sl;
@@ -649,8 +697,9 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             outMeters[i].store(std::max(run.outPeak, outMeters[i].load(std::memory_order_relaxed) * fall),
                                std::memory_order_relaxed);
             for (size_t k = 0; k < size_t(kMaxSendsPerTrack); k++) {
-                sendMeters[i][k].store(std::max(run.sendPeak[k], sendMeters[i][k].load(std::memory_order_relaxed) * fall),
-                                       std::memory_order_relaxed);
+                sendMeters[i][k].store(
+                    std::max(run.sendPeak[k], sendMeters[i][k].load(std::memory_order_relaxed) * fall),
+                    std::memory_order_relaxed);
                 run.sendPeak[k] = 0;
             }
             run.peakL = run.peakR = 0;
@@ -698,8 +747,8 @@ float AudioPlayer::envelopeOf(const AudioInstancePlay& a, double songTick, doubl
         g *= fadeShape(float(out / outLen), a.fadeOut.curve, a.overlapOut > 0);
     // The silent safety fades, so no edge ever clicks. Where an edge and a loop seam's dip fall together, the
     // lower of them counts, not both: two 2 ms fades on top of each other would be twice as steep.
-    double safety = std::min({1.0, in * secondsPerSongTick / kEdgeFadeSeconds, out * secondsPerSongTick / kEdgeFadeSeconds,
-                              double(seam)});
+    double safety = std::min(
+        {1.0, in * secondsPerSongTick / kEdgeFadeSeconds, out * secondsPerSongTick / kEdgeFadeSeconds, double(seam)});
     return g * float(safety);
 }
 
@@ -717,6 +766,26 @@ double AudioPlayer::engineElapsed(const Engine& engine, const TrackRun& run) con
     return run.engineIndex >= 0 && size_t(run.engineIndex) < engine.trackCountNow()
                ? engine.clipElapsed(size_t(run.engineIndex))
                : NAN;
+}
+
+bool AudioPlayer::canRest(const Engine& engine, const AudioTrackPlay& track, TrackRun& run, int wantedNow, bool playing,
+                          double song) {
+    if (wantedNow != 0 || run.fed || track.delay != 0 || !track.sources.empty() || !track.returns.empty() ||
+        track.hearRollIn || track.rollIn)
+        return false;
+    for (const Voice& v : run.voices)
+        if (v.on)
+            return false;
+    if (playing) {
+        double ahead = double(kBlock - 1);
+        std::array<Wanted, 2> later;
+        double elapsed = engineElapsed(engine, run);
+        if (wanted(engine, track, run, later, song + ahead * ticksPerSample,
+                   std::isfinite(elapsed) ? elapsed + ahead * ticksPerSample : elapsed, true) != 0)
+            return false;
+    }
+    run.slot = run.engineIndex >= 0 ? engine.playingSlot(size_t(run.engineIndex)) : -1;
+    return true;
 }
 
 bool AudioPlayer::steadyAhead(const Engine& engine, const AudioTrackPlay& track, TrackRun& run,
@@ -746,7 +815,8 @@ bool AudioPlayer::steadyAhead(const Engine& engine, const AudioTrackPlay& track,
     for (int k = 0; k < n; k++) {
         const Wanted& a = now[size_t(k)];
         const Wanted& b = later[size_t(k)];
-        if (a.key != b.key || a.envelope < 1 || b.envelope < 1 || std::abs(b.tick - (a.tick + ahead * a.tickRate)) > 1e-3)
+        if (a.key != b.key || a.envelope < 1 || b.envelope < 1 ||
+            std::abs(b.tick - (a.tick + ahead * a.tickRate)) > 1e-3)
             return false;
     }
     bool launcher = !(engine.playMode() == PlayMode::Arranger && !engine.overridden(size_t(run.engineIndex)));
@@ -755,8 +825,8 @@ bool AudioPlayer::steadyAhead(const Engine& engine, const AudioTrackPlay& track,
     return true;
 }
 
-int AudioPlayer::wanted(const Engine& engine, const AudioTrackPlay& track, TrackRun& run,
-                        std::array<Wanted, 2>& out, double t, double elapsed, bool peek) {
+int AudioPlayer::wanted(const Engine& engine, const AudioTrackPlay& track, TrackRun& run, std::array<Wanted, 2>& out,
+                        double t, double elapsed, bool peek) {
     // The engine's index for the track, found again whenever the engine's track list changed.
     size_t engineTracks = engine.trackCountNow();
     if (run.engineIndex < 0 || size_t(run.engineIndex) >= engineTracks ||
@@ -865,8 +935,8 @@ void AudioPlayer::place(Voice& v, const Wanted& w) const {
 
 void AudioPlayer::startVoice(TrackRun& run, const Wanted& w, float fadeSeconds) {
     const AudioClipPlay& c = snapshot->clips[size_t(w.clip)];
-    bool rendered = c.follow == TempoFollow::Stretch && c.render &&
-                    std::abs(c.renderTempo - tempo) <= kRenderTolerance * tempo;
+    bool rendered =
+        c.follow == TempoFollow::Stretch && c.render && std::abs(c.renderTempo - tempo) <= kRenderTolerance * tempo;
     const AudioBuffer* buffer = rendered ? c.render : c.prepared;
     if (!buffer || buffer->frames <= 0)
         return;
@@ -927,8 +997,8 @@ void AudioPlayer::follow(TrackRun& run, const std::array<Wanted, 2>& want, int c
         }
         const Wanted& w = want[size_t(match)];
         const AudioClipPlay& c = snapshot->clips[size_t(w.clip)];
-        bool rendered = c.follow == TempoFollow::Stretch && c.render &&
-                        std::abs(c.renderTempo - tempo) <= kRenderTolerance * tempo;
+        bool rendered =
+            c.follow == TempoFollow::Stretch && c.render && std::abs(c.renderTempo - tempo) <= kRenderTolerance * tempo;
         const AudioBuffer* buffer = rendered ? c.render : c.prepared;
         if (buffer != v.buffer || w.clip != v.clip) {
             // A render became ready, or the tempo moved off it: crossfade to the other buffer.

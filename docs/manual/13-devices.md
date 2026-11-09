@@ -164,7 +164,8 @@ orders in the Direction dropdown, such as Outside in, stay as you pick them.) Cl
   point, picked.
 - **Step and Ramp in the row on top** make every picked point that kind, as one undo step; right-clicking a point
   does the same (it picks the point first). The count between the two says how many points are picked, and a button
-  lights when every picked point is already its kind. Right-click a point also deletes it.
+  lights when every picked point is already its kind. Right-click a point also deletes it. **Delete** removes every
+  picked point, after you have clicked in the curve pane. Selecting another track closes the curve.
 - **Its own zoom.** The curve zooms and scrolls on its own: **Ctrl+wheel** across, **Alt+wheel** up and down, the
   wheel scrolls up and down, **Shift+wheel** across. Double-click its ruler to see the whole drawing. It opens lined
   up under the notes; right-click for **Line up under the notes** or **Show the whole drawing**.

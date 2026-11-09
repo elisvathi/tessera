@@ -71,7 +71,7 @@ double ArrangerLanes::verticalScroll() { return owner.tracks.scroll(); }
 
 void ArrangerLanes::setVerticalScroll(double px) {
     owner.tracks.scrollTo(px);
-    ctx.view().trackScroll = owner.tracks.scroll();
+    ctx.state().trackScroll = owner.tracks.scroll();
 }
 
 void ArrangerLanes::zoomVertical(double y, double factor) { owner.zoomTracksAt(y, factor); }
@@ -82,7 +82,7 @@ void ArrangerLanes::showVerticalRange(double y0, double y1) {
     owner.tracks.zoomAt(y0, box.size.y / (y1 - y0));
     owner.tracks.scrollByPx(y0);
     owner.writeHeights();
-    ctx.view().trackScroll = owner.tracks.scroll();
+    ctx.state().trackScroll = owner.tracks.scroll();
 }
 
 void ArrangerLanes::zoomToFit() {
@@ -96,7 +96,7 @@ void ArrangerLanes::zoomToFit() {
     if (selection().empty()) {
         owner.tracks.fitAll();
         owner.writeHeights();
-        ctx.view().trackScroll = owner.tracks.scroll();
+        ctx.state().trackScroll = owner.tracks.scroll();
     }
 }
 
@@ -1142,7 +1142,7 @@ void ArrangerLanes::paintClips(NVGcontext* vg, Vec size) {
         const TrackRow& row = owner.rows[i];
         if (row.kind == TrackRow::Kind::Group) {
             // A folded group shows its members' clips flattened into its row.
-            if (!ctx.view().foldedGroups.count(row.group.value))
+            if (!ctx.state().foldedGroups.count(row.group.value))
                 continue;
             const TrackGroup* g = song.findGroup(row.group);
             for (const arrange::Placed& p : layout)

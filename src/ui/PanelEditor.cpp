@@ -173,7 +173,7 @@ PanelEditor::~PanelEditor() {
 }
 
 EditorPane* PanelEditor::focusedPane() {
-    if (ctx.view().focus == Pane::Top && top->visible)
+    if (ctx.state().focus == Pane::Top && top->visible)
         return top;
     return detail->visible ? static_cast<EditorPane*>(detail) : top;
 }
@@ -196,7 +196,7 @@ void PanelEditor::step() {
     panes->box = rack::math::Rect(rack::math::Vec(), box.size);
     // Full editor sits left of the top pane's maximize button. The transport sits top-left, above the track names,
     // where the eye starts. With the notes maximized both move into the notes header (which keeps the room free).
-    bool notesOnTop = ctx.view().maximized == Pane::Detail;
+    bool notesOnTop = ctx.state().maximized == Pane::Detail;
     float transportWidth = float(transport.size()) * (kTransportButton + 2) - 2;
     float groupWidth = kCornerButton + kCornerGroupGap + transportWidth;
     detail->reserveHeader(notesOnTop ? groupWidth + 6 : 0);

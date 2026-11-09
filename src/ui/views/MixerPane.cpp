@@ -1,6 +1,7 @@
 #include "MixerPane.hpp"
 
 #include "../../model/AudioEdits.hpp"
+#include "../../model/Sends.hpp"
 #include "../../module/OutputModuleBase.hpp"
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -8,9 +9,8 @@
 #include "../editing/AudioActions.hpp"
 #include "../editing/SendActions.hpp"
 #include "../editing/Sources.hpp"
-#include "../widgets/ColorMenuItem.hpp"
-#include "../../model/Sends.hpp"
 #include "../editing/TrackActions.hpp"
+#include "../widgets/ColorMenuItem.hpp"
 #include "../widgets/Draw.hpp"
 #include "../widgets/EditTools.hpp"
 #include "../widgets/MenuTextField.hpp"
@@ -30,10 +30,11 @@ constexpr float kLaneStripWidth = 40; // a drum lane IN's strip: narrower, and s
 constexpr float kMasterWidth = 88;
 constexpr float kGap = 4;
 constexpr float kKnobStripsBelow = 200; // pane height (px) under which the strips use knobs instead of faders
+constexpr float kKnobsStackFrom = 80;   // pane height (px) from which a strip's knobs sit one above the other
 constexpr float kKnobStripWidth = 62;
 constexpr float kKnobLaneWidth = 50;
-constexpr float kKnobTravel = 140;   // px of drag across a level knob's whole range
-constexpr float kFaderSnapPx = 6;    // the soft detent at 0 dB
+constexpr float kKnobTravel = 140; // px of drag across a level knob's whole range
+constexpr float kFaderSnapPx = 6;  // the soft detent at 0 dB
 constexpr float kZeroDbPos = kZeroDbFaderPos;
 constexpr double kPeakHoldSeconds = 1.5;
 constexpr float kWheelDb = 0.5f;
@@ -144,8 +145,7 @@ std::string laneName(const MixerPane::Strip& s) { return s.isInput() ? s.label :
 
 class FaderGesture : public DragGesture {
   public:
-    FaderGesture(MixerPane& pane, EditorContext& ctx, int strip, Vec press)
-        : pane(pane), ctx(ctx), press(press) {
+    FaderGesture(MixerPane& pane, EditorContext& ctx, int strip, Vec press) : pane(pane), ctx(ctx), press(press) {
         const MixerPane::Strip& s = pane.layoutStrips()[size_t(strip)];
         master = s.master;
         track = s.track;
@@ -198,9 +198,11 @@ class FaderGesture : public DragGesture {
             if (master)
                 m->perform(setMasterVolume(m->song(), now));
             else if (groupId.valid())
-                m->perform(setGroupChannel(m->song(), groupId, {now, groupPan}, "Group volume " + audioDraw::dbText(now)));
+                m->perform(
+                    setGroupChannel(m->song(), groupId, {now, groupPan}, "Group volume " + audioDraw::dbText(now)));
             else if (group.size() == 1)
-                m->perform(setChannel(m->song(), track, {now, group[0].before.pan}, "Volume " + audioDraw::dbText(now)));
+                m->perform(
+                    setChannel(m->song(), track, {now, group[0].before.pan}, "Volume " + audioDraw::dbText(now)));
             else
                 m->perform(nudgeVolumes(m->song(), group, now - startDb));
         }
@@ -402,13 +404,13 @@ MixerPane::MixerPane(EditorContext& ctx, bool panel) : InteractiveView(ctx), pan
 
 void MixerPane::onButton(const ButtonEvent& e) {
     if (e.action == GLFW_PRESS && ctx.module())
-        ctx.view().focus = Pane::Detail; // clicking anywhere in a pane focuses it, as in the others
+        ctx.state().focus = Pane::Detail; // clicking anywhere in a pane focuses it, as in the others
     InteractiveView::onButton(e);
 }
 
 void MixerPane::draw(const DrawArgs& args) {
     InteractiveView::draw(args);
-    if (ctx.module() && ctx.view().focus == Pane::Detail && box.size.y > tab.size.y + 20)
+    if (ctx.module() && ctx.state().focus == Pane::Detail && box.size.y > tab.size.y + 20)
         draw::roundedRectStroke(args.vg, Rect(Vec(), box.size), 0, nvgTransRGBAf(theme::colors().accent, 0.5f), 1);
 }
 
@@ -530,11 +532,11 @@ float MixerPane::capPos(const Strip& s) const {
             return faderPos(shownVolume(s));
         return faderPos(shownSend(s, mode));
     };
-    float to = posFor(v.showSends);
-    double t = (EditorContext::now() - v.sendsSince) / 0.12;
-    if (v.sendsSince < 0 || t >= 1)
+    float to = posFor(ctx.state().showSends);
+    double t = (EditorContext::now() - ctx.state().sendsSince) / 0.12;
+    if (ctx.state().sendsSince < 0 || t >= 1)
         return to;
-    float from = posFor(v.sendsFrom);
+    float from = posFor(ctx.state().sendsFrom);
     return from + (to - from) * float(std::max(0.0, t));
 }
 
@@ -565,10 +567,10 @@ void MixerPane::layout() {
     float top = tabH + kGap, bottom = box.size.y - kGap;
     // Show sends: a band across the top says so; a target that lost its strip ends the mode.
     ViewState& view = ctx.view();
-    if (view.showSends.valid() && m->soundIndex(view.showSends) < 0)
-        view.setShowSends(TrackId(), EditorContext::now());
+    if (ctx.state().showSends.valid() && m->soundIndex(ctx.state().showSends) < 0)
+        ctx.state().setShowSends(TrackId(), EditorContext::now());
     band = bandClose = Rect();
-    if (view.showSends.valid()) {
+    if (ctx.state().showSends.valid()) {
         band = Rect(kGap, top, box.size.x - 2 * kGap, 16);
         bandClose = Rect(band.getRight() - 18, band.pos.y, 18, 16);
         top += 20;
@@ -592,16 +594,32 @@ void MixerPane::layout() {
         s.box = Rect(x, top, w, h);
         if (knobs) {
             s.knob = true;
-            // The two knobs share the width, so a narrow strip takes smaller ones.
-            float size = std::min(std::clamp(h - 34, 18.f, 30.f), (w - 8) * 0.57f), small = size * 0.75f, y = top + 17;
+            bool buttons = !s.master && h >= 62;
             s.name = Rect(x, top + 3, w, 13);
-            s.fader = Rect(x + 3, y, size, size);
-            if (!s.master)
-                s.pan = Rect(x + w - 3 - small, y + (size - small) / 2, small, small);
-            if (!s.master && h >= 62) {
+            if (buttons) {
                 s.mute = Rect(x + 3, top + h - 15, w / 2 - 4, 13);
                 s.solo = Rect(x + w / 2 + 1, top + h - 15, w / 2 - 4, 13);
             }
+            float from = top + 17, room = h - 17 - (buttons ? 17 : 3);
+            if (h >= kKnobsStackFrom) {
+                // One above the other, the level taking most of the height, spaced evenly so no gap collects.
+                float size = std::clamp(room * 0.56f, 24.f, std::min(w - 12, 50.f));
+                float small = s.master ? 0 : size * 0.72f, text = room >= 90 ? 12 : 0;
+                float gap = (room - size - text - small) / (s.master ? 2 : 3);
+                float y = from + gap;
+                s.fader = Rect(x + (w - size) / 2, y, size, size);
+                if (text > 0)
+                    s.readout = Rect(x + 2, y + size, w - 4, text);
+                if (!s.master)
+                    s.pan = Rect(x + (w - small) / 2, y + size + text + gap, small, small);
+                return;
+            }
+            // Side by side: the two knobs share the width, so a narrow strip takes smaller ones.
+            float size = std::min(std::clamp(h - 34, 18.f, 30.f), (w - 8) * 0.57f), small = size * 0.75f;
+            float y = from + std::max(0.f, (room - size) / 2);
+            s.fader = Rect(x + 3, y, size, size);
+            if (!s.master)
+                s.pan = Rect(x + w - 3 - small, y + (size - small) / 2, small, small);
             return;
         }
         float y = top + 3;
@@ -639,7 +657,8 @@ void MixerPane::layout() {
         if (!s.master && s.lane < 0) {
             if (!sendersTo(m->song(), s.track).empty())
                 s.outMeter = Rect(s.fader.pos.x - 8, s.fader.pos.y, 3, s.fader.size.y);
-            if (view.showSends.valid() && view.showSends != s.track && findSend(m->song(), s.track, view.showSends))
+            if (ctx.state().showSends.valid() && ctx.state().showSends != s.track &&
+                findSend(m->song(), s.track, ctx.state().showSends))
                 s.pre = Rect(x + 2, s.fader.pos.y, 18, 11);
         }
     };
@@ -661,7 +680,7 @@ void MixerPane::layout() {
         x += stripWidth + kGap;
         lastOfGroup = groupOf(m->song(), t.id);
         // A track with two or more inputs: a narrow strip for each, after the track's, unless folded.
-        if (hasInputStrips(t.id) && !view.foldedInputs.count(t.id.value)) {
+        if (hasInputStrips(t.id) && !ctx.state().foldedInputs.count(t.id.value)) {
             std::vector<OutputModuleBase*> inputs = m->sourceModules(t.id);
             int number = 0;
             auto addInput = [&](int64_t module, const std::string& label) {
@@ -708,7 +727,8 @@ void MixerPane::layout() {
                     continue;
                 }
                 if (after && m->soundIndex(o.id) >= 0 &&
-                    std::find(lastOfGroup->tracks.begin(), lastOfGroup->tracks.end(), o.id) != lastOfGroup->tracks.end())
+                    std::find(lastOfGroup->tracks.begin(), lastOfGroup->tracks.end(), o.id) !=
+                        lastOfGroup->tracks.end())
                     more = true;
             }
             if (!more && m->groupIndex(lastOfGroup->id) >= 0) {
@@ -737,8 +757,8 @@ void MixerPane::layout() {
 void MixerPane::step() {
     // Switching the pane back to the notes leaves Show sends; maximise and restore keep it.
     ViewState& v = ctx.view();
-    if (v.showSends.valid() && !v.mixerOpen)
-        v.setShowSends(TrackId(), EditorContext::now());
+    if (ctx.state().showSends.valid() && !ctx.state().mixerOpen)
+        ctx.state().setShowSends(TrackId(), EditorContext::now());
     layout();
     // Once a loaded patch has settled, say if files are missing (§8.7): one toast, with Find… for the first.
     if (TesseraModule* m = ctx.module())
@@ -749,8 +769,9 @@ void MixerPane::step() {
                 if (!missing.empty()) {
                     EditorContext* c = &ctx;
                     AudioSourceId first = missing.front();
-                    std::string text = missing.size() == 1 ? "1 audio file is missing"
-                                                           : std::to_string(missing.size()) + " audio files are missing";
+                    std::string text = missing.size() == 1
+                                           ? "1 audio file is missing"
+                                           : std::to_string(missing.size()) + " audio files are missing";
                     ctx.toast(text, "Find…", [c, first] { audioActions::findFile(*c, first); });
                 }
             }
@@ -774,7 +795,7 @@ MixerPane::Hit MixerPane::hitTest(Vec pos) const {
             continue;
         hit.strip = int(i);
         Rect faderZone(s.fader.pos.x - 6, s.fader.pos.y - 6, s.fader.size.x + s.meter.size.x + 18, s.fader.size.y + 12);
-        bool sendsMode = ctx.view().showSends.valid();
+        bool sendsMode = ctx.state().showSends.valid();
         if (!sendsMode)
             for (size_t k = 0; k < s.sendKnobs.size(); k++)
                 if (s.sendKnobs[k].grow(Vec(3, 3)).contains(pos)) {
@@ -826,7 +847,7 @@ std::unique_ptr<DragGesture> MixerPane::startGesture(Vec pos, int button, Modifi
     }
     case Part::Fader: {
         const Strip& s = strips[size_t(h.strip)];
-        TrackId target = ctx.view().showSends;
+        TrackId target = ctx.state().showSends;
         if (target.valid()) {
             // Show sends: the faders of other tracks are their sends; the master and tracks that would make a
             // loop don't move.
@@ -910,7 +931,8 @@ void MixerPane::openChipMenu(const Strip& s) {
     rack::ui::Menu* menu = rack::createMenu();
     menu->addChild(rack::createMenuLabel(t ? t->name : "Master"));
     bool drum = t && t->type == TrackType::Drum;
-    std::string add = std::string(drum ? "Add a Drum Out" : "Add a Track Out") + (t ? " for this track" : " for the master");
+    std::string add =
+        std::string(drum ? "Add a Drum Out" : "Add a Track Out") + (t ? " for this track" : " for the master");
     menu->addChild(rack::createMenuItem(add, "", [c, m, track] { c->toast(audioActions::addOutputFor(m, track)); }));
     std::vector<OutputModuleBase*> outputs = audioActions::outputsFor(m, track);
     for (size_t i = 0; i < outputs.size(); i++) {
@@ -931,7 +953,9 @@ void MixerPane::openChipMenu(const Strip& s) {
 
 void MixerPane::openAddSend(TrackId from) { sendActions::appendAddSendItems(rack::createMenu(), ctx, from); }
 
-void MixerPane::openSendMenu(TrackId from, TrackId to) { sendActions::appendSendItems(rack::createMenu(), ctx, from, to); }
+void MixerPane::openSendMenu(TrackId from, TrackId to) {
+    sendActions::appendSendItems(rack::createMenu(), ctx, from, to);
+}
 
 void MixerPane::click(Vec pos, int button, Modifiers mods) {
     TesseraModule* m = ctx.module();
@@ -941,7 +965,7 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
     const Strip* s = h.strip >= 0 ? &strips[size_t(h.strip)] : nullptr;
     if (s && h.part == Part::Chip && s->lane < 0) {
         if (!s->master && hasInputStrips(s->track)) {
-            std::set<uint64_t>& folded = ctx.view().foldedInputs;
+            std::set<uint64_t>& folded = ctx.state().foldedInputs;
             if (!folded.erase(s->track.value))
                 folded.insert(s->track.value);
             return;
@@ -951,7 +975,7 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
     }
     ViewState& view = ctx.view();
     if (h.part == Part::BandClose) {
-        view.setShowSends(TrackId(), EditorContext::now());
+        ctx.state().setShowSends(TrackId(), EditorContext::now());
         return;
     }
     if (s && h.part == Part::SendKnob) {
@@ -965,14 +989,15 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         return;
     }
     if (s && h.part == Part::Receives && button == GLFW_MOUSE_BUTTON_LEFT) {
-        view.setShowSends(view.showSends == s->track ? TrackId() : s->track, EditorContext::now());
+        ctx.state().setShowSends(ctx.state().showSends == s->track ? TrackId() : s->track, EditorContext::now());
         return;
     }
     if (s && h.part == Part::Pre && button == GLFW_MOUSE_BUTTON_LEFT) {
-        if (const Send* send = findSend(m->song(), s->track, view.showSends)) {
+        if (const Send* send = findSend(m->song(), s->track, ctx.state().showSends)) {
             Send next = *send;
             next.preFader = !next.preFader;
-            m->perform(setSend(m->song(), s->track, next, next.preFader ? "Send before the fader" : "Send after the fader"));
+            m->perform(
+                setSend(m->song(), s->track, next, next.preFader ? "Send before the fader" : "Send after the fader"));
         }
         return;
     }
@@ -992,21 +1017,21 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         TrackId track = s->track;
         EditorContext* c = &ctx;
         rack::ui::Menu* menu = rack::createMenu();
-        menu->addChild(rack::createMenuItem("Show sends to this track", "", [c, track] {
-            c->view().setShowSends(track, EditorContext::now());
-        }));
+        menu->addChild(rack::createMenuItem("Show sends to this track", "",
+                                            [c, track] { c->state().setShowSends(track, EditorContext::now()); }));
         // Extra delay this track's sound has (a slow effect): its recordings and bounces move earlier by it.
         const Track* t = m->song().findTrack(track);
         menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createMenuLabel("Latency (samples): " + std::to_string(t ? t->latencySamples : 0)));
-        menu->addChild(new MenuTextField(t ? std::to_string(t->latencySamples) : "0", [m, track](const std::string& text) {
-            char* end = nullptr;
-            long n = std::strtol(text.c_str(), &end, 10);
-            if (end != text.c_str())
-                if (CommandPtr set = setTrackField(m->song(), track, &Track::latencySamples,
-                                                   int(std::clamp(n, 0L, 96000L)), "Set track latency"))
-                    m->perform(std::move(set));
-        }));
+        menu->addChild(
+            new MenuTextField(t ? std::to_string(t->latencySamples) : "0", [m, track](const std::string& text) {
+                char* end = nullptr;
+                long n = std::strtol(text.c_str(), &end, 10);
+                if (end != text.c_str())
+                    if (CommandPtr set = setTrackField(m->song(), track, &Track::latencySamples,
+                                                       int(std::clamp(n, 0L, 96000L)), "Set track latency"))
+                        m->perform(std::move(set));
+            }));
         return;
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
@@ -1094,8 +1119,9 @@ void MixerPane::doubleClick(Vec pos, Modifiers mods) {
         const Track* t = m->song().findTrack(s.track);
         if (t && h.send < int(t->sends.size()))
             sendTo = t->sends[size_t(h.send)].to;
-    } else if (h.part == Part::Fader && ctx.view().showSends.valid() && ctx.view().showSends != s.track && !s.master) {
-        sendTo = ctx.view().showSends;
+    } else if (h.part == Part::Fader && ctx.state().showSends.valid() && ctx.state().showSends != s.track &&
+               !s.master) {
+        sendTo = ctx.state().showSends;
     }
     if (sendTo.valid()) {
         if (const Send* send = findSend(m->song(), s.track, sendTo))
@@ -1138,11 +1164,12 @@ void MixerPane::wheel(Vec pos, Vec delta, Modifiers mods) {
             return;
         Send send = t->sends[size_t(h.send)];
         float step = (mods.shift ? kFine : kWheelDb) * (delta.y > 0 ? 1.f : -1.f);
-        send.db = send.db <= kSilentDb ? (delta.y > 0 ? -60.f : kSilentDb) : std::clamp(send.db + step, kSilentDb, kMaxFaderDb);
+        send.db = send.db <= kSilentDb ? (delta.y > 0 ? -60.f : kSilentDb)
+                                       : std::clamp(send.db + step, kSilentDb, kMaxFaderDb);
         m->perform(setSend(m->song(), s.track, send, "Send " + audioDraw::dbText(send.db)));
         return;
     }
-    if (!m || h.part != Part::Fader || delta.y == 0 || ctx.view().showSends.valid())
+    if (!m || h.part != Part::Fader || delta.y == 0 || ctx.state().showSends.valid())
         return;
     const Strip& s = strips[size_t(h.strip)];
     float step = (mods.shift ? kFine * 1 : kWheelDb) * (delta.y > 0 ? 1.f : -1.f);
@@ -1251,7 +1278,8 @@ void MixerPane::drawTab(NVGcontext* vg) {
             break;
     }
     float right = maximizeButton->box.pos.x - 8 - tabRight;
-    draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+    draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1,
+                          NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
     float peak = std::max(player.masterLevel(0), player.masterLevel(1));
     char text[32];
     snprintf(text, sizeof text, peak > 1e-5f ? "peak %.1f" : "peak -inf", double(voltsDb(peak)));
@@ -1273,14 +1301,15 @@ void MixerPane::drawGroupStrip(NVGcontext* vg, const Strip& s, const TrackGroup&
     nvgRect(vg, s.box.pos.x, s.box.pos.y, s.box.size.x, 3);
     nvgFillColor(vg, color);
     nvgFill(vg);
-    draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0,
+                         NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     draw::text(vg, name, s.name.getCenter().x, s.name.getCenter().y + 1,
                draw::ellipsize(vg, name, g.name.empty() ? "Group" : g.name, s.name.size.x - 4));
-    draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler - 1, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler - 1, c.text1,
+                          NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     if (s.chip.size.x > 0) {
         draw::roundedRect(vg, s.chip, theme::metrics::kRadiusControl, c.bg2);
-        draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y,
-                   "Group · " + std::to_string(g.tracks.size()));
+        draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y, "Group · " + std::to_string(g.tracks.size()));
     }
     if (s.pan.size.x > 0) {
         float pan = shownPan(s);
@@ -1311,12 +1340,13 @@ void MixerPane::drawGroupStrip(NVGcontext* vg, const Strip& s, const TrackGroup&
     draw::roundedRect(vg, Rect(s.fader.pos.x - 2, capY - 5, s.fader.size.x + 4, 10), 2, heldNow ? c.accent : c.text1);
     const AudioPlayer& player = m->audioPlayer();
     drawMeter(vg, s.meter, player.groupLevel(s.playerIndex, 0), player.groupLevel(s.playerIndex, 1));
-    draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text0,
+                         NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y, audioDraw::dbText(volume));
     small.color = c.text2;
     draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8, "\xE2\x86\x92 Master");
     // Show sends: groups don't send, they step back like the master.
-    if (ctx.view().showSends.valid())
+    if (ctx.state().showSends.valid())
         draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl, nvgTransRGBAf(c.bg0, 0.6f));
 }
 
@@ -1447,7 +1477,7 @@ void MixerPane::drawKnobStrip(NVGcontext* vg, const Strip& s) {
                draw::ellipsize(vg, name, label, s.name.size.x - 4));
 
     // The level knob: its position on the outer ring, what is sounding on the ring inside it.
-    TrackId target = ctx.view().showSends;
+    TrackId target = ctx.state().showSends;
     bool showsSend = target.valid() && t && !s.master && s.lane < 0 && !group && s.track != target;
     float position = faderPos(showsSend ? shownSend(s, target) : shownVolume(s));
     float low = float(M_PI) * 0.75f, sweep = float(M_PI) * 1.5f;
@@ -1491,6 +1521,12 @@ void MixerPane::drawKnobStrip(NVGcontext* vg, const Strip& s) {
         nvgStroke(vg);
     }
 
+    if (s.readout.size.x > 0) {
+        draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler - 2, c.text1,
+                             NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y, audioDraw::dbText(db));
+    }
+
     auto toggle = [&](const Rect& r, const char* text, bool on, NVGcolor lit) {
         if (r.size.x <= 0)
             return;
@@ -1526,7 +1562,7 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     }
     const Track* t = s.master ? nullptr : song.findTrack(s.track);
     // Show sends: other strips' faders are their sends to the target (§7.6).
-    TrackId target = ctx.view().showSends;
+    TrackId target = ctx.state().showSends;
     const Track* targetTrack = target.valid() ? song.findTrack(target) : nullptr;
     bool showsSend = targetTrack && !s.master && s.track != target;
     bool cantSend = showsSend && !findSend(song, s.track, target) && !whyNoSend(song, s.track, target).empty();
@@ -1544,11 +1580,13 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     nvgRect(vg, s.box.pos.x, s.box.pos.y, s.box.size.x, 3);
     nvgFillColor(vg, color);
     nvgFill(vg);
-    draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0,
+                         NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     std::string label = t ? t->name : "Master";
     draw::text(vg, name, s.name.getCenter().x, s.name.getCenter().y + 1,
                draw::ellipsize(vg, name, label, s.name.size.x - 4));
-    draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler - 1, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler - 1, c.text1,
+                          NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
 
     // Source chip: what feeds the track, in words (§7.2).
     if (s.chip.size.x > 0) {
@@ -1564,10 +1602,11 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         }
         draw::roundedRect(vg, s.chip, theme::metrics::kRadiusControl, c.bg2);
         small.color = chipColor;
-        draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y, draw::ellipsize(vg, small, chip, s.chip.size.x - 4));
+        draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y,
+                   draw::ellipsize(vg, small, chip, s.chip.size.x - 4));
         if (t && hasInputStrips(t->id)) {
             // The arrow that folds the input strips.
-            bool open = !ctx.view().foldedInputs.count(t->id.value);
+            bool open = !ctx.state().foldedInputs.count(t->id.value);
             float ax = s.chip.pos.x + 5, ay = s.chip.getCenter().y;
             nvgBeginPath(vg);
             if (open) {
@@ -1717,8 +1756,8 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
     }
     if (s.pre.size.x > 0) {
         const Send* send = findSend(song, s.track, target);
-        draw::TextStyle pre{theme::fonts::ui(), theme::metrics::kTextRuler - 2, send && send->preFader ? c.text0 : c.text2,
-                            NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::TextStyle pre{theme::fonts::ui(), theme::metrics::kTextRuler - 2,
+                            send && send->preFader ? c.text0 : c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
         draw::roundedRect(vg, s.pre, 2, send && send->preFader ? c.bg2 : theme::recessed(c, c.bg1, 0.3f));
         draw::text(vg, pre, s.pre.getCenter().x, s.pre.getCenter().y, "pre");
     }
@@ -1763,7 +1802,8 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         nvgFill(vg);
     }
     // The level as text; under it where the strip goes.
-    draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text0,
+                         NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y,
                showsSend ? "send " + audioDraw::dbText(volume) : audioDraw::dbText(volume));
     small.color = c.text2;
@@ -1773,8 +1813,7 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8,
                    draw::ellipsize(vg, small, "\xE2\x86\x92 " + (viaGroup ? g->name : std::string("Master")),
                                    s.box.size.x - 4));
-    }
-    else if (s.connect.size.x > 0) {
+    } else if (s.connect.size.x > 0) {
         draw::roundedRect(vg, s.connect, theme::metrics::kRadiusControl, c.bg2);
         small.color = c.text0;
         draw::text(vg, small, s.connect.getCenter().x, s.connect.getCenter().y, "Connect to Audio");
@@ -1809,19 +1848,22 @@ void MixerPane::drawView(const DrawArgs& args) {
     for (const Strip& s : strips)
         drawStrip(vg, s);
     if (band.size.x > 0)
-        if (const Track* to = ctx.module()->song().findTrack(ctx.view().showSends)) {
-            draw::roundedRect(vg, band, theme::metrics::kRadiusControl, nvgLerpRGBA(c.bg1, theme::track(to->color), 0.18f));
-            draw::TextStyle text{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        if (const Track* to = ctx.module()->song().findTrack(ctx.state().showSends)) {
+            draw::roundedRect(vg, band, theme::metrics::kRadiusControl,
+                              nvgLerpRGBA(c.bg1, theme::track(to->color), 0.18f));
+            draw::TextStyle text{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0,
+                                 NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
             draw::text(vg, text, band.pos.x + 8, band.getCenter().y,
                        "Faders show sends to " + to->name + "  \xC2\xB7  Esc to go back");
             text.align = NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE;
             draw::text(vg, text, bandClose.getCenter().x, bandClose.getCenter().y, "\xC3\x97");
         }
     if (notesOnly > 0) {
-        draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2,
+                             NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         float x = strips.size() > 1 ? strips[strips.size() - 2].box.getRight() + 12 : 12;
-        std::string text = std::to_string(notesOnly) + (notesOnly == 1 ? " track plays" : " tracks play") +
-                           " notes only";
+        std::string text =
+            std::to_string(notesOnly) + (notesOnly == 1 ? " track plays" : " tracks play") + " notes only";
         draw::text(vg, hint, x, (band.size.x > 0 ? band.getBottom() : tab.size.y) + 14, text);
     }
     nvgRestore(vg);

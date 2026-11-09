@@ -1,8 +1,10 @@
 #pragma once
 
+#include "Arrangement.hpp"
 #include "Scale.hpp"
 #include "Song.hpp"
 
+#include <optional>
 #include <vector>
 
 /// A track's device chain run over a list of notes outside the engine, for MIDI export (docs/DEVICES.md §6): the
@@ -21,6 +23,25 @@ struct Note {
     uint8_t channel = 1;
     uint8_t lane = 0; // the playhead that read it (1..16), for its branch; 0 = none
 };
+
+/// Calls `set(lane, value, modulate)` for each knob lane playing at song tick `t`, in the order they apply: the track's
+/// lanes, then those of the clip under the song. `modulate`: the value moves the track lane's around 0.5.
+template <typename Set>
+void forEachKnobLane(const Song& song, const Track& track, double t, Set set) {
+    for (const AutomationEnvelope& lane : track.automation)
+        if (lane.paramTarget.valid() && !lane.mute)
+            set(lane, evaluate(lane, t), false);
+    const ArrangerClip* inst = instanceAt(track, Tick(t));
+    const Clip* clip = inst && !inst->muted ? song.findClip(inst->clip) : nullptr;
+    if (!clip)
+        return;
+    std::optional<double> at = clipTimeAt(*clip, *inst, t);
+    if (!at)
+        return;
+    for (const AutomationEnvelope& lane : clip->automation)
+        if (lane.paramTarget.valid() && !lane.mute)
+            set(lane, evaluate(lane, *at), lane.combine == CombineMode::Modulate);
+}
 
 /// What `track`'s chain makes of `notes` (sorted by start). Devices that keep playing (echo, arpeggiator) stop at
 /// `until`. `tempo` (BPM) times envelopes and hertz LFOs; `keys` are the clips' own keys. Without an active device

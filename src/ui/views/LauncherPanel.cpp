@@ -224,7 +224,7 @@ class SlotDragGesture : public DragGesture {
 class PanelResizeGesture : public DragGesture {
   public:
     PanelResizeGesture(LauncherPanel& panel, Vec press) : panel(panel), press(press), start(panel.box.size.x) {
-        panel.ctx.view().clipsWide = false;
+        panel.ctx.state().clipsWide = false;
     }
     void update(Vec pos, Modifiers) override {
         float most = panel.contentWidth();

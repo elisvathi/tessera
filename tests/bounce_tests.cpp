@@ -1,9 +1,11 @@
 #include "doctest.h"
 
 #include "../src/model/BounceNotes.hpp"
-#include "../src/model/Render.hpp"
 #include "../src/model/DeviceCommands.hpp"
+#include "../src/model/DeviceTypes.hpp"
 #include "../src/model/Devices.hpp"
+#include "../src/model/Playheads.hpp"
+#include "../src/model/Render.hpp"
 #include "../src/model/Serialize.hpp"
 
 #include <jansson.h>
@@ -227,6 +229,177 @@ TEST_CASE("a notes bounce plays a lane that turns a device knob into the notes")
     bounceNotes(f.song, what, 120, f.next(), &made)->apply(f.song);
     CHECK(f.song.findClip(made.clip)->notes.front().pitch == 60 + 24);
     CHECK(f.song.findTrack(made.track)->automation.empty());
+}
+
+namespace {
+
+/// A Motion device on the bounced track, joined by every note of its clip.
+DeviceId motionOnAllNotes(BounceSong& f) {
+    DeviceId motion;
+    addDevice(f.song, f.track, DeviceType::Motion, 0, f.next(), &motion)->apply(f.song);
+    for (Note& n : f.song.findClip(f.clipId)->notes)
+        n.motion = motion;
+    return motion;
+}
+
+/// A track Curve on `motion`'s Pitch: no change for two beats, then a step that adds 24 key steps.
+void stepCurveOnPitch(BounceSong& f, DeviceId motion) {
+    Modulator curve;
+    curve.id = ModulatorId(f.song.nextId++);
+    curve.type = ModulatorType::Curve;
+    curve.params.assign(devices::modulatorInfo(ModulatorType::Curve).params.size(), 0.f);
+    curve.length = 4 * kPpq;
+    curve.segmentEnd = 4 * kPpq;
+    AutoPoint rest, up;
+    rest.value = 0.5f;
+    rest.curve = CurveType::Hold;
+    up.t = 2 * kPpq;
+    up.value = 1;
+    up.curve = CurveType::Hold;
+    curve.points = {rest, up};
+    Modulation route;
+    route.kind = Modulation::Kind::Param;
+    route.amount = 1;
+    route.target = ParamRef{ParamRef::Kind::Device, motion.value, uint16_t(chain::knob::kMotionPitch)};
+    curve.routes.push_back(route);
+    f.song.findTrack(f.track)->modulators.push_back(curve);
+}
+
+/// The clip a bounce of the track's first bar makes.
+const Clip* bounceBar(BounceSong& f) {
+    NoteBounce what;
+    what.track = f.track;
+    what.to = 4 * kPpq;
+    NoteBounceMade made;
+    CommandPtr command = bounceNotes(f.song, what, 120, f.next(), &made);
+    REQUIRE(command);
+    command->apply(f.song);
+    return f.song.findClip(made.clip);
+}
+
+} // namespace
+
+TEST_CASE("a notes bounce plays a curve on a Motion device before the playheads") {
+    BounceSong f;
+    DeviceId motion = motionOnAllNotes(f);
+    addDevice(f.song, f.track, DeviceType::Playheads, 1, f.next())->apply(f.song);
+    stepCurveOnPitch(f, motion);
+    int moved = 0, still = 0;
+    for (const Note& n : bounceBar(f)->notes)
+        (n.start < 2 * kPpq ? still : moved) += n.start < 2 * kPpq ? int(n.pitch <= 61) : int(n.pitch > 63);
+    CHECK(still > 0);
+    CHECK(moved > 0);
+}
+
+TEST_CASE("a notes bounce plays a curve on a Motion device with no playheads, step where the note starts") {
+    BounceSong f;
+    DeviceId motion = motionOnAllNotes(f);
+    stepCurveOnPitch(f, motion);
+    const Clip* clip = bounceBar(f);
+    REQUIRE(clip->notes.size() == 4);
+    CHECK(clip->notes[0].pitch == 60);
+    CHECK(clip->notes[1].pitch == 61);
+    CHECK(clip->notes[2].pitch > 62);
+    CHECK(clip->notes[3].pitch > 63);
+}
+
+TEST_CASE("a notes bounce plays a lane on a Motion device's knob before the playheads") {
+    BounceSong f;
+    DeviceId motion = motionOnAllNotes(f);
+    addDevice(f.song, f.track, DeviceType::Playheads, 1, f.next())->apply(f.song);
+    AutomationEnvelope lane;
+    lane.id = AutomationId(f.song.nextId++);
+    lane.paramTarget = ParamRef{ParamRef::Kind::Device, motion.value, uint16_t(chain::knob::kMotionPitch)};
+    AutoPoint up;
+    up.value = 1;
+    lane.points = {up};
+    f.song.findTrack(f.track)->automation.push_back(lane);
+    for (const Note& n : bounceBar(f)->notes)
+        CHECK(n.pitch > 63);
+}
+
+TEST_CASE("a notes bounce plays a lane on a playhead's own setting") {
+    BounceSong f;
+    addDevice(f.song, f.track, DeviceType::Playheads, 0, f.next())->apply(f.song);
+    Track& track = *f.song.findTrack(f.track);
+    track.devices[0].playheads.resize(1);
+    AutomationEnvelope lane;
+    lane.id = AutomationId(f.song.nextId++);
+    lane.paramTarget =
+        ParamRef{ParamRef::Kind::Playhead, track.devices[0].playheads[0].id.value, uint16_t(playheads::knob::kOn)};
+    AutoPoint on, off;
+    on.value = 1;
+    on.curve = CurveType::Hold;
+    off.t = 2 * kPpq;
+    off.value = 0;
+    off.curve = CurveType::Hold;
+    lane.points = {on, off};
+    track.automation.push_back(lane);
+    for (const Note& n : bounceBar(f)->notes)
+        CHECK(n.start < 2 * kPpq);
+}
+
+TEST_CASE("a notes bounce keeps each note's own expression curves") {
+    BounceSong f;
+    f.song.findClip(f.clipId)->notes[0].timbreExpr = {{0, 0.25f, 0}, {1, 0.75f, 0}};
+    const Clip* clip = bounceBar(f);
+    REQUIRE(clip->notes.size() == 4);
+    CHECK(clip->notes[0].timbreExpr == f.song.findClip(f.clipId)->notes[0].timbreExpr);
+}
+
+TEST_CASE("a notes bounce plays a curve sent to an AUTO jack, with no lane on that channel") {
+    BounceSong f;
+    Modulator curve;
+    curve.id = ModulatorId(f.song.nextId++);
+    curve.type = ModulatorType::Curve;
+    curve.params.assign(devices::modulatorInfo(ModulatorType::Curve).params.size(), 0.f);
+    curve.length = 4 * kPpq;
+    curve.segmentEnd = 4 * kPpq;
+    AutoPoint rest, up;
+    rest.value = 0.5f;
+    rest.curve = CurveType::Hold;
+    up.t = 2 * kPpq;
+    up.value = 1;
+    up.curve = CurveType::Hold;
+    curve.points = {rest, up};
+    Modulation route;
+    route.kind = Modulation::Kind::AutoChannel;
+    route.track = f.track;
+    route.channel = 3;
+    route.amount = 1;
+    curve.routes.push_back(route);
+    f.song.findTrack(f.track)->modulators.push_back(curve);
+
+    NoteBounce what;
+    what.track = f.track;
+    what.to = 4 * kPpq;
+    NoteBounceMade made;
+    bounceNotes(f.song, what, 120, f.next(), &made)->apply(f.song);
+    const Track& track = *f.song.findTrack(made.track);
+    REQUIRE(track.automation.size() == 1);
+    CHECK(track.automation[0].outputIndex == 3);
+    CHECK(evaluate(track.automation[0], double(kPpq)) == doctest::Approx(0.f));
+    CHECK(evaluate(track.automation[0], double(3 * kPpq)) == doctest::Approx(1.f));
+}
+
+TEST_CASE("a notes bounce carries the track's pitch bend lane") {
+    BounceSong f;
+    AutomationEnvelope lane;
+    lane.id = AutomationId(f.song.nextId++);
+    lane.drive = LaneDrive::Pitch;
+    AutoPoint up;
+    up.value = 0.75f;
+    lane.points = {up};
+    f.song.findTrack(f.track)->automation.push_back(lane);
+    NoteBounce what;
+    what.track = f.track;
+    what.to = 4 * kPpq;
+    NoteBounceMade made;
+    bounceNotes(f.song, what, 120, f.next(), &made)->apply(f.song);
+    const Track& track = *f.song.findTrack(made.track);
+    REQUIRE(track.automation.size() == 1);
+    CHECK(track.automation[0].drive == LaneDrive::Pitch);
+    CHECK(evaluate(track.automation[0], 0.0) == doctest::Approx(0.75f));
 }
 
 TEST_CASE("note repeat plays a whole chord again at its rate for as long as it lasts") {

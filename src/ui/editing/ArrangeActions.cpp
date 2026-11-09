@@ -469,15 +469,14 @@ void openInEditor(ArrangerLanes& lanes, ArrangementId id) {
     const arrange::Placed* p = arrange::find(lanes.committed(), id);
     if (!p)
         return;
-    ViewState& view = ctx.view();
-    bool alreadyOpen = ctx.state().selectedClip == p->clip.clip && view.focus == Pane::Detail;
+    bool alreadyOpen = ctx.state().selectedClip == p->clip.clip && ctx.state().focus == Pane::Detail;
     lanes.selection() = {id};
     clipActions::select(ctx, p->track, p->clip.clip);
-    view.focus = Pane::Detail;
-    if (view.maximized == Pane::Top)
-        view.maximized.reset();
+    ctx.state().focus = Pane::Detail;
+    if (ctx.state().maximized == Pane::Top)
+        ctx.state().maximized.reset();
     else if (alreadyOpen)
-        view.maximized = Pane::Detail; // double-click again: the piano roll fills the editor
+        ctx.state().maximized = Pane::Detail; // double-click again: the piano roll fills the editor
 }
 
 void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId clicked, Tick at) {

@@ -374,7 +374,7 @@ const Playhead* DeviceStrip::branchPlayhead() {
 
 const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
     for (const Playhead& p : d.playheads)
-        if (p.id.value == ctx.selectedPlayhead)
+        if (p.id.value == ctx.state().selectedPlayhead)
             return &p;
     return d.playheads.empty() ? nullptr : &d.playheads.front();
 }
@@ -407,8 +407,8 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     if (shown) {
         uint64_t id = shown->id.value;
         auto label = [&](float lx, float width, int param) {
-            parts.push_back({Kind::CurveLabel, Rect(lx, knobTop + 40, width, 12), index, param, id,
-                             ParamRef::Kind::Playhead});
+            parts.push_back(
+                {Kind::CurveLabel, Rect(lx, knobTop + 40, width, 12), index, param, id, ParamRef::Kind::Playhead});
         };
         float kx = card.pos.x + kCardPad;
         parts.push_back({Kind::GroupLabel, Rect(kx, knobTop - 12, 3 * kCell, 10), index, 0, id});
@@ -418,10 +418,10 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
         kx += kCell;
         // Rate
         label(kx, kCell, kRate);
-        parts.push_back({Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, kRate, id,
-                         ParamRef::Kind::Playhead});
-        parts.push_back({Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kRate, id, ParamRef::Kind::Playhead,
-                         true});
+        parts.push_back(
+            {Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, kRate, id, ParamRef::Kind::Playhead});
+        parts.push_back(
+            {Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kRate, id, ParamRef::Kind::Playhead, true});
         kx += kCell;
         // Direction: its name opens a curve for the direction; the dropdown also holds the step orders.
         label(kx, kCell, kDirection);
@@ -506,10 +506,11 @@ void DeviceStrip::step() {
             scrollX = 0;
             modScroll = 0;
         }
-        if (ctx.selectedDevice && !(t && findDevice(ctx.module()->song(), DeviceId(ctx.selectedDevice)) &&
-                                    std::any_of(t->devices.begin(), t->devices.end(),
-                                                [&](const Device& d) { return d.id.value == ctx.selectedDevice; })))
-            ctx.selectedDevice = 0;
+        if (ctx.state().selectedDevice &&
+            !(t && findDevice(ctx.module()->song(), DeviceId(ctx.state().selectedDevice)) &&
+              std::any_of(t->devices.begin(), t->devices.end(),
+                          [&](const Device& d) { return d.id.value == ctx.state().selectedDevice; })))
+            ctx.state().selectedDevice = 0;
         if (ctx.mappingModulator && !findModulator(ctx.module()->song(), ModulatorId(ctx.mappingModulator)))
             ctx.mappingModulator = 0;
         float most = std::max(0.f, contentWidth - (box.size.x - chainLeft));
@@ -524,13 +525,13 @@ void DeviceStrip::step() {
 
 bool DeviceStrip::handleAction(Action action) {
     TesseraModule* m = ctx.module();
-    if (!m || !ctx.selectedDevice || !deviceActions::stripOpen(ctx))
+    if (!m || !ctx.state().selectedDevice || !deviceActions::stripOpen(ctx))
         return false;
-    DeviceId id(ctx.selectedDevice);
+    DeviceId id(ctx.state().selectedDevice);
     switch (action) {
     case Action::Delete:
         m->perform(removeDevice(m->song(), id));
-        ctx.selectedDevice = 0;
+        ctx.state().selectedDevice = 0;
         return true;
     case Action::Duplicate:
         m->perform(duplicateDevice(m->song(), id, m->ids()));
@@ -583,7 +584,7 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
         else if (info->kind == devices::ParamInfo::Kind::Choice)
             onClick = [c, ref] { deviceActions::openChoiceMenu(*c, ref); };
         else
-            onClick = [c, device] { c->selectedDevice = device.value; };
+            onClick = [c, device] { c->state().selectedDevice = device.value; };
         // An automated knob starts from where its lane has it, so it doesn't jump.
         float start = m->automated(ref) ? m->knobBase(ref) : *value;
         return std::make_unique<ClickOrDrag>(std::make_unique<KnobDrag>(*this, ctx, ref, start, *info, pos), pos,
@@ -598,7 +599,7 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
                 centers.push_back(q.rect.getCenter().x);
         DeviceId device(p.id);
         return std::make_unique<ClickOrDrag>(std::make_unique<CardDrag>(*this, ctx, device, centers), pos,
-                                             [c, device] { c->selectedDevice = device.value; });
+                                             [c, device] { c->state().selectedDevice = device.value; });
     }
     default:
         return nullptr;
@@ -631,7 +632,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             deviceActions::openModulatorMenu(ctx, ModulatorId(hit->id));
             break;
         case Kind::PlayheadChip:
-            ctx.selectedPlayhead = hit->id;
+            ctx.state().selectedPlayhead = hit->id;
             deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
             break;
         case Kind::CurveLabel:
@@ -647,7 +648,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     if (!hit) {
         // Empty space ends mapping and drops the card selection.
         ctx.mappingModulator = 0;
-        ctx.selectedDevice = 0;
+        ctx.state().selectedDevice = 0;
         return;
     }
     switch (hit->kind) {
@@ -666,19 +667,19 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         // opens no popover (Trello: the dialog and the pane opened together). A second click puts the notes back.
         const Modulator* mod = findModulator(m->song(), ModulatorId(hit->id));
         if (mod && mod->type == ModulatorType::Curve) {
-            ctx.openModulator = 0;
+            ctx.state().openModulator = 0;
             if (deviceActions::curveShown(ctx, mod->id))
-                ctx.view().lowerLane = 0;
+                ctx.state().lowerLane = 0;
             else
                 deviceActions::showCurve(ctx, mod->id);
             break;
         }
-        ctx.openModulator = ctx.openModulator == hit->id ? 0 : hit->id;
+        ctx.state().openModulator = ctx.state().openModulator == hit->id ? 0 : hit->id;
         break;
     }
     case Kind::ModulatorMap:
         ctx.mappingModulator = ctx.mappingModulator == hit->id ? 0 : hit->id;
-        ctx.openModulator = 0;
+        ctx.state().openModulator = 0;
         break;
     case Kind::Power:
         if (const Device* d = findDevice(m->song(), DeviceId(hit->id)))
@@ -704,14 +705,14 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         }
         break;
     case Kind::CardHeader:
-        ctx.selectedDevice = hit->id;
+        ctx.state().selectedDevice = hit->id;
         ctx.mappingModulator = 0;
         break;
     case Kind::AddTile:
         deviceActions::openDeviceBrowser(ctx, t->id, -1);
         break;
     case Kind::PlayheadChip:
-        ctx.selectedPlayhead = hit->id;
+        ctx.state().selectedPlayhead = hit->id;
         // The dot at the chip's left end turns it off or on; with Alt it solos it.
         if (pos.x < hit->rect.pos.x + kChipDot)
             deviceActions::togglePlayheadOn(ctx, mods.alt);
@@ -768,12 +769,12 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         PlayheadId added;
         if (CommandPtr add = addPlayhead(m->song(), DeviceId(hit->id), m->ids(), &added)) {
             m->perform(std::move(add));
-            ctx.selectedPlayhead = added.value;
+            ctx.state().selectedPlayhead = added.value;
         }
         break;
     }
     case Kind::Card:
-        ctx.selectedDevice = hit->id;
+        ctx.state().selectedDevice = hit->id;
         ctx.mappingModulator = 0;
         break;
     default:
@@ -1002,7 +1003,7 @@ void DeviceStrip::drawModulators(NVGcontext* vg) {
         const Modulator* mod = findModulator(song, ModulatorId(p.id), &place);
         if (!mod)
             continue;
-        bool open = ctx.openModulator == p.id || deviceActions::curveShown(ctx, mod->id),
+        bool open = ctx.state().openModulator == p.id || deviceActions::curveShown(ctx, mod->id),
              mapping = ctx.mappingModulator == p.id;
         bool mapHot =
             hovered >= 0 && parts[size_t(hovered)].kind == Kind::ModulatorMap && parts[size_t(hovered)].id == p.id;
@@ -1068,7 +1069,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
     if (!card)
         return;
     Rect r = card->rect;
-    bool selected = ctx.selectedDevice == d.id.value;
+    bool selected = ctx.state().selectedDevice == d.id.value;
     NVGcolor border = selected ? c.select : c.line0;
     // The Playheads card takes the colour of the playhead it shows.
     if (d.type == DeviceType::Playheads)
@@ -1303,8 +1304,8 @@ void DeviceStrip::drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhe
     auto value = [&](int k) {
         ParamRef ref = refOf(k);
         float v = knobPreview && knobPreview->first == ref ? knobPreview->second
-                  : moved(k)                                ? m->liveKnob(ref)
-                                                            : p.params[size_t(k)];
+                  : moved(k)                               ? m->liveKnob(ref)
+                                                           : p.params[size_t(k)];
         return int(std::lround(devices::display(info[size_t(k)], v)));
     };
     int size = value(kRepeatSize), times = value(kRepeatTimes), curve = value(kCurve);
@@ -1396,7 +1397,8 @@ void DeviceStrip::drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhe
             deviceActions::drawCurveIcon(vg, icon, curve, curved ? color : c.text1, 1.3f);
             draw::TextStyle t{theme::fonts::ui(), 10, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
             draw::text(vg, t, icon.getRight() + 5, q.rect.getCenter().y,
-                       draw::ellipsize(vg, t, playheads::curveNames()[size_t(curve)], q.rect.getRight() - icon.getRight() - 18));
+                       draw::ellipsize(vg, t, playheads::curveNames()[size_t(curve)],
+                                       q.rect.getRight() - icon.getRight() - 18));
             chevron(q.rect.getRight() - 8, q.rect.getCenter().y);
         }
         nvgRestore(vg);

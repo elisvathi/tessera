@@ -232,9 +232,9 @@ void CurveView::setPickedKind(CurveType kind) {
 
 const Modulator* CurveView::modulator(ModulatorPlace* place) {
     TesseraModule* m = ctx.module();
-    if (!m || !ctx.curveModulator)
+    if (!m || !ctx.state().curveModulator)
         return nullptr;
-    const Modulator* mod = findModulator(m->song(), ModulatorId(ctx.curveModulator), place);
+    const Modulator* mod = findModulator(m->song(), ModulatorId(ctx.state().curveModulator), place);
     return mod && mod->type == ModulatorType::Curve ? mod : nullptr;
 }
 
@@ -243,7 +243,7 @@ ParamRef CurveView::target() {
         int r = mods::drawnRoute(*mod);
         return r >= 0 ? mod->routes[size_t(r)].target : ParamRef();
     }
-    return ctx.curveTarget;
+    return ctx.state().curveTarget;
 }
 
 const devices::ParamInfo* CurveView::targetInfo(float* base, float* amount) {
@@ -272,13 +272,14 @@ bool CurveView::stepped() {
     return info && discrete(*info) && std::fabs(amount) > 1e-4f;
 }
 
-bool CurveView::hasCurve() { return modulator() || (ctx.curveTarget.valid() && targetInfo()); }
+bool CurveView::hasCurve() { return modulator() || (ctx.state().curveTarget.valid() && targetInfo()); }
 
 std::string CurveView::title() {
     if (const Modulator* mod = modulator())
         return mod->name;
     TesseraModule* m = ctx.module();
-    return m && ctx.curveTarget.valid() ? deviceActions::paramName(m->song(), ctx.curveTarget) : "Curve";
+    return m && ctx.state().curveTarget.valid() ? deviceActions::paramName(m->song(), ctx.state().curveTarget)
+                                                : "Curve";
 }
 
 double CurveView::spanStart() {
@@ -311,7 +312,7 @@ void CurveView::commit(CurveDrawing drawing) {
         return;
     }
     const Track* t = owner.track();
-    ParamRef ref = ctx.curveTarget;
+    ParamRef ref = ctx.state().curveTarget;
     if (!t || !ref.valid())
         return;
     // Named after what it moves: "Melody Rate", "Echo Time".
@@ -492,10 +493,23 @@ void CurveView::step() {
     if (hasCurve() && visible && (!fitted || id != fittedModulator || !(ref == fittedTarget))) {
         if (fitted && id != fittedModulator && fittedModulator != 0)
             picked.clear();
-        fit();
+        // A curve already open in the other editor stays where it was; a new one lines up under the notes.
+        if (ctx.module() && id != 0 && ctx.state().curveTimeFor == id && ctx.state().curveTime.pxPerTick > 0)
+            time.restore(ctx.state().curveTime);
+        else
+            fit();
         fitted = true;
         fittedModulator = id;
         fittedTarget = ref;
+    }
+    if (ctx.module() && visible && id != 0) {
+        EditorState& state = ctx.state();
+        if (ctx.drivesView()) {
+            state.curveTime = time.state();
+            state.curveTimeFor = id;
+        } else if (state.curveTimeFor == id && state.curveTime.pxPerTick > 0) {
+            time.restore(state.curveTime);
+        }
     }
     InteractiveView::step();
 }
@@ -581,6 +595,18 @@ std::unique_ptr<DragGesture> CurveView::startGesture(Vec pos, int button, Modifi
     return std::make_unique<ClickOrDrag>(std::make_unique<CurvePick>(*this, pos, mods.shift), pos, add);
 }
 
+void CurveView::deletePicked() {
+    if (picked.empty() || !modulator())
+        return;
+    CurveDrawing d = shown();
+    // From the last back, so the indices still to go stay right.
+    for (auto it = picked.rbegin(); it != picked.rend(); ++it)
+        if (*it < d.points.size())
+            d.points.erase(d.points.begin() + std::ptrdiff_t(*it));
+    picked.clear();
+    commit(d);
+}
+
 void CurveView::doubleClick(Vec pos, Modifiers mods) {
     if (pos.y < kEdge && pos.x >= left) {
         setHeight(0);
@@ -625,7 +651,7 @@ void CurveView::click(Vec pos, int button, Modifiers mods) {
             break;
         case HeaderPart::Kind::Close:
             // Back to the note lane shown before the curve.
-            ctx.view().lowerLane = 0;
+            ctx.state().lowerLane = 0;
             break;
         case HeaderPart::Kind::Shape:
             applyShape(part.shape);
@@ -806,7 +832,7 @@ void CurveView::openMovesMenu() {
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Map to more knobs", "", [c, id] {
         c->mappingModulator = id.value;
-        c->openModulator = 0;
+        c->state().openModulator = 0;
     }));
     menu->addChild(rack::createMenuItem("CV out…", "", [c, id] { deviceActions::openCvOutMenu(*c, id); }));
 }

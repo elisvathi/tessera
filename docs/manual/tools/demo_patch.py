@@ -359,7 +359,10 @@ def main():
     song, lead = make_song()
     hp = PANEL_HP
     (out / "demo.vcv").write_text(json.dumps(patch([tessera_module(song, lead, hp, True)] + outputs(hp))))
-    (out / "panel.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 80, True)] + outputs(80))))
+    # The two editors share their open lanes, and the panel has no room for this one.
+    panel = tessera_module(song, lead, 80, True)
+    del panel["data"]["ui"]["overlay"]["openAutomation"]
+    (out / "panel.vcv").write_text(json.dumps(patch([panel] + outputs(80))))
     (out / "modules.vcv").write_text(json.dumps(patch([tessera_module(song, lead, hp, True)] + outputs(hp), 1.6)))
     first = [tessera_module(song, lead, hp, False), output_module(2001, "TrackOut", "Bass", hp),
              fundamental(3001, "VCO", hp + 7), fundamental(3002, "ADSR", hp + 18), fundamental(3003, "VCA-1", hp + 28)]

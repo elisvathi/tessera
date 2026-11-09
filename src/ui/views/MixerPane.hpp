@@ -103,7 +103,7 @@ class MixerPane : public InteractiveView {
     /// the two.
     float capPos(const Strip& s) const;
     /// Whether Show sends is on (for a track that still has a strip).
-    bool showingSends() const { return ctx.view().showSends.valid(); }
+    bool showingSends() const { return ctx.state().showSends.valid(); }
     /// A lane strip's level and pan: plays at once while a drag holds it, and commits one undo step.
     void holdLane(const Strip& s, Channel c);
     void setLane(const Strip& s, Channel c, const std::string& name);

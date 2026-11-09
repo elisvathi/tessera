@@ -20,7 +20,7 @@ void automate(EditorContext& ctx, TrackId from, TrackId to) {
     const Send* send = m ? findSend(m->song(), from, to) : nullptr;
     if (!t || !target || !send)
         return;
-    ctx.view().openAutomation.insert(from.value);
+    ctx.state().openAutomation.insert(from.value);
     for (const AutomationEnvelope& l : t->automation)
         if (l.drive == LaneDrive::Send && l.sendTo == to)
             return;
@@ -58,9 +58,9 @@ void appendAddSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from) 
             if (CommandPtr add = addSend(m->song(), from, to))
                 m->perform(std::move(add));
             // The next move is turning it up: the faders show the sends to that track.
-            c->view().setShowSends(to, EditorContext::now());
+            c->state().setShowSends(to, EditorContext::now());
             if (c->module() && c->module()->makesSound())
-                c->view().mixerOpen = true;
+                c->state().mixerOpen = true;
         }));
         offered++;
     }
@@ -78,16 +78,16 @@ void appendSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from, Tra
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuLabel("Send to " + target->name));
     menu->addChild(rack::createMenuItem("Show sends to " + target->name, "", [c, to] {
-        c->view().setShowSends(to, EditorContext::now());
-        c->view().mixerOpen = true;
+        c->state().setShowSends(to, EditorContext::now());
+        c->state().mixerOpen = true;
     }));
     menu->addChild(rack::createMenuItem("Automate in the timeline", "", [c, from, to] { automate(*c, from, to); }));
-    menu->addChild(rack::createCheckMenuItem("Before the fader", "", [pre = now.preFader] { return pre; }, [m, from, now] {
-        m->perform(setSend(m->song(), from, {now.to, now.db, true}, "Send before the fader"));
-    }));
-    menu->addChild(rack::createCheckMenuItem("After the fader", "", [pre = now.preFader] { return !pre; }, [m, from, now] {
-        m->perform(setSend(m->song(), from, {now.to, now.db, false}, "Send after the fader"));
-    }));
+    menu->addChild(rack::createCheckMenuItem(
+        "Before the fader", "", [pre = now.preFader] { return pre; },
+        [m, from, now] { m->perform(setSend(m->song(), from, {now.to, now.db, true}, "Send before the fader")); }));
+    menu->addChild(rack::createCheckMenuItem(
+        "After the fader", "", [pre = now.preFader] { return !pre; },
+        [m, from, now] { m->perform(setSend(m->song(), from, {now.to, now.db, false}, "Send after the fader")); }));
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Send level (dB)"));
     menu->addChild(new MenuTextField(audioDraw::dbText(now.db), [m, from, now](const std::string& text) {

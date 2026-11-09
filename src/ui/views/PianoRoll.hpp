@@ -45,6 +45,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
     float headerLeft = 0;
 
     bool handleAction(Action action) override;
+    /// Remembers whether a press at `pos` landed in the curve pane, so Delete acts on its points and not on the notes.
+    void notePress(rack::math::Vec pos);
     void layout() override;
     void step() override;
     void draw(const DrawArgs& args) override;
@@ -54,6 +56,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ClipSource source;
     /// The last click was in the automation lane, so editing keys act on its points rather than on notes.
     bool automationFocus = false;
+    /// The last press was in the Curve modulator's pane.
+    bool curvePaneFocus = false;
     /// Notes whose velocity tag stays visible: the ones a velocity drag is changing.
     edits::IdSet velocityShown;
     /// Curve points picked in the grid (Bend tool, or a timbre / pressure strip): dragging one moves them all,

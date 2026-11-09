@@ -2,6 +2,7 @@
 
 #include "../module/Registry.hpp"
 #include "../module/TesseraModule.hpp"
+#include "EditorWindow.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -20,10 +21,13 @@ void EditorContext::selectTrackOffset(int delta) const {
     state().selectedTrack = song.tracks[size_t(index)].id;
 }
 
+bool EditorContext::drivesView() const { return surface == Surface::Overlay || !EditorWindow::isOpenFor(moduleId); }
+
 EditorState& EditorContext::state() const {
     TesseraModule* m = module();
-    assert(m && "EditorContext::state() without a module");
-    return m->editor();
+    // Views also draw in the module browser, with no module: they read defaults there.
+    static EditorState noModule;
+    return m ? m->editor() : noModule;
 }
 
 } // namespace tessera

@@ -61,12 +61,12 @@ constexpr float kDbTextWidth = 44;
 class ResizeLaneGesture : public DragGesture {
   public:
     ResizeLaneGesture(EditorContext& ctx, AutomationId lane, float startY)
-        : ctx(ctx), lane(lane), startY(startY), startHeight(ctx.view().laneHeight(lane)) {}
+        : ctx(ctx), lane(lane), startY(startY), startHeight(ctx.state().laneHeight(lane)) {}
     void update(Vec pos, Modifiers mods) override {
         height = std::clamp(startHeight + (pos.y - startY), TrackAxis::kMinHeight, TrackAxis::kMaxHeight);
-        ctx.view().laneHeights[lane.value] = height;
+        ctx.state().laneHeights[lane.value] = height;
     }
-    void cancel() override { ctx.view().laneHeights[lane.value] = startHeight; }
+    void cancel() override { ctx.state().laneHeights[lane.value] = startHeight; }
     std::string readout() const override { return std::to_string(int(height)) + " px"; }
     CursorShape cursor() const override { return CursorShape::ResizeV; }
 
@@ -81,22 +81,22 @@ class ResizeLaneGesture : public DragGesture {
 class ResizeTrackGesture : public DragGesture {
   public:
     ResizeTrackGesture(EditorContext& ctx, TrackId track, float startY)
-        : ctx(ctx), track(track), startY(startY), startHeights(ctx.view().trackHeights),
-          startHeight(ctx.view().trackHeight(track)) {}
+        : ctx(ctx), track(track), startY(startY), startHeights(ctx.state().trackHeights),
+          startHeight(ctx.state().trackHeight(track)) {}
 
     void update(Vec pos, Modifiers mods) override {
         ViewState& view = ctx.view();
-        view.trackHeights = startHeights;
+        ctx.state().trackHeights = startHeights;
         double h = std::clamp(startHeight + (pos.y - startY), TrackAxis::kMinHeight, TrackAxis::kMaxHeight);
         if (mods.alt) {
             for (const Track& t : ctx.module()->song().tracks)
-                view.trackHeights[t.id.value] = h;
+                ctx.state().trackHeights[t.id.value] = h;
         } else {
-            view.trackHeights[track.value] = h;
+            ctx.state().trackHeights[track.value] = h;
         }
         height = h;
     }
-    void cancel() override { ctx.view().trackHeights = startHeights; }
+    void cancel() override { ctx.state().trackHeights = startHeights; }
     std::string readout() const override { return std::to_string(int(height)) + " px"; }
     CursorShape cursor() const override { return CursorShape::ResizeV; }
 
@@ -335,9 +335,9 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
     }
     const TrackRow& row = owner.rows[size_t(hit.row)];
     if (row.kind == TrackRow::Kind::Master) {
-        hit.part = masterLevelRect().contains(pos)                ? Part::MasterLevel
+        hit.part = masterLevelRect().contains(pos)                   ? Part::MasterLevel
                    : masterLanesRect().grow(Vec(2, 2)).contains(pos) ? Part::Automation
-                                                                    : Part::Master;
+                                                                     : Part::Master;
         return hit;
     }
     float top = float(owner.tracks.trackTop(hit.row));
@@ -383,7 +383,6 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
 }
 
 namespace {
-
 
 /// Drags an audio track's level bar sideways: relative, Shift or Ctrl/Cmd for fine, a soft detent at 0 dB (Alt
 /// skips it). Plays at once through the player's hold; one undo step on release.
@@ -688,10 +687,11 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
     Hit hit = hitTest(pos);
     if (hit.part == Part::Master) {
         if (button == GLFW_MOUSE_BUTTON_LEFT)
-            ctx.view().mixerOpen = true;
+            ctx.state().mixerOpen = true;
         return;
     }
-    if (hit.row >= 0 && hit.row < int(owner.rows.size()) && owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Master) {
+    if (hit.row >= 0 && hit.row < int(owner.rows.size()) &&
+        owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Master) {
         TrackId id = owner.rows[size_t(hit.row)].track;
         if (button == GLFW_MOUSE_BUTTON_RIGHT && hit.part == Part::MasterLevel) {
             EditorContext* c = &ctx;
@@ -704,7 +704,7 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
                     m->perform(setMasterVolume(m->song(), 0));
             }));
         } else if (button == GLFW_MOUSE_BUTTON_LEFT && hit.part == Part::Automation) {
-            std::set<uint64_t>& open = ctx.view().openAutomation;
+            std::set<uint64_t>& open = ctx.state().openAutomation;
             if (!open.erase(id.value))
                 open.insert(id.value);
         }
@@ -770,13 +770,13 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
         return;
     switch (hit.part) {
     case Part::Fold: {
-        std::set<uint64_t>& folded = ctx.view().foldedGroups;
+        std::set<uint64_t>& folded = ctx.state().foldedGroups;
         if (!folded.erase(row.group.value))
             folded.insert(row.group.value);
         break;
     }
     case Part::Automation: {
-        std::set<uint64_t>& open = ctx.view().openAutomation;
+        std::set<uint64_t>& open = ctx.state().openAutomation;
         if (!open.erase(row.track.value))
             open.insert(row.track.value);
         break;
@@ -819,8 +819,8 @@ void TrackHeaders::doubleClick(Vec pos, Modifiers mods) {
     if (hit.part == Part::Edge) {
         // Double-clicking the bottom edge toggles between compact and expanded.
         ViewState& view = ctx.view();
-        view.trackHeights[row.track.value] =
-            view.trackHeight(row.track) > kCompactHeight ? kCompactHeight : kExpandedHeight;
+        ctx.state().trackHeights[row.track.value] =
+            ctx.state().trackHeight(row.track) > kCompactHeight ? kCompactHeight : kExpandedHeight;
         return;
     }
     if (hit.part == Part::Level || hit.part == Part::Pan) {
@@ -890,8 +890,8 @@ std::string TrackHeaders::tipFor(const Hit& hit) {
                ". Drag sideways; double-click: 0 dB; right-click to automate";
     if (hit.part == Part::Master)
         return "Master: every track that makes sound, on its way to MAIN. Click to open the mixer";
-    if (hit.row >= 0 && hit.row < int(owner.rows.size()) && owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Master &&
-        hit.part == Part::Automation)
+    if (hit.row >= 0 && hit.row < int(owner.rows.size()) &&
+        owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Master && hit.part == Part::Automation)
         return "The Master's Volume lane: right-click its level bar to add one";
     if (hit.row < 0 || hit.row >= int(owner.rows.size()) || owner.rows[size_t(hit.row)].kind != TrackRow::Kind::Track)
         return "";
@@ -960,7 +960,7 @@ void TrackHeaders::wheel(Vec pos, Vec delta, Modifiers mods) {
         return;
     }
     owner.tracks.scrollByPx(-delta.y);
-    ctx.view().trackScroll = owner.tracks.scroll();
+    ctx.state().trackScroll = owner.tracks.scroll();
 }
 
 // ---- Drawing ------------------------------------------------------------------------------------------------
@@ -1048,7 +1048,7 @@ void TrackHeaders::drawMasterRow(NVGcontext* vg) {
     draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::text(vg, name, r.pos.x + 6, r.getCenter().y, "Master");
     Rect lanes = masterLanesRect();
-    bool lanesOpen = ctx.view().openAutomation.count(master.id.value) > 0;
+    bool lanesOpen = ctx.state().openAutomation.count(master.id.value) > 0;
     bool lanesHover = hovered && hover.part == Part::Automation;
     if (lanesHover)
         draw::roundedRect(vg, lanes, 3, c.line0);
@@ -1078,7 +1078,7 @@ void TrackHeaders::drawGroupRow(NVGcontext* vg, int index, float top, float h) {
     const TrackGroup* g = ctx.module()->song().findGroup(row.group);
     if (!g)
         return;
-    bool folded = ctx.view().foldedGroups.count(g->id.value) > 0;
+    bool folded = ctx.state().foldedGroups.count(g->id.value) > 0;
     bool hovered = hover.row == index && !hasGesture();
     nvgBeginPath(vg);
     nvgRect(vg, 0, top, box.size.x, h);
@@ -1288,7 +1288,7 @@ void TrackHeaders::drawTrackRow(NVGcontext* vg, int index, float top, float h) {
         nvgStroke(vg);
     }
     Rect lanes = automationRect(top, h);
-    bool lanesOpen = ctx.view().openAutomation.count(t.id.value) > 0;
+    bool lanesOpen = ctx.state().openAutomation.count(t.id.value) > 0;
     bool lanesHover = hovered && hover.part == Part::Automation;
     if (lanesHover)
         draw::roundedRect(vg, lanes, 3, c.line0);

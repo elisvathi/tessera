@@ -2297,3 +2297,46 @@ Replaces the list behind "2 sources" for tracks, and the "turn Clips down for a 
 - **Note Repeat** is its own device, because repeating a held chord should be easy to find. It replays every note at its
   Rate for as long as the note lasts.
 - **An audio track can also record another track or the master mix**, before its fader, alongside Track Out IN and Roll IN.
+
+## 143. Bounce notes equals recording the track (9 Nov)
+
+Replaces the Automation line of §139.
+
+- **As it plays matches what recording the track's outputs would capture**: pitch, gate, velocity at each note's own moment. Checked
+  against the engine on a real song: same notes, gates within a tick.
+- **Curves, lanes and song-following modulators count on every route**: Motion before Playheads, Motion in the chain, playhead settings
+  and the Playheads device. Curves in the chain are read for the block they play in, as in the engine.
+- **Other signals come along**: each note's bend, timbre and pressure curves, pitch bend and pressure lanes, and curves sent to AUTO
+  jacks (sampled, with a lane made when the jack had none).
+- **Limit:** free-running and note-following modulators can't be worked out without playing (§139).
+
+## 144. The two editors show the same thing (9 Nov)
+
+Changes §15, where each surface kept its own views.
+
+- **Shared by the full editor and the panel editor:** what is open (device strip, lower pane and curve, note lane, mixer, drum view, Show
+  sends, selected device, playhead and modulator), the panes (maximised pane, splitter, focus, inspector, wide clips), zoom and scroll (timeline, notes, curve pane), track and lane heights, folded groups and
+  open automation lanes.
+- **One editor drives, the other copies:** the full editor while it is open, else the panel. Two editors moving one view would fight, since
+  each fits and follows for its own width. So only the one in use fits a clip or follows the playhead.
+- **The notes view stays centred on the same rows** when the heights differ.
+- **Per editor, because the windows differ:** sizes in pixels: header width, clips width, mixer and curve pane height.
+- **One default track height, 48 px.** The panel used to start at 24 px.
+- **Old patches:** the full editor's views win; devices open in either stay open.
+- **A curve belongs to the track it was opened on:** selecting another track closes the curve pane.
+
+## 145. A short mixer has two layouts (9 Nov)
+
+Adds to §141.
+
+- **Under 200 px the strips use knobs, as before. From 80 px they stack**, level above pan, spaced evenly so no gap collects, with the dB when
+  there is room. **Under 80 px they sit side by side**, and under 62 px M and S drop off.
+
+## 146. Roll does less on each sample (9 Nov)
+
+- **Settings, buttons, lights and what the UI reads run every 32 samples.** Jacks that carry timing (clock, reset, run, launch, scene CV, record
+  gates and MIDI) stay on every sample. A one-sample event such as a tempo change is still read every sample.
+- **A silent audio track rests for the rest of its block** when it has no voice, input, send reaching it or delay, and no clip starts before the
+  block ends. It still writes silence to OUT and its delay line, and its fader ramps jump to the block's end.
+- A transport change, a jump, a tempo change or a launch wakes it at once.
+

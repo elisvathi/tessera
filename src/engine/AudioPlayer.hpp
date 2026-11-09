@@ -2,8 +2,8 @@
 
 #include "AudioBus.hpp"
 #include "AudioPlayback.hpp"
-#include "FrameRing.hpp"
 #include "Engine.hpp"
+#include "FrameRing.hpp"
 #include "Varispeed.hpp"
 
 #include <array>
@@ -62,8 +62,9 @@ class AudioPlayer {
 
     /// A track's (by its index in the snapshot) or the master's level in volts, peaks falling 20 dB a second.
     float level(int track, int side) const {
-        return track >= 0 && track < kMaxTracks ? meters[size_t(track)][size_t(side & 1)].load(std::memory_order_relaxed)
-                                                : 0.f;
+        return track >= 0 && track < kMaxTracks
+                   ? meters[size_t(track)][size_t(side & 1)].load(std::memory_order_relaxed)
+                   : 0.f;
     }
     float masterLevel(int side) const { return masterMeter[size_t(side & 1)].load(std::memory_order_relaxed); }
     /// The highest master peak (volts) since the last clearClip(), for the clip light.
@@ -130,8 +131,9 @@ class AudioPlayer {
 
     /// A group strip's (its index in the snapshot) level in volts, peaks falling 20 dB a second.
     float groupLevel(int group, int side) const {
-        return group >= 0 && group < kMaxTracks ? groupMeters[size_t(group)][size_t(side & 1)].load(std::memory_order_relaxed)
-                                                : 0.f;
+        return group >= 0 && group < kMaxTracks
+                   ? groupMeters[size_t(group)][size_t(side & 1)].load(std::memory_order_relaxed)
+                   : 0.f;
     }
 
     /// The longest delay compensation can add, in samples (about 170 ms at 48 kHz).
@@ -160,7 +162,8 @@ class AudioPlayer {
         return track >= 0 && track < kMaxTracks ? outMeters[size_t(track)].load(std::memory_order_relaxed) : 0.f;
     }
     void releaseHolds();
-    /// The fader (`pan` false, as a gain) or pan a drag holds on `track` now, for recording it into its lane. UI thread.
+    /// The fader (`pan` false, as a gain) or pan a drag holds on `track` now, for recording it into its lane. UI
+    /// thread.
     bool held(uint64_t track, bool pan, float& value) const;
 
     /// Whether a fader (`pan` false) or pan lane moves track `track` (its index in the snapshot) now, and to what:
@@ -183,21 +186,21 @@ class AudioPlayer {
   private:
     struct Voice {
         bool on = false;
-        uint64_t key = 0; // which instance or launched slot it plays
-        int clip = -1;         // index into the snapshot's clips
-        uint64_t clipId = 0;   // to find the clip again in a new snapshot
+        uint64_t key = 0;    // which instance or launched slot it plays
+        int clip = -1;       // index into the snapshot's clips
+        uint64_t clipId = 0; // to find the clip again in a new snapshot
         const AudioBuffer* buffer = nullptr;
         bool rendered = false;
-        bool exact = false;   // plays every frame in turn: no interpolation needed
-        bool free = false;    // Off clips: keeps its own pace, ignoring tempo changes
-        double pos = 0;       // frame in `buffer`
-        double rate = 0;      // frames per sample
-        int64_t frame = 0;    // exact voices
-        bool advanced = false; // a leaving voice already moved on this sample
-        double lastTick = 0;  // clip tick, to see seams and jumps
+        bool exact = false;           // plays every frame in turn: no interpolation needed
+        bool free = false;            // Off clips: keeps its own pace, ignoring tempo changes
+        double pos = 0;               // frame in `buffer`
+        double rate = 0;              // frames per sample
+        int64_t frame = 0;            // exact voices
+        bool advanced = false;        // a leaving voice already moved on this sample
+        double lastTick = 0;          // clip tick, to see seams and jumps
         float fade = 0, fadeStep = 0; // crossfade gain and its change per sample
-        bool leaving = false; // fading out for good
-        float gain = 0;       // this sample's clip gain and envelope
+        bool leaving = false;         // fading out for good
+        float gain = 0;               // this sample's clip gain and envelope
     };
 
     /// What should play on a track now: up to two clips (two only where timeline clips overlap).
@@ -214,7 +217,7 @@ class AudioPlayer {
         size_t cursor = 0; // first timeline instance that may play
         int engineIndex = -1;
         float gainL = 0, gainR = 0, stepL = 0, stepR = 0; // fader and pan, ramping
-        float outGain = 0, outStep = 0; // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
+        float outGain = 0, outStep = 0;     // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
         float clipsGain = 1, clipsStep = 0; // the clips' source Level
         float clipsPanL = 1, clipsPanR = 1;
         // Into the master: what came back on IN (heard), and its own sound (heard and own). One ramp per signal, so a
@@ -227,9 +230,11 @@ class AudioPlayer {
         float outPeak = 0;
         // This sample's signals, for the taps.
         float inL = 0, inR = 0, soundL = 0, soundR = 0, stemL = 0, stemR = 0;
-        bool fresh = true; // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
-        bool steady = false; // its voices step on unchanged for the rest of this block
-        int slot = -1;       // the launched slot a steady block plays, or -1 on the timeline
+        bool fresh = true;    // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
+        bool steady = false;  // its voices step on unchanged for the rest of this block
+        bool resting = false; // silent and nothing starts in this block: only silence is written (see process())
+        bool fed = false;     // another track sends to it, so it can't rest
+        int slot = -1;        // the launched slot a steady block plays, or -1 on the timeline
         float peakL = 0, peakR = 0;
     };
 
@@ -240,6 +245,10 @@ class AudioPlayer {
     /// Whether the track's voices can step on unchanged for the rest of the block (see process()).
     bool steadyAhead(const Engine& engine, const AudioTrackPlay& track, TrackRun& run, const std::array<Wanted, 2>& now,
                      int n, double song);
+    /// Whether a track can rest for the rest of this block: it has no voice, no input or send reaching it, no delay
+    /// to run out, and no clip starts before the block ends.
+    bool canRest(const Engine& engine, const AudioTrackPlay& track, TrackRun& run, int wantedNow, bool playing,
+                 double song);
     /// The engine's ticks since the track's launched clip started; NaN when none plays.
     double engineElapsed(const Engine& engine, const TrackRun& run) const;
     void follow(TrackRun& run, const std::array<Wanted, 2>& want, int count);
@@ -277,6 +286,7 @@ class AudioPlayer {
     double ticksPerSample = 0;
     double blockTempo = 0;
     bool blockSteady = false;
+    bool blockPlaying = false; // whether the transport ran when the block began
     Varispeed sinc;
     double sampleRate = 48000;
     double tempo = 120;

@@ -121,8 +121,8 @@ void ArrangerView::layout() {
     foldTab->visible = narrow && timelinePlays;
     float tab = foldTab->visible ? kFoldTabWidth : 0;
     float room = std::max(0.f, box.size.x - headerWidth - tab);
-    float most = ctx.view().clipsWide ? room - kFoldedTimeline : room * 0.5f;
-    float wanted = ctx.view().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth;
+    float most = ctx.state().clipsWide ? room - kFoldedTimeline : room * 0.5f;
+    float wanted = ctx.state().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth;
     float panelWidth = std::max(0.f, std::min({wanted, panel->contentWidth(), most}));
     if (foldTab->visible && !ctx.clipsOpenNarrow)
         panelWidth = 0;
@@ -214,7 +214,7 @@ void ArrangerView::applyZoomLimits() {
 }
 
 void ArrangerView::syncFromState() {
-    ViewState& state = ctx.view();
+    EditorState& state = ctx.state();
     const Song& song = ctx.module()->song();
     rows = buildTrackRows(song, state.foldedGroups, state.openAutomation, headers->showsMaster());
     std::vector<double> heights;
@@ -270,9 +270,9 @@ void ArrangerView::writeHeights() {
         if (i < syncedHeights.size() && tracks.heights()[i] == syncedHeights[i])
             continue; // not resized: keep the stored height (it may be smaller than a stacked track's)
         if (rows[i].kind == TrackRow::Kind::Track)
-            ctx.view().trackHeights[rows[i].track.value] = tracks.heights()[i];
+            ctx.state().trackHeights[rows[i].track.value] = tracks.heights()[i];
         else if (rows[i].kind == TrackRow::Kind::Lane)
-            ctx.view().laneHeights[rows[i].lane.value] = tracks.heights()[i];
+            ctx.state().laneHeights[rows[i].lane.value] = tracks.heights()[i];
     }
 }
 
@@ -286,13 +286,17 @@ void ArrangerView::zoomTracksAt(double y, double factor) {
     syncFromState();
     if (row >= 0 && row < int(tracks.heights().size()))
         tracks.anchorScroll(tracks.scroll() + tracks.trackTop(row) + fraction * tracks.trackHeight(row) - y);
-    ctx.view().trackScroll = tracks.scroll();
+    ctx.state().trackScroll = tracks.scroll();
 }
 
 void ArrangerView::saveToState() {
-    ViewState& state = ctx.view();
-    state.arranger = viewport.time.state();
-    state.trackScroll = tracks.scroll();
+    EditorState& state = ctx.state();
+    if (ctx.drivesView()) {
+        state.arranger = viewport.time.state();
+        state.trackScroll = tracks.scroll();
+    } else if (state.arranger.pxPerTick > 0) {
+        viewport.time.restore(state.arranger);
+    }
 }
 
 void ArrangerView::step() {
@@ -313,7 +317,7 @@ void ArrangerView::step() {
         viewport.time.step(lastStep > 0 ? now - lastStep : 0);
         lastStep = now;
 
-        if (m->playing() && !ctx.followPaused())
+        if (ctx.drivesView() && m->playing() && !ctx.followPaused())
             if (auto left = followScroll(ctx.state().follow, source.playhead(), viewport.time))
                 viewport.time.scrollTo(*left);
         saveToState();
@@ -326,6 +330,8 @@ void ArrangerView::revealSelectedTrack() {
     if (selected == revealedTrack)
         return;
     revealedTrack = selected;
+    if (!ctx.drivesView())
+        return;
     int row = lanes->rowOf(selected);
     if (row < 0)
         return;
@@ -431,7 +437,7 @@ bool ArrangerView::handleAction(Action action) {
     case Action::FitAllTracks:
         tracks.fitAll();
         writeHeights();
-        ctx.view().trackScroll = tracks.scroll();
+        ctx.state().trackScroll = tracks.scroll();
         return true;
     case Action::GoToStart:
         source.seek(0, false);

@@ -10,8 +10,8 @@ namespace tessera {
 
 namespace {
 
-/// Whether a lane drives an AUTO jack. Lanes that turn a device knob are already in the bounced notes, and the new track
-/// has no devices for them to reach.
+/// Whether a lane drives an AUTO jack. Lanes that turn a device knob are already in the bounced notes, and the new
+/// track has no devices for them to reach.
 bool drivesJack(const AutomationEnvelope& lane) { return !lane.paramTarget.valid() && lane.drive == LaneDrive::Auto; }
 
 /// A copy of `lane` for the new track, with its own ID and no hold on other modules' knobs, which the source keeps.
@@ -21,6 +21,30 @@ AutomationEnvelope laneCopy(const AutomationEnvelope& lane, const NextId& nextId
     copy.targets.clear();
     copy.combine = CombineMode::Override;
     copy.points.clear();
+    return copy;
+}
+
+/// A lane for the new track from `model` (or a plain one on AUTO channel `output` when there is none) holding
+/// `samples`.
+AutomationEnvelope bakedLane(const AutomationEnvelope* model, int output,
+                             const std::vector<std::pair<Tick, float>>& samples, const NextId& nextId) {
+    AutomationEnvelope plain;
+    plain.outputIndex = output;
+    plain.name = "AUTO " + std::to_string(output + 1);
+    AutomationEnvelope copy = laneCopy(model ? *model : plain, nextId);
+    // Samples are kept only where the value changes, so a flat stretch needs its end marked or it would slope.
+    Tick sampleStep = render::Options().ccStep;
+    for (const auto& [tick, value] : samples) {
+        if (!copy.points.empty() && tick - copy.points.back().t > sampleStep) {
+            AutoPoint held = copy.points.back();
+            held.t = tick - 1;
+            copy.points.push_back(held);
+        }
+        AutoPoint p;
+        p.t = tick;
+        p.value = value;
+        copy.points.push_back(p);
+    }
     return copy;
 }
 
@@ -92,6 +116,9 @@ CommandPtr bounceNotes(const Song& song, const NoteBounce& what, double tempo, c
         n.velocity = p.velocity;
         n.releaseVelocity = p.release;
         n.channel = p.channel;
+        n.pitchExpr = p.pitchExpr;
+        n.timbreExpr = p.timbreExpr;
+        n.pressureExpr = p.pressureExpr;
         clip.notes.push_back(n);
     }
     if (clip.notes.empty())
@@ -109,8 +136,22 @@ CommandPtr bounceNotes(const Song& song, const NoteBounce& what, double tempo, c
         // A panel clip's lanes play with the clip, so they stay on the new clip, from its start.
         const Clip* original = song.findClip(what.clip);
         Tick base = original->playStart();
+        // The track's modulators sent to an AUTO jack aren't in the clip's lanes: those channels are sampled instead.
+        std::vector<int> sampled;
+        for (int output = 0; output < render::kLanes; output++) {
+            if (!render::modulatedOutput(song, what.track, output))
+                continue;
+            std::vector<std::pair<Tick, float>> samples =
+                render::clipLaneSamples(song, what.track, what.clip, output, options, length);
+            if (samples.empty())
+                continue;
+            sampled.push_back(output);
+            clip.automation.push_back(bakedLane(laneOn(song, *source, output), output, samples, nextId));
+        }
         for (const AutomationEnvelope& lane : original->automation) {
-            if (!drivesJack(lane) || lane.points.empty())
+            bool shapesNotes = lane.drive == LaneDrive::Pitch || lane.drive == LaneDrive::Pressure;
+            bool taken = std::find(sampled.begin(), sampled.end(), lane.outputIndex) != sampled.end();
+            if (lane.paramTarget.valid() || lane.points.empty() || !(shapesNotes || (drivesJack(lane) && !taken)))
                 continue;
             AutomationEnvelope copy = laneCopy(lane, nextId);
             for (const AutoPoint& p : lane.points)
@@ -132,17 +173,26 @@ CommandPtr bounceNotes(const Song& song, const NoteBounce& what, double tempo, c
         for (int output = 0; output < render::kLanes; output++) {
             std::vector<std::pair<Tick, float>> samples =
                 render::laneSamples(work, what.track, output, options, from, from + length);
-            const AutomationEnvelope* model = laneOn(song, *source, output);
-            if (samples.empty() || !model)
+            if (!samples.empty())
+                track.automation.push_back(bakedLane(laneOn(song, *source, output), output, samples, nextId));
+        }
+        // The pitch bend and pressure lanes shape the notes too.
+        for (LaneDrive drive : {LaneDrive::Pitch, LaneDrive::Pressure}) {
+            std::vector<std::pair<Tick, float>> samples =
+                render::driveSamples(work, what.track, drive, options, from, from + length);
+            if (samples.empty())
                 continue;
-            AutomationEnvelope copy = laneCopy(*model, nextId);
-            for (const auto& [tick, value] : samples) {
-                AutoPoint p;
-                p.t = tick;
-                p.value = value;
-                copy.points.push_back(p);
-            }
-            track.automation.push_back(std::move(copy));
+            const AutomationEnvelope* model = nullptr;
+            for (const AutomationEnvelope& lane : source->automation)
+                if (!lane.paramTarget.valid() && lane.drive == drive)
+                    model = &lane;
+            for (const ArrangerClip& a : source->arrangement)
+                if (const Clip* c = model ? nullptr : song.findClip(a.clip))
+                    for (const AutomationEnvelope& lane : c->automation)
+                        if (!lane.paramTarget.valid() && lane.drive == drive)
+                            model = &lane;
+            if (model)
+                track.automation.push_back(bakedLane(model, model->outputIndex, samples, nextId));
         }
         ArrangerClip a;
         a.id = ArrangementId(nextId());

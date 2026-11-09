@@ -159,7 +159,8 @@ std::vector<float> stepsOf(const Modulator& m, int* count) {
 
 const Modulator* ModulatorPopover::modulator(ModulatorPlace* place) {
     TesseraModule* m = ctx.module();
-    return m && ctx.openModulator ? findModulator(m->song(), ModulatorId(ctx.openModulator), place) : nullptr;
+    return m && ctx.state().openModulator ? findModulator(m->song(), ModulatorId(ctx.state().openModulator), place)
+                                          : nullptr;
 }
 
 float ModulatorPopover::wantedHeight() {
@@ -234,8 +235,8 @@ const ModulatorPopover::Part* ModulatorPopover::partAt(Vec pos) const {
 }
 
 void ModulatorPopover::step() {
-    if (ctx.openModulator && !modulator())
-        ctx.openModulator = 0;
+    if (ctx.state().openModulator && !modulator())
+        ctx.state().openModulator = 0;
     layoutParts();
     InteractiveView::step();
 }
@@ -286,7 +287,7 @@ void ModulatorPopover::click(Vec pos, int button, Modifiers mods) {
         return;
     switch (hit->kind) {
     case Kind::Close:
-        ctx.openModulator = 0;
+        ctx.state().openModulator = 0;
         break;
     case Kind::Setting: {
         // Only toggles get here: they flip on a click.
@@ -300,7 +301,7 @@ void ModulatorPopover::click(Vec pos, int button, Modifiers mods) {
         break;
     case Kind::Map:
         ctx.mappingModulator = mod->id.value;
-        ctx.openModulator = 0;
+        ctx.state().openModulator = 0;
         break;
     case Kind::CvOut:
         deviceActions::openCvOutMenu(ctx, mod->id);

@@ -63,18 +63,18 @@ const Track* track(EditorContext& ctx) {
 }
 
 bool stripOpen(EditorContext& ctx) {
-    if (!ctx.view().deviceStrip)
+    if (!ctx.state().deviceStrip)
         return false;
     const Track* t = track(ctx);
     if (!t)
         return false;
-    return !t->devices.empty() || !t->modulators.empty() || ctx.stripOpenedFor == t->id.value;
+    return !t->devices.empty() || !t->modulators.empty() || ctx.state().stripOpenedFor == t->id.value;
 }
 
 void setStripOpen(EditorContext& ctx, bool open) {
-    ctx.view().deviceStrip = open;
+    ctx.state().deviceStrip = open;
     const Track* t = track(ctx);
-    ctx.stripOpenedFor = open && t ? t->id.value : 0;
+    ctx.state().stripOpenedFor = open && t ? t->id.value : 0;
 }
 
 const devices::ParamInfo* infoOf(const Song& song, const ParamRef& ref) {
@@ -218,7 +218,7 @@ void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) 
         if (type == ModulatorType::Curve)
             showCurve(*c, added);
         else
-            c->openModulator = added.value;
+            c->state().openModulator = added.value;
     };
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
 }
@@ -238,7 +238,7 @@ const Playhead* shownPlayhead(EditorContext& ctx) {
     if (!d || d->playheads.empty())
         return nullptr;
     for (const Playhead& p : d->playheads)
-        if (p.id.value == ctx.selectedPlayhead)
+        if (p.id.value == ctx.state().selectedPlayhead)
             return &p;
     return &d->playheads.front();
 }
@@ -286,7 +286,6 @@ float playheadValue(const Playhead& p, int k) {
     return devices::display(devices::playheadInfo().params[size_t(k)], p.params[size_t(k)]);
 }
 
-
 const char* const kDirections[] = {"Forward", "Backward", "Ping-pong", "Freeze"};
 const char* const kOrders[] = {"In order", "Outside in", "Inside out", "Odd then even", "Shuffle"};
 
@@ -324,20 +323,22 @@ void openDirectionMenu(EditorContext& ctx, PlayheadId id) {
                 sub->addChild(rack::createMenuLabel("Step size"));
                 for (int s = 0; s < int(steps.size()); s++)
                     sub->addChild(rack::createCheckMenuItem(
-                        steps[size_t(s)], "", [=] { return order == o && step == s; }, [c, id, o, s] {
+                        steps[size_t(s)], "", [=] { return order == o && step == s; },
+                        [c, id, o, s] {
                             setPlayheadValues(*c, id, {{kOrder, float(o)}, {kOrderStep, float(s)}}, "Set order");
                         }));
             }));
 }
 
 void showCurve(EditorContext& ctx, ModulatorId id) {
-    ctx.curveModulator = id.value;
-    ctx.curveTarget = ParamRef();
-    ctx.view().lowerLane = kCurveLane;
+    ctx.state().curveModulator = id.value;
+    ctx.state().curveTarget = ParamRef();
+    ctx.state().curveOpenedOn = ctx.state().selectedTrack;
+    ctx.state().lowerLane = kCurveLane;
 }
 
 bool curveShown(EditorContext& ctx, ModulatorId id) {
-    return id.valid() && ctx.view().lowerLane == kCurveLane && ctx.curveModulator == id.value;
+    return id.valid() && ctx.state().lowerLane == kCurveLane && ctx.state().curveModulator == id.value;
 }
 
 ModulatorId curveOn(const Song& song, const ParamRef& target) {
@@ -357,7 +358,7 @@ void showCurveFor(EditorContext& ctx, const ParamRef& target) {
     ModulatorId id = m ? curveOn(m->song(), target) : ModulatorId();
     showCurve(ctx, id);
     if (!id.valid())
-        ctx.curveTarget = target;
+        ctx.state().curveTarget = target;
 }
 
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
@@ -383,7 +384,9 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
                 sub->addChild(rack::createCheckMenuItem(
                     ch == 0 ? "Each note's own" : "Channel " + std::to_string(ch), "",
                     [channel, ch] { return channel == ch; },
-                    [run, id, ch] { run([&](const Song& s, TesseraModule*) { return setPlayheadChannel(s, id, ch); }); }));
+                    [run, id, ch] {
+                        run([&](const Song& s, TesseraModule*) { return setPlayheadChannel(s, id, ch); });
+                    }));
         }));
     bool on = playheads::isOn(*p), solo = p->solo;
     menu->addChild(rack::createCheckMenuItem(
@@ -405,28 +408,27 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
         ParamRef ref{ParamRef::Kind::Playhead, id.value, uint16_t(k)};
         bool curved = curveOn(m->song(), ref).valid();
         std::string shown = choices[size_t(std::clamp(int(now), 0, int(choices.size()) - 1))];
-        menu->addChild(
-            rack::createSubmenuItem(info.name, curved ? shown + " ~" : shown, [=](rack::ui::Menu* sub) {
-                for (int i = 0; i < int(choices.size()); i++)
-                    sub->addChild(rack::createCheckMenuItem(
-                        choices[size_t(i)], "", [now, i] { return int(now) == i; },
-                        [c, id, k, i, name = std::string(info.name)] {
-                            setPlayheadValues(*c, id, {{k, float(i)}}, "Set " + name);
-                        }));
-                sub->addChild(new rack::ui::MenuSeparator);
-                sub->addChild(rack::createMenuItem(curved ? "Show its curve" : "Draw a curve for it", "",
-                                                   [c, ref] { showCurveFor(*c, ref); }));
-                sub->addChild(rack::createMenuItem("Automate or modulate…", "", [c, ref] { openKnobMenu(*c, ref); }));
-            }));
+        menu->addChild(rack::createSubmenuItem(info.name, curved ? shown + " ~" : shown, [=](rack::ui::Menu* sub) {
+            for (int i = 0; i < int(choices.size()); i++)
+                sub->addChild(rack::createCheckMenuItem(
+                    choices[size_t(i)], "", [now, i] { return int(now) == i; },
+                    [c, id, k, i, name = std::string(info.name)] {
+                        setPlayheadValues(*c, id, {{k, float(i)}}, "Set " + name);
+                    }));
+            sub->addChild(new rack::ui::MenuSeparator);
+            sub->addChild(rack::createMenuItem(curved ? "Show its curve" : "Draw a curve for it", "",
+                                               [c, ref] { showCurveFor(*c, ref); }));
+            sub->addChild(rack::createMenuItem("Automate or modulate…", "", [c, ref] { openKnobMenu(*c, ref); }));
+        }));
     }
-    menu->addChild(rack::createMenuItem("Draw its path in the time map", "", [c] { c->view().lowerLane = kTimeMapLane; }));
+    menu->addChild(
+        rack::createMenuItem("Draw its path in the time map", "", [c] { c->state().lowerLane = kTimeMapLane; }));
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Duplicate", "", [run, id] {
         run([&](const Song& s, TesseraModule* mod) { return duplicatePlayhead(s, id, mod->ids()); });
     }));
-    menu->addChild(rack::createMenuItem("Delete", "", [run, id] {
-        run([&](const Song& s, TesseraModule*) { return removePlayhead(s, id); });
-    }));
+    menu->addChild(rack::createMenuItem(
+        "Delete", "", [run, id] { run([&](const Song& s, TesseraModule*) { return removePlayhead(s, id); }); }));
 }
 
 void openDeviceMenu(EditorContext& ctx, DeviceId id) {
@@ -457,7 +459,8 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id) {
                 p.name, choices[size_t(std::clamp(now - first, 0, int(choices.size()) - 1))], [=](rack::ui::Menu* sub) {
                     for (int i = 0; i < int(choices.size()); i++)
                         sub->addChild(rack::createCheckMenuItem(
-                            choices[size_t(i)], "", [now, i, first] { return now == i + first; }, [c, id, k, i, first, p] {
+                            choices[size_t(i)], "", [now, i, first] { return now == i + first; },
+                            [c, id, k, i, first, p] {
                                 setKnob(*c, {ParamRef::Kind::Device, id.value, uint16_t(k)},
                                         devices::normalize(p, float(i + first)));
                             }));
@@ -560,7 +563,7 @@ void newMotion(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes
     all->add(std::move(add));
     all->add(setNotesMotion(work, clip, notes, added));
     m->perform(std::move(all));
-    ctx.selectedDevice = added.value;
+    ctx.state().selectedDevice = added.value;
     setStripOpen(ctx, true);
 }
 
@@ -575,7 +578,8 @@ void appendMotionItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip, co
             continue;
         DeviceId id = d.id;
         menu->addChild(rack::createCheckMenuItem(
-            "Move with " + d.name, "", [current, id] { return current == id; }, [c, clip, notes, id] {
+            "Move with " + d.name, "", [current, id] { return current == id; },
+            [c, clip, notes, id] {
                 if (TesseraModule* mod = c->module())
                     mod->perform(setNotesMotion(mod->song(), clip, notes, id));
             }));
@@ -715,14 +719,14 @@ void openModulatorMenu(EditorContext& ctx, ModulatorId id) {
     }
     menu->addChild(rack::createMenuItem("Map to knobs", "", [c, id] {
         c->mappingModulator = id.value;
-        c->openModulator = 0;
+        c->state().openModulator = 0;
     }));
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Remove", "", [c, id] {
         if (TesseraModule* m2 = c->module()) {
             m2->perform(removeModulator(m2->song(), id));
-            if (c->openModulator == id.value)
-                c->openModulator = 0;
+            if (c->state().openModulator == id.value)
+                c->state().openModulator = 0;
             if (c->mappingModulator == id.value)
                 c->mappingModulator = 0;
         }
@@ -930,16 +934,16 @@ void showLane(EditorContext& ctx, LaneOwner owner, AutomationId lane) {
     if (!m)
         return;
     if (owner.track.valid()) {
-        if (ctx.view().maximized == Pane::Detail)
-            ctx.view().maximized.reset();
-        ctx.view().openAutomation.insert(owner.track.value);
+        if (ctx.state().maximized == Pane::Detail)
+            ctx.state().maximized.reset();
+        ctx.state().openAutomation.insert(owner.track.value);
         return;
     }
     TrackId track = clipActions::trackOf(m->song(), owner.clip);
     if (track.valid())
         ctx.state().selectedTrack = track;
     ctx.state().selectedClip = owner.clip;
-    ctx.view().lowerLane = lane.value;
+    ctx.state().lowerLane = lane.value;
 }
 
 } // namespace tessera::deviceActions

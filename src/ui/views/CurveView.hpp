@@ -38,6 +38,8 @@ class CurveView : public InteractiveView {
     /// The picked points, by index into the drawing's points, in order. Step | Ramp in the header acts on them, and
     /// dragging one moves them all.
     std::vector<size_t> picked;
+    /// Deletes the picked points as one undo step (the Delete key). Does nothing with none picked.
+    void deletePicked();
     /// Whether point `index` is picked.
     bool isPicked(size_t index) const { return std::binary_search(picked.begin(), picked.end(), index); }
     /// Sets the curve pane's height (px) from a drag of its top edge; 0 goes back to the default.

@@ -29,9 +29,12 @@ class EditorContext {
 
     /// The Tessera being edited, or nullptr once it has been deleted.
     TesseraModule* module() const;
-    /// Valid only while module() is not null. Settings shared by every surface (selection, follow).
+    /// Settings shared by every surface: what you work on and what is open. Defaults when there is no module.
     EditorState& state() const;
-    /// This surface's own layout and views.
+    /// Whether this editor is the one in use, so its views move and the other's copy them: the full editor while it
+    /// is open, else the panel. Two editors moving one view would fight, since each fits and follows for its own size.
+    bool drivesView() const;
+    /// This surface's own pane layout.
     ViewState& view() const { return state().view(surface); }
     /// Selects the next (+1) or previous (-1) track, stopping at the ends.
     void selectTrackOffset(int delta) const;
@@ -74,13 +77,6 @@ class EditorContext {
     bool showHelp = false; // the "?" overlay: every shortcut, generated from the shortcut table
     // The device strip (docs/DEVICES.md §1.1): IDs, so nothing points into the song across frames.
     uint64_t mappingModulator = 0; // ModulatorId being mapped onto knobs; 0 = not mapping
-    uint64_t openModulator = 0;    // ModulatorId whose settings popover is open
-    uint64_t selectedDevice = 0;   // DeviceId of the selected card (Delete removes it)
-    uint64_t stripOpenedFor = 0;   // TrackId whose empty device strip was opened by hand
-    uint64_t selectedPlayhead = 0; // PlayheadId shown on the Playheads card, the ruler and the lower pane
-    // The Curve modulator the lower pane shows; when 0, the setting it would move once a point is drawn.
-    uint64_t curveModulator = 0;
-    ParamRef curveTarget;
     bool clipsOpenNarrow = false;  // a narrow song pane shows the clips although the timeline plays
     double toastUntil = 0;
     static constexpr double kToastSeconds = 4;

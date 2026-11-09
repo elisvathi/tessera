@@ -173,14 +173,14 @@ std::pair<ToolButton*, ToolButton*> makeDrumViewSwitch(EditorContext& ctx) {
     ToolButton::Options lanes;
     lanes.text = "Lanes";
     lanes.tooltip = withShortcut("Drum lanes: one row per lane, every step a cell", Action::ToggleDrumView);
-    lanes.action = [c] { c->view().drumLanes = true; };
-    lanes.active = [c] { return c->module() && c->view().drumLanes; };
+    lanes.action = [c] { c->state().drumLanes = true; };
+    lanes.active = [c] { return c->module() && c->state().drumLanes; };
     lanes.filled = true;
     ToolButton::Options keys;
     keys.text = "Keys";
     keys.tooltip = withShortcut("The piano keys: every note, drawn as a plain note", Action::ToggleDrumView);
-    keys.action = [c] { c->view().drumLanes = false; };
-    keys.active = [c] { return c->module() && !c->view().drumLanes; };
+    keys.action = [c] { c->state().drumLanes = false; };
+    keys.active = [c] { return c->module() && !c->state().drumLanes; };
     keys.filled = true;
     return {new ToolButton(lanes), new ToolButton(keys)};
 }
@@ -288,7 +288,7 @@ class MaximizeButton : public ToolButton {
   public:
     MaximizeButton(EditorContext& ctx, Options o) : ToolButton(std::move(o)), ctx(ctx) {}
     void step() override {
-        setIcon(ctx.module() && ctx.view().maximized ? Icon::Restore : Icon::Maximize);
+        setIcon(ctx.module() && ctx.state().maximized ? Icon::Restore : Icon::Maximize);
         ToolButton::step();
     }
 
@@ -306,14 +306,14 @@ ToolButton* makeMaximizeButton(EditorContext& ctx, Pane pane) {
                                                : "Maximize this pane, or restore both panes",
                              Action::MaximizePane);
     o.action = [c, pane] {
-        ViewState& v = c->view();
+        EditorState& v = c->state();
         if (v.maximized)
             v.maximized.reset();
         else
             v.maximized = pane;
         v.focus = pane;
     };
-    o.active = [c] { return c->module() && c->view().maximized.has_value(); };
+    o.active = [c] { return c->module() && c->state().maximized.has_value(); };
     auto* b = new MaximizeButton(ctx, o);
     b->box.size = rack::math::Vec(kMaximizeButton, kMaximizeButton);
     return b;

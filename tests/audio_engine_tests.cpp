@@ -6,8 +6,8 @@
 #include "../src/engine/Snapshot.hpp"
 #include "../src/model/AudioEdits.hpp"
 #include "../src/model/Json.hpp"
-#include "../src/model/Serialize.hpp"
 #include "../src/model/Sends.hpp"
+#include "../src/model/Serialize.hpp"
 #include "../src/module/OutputBus.hpp"
 
 #include <chrono>
@@ -467,7 +467,7 @@ TEST_CASE("turning Clips off leaves OUT sending them, so an effect keeps playing
     }
     const AudioOutFrame* out = bus.readAudio(24000, 5, rig.track);
     REQUIRE(out);
-    CHECK(out->l == doctest::Approx(kVolts)); // the effect still gets the clips
+    CHECK(out->l == doctest::Approx(kVolts));        // the effect still gets the clips
     CHECK(left == doctest::Approx(1).epsilon(1e-3)); // and only the effect is heard
 }
 
@@ -701,7 +701,6 @@ TEST_CASE("performance: playing and mixing audio tracks stays inside its budget 
 #endif
 }
 
-
 TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, and follows mute and solo") {
     Song song = makeDefaultSong();
     FakeBuffers buffers;
@@ -735,9 +734,9 @@ TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, 
     };
     play();
     REQUIRE(kept.back()->tracks.size() == 2);
-    CHECK(kept.back()->tracks[0].id == bass); // the sender comes first
+    CHECK(kept.back()->tracks[0].id == bass);              // the sender comes first
     CHECK(out[1].l == doctest::Approx(1.f).epsilon(1e-3)); // after the fader: 2 V at -6 dB
-    CHECK(left == doctest::Approx(1.3f).epsilon(1e-3));     // the send never joins the reverb's sound directly
+    CHECK(left == doctest::Approx(1.3f).epsilon(1e-3));    // the send never joins the reverb's sound directly
     CHECK(player.outLevel(1) > 0.9f);
 
     setSend(song, bass, {reverb, 0, true}, "pre")->apply(song);
@@ -924,4 +923,37 @@ TEST_CASE("a timeline copy can play another take of its clip: its file, from the
     Song back = songFromJson(j.get(), Song::kSchemaVersion);
     CHECK(back.findClip(rig.clip)->audio->takes.size() == 1);
     CHECK(back.findTrack(rig.track)->arrangement.front().take == 0);
+}
+
+TEST_CASE("a silent audio track wakes up on time for a clip that starts inside a block") {
+    Rig rig(1.0, [](int64_t) { return 0.5f; });
+    // 1000 ticks is 25000 samples at 120 BPM and 48 kHz: 8 samples into a 32-sample block.
+    rig.song.findTrack(rig.track)->arrangement[0].position = 1000;
+    rig.rebuild();
+    rig.mode = PlayMode::Arranger;
+    rig.engine->setPlayMode(PlayMode::Arranger);
+    rig.engine->reset();
+    rig.engine->play();
+    int64_t first = -1;
+    for (int64_t n = 0; n < 40000 && first < 0; n++)
+        if (std::abs(rig.step()) > 1e-6f)
+            first = n;
+    CHECK(first >= 24998);
+    CHECK(first <= 25004);
+}
+
+TEST_CASE("a silent audio track keeps its fader moving while it rests") {
+    Rig rig(1.0, [](int64_t) { return 0.5f; });
+    rig.song.findTrack(rig.track)->arrangement[0].position = 100000;
+    rig.rebuild();
+    rig.mode = PlayMode::Arranger;
+    rig.engine->setPlayMode(PlayMode::Arranger);
+    rig.engine->reset();
+    rig.engine->play();
+    for (int n = 0; n < 4096; n++)
+        CHECK(rig.step() == 0.f);
+    rig.player->hold(rig.track.value, 0.25f, 0, AudioPlayer::kHoldVolume);
+    for (int n = 0; n < 4096; n++)
+        CHECK(rig.step() == 0.f);
+    CHECK(rig.player->level(0, 0) == 0.f);
 }

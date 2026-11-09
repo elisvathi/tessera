@@ -713,6 +713,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Split an audio clip, change one piece's gain: the other stays. Same settings: Glue rejoins them.
 - [ ] Bounce audio: the new track shows at once; Stop on the message keeps what played; only that track plays; solo buttons and the loop are as they were afterwards. With Selected clips, an unselected overlapping clip stays out.
 - [ ] Bounce notes: instant, one clip, a new track with no devices; all playheads on their channels or one alone; As written; CV lanes come across; a panel clip lands in the same scene. A knob lane is baked into the notes.
+- [ ] Bounce notes matches playback: a Motion device before Playheads with a Curve on Pitch: the new track plays the same notes as the original. Note bend curves, a curve sent to an AUTO jack and a pitch bend lane all come across.
+- [ ] Curve pane: pick points, press Delete: only the points go, one undo step; notes stay. Click a note, press Delete: the note goes. Select another track: the curve closes.
+- [ ] Open the devices in the panel editor, open the full editor: the devices are open there too. The same for the lower pane, the mixer and the drum view. Maximize a pane, zoom, scroll, resize a track and open its automation lanes in one editor: the other shows the same when you switch. Check the panel still fits with the devices open.
+- [ ] Mixer pane heights: over 200 px faders; 80 to 200 px knobs stacked, no big gap, the dB shown when tall enough; under 80 px knobs side by side; under 62 px no M and S. Level and pan drag at each size.
 - [ ] A playhead segment dragged to the clip's full length stays there while playing.
 - [ ] 30 HP panel: IN L and R in RECORD; meter clear of MAIN. Record from Roll IN, from another track and from Master mix each make a take.
 - [ ] Audio track with OUT → effect → IN: Clips and IN strips show; muting Clips leaves the effect playing; S on an input solos it and its track, one undo step; pan moves live.

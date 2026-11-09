@@ -116,8 +116,12 @@ new track…**. It takes no time and nothing has to play. **Ctrl+B** opens this 
 - **Notes**: **As it plays** has the devices and playheads applied. **As written** is the clip's own notes.
 - **Playheads**: all of them, each on its own channel on the one new track, or just one.
 
-Automation comes along. Lanes that turn a device or playhead knob are already in the notes (**As it plays**). Lanes that
-drive an AUTO jack come across to the new track, one per jack, with the clip's own lanes combined in.
+**As it plays** gives you what recording the track's pitch, gate and velocity would give. Curves and lanes that turn a
+device, a Motion device or a playhead setting are in the notes, at the moment each note plays.
+
+The rest of the track's signals come along too. Each note keeps its own bend, timbre and pressure curves. AUTO jacks come
+across to the new track, one per jack, with the clip's own lanes and any curves sent to the jack combined in. Pitch bend
+and pressure lanes come across too.
 
 The result is one clip on a new track under the original, with no devices, in one undo step. A clip from the clips
 panel lands in the same scene on the new track. To bounce what a track sounds like, choose **Bounce audio to a new

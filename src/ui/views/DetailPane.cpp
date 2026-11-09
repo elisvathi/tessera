@@ -40,22 +40,24 @@ void DetailPane::setMixer(MixerPane* m) {
         o.tooltip = withShortcut(toMixer ? "Show the mixer in this pane" : "Show the selected clip in this pane",
                                  Action::ToggleMixer);
         o.action = [c, toMixer] {
-            c->view().mixerOpen = toMixer;
-            c->view().focus = Pane::Detail;
+            c->state().mixerOpen = toMixer;
+            c->state().focus = Pane::Detail;
         };
-        o.active = [c, toMixer] { return c->view().mixerOpen == toMixer; };
+        o.active = [c, toMixer] { return c->state().mixerOpen == toMixer; };
         auto* b = new ToolButton(o);
         addChild(b);
         (toMixer ? mixerTab : notesTab) = b;
     }
 }
 
-bool DetailPane::showsMixer() const { return mixer && mixer->hasSound() && ctx.view().mixerOpen; }
+bool DetailPane::showsMixer() const { return mixer && mixer->hasSound() && ctx.state().mixerOpen; }
 
 void DetailPane::onButton(const ButtonEvent& e) {
     // Delete and Ctrl+D act on the device cards only right after a click in the strip.
-    if (e.action == GLFW_PRESS && ctx.module())
+    if (e.action == GLFW_PRESS && ctx.module()) {
         stripFocus = strip->visible && strip->box.contains(e.pos);
+        roll->notePress(e.pos);
+    }
     EditorPane::onButton(e);
 }
 
@@ -117,6 +119,8 @@ void DetailPane::layout() {
 }
 
 void DetailPane::step() {
+    if (ctx.module())
+        ctx.state().closeCurveIfTrackChanged();
     if (notesTab) {
         TesseraModule* m = ctx.module();
         const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;

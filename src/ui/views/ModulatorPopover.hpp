@@ -45,7 +45,9 @@ class ModulatorPopover : public InteractiveView {
     const Modulator* modulator(ModulatorPlace* place = nullptr);
     void layoutParts();
     const Part* partAt(rack::math::Vec pos) const;
-    ParamRef settingRef(int index) const { return {ParamRef::Kind::Modulator, ctx.openModulator, uint16_t(index)}; }
+    ParamRef settingRef(int index) const {
+        return {ParamRef::Kind::Modulator, ctx.state().openModulator, uint16_t(index)};
+    }
 
     std::vector<Part> parts;
     int hovered = -1;

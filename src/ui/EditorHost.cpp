@@ -126,11 +126,11 @@ bool EditorHost::handleKey(const rack::widget::Widget::KeyBaseEvent& e) {
     // Keys act on the pane under the mouse, in both editors (Trello, 14 Oct): with focus left on the last
     // clicked pane, Ctrl+A then Ctrl+D over the notes selected and copied every track.
     if (EditorPane* hovered = paneUnderMouse())
-        ctx.view().focus = hovered->pane();
+        ctx.state().focus = hovered->pane();
     // The mixer has no keys of its own yet: while the lower pane shows it, only the keys that work everywhere act.
-    bool mixerShown = ctx.module() && ctx.module()->makesSound() && ctx.view().mixerOpen;
-    Scope scope = ctx.view().focus == Pane::Top && arrangerPane()        ? Scope::TopPane
-                  : ctx.view().focus == Pane::Detail && mixerShown ? Scope::Everywhere
+    bool mixerShown = ctx.module() && ctx.module()->makesSound() && ctx.state().mixerOpen;
+    Scope scope = ctx.state().focus == Pane::Top && arrangerPane()  ? Scope::TopPane
+                  : ctx.state().focus == Pane::Detail && mixerShown ? Scope::Everywhere
                                                                    : Scope::DetailPane;
     std::optional<Action> action = findAction({e.key, e.keyName, mods}, scope);
     if (!action)
@@ -196,8 +196,9 @@ void EditorHost::showNotices() {
             std::string name = t ? t->name : "Master";
             TrackId track = news.track;
             int64_t newest = news.module;
-            ctx.toast(name + " has " + std::to_string(news.count) + " sources now. " + (news.count == 2 ? "Both play" : "All play"), "Use only the new one",
-                      [m, track, newest] {
+            ctx.toast(name + " has " + std::to_string(news.count) + " sources now. " +
+                          (news.count == 2 ? "Both play" : "All play"),
+                      "Use only the new one", [m, track, newest] {
                           for (const sources::Row& r : sources::rowsOf(*m, track))
                               if (!r.countedOnce && (!r.module || r.module->id != newest) && r.level.use)
                                   sources::set(*m, track, r, {r.level.db, false}, "Use only the new source");
@@ -291,28 +292,28 @@ void EditorHost::runAction(Action action) {
     case Action::SwitchPane: {
         if (!arrangerPane())
             return;
-        view.focus = view.focus == Pane::Top ? Pane::Detail : Pane::Top;
-        if (view.maximized)
-            view.maximized = view.focus;
+        ctx.state().focus = ctx.state().focus == Pane::Top ? Pane::Detail : Pane::Top;
+        if (ctx.state().maximized)
+            ctx.state().maximized = ctx.state().focus;
         return;
     }
     case Action::WidenClips:
         if (!arrangerPane())
             return;
-        view.clipsWide = !view.clipsWide;
-        if (view.maximized == Pane::Detail)
-            view.maximized.reset();
+        ctx.state().clipsWide = !ctx.state().clipsWide;
+        if (ctx.state().maximized == Pane::Detail)
+            ctx.state().maximized.reset();
         return;
     case Action::MaximizePane:
         if (!arrangerPane())
             return;
-        if (view.maximized)
-            view.maximized.reset();
+        if (ctx.state().maximized)
+            ctx.state().maximized.reset();
         else
-            view.maximized = view.focus;
+            ctx.state().maximized = ctx.state().focus;
         return;
     case Action::ToggleInspector:
-        view.inspectorOpen = !view.inspectorOpen;
+        ctx.state().inspectorOpen = !ctx.state().inspectorOpen;
         return;
     case Action::ToggleDevices:
         deviceActions::setStripOpen(ctx, !deviceActions::stripOpen(ctx));
@@ -404,8 +405,8 @@ void EditorHost::runAction(Action action) {
         // The lower pane shows the notes or the mixer; F4 switches, as the switch in its header does.
         if (!ctx.module() || !ctx.module()->makesSound())
             return;
-        view.mixerOpen = !view.mixerOpen;
-        view.focus = Pane::Detail;
+        ctx.state().mixerOpen = !ctx.state().mixerOpen;
+        ctx.state().focus = Pane::Detail;
         return;
     case Action::ExportAudio:
         exportAudio::openDialog(ctx);
@@ -424,7 +425,7 @@ void EditorHost::runAction(Action action) {
     case Action::StepInput:
         state.stepInput = !state.stepInput;
         if (state.stepInput)
-            view.focus = Pane::Detail;
+            ctx.state().focus = Pane::Detail;
         return;
     case Action::Close:
         // First Esc cancels a drag, then leaves a hit's zoomed curve, then step input or keyboard play, then disarms
@@ -432,14 +433,14 @@ void EditorHost::runAction(Action action) {
         // (the overlay closes).
         if (ctx.dragging)
             ctx.dragging->cancelGesture();
-        else if (ctx.view().showSends.valid())
-            ctx.view().setShowSends(TrackId(), EditorContext::now());
+        else if (ctx.state().showSends.valid())
+            ctx.state().setShowSends(TrackId(), EditorContext::now());
         else if (state.curveFocusNote.valid()) {
             state.curveFocusNote = NoteId();
             state.curveFocusClip = ClipId();
-        } else if (ctx.mappingModulator || ctx.openModulator) {
+        } else if (ctx.mappingModulator || ctx.state().openModulator) {
             ctx.mappingModulator = 0;
-            ctx.openModulator = 0;
+            ctx.state().openModulator = 0;
         } else if (state.stepInput || state.keyboardPlay) {
             state.stepInput = false;
             state.keyboardPlay = false;
