@@ -1955,11 +1955,17 @@ void AudioEditor::drawView(const DrawArgs& args) {
     }
     // What the clip does, in words.
     std::string note = a.takes.empty() ? src->name : "Comp";
-    std::string st = audioDraw::stateText(state);
+    bool rendering = audioDraw::rendering(state);
+    std::string st = rendering ? audioDraw::renderingText(state) : audioDraw::stateText(state);
     if (!st.empty())
         note += "  " + st;
-    draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
+    draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler, rendering ? c.text0 : c.text2,
+                          NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
     draw::text(vg, small, 6, wave.pos.y + 2, note);
+    if (rendering)
+        audioDraw::drawRenderBar(
+            vg, Rect(0, wave.pos.y - theme::metrics::kStatusBar, box.size.x, theme::metrics::kStatusBar), state,
+            c.accent);
     // Where a preview has got to.
     if (m->audioPlayer().previewing()) {
         float x = float(tickToX(m->audioPlayer().previewTick()));

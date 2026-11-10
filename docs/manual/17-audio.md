@@ -74,9 +74,10 @@ so its loudest sample reaches full scale) and **Replace file…** (see below).
 
 ### Moving the tempo sounds like tape
 
-Stretching a clip well takes a moment of work. While Tessera makes the stretched version, the clip plays a quick
-version that runs faster or slower like tape, and the clip shows how far along it is ("… 40%"). When the clean
-version is ready, it takes over without a click. Turning the **TEMPO** knob does the same: while the tempo moves,
+Stretching or pitch-shifting a clip well takes a moment of work. While Tessera makes the new version, a thin bar along
+the clip fills from left to right and its title shows how far along it is ("… 40%"). The audio editor says it in words
+("Shifting pitch 40%"). Until then a stretched clip plays a quick version that runs faster or slower like tape, and a
+pitch-shifted clip plays at its old pitch. When the clean version is ready, it takes over without a click. Turning the **TEMPO** knob does the same: while the tempo moves,
 clips follow it like tape, and half a second after it settles they get their clean stretched version.
 
 Alt+drag a clip's right edge to change its clip tempo by hand: a clip made twice as long plays at half the speed.

@@ -2400,3 +2400,13 @@ confirms that presets, selections and copy and paste carry JSON only (`ModuleWid
   part holds frames.
 
 Details: `docs/design/AUDIO_EDITING.md`.
+
+## 149. A clip being rendered shows a bar, not a spinner (9 Nov)
+
+AUDIO_MIXER §6.6 asked for a spinner. Clips on the timeline are drawn into a cached layer, so a spinner would redraw
+that layer every frame for as long as a render runs. A bar that fills up only needs a redraw when the percentage moves
+(`AudioStore::renderProgressSteps()`), and it says how long is left. Clips and launcher slots show the bar; the audio
+editor and the inspector also say "Shifting pitch 40%" or "Stretching 40%".
+
+Faders and pan knobs read a drag's value from `AudioPlayer::held()`, so the track headers, the mixer and the inspector
+all move together, whichever one is dragged.

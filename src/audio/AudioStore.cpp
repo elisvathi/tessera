@@ -481,6 +481,20 @@ RenderStatus AudioStore::renderStatus(const RenderKey& key) const {
     return {};
 }
 
+RenderStatus AudioStore::warpedRenderStatus(const RenderKey& key) const {
+    std::lock_guard<std::mutex> lock(mutex);
+    RenderStatus out;
+    for (const Render& r : renders) {
+        if (!(r.key.source == key.source) || r.key.factor != key.factor || r.key.semitones != key.semitones ||
+            r.key.sound != key.sound || r.key.reverse != key.reverse)
+            continue;
+        out = r.status;
+        if (out.state == RenderState::Waiting || out.state == RenderState::Rendering)
+            break;
+    }
+    return out;
+}
+
 size_t AudioStore::memoryBytes() const {
     std::lock_guard<std::mutex> lock(mutex);
     size_t n = 0;
@@ -825,6 +839,8 @@ void AudioStore::renderOne(const RenderKey& key) {
             auto r = std::find_if(renders.begin(), renders.end(), [&](const Render& x) { return x.key == key; });
             if (stopping || r == renders.end() || inRate != rate)
                 return false;
+            if (int(p * 100) != int(r->status.progress * 100))
+                progressSteps.fetch_add(1, std::memory_order_relaxed);
             r->status.progress = float(p);
             return true;
         };

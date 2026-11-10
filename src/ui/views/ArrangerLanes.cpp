@@ -1065,6 +1065,7 @@ uint64_t ArrangerLanes::clipsKey() {
     // Waveforms fill in, states and renders change, and Off clips follow the tempo.
     if (AudioStore* store = m->audioStore()) {
         key = hashMix(key, double(store->changes()));
+        key = hashMix(key, double(store->renderProgressSteps()));
         key = hashMix(key, m->tempo());
     }
     for (double h : owner.tracks.heights())
@@ -1238,8 +1239,13 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             nvgFillColor(vg, theme::track(color, 0.25f * alpha));
             nvgFill(vg);
         }
-        if (clip->audio)
+        if (clip->audio) {
             drawAudioBody(vg, *clip, a, body, audioState, gainDb, color, alpha);
+            if (audioDraw::rendering(audioState))
+                audioDraw::drawRenderBar(
+                    vg, Rect(r.pos.x, r.getBottom() - theme::metrics::kStatusBar, r.size.x, theme::metrics::kStatusBar),
+                    audioState, c.text0);
+        }
         // Read by playheads: where they go, not the notes as written. Each timeline clip starts its playheads from
         // where it begins the clip, slower when stretched (as the engine reads it).
         const Device* readers = clip->audio ? nullptr : activePlayheads(track);

@@ -182,6 +182,43 @@ TEST_CASE("renders are made when wanted, and the nearest ready one stands in") {
     CHECK_FALSE(store.render(RenderKey{id, 1.25, 2, SoundType::Drums}, found));
 }
 
+TEST_CASE("a render's progress is counted apart from changes, so clips redraw without a new snapshot") {
+    TempFolder dir;
+    AudioStore store;
+    store.setFolder(dir.path.string());
+    store.setEngineRate(48000);
+    Song song = makeDefaultSong();
+    AudioSourceId id = importInto(store, song, "click120.wav");
+    store.sync(song);
+    store.waitIdle();
+
+    uint64_t before = store.renderProgressSteps();
+    store.want({RenderKey{id, 1.25, 3, SoundType::Drums}});
+    store.waitIdle();
+    CHECK(store.renderProgressSteps() > before);
+}
+
+TEST_CASE("a warped clip finds its render's status without naming its markers") {
+    TempFolder dir;
+    AudioStore store;
+    store.setFolder(dir.path.string());
+    store.setEngineRate(48000);
+    Song song = makeDefaultSong();
+    AudioSourceId id = importInto(store, song, "click120.wav");
+    store.sync(song);
+    store.waitIdle();
+
+    RenderKey asked{id, 1.0, 2, SoundType::Drums};
+    RenderKey made = asked;
+    made.warps = {{0, 0}, {double(kPpq), 12000}};
+    made.framesPerTick = 25;
+    store.want({made});
+    store.waitIdle();
+    CHECK(store.renderStatus(asked).state == RenderState::None);
+    CHECK(store.warpedRenderStatus(asked).state == RenderState::Ready);
+    CHECK(store.warpedRenderStatus(RenderKey{id, 1.0, 5, SoundType::Drums}).state == RenderState::None);
+}
+
 TEST_CASE("renders no longer wanted before they start are dropped") {
     TempFolder dir;
     AudioStore store;

@@ -23,6 +23,7 @@ struct ClipState {
     const AudioSource* source = nullptr;
     SourceStatus status;
     RenderStatus render; // the render this clip wants at the song tempo; None when it needs none
+    bool pitched = false;            // that render moves the pitch, not only the length
     std::vector<SourceStatus> takes; // per take, beside `status` for the clip's own
     regions::Files files;
 
@@ -61,6 +62,15 @@ std::string bigTitleMarks(const Clip& clip, const ClipState& state, float gainDb
 
 /// A short word for a state worth seeing ("Loading 40%", "Missing file", "40%"), or empty when it just plays.
 std::string stateText(const ClipState& state);
+
+/// Whether the clip's stretched or pitch-shifted version is still being made or waits its turn.
+bool rendering(const ClipState& state);
+
+/// What rendering() is doing, in words, for places with room: "Shifting pitch 40%", "Stretching 40%".
+std::string renderingText(const ClipState& state);
+
+/// A thin bar in `bar` that fills from the left as the render gets done. Its faint groove shows while it waits.
+void drawRenderBar(NVGcontext* vg, rack::math::Rect bar, const ClipState& state, NVGcolor color);
 
 /// Whether a state wants an amber warning mark.
 bool stateWarns(const ClipState& state);

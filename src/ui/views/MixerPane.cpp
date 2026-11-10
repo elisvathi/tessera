@@ -469,6 +469,10 @@ float MixerPane::shownVolume(const Strip& s) const {
     auto it = held.find(key);
     if (it != held.end())
         return it->second.first;
+    // A drag on this track's control in the track headers moves the strip too.
+    float dragged;
+    if (m->audioPlayer().held(key, false, dragged))
+        return gainToDb(dragged);
     // A fader lane playing moves the fader with it (§7.3).
     float automated;
     if (s.master)
@@ -499,6 +503,9 @@ float MixerPane::shownPan(const Strip& s) const {
     auto it = held.find(s.track.value);
     if (it != held.end())
         return it->second.second;
+    float dragged;
+    if (ctx.module()->audioPlayer().held(s.track.value, true, dragged))
+        return dragged;
     float automated;
     if (ctx.module()->audioPlayer().automated(s.playerIndex, true, automated))
         return automated;

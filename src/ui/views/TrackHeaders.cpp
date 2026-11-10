@@ -405,8 +405,6 @@ class LevelGesture : public DragGesture {
         if (!mods.alt && std::abs(MixerPane::faderPos(now) - 0.75f) * width < 6)
             now = 0;
         ctx.module()->holdChannel(track, now, start.pan, false);
-        shown = now;
-        shownId = track.value;
     }
     void commit() override {
         TesseraModule* m = ctx.module();
@@ -415,17 +413,10 @@ class LevelGesture : public DragGesture {
         else if (now != start.volumeDb)
             m->perform(setChannel(m->song(), track, {now, start.pan}, "Volume " + audioDraw::dbText(now)));
         m->releaseChannelHolds();
-        shown = NAN;
     }
-    void cancel() override {
-        ctx.module()->audioPlayer().releaseHolds();
-        shown = NAN;
-    }
+    void cancel() override { ctx.module()->audioPlayer().releaseHolds(); }
     std::string readout() const override { return (master ? "Master " : "Volume ") + audioDraw::dbText(now); }
     CursorShape cursor() const override { return CursorShape::ResizeH; }
-    /// The level a drag shows now, and whose it is (a track or the master); NaN when none runs.
-    static float shown;
-    static uint64_t shownId;
 
   private:
     EditorContext& ctx;
@@ -436,8 +427,6 @@ class LevelGesture : public DragGesture {
     Channel start;
     float now = 0;
 };
-float LevelGesture::shown = NAN;
-uint64_t LevelGesture::shownId = 0;
 
 /// Draws a level bar: the groove, the live level (bright only in its top 6 dB, red past 0 dB) and the fader as a
 /// thin bright line. Shared by the audio track rows and the Master row.
@@ -528,15 +517,16 @@ void TrackHeaders::drawLevelLine(NVGcontext* vg, const Track& t, int row, float 
         return;
     const theme::Palette& c = theme::colors();
     TesseraModule* m = ctx.module();
-    bool dragged = std::isfinite(LevelGesture::shown) && LevelGesture::shownId == t.id.value;
     int index = m->soundIndex(t.id);
-    float volume = t.channel.volumeDb, pan = t.channel.pan, automated;
+    float volume = t.channel.volumeDb, pan = t.channel.pan, automated, held;
     if (m->audioPlayer().automated(index, false, automated))
         volume = automated;
     if (m->audioPlayer().automated(index, true, automated))
         pan = automated;
-    if (dragged)
-        volume = LevelGesture::shown;
+    if (m->audioPlayer().held(t.id.value, false, held))
+        volume = gainToDb(held);
+    if (m->audioPlayer().held(t.id.value, true, held))
+        pan = held;
     Rect bar(hit.pos.x, hit.getCenter().y - kLevelBarH / 2, hit.size.x, kLevelBarH);
     // The live level in the track colour, faint, and bright only in its top 6 dB, so a busy song doesn't flicker
     // in every row.
@@ -1055,12 +1045,11 @@ void TrackHeaders::drawMasterRow(NVGcontext* vg) {
     NVGcolor arrow = lanesHover ? c.text0 : !master.automation.empty() ? c.text1 : nvgTransRGBAf(c.text2, 0.55f);
     drawFoldArrow(vg, lanes.getCenter().x - (lanesOpen ? 3 : 2), lanes.getCenter().y, !lanesOpen, arrow);
     Rect hit = masterLevelRect();
-    bool dragged = std::isfinite(LevelGesture::shown) && LevelGesture::shownId == master.id.value;
-    float volume = master.volumeDb, automated;
+    float volume = master.volumeDb, automated, held;
     if (m->audioPlayer().masterAutomated(automated))
         volume = automated;
-    if (dragged)
-        volume = LevelGesture::shown;
+    if (m->audioPlayer().held(master.id.value, false, held))
+        volume = gainToDb(held);
     Rect bar(hit.pos.x, hit.getCenter().y - kLevelBarH / 2, hit.size.x, kLevelBarH);
     float level = std::max(m->audioPlayer().masterLevel(0), m->audioPlayer().masterLevel(1));
     drawLevelBar(vg, bar, level, volume, nvgTransRGBAf(c.text1, 0.35f), c.text1);

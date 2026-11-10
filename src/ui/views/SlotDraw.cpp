@@ -346,6 +346,11 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                                         return audioDraw::framesOfTicks(*clip, state, u0, u1, column);
                                     });
         }
+        if (audioDraw::rendering(state))
+            audioDraw::drawRenderBar(vg,
+                                     Rect(body.pos.x, body.getBottom() - theme::metrics::kStatusBar, body.size.x,
+                                          theme::metrics::kStatusBar),
+                                     state, c.text0);
     } else if (readers) {
         drawHatch(vg, body, body.getRight(), nvgTransRGBAf(c.onTile, 0.12f));
         // Clear of the playhead mark at the right.

@@ -92,6 +92,12 @@ class AudioStore : public AudioBuffers {
 
     SourceStatus status(AudioSourceId id) const;
     RenderStatus renderStatus(const RenderKey& key) const;
+    /// The status of a render like `key`, whatever its warp markers: the UI can't name a warped clip's exact render,
+    /// whose markers are in frames at the buffer's rate. One still being made wins over a finished one.
+    RenderStatus warpedRenderStatus(const RenderKey& key) const;
+    /// Goes up as a render's percentage moves. Apart from changes(), so a moving percentage redraws clips without
+    /// building a new snapshot.
+    uint64_t renderProgressSteps() const { return progressSteps.load(std::memory_order_relaxed); }
     /// Goes up whenever a buffer, a waveform or a status changes, so the module knows to build a new snapshot.
     uint64_t changes() const { return changeCount.load(std::memory_order_acquire); }
     /// Bytes of samples held in memory (prepared and rendered), for the Master strip's tooltip.
@@ -153,6 +159,7 @@ class AudioStore : public AudioBuffers {
     int busy = 0;
     bool stopping = false;
     std::atomic<uint64_t> changeCount{1};
+    std::atomic<uint64_t> progressSteps{0};
     std::thread loader, renderer;
 };
 

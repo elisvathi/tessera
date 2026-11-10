@@ -347,8 +347,14 @@ void TesseraModule::audioStep() {
     audioSnapshots.collect();
     MixPlan plan = currentMixPlan();
     if (!audio) {
-        if (!hasAudio(songData) && plan.returns.empty())
+        if (!hasAudio(songData) && plan.returns.empty()) {
+            // No snapshot will follow to end them, and the headers draw what a hold says.
+            if (releaseHolds) {
+                player->releaseHolds();
+                releaseHolds = false;
+            }
             return;
+        }
         setupAudioFolder();
         if (!audio)
             return;

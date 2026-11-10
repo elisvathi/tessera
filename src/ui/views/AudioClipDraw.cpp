@@ -5,6 +5,7 @@
 #include "../../engine/AudioSnapshotBuilder.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
+#include "../widgets/Draw.hpp"
 
 #include <cmath>
 
@@ -30,8 +31,10 @@ ClipState stateOf(TesseraModule& module, const Clip& clip) {
         s.takes.push_back(store->status(t.source));
     RenderKey key;
     double tempo = module.tempo() > 0 ? module.tempo() : 120;
-    if (wantsRender(*clip.audio, tempo, key))
-        s.render = store->renderStatus(key);
+    if (wantsRender(*clip.audio, tempo, key)) {
+        s.render = clip.audio->warps.empty() ? store->renderStatus(key) : store->warpedRenderStatus(key);
+        s.pitched = key.semitones != 0;
+    }
     return s;
 }
 
@@ -217,6 +220,25 @@ std::string stateText(const ClipState& state) {
     if (state.render.state == RenderState::Failed)
         return "!";
     return "";
+}
+
+bool rendering(const ClipState& state) {
+    return state.status.state == SourceState::Ready &&
+           (state.render.state == RenderState::Waiting || state.render.state == RenderState::Rendering);
+}
+
+std::string renderingText(const ClipState& state) {
+    return (state.pitched ? "Shifting pitch " : "Stretching ") + std::to_string(int(state.render.progress * 100)) + "%";
+}
+
+void drawRenderBar(NVGcontext* vg, rack::math::Rect bar, const ClipState& state, NVGcolor color) {
+    // The dark backing keeps it readable over a waveform, on a clip of any colour.
+    draw::roundedRect(vg, bar, 1, nvgTransRGBAf(theme::colors().bg0, 0.8f));
+    draw::roundedRect(vg, bar, 1, nvgTransRGBAf(color, 0.25f));
+    rack::math::Rect done = bar;
+    done.size.x *= std::clamp(state.render.progress, 0.f, 1.f);
+    if (done.size.x >= 1)
+        draw::roundedRect(vg, done, 1, color);
 }
 
 bool stateWarns(const ClipState& state) {

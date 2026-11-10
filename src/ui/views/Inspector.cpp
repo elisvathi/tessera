@@ -903,7 +903,7 @@ void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
             y = row(vg, y, "", std::to_string(src->fileChannels) + " channels mixed down to " +
                                    std::to_string(src->channels));
     }
-    std::string st = audioDraw::stateText(state);
+    std::string st = audioDraw::rendering(state) ? audioDraw::renderingText(state) : audioDraw::stateText(state);
     if (!st.empty())
         y = row(vg, y, "State", st == "!" ? "Couldn't make the stretched version" : st);
 
@@ -994,10 +994,18 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     y = row(vg, y, "Name", t->name);
     if (t->type == TrackType::Audio) {
         // An audio track plays through the mixer to MAIN: no voices, inputs or output modules yet (Phase 2).
-        y = row(vg, y, "Volume", audioDraw::dbText(t->channel.volumeDb));
+        float volumeDb = t->channel.volumeDb, panValue = t->channel.pan, dragged;
+        if (m->audioPlayer().held(t->id.value, false, dragged))
+            volumeDb = gainToDb(dragged);
+        if (m->audioPlayer().held(t->id.value, true, dragged))
+            panValue = dragged;
+        y = row(vg, y, "Volume", audioDraw::dbText(volumeDb));
         char pan[24];
-        snprintf(pan, sizeof pan, t->channel.pan == 0 ? "Centre" : t->channel.pan < 0 ? "%.0f%% left" : "%.0f%% right",
-                 double(std::abs(t->channel.pan) * 100));
+        snprintf(pan, sizeof pan,
+                 panValue == 0  ? "Centre"
+                 : panValue < 0 ? "%.0f%% left"
+                                : "%.0f%% right",
+                 double(std::abs(panValue) * 100));
         y = row(vg, y, "Pan", pan);
         y = row(vg, y, "Output", m->mainPatched() ? "MAIN" : "MAIN (not patched)");
         y = drawSends(vg, y, *t);
