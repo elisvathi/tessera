@@ -107,6 +107,12 @@ While you drag a note or clip near the edge, the view scrolls by itself.
 ![The timeline with markers, loop strip and ruler](images/timeline.png)
 
 - **Click** the ruler to move the playhead. **Double-click** to move it and start playing from there.
+- **While playing**, the jump waits for its beat, so clips on the launcher stay in time with the timeline. Click
+  beat 4 of bar 6 while the song is on beat 2, and the song plays on to beat 4 of the bar it is in, then jumps.
+  Until then the target blinks on the ruler. The wait follows **Launch quantize** (1 bar by default): with
+  **None** the jump happens at once. Clicking again picks a new target, and stopping lands on it. A click on a
+  playing clip's ruler in the piano roll works the same way. See
+  [Launch quantize](05-clips-and-scenes.md#launch-quantize-when-clips-start).
 - The **loop strip** is the thin bar under the markers. Drag in it to draw the loop. Drag the loop to move it, drag
   its ends to resize it. Double-click it to turn the loop on or off. **L** also turns the loop on and off, and
   **Ctrl+L** sets the loop around what is selected.

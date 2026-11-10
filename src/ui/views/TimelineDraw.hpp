@@ -17,6 +17,8 @@ void drawGrid(NVGcontext* vg, const TimeAxis& axis, TimeSig ts, float height, Ti
 
 /// The playhead line, plus a small triangle cap when `cap` is set (rulers).
 void drawPlayhead(NVGcontext* vg, float x, float height, bool cap = false);
+/// The same in another colour, such as the queue colour for a jump waiting for its beat.
+void drawPlayhead(NVGcontext* vg, float x, float height, bool cap, NVGcolor color);
 
 /// "3.2" style position labels: bar.beat, with .16th added when the label step is finer than a beat.
 std::string positionLabel(Tick tick, Tick labelStep, TimeSig ts);

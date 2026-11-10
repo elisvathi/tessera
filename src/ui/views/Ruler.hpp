@@ -36,7 +36,10 @@ class TimelineSource {
     /// The playhead in this timeline's time, or NaN when there is none to show.
     virtual double playhead() = 0;
     virtual bool canSeek() { return false; }
+    /// While playing, a seek waits for its beat (DECISIONS §96).
     virtual void seek(double tick, bool play) {}
+    /// Where a seek waiting for its beat will land, in this timeline's time; NaN when none waits.
+    virtual double pendingSeek() { return NAN; }
 
     virtual bool hasMarkers() { return false; }
     virtual std::vector<Marker> markers() { return {}; }

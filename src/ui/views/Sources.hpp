@@ -23,6 +23,7 @@ class ArrangerSource : public TimelineSource {
     void setLoop(Tick start, Tick end) override;
     void toggleLoop() override;
     double playhead() override;
+    double pendingSeek() override;
     bool canSeek() override { return true; }
     void seek(double tick, bool play) override;
     bool hasMarkers() override { return true; }
@@ -57,6 +58,7 @@ class ClipSource : public TimelineSource {
     void setLoop(Tick start, Tick end) override;
     void toggleLoop() override;
     double playhead() override;
+    double pendingSeek() override;
     double instanceEnd() override;
     double instanceStart() override;
     void previewInstanceEnd(double end) override { endPreview = end; }

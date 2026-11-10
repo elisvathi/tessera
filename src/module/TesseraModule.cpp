@@ -121,6 +121,7 @@ LauncherStatus TesseraModule::launcherStatus(TrackId track) const {
     status.position = s.position.load(std::memory_order_relaxed);
     status.overridden = s.overridden.load(std::memory_order_relaxed);
     status.elapsed = s.elapsed.load(std::memory_order_relaxed);
+    status.queuedClipTime = s.queuedClipTime.load(std::memory_order_relaxed);
     return status;
 }
 
@@ -161,33 +162,26 @@ void TesseraModule::Host::launchAt(TrackId track, int slot, double playTick) {
 }
 
 void TesseraModule::readRecordInputs(const ProcessArgs& args) {
-    // CV: a rising gate starts a note at the V/OCT of that moment; the note keeps that pitch until it ends.
     int channels = inputs[REC_GATE_INPUT].getChannels();
     // Nothing patched and no CV note held from before: no note can start or end.
     bool anyHigh = false;
+    bool velocityPatched = inputs[REC_VEL_INPUT].isConnected();
+    CvNoteInput::Events cvEvents;
     for (int c = 0; c < kMaxVoices && (channels > 0 || recGateHeld); c++) {
-        bool wasHigh = recGates[size_t(c)].isHigh();
         float gate = c < channels ? inputs[REC_GATE_INPUT].getVoltage(c) : 0.f;
-        recGates[size_t(c)].process(gate, kGateLow, kGateHigh);
-        bool high = recGates[size_t(c)].isHigh();
-        anyHigh |= high;
-        if (high == wasHigh)
-            continue;
-        LiveNote n;
-        n.source = LiveSource::Cv;
-        n.channel = uint8_t(c);
-        n.on = high;
-        if (high) {
-            float v = inputs[REC_VOCT_INPUT].getPolyVoltage(c);
-            recPitches[size_t(c)] = int8_t(std::clamp(int(std::lround(v * 12.f)) + 60, 0, 127));
-            n.velocity = inputs[REC_VEL_INPUT].isConnected()
-                             ? std::clamp(inputs[REC_VEL_INPUT].getPolyVoltage(c) / 10.f, 0.f, 1.f)
-                             : 0.8f;
-        } else {
-            n.velocity = 0.5f;
+        float velocity = velocityPatched ? std::clamp(inputs[REC_VEL_INPUT].getPolyVoltage(c) / 10.f, 0.f, 1.f) : 0.8f;
+        int n = recCv.process(c, gate, inputs[REC_VOCT_INPUT].getPolyVoltage(c), velocity, cvEvents);
+        anyHigh |= recCv.held(c);
+        for (int i = 0; i < n; i++) {
+            const CvNoteInput::Event& e = cvEvents[size_t(i)];
+            LiveNote note;
+            note.source = LiveSource::Cv;
+            note.channel = e.channel;
+            note.pitch = e.pitch;
+            note.velocity = e.velocity;
+            note.on = e.on;
+            engine.liveNote(note);
         }
-        n.pitch = recPitches[size_t(c)];
-        engine.liveNote(n);
     }
     recGateHeld = anyHigh;
 
@@ -757,6 +751,7 @@ void TesseraModule::process(const ProcessArgs& args) {
     if (args.sampleRate != engineSampleRate) {
         engineSampleRate = args.sampleRate;
         engine.setSampleRate(engineSampleRate);
+        recCv.setSampleRate(engineSampleRate);
     }
     if (const Snapshot* next = snapshots.poll())
         engine.setSnapshot(next);
@@ -801,6 +796,7 @@ void TesseraModule::process(const ProcessArgs& args) {
         publishLauncherStatus();
 
     uiPlayhead.store(engine.position(), std::memory_order_relaxed);
+    uiPendingSeek.store(engine.pendingSeek(), std::memory_order_relaxed);
     uiPlayTick.store(engine.playPosition(), std::memory_order_relaxed);
     uiPlaying.store(engine.isPlaying(), std::memory_order_relaxed);
     uiTempo.store(engine.tempo(), std::memory_order_relaxed);
@@ -874,6 +870,8 @@ void TesseraModule::followClock(const ProcessArgs& args) {
 }
 
 void TesseraModule::handleUiRequests() {
+    // A ruler click with "play" waits for its beat only if the song was already playing before this request.
+    bool wasPlaying = engine.isPlaying();
     // A plain load first: an exchange on every sample costs a locked instruction even when nothing was asked.
     int requests = transportRequests.load(std::memory_order_relaxed)
                        ? transportRequests.exchange(0, std::memory_order_acquire)
@@ -889,7 +887,8 @@ void TesseraModule::handleUiRequests() {
     if (requests & kRequestRecord)
         engine.toggleRecord(countInBars.load(std::memory_order_relaxed));
     if (seekPending.load(std::memory_order_relaxed) && seekPending.exchange(false, std::memory_order_acquire))
-        engine.seek(seekTarget.load(std::memory_order_relaxed));
+        wasPlaying ? engine.seekInTime(seekTarget.load(std::memory_order_relaxed))
+                   : engine.seek(seekTarget.load(std::memory_order_relaxed));
     AuditionEvent event;
     while (auditions.pop(event))
         engine.audition(event);
@@ -938,6 +937,7 @@ void TesseraModule::publishLauncherStatus() {
         s.track.store(engine.trackAt(i).value, std::memory_order_relaxed);
         s.playing.store(engine.playingSlot(i), std::memory_order_relaxed);
         s.queued.store(engine.queuedSlot(i), std::memory_order_relaxed);
+        s.queuedClipTime.store(engine.queuedClipTime(i), std::memory_order_relaxed);
         s.position.store(engine.clipPosition(i), std::memory_order_relaxed);
         s.overridden.store(engine.overridden(i), std::memory_order_relaxed);
         s.elapsed.store(engine.clipElapsed(i), std::memory_order_relaxed);

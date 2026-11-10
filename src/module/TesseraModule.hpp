@@ -2,6 +2,7 @@
 
 #include "../engine/ArrangementCapture.hpp"
 #include "../engine/ClockSync.hpp"
+#include "../engine/CvNoteInput.hpp"
 #include "../engine/Engine.hpp"
 #include "../engine/Recorder.hpp"
 #include "../engine/SnapshotExchange.hpp"
@@ -36,6 +37,7 @@ struct LauncherStatus {
     double position = NAN;       // clip ticks of the playing clip
     bool overridden = false;     // Arranger mode: the launcher has taken the track over
     double elapsed = NAN;        // clip ticks since the playing clip started, for lanes with their own loop
+    double queuedClipTime = NAN; // a jump inside the clip waiting for its beat: where it lands, in clip ticks
 };
 
 /// Transport requests from the UI thread, carried out on the next sample.
@@ -135,7 +137,7 @@ class TesseraModule : public rack::engine::Module {
     EditorState& editor() { return editorState; }
 
     void requestTransport(int request) { transportRequests.fetch_or(request); }
-    /// Moves the song position on the next sample.
+    /// Moves the song position on the next sample; while playing it waits for its beat (Engine::seekInTime).
     void requestSeek(double tick) {
         seekTarget.store(tick);
         seekPending.store(true);
@@ -273,6 +275,8 @@ class TesseraModule : public rack::engine::Module {
 
     // Live transport state for the panel, safe to read from any thread
     double playheadTicks() const { return uiPlayhead.load(std::memory_order_relaxed); }
+    /// Where a ruler click waiting for its beat will land, in song ticks; NaN when none waits.
+    double pendingSeekTicks() const { return uiPendingSeek.load(std::memory_order_relaxed); }
     double playTicks() const { return uiPlayTick.load(std::memory_order_relaxed); }
     bool playing() const { return uiPlaying.load(std::memory_order_relaxed); }
     double tempo() const { return uiTempo.load(std::memory_order_relaxed); }
@@ -409,8 +413,7 @@ class TesseraModule : public rack::engine::Module {
     rack::midi::Message midiMessage; // reused: a Message holds a vector, so a new one per sample would allocate
     MidiReader midiReader;           // audio thread
     bool midiReaderMpe = false;      // the MPE setting the reader was last given
-    std::array<rack::dsp::SchmittTrigger, kMaxVoices> recGates;
-    std::array<int8_t, kMaxVoices> recPitches{};
+    CvNoteInput recCv;
     bool recGateHeld = false; // a REC GATE channel is high
     float recBlink = 0;
 
@@ -434,6 +437,7 @@ class TesseraModule : public rack::engine::Module {
 
     // Audio thread -> UI
     std::atomic<double> uiPlayhead{0};
+    std::atomic<double> uiPendingSeek{NAN};
     std::atomic<double> uiPlayTick{0};
     std::atomic<bool> uiPlaying{false};
     std::atomic<double> uiTempo{120};
@@ -448,6 +452,7 @@ class TesseraModule : public rack::engine::Module {
         std::atomic<double> position{NAN};
         std::atomic<bool> overridden{false};
         std::atomic<double> elapsed{NAN};
+        std::atomic<double> queuedClipTime{NAN};
     };
     std::array<LauncherSlot, kMaxTracks> launcherSlots; // by bus slot
 

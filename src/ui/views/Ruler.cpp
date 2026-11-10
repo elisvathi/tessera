@@ -4,6 +4,7 @@
 #include "../widgets/ColorMenuItem.hpp"
 #include "../widgets/Draw.hpp"
 #include "../widgets/MenuTextField.hpp"
+#include "SlotDraw.hpp"
 #include "TimelineDraw.hpp"
 
 #include <algorithm>
@@ -520,6 +521,15 @@ void Ruler::drawView(const DrawArgs& args) {
         nvgSave(vg);
         nvgTranslate(vg, 0, markersBottom());
         timeline::drawPlayhead(vg, x, timeBottom() - markersBottom(), true);
+        nvgRestore(vg);
+    }
+    double waiting = source.pendingSeek();
+    if (std::isfinite(waiting) && slotDraw::blinkOn()) {
+        // A click waiting for its beat blinks where it will land, as a queued clip launch blinks.
+        float x = float(viewport.time.tickToX(waiting));
+        nvgSave(vg);
+        nvgTranslate(vg, 0, markersBottom());
+        timeline::drawPlayhead(vg, x, timeBottom() - markersBottom(), true, c.queue);
         nvgRestore(vg);
     }
     if (ctx.snapAxis == &viewport && std::isfinite(ctx.snapMark)) {

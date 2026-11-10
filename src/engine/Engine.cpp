@@ -259,6 +259,7 @@ void Engine::seek(double tick) {
     bool wasRecording = recordingOn;
     if (wasRecording)
         stopRecording();
+    pendingSeekTo = NAN;
     songTick = std::max(0.0, tick);
     windowStart = songTick;
     // Notes of the old position stop; the arrangement picks up from the new one.
@@ -268,6 +269,24 @@ void Engine::seek(double tick) {
     seekAll();
     if (wasRecording)
         startRecording();
+}
+
+void Engine::seekInTime(double tick) {
+    tick = std::max(0.0, tick);
+    double q = snapshot ? double(snapshot->launchQuantize) : 0;
+    double wait = playing && q > 0 ? waitForPhase(tick, q) : 0;
+    if (wait <= 0) {
+        seek(tick);
+        return;
+    }
+    pendingSeekTo = tick;
+    pendingSeekAt = playTick + wait;
+}
+
+double Engine::waitForPhase(double phase, double q) const {
+    double wait = positiveMod(phase - songTick, q);
+    // Rounding can leave a hair short of a whole step: that is "now", not a step later.
+    return wait > q - 1e-6 ? 0 : wait;
 }
 
 void Engine::setPlayMode(PlayMode m) {
@@ -664,6 +683,8 @@ void Engine::stop() {
     // After `playing` drops, so the recorder knows the take ended with the transport (its clip shouldn't play on).
     stopRecording();
     applyQueued();
+    if (std::isfinite(pendingSeekTo))
+        seek(pendingSeekTo);
     for (TrackState& t : tracks)
         releaseAll(t);
 }
@@ -675,6 +696,7 @@ void Engine::reset() {
         stopRecording();
     songTick = (loopOn && snapshot) ? double(snapshot->loopStart) : 0.0;
     playTick = 0;
+    pendingSeekTo = NAN;
     applyQueued();
     for (TrackState& t : tracks) {
         t.launchTick = 0;
@@ -689,7 +711,7 @@ void Engine::reset() {
 void Engine::applyQueued() {
     for (size_t i = 0; i < trackCount; i++)
         if (tracks[i].queued != kNothingQueued)
-            switchTo(*snapshot->tracks[i], tracks[i], tracks[i].queued, playTick);
+            switchQueued(*snapshot->tracks[i], tracks[i], playTick);
     if (pendingTempo > 0)
         pendingTempoAt = playTick;
 }
@@ -718,6 +740,18 @@ void Engine::launch(const LaunchEvent& e) {
             if (state.id.value == e.track && (std::isfinite(e.at) || std::isfinite(e.clipTime))) {
                 // In time with an earlier start: pick up the clip where it would be by now. Or from a chosen point.
                 if (const ClipPlayback* clip = tp.slot(e.index)) {
+                    if (std::isfinite(e.clipTime) && playing && !e.immediate) {
+                        // A click on the clip's ruler waits for its place in the launch grid, as the song's does.
+                        double q = double(clip->launchQuantize >= 0 ? clip->launchQuantize : snapshot->launchQuantize);
+                        double wait = q > 0 ? waitForPhase(e.clipTime - double(clip->loopStart), q) : 0;
+                        if (wait > 0) {
+                            state.queued = e.index;
+                            state.queuedClip = tp.slotClips[size_t(e.index)];
+                            state.queuedAt = playTick + wait;
+                            state.queuedClipTime = e.clipTime;
+                            break;
+                        }
+                    }
                     double at = std::isfinite(e.clipTime) ? playTick - (e.clipTime - double(clip->loopStart)) : e.at;
                     releaseClipVoices(state);
                     switchTo(tp, state, e.index, at);
@@ -785,10 +819,24 @@ void Engine::queueLaunch(const TrackPlayback& tp, TrackState& state, int slot, b
     state.queued = slot;
     state.queuedClip = slot >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
     state.queuedAt = playTick + wait;
+    state.queuedClipTime = NAN;
+}
+
+void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at) {
+    double clipTime = state.queuedClipTime;
+    int slot = state.queued;
+    const ClipPlayback* clip = tp.slot(slot);
+    if (!std::isfinite(clipTime) || !clip) {
+        switchTo(tp, state, slot, at);
+        return;
+    }
+    switchTo(tp, state, slot, at - (clipTime - double(clip->loopStart)));
+    seekTrackAt(tp, state, at);
 }
 
 void Engine::switchTo(const TrackPlayback& tp, TrackState& state, int slot, double at) {
     releaseClipVoices(state);
+    state.queuedClipTime = NAN;
     state.playing = tp.slot(slot) ? slot : kNoSlot;
     state.playingClip = state.playing >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
     state.queued = kNothingQueued;
@@ -841,6 +889,8 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         advanceModulation();
     }
 
+    if (playing && std::isfinite(pendingSeekTo) && playTick >= pendingSeekAt - 1e-9)
+        seek(pendingSeekTo);
     if (playing) {
         double prevPlay = playTick;
         windowPlay = prevPlay;
@@ -1044,7 +1094,7 @@ void Engine::scheduleTrackNow(const TrackPlayback& track, TrackState& state, dou
     if (state.queued != kNothingQueued && state.queuedAt < curPlay) {
         double at = std::max(state.queuedAt, prevPlay);
         playSource(track, state, from, at);
-        switchTo(track, state, state.queued, at);
+        switchQueued(track, state, at);
         from = at;
     }
     playSource(track, state, from, curPlay);
@@ -1603,7 +1653,7 @@ void Engine::holdDrumCurves(TrackState& state) {
     state.curvedLanes = 0;
 }
 
-void Engine::seekTrack(const TrackPlayback& track, TrackState& state) {
+void Engine::seekTrackAt(const TrackPlayback& track, TrackState& state, double play) {
     state.arrangementCursor = arrangementIndex(track, songTick);
     state.cursor = 0;
     const ClipPlayback* playing = track.slot(state.playing);
@@ -1611,7 +1661,7 @@ void Engine::seekTrack(const TrackPlayback& track, TrackState& state) {
         return;
     const ClipPlayback& clip = *playing;
     double length = double(clip.loopLength());
-    double a = playTick - state.launchTick;
+    double a = play - state.launchTick;
     if (!clip.looping && a >= length) {
         state.cursor = clip.notes.size();
         return;
