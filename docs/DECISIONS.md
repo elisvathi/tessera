@@ -355,7 +355,11 @@ stays for big work and opens from the strip's "Full editor" button.
 ## 24. Recording (milestone 10)
 
 - **Inputs:** REC V/OCT, GATE and VEL on the panel (poly; a rising gate above 1 V starts a note at that moment's
-  V/OCT, `round(v * 12) + 60`; it ends below 0.1 V), and one MIDI input per Tessera (module menu or the record
+  V/OCT, `round(v * 12) + 60`; it ends below 0.1 V; while the gate stays high, V/OCT moving to another semitone
+  for 1 ms ends the note and starts one at the new pitch, as a mono keyboard plays legato (issue #12); the output
+  retriggers between them, as touching notes do on playback, and a legato playback mode would be its own
+  feature), and one
+  MIDI input per Tessera (module menu or the record
   button's menu). Velocity is 0-10 V, or 0.8 without a cable. The new jack and button IDs come last, so saved
   cables stay on their jacks.
 - **Per track:** an arm button (track headers and launcher column headers; exclusive, Ctrl/Cmd+click adds), the
@@ -912,6 +916,7 @@ The review sorted every control by how often a producer uses it (artifact "Tesse
   timeline clip, else the one under the playhead, else the first on the track; in the loop pass the playhead is in,
   else the first pass that plays it (`songTickAt`, the inverse of `clipTimeAt`).
 - Nothing happens when the clip is in neither place for what plays.
+- **While playing, both jumps wait for their beat** (§96 replaces "at once" above).
 
 ## 62. New song (14 Oct)
 
@@ -1460,3 +1465,24 @@ modules with the plugin *name*. Both read fine now. Patches saved before this ch
 module (its slug changed from `Tessera` to `Roll`); the plugin was not yet in the library, so no user
 patches exist. The song-title default in MIDI/DAWproject export stays "Tessera" (the product name);
 instance-name fallbacks and the panel title follow the module name.
+
+## 96. Ruler jumps wait for their beat while playing (10 Nov, issue #11)
+
+A click on the song's ruler, a marker, or a playing clip's ruler used to jump at once (§61). With one track on
+the launcher and another on the timeline, the two then played different beats.
+
+- **While playing, a jump waits** until the song reaches the target's place in the launch quantize grid, then
+  jumps. With 1 bar (the default): the song is on beat 2, the click is on beat 4 of bar 6, so the song plays on
+  to beat 4 of the bar it is in and jumps there. The wait can end in the current bar; it never waits more than
+  one grid step.
+- **The grid is Launch quantize**: the song's setting for song jumps; for a clip's ruler, the clip's own setting
+  if it has one. Launches and jumps then share one setting. With Off, or while stopped, the jump is at once.
+  With 1/16 or 1/4, a jump keeps that grid but not the bar, as a launch on that setting does.
+- **While it waits**, the target blinks on the ruler in the queue colour, as a queued launch does; a clip jump
+  also blinks the clip's slot. A newer click replaces the waiting one. **Stop** lands on the waiting target, as
+  stop carries out queued launches. Reset drops it. Esc is not used: it closes the editor.
+- The jump lands on its sample exactly, so a note right at the target plays.
+
+Why: launched clips are timed against the song's grid; a jump that keeps the song's place in the grid keeps
+them in time. The user who reported it asked for this behaviour, and it is the usual one for clip-based
+sequencers.

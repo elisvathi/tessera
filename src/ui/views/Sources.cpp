@@ -69,6 +69,8 @@ void ArrangerSource::toggleLoop() {
 
 double ArrangerSource::playhead() { return ctx.module()->playheadTicks(); }
 
+double ArrangerSource::pendingSeek() { return ctx.module()->pendingSeekTicks(); }
+
 void ArrangerSource::seek(double tick, bool play) {
     TesseraModule* m = ctx.module();
     m->requestSeek(tick);
@@ -182,6 +184,25 @@ double ClipSource::playhead() {
     return NAN;
 }
 
+double ClipSource::pendingSeek() {
+    TesseraModule* m = ctx.module();
+    const Track* t = m->song().findTrack(track);
+    if (!t || !current())
+        return NAN;
+    LauncherStatus status = m->launcherStatus(track);
+    if (status.queued >= 0 && status.queued < int(t->slots.size()) && t->slots[size_t(status.queued)].clip == clip)
+        return status.queuedClipTime;
+    if (m->playMode() == PlayMode::Arranger && !status.overridden) {
+        double song = m->pendingSeekTicks();
+        if (!std::isfinite(song))
+            return NAN;
+        if (const ArrangerClip* a = instanceAt(*t, Tick(song)); a && a->clip == clip)
+            if (std::optional<double> u = clipTimeAt(*current(), *a, song, lanes()))
+                return *u;
+    }
+    return NAN;
+}
+
 int ClipSource::seekSlot() {
     TesseraModule* m = ctx.module();
     const Track* t = m->song().findTrack(track);
@@ -228,7 +249,6 @@ void ClipSource::seek(double tick, bool play) {
         e.kind = LaunchEvent::Kind::Slot;
         e.track = track.value;
         e.index = slot;
-        e.immediate = true;
         e.start = play;
         ClipSpan span = clipSpan(*c, lanes());
         Tick start = span.looping ? span.start : 0;

@@ -8,7 +8,7 @@ Roll records them into clips.
 | Source | How to set it up |
 |---|---|
 | **MIDI** | Right-click the Roll panel, **MIDI input (for recording)**, and pick the driver, device and channel. The record button's ▾ menu has the same item. |
-| **CV** | Patch the **V/OCT**, **GATE** and (optionally) **VEL** inputs in the panel's lower box. They are polyphonic: each channel is one voice. A note starts when its gate rises above 1 V. Without a VEL cable, notes get 80%. |
+| **CV** | Patch the **V/OCT**, **GATE** and (optionally) **VEL** inputs in the panel's lower box. They are polyphonic: each channel is one voice. A note starts when its gate rises above 1 V. If V/OCT moves to another note while the gate stays high (a mono keyboard played legato), that starts a new note too. Without a VEL cable, notes get 80%. |
 | **Computer keyboard** | Press **Ctrl+K** in the editor. See [Keyboard play](#keyboard-play). |
 
 ## Arming a track

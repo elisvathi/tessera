@@ -990,3 +990,94 @@ TEST_CASE("external clock: a note on beat 2 plays on the 24th pulse") {
     CHECK(edges[1] >= 24 * kPeriod - 2);
     CHECK(edges[1] <= 24 * kPeriod + 2);
 }
+
+// ---- Ruler jumps wait for their beat (issue #11) ------------------------------------------------------------
+
+namespace {
+
+constexpr int64_t kBeatSamples = kPpq * kSamplesPerTick;
+
+/// Where the song is within its bar, in ticks.
+double barPhase(double songTick) { return std::fmod(songTick, double(4 * kPpq)); }
+
+} // namespace
+
+TEST_CASE("a ruler jump while playing waits for its place in the bar, so launched clips stay on the beat") {
+    Harness h(songWith({{0, 100, 60}}, 4 * kPpq, 1));
+    h.runTo(kBeatSamples - 1);                       // beat 2 of bar 1
+    double target = double(5 * 4 * kPpq + 3 * kPpq); // bar 6, beat 4
+    h.engine.seekInTime(target);
+    CHECK(h.engine.pendingSeek() == doctest::Approx(target));
+    CHECK(h.engine.position() == doctest::Approx(double(kPpq)));
+
+    h.runTo(3 * kBeatSamples - 1); // up to beat 4 of bar 1: still waiting
+    CHECK(h.engine.position() == doctest::Approx(double(3 * kPpq)));
+    CHECK(std::isfinite(h.engine.pendingSeek()));
+    h.step();
+    CHECK(std::isnan(h.engine.pendingSeek()));
+    CHECK(h.engine.position() == doctest::Approx(target + 1.0 / kSamplesPerTick));
+    // The song and the launched clip are on the same beat.
+    CHECK(barPhase(h.engine.position()) == doctest::Approx(h.engine.clipPosition(0)));
+}
+
+TEST_CASE("a ruler jump goes at once while stopped, with launch quantize Off, or already on its beat") {
+    Song song = songWith({{0, 100, 60}}, 4 * kPpq, 1);
+    Harness stopped(song);
+    stopped.runTo(100);
+    stopped.engine.stop();
+    stopped.engine.seekInTime(double(9 * kPpq));
+    CHECK(stopped.engine.position() == doctest::Approx(double(9 * kPpq)));
+    CHECK(std::isnan(stopped.engine.pendingSeek()));
+
+    Song off = song;
+    off.launchQuantize = LaunchQuantize::Off;
+    Harness free(off);
+    free.runTo(100);
+    free.engine.seekInTime(double(9 * kPpq));
+    CHECK(free.engine.position() == doctest::Approx(double(9 * kPpq)));
+
+    Harness onBeat(song);
+    onBeat.runTo(kBeatSamples - 1);                    // the song is at beat 2 exactly
+    onBeat.engine.seekInTime(double(4 * kPpq + kPpq)); // bar 2, beat 2
+    CHECK(onBeat.engine.position() == doctest::Approx(double(5 * kPpq)));
+}
+
+TEST_CASE("a newer ruler jump replaces a waiting one, and stopping lands on the waiting target") {
+    Harness h(songWith({{0, 100, 60}}, 4 * kPpq, 1));
+    h.runTo(100);
+    h.engine.seekInTime(double(8 * kPpq + 3 * kPpq));
+    h.engine.seekInTime(double(8 * kPpq + 2 * kPpq));
+    CHECK(h.engine.pendingSeek() == doctest::Approx(double(10 * kPpq)));
+    h.engine.stop();
+    CHECK(h.engine.position() == doctest::Approx(double(10 * kPpq)));
+    CHECK(std::isnan(h.engine.pendingSeek()));
+}
+
+TEST_CASE("a waiting jump onto a timeline note plays that note on the jump's exact sample") {
+    Tick target = 8 * 4 * kPpq + 2 * kPpq; // bar 9, beat 3
+    Harness h(songWithInstance({{0, 100, 72}}, kPpq, target, kPpq));
+    arrangerMode(h);
+    h.runTo(kBeatSamples / 2 - 1); // beat 1.5
+    h.engine.seekInTime(double(target));
+    std::vector<int64_t> edges = h.risingEdges(0, 3 * kBeatSamples);
+    CHECK(edges == std::vector<int64_t>{2 * kBeatSamples});
+    CHECK(h.frame().voct[0] == doctest::Approx(1.f));
+}
+
+TEST_CASE("a jump on a playing clip's ruler waits for the same point in the song's bar") {
+    // A 2-bar clip; its last beat holds a high note.
+    Harness h(songWith({{0, 100, 60}, {7 * kPpq, 100, 72}}, 8 * kPpq, 1));
+    h.runTo(kBeatSamples / 2 - 1); // beat 1.5 of bar 1
+    LaunchEvent e{LaunchEvent::Kind::Slot, h.song.tracks[0].id.value, 0, false};
+    e.clipTime = double(7 * kPpq); // bar 2, beat 4 of the clip
+    h.engine.launch(e);
+    CHECK(h.engine.queuedSlot(0) == 0);
+    CHECK(h.engine.queuedClipTime(0) == doctest::Approx(double(7 * kPpq)));
+
+    // It lands when the song reaches beat 4, and the high note starts right there.
+    std::vector<int64_t> edges = h.risingEdges(0, 3 * kBeatSamples + 10);
+    CHECK(edges == std::vector<int64_t>{3 * kBeatSamples});
+    CHECK(h.frame().voct[0] == doctest::Approx(1.f));
+    CHECK(h.engine.queuedSlot(0) == kNothingQueued);
+    CHECK(h.engine.clipPosition(0) == doctest::Approx(7 * kPpq + 11.0 / kSamplesPerTick));
+}

@@ -245,6 +245,26 @@ TEST_CASE("a note-off reaches the tracks its note-on went to, even after disarmi
     CHECK_FALSE(rig.gate(0));
 }
 
+TEST_CASE("a legato pitch change on REC CV retriggers the monitor at the new pitch (issue #12)") {
+    Song song = recordSong();
+    song.tracks[0].polyphony = 1;
+    EngineRig rig(song);
+    const TrackFrame& f = rig.frames[size_t(rig.slots.slotOf(rig.song.tracks[0].id))];
+    rig.engine.liveNote({LiveSource::Cv, 0, 60, 0.8f, true});
+    rig.run(100);
+    REQUIRE(rig.gate(0));
+    rig.engine.liveNote({LiveSource::Cv, 0, 60, 0.5f, false});
+    rig.engine.liveNote({LiveSource::Cv, 0, 67, 0.8f, true});
+    bool dropped = false;
+    for (int i = 0; i < 200; i++) {
+        rig.run(1);
+        dropped |= !rig.gate(0);
+    }
+    CHECK(dropped);
+    CHECK(rig.gate(0));
+    CHECK(f.voct[0] == doctest::Approx(7.f / 12.f));
+}
+
 TEST_CASE("live notes can snap to the song key") {
     Song song = recordSong();
     song.scale = ScaleRef{0, "major"};

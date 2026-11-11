@@ -57,6 +57,8 @@ Click **Launch 1 bar ▾** (above the track names) to choose the launch line.
 - **1/16**, **1/4**, **1 bar** (default), **2 bars**, **4 bars** wait for that line. Lines follow the song's bar
   numbers.
 - A clip can have its own setting: right-click it, **Launch quantize**. "Song setting" uses the menu above.
+- Clicking a ruler to move the playhead while playing waits on the same lines, landing on the beat you clicked.
+  See [The editor](03-editor.md#the-ruler-loop-and-markers).
 - **Record into timeline** writes what you launch onto the timeline. See [The timeline](06-timeline.md#recording-what-you-launch).
 
 ## Editing clips

@@ -85,7 +85,7 @@ in the box named **RECORD** are for recording.
 | **LAUNCH** | A trigger launches the picked scene. |
 | **FILL** | Fill is on while the input is above 1 V, or while the FILL button is held. See [FILL](#7-fill). |
 | **V/OCT** | Record input: the pitch of each note, per poly channel. |
-| **GATE** | Record input: a note starts when the gate rises above 1 V and ends when it falls below 0.1 V. |
+| **GATE** | Record input: a note starts when the gate rises above 1 V and ends when it falls below 0.1 V. A new pitch on V/OCT while the gate stays high starts a new note. |
 | **VEL** | Record input: velocity, 0 to 10 V. Without a cable, notes get 80%. |
 | **AUTO** | Records automation. Poly: channel 1 goes to AUTO lane 1, channel 2 to lane 2, and so on. See [Automation](12-automation.md#recording-automation). |
 

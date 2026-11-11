@@ -178,8 +178,15 @@ class Engine {
     /// Back to the loop start when looping, otherwise to the song start. Clips restart from their beginning.
     void reset();
 
-    /// Moves the song position (the arranger playhead). Clips keep their own phase.
+    /// Moves the song position (the arranger playhead) at once. Clips keep their own phase.
     void seek(double songTick);
+    /// Moves the song position the way a click on the ruler does (DECISIONS §96). While playing with launch
+    /// quantize on, the jump waits until the song reaches the target's place in the quantize grid, so launched
+    /// clips stay on the same beat; stopped, or with launch quantize Off, it jumps at once. A newer call replaces
+    /// a waiting one.
+    void seekInTime(double songTick);
+    /// Where a waiting jump will land, in song ticks; NaN when none waits.
+    double pendingSeek() const { return pendingSeekTo; }
 
     bool isPlaying() const { return playing; }
     double tempo() const { return bpm; }
@@ -231,6 +238,10 @@ class Engine {
     int playingSlot(size_t i) const { return tracks[i].playing; }
     /// kNothingQueued, kNoSlot (a stop is queued) or the queued slot.
     int queuedSlot(size_t i) const { return tracks[i].queued; }
+    /// The clip time a queued jump inside the playing clip lands on (a click on its ruler); NaN for a plain launch.
+    double queuedClipTime(size_t i) const {
+        return tracks[i].queued != kNothingQueued ? tracks[i].queuedClipTime : NAN;
+    }
     /// In Arranger mode: the launcher has taken this track over, so its arrangement is silent.
     bool overridden(size_t i) const { return mode == PlayMode::Arranger && tracks[i].overridden; }
     /// Where the playing clip is, in clip ticks. NaN when nothing plays or a one-shot clip has ended.
@@ -301,6 +312,7 @@ class Engine {
         int queued = kNothingQueued;
         ClipId queuedClip;
         double queuedAt = 0;     // playTick when the queued change happens
+        double queuedClipTime = NAN; // the queued clip starts from this clip time (a ruler click); NaN = its start
         double launchTick = 0;   // playTick when the playing clip started
         bool overridden = false; // launched or stopped by the launcher since the last "back to arrangement"
         size_t arrangementCursor = 0;
@@ -438,6 +450,8 @@ class Engine {
     static size_t arrangementIndex(const TrackPlayback& track, double songPos);
     void queueLaunch(const TrackPlayback& track, TrackState& state, int slot, bool immediate);
     void switchTo(const TrackPlayback& track, TrackState& state, int slot, double at);
+    /// Carries out the track's queued launch at play tick `at`, from its queued clip time when it has one.
+    void switchQueued(const TrackPlayback& track, TrackState& state, double at);
     /// Carries out every queued launch now (on stop and reset).
     void applyQueued();
     void releaseClipVoices(TrackState& state);
@@ -467,7 +481,11 @@ class Engine {
     void advanceDrumCurves(TrackState& state);
     /// Stops every drum lane's curve where it is, so the outputs hold their values.
     static void holdDrumCurves(TrackState& state);
-    void seekTrack(const TrackPlayback& track, TrackState& state);
+    void seekTrack(const TrackPlayback& track, TrackState& state) { seekTrackAt(track, state, playTick); }
+    /// Points the track's cursors at where it plays at play tick `play`.
+    void seekTrackAt(const TrackPlayback& track, TrackState& state, double play);
+    /// Ticks until the song is at `phase` within the launch grid `q` (0 when it is there now).
+    double waitForPhase(double phase, double q) const;
     void seekAll();
     void writeFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const;
     /// Track lanes play while the track follows the arrangement; clip lanes while their clip plays. A clip lane
@@ -582,6 +600,8 @@ class Engine {
     bool capturing = false;
     double pendingTempo = 0; // a scene's tempo, applied when playTick reaches pendingTempoAt
     double pendingTempoAt = 0;
+    double pendingSeekTo = NAN; // a ruler click waiting for its place in the launch grid, in song ticks
+    double pendingSeekAt = 0;   // playTick when it jumps
 
     RecordQueue* recordQueue = nullptr;
     bool recordingOn = false;

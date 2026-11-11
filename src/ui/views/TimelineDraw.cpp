@@ -35,11 +35,14 @@ void drawGrid(NVGcontext* vg, const TimeAxis& axis, TimeSig ts, float height, Ti
 }
 
 void drawPlayhead(NVGcontext* vg, float x, float height, bool cap) {
-    const theme::Palette& c = theme::colors();
+    drawPlayhead(vg, x, height, cap, theme::colors().accent);
+}
+
+void drawPlayhead(NVGcontext* vg, float x, float height, bool cap, NVGcolor color) {
     nvgBeginPath(vg);
     nvgMoveTo(vg, x, 0);
     nvgLineTo(vg, x, height);
-    nvgStrokeColor(vg, c.accent);
+    nvgStrokeColor(vg, color);
     nvgStrokeWidth(vg, 1.5f);
     nvgStroke(vg);
     if (cap) {
@@ -48,7 +51,7 @@ void drawPlayhead(NVGcontext* vg, float x, float height, bool cap) {
         nvgLineTo(vg, x + 5, 0);
         nvgLineTo(vg, x, 6);
         nvgClosePath(vg);
-        nvgFillColor(vg, c.accent);
+        nvgFillColor(vg, color);
         nvgFill(vg);
     }
 }
