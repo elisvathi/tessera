@@ -55,11 +55,12 @@ class CvNoteInput {
             return 0;
 
         float semis = voct * 12.f + 60.f;
-        if (std::fabs(semis - float(c.pitch)) <= 0.5f + kPitchHysteresis) {
+        int8_t next = pitchOf(voct);
+        // Past either end of the note range the clamped pitch stays the same, however far V/OCT goes.
+        if (next == c.pitch || std::fabs(semis - float(c.pitch)) <= 0.5f + kPitchHysteresis) {
             c.pending = -1;
             return 0;
         }
-        int8_t next = pitchOf(voct);
         if (next != c.pending) {
             c.pending = next;
             c.pendingSamples = 0;

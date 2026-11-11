@@ -155,6 +155,10 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] ARRANGE (panel) / the transport Plays switch: the timeline plays; notes start on time. In Launcher
       mode the timeline is silent. The display shows ARRANGER.
 - [ ] A note crossing the song loop end stops there; seeking cuts sounding notes; stop leaves no gate high.
+- [ ] Ruler jump while playing (Launch quantize 1 bar): on beat 2, click beat 4 of bar 6. The target blinks, the
+      song plays on to beat 4, then jumps there; a launched clip stays on the beat. A second click replaces the
+      target; Stop lands on it. With Launch quantize None, or stopped, the jump is at once. A playing clip's ruler
+      in the piano roll waits the same way and its slot blinks.
 - [ ] Launch a clip in Arranger mode: that track leaves the timeline (lane dimmed), "Back to arr." appears;
       clicking it brings the track back. Stopping a track also takes it over.
 - [ ] Drag a clip: snaps to the grid and to nearby clip edges, markers, loop and playhead; Alt is free; Shift
@@ -267,6 +271,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       cables on RESET / RUN / SCENE / LAUNCH.
 - [ ] Arm a track (header dot or launcher column dot; Ctrl+click arms several). Notes on REC GATE play through the
       armed track's Track Out (monitor), quantized to the key when that option is on.
+- [ ] Legato on REC CV (mono MIDI->CV): hold one key, press a second, let go of the second. Three notes record
+      (first, second, first again) and the monitor retriggers on each. A V/OCT held above +6 V records one note.
 - [ ] MIDI: pick a device in the module menu; a track set to MIDI channel 2 only takes channel 2.
 - [ ] Count-in 1 bar: 4 clicks on CLICK OUT, then playback and recording start together.
 - [ ] Launcher mode, empty track: record, play, stop recording: a clip of whole bars appears in the selected scene's

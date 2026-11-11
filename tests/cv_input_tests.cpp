@@ -101,6 +101,21 @@ TEST_SUITE("cv note input") {
         CHECK_FALSE(in.held(0));
     }
 
+    TEST_CASE("a held V/OCT past either end of the note range plays one note, not a stream of them") {
+        for (float v : {6.f, 10.f, -6.f}) {
+            CAPTURE(v);
+            CvNoteInput in = input48k();
+            REQUIRE(run(in, 1, kHigh, v).size() == 1);
+            CHECK(run(in, 48000, kHigh, v).empty());
+        }
+        CvNoteInput in = input48k();
+        run(in, 1, kHigh, 10.f);
+        auto e = run(in, 100, kHigh, voctOf(60));
+        REQUIRE(e.size() == 2);
+        CHECK(e[0].pitch == 127);
+        CHECK(e[1].pitch == 60);
+    }
+
     TEST_CASE("each poly channel follows its own gate and pitch") {
         CvNoteInput in = input48k();
         run(in, 10, kHigh, voctOf(60), 0.7f, 0);
