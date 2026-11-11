@@ -180,7 +180,7 @@ class Engine {
 
     /// Moves the song position (the arranger playhead) at once. Clips keep their own phase.
     void seek(double songTick);
-    /// Moves the song position the way a click on the ruler does (DECISIONS §96). While playing with launch
+    /// Moves the song position the way a click on the ruler does (DECISIONS §150). While playing with launch
     /// quantize on, the jump waits until the song reaches the target's place in the quantize grid, so launched
     /// clips stay on the same beat; stopped, or with launch quantize Off, it jumps at once. A newer call replaces
     /// a waiting one.

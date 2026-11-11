@@ -108,7 +108,7 @@ Toggle `Ctrl/Cmd+F` (button in transport). Modes: **Page** (jumps when the playh
 
 - Click in the ruler's lower half: move the playhead (snapped). Double-click: move and play from there. While
   playing, the jump waits for the target's place in the launch quantize grid and the target blinks in the queue
-  colour until then (DECISIONS §96).
+  colour until then (DECISIONS §150).
 - Drag in the ruler's upper half (the loop strip): draw the loop region. Drag its body to move it, edges to resize. Double-click it to toggle loop on/off.
 - `Ctrl/Cmd+L`: set loop to selection.
 - Markers row above the ruler: double-click to add, drag to move, click a marker to jump, double-click a marker to
