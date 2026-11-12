@@ -1845,6 +1845,11 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
         hitDrum(track, state, n);
         return;
     }
+    // A note's end and the next one's start are worked out apart (and the end on the engine's clock, which runs on
+    // while stopped), so they round a hair apart: a note ending where this one starts has ended, and its voice is
+    // free for this one. Otherwise a line of back-to-back notes now and then takes a second voice.
+    constexpr double kHair = 1e-6; // ticks: far less than a sample at any tempo
+    state.voices.releaseEndedBefore(n.start + kHair);
     // Into its channel's own voices: a playhead's notes never take another channel's.
     int v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id, n.channel);
     clearLiveVoice(state, v);

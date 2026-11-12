@@ -1735,6 +1735,46 @@ TEST_CASE("engine: a bass playhead over chords uses one voice; its Track Out sen
     CHECK(used(2) == 1); // stopped: each channel back to one until it needs more
 }
 
+TEST_CASE("engine: a playhead's line of back-to-back notes stays on one voice, however long the engine ran first") {
+    // Each note ends where the next starts. The voice's end is on the engine's clock, which keeps running while
+    // stopped, and the next start is on the play clock: the two can round a hair apart.
+    Song song =
+        songWith({{0, 1920, 55}, {1920, 1920, 55}, {3840, 1920, 57}, {5760, 1920, 59}, {7680, 1920, 52}}, 12 * kPpq, 8);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.channel = 1;
+    p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, "2x");
+    p.params[playheads::knob::kRegionLength] =
+        devices::normalize(devices::playheadInfo().params[playheads::knob::kRegionLength], 32); // steps
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.length = 48 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    song.loopStart = 0;
+    song.loopEnd = 48 * kPpq;
+    for (int64_t idle : {0, 1000, 44100, 100000, 220500, 333333}) {
+        CAPTURE(idle);
+        Harness h(song, false);
+        h.engine.setSampleRate(44100);
+        h.engine.setTempo(120);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.setLoopEnabled(true);
+        h.runTo(idle);
+        h.engine.reset();
+        h.engine.play();
+        int second = 0;
+        for (int64_t s = 0; s < 44100 * 20; s++) {
+            h.step();
+            for (int v = 1; v < h.frame().channels; v++)
+                second += h.frame().part[v] == 1 && h.gate(v) ? 1 : 0;
+        }
+        CHECK(second == 0);
+    }
+}
+
 TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     ArrangerClip a;
