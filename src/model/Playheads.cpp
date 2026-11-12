@@ -158,6 +158,12 @@ int sweepTravel(const Motion& m, double da, double db, double restartBase, Sweep
     while (d < db && count < max) {
         double segmentEnd;
         double content = contentAt(m, d, &segmentEnd);
+        // A hair short of a repeat block's end is its end. When the block's last repeat ends on the region's end,
+        // the hair would otherwise read as the wrap below, and a stray sweep would read the region's first note.
+        if (segmentEnd - d < kHair) {
+            d = segmentEnd;
+            continue;
+        }
         double x = unwrapped(m, content);
         double wrap = std::floor(x / length);
         double q = x - wrap * length;

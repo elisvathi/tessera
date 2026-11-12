@@ -1570,3 +1570,23 @@ TEST_CASE("a playhead reads the note on its segment's start every pass, and neve
         CHECK(e == 0);
     }
 }
+
+TEST_CASE("a repeat block's last repeat ending on the region's end moves on to the next block, not to the wrap") {
+    // The user's song: a one-bar clip of four chords, read a quarter at a time, each quarter four times, so each bar
+    // plays one chord. The last repeat of a block ends on the region's end. Rounding left the travel a hair short of
+    // it, which read as the wrap: a stray hair of a sweep read the first chord on top of the last.
+    std::vector<N> notes = {{0, 960, 62}, {2880, 3840, 60}};
+    std::vector<uint32_t> byEnd = orderByEnd(notes);
+    Motion m;
+    m.regionLength = 3840;
+    m.repeatSize = 960;
+    m.repeatTimes = 4;
+    // The window caught in the user's song at 80.39 BPM, exactly.
+    Sweep s[kMaxSweeps];
+    int n = sweeps(m, 14399.9502451145, 14400.807691240801, s);
+    int first = 0, last = 0;
+    for (int i = 0; i < n; i++)
+        crossed(s[i], notes, byEnd, [&](const N& note, double) { (note.pitch == 62 ? first : last)++; });
+    CHECK(first == 0);
+    CHECK(last == 1);
+}
