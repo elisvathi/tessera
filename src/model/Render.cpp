@@ -163,7 +163,7 @@ struct MovedBy {
 
 /// The move `knobs` make once the "Per pass" modulators on `motion` (and timed Curves, given `songTick`) are added.
 MovedBy movedFrom(const Song& song, const Track& track, const Device& motion, std::vector<float> knobs, int64_t pass,
-                  double songTick) {
+                  double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN()) {
     auto add = [&](const std::vector<Modulator>& list) {
         for (const Modulator& m : list) {
             bool passes = mods::perPass(m.type, m.params.data());
@@ -179,6 +179,7 @@ MovedBy movedFrom(const Song& song, const Track& track, const Device& motion, st
                 mods::State state;
                 mods::Clock clock;
                 clock.songTick = songTick;
+                clock.sinceClip = sinceClip;
                 clock.timeSig = song.timeSig;
                 value = mods::evaluate(m.type, m.id.value, m.params.data(), state, clock, nullptr, 0, &drawn);
             }
@@ -206,8 +207,9 @@ MovedBy movedFrom(const Song& song, const Track& track, const Device& motion, st
 
 /// The piano roll's picture of a move: the knobs as set, with "Per pass" modulators and timed Curves.
 MovedBy movedAt(const Song& song, const Track& track, const Device& motion, int64_t pass,
-                double songTick = std::numeric_limits<double>::quiet_NaN()) {
-    return movedFrom(song, track, motion, motion.params, pass, songTick);
+                double songTick = std::numeric_limits<double>::quiet_NaN(),
+                double sinceClip = std::numeric_limits<double>::quiet_NaN()) {
+    return movedFrom(song, track, motion, motion.params, pass, songTick, sinceClip);
 }
 
 /// A move as it sounds at `songTick`: the knobs as the engine holds them then (lanes set them, modulators that move
@@ -1207,7 +1209,7 @@ Scale keyOf(const Song& song, const Clip& clip) {
 } // namespace
 
 MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
-                        double songTick) {
+                        double songTick, double sinceClip) {
     if (index >= clip.notes.size())
         return {};
     const Note& n = clip.notes[index];
@@ -1217,7 +1219,7 @@ MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, 
             motion = d;
     if (!motion || n.muted)
         return {};
-    MovedBy moved = movedAt(song, track, *motion, pass, songTick);
+    MovedBy moved = movedAt(song, track, *motion, pass, songTick, sinceClip);
     int pitch = n.pitch;
     if (moved.steps != 0)
         pitch = moved.inKey ? keyOf(song, clip).stepBy(pitch, moved.steps) : pitch + moved.steps;

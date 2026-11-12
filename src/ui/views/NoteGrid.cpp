@@ -1137,12 +1137,21 @@ int NoteGrid::updateMotionMoved() {
     // plays straight meets each note at its own place on each pass.
     bool anyTime = activePlayheads(*track) != nullptr;
     double songTick = m->playheadTicks();
+    // Curves count from when the track's clip started, as the engine counts them: a launched clip's own time, or
+    // the song's time since the timeline clip under it began (its offset and stretch don't count).
+    double sinceClip = NAN;
+    LauncherStatus status = m->launcherStatus(track->id);
+    if (status.playing >= 0 && status.playing < int(track->slots.size()) && track->slots[size_t(status.playing)].clip)
+        sinceClip = status.elapsed;
+    else if (m->playMode() == PlayMode::Arranger && !status.overridden)
+        if (const ArrangerClip* under = instanceAt(*track, Tick(songTick)))
+            sinceClip = songTick - double(under->position);
     motionCurrent.assign(clip->notes.size(), render::MotionMove{});
     for (size_t i = 0; i < clip->notes.size() && i < motionMoves.size(); i++) {
         const std::vector<render::MotionMove>& list = motionMoves[i];
         if (list.empty())
             continue;
-        render::MotionMove now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick)
+        render::MotionMove now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick, sinceClip)
                                          : list[size_t(pass) % list.size()];
         motionCurrent[i] = now;
         bool moves =

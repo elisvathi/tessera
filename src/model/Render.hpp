@@ -6,6 +6,7 @@
 #include <jansson.h>
 
 #include <array>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -113,8 +114,9 @@ struct MotionMove {
 /// clip plays straight; empty for the other notes. For the piano roll's ghosts of notes a Motion moves.
 std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& track, const Clip& clip);
 /// Where note `index` of `clip` moves when its Motion device reads it on `pass` at `songTick`, its curves read
-/// there (playheads may read a note at any moment).
+/// there (playheads may read a note at any moment). `sinceClip` is how long the track's clip has played (launched,
+/// or the timeline clip under the song), which Curves count from as the engine does; NaN counts from the song's start.
 MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
-                        double songTick);
+                        double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN());
 
 } // namespace tessera::render

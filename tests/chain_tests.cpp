@@ -2422,6 +2422,35 @@ TEST_CASE("the piano roll finds the moves of a Motion inside a playhead's own de
     CHECK(moves[1][0].pitch == 69);
 }
 
+TEST_CASE("the piano roll reads a Motion's Curve from when its timeline clip started, as the engine does") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device motion = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+    motion.params[chain::knob::kMotionInKey] = 0;
+    Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    heads.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices = {motion, heads};
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = motion.id;
+    // A step up two semitones at bar 2 of the curve; the clip starts on the timeline at bar 2.
+    const devices::ParamInfo& pitch = devices::motionInfo().params[chain::knob::kMotionPitch];
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.length = 8 * kPpq;
+    float up = 0.5f + (devices::normalize(pitch, 2) - devices::normalize(pitch, 0)) / 2;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}};
+    curve.segmentEnd = 8 * kPpq;
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
+
+    double clipStart = 4 * kPpq;
+    // Bar 1 of the clip: the curve hasn't stepped yet, though the song is past its step.
+    CHECK(render::motionMoveAt(song, song.tracks[0], clip, 0, 0, clipStart + kPpq, kPpq).pitch == 60);
+    // Bar 2 of the clip: stepped up.
+    CHECK(render::motionMoveAt(song, song.tracks[0], clip, 0, 1, clipStart + 5 * kPpq, 5 * kPpq).pitch == 62);
+}
+
 namespace {
 /// Rising edges of `pitch` on any voice over `samples`.
 int countStarts(Harness& h, int pitch, int64_t samples) {
