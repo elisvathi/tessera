@@ -92,7 +92,7 @@ Right-click a track header for its menu.
 | **Add instrument track / Add drum track / Add audio track** | Adds a track after this one. |
 | **Duplicate / Delete / Rename** | As above. |
 | **Colour** | One of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
-| **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and with playheads each channel gets its own voices (more for one faster than 1x). Or pick a fixed number from 1 to 16 (with playheads, for each channel). |
+| **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and with playheads each channel gets its own voices (more for one faster than 1x). Or pick a fixed number from 1 to 16 (with playheads, for each channel: the menu then reads, for example, **4 per channel (12)**, with the total the track sends). |
 | **Show automation lanes / Add automation lane** | See [Automation](12-automation.md). |
 | **Bounce audio to a new track…** | Records what the track sounds like onto a new audio track. Shown when the track makes sound. See [Audio](17-audio.md). |
 | **Bounce notes to a new track…** | Note and drum tracks. Makes a new track from the notes, at once. See below. |

@@ -16,8 +16,12 @@
 namespace tessera::trackActions {
 
 std::string voicesLabel(const Song& song, const Track& track) {
-    std::string count = std::to_string(song.voicesOf(track));
-    return track.polyphony == kAutoVoices ? "Auto (" + count + ")" : count;
+    std::string total = std::to_string(song.voicesOf(track));
+    if (track.polyphony == kAutoVoices)
+        return "Auto (" + total + ")";
+    // With playheads a fixed count is for each channel, so the track sends more in all.
+    std::string set = std::to_string(std::clamp(track.polyphony, 1, kMaxVoices));
+    return set == total ? set : set + " per channel (" + total + ")";
 }
 
 namespace {
