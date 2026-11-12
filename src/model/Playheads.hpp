@@ -35,7 +35,7 @@ enum Playhead {
     kCurve,      // how the repeats in each repeat group are spaced: Straight or a ready shape (curveNames())
     kBendAmount, // kept for saved songs; not read: each Curve has its strength built in
     kBendCycle,  // kept for saved songs; not read: a Curve spans one repeat group
-    kOffset,
+    kOffset,     // kept for saved songs; not read: it moved the playhead's place, which its segment now says
     kLength,
     kFixedLength,
     kPath,      // From settings, or Drawn (the playhead's path points)
@@ -48,7 +48,8 @@ enum Playhead {
     kOrder,     // reads its segment's steps in order, outside in, inside out, odd then even, or shuffled
     kOrderStep, // the size of those steps
     kOnJump,    // Retrigger: a jump cuts the note playing and plays again the notes it lands inside; or Let ring
-    kOn         // whether it plays: the dot on its chip; a curve or a lane can switch it in time
+    kOn,        // whether it plays: the dot on its chip; a curve or a lane can switch it in time
+    kTimeOffset // plays its notes earlier or later by a note value (offsetNames()), its path and all
 };
 /// The Playheads device's own knobs.
 enum Device { kRestart, kRestartBars, kSameNote };
@@ -79,6 +80,9 @@ struct Motion {
     double bendAmount = 0;   // 0..1
     double bendCycle = 0;    // the playhead's own ticks (elapsed times rate); 0 = no bend. One repeat group.
     double restartEvery = 0; // elapsed ticks; 0 = only when the clip starts
+    /// How much later than the clip's time the playhead moves, in elapsed ticks (negative: earlier). Everything it
+    /// does happens that much later: where it is, its sweeps, when they reach a place, its restarts.
+    double offset = 0;
     /// A drawn path, when the Path knob says Drawn and the playhead has points (set by the caller, which owns them):
     /// over each cycle of the playhead's own time it goes where the points say; rate still applies, the other
     /// movement settings don't.
@@ -251,6 +255,9 @@ const std::vector<std::string>& fixedLengthNames();
 const std::vector<std::string>& pathCycleNames();
 const std::vector<std::string>& orderStepNames();
 double orderStepTicks(int index, TimeSig ts);
+/// The Offset choices, from a bar early through "0" to a bar late, and each one in song ticks (negative: earlier).
+const std::vector<std::string>& offsetNames();
+double offsetTicks(int index, TimeSig ts);
 /// Which of `count` steps is read `k`-th in `order` (pass `pass` of a shuffle). Every step is read once per pass.
 int orderedStep(Order order, int k, int count, int64_t pass, uint32_t seed);
 double pathCycleTicks(int index, TimeSig ts);

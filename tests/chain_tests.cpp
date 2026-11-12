@@ -2174,6 +2174,135 @@ TEST_CASE("engine: it tells the editor where each playhead is, as a changed rate
     CHECK(h.engine.playheadPosition(0, 0) == doctest::Approx(1960).epsilon(0.02));
 }
 
+/// The ticks at which notes of `pitch` start on any voice, up to `ticks`.
+std::vector<double> startsOf(Harness& h, int pitch, double ticks) {
+    std::vector<double> out;
+    bool was = false;
+    while (double(h.sample + 1) < ticks * kSamplesPerTick) {
+        h.step();
+        bool now = false;
+        for (int v = 0; v < h.frame().channels; v++)
+            now = now || (h.gate(v) && h.pitch(v) == pitch);
+        if (now && !was)
+            out.push_back(double(h.sample) / kSamplesPerTick);
+        was = now;
+    }
+    return out;
+}
+
+/// A song with one Playheads device of one playhead whose Offset is `offset` (a choice name such as "+1/8").
+Song offsetSong(const std::vector<Spec>& notes, const char* offset, Tick loopLength = 4 * kPpq) {
+    Song song = songWith(notes, loopLength, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.params[playheads::knob::kTimeOffset] = choiceKnob(playheads::knob::kTimeOffset, offset);
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    return song;
+}
+
+void checkStarts(const std::vector<double>& got, const std::vector<double>& want) {
+    REQUIRE(got.size() == want.size());
+    for (size_t i = 0; i < got.size(); i++)
+        CHECK(got[i] == doctest::Approx(want[i]).epsilon(0.002));
+}
+
+TEST_CASE("engine: a playhead's Offset plays its notes later or earlier, and its line follows") {
+    SUBCASE("late") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "+1/8"));
+        checkStarts(startsOf(h, 60, 4400), {480, 4320});
+        Harness line(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "+1/8"));
+        line.runTo(1000 * kSamplesPerTick);
+        CHECK(line.engine.playheadPosition(0, 0) == doctest::Approx(520).epsilon(0.03)); // trailing by 1/8
+    }
+    SUBCASE("late, the other note") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "+1/8"));
+        checkStarts(startsOf(h, 64, 4000), {2400});
+    }
+    SUBCASE("early: the first pass skips the note that would come before the clip started") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "-1/16"));
+        checkStarts(startsOf(h, 60, 7600), {3600, 7440});
+    }
+    SUBCASE("early, the other note") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "-1/16"));
+        checkStarts(startsOf(h, 64, 4000), {1680});
+    }
+}
+
+TEST_CASE("engine: an Offset never plays past a clip's end, on the timeline or launched") {
+    SUBCASE("a late note past the timeline clip's end is cut") {
+        Song song = offsetSong({{0, 240, 60}, {3600, 120, 64}}, "+1/8");
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = song.clips.begin()->first;
+        a.position = 4 * kPpq;
+        a.length = 4 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        Harness h(song, false);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.reset();
+        h.engine.play();
+        checkStarts(startsOf(h, 60, 12 * kPpq), {4 * kPpq + 480});
+        Harness again(song, false);
+        again.engine.setPlayMode(PlayMode::Arranger);
+        again.engine.reset();
+        again.engine.play();
+        CHECK(startsOf(again, 64, 12 * kPpq).empty());
+    }
+    SUBCASE("an early note from past the timeline clip's end is not read") {
+        Song song = offsetSong({{0, 240, 60}, {3900, 120, 64}}, "-1/8", 8 * kPpq);
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = song.clips.begin()->first;
+        a.position = 4 * kPpq;
+        a.length = 4 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        Harness h(song, false);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.reset();
+        h.engine.play();
+        CHECK(startsOf(h, 64, 12 * kPpq).empty());
+    }
+    SUBCASE("a launched clip that doesn't loop cuts its late notes at its end") {
+        Song song = offsetSong({{0, 240, 60}, {3600, 120, 64}}, "+1/8");
+        song.clips.begin()->second.loopMode = LoopMode::Off;
+        Harness h(song);
+        CHECK(startsOf(h, 64, 6000).empty());
+    }
+    SUBCASE("a looping launched clip carries its late notes over the loop") {
+        Harness h(offsetSong({{0, 240, 60}, {3600, 120, 64}}, "+1/8"));
+        checkStarts(startsOf(h, 64, 8000), {4080, 7920});
+    }
+}
+
+TEST_CASE("engine: a lane moves a playhead's Offset while it plays, and no note plays twice") {
+    Song song = offsetSong({{0, 120, 60}, {960, 120, 62}, {1920, 120, 64}, {2880, 120, 65}}, "0");
+    ParamRef offset{ParamRef::Kind::Playhead, song.tracks[0].devices[0].playheads[0].id.value,
+                    uint16_t(playheads::knob::kTimeOffset)};
+    AutomationEnvelope lane = makeKnobLane(song.newId<AutomationId>(), offset, "Playhead · Offset",
+                                           choiceKnob(playheads::knob::kTimeOffset, "0"), true, 0);
+    // From halfway through beat 2 a quarter late: the playhead waits a beat, then reads on from where it was.
+    lane.points = {{0, choiceKnob(playheads::knob::kTimeOffset, "0"), CurveType::Hold, 0},
+                   {1440, choiceKnob(playheads::knob::kTimeOffset, "+1/4"), CurveType::Hold, 0}};
+    song.tracks[0].automation.push_back(lane);
+    Harness h(song);
+    std::vector<double> starts;
+    bool was[128] = {};
+    while (h.sample < 4000 * kSamplesPerTick) {
+        h.step();
+        for (int pitch : {60, 62, 64, 65}) {
+            bool now = false;
+            for (int v = 0; v < h.frame().channels; v++)
+                now = now || (h.gate(v) && h.pitch(v) == pitch);
+            if (now && !was[pitch])
+                starts.push_back(double(h.sample) / kSamplesPerTick + pitch * 1e4);
+            was[pitch] = now;
+        }
+    }
+    std::sort(starts.begin(), starts.end());
+    checkStarts(starts, {60e4 + 0, 62e4 + 960, 64e4 + 2880, 65e4 + 3840});
+}
+
 TEST_CASE("the piano roll finds the moves of a Motion inside a playhead's own devices, as of one in the chain") {
     Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
     auto motion = [&](float semitones) {

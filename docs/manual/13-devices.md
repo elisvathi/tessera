@@ -101,16 +101,17 @@ while the playhead is off (also while a curve or a lane has turned it off). Alt-
 there, and the notes its own devices still had to play (an Echo's repeats) don't come. Right-click a chip to rename it,
 pick its **Channel** (see [A sound for each playhead](#a-sound-for-each-playhead); the chip shows it), turn it **On**
 or off, solo it, duplicate or delete it, or **Switch it on and off in time…** with a curve. Under the chips, the shown
-playhead's settings, in two groups: **MOVE** (whether and how it travels) and **REPEAT** (what it plays again, and how
+playhead's settings, in two groups: **MOVE** (whether, how and when it travels) and **REPEAT** (what it plays again, and how
 the repeats are spaced). A setting still at its default draws faint, so the ones you changed stand out:
 
-![A Playheads card: MOVE with Rate and Direction; REPEAT with Piece 1/16, Times 4 and Curve Ease in, its four hits bunching up toward the end](images/playhead-repeat.png)
+![A Playheads card: MOVE with Rate, Direction and Offset; REPEAT with Piece 1/16, Times 4 and Curve Ease in, its four hits bunching up toward the end](images/playhead-repeat.png)
 
 | Setting | What it does |
 |---|---|
 | **On** | Whether it plays: the switch is the dot on its chip. Its name opens a curve, so the playhead can come in and drop out as the song plays (see **Curves** below). |
 | **Rate** | Speed against the song, from 1/32x to 32x: halves and doubles, thirds (1/3x, 2/3x, 4/3x, 3x…), dotted speeds (3/8x, 3/4x, 3/2x) and fives (4/5x, 5/4x). |
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size (1/32 to 2 bars, triplets too). |
+| **Offset** | Plays this playhead's notes later (+) or earlier (−) than it reads them, by a note value: 1/64 up to a bar either way, with triplet (T) and dotted (D) values, and every 1/16 between (+5/16, +7/16…). Its line over the notes trails or leads by as much, so it crosses each note when you hear it. Two playheads on the same segment, one at **+1/4**, make a round. Double-click it to set it back to **0**. At the very start of a clip, a late playhead waits for its offset, and an early one skips the notes that would have come before the clip started. When the clip loops, notes carry over the loop as usual. A clip's end is a hard stop: a late note that would sound after the clip ends doesn't play, and an early playhead doesn't play notes from past the end. That holds for a timeline clip, and for a launched clip that doesn't loop. When a curve or a lane moves Offset later while the clip plays, the playhead waits until the new time catches up. It never plays the same notes twice. Moved earlier, it skips ahead. |
 | **Piece** | The size of the piece it plays again: Off, or 1/64 up to 4 bars, with triplet (T) and dotted (D) sizes between. With **Times**, it plays each piece that many times, then moves on one piece: Piece 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
 | **Times** | How many times each piece plays, 2 to 16. Click to type it, or drag up and down. |
 | **Curve** | How the repeats are spaced in time (see [Spacing the repeats](#spacing-the-repeats)). **Straight** spaces them evenly. |
@@ -129,8 +130,8 @@ and over, starting at its left end. A thin line drops from each grip through the
 reads. Drag a grip to resize the segment, the bar to move it. For a playhead, the piano roll is a canvas: a segment can
 sit anywhere on it, past the clip's end too, and plays the notes written there (where nothing is written, it is
 silent). So with playheads on, the clip's loop doesn't decide what plays: the loop bar is hidden, the inspector's
-**Loop** reads **Playheads decide**, and the loop only sets where a new segment starts out. For a round, move the
-second playhead's segment a beat later. The other playheads' segments show as thin lines in their colours.
+**Loop** reads **Playheads decide**, and the loop only sets where a new segment starts out. For a round, give the
+second playhead an **Offset** of +1/4, or move its segment a beat later. The other playheads' segments show as thin lines in their colours.
 Right-click the segment to move it or resize it as the song plays (**Move it in time with a curve…**, **Resize it in
 time with a curve…**), to automate or modulate its start or length, or to make it **Follow the clip's loop** again.
 
@@ -143,7 +144,7 @@ off), and the piano roll's title adds "read by 3 playheads". The paths follow th
 on them play but aren't drawn there.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a setting's name (underlined) and
-a curve for it opens in the piano roll's lower pane. On this card that is On, Rate, Direction, Piece, Times and Curve
+a curve for it opens in the piano roll's lower pane. On this card that is On, Rate, Direction, Offset, Piece, Times and Curve
 (and the rarer settings, from **More**, and the segment, from its right-click menu): a curve on On can bring the
 playhead in for bars 5 to 8 only, one on Direction can turn it round in bar 2, one on Piece can start repeating halfway
 through. On has two rows: the curve on its top row leaves it on, a step down to the row below turns it off. (The step

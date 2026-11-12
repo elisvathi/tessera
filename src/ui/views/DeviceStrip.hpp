@@ -73,6 +73,7 @@ class DeviceStrip : public InteractiveView {
         ParamRef::Kind refKind = ParamRef::Kind::Device; // what a knob's `id` is
         bool dial = false;                               // a choice drawn as a knob (a playhead's rate)
         bool compact = false; // a choice drawn inside the REPEAT block (drawRepeatBlock), not as a knob cell
+        bool centred = false; // a dial whose arc grows from the middle, where its "0" is (a playhead's Offset)
     };
 
     // What running gestures show before they are committed.

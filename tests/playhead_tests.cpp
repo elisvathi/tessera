@@ -1406,3 +1406,81 @@ TEST_CASE("a playhead without a segment of its own keeps it when a note is added
     song.clips.at(id).sortNotes();
     CHECK(starts() == before);
 }
+
+// ---- Offset ----------------------------------------------------------------------------------------------------
+
+TEST_CASE("Offset choices run from a bar early through 0 to a bar late, in note values") {
+    const std::vector<std::string>& names = offsetNames();
+    REQUIRE(names.size() % 2 == 1);
+    size_t zero = names.size() / 2;
+    CHECK(names[zero] == "0");
+    CHECK(names.front() == "-1 bar");
+    CHECK(names.back() == "+1 bar");
+    TimeSig ts;
+    CHECK(offsetTicks(int(zero), ts) == 0);
+    CHECK(offsetTicks(choiceIndex(names, "+1/8"), ts) == doctest::Approx(480));
+    CHECK(offsetTicks(choiceIndex(names, "-1/16 T"), ts) == doctest::Approx(-160));
+    CHECK(offsetTicks(choiceIndex(names, "+5/16"), ts) == doctest::Approx(1200));
+    for (size_t i = 1; i < names.size(); i++)
+        CHECK(offsetTicks(int(i), ts) > offsetTicks(int(i) - 1, ts)); // in order, so a curve sweeps it evenly
+    const devices::ParamInfo& info = devices::playheadInfo().params[knob::kTimeOffset];
+    CHECK(info.name == std::string("Offset"));
+    CHECK(int(std::lround(devices::display(info, devices::defaultNormalized(info)))) == int(zero));
+}
+
+TEST_CASE("a late Offset plays every note that much later; an early one skips what would come before the start") {
+    Motion late = oneBar();
+    late.offset = 480;
+    CHECK(play(late, fourBeats(), 8 * kBeat) ==
+          std::vector<Hit>{
+              {480, 60}, {1440, 62}, {2400, 64}, {3360, 65}, {4320, 60}, {5280, 62}, {6240, 64}, {7200, 65}});
+    CHECK(positionAt(late, 1000) == doctest::Approx(520));
+    CHECK(positionAt(late, 100) == doctest::Approx(0)); // waiting at its start
+
+    Motion early = oneBar();
+    early.offset = -240;
+    // The 60 on beat 1 would come before the clip started, so the first pass skips it; the loop brings it back.
+    CHECK(play(early, fourBeats(), 2 * kBeat * 4) ==
+          std::vector<Hit>{
+              {720, 62}, {1680, 64}, {2640, 65}, {3600, 60}, {4560, 62}, {5520, 64}, {6480, 65}, {7440, 60}});
+}
+
+TEST_CASE("MIDI export plays a playhead's Offset as the engine does: set, or moved by a lane, cut at the clip's end") {
+    Song song = songWithTrack();
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    for (auto [start, pitch] : {std::pair<Tick, int>{0, 60}, {960, 62}, {3600, 64}}) {
+        Note n;
+        n.id = song.newId<NoteId>();
+        n.start = start;
+        n.length = 120;
+        n.pitch = int8_t(pitch);
+        clip.notes.push_back(n);
+    }
+    song.clips.emplace(clip.id, clip);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = clip.id;
+    a.position = 4 * kPpq;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, removePlayhead(song, firstDevice(song).playheads[1].id));
+    PlayheadId id = firstDevice(song).playheads[0].id;
+    ParamRef offset{ParamRef::Kind::Playhead, id.value, uint16_t(knob::kTimeOffset)};
+    const devices::ParamInfo& info = devices::playheadInfo().params[knob::kTimeOffset];
+    float late = devices::normalize(info, float(choiceIndex(offsetNames(), "+1/8")));
+    SUBCASE("set") { applyUndoable(song, setParam(song, offset, late)); }
+    SUBCASE("by a lane") {
+        AutomationEnvelope lane = makeKnobLane(song.newId<AutomationId>(), offset, "Playhead · Offset",
+                                               devices::defaultNormalized(info), true, 0);
+        lane.points = {{0, late, CurveType::Hold, 0}};
+        song.tracks[0].automation.push_back(lane);
+    }
+    std::vector<std::pair<double, int>> got;
+    for (const render::ExportNote& n : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
+        got.push_back({n.start - 4 * kPpq, n.pitch});
+    // An 1/8 late; the 64 would sound past the clip's end, so it doesn't.
+    CHECK(got == std::vector<std::pair<double, int>>{{480, 60}, {1440, 62}});
+}

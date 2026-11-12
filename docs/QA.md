@@ -761,3 +761,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Audio track with OUT → effect → IN: Clips and IN strips show; muting Clips leaves the effect playing; S on an input solos it and its track, one undo step; pan moves live.
 - [ ] Lower pane under 200 px: knob strips, level knob drags, M and S work.
 - [ ] Note Repeat on a held chord: the whole chord repeats at Rate; Gate shortens hits; Decay fades them; a live-played chord stops when released.
+
+## Playhead Offset, 12 Nov
+
+- [ ] Two playheads on one segment, the second at Offset +1/4: a round, the second line trailing a beat behind its notes. Double-click Offset: back to 0.
+- [ ] Offset -1/16: the first note of the first pass is skipped; on the next pass it plays just before the loop.
+- [ ] On the timeline, Offset +1/8 on a clip with a note in its last 1/8: that note doesn't play; nothing sounds after the clip ends.
+- [ ] Right-click Offset, automate it with a lane stepping from 0 to +1/4 mid-bar: the playhead pauses a beat, no note plays twice. MIDI export with devices applied matches what you hear.
+- [ ] The card fits the panel editor with the divider moved; MOVE shows On, Rate, Direction, Offset.

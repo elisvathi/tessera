@@ -481,9 +481,10 @@ class Engine {
     void playClip(const TrackPlayback& track, TrackState& state, double from, double to);
     /// A clip read by the track's playheads instead of its own playhead (docs/design/PLAYHEADS.md): `a` and `b`
     /// are clip ticks since the clip started, `from` the play tick `a` falls on, and each clip tick lasts
-    /// `stretch` play ticks.
+    /// `stretch` play ticks. A playhead reads only between `first` and `last` (clip ticks): where the clip
+    /// begins and ends, so an Offset never reads past either.
     void playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
-                       double from, double stretch = 1);
+                       double from, double stretch = 1, double first = 0, double last = INFINITY);
     /// The timeline clips under song ticks [from, to), read by the track's playheads.
     void playInstancesByPlayheads(const TrackPlayback& track, TrackState& state, double from, double to,
                                   double playAtFrom);
@@ -651,8 +652,10 @@ class Engine {
     /// restart it was counted to, so a moving Rate changes speed instead of making the playhead jump.
     struct PlayheadClock {
         double own = 0;
-        double until = NAN;
+        double until = NAN; // how far it has read, in its own clip ticks (its Offset behind or ahead of now)
         double restart = 0;
+        double readTo = NAN; // how far the track's reading has come (clip ticks), to tell reading on from a jump
+        double shift = 0;    // its Offset in clip ticks: how far `until` runs behind now
         // Its settings in ticks, worked out once per control block (knobs only change there) for this clip.
         playheads::Motion motion;
         playheads::NoteShape shape;

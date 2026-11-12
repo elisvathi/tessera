@@ -196,7 +196,7 @@ TypeInfo buildPlayhead() {
              choice("Curve", curveNames(), 0),
              number("Bend amount", 0, 100, 50, "%"),
              choice("Bend cycle", cycleNames(), 2),
-             integer("Offset", -16, 16, 0, "steps"),
+             integer("Old offset", -16, 16, 0, "steps"),
              choice("Length", {"As written", "Follows playhead", "Fixed"}, 1),
              choice("Fixed length", fixedLengthNames(), choiceIndex(fixedLengthNames(), "1/16")),
              choice("Path", {"From settings", "Drawn"}, 0),
@@ -209,7 +209,8 @@ TypeInfo buildPlayhead() {
              choice("Order", {"In order", "Outside in", "Inside out", "Odd then even", "Shuffle"}, 0),
              choice("Order step", orderStepNames(), choiceIndex(orderStepNames(), "1/8")),
              choice("On a jump", {"Retrigger", "Let ring"}, 0),
-             toggle("On", true)}};
+             toggle("On", true),
+             choice("Offset", playheads::offsetNames(), choiceIndex(playheads::offsetNames(), "0"))}};
 }
 
 const std::vector<TypeInfo>& deviceTable() {

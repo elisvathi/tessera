@@ -2436,3 +2436,21 @@ the launcher and another on the timeline, the two then played different beats.
 Why: launched clips are timed against the song's grid; a jump that keeps the song's place in the grid keeps
 them in time. The user who reported it asked for this behaviour, and it is the usual one for clip-based
 sequencers.
+
+## 151. A playhead's Offset moves when its notes play (12 Nov)
+
+- **Offset is a time setting on the playhead, the fourth MOVE cell.** A device in the playhead's chain could only
+  delay notes; Offset also plays early, because a playhead's place is worked out from time alone and can read ahead.
+  Motion's Time was close but only moves the notes that joined it. The old Offset slot (it moved the place, and the
+  segment does that now) stays in the list as "Old offset", unread; the new one is appended, so older songs that saved
+  a value there don't start shifting.
+- **Quantized to note values, both ways**: 1/64 to a bar, with triplet and dotted values and every 1/16 between,
+  mirrored around 0. One choice list, short to long, so a curve or a lane sweeps it in order.
+- **It shifts the playhead's whole time**, not just its notes: where it is, its sweeps, retrigger cuts, note lengths
+  and restarts all happen that much later. So its line in the piano roll crosses each note when it sounds.
+- **A clip's ends are hard cuts.** It reads only between where the clip begins and ends: a late note that would sound
+  past a timeline clip's end (or a launched clip that doesn't loop) doesn't play, and an early playhead doesn't read
+  past the end. At the start a late playhead waits; an early one skips what would come before the clip started. A
+  loop is no edge: notes carry over it. The song loop on the timeline is a jump, as before.
+- **Moved while playing, it never plays a note twice.** Moved later, the playhead waits until the time catches up;
+  moved earlier, it skips ahead. The engine tells the two apart by whether the track reads on from where it left off.

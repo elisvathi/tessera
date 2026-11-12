@@ -1307,7 +1307,8 @@ void Engine::playInstancesByPlayheads(const TrackPlayback& track, TrackState& st
         double begin = inst.offset - double(inst.spanStart);
         double ea = begin + (a - double(inst.position)) / inst.stretch;
         double eb = begin + (b - double(inst.position)) / inst.stretch;
-        playPlayheads(track, state, *inst.clip, ea, eb, playAtFrom + (a - from), inst.stretch);
+        double endsAt = begin + (double(inst.end) - double(inst.position)) / inst.stretch;
+        playPlayheads(track, state, *inst.clip, ea, eb, playAtFrom + (a - from), inst.stretch, begin, endsAt);
     }
 }
 
@@ -1358,7 +1359,8 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
             double to = std::max(end, look.until + double(kControlBlock) * ticksPerSample);
             if (!clip.looping)
                 to = std::min(to, length);
-            playPlayheads(track, state, clip, look.until, to, state.launchTick + look.until);
+            playPlayheads(track, state, clip, look.until, to, state.launchTick + look.until, 1, 0,
+                          clip.looping ? INFINITY : length);
             look.until = to;
         }
         if (!clip.looping && b >= length)
@@ -1389,7 +1391,7 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
 }
 
 void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
-                           double from, double stretch) {
+                           double from, double stretch, double first, double last) {
     const ChainPlayback& chain = *state.chainInfo;
     TimeSig ts = snapshot->timeSig;
     const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
@@ -1465,9 +1467,24 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
         // The engine counts the playhead's own time itself (rate 1 below), restarting where the song time says.
         m.rate = 1;
         m.restartEvery = 0;
-        for (double segA = a; segA < b;) {
+        // Offset: the playhead reads the clip that much earlier (or later) than now and its notes play now, so they
+        // come late (or early). It reads only inside the clip, so a clip's end cuts what would come after it.
+        double shift = m.offset / stretch;
+        m.offset = 0;
+        double pa = std::max(a - shift, first), pb = std::min(b - shift, last);
+        if (std::abs(a - clock.readTo) <= 1e-6) {
+            // Reading on from where it left off: an Offset moved later waits for the time to catch up rather than
+            // read the same notes again; one moved earlier skips ahead.
+            if (std::isfinite(clock.until))
+                pa = std::max(pa, clock.until);
+        } else {
+            clock.until = NAN;
+        }
+        clock.readTo = b;
+        clock.shift = shift;
+        for (double segA = pa; segA < pb;) {
             double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
-            double segB = restartEvery > 0 ? std::min(b, restart + restartEvery) : b;
+            double segB = restartEvery > 0 ? std::min(pb, restart + restartEvery) : pb;
             // A jump (launch, seek, restart, another timeline clip) starts counting afresh from where the time says.
             // A timeline clip works its time out from the song's every sample, a hair off where the last stretch
             // ended: that is no jump.
@@ -1496,7 +1513,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                             return; // read from its Motion device's own list, moved
                         if (!playheads::picked(clock.shape.pick, e.role))
                             return;
-                        double t = segA + (playheads::timeAt(m, sweep, pos) - ownA) / rate;
+                        double t = segA + (playheads::timeAt(m, sweep, pos) - ownA) / rate + shift;
                         double onPlay = std::max(from, from + (t - a) * stretch);
                         NoteEvent n = e;
                         if (p.channel > 0)
@@ -1749,6 +1766,7 @@ void Engine::rewindPlayheads(TrackState& state) {
         if (index < tracks.size())
             for (PlayheadClock& clock : (*playheadClocks)[index]) {
                 clock.until = NAN;
+                clock.readTo = NAN;
                 clock.lastPos = NAN;
             }
         return;
@@ -1765,12 +1783,17 @@ void Engine::rewindPlayheads(TrackState& state) {
     size_t index = size_t(&state - tracks.data());
     if (index >= tracks.size())
         return;
-    for (PlayheadClock& clock : (*playheadClocks)[index])
-        if (std::isfinite(clock.until) && clock.until > now) {
-            clock.own -= clock.motion.rate * (clock.until - now);
-            clock.until = now;
+    for (PlayheadClock& clock : (*playheadClocks)[index]) {
+        if (std::isfinite(clock.readTo) && clock.readTo > now)
+            clock.readTo = now;
+        // Its own reading runs its Offset behind (or ahead of) now.
+        double ownNow = now - clock.shift;
+        if (std::isfinite(clock.until) && clock.until > ownNow) {
+            clock.own -= clock.motion.rate * (clock.until - ownNow);
+            clock.until = ownNow;
             clock.lastPos = NAN; // it was further on: going back there is no jump
         }
+    }
 }
 
 void Engine::clearPending(TrackState& state) {

@@ -383,11 +383,12 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
     float h = box.size.y;
     const Playhead* shown = shownPlayhead(d);
     using namespace playheads::knob;
-    // One row in two groups: MOVE (whether and how it travels: On, Rate, Direction) and REPEAT (piece, times and how
+    // One row in two groups: MOVE (whether, how and when it travels: On, Rate, Direction, Offset) and REPEAT (piece,
+    // times and how
     // the repeats are spaced), then More. Pitch and loudness are devices in the playhead's own chain (Transpose,
     // Velocity); its channel and Notes are set once, so they live in the chip's and More's menus.
     float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
-    float controls = 3 * kCell + kGroupGap + kRepeatBlock + kGroupGap + kCell;
+    float controls = 4 * kCell + kGroupGap + kRepeatBlock + kGroupGap + kCell;
     Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);
     parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
     Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
@@ -411,7 +412,7 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
                 {Kind::CurveLabel, Rect(lx, knobTop + 40, width, 12), index, param, id, ParamRef::Kind::Playhead});
         };
         float kx = card.pos.x + kCardPad;
-        parts.push_back({Kind::GroupLabel, Rect(kx, knobTop - 12, 3 * kCell, 10), index, 0, id});
+        parts.push_back({Kind::GroupLabel, Rect(kx, knobTop - 12, 4 * kCell, 10), index, 0, id});
         // On: the chip's dot, here with a name that opens its curve, so the playhead can come in and drop out in time.
         label(kx, kCell, kOn);
         parts.push_back({Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kOn, id, ParamRef::Kind::Playhead});
@@ -426,6 +427,15 @@ float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float kn
         // Direction: its name opens a curve for the direction; the dropdown also holds the step orders.
         label(kx, kCell, kDirection);
         parts.push_back({Kind::PlayheadDirection, Rect(kx, knobTop - 2, kCell, 54), index, -1, id});
+        kx += kCell;
+        // Offset: when its notes play, drawn from the middle (0) like a knob that goes both ways.
+        label(kx, kCell, kTimeOffset);
+        parts.push_back(
+            {Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, kTimeOffset, id, ParamRef::Kind::Playhead});
+        Part offset{Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kTimeOffset,
+                    id,         ParamRef::Kind::Playhead,         true};
+        offset.centred = true;
+        parts.push_back(offset);
         kx += kCell + kGroupGap;
 
         // The REPEAT block: where its hits land on top, then Piece × Times and Curve, each name opening its curve.
@@ -1554,7 +1564,7 @@ void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
             nvgStroke(vg);
         }
         arc(vg, center, kKnobRadius, 0, 1, c.line1, 2.8f);
-        arc(vg, center, kKnobRadius, info->bipolar() ? 0.5f : 0.f, base, valueColor, 2.8f);
+        arc(vg, center, kKnobRadius, info->bipolar() || part.centred ? 0.5f : 0.f, base, valueColor, 2.8f);
         for (size_t k = 0; k < rings.size() && k < 4; k++)
             arc(vg, center, kKnobRadius + 3.4f + float(k) * 2.4f, base, std::clamp(base + rings[k].amount, 0.f, 1.f),
                 rings[k].color, 1.8f);

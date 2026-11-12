@@ -229,6 +229,15 @@ const Length kFixedLengths[] = {{"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/1
                                 {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"1/4 D", 3.0 / 8},   {"1/2", 1.0 / 2},
                                 {"1 bar", 1, true},  {"2 bars", 2, true}};
 
+// How far Offset moves a playhead, one way: the common note values with their triplets and dotted ones, and every
+// 1/16 up to a bar, so a canon can sit at any step. offsetNames() mirrors it around "0".
+const Length kOffsets[] = {{"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/16 T", 1.0 / 24}, {"1/16", 1.0 / 16},
+                           {"1/8 T", 1.0 / 12}, {"1/16 D", 3.0 / 32}, {"1/8", 1.0 / 8},     {"1/4 T", 1.0 / 6},
+                           {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"5/16", 5.0 / 16},   {"1/2 T", 1.0 / 3},
+                           {"1/4 D", 3.0 / 8},  {"7/16", 7.0 / 16},   {"1/2", 1.0 / 2},     {"9/16", 9.0 / 16},
+                           {"5/8", 5.0 / 8},    {"11/16", 11.0 / 16}, {"1/2 D", 3.0 / 4},   {"13/16", 13.0 / 16},
+                           {"7/8", 7.0 / 8},    {"15/16", 15.0 / 16}, {"1 bar", 1, true}};
+
 struct Rate {
     const char* name;
     double value;
@@ -282,6 +291,27 @@ const std::vector<std::string>& orderStepNames() {
     return names;
 }
 double orderStepTicks(int index, TimeSig ts) { return ticksAt(kOrderSteps, index, ts); }
+
+const std::vector<std::string>& offsetNames() {
+    static const std::vector<std::string> names = [] {
+        std::vector<std::string> out;
+        for (size_t i = std::size(kOffsets); i-- > 0;)
+            out.push_back(std::string("-") + kOffsets[i].name);
+        out.push_back("0");
+        for (const Length& l : kOffsets)
+            out.push_back(std::string("+") + l.name);
+        return out;
+    }();
+    return names;
+}
+
+double offsetTicks(int index, TimeSig ts) {
+    int zero = int(std::size(kOffsets));
+    index = std::clamp(index, 0, 2 * zero);
+    if (index == zero)
+        return 0;
+    return index > zero ? ticksAt(kOffsets, index - zero - 1, ts) : -ticksAt(kOffsets, zero - 1 - index, ts);
+}
 
 int orderedStep(Order order, int k, int count, int64_t pass, uint32_t seed) {
     if (count <= 1)
@@ -394,6 +424,7 @@ double warp(Bend shape, double amount, double f) {
 }
 
 double positionAt(const Motion& m, double elapsed) {
+    elapsed -= m.offset;
     if (m.regionLength <= 0)
         return m.regionStart;
     if (m.drawn()) {
@@ -437,6 +468,15 @@ int sweepsUnmarked(const Motion& m, double a, double b, Sweep* out, int max) {
 int sweeps(const Motion& m, double a, double b, Sweep* out, int max, double before) {
     if (b <= a || m.regionLength <= 0 || m.rate <= 0 || m.direction == Direction::Freeze)
         return 0;
+    if (m.offset != 0) {
+        // The same moves, that much later; their times (restartBase) are counted back in the caller's time.
+        Motion unshifted = m;
+        unshifted.offset = 0;
+        int count = sweeps(unshifted, a - m.offset, b - m.offset, out, max, before);
+        for (int i = 0; i < count; i++)
+            out[i].restartBase += m.offset;
+        return count;
+    }
     int count = sweepsUnmarked(m, a, b, out, max);
     // A jump starts away from the previous place or begins another repeated piece, including a continuous advance.
     if (std::isnan(before))
@@ -524,10 +564,13 @@ bool wantsDrawnPath(const float* knobs) {
     return std::lround(devices::display(devices::playheadInfo().params[knob::kPath], knobs[knob::kPath])) == 1;
 }
 
-std::vector<AutoPoint> pathFromSettings(const Motion& m, double cycle, double step) {
+std::vector<AutoPoint> pathFromSettings(const Motion& settings, double cycle, double step) {
     std::vector<AutoPoint> points;
-    if (m.regionLength <= 0 || step <= 0)
+    if (settings.regionLength <= 0 || step <= 0)
         return points;
+    // Offset moves a drawn path too, so the drawing leaves it out.
+    Motion m = settings;
+    m.offset = 0;
     auto valueAt = [&](double own) { return float((positionAt(m, own / m.rate) - m.regionStart) / m.regionLength); };
     float last = valueAt(0), slope = 0;
     points.push_back({0, last, CurveType::Linear, 0});
@@ -594,6 +637,7 @@ Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart
     m.pathCycle = pathCycleTicks(index(knob::kPathCycle), ts);
     m.order = Order(index(knob::kOrder));
     m.orderStep = orderStepTicks(index(knob::kOrderStep), ts);
+    m.offset = offsetTicks(index(knob::kTimeOffset), ts);
     if (deviceKnobs) {
         const devices::TypeInfo& info = devices::deviceInfo(DeviceType::Playheads);
         auto device = [&](int k) { return devices::display(info.params[size_t(k)], deviceKnobs[k]); };

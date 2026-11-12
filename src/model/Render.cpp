@@ -432,7 +432,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
             // Small steps, so no window needs more sweeps than one call gives; each step reads the modulators anew.
             constexpr double kStep = double(kPpq) / 8;
             std::vector<float> knobs(p.params.size()), deviceKnobs(device.params.size());
-            double ownTime = NAN, lastRestart = NAN, lastPos = NAN;
+            double ownTime = NAN, lastRestart = NAN, lastPos = NAN, readUntil = NAN;
             // Its On as it plays (a curve or a lane can switch it): off, it reads nothing, and what it sounds stops
             // there, as in the engine. Its own time runs on meanwhile.
             size_t firstItem = items.size();
@@ -464,18 +464,26 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                 playheads::Motion ownM = m;
                 ownM.rate = 1;
                 ownM.restartEvery = 0;
+                ownM.offset = 0;
                 playheads::Motion timed = ownM;
                 timed.rate = rate;
-                for (double segA = e; segA < to;) {
+                // Offset, as in the engine: it reads that much earlier (or later) than now, only inside the timeline
+                // clip, and never the same place twice when the Offset moves.
+                double shift = m.offset / stretch;
+                double readA = std::max(e - shift, begin), readB = std::min(to - shift, begin + length);
+                if (std::isfinite(readUntil))
+                    readA = std::max(readA, readUntil);
+                for (double segA = readA; segA < readB;) {
                     double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
-                    double segB = restartEvery > 0 ? std::min(to, restart + restartEvery) : to;
-                    if (std::isnan(ownTime) || restart != lastRestart) {
+                    double segB = restartEvery > 0 ? std::min(readB, restart + restartEvery) : readB;
+                    if (std::isnan(ownTime) || restart != lastRestart || !(std::abs(segA - readUntil) <= 1e-6)) {
                         ownTime = rate * (segA - restart);
                         lastPos = NAN;
                     }
                     lastRestart = restart;
                     double ownA = ownTime;
                     ownTime += rate * (segB - segA);
+                    readUntil = segB;
                     playheads::Sweep sweeps[playheads::kMaxSweeps];
                     int count = playheads::sweeps(ownM, ownA, ownTime, sweeps, playheads::kMaxSweeps, lastPos);
                     if (count > 0)
@@ -491,7 +499,7 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                 if (!playheads::picked(shape.pick, n.role))
                                     return;
                                 double own = playheads::timeAt(ownM, sweeps[i], pos);
-                                double elapsed = segA + (own - ownA) / rate;
+                                double elapsed = segA + (own - ownA) / rate + shift;
                                 double at = double(a.position) + (elapsed - begin) * stretch;
                                 // Read again at the moment it is met: a step drawn inside this block reaches it.
                                 MovedBy hit =
