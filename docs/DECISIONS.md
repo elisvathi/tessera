@@ -2464,8 +2464,12 @@ Research: `docs/design/ARP_PATTERNS.md`.
   Shuffled (each note once per round, in an order fixed by the held pitches, so a loop sounds the same every pass).
   The sources disagree on Converge's and Diverge's order; these start low, like the other patterns. Pedal low and
   high, rests and rhythm patterns are left for later (rests need a new step control and a mockup).
-- **The list keeps related patterns together** (Up, Down, Up-down, Up-down full, Down-up, Converge, Diverge,
-  As played, Random, Shuffled, Chord), so schema 9 moves saved patterns, lanes and curves on Pattern to the same
+- **Down-up full, Walk and Pattern** were added the same day. Down-up full is Up-down full from the top; with the
+  restart on a new chord, where it starts is heard. Walk (on, stay or back one: 50/25/25) and Pattern (a 16-step line,
+  the lowest note twice as likely) come from two well-known hardware arps; both choose from the held pitches, so the
+  same notes always play the same line, unlike Random.
+- **The list keeps related patterns together** (Up, Down, Up-down, Up-down full, Down-up, Down-up full, Converge,
+  Diverge, As played, Random, Walk, Shuffled, Pattern, Chord), so schema 9 moves saved patterns, lanes and curves on Pattern to the same
   choice by name, as schema 8 did for the playhead lists. That code is now one helper for both.
 - **A new chord starts the pattern from its beginning** when most of the held notes arrived since the last step, as
   the Arpeggiate command does (§45). Before, only silence reset it, so a chord change with Hold or without a gap

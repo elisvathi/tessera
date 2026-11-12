@@ -460,23 +460,29 @@ void Chain::release(int stage, uint32_t id, bool hold) {
 
 namespace {
 
+/// A well-mixed number from `seed` (splitmix64): a few multiplies, no tables, so it runs on the audio thread.
+uint64_t mixed(uint64_t seed) {
+    uint64_t z = seed + 0x9E3779B97F4A7C15ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+
+/// A number in [0, 1) for step `k` of the line `seed` picks: the same every time.
+double chance(uint64_t seed, uint64_t k) { return double(mixed(seed ^ mixed(k)) >> 11) * 0x1.0p-53; }
+
 /// The `k`-th note (0..count-1) a Shuffled arpeggio plays: a fixed shuffle of the notes, one for each `seed`.
 int shuffledIndex(int k, int count, uint64_t seed) {
     std::array<uint8_t, 64> order;
     count = std::clamp(count, 1, int(order.size()));
     for (int i = 0; i < count; i++)
         order[size_t(i)] = uint8_t(i);
-    for (int i = count - 1; i > 0; i--) {
-        // splitmix64: a few multiplies per swap, no tables, so it runs on the audio thread.
-        seed += 0x9E3779B97F4A7C15ull;
-        uint64_t z = seed;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        z ^= z >> 31;
-        std::swap(order[size_t(i)], order[size_t(z % uint64_t(i + 1))]);
-    }
+    for (int i = count - 1; i > 0; i--)
+        std::swap(order[size_t(i)], order[size_t(mixed(seed + uint64_t(i)) % uint64_t(i + 1))]);
     return order[size_t(k % count)];
 }
+
+constexpr uint64_t kPatternSteps = 16; // how long the line a Pattern arpeggio makes is
 
 } // namespace
 
@@ -575,6 +581,14 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
     };
     uint64_t into = s.steps - s.patternStart; // steps since the pattern started
     int step = int(into % uint64_t(std::max(1, count)));
+    // The patterns that choose for themselves choose the same way for the same held notes, so a loop sounds the
+    // same every pass: what plays is what was heard last time.
+    auto heldSeed = [&] {
+        uint64_t seed = c.seed ^ (d.id * 0x9E3779B97F4A7C15ull) ^ uint64_t(octaves);
+        for (int i = 0; i < count; i++)
+            seed = seed * 1099511628211ull ^ uint64_t(at(i).second + 1);
+        return seed;
+    };
     switch (pattern) {
     case ArpPattern::Chord:
         for (int i = 0; i < count; i++) {
@@ -599,10 +613,33 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         play(h, p);
         break;
     }
-    case ArpPattern::UpDownTwice: {
+    case ArpPattern::UpDownFull:
+    case ArpPattern::DownUpFull: {
         // Up and back, each end played twice: a round is twice the notes long, so four notes fill eight steps.
         int j = int(into % uint64_t(2 * count));
-        auto [h, p] = at(j < count ? j : 2 * count - 1 - j);
+        int index = j < count ? j : 2 * count - 1 - j;
+        auto [h, p] = at(pattern == ArpPattern::DownUpFull ? count - 1 - index : index);
+        play(h, p);
+        break;
+    }
+    case ArpPattern::Walk: {
+        // From the lowest note: half the time on to the next, a quarter the same again, a quarter back one, wrapping
+        // round at the ends.
+        if (into == 0) {
+            s.walk = 0;
+        } else {
+            double r = chance(heldSeed(), into);
+            s.walk += r < 0.5 ? 1 : r < 0.75 ? 0 : -1;
+        }
+        s.walk = ((s.walk % count) + count) % count;
+        auto [h, p] = at(s.walk);
+        play(h, p);
+        break;
+    }
+    case ArpPattern::Pattern: {
+        // Any note on each of its 16 steps, the lowest one twice as likely as each of the others.
+        int pick = int(chance(heldSeed(), into % kPatternSteps) * double(count + 1));
+        auto [h, p] = at(pick >= count ? 0 : pick);
         play(h, p);
         break;
     }
@@ -623,11 +660,7 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         break;
     }
     case ArpPattern::Shuffled: {
-        // The same held notes always shuffle the same way, so what plays is what was heard last time.
-        uint64_t seed = c.seed ^ (d.id * 0x9E3779B97F4A7C15ull) ^ uint64_t(octaves);
-        for (int i = 0; i < count; i++)
-            seed = seed * 1099511628211ull ^ uint64_t(at(i).second + 1);
-        auto [h, p] = at(shuffledIndex(step, count, seed));
+        auto [h, p] = at(shuffledIndex(step, count, heldSeed()));
         play(h, p);
         break;
     }

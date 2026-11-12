@@ -808,7 +808,8 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(run(float(chain::ArpPattern::Up), 2) == std::vector<int>{60, 64, 67, 72, 76, 79, 60, 64});
         CHECK(run(float(chain::ArpPattern::Chord), 1).size() == 24);
         // The ends twice at each turn: a round of 6 with three notes.
-        CHECK(run(float(chain::ArpPattern::UpDownTwice), 1) == std::vector<int>{60, 64, 67, 67, 64, 60, 60, 64});
+        CHECK(run(float(chain::ArpPattern::UpDownFull), 1) == std::vector<int>{60, 64, 67, 67, 64, 60, 60, 64});
+        CHECK(run(float(chain::ArpPattern::DownUpFull), 1) == std::vector<int>{67, 64, 60, 60, 64, 67, 67, 64});
         // Outside in: C G E; over two octaves the whole run, C G' E E' G C'.
         CHECK(run(float(chain::ArpPattern::Converge), 1) == std::vector<int>{60, 67, 64, 60, 67, 64, 60, 67});
         CHECK(run(float(chain::ArpPattern::Converge), 2) == std::vector<int>{60, 79, 64, 76, 67, 72, 60, 79});
@@ -821,6 +822,25 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(std::multiset<int>(shuffled.begin(), shuffled.begin() + 3) == std::multiset<int>{60, 64, 67});
         CHECK(std::equal(shuffled.begin(), shuffled.begin() + 5, shuffled.begin() + 3));
         CHECK(run(float(chain::ArpPattern::Shuffled), 1) == shuffled);
+        // Walk starts on the lowest note and moves at most one note a step, the same path every time.
+        std::vector<int> walk = run(float(chain::ArpPattern::Walk), 2);
+        const std::vector<int> run6 = {60, 64, 67, 72, 76, 79};
+        REQUIRE(walk.size() == 8);
+        CHECK(walk[0] == 60);
+        for (size_t i = 1; i < walk.size(); i++) {
+            int from = int(std::find(run6.begin(), run6.end(), walk[i - 1]) - run6.begin());
+            int to = int(std::find(run6.begin(), run6.end(), walk[i]) - run6.begin());
+            int move = (to - from + 6) % 6;
+            CHECK((move == 0 || move == 1 || move == 5)); // the same, the next, or back one (wrapping)
+        }
+        CHECK(run(float(chain::ArpPattern::Walk), 2) == walk);
+        CHECK(walk != std::vector<int>{60, 64, 67, 72, 76, 79, 60, 64}); // it wanders, unlike Up
+        // Pattern: a fixed line of held notes, the same every time.
+        std::vector<int> line = run(float(chain::ArpPattern::Pattern), 1);
+        REQUIRE(line.size() == 8);
+        CHECK(line == run(float(chain::ArpPattern::Pattern), 1));
+        for (int p : line)
+            CHECK((p == 60 || p == 64 || p == 67));
         std::vector<int> wide = run(float(chain::ArpPattern::Shuffled), 4);
         CHECK(std::set<int>(wide.begin(), wide.end()).size() == 8); // no repeats inside a round of 12
     }

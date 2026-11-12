@@ -71,15 +71,15 @@ std::vector<TypeInfo> buildDevices() {
                                     {choice("Chord", chordNames(), 0), toggle("In key", true),
                                      integer("Inversion", -3, 3, 0), choice("Voicing", {"Close", "Open", "Drop 2"}, 0),
                                      number("Strum", 0, 100, 0, "% of 1/16")}};
-    t[size_t(DeviceType::Arpeggiator)] = {"Arpeggiator",
-                                          {choice("Pattern",
-                                                  {"Up", "Down", "Up-down", "Up-down full", "Down-up", "Converge",
-                                                   "Diverge", "As played", "Random", "Shuffled", "Chord"},
-                                                  0),
-                                           choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 200, 80, "%"),
-                                           integer("Octaves", 1, 4, 1), number("Swing", 0, 100, 0, "%"),
-                                           choice("Velocity", {"As played", "Fixed", "Accent"}, 0),
-                                           toggle("Hold", false)}};
+    t[size_t(DeviceType::Arpeggiator)] = {
+        "Arpeggiator",
+        {choice("Pattern",
+                {"Up", "Down", "Up-down", "Up-down full", "Down-up", "Down-up full", "Converge", "Diverge", "As played",
+                 "Random", "Walk", "Shuffled", "Pattern", "Chord"},
+                0),
+         choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
+         number("Swing", 0, 100, 0, "%"), choice("Velocity", {"As played", "Fixed", "Accent"}, 0),
+         toggle("Hold", false)}};
     t[size_t(DeviceType::NoteRepeat)] = {"Note Repeat",
                                          {choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 100, 50, "%"),
                                           number("Decay", 0, 100, 0, "%")}};

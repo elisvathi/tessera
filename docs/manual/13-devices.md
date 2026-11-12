@@ -59,11 +59,14 @@ highest. **Octaves** adds the notes again an octave up, and the pattern runs ove
 | **Up-down** | Up, then back down. The top and bottom notes play once at each turn. | C E G E, C E G E… |
 | **Up-down full** | Up, then back down, with the top and bottom notes played twice. Four notes fill exactly 8 steps. | C E G G E C… |
 | **Down-up** | Down, then back up, the ends once. | G E C E, G E C E… |
+| **Down-up full** | Down, then back up, with the top and bottom notes played twice. | G E C C E G… |
 | **Converge** | From the outside in: lowest, highest, then the next pair inward. | C G E, C G E… (with B too: C B E G) |
 | **Diverge** | From the middle out, the lower note of each pair first. | E C G, E C G… (with B too: E G C B) |
 | **As played** | In the order you played the notes. | as played |
 | **Random** | Any note on each step; the same note can come twice. | for example E E C G… |
+| **Walk** | Starts on the lowest note and wanders: half the time on to the next note, a quarter of the time the same note again, a quarter back one (round the ends). The same notes always walk the same path. | for example C E E C E G G E… |
 | **Shuffled** | Each note once per round, in a mixed order. The same notes always mix the same way, so a loop sounds the same every pass. | for example G C E, G C E… |
+| **Pattern** | A 16-step line made from the held notes, the lowest note twice as often as each of the others. Change the notes for a new line; the same notes always make the same line. | for example C G C E C C G E… |
 | **Chord** | All the notes together on every step. | C+E+G… |
 
 When you change to a new chord, the pattern starts again from its beginning, also with **Hold** on or when the chords

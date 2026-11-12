@@ -41,14 +41,17 @@ enum class LengthMode : uint8_t { Scale, Fixed, Legato };
 enum class ArpPattern : uint8_t {
     Up,
     Down,
-    UpDown,      // the top and bottom notes once at each turn
-    UpDownTwice, // the top and bottom notes twice at each turn
+    UpDown,     // the top and bottom notes once at each turn
+    UpDownFull, // the top and bottom notes twice at each turn
     DownUp,
+    DownUpFull,
     Converge, // lowest, highest, second lowest, second highest… meeting in the middle
     Diverge,  // the middle first, then out, the lower of each pair first
     AsPlayed,
     Random,
+    Walk,     // mostly on to the next note, sometimes the same or back one; one path for each set of held notes
     Shuffled, // each note once per round, in an order of its own for each set of held notes
+    Pattern,  // a 16-step line made from the held notes, the lowest note twice as often; one per set of held notes
     Chord
 };
 enum class ArpVelocity : uint8_t { AsPlayed, Fixed, Accent };
@@ -185,6 +188,7 @@ class Chain {
         uint32_t arrivals = 0;
         uint64_t patternStart = 0; // the arpeggiator step its pattern last started again on
         uint32_t stepArrivals = 0; // `arrivals` at its last step: notes arriving after it are new
+        int walk = 0;              // where a Walk pattern is in its list of notes
     };
 
     void post(int stage, Kind kind, const ChainNote& note, double time, Output& out, uint8_t step = 0);
