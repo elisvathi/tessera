@@ -154,7 +154,7 @@ append-only so saved patches keep working. Values are stored normalized (0..1) a
 | **Velocity** | shapes velocity | curve (soft…hard), min, max, random ±, fixed value |
 | **Note Length** | shapes gate | scale %, fixed length (sync), legato (to next note) |
 | **Chord** | adds notes | chord type (or intervals), inversion, spread (close / open / drop-2), in key |
-| **Arpeggiator** | plays held notes one at a time | pattern (up, down, up-down, up-down with the ends twice, down-up, converge, diverge, as played, random, shuffled, chord), rate (sync, triplet, dotted), gate, octaves, swing, velocity (as played / accent pattern), hold |
+| **Arpeggiator** | plays held notes one at a time | pattern (up, down, up-down, up-down full (the ends twice), down-up, converge, diverge, as played, random, shuffled, chord), rate (sync, triplet, dotted), gate, octaves, swing, velocity (as played / accent pattern), hold |
 | **Echo** | repeats notes (MIDI delay) | time (sync), repeats, velocity decay, pitch per repeat, gate |
 | **Note Repeat** | plays every note again while it lasts, chords included | rate, gate 5–100%, decay 0–100% |
 | **Humanize** | loosens the feel each pass | timing (later only, up to 1/32), velocity ±, length ± |

@@ -57,7 +57,7 @@ highest. **Octaves** adds the notes again an octave up, and the pattern runs ove
 | **Up** | Low to high, then again. | C E G, C E G… |
 | **Down** | High to low, then again. | G E C, G E C… |
 | **Up-down** | Up, then back down. The top and bottom notes play once at each turn. | C E G E, C E G E… |
-| **Up-down, ends twice** | Up, then back down, with the top and bottom notes played twice. Four notes fill exactly 8 steps. | C E G G E C… |
+| **Up-down full** | Up, then back down, with the top and bottom notes played twice. Four notes fill exactly 8 steps. | C E G G E C… |
 | **Down-up** | Down, then back up, the ends once. | G E C E, G E C E… |
 | **Converge** | From the outside in: lowest, highest, then the next pair inward. | C G E, C G E… (with B too: C B E G) |
 | **Diverge** | From the middle out, the lower note of each pair first. | E C G, E C G… (with B too: E G C B) |

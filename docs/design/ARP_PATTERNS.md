@@ -1,6 +1,6 @@
 # Arpeggiator patterns: what others offer, and what to add
 
-Research note, 12 Nov 2026. Built the same day: Up-down ends twice, Converge, Diverge, Shuffled and the restart on a
+Research note, 12 Nov 2026. Built the same day: Up-down ends twice (named "Up-down full"), Converge, Diverge, Shuffled and the restart on a
 new chord (DECISIONS §152). The rest is not built.
 
 ## 1. Summary

@@ -2459,12 +2459,12 @@ sequencers.
 
 Research: `docs/design/ARP_PATTERNS.md`.
 
-- **Four patterns join the list**: Up-down, ends twice (the most common one missing: four notes fill eight steps),
+- **Four patterns join the list**: Up-down full (the ends twice; the most common one missing: four notes fill eight steps),
   Converge (outside in: C G E, C B E G), Diverge (middle out, the lower note of each pair first: E C G, E G C B) and
   Shuffled (each note once per round, in an order fixed by the held pitches, so a loop sounds the same every pass).
   The sources disagree on Converge's and Diverge's order; these start low, like the other patterns. Pedal low and
   high, rests and rhythm patterns are left for later (rests need a new step control and a mockup).
-- **The list keeps related patterns together** (Up, Down, Up-down, Up-down ends twice, Down-up, Converge, Diverge,
+- **The list keeps related patterns together** (Up, Down, Up-down, Up-down full, Down-up, Converge, Diverge,
   As played, Random, Shuffled, Chord), so schema 9 moves saved patterns, lanes and curves on Pattern to the same
   choice by name, as schema 8 did for the playhead lists. That code is now one helper for both.
 - **A new chord starts the pattern from its beginning** when most of the held notes arrived since the last step, as

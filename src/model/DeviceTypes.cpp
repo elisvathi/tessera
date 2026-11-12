@@ -73,8 +73,8 @@ std::vector<TypeInfo> buildDevices() {
                                      number("Strum", 0, 100, 0, "% of 1/16")}};
     t[size_t(DeviceType::Arpeggiator)] = {"Arpeggiator",
                                           {choice("Pattern",
-                                                  {"Up", "Down", "Up-down", "Up-down, ends twice", "Down-up",
-                                                   "Converge", "Diverge", "As played", "Random", "Shuffled", "Chord"},
+                                                  {"Up", "Down", "Up-down", "Up-down full", "Down-up", "Converge",
+                                                   "Diverge", "As played", "Random", "Shuffled", "Chord"},
                                                   0),
                                            choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 200, 80, "%"),
                                            integer("Octaves", 1, 4, 1), number("Swing", 0, 100, 0, "%"),
