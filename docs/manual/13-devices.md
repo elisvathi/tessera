@@ -36,7 +36,7 @@ A track holds up to 16 devices.
 | **Scale** | Keeps every note in a key. | Key from (Clip, Song, Fixed), Root, Scale, Notes off key (Nearest, Up, Down, or Drop them). Root and Scale hide unless Key from is Fixed. |
 | **Chord** | Turns each note into a chord. | Chord, In key, Inversion, Voicing (Close, Open, Drop 2), Strum. |
 | **Note Length** | Makes notes shorter, longer or legato. | Mode (Scale, Fixed, Legato), Scale %, Length, Overlap. |
-| **Arpeggiator** | Plays held notes one at a time. | Pattern (Up, Down, Up-down, Down-up, Random, As played, Chord), Rate, Gate, Octaves, Swing, Velocity (As played, Fixed, Accent), Hold. |
+| **Arpeggiator** | Plays held notes one at a time. | Pattern (see below), Rate, Gate, Octaves, Swing, Velocity (As played, Fixed, Accent), Hold. |
 | **Note Repeat** | Plays every note again and again for as long as it lasts, so a held chord repeats as a chord. | Rate, Gate, Decay (each repeat a little quieter). |
 | **Echo** | Repeats notes, fading out, like a delay. | Time, Repeats, Decay, Pitch (per repeat), Gate. |
 | **Velocity** | Makes notes softer, harder, or keeps them in a range. | Curve, Min, Max, Random. |
@@ -48,6 +48,27 @@ A track holds up to 16 devices.
 
 **Playheads** is different from the others: it doesn't change notes, it reads the clip. See
 [Playheads](#playheads) below.
+
+**Arpeggiator patterns.** The examples hold C, E and G. All patterns except As played go from the lowest note to the
+highest. **Octaves** adds the notes again an octave up, and the pattern runs over all of them.
+
+| Pattern | What it plays | C E G |
+|---|---|---|
+| **Up** | Low to high, then again. | C E G, C E G… |
+| **Down** | High to low, then again. | G E C, G E C… |
+| **Up-down** | Up, then back down. The top and bottom notes play once at each turn. | C E G E, C E G E… |
+| **Up-down, ends twice** | Up, then back down, with the top and bottom notes played twice. Four notes fill exactly 8 steps. | C E G G E C… |
+| **Down-up** | Down, then back up, the ends once. | G E C E, G E C E… |
+| **Converge** | From the outside in: lowest, highest, then the next pair inward. | C G E, C G E… (with B too: C B E G) |
+| **Diverge** | From the middle out, the lower note of each pair first. | E C G, E C G… (with B too: E G C B) |
+| **As played** | In the order you played the notes. | as played |
+| **Random** | Any note on each step; the same note can come twice. | for example E E C G… |
+| **Shuffled** | Each note once per round, in a mixed order. The same notes always mix the same way, so a loop sounds the same every pass. | for example G C E, G C E… |
+| **Chord** | All the notes together on every step. | C+E+G… |
+
+When you change to a new chord, the pattern starts again from its beginning, also with **Hold** on or when the chords
+follow each other without a gap. If only one note of the chord changes (an inner voice moving), the pattern carries
+on.
 
 **Order matters.** Chord → Arpeggiator arpeggiates the chord. Arpeggiator → Chord makes a chord on every arpeggio step.
 

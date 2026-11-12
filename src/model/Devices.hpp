@@ -37,7 +37,20 @@ enum Motion { kMotionPitch, kMotionTime, kMotionLength, kMotionVelocity, kMotion
 enum class KeyFrom : uint8_t { Clip, Song, Fixed };
 enum class OffKey : uint8_t { Nearest, Up, Down, Drop };
 enum class LengthMode : uint8_t { Scale, Fixed, Legato };
-enum class ArpPattern : uint8_t { Up, Down, UpDown, DownUp, Random, AsPlayed, Chord };
+/// The Arpeggiator's patterns, in the order of its Pattern list (saved songs before schema 9 had fewer).
+enum class ArpPattern : uint8_t {
+    Up,
+    Down,
+    UpDown,      // the top and bottom notes once at each turn
+    UpDownTwice, // the top and bottom notes twice at each turn
+    DownUp,
+    Converge, // lowest, highest, second lowest, second highest… meeting in the middle
+    Diverge,  // the middle first, then out, the lower of each pair first
+    AsPlayed,
+    Random,
+    Shuffled, // each note once per round, in an order of its own for each set of held notes
+    Chord
+};
 enum class ArpVelocity : uint8_t { AsPlayed, Fixed, Accent };
 
 constexpr uint32_t kLiveNote = 0x80000000u; // IDs of notes played live carry this bit
@@ -170,6 +183,8 @@ class Chain {
         bool running = false; // an arpeggiator's clock is ticking
         uint64_t steps = 0;   // arpeggiator steps played; Note Filter: notes counted
         uint32_t arrivals = 0;
+        uint64_t patternStart = 0; // the arpeggiator step its pattern last started again on
+        uint32_t stepArrivals = 0; // `arrivals` at its last step: notes arriving after it are new
     };
 
     void post(int stage, Kind kind, const ChainNote& note, double time, Output& out, uint8_t step = 0);

@@ -59,7 +59,8 @@ struct Marker {
 /// notes are sorted, and nextId is above every ID in use.
 struct Song {
     // 7 was taken twice, on two branches: the Playheads device and audio. 8: more playhead rates and lengths.
-    static constexpr int kSchemaVersion = 8;
+    // 9: more Arpeggiator patterns.
+    static constexpr int kSchemaVersion = 9;
 
     TimeSig timeSig;
     float swing = 0;           // 0..1, shown as 50..75% (Swing.hpp)

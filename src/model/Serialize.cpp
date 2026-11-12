@@ -1264,7 +1264,7 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     // clips, fades, mixer channels and the master; older songs load with none, every channel at 0 dB and centred,
     // and the master at 0 dB). A song saved at 7 has one or the other, and neither needs rewriting here. Version 8
     // gave the playheads' choices more rates and lengths (songFromJson keeps each saved choice by name; a song
-    // without playheads has nothing to keep).
+    // without playheads has nothing to keep). Version 9 gave the Arpeggiator more patterns (kept by name the same way).
     if (fromVersion == 6) {
         // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
         // notes for the written length by default, so at half speed a note stopped halfway while the playhead was
@@ -1349,60 +1349,55 @@ void narrowTransposeSemitones(Song& s) {
         lanes(clip.automation);
 }
 
-/// Before schema 8 a playhead's Rate, Piece, Order step, Fixed length and Path cycle had fewer choices (Trello: "add
-/// more divisions"). A choice is saved as 0..1 of its list, so each saved value finds its choice by name in the
-/// longer list. Lanes on those settings move the same way; a curve drawn in one keeps reaching the choices it
-/// reached from the setting as set, and another modulator's amount keeps its reach from there.
-void growPlayheadChoices(Song& s) {
-    namespace pk = playheads::knob;
-    struct Grown {
-        int knob;
-        std::vector<std::string> before;
-        const std::vector<std::string>& now;
-    };
-    const std::vector<Grown> grown = {
-        {pk::kRate,
-         {"1/16x", "1/8x", "1/4x", "1/3x", "1/2x", "2/3x", "3/4x", "1x", "4/3x", "3/2x", "2x", "3x", "4x", "8x", "16x"},
-         playheads::rateNames()},
-        {pk::kRepeatSize, {"Off", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::repeatNames()},
-        {pk::kOrderStep, {"1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::orderStepNames()},
-        {pk::kFixedLength, {"1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::fixedLengthNames()},
-        {pk::kPathCycle, {"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, playheads::pathCycleNames()}};
-    auto oldIndex = [](const Grown& g, float v) {
+/// A choice setting whose list grew: its names before, and its list now.
+struct GrownChoice {
+    int knob;
+    std::vector<std::string> before;
+    const std::vector<std::string>& now;
+};
+
+/// One owner's saved settings (a device's or a playhead's) and which of its choices grew.
+struct GrownSettings {
+    ParamRef::Kind kind;
+    uint64_t owner;
+    std::vector<float>* params;
+    const std::vector<GrownChoice>* grown;
+};
+
+/// A choice is saved as 0..1 of its list, so when a list grows each saved value finds its choice by name in the
+/// longer list. Lanes on those settings move the same way; a curve drawn in one keeps reaching the choices it reached
+/// from the setting as set, and another modulator's amount keeps its reach from there.
+void growChoices(Song& s, const std::vector<GrownSettings>& settings) {
+    auto oldIndex = [](const GrownChoice& g, float v) {
         return std::clamp(int(std::lround(double(v) * double(g.before.size() - 1))), 0, int(g.before.size()) - 1);
     };
-    auto newIndex = [](const Grown& g, int old) { return playheads::choiceIndex(g.now, g.before[size_t(old)]); };
-    auto normalized = [](const Grown& g, int index) { return float(double(index) / double(g.now.size() - 1)); };
+    auto newIndex = [](const GrownChoice& g, int old) { return playheads::choiceIndex(g.now, g.before[size_t(old)]); };
+    auto normalized = [](const GrownChoice& g, int index) { return float(double(index) / double(g.now.size() - 1)); };
     // A move of `delta` (0..1 of the old list) from choice `from`, as a move in the new list.
-    auto moved = [&](const Grown& g, int from, double delta) {
+    auto moved = [&](const GrownChoice& g, int from, double delta) {
         int to = std::clamp(int(std::lround(double(from) + delta * double(g.before.size() - 1))), 0,
                             int(g.before.size()) - 1);
         return double(newIndex(g, to) - newIndex(g, from)) / double(g.now.size() - 1);
     };
-    // Where each playhead's grown settings were (old index), before they move.
-    std::map<std::pair<uint64_t, int>, int> base;
-    for (Track& t : s.tracks)
-        for (Device& d : t.devices)
-            for (Playhead& p : d.playheads)
-                for (const Grown& g : grown)
-                    if (size_t(g.knob) < p.params.size()) {
-                        int old = oldIndex(g, p.params[size_t(g.knob)]);
-                        base[{p.id.value, g.knob}] = old;
-                        p.params[size_t(g.knob)] = normalized(g, newIndex(g, old));
-                    }
-    auto grownOf = [&](const ParamRef& r) -> const Grown* {
-        if (r.kind != ParamRef::Kind::Playhead)
-            return nullptr;
-        for (const Grown& g : grown)
-            if (g.knob == r.param && base.count({r.owner, g.knob}))
-                return &g;
-        return nullptr;
+    // Where each grown setting was (old index), before it moves, and which choice it is.
+    std::map<std::tuple<int, uint64_t, int>, std::pair<int, const GrownChoice*>> base;
+    for (const GrownSettings& o : settings)
+        for (const GrownChoice& g : *o.grown)
+            if (size_t(g.knob) < o.params->size()) {
+                float& v = (*o.params)[size_t(g.knob)];
+                int old = oldIndex(g, v);
+                base[{int(o.kind), o.owner, g.knob}] = {old, &g};
+                v = normalized(g, newIndex(g, old));
+            }
+    auto found = [&](const ParamRef& r) -> const std::pair<int, const GrownChoice*>* {
+        auto it = base.find({int(r.kind), r.owner, int(r.param)});
+        return it == base.end() ? nullptr : &it->second;
     };
     auto lanes = [&](std::vector<AutomationEnvelope>& list) {
         for (AutomationEnvelope& lane : list)
-            if (const Grown* g = grownOf(lane.paramTarget))
+            if (const auto* f = found(lane.paramTarget))
                 for (AutoPoint& p : lane.points)
-                    p.value = normalized(*g, newIndex(*g, oldIndex(*g, p.value)));
+                    p.value = normalized(*f->second, newIndex(*f->second, oldIndex(*f->second, p.value)));
     };
     for (Track& t : s.tracks)
         lanes(t.automation);
@@ -1412,19 +1407,60 @@ void growPlayheadChoices(Song& s) {
         int drawn = mods::drawnRoute(m);
         for (size_t i = 0; i < m.routes.size(); i++) {
             Modulation& r = m.routes[i];
-            const Grown* g = r.kind == Modulation::Kind::Param ? grownOf(r.target) : nullptr;
-            if (!g)
+            const auto* f = r.kind == Modulation::Kind::Param ? found(r.target) : nullptr;
+            if (!f)
                 continue;
-            int from = base[{r.target.owner, g->knob}];
+            const GrownChoice& g = *f->second;
             if (int(i) == drawn) {
                 // A drawn point's height is a move from the setting as set: 0.5 + (move / 2) at full amount.
                 for (AutoPoint& p : m.points)
-                    p.value = std::clamp(float(0.5 + moved(*g, from, (double(p.value) - 0.5) * 2) / 2), 0.f, 1.f);
+                    p.value = std::clamp(float(0.5 + moved(g, f->first, (double(p.value) - 0.5) * 2) / 2), 0.f, 1.f);
             } else {
-                r.amount = std::clamp(float(moved(*g, from, double(r.amount))), -1.f, 1.f);
+                r.amount = std::clamp(float(moved(g, f->first, double(r.amount))), -1.f, 1.f);
             }
         }
     });
+}
+
+/// Before schema 8 a playhead's Rate, Piece, Order step, Fixed length and Path cycle had fewer choices (Trello: "add
+/// more divisions").
+void growPlayheadChoices(Song& s) {
+    namespace pk = playheads::knob;
+    static const std::vector<GrownChoice> grown = {
+        {pk::kRate,
+         {"1/16x", "1/8x", "1/4x", "1/3x", "1/2x", "2/3x", "3/4x", "1x", "4/3x", "3/2x", "2x", "3x", "4x", "8x", "16x"},
+         playheads::rateNames()},
+        {pk::kRepeatSize, {"Off", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::repeatNames()},
+        {pk::kOrderStep, {"1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::orderStepNames()},
+        {pk::kFixedLength, {"1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::fixedLengthNames()},
+        {pk::kPathCycle, {"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, playheads::pathCycleNames()}};
+    std::vector<GrownSettings> settings;
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices)
+            for (Playhead& p : d.playheads)
+                settings.push_back({ParamRef::Kind::Playhead, p.id.value, &p.params, &grown});
+    growChoices(s, settings);
+}
+
+/// Before schema 9 the Arpeggiator had seven patterns; the longer list keeps related patterns together.
+void growArpPatterns(Song& s) {
+    static const std::vector<GrownChoice> grown = {
+        {chain::knob::kPattern,
+         {"Up", "Down", "Up-down", "Down-up", "Random", "As played", "Chord"},
+         devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(chain::knob::kPattern)].choices}};
+    std::vector<GrownSettings> settings;
+    auto add = [&](Device& d) {
+        if (d.type == DeviceType::Arpeggiator)
+            settings.push_back({ParamRef::Kind::Device, d.id.value, &d.params, &grown});
+    };
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices) {
+            add(d);
+            for (Playhead& p : d.playheads)
+                for (Device& b : p.branch)
+                    add(b);
+        }
+    growChoices(s, settings);
 }
 
 /// Before 13 Oct 2026 Random also had velocity (knob 3) and timing (knob 4). Those moved to the Humanize device: a
@@ -1638,6 +1674,8 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
         narrowTransposeSemitones(s);
     if (schemaVersion < 8)
         growPlayheadChoices(s);
+    if (schemaVersion < 9)
+        growArpPatterns(s);
     normalize(s);
     return s;
 }

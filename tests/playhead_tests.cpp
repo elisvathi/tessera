@@ -1484,3 +1484,37 @@ TEST_CASE("MIDI export plays a playhead's Offset as the engine does: set, or mov
     // An 1/8 late; the 64 would sound past the clip's end, so it doesn't.
     CHECK(got == std::vector<std::pair<double, int>>{{480, 60}, {1440, 62}});
 }
+
+TEST_CASE(
+    "a song saved before the longer Arpeggiator list keeps its pattern, its lane and one in a playhead's branch") {
+    // Schema 8 saved Pattern as 0..1 of 7 choices: Up, Down, Up-down, Down-up, Random, As played, Chord.
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Arpeggiator, -1, idsOf(song)));
+    Device& arp = song.tracks[0].devices.back();
+    arp.params[chain::knob::kPattern] = 4.f / 6; // Random
+    ParamRef pattern{ParamRef::Kind::Device, arp.id.value, uint16_t(chain::knob::kPattern)};
+    AutomationEnvelope lane = makeKnobLane(AutomationId(song.nextId++), pattern, "Pattern", 0, true, 0);
+    lane.points = {{0, 3.f / 6, CurveType::Hold, 0}, {960, 1, CurveType::Hold, 0}}; // Down-up, then Chord
+    song.tracks[0].automation.push_back(lane);
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    Device branchArp = devices::makeDevice(DeviceType::Arpeggiator, DeviceId(song.nextId++));
+    branchArp.params[chain::knob::kPattern] = 5.f / 6; // As played
+    song.tracks[0].devices.front().playheads[0].branch.push_back(branchArp);
+
+    json::Ref j(songToJson(song));
+    Song loaded = songFromJson(j.get(), 8);
+    const devices::ParamInfo& info = devices::deviceInfo(DeviceType::Arpeggiator).params[chain::knob::kPattern];
+    const Device* a = nullptr;
+    for (const Device& d : loaded.tracks[0].devices)
+        if (d.type == DeviceType::Arpeggiator)
+            a = &d;
+    REQUIRE(a != nullptr);
+    CHECK(devices::format(info, a->params[chain::knob::kPattern]) == "Random");
+    const AutomationEnvelope& l = loaded.tracks[0].automation.back();
+    CHECK(devices::format(info, l.points[0].value) == "Down-up");
+    CHECK(devices::format(info, l.points[1].value) == "Chord");
+    const Device& b = loaded.tracks[0].devices.front().playheads[0].branch.front();
+    CHECK(devices::format(info, b.params[chain::knob::kPattern]) == "As played");
+    json::Ref again(songToJson(loaded));
+    CHECK(songFromJson(again.get(), Song::kSchemaVersion) == loaded);
+}

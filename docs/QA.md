@@ -769,3 +769,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] On the timeline, Offset +1/8 on a clip with a note in its last 1/8: that note doesn't play; nothing sounds after the clip ends.
 - [ ] Right-click Offset, automate it with a lane stepping from 0 to +1/4 mid-bar: the playhead pauses a beat, no note plays twice. MIDI export with devices applied matches what you hear.
 - [ ] The card fits the panel editor with the divider moved; MOVE shows On, Rate, Direction, Offset.
+
+## Arpeggiator patterns, 12 Nov
+
+- [ ] Hold C E G on an Arpeggiator: Up-down, ends twice plays C E G G E C; Converge C G E; Diverge E C G; Shuffled each note once per round, the same order every round.
+- [ ] Two chords back to back (or with Hold): the second starts from its lowest note. Move one inner voice: the pattern carries on.
+- [ ] A song saved by 2.0.9 with an Arpeggiator on Random, Chord or As played opens with the same pattern.

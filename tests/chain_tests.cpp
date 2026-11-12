@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <set>
+#include <tuple>
 #include <vector>
 
 using namespace tessera;
@@ -806,6 +807,39 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(run(float(chain::ArpPattern::UpDown), 1) == std::vector<int>{60, 64, 67, 64, 60, 64, 67, 64});
         CHECK(run(float(chain::ArpPattern::Up), 2) == std::vector<int>{60, 64, 67, 72, 76, 79, 60, 64});
         CHECK(run(float(chain::ArpPattern::Chord), 1).size() == 24);
+        // The ends twice at each turn: a round of 6 with three notes.
+        CHECK(run(float(chain::ArpPattern::UpDownTwice), 1) == std::vector<int>{60, 64, 67, 67, 64, 60, 60, 64});
+        // Outside in: C G E; over two octaves the whole run, C G' E E' G C'.
+        CHECK(run(float(chain::ArpPattern::Converge), 1) == std::vector<int>{60, 67, 64, 60, 67, 64, 60, 67});
+        CHECK(run(float(chain::ArpPattern::Converge), 2) == std::vector<int>{60, 79, 64, 76, 67, 72, 60, 79});
+        // Middle out, the lower first: E C G; with six notes G C' E E' C G'.
+        CHECK(run(float(chain::ArpPattern::Diverge), 1) == std::vector<int>{64, 60, 67, 64, 60, 67, 64, 60});
+        CHECK(run(float(chain::ArpPattern::Diverge), 2) == std::vector<int>{67, 72, 64, 76, 60, 79, 67, 72});
+        // Each note once per round, the same order every round and every time.
+        std::vector<int> shuffled = run(float(chain::ArpPattern::Shuffled), 1);
+        REQUIRE(shuffled.size() == 8);
+        CHECK(std::multiset<int>(shuffled.begin(), shuffled.begin() + 3) == std::multiset<int>{60, 64, 67});
+        CHECK(std::equal(shuffled.begin(), shuffled.begin() + 5, shuffled.begin() + 3));
+        CHECK(run(float(chain::ArpPattern::Shuffled), 1) == shuffled);
+        std::vector<int> wide = run(float(chain::ArpPattern::Shuffled), 4);
+        CHECK(std::set<int>(wide.begin(), wide.end()).size() == 8); // no repeats inside a round of 12
+    }
+    SUBCASE("a new chord starts the pattern again; one voice moving inside it doesn't") {
+        auto run = [](bool hold, const std::vector<std::tuple<double, double, int>>& notes) {
+            Rig r;
+            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kHold, hold ? 1.f : 0.f}});
+            for (auto [start, length, pitch] : notes)
+                r.push(r.note(start, length, pitch));
+            r.runTicks(-1, 1900);
+            return pitchesOf(r.out.notes);
+        };
+        // Held on through a gap: the latched C E G plays on, then D F A starts from its lowest note.
+        CHECK(
+            run(true, {{0, 900, 60}, {0, 900, 64}, {0, 900, 67}, {1000, 900, 62}, {1000, 900, 65}, {1000, 900, 69}}) ==
+            std::vector<int>{60, 64, 67, 60, 64, 62, 65, 69});
+        // E moves to F under a held C and G: the pattern carries on.
+        CHECK(run(false, {{0, 1920, 60}, {0, 900, 64}, {0, 1920, 67}, {900, 1020, 65}}) ==
+              std::vector<int>{60, 64, 67, 60, 65, 67, 60, 65});
     }
     SUBCASE("off-grid notes wait for the next step; hold keeps playing after release") {
         Rig r;

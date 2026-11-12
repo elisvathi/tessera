@@ -458,6 +458,28 @@ void Chain::release(int stage, uint32_t id, bool hold) {
     }
 }
 
+namespace {
+
+/// The `k`-th note (0..count-1) a Shuffled arpeggio plays: a fixed shuffle of the notes, one for each `seed`.
+int shuffledIndex(int k, int count, uint64_t seed) {
+    std::array<uint8_t, 64> order;
+    count = std::clamp(count, 1, int(order.size()));
+    for (int i = 0; i < count; i++)
+        order[size_t(i)] = uint8_t(i);
+    for (int i = count - 1; i > 0; i--) {
+        // splitmix64: a few multiplies per swap, no tables, so it runs on the audio thread.
+        seed += 0x9E3779B97F4A7C15ull;
+        uint64_t z = seed;
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+        z ^= z >> 31;
+        std::swap(order[size_t(i)], order[size_t(z % uint64_t(i + 1))]);
+    }
+    return order[size_t(k % count)];
+}
+
+} // namespace
+
 void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
     int stage = m.stage;
     DeviceState& s = states[size_t(stage)];
@@ -488,6 +510,7 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
             // Steps fall on the song's grid: the first one on the next line (at once when the note is on one).
             s.running = true;
             s.steps = 0;
+            s.patternStart = 0;
             double song = m.time + c.songOffset;
             double line = std::ceil(song / rate - 1e-6) * rate - c.songOffset;
             post(stage, Kind::Tick, ChainNote(), std::max(line, m.time), out);
@@ -518,6 +541,14 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         std::sort(order.begin(), order.begin() + s.heldCount,
                   [](const Held* a, const Held* b) { return a->order < b->order; });
     int count = s.heldCount * octaves;
+    // A new chord (most of what is held arrived since the last step) starts the pattern from its beginning; one
+    // voice moving inside a chord doesn't. As with the Arpeggiate command (DECISIONS §45).
+    int fresh = 0;
+    for (int i = 0; i < s.heldCount; i++)
+        fresh += s.held[size_t(i)].order >= s.stepArrivals;
+    if (s.steps > s.patternStart && fresh * 2 > s.heldCount)
+        s.patternStart = s.steps;
+    s.stepArrivals = s.arrivals;
     auto at = [&](int index) {
         const Held* h = order[size_t(index % s.heldCount)];
         return std::make_pair(h, int(h->note.pitch) + 12 * (index / s.heldCount));
@@ -542,7 +573,8 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
             note.velocity = std::clamp(note.velocity * (s.steps % 4 == 0 ? 1.25f : 0.85f), 0.f, 1.f);
         post(stage + 1, Kind::On, note, note.start, out);
     };
-    int step = int(s.steps % uint64_t(std::max(1, count)));
+    uint64_t into = s.steps - s.patternStart; // steps since the pattern started
+    int step = int(into % uint64_t(std::max(1, count)));
     switch (pattern) {
     case ArpPattern::Chord:
         for (int i = 0; i < count; i++) {
@@ -559,11 +591,43 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
     case ArpPattern::DownUp: {
         // Up and back without repeating the ends.
         int period = count > 1 ? 2 * count - 2 : 1;
-        int j = int(s.steps % uint64_t(period));
+        int j = int(into % uint64_t(period));
         int index = j < count ? j : period - j;
         if (pattern == ArpPattern::DownUp)
             index = count - 1 - index;
         auto [h, p] = at(index);
+        play(h, p);
+        break;
+    }
+    case ArpPattern::UpDownTwice: {
+        // Up and back, each end played twice: a round is twice the notes long, so four notes fill eight steps.
+        int j = int(into % uint64_t(2 * count));
+        auto [h, p] = at(j < count ? j : 2 * count - 1 - j);
+        play(h, p);
+        break;
+    }
+    case ArpPattern::Converge: {
+        auto [h, p] = at(step % 2 == 0 ? step / 2 : count - 1 - step / 2);
+        play(h, p);
+        break;
+    }
+    case ArpPattern::Diverge: {
+        // From the middle out; with an even count the lower middle note first.
+        int index;
+        if (count % 2 == 1)
+            index = step == 0 ? count / 2 : count / 2 + (step % 2 == 1 ? -(step + 1) / 2 : step / 2);
+        else
+            index = step % 2 == 0 ? count / 2 - 1 - step / 2 : count / 2 + step / 2;
+        auto [h, p] = at(index);
+        play(h, p);
+        break;
+    }
+    case ArpPattern::Shuffled: {
+        // The same held notes always shuffle the same way, so what plays is what was heard last time.
+        uint64_t seed = c.seed ^ (d.id * 0x9E3779B97F4A7C15ull) ^ uint64_t(octaves);
+        for (int i = 0; i < count; i++)
+            seed = seed * 1099511628211ull ^ uint64_t(at(i).second + 1);
+        auto [h, p] = at(shuffledIndex(step, count, seed));
         play(h, p);
         break;
     }
