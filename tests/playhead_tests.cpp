@@ -1518,3 +1518,55 @@ TEST_CASE(
     json::Ref again(songToJson(loaded));
     CHECK(songFromJson(again.get(), Song::kSchemaVersion) == loaded);
 }
+
+TEST_CASE("a playhead reads the note on its segment's start every pass, and never the one on its end") {
+    // The user's song: two half notes, G at 0 and E at 7680. Playhead 1 reads bars 1 and 2 (0 to 7680), playhead 2
+    // half of bar 3 (7680 to 9600), both at 2x. The engine adds the playhead's own time up a control block at a
+    // time, and that sum rounds: it could stop a hair short of a wrap, so a sweep ended a hair past the segment
+    // (reading the note there) and the next began a hair after its start (missing the note there).
+    std::vector<N> notes = {{0, 1920, 55}, {7680, 9600, 52}};
+    std::vector<uint32_t> byEnd = orderByEnd(notes);
+    // 32 samples at 44.1 kHz and 120 BPM, at 2x: the windows Rack reads in.
+    const double step = 2 * (120.0 / 60 * 960 / 44100 * 32);
+    struct Case {
+        double regionStart, regionLength;
+        int pitch;      // the note on the segment's start: once every pass
+        int strayPitch; // the note on the segment's end: never
+    };
+    for (Case c : {Case{0, 7680, 55, 52}, Case{7680, 1920, 52, -1}}) {
+        Motion m;
+        m.regionStart = c.regionStart;
+        m.regionLength = c.regionLength;
+        int hits = 0, strays = 0;
+        double own = 0, until = 400 * c.regionLength;
+        while (own < until) {
+            double next = own + step;
+            Sweep s[kMaxSweeps];
+            int n = sweeps(m, own, next, s);
+            for (int i = 0; i < n; i++)
+                crossed(s[i], notes, byEnd, [&](const N& note, double) {
+                    hits += note.pitch == c.pitch;
+                    strays += note.pitch == c.strayPitch;
+                });
+            own = next;
+        }
+        CAPTURE(c.regionStart);
+        CHECK(hits == int(std::ceil(own / c.regionLength))); // once each time it starts its segment again
+        CHECK(strays == 0);
+    }
+    // The two windows caught in Rack, exactly.
+    Motion m;
+    m.regionLength = 7680;
+    for (auto [a, b] :
+         {std::pair<double, double>{15359.912925168997, 15362.69931972682}, {30718.519727898583, 30721.306122456408}}) {
+        Sweep s[kMaxSweeps];
+        int n = sweeps(m, a, b, s);
+        int g = 0, e = 0;
+        for (int i = 0; i < n; i++) {
+            CHECK(s[i].to <= 7680);
+            crossed(s[i], notes, byEnd, [&](const N& note, double) { (note.pitch == 55 ? g : e)++; });
+        }
+        CHECK(g == 1);
+        CHECK(e == 0);
+    }
+}

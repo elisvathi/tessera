@@ -110,6 +110,10 @@ $(TEST_OBJ_DIR)/tests/%.o: TEST_FLAGS += -O0
 $(TEST_OBJ_DIR)/src/audio/stretch/%.o: TEST_FLAGS += -O2
 $(TEST_OBJ_DIR)/src/audio/DrLibs.o: TEST_FLAGS += -O2
 
+# The plugin is built with Rack's -funsafe-math-optimizations, which lets the compiler reorder arithmetic. Playhead
+# sweeps meet notes exactly on segment edges, so they are tested with the same rounding the plugin has.
+$(TEST_OBJ_DIR)/src/model/Playheads.o: TEST_FLAGS += -O3 -funsafe-math-optimizations
+
 $(TEST_BIN): $(TEST_OBJECTS)
 	@mkdir -p $(dir $@)
 	$(TEST_CXX) $(TEST_FLAGS) $(TEST_LINK_FLAGS) -o $@ $(TEST_OBJECTS) $(TEST_LIBS)

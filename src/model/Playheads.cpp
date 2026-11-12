@@ -150,16 +150,30 @@ double orderShift(const Motion& m, double pos, double pass) {
 }
 
 int sweepTravel(const Motion& m, double da, double db, double restartBase, Sweep* out, int max) {
+    constexpr double kHair = 1e-6; // ticks: far less than any note's place can differ by
     int count = 0;
     double d = da;
     double length = m.regionLength;
+    double ranToWrap = NAN; // the wrap the last sweep ran to the end of
     while (d < db && count < max) {
         double segmentEnd;
         double content = contentAt(m, d, &segmentEnd);
         double x = unwrapped(m, content);
         double wrap = std::floor(x / length);
         double q = x - wrap * length;
-        double end = std::min({db, segmentEnd, d + (length - q)});
+        // Rounding (the plugin is built with unsafe math) can leave the travel a hair short of a wrap, or, right
+        // after a sweep that ran to one, a hair past it. A hair is no distance: it is the wrap. Otherwise a sweep
+        // ends a hair past the segment, reading the note that starts there, and the next begins a hair after its
+        // start, missing the note there. (A window that starts a hair past a wrap keeps its place: the window before
+        // it already read the wrap.)
+        if (length - q < kHair) {
+            wrap += 1;
+            q = 0;
+        } else if (q < kHair && wrap == ranToWrap + 1) {
+            q = 0;
+        }
+        double toWrap = length - q;
+        double end = std::min({db, segmentEnd, d + toWrap});
         double from = positionOf(m, wrap, q);
         if (ordered(m)) {
             // Each step is read on its own: a sweep ends at a step's edge, and moves to where the order puts it.
@@ -171,7 +185,10 @@ int sweepTravel(const Motion& m, double da, double db, double restartBase, Sweep
         }
         Sweep& s = out[count++];
         s.from = from;
-        s.to = positionOf(m, wrap, q + (end - d));
+        // A sweep that runs to the wrap ends exactly on the segment's edge, never past it.
+        bool toTheWrap = end - d >= toWrap - kHair;
+        s.to = positionOf(m, wrap, toTheWrap ? length : std::min(length, q + (end - d)));
+        ranToWrap = toTheWrap ? wrap : NAN;
         double shift = orderShift(m, (s.from + s.to) / 2, wrap);
         s.from += shift;
         s.to += shift;
