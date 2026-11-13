@@ -775,3 +775,23 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Hold C E G on an Arpeggiator: Up-down full plays C E G G E C; Converge C G E; Diverge E C G; Shuffled each note once per round, the same order every round; Down-up full G E C C E G; Walk wanders from C, the same path each time you hold the chord; Pattern a 16-step line that changes when you change the notes.
 - [ ] Two chords back to back (or with Hold): the second starts from its lowest note. Move one inner voice: the pattern carries on.
 - [ ] A song saved by 2.0.9 with an Arpeggiator on Random, Chord or As played opens with the same pattern.
+
+## Effect loops and the chain, 13 Nov (docs/DECISIONS.md §153)
+
+- [ ] An audio track's Track Out: OUT into a delay, the delay back into IN. The mixer shows **Clips** and a strip named
+      after the delay, at 100%: only the delay is heard. Drag it to 50%: the dry loop and the delay both in full, never
+      hollow. 0%: only the dry loop. Double-click: 100%. Each drag is one undo step.
+- [ ] **M** on the loop strip: the dry sound passes untouched. The Track Out's screen says **FX OFF**, then **FX MIX 50%**.
+- [ ] A Track Out bound to the Master, OUT through a filter, back into IN: the Master shows **Mix** and the filter left of
+      its strip; the arrow on **MAIN** folds them. The Master's Mix strip has no pan or solo.
+- [ ] Two loops on one track: drag the second strip's name left of the first (a marker shows where it lands); the
+      order swaps and you hear it. Undo swaps back. Right-click a name: **Move left** / **Move right**.
+- [ ] A note track with a synth on Track Out 1 IN and a reverb loop on Track Out 2: the reverb hears the synth. Move the
+      reverb before the synth: the synth plays dry.
+- [ ] Patching a loop never shows the "has 2 sources now" message.
+- [ ] Drum Out Kit OUT through an effect into Kit IN: a Mix strip after the lane strips.
+- [ ] A track that receives sends, with no effect patched: you hear what it is sent. Patch a reverb loop at 100%: only
+      the reverb.
+- [ ] Open a patch saved by 2.0.9 with a loop on an audio track: it sounds the same (loop at 50%). One whose Clips were
+      off: Clips come back at 0 dB and the loop opens at 100%.
+- [ ] The mixer under 200 px tall: loop strips show a Mix knob with its percentage.

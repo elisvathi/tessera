@@ -46,12 +46,16 @@ inline double engineFrames(double frames, double sourceRate, double engineRate) 
 }
 
 /// What the rack adds to the mix, from the output modules on the UI thread (§8.3): which return slots feed which
-/// track, and each track's output bus slot. A return for the master uses the master's ID.
+/// track, in the order of the track's chain, and each track's output bus slot. A return for the master uses the
+/// master's ID.
 struct MixPlan {
     struct Return {
         TrackId track;
         int slot = -1;
-        bool source = false; // the track's own sound (Drum Out's lane INs): it goes to OUT; a return doesn't
+        bool source = false; // the track's own sound (Drum Out's lane INs), before its chain
+        bool hasIn = true;   // something is patched into its IN; without, it only sends the sound out on OUT
+        bool loop = false;   // an effect loop (its OUT has a cable): what comes back replaces the sound by its Mix
+        int delay = 0;       // a loop's round trip in samples, which delay compensation counts
     };
     std::vector<Return> returns;
     std::vector<std::pair<TrackId, int>> busSlots;
@@ -61,7 +65,7 @@ struct MixPlan {
 
     bool feeds(TrackId track) const {
         for (const Return& r : returns)
-            if (r.track == track)
+            if (r.track == track && r.hasIn)
                 return true;
         return false;
     }

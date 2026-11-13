@@ -75,6 +75,36 @@ class OutputModuleBase : public rack::engine::Module {
     int activeReturn() const;
     /// The return bus slot its source inputs (Drum Out's lane INs) write to while any has a cable; -1 otherwise.
     int activeSource() const;
+    /// Its return bus slot while it has a place in its track's chain: a cable on IN or on OUT; -1 otherwise. UI thread.
+    int chainSlot() const;
+    /// Whether it is an effect loop of its track (DECISIONS §153): bound, with a cable on OUT. What comes back on IN
+    /// then replaces the sound by its Mix instead of adding to it. UI thread.
+    bool isLoop() const;
+    /// How much of an effect loop is heard, 0..1 (1 = only what comes back), saved with the module. UI thread; the
+    /// caller records the undo step.
+    float mixAmount() const { return mix; }
+    void setMix(float amount);
+    /// Plays a Mix at once while a drag moves it, before it is committed; nullopt ends it.
+    void holdMix(std::optional<float> amount);
+    /// The Mix to show: what a drag holds, else the saved one.
+    float shownMix() const { return heldMix ? *heldMix : mix; }
+    /// An effect loop's round trip through the rack in samples (3 plus one per module on the way), found by Tessera
+    /// from the cables. UI thread.
+    int loopDelay() const { return loopDelaySamples.load(std::memory_order_relaxed); }
+    void setLoopDelay(int samples) { loopDelaySamples.store(std::clamp(samples, 0, 63), std::memory_order_relaxed); }
+    /// Whether input `id` is one of its IN jacks, or output `id` one of its OUT jacks.
+    bool isInJack(int id) const { return audioPorts.inL >= 0 && (id == audioPorts.inL || id == audioPorts.inR); }
+    bool isOutJack(int id) const { return audioPorts.outL >= 0 && (id == audioPorts.outL || id == audioPorts.outR); }
+    /// Its place in its track's chain, saved with the module; -1 until the user orders the chain (then rack order).
+    int chainOrder() const { return chainPos; }
+    void setChainOrder(int pos) { chainPos = pos; }
+    /// True once, for a module loaded from a patch made before effect loops had a Mix, so Tessera can set the Mix
+    /// that keeps the patch sounding as it did (DECISIONS §153).
+    bool takeLegacyMix() {
+        bool was = legacyMix;
+        legacyMix = false;
+        return was;
+    }
     /// Its source inputs (Drum Out's lane INs): how many, whether one has a cable, and its level after its own fader
     /// and pan (volts, a peak falling 20 dB a second), for the mixer's lane strips. UI thread.
     int sourceCount() const { return audioPorts.sourceCount; }
@@ -165,6 +195,15 @@ class OutputModuleBase : public rack::engine::Module {
     bool countedOnce = false;
     std::atomic<float> inputTarget{1}; // Level as a gain, 0 when not in use or counted once
     float inputGain = 1;
+    float mix = 1; // an effect loop's Mix (isLoop())
+    std::optional<float> heldMix;
+    bool legacyMix = false;
+    int chainPos = -1;
+    std::atomic<bool> loopOn{false};
+    std::atomic<int> loopDelaySamples{4};
+    std::atomic<float> dryTarget{1}; // what stays of the sound before it, 1 unless it is an effect loop
+    std::atomic<float> wetTarget{1}; // what is heard of its IN by the Mix, 1 unless it is an effect loop
+    float dryGain = 1, wetGain = 1;
     float inputPeak = 0;
     std::atomic<float> inputMeter{0};
 };

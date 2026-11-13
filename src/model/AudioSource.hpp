@@ -280,6 +280,12 @@ struct SourceLevel {
     bool operator!=(const SourceLevel& o) const { return !(*this == o); }
 };
 
+/// How much of the sound before an effect loop stays at Mix `mix` (0..1): all of it up to 50%, then less, to none at
+/// 100%. With loopWet() this is a dry/wet balance whose middle plays both in full (DECISIONS §153).
+inline float loopDry(float mix) { return std::clamp(2 * (1 - mix), 0.f, 1.f); }
+/// How much of what comes back from an effect loop is heard at Mix `mix` (0..1): none at 0%, all of it from 50%.
+inline float loopWet(float mix) { return std::clamp(2 * mix, 0.f, 1.f); }
+
 /// The master: the sum of every track, out through MAIN. Not a Track: it has no clips, voices or export. It has its
 /// own ID from the song's counter, so output modules and mixer automation can point at it like at a track.
 struct MasterChannel {

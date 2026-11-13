@@ -2474,3 +2474,44 @@ Research: `docs/design/ARP_PATTERNS.md`.
 - **A new chord starts the pattern from its beginning** when most of the held notes arrived since the last step, as
   the Arpeggiate command does (§45). Before, only silence reset it, so a chord change with Hold or without a gap
   began mid-pattern. Swing and Accent keep counting from the first step, so they stay on the grid.
+
+## 153. Effect loops: every track has an ordered chain of Track Outs (13 Nov)
+
+Replaces "an effect loop never turns one source off or replaces another" (§96, spec §2 rev 7), "OUT takes the clips
+before their Level" (§141), "the send never joins the receiver's sound directly" and "No OUT cable" (§117). Builds the
+chain agreed on 3 Nov (spec "Agreed: an ordered effect chain inside a track") with Track Out itself, not a new module:
+the user asked "why can't Track Out simply be that solution?", and it can.
+
+- **A track's Track Outs run in order**: the sound before the chain (clips at their Level, a Drum Out's lane INs, what
+  other tracks send, Roll IN while monitored) goes through them one by one, then the fader, pan and sends. The master
+  works the same way on the mix.
+- **The OUT cable decides the job**: OUT not patched, the module adds its IN (a source, as before). OUT patched, it is
+  an **effect loop**: its OUT carries the sound so far and what comes back on IN replaces it by its **Mix**. A loop with
+  nothing coming back (no IN cable, bypassed, removed) lets the sound pass untouched: a cable never silences a track.
+- **The Mix law** is a dry/wet balance: dry = min(1, 2(1 − mix)), wet = min(1, 2·mix). 50% plays both in full, which is
+  exactly what loops played before, so old patches can be converted without a gain stage. New loops start at 100%.
+- **The dry part waits for the return**: 3 samples for a cable from OUT straight to IN (Tessera to OUT is one sample,
+  each cable one, IN back to Tessera one) plus one per module on the shortest cable path, found from the cables on
+  the UI thread. Checked in a hidden Rack with a temporary probe: the return lined up at 3 samples, and 50% Mix on a
+  cable loop raised the level by 6 dB. The loops' round trips count in delay compensation.
+- **Wiring**: each module's return bus slot also carries its OUT (Tessera writes the sound so far there) and, with
+  each return, its dry gain, whether it is a loop and its round trip. So a Mix drag ramps in the module and never
+  rebuilds the snapshot, and a missing module drops out by itself. Solo among a track's inputs and "counted once" only
+  concern sources; loops ignore them.
+- **Order** is saved in each module ("chain"), set by dragging a loop strip's name sideways in the mixer or **Move
+  left / right** in its name menu, one Rack undo step. Modules never ordered come after, in rack order (top to bottom,
+  then left to right). The input strips show the chain in order.
+- **The mixer**: a loop strip is named after the module patched into its OUT; its fader is the Mix (linear, 0–100%,
+  double-click 100%, scroll 5%), with **M** for off, no pan or solo. The master now has input strips too (**Mix** and
+  its Track Outs, left of the Master strip; the arrow on MAIN folds them): the user's report that started this was a
+  master effect with no amount control. A drum track shows loop strips after its lane strips. The chip reads
+  "1 in · 1 fx". OUT on a note track is no longer dim.
+- **Sends join the receiver's sound before its chain**, so a reverb track is a track with a reverb loop at 100%. Without
+  a loop its sends are heard dry.
+- **Mute** fades the heard sound first, then the own sound going into the chain (unmute the other way round): ramping
+  both at once multiplied two fades into one twice as steep.
+- **Old patches** (a Track Out without "mix") open at 50%. Once the patch settles, a loop on an audio track whose Clips
+  were down at gain g < 1 (the old way to hear only the effect) gets Clips back at 0 dB and Mix 1 − g/2; a loop on a
+  note or drum track that receives sends gets 100% (its sends were never heard dry). Two old loops on one track were
+  parallel and are now in series: not exact, accepted.
+- Not done: a Mix lane for automation; a loop's own latency beyond its cable path (type it as the track's Latency).

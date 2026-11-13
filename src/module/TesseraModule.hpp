@@ -325,9 +325,12 @@ class TesseraModule : public rack::engine::Module {
     }
     /// Whether anything in the song makes sound: an audio track, or audio coming back on an output module's IN.
     bool makesSound() const;
-    /// The output modules whose audio inputs bring sound to `track` (or the master) now, by place in the rack: left
-    /// to right, then top to bottom (§7.8). UI thread; the pointers are good for this frame only.
+    /// The output modules whose audio inputs bring sound to `track` (or the master) now, in the order of its chain
+    /// (DECISIONS §153): as the user ordered them, then by place in the rack, top to bottom, then left to right. UI
+    /// thread; the pointers are good for this frame only.
     std::vector<OutputModuleBase*> sourceModules(TrackId track) const;
+    /// The same, with effect loops that have no IN cable yet (they still send the sound out on OUT).
+    std::vector<OutputModuleBase*> chainModules(TrackId track) const;
     /// Tells each output module whether another input of its track is soloed. UI thread, every frame.
     void applyInputSolo();
     /// A track that just got a second source: the editors toast it once (§7.8, "A new second source plays at once").
@@ -657,6 +660,11 @@ class TesseraModule : public rack::engine::Module {
     double sourcesSeededAt = 0;
     /// Marks sources counted once and reports a new second source. Each UI frame.
     void sourcesStep();
+    /// Every output module of this Tessera in chain order (see sourceModules()).
+    std::vector<OutputModuleBase*> orderedOutputs() const;
+    /// Finds each effect loop's round trip from the cables, and gives modules from older patches the Mix that keeps
+    /// them sounding the same (DECISIONS §153). `cables` maps each cable's output (module, port) to its input.
+    void loopsStep(const std::vector<std::pair<std::pair<int64_t, int>, std::pair<int64_t, int>>>& cables);
     // A knob held by a drag: kind, parameter and owner packed into one word (0 = none), then its value.
     std::atomic<uint64_t> heldKnobKey{0};
     std::atomic<float> heldKnobValue{0};

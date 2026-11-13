@@ -539,31 +539,113 @@ TEST_CASE("OUT carries a track's clips before its fader; what comes back on IN j
     CHECK(master->l == doctest::Approx(left).epsilon(1e-3));
 }
 
-TEST_CASE("turning Clips off leaves OUT sending them, so an effect keeps playing without the dry sound") {
-    Rig rig(4.0, dc);
-    rig.audioTrack().clips.use = false;
+namespace {
+
+/// A note track whose chain runs Track Outs at return slots `order`, played for 2000 samples. Slot 0 adds a click at
+/// sample 1000; slot 1 is an effect loop with a cable from its OUT straight to its IN (a 3-sample round trip) at
+/// `mix`, unless `loopThere` is false (its module is gone). Returns what reaches the master.
+std::vector<float> runChain(const std::vector<int>& order, float mix, bool loopThere = true) {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId notes = song.tracks.front().id;
     MixPlan plan;
-    plan.busSlots = {{rig.track, 5}};
-    plan.returns = {{rig.track, 2}};
-    rig.old.push_back(std::move(rig.audio));
-    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
-    rig.player->setSnapshot(rig.audio.get());
-    OutputBus bus;
-    ReturnBus& returns = bus.returns();
-    rig.engine->play();
-    float left = 0, right = 0;
-    for (int64_t n = 0; n < 24000; n++) {
-        returns.write(n, 2, rig.track, 1.f, 1.f); // the effect sends 1 V back on IN
-        rig.engine->setPlayMode(rig.mode);
-        rig.engine->process(rig.frames.data(), rig.events);
-        AudioPlayer::Rack rack{&returns, bus.beginAudioWrite(n), n};
-        rig.player->process(*rig.engine, left, right, rack);
-        bus.publishAudio(n);
+    for (int slot : order)
+        plan.returns.push_back({notes, slot, false, true, slot == 1, slot == 1 ? 3 : 0});
+    auto snap = buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot;
+    AudioPlayer player;
+    player.setSampleRate(kRate);
+    player.setSnapshot(snap.get());
+    Engine engine;
+    engine.setSampleRate(kRate);
+    ReturnBus returns;
+    std::array<AudioOutFrame, kMaxTracks + 1> out{};
+    std::array<TrackFrame, kMaxTracks> frames{};
+    TransportEvents events;
+    std::vector<float> master;
+    float jackL = 0, jackR = 0; // the loop module's OUT jack, which reaches its IN a sample later
+    for (int64_t n = 0; n < 2000; n++) {
+        returns.write(n, 0, notes, n == 1000 ? 1.f : 0.f, 0.f);
+        if (loopThere) {
+            ReturnFrame back;
+            back.l = jackL * loopWet(mix);
+            back.r = jackR * loopWet(mix);
+            back.dry = loopDry(mix);
+            back.loop = true;
+            back.delay = 3;
+            returns.write(n, 1, notes, back);
+            returns.readOut(n, 1, notes, jackL, jackR);
+        }
+        engine.process(frames.data(), events);
+        float l = 0, r = 0;
+        player.process(engine, l, r, {&returns, out.data(), n});
+        master.push_back(l);
     }
-    const AudioOutFrame* out = bus.readAudio(24000, 5, rig.track);
-    REQUIRE(out);
-    CHECK(out->l == doctest::Approx(kVolts));        // the effect still gets the clips
-    CHECK(left == doctest::Approx(1).epsilon(1e-3)); // and only the effect is heard
+    return master;
+}
+
+/// The biggest value in `v`, and how many samples are above a small threshold.
+std::pair<float, int> peakAndCount(const std::vector<float>& v) {
+    float peak = 0;
+    int count = 0;
+    for (float x : v) {
+        peak = std::max(peak, std::abs(x));
+        count += std::abs(x) > 1e-4f ? 1 : 0;
+    }
+    return {peak, count};
+}
+
+} // namespace
+
+TEST_CASE("an effect loop gets the sound so far on its OUT; at half Mix the dry and the return meet in one sample") {
+    // The loop after the click: its OUT carries the click, and the dry click waits for the effect's return.
+    auto [peak, count] = peakAndCount(runChain({0, 1}, 0.5f));
+    CHECK(peak == doctest::Approx(2.f).epsilon(1e-4));
+    CHECK(count == 1);
+}
+
+TEST_CASE("an effect loop at full Mix replaces the sound with what comes back; at no Mix it is left out") {
+    auto [wetPeak, wetCount] = peakAndCount(runChain({0, 1}, 1.f));
+    CHECK(wetPeak == doctest::Approx(1.f).epsilon(1e-4));
+    CHECK(wetCount == 1);
+    auto [dryPeak, dryCount] = peakAndCount(runChain({0, 1}, 0.f));
+    CHECK(dryPeak == doctest::Approx(1.f).epsilon(1e-4));
+    CHECK(dryCount == 1);
+}
+
+TEST_CASE("the chain's order matters: an effect loop before a source never hears it") {
+    auto [peak, count] = peakAndCount(runChain({1, 0}, 1.f));
+    CHECK(peak == doctest::Approx(1.f).epsilon(1e-4)); // the click, untouched
+    CHECK(count == 1);
+}
+
+TEST_CASE("an effect loop whose module sends nothing back lets the sound through") {
+    auto [peak, count] = peakAndCount(runChain({0, 1}, 1.f, false));
+    CHECK(peak == doctest::Approx(1.f).epsilon(1e-4));
+    CHECK(count == 1);
+}
+
+TEST_CASE("the Mix law: dry in full up to half, wet in full from half") {
+    CHECK(loopDry(0) == 1);
+    CHECK(loopWet(0) == 0);
+    CHECK(loopDry(0.5f) == 1);
+    CHECK(loopWet(0.5f) == 1);
+    CHECK(loopDry(0.75f) == doctest::Approx(0.5f));
+    CHECK(loopWet(0.25f) == doctest::Approx(0.5f));
+    CHECK(loopDry(1) == 0);
+    CHECK(loopWet(1) == 1);
+}
+
+TEST_CASE("an effect loop makes its track late by its round trip, so delay compensation waits for it") {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId a = song.tracks[0].id, b = song.tracks[1].id;
+    MixPlan plan;
+    plan.returns = {{a, 0}, {a, 1, false, true, true, 5}, {b, 2}};
+    auto snap = buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot;
+    REQUIRE(snap->tracks.size() == 2);
+    CHECK(snap->tracks[0].returns == std::vector<int>{0, 1}); // in the order of the chain
+    CHECK(snap->tracks[0].delay == 0);
+    CHECK(snap->tracks[1].delay == 5);
 }
 
 TEST_CASE("a track's own sources go to OUT, an effect's return doesn't, so an effect loop never feeds back") {
@@ -839,7 +921,7 @@ TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, 
     song.tracks[0].channel.volumeDb = -6.0206f;
     addSend(song, bass, reverb, 0)->apply(song);
     MixPlan plan;
-    plan.returns = {{bass, 0}, {reverb, 1}};
+    plan.returns = {{bass, 0}, {reverb, 1, false, true, true, 0}}; // the reverb's Track Out is an effect loop
     plan.busSlots = {{bass, 0}, {reverb, 1}};
     Engine engine;
     engine.setSampleRate(kRate);
@@ -852,13 +934,17 @@ TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, 
     TransportEvents events;
     int64_t n = 0;
     float left = 0, right = 0;
-    // Bass's voice comes back at 2 V; the reverb's effect at 0.3 V.
+    // Bass's voice comes back at 2 V; the reverb's effect loop at 0.3 V, at full Mix.
+    ReturnFrame wet;
+    wet.l = wet.r = 0.3f;
+    wet.dry = 0;
+    wet.loop = true;
     auto play = [&] {
         kept.push_back(buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot);
         player.setSnapshot(kept.back().get());
         for (int i = 0; i < 2000; i++, n++) {
             returns.write(n, 0, bass, 2.f, 2.f);
-            returns.write(n, 1, reverb, 0.3f, 0.3f);
+            returns.write(n, 1, reverb, wet);
             engine.process(frames.data(), events);
             player.process(engine, left, right, {&returns, out.data(), n});
         }
@@ -867,7 +953,7 @@ TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, 
     REQUIRE(kept.back()->tracks.size() == 2);
     CHECK(kept.back()->tracks[0].id == bass);              // the sender comes first
     CHECK(out[1].l == doctest::Approx(1.f).epsilon(1e-3)); // after the fader: 2 V at -6 dB
-    CHECK(left == doctest::Approx(1.3f).epsilon(1e-3));    // the send never joins the reverb's sound directly
+    CHECK(left == doctest::Approx(1.3f).epsilon(1e-3));    // at full Mix only the reverb's return is heard
     CHECK(player.outLevel(1) > 0.9f);
 
     setSend(song, bass, {reverb, 0, true}, "pre")->apply(song);

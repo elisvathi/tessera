@@ -147,20 +147,24 @@ of channels follows the track's **Voices** setting (by default, as many as the t
 | **TIMB** | Timbre curve of each note, 0 to 10 V (see [Shaping notes](08-shaping-notes.md#bends-timbre-and-pressure)). |
 | **PRESS** | Pressure curve of each note, 0 to 10 V. |
 | **AUTO** | The track's automation lanes, one channel per AUTO lane, already in volts. |
-| **OUT L / OUT R** | The track's sound before its fader, for an effect: an audio track's clips, or the master mix. 10 V is full scale (0 dB). |
-| **IN L / IN R** (inputs) | Audio mixed into the track before its fader, at full level. Patch an effect's output here. With one side patched, both sides hear it; a poly cable is summed. |
+| **OUT L / OUT R** | The track's sound up to this Track Out, before its fader: an audio track's clips, a synth that an earlier Track Out brings in, what other tracks send to it, or the master mix. Patch it into an effect. 10 V is full scale (0 dB). |
+| **IN L / IN R** (inputs) | Audio into the track before its fader. With nothing on OUT it is added at full level (a synth, a live input); with OUT patched it is the effect coming back. With one side patched, both sides hear it; a poly cable is summed. |
 
-**An effect on a track**: patch **OUT L/R** into the effect and the effect's output back into **IN L/R**. You hear
-the track's sound together with what comes back, through the track's fader in the [mixer](18-mixer.md). The light
-between IN L and IN R is green while audio comes back, red above 0 dB. A cable into IN of a note track gives that
-track a strip in the mixer: plug a synth's output in, and the track has a fader, pan and meter like an audio track.
-Several Track Outs can bring sound to one track; each is a source with its own **Use** and **Level** in the
-right-click menu (see [Several sources on one track](18-mixer.md#several-sources-on-one-track)). The screen shows
-**IN OFF** or the level while they change the sound.
+**An effect on a track**: patch **OUT L/R** into the effect and the effect's output back into **IN L/R**. The Track
+Out is then an **effect loop**: what comes back replaces the track's sound, blended by its **Mix** in the
+[mixer](18-mixer.md) (100% at first: only the effect). Several Track Outs on one track make a chain, one effect after
+the other (see [Effects on a track](18-mixer.md#effects-on-a-track)). The light between IN L and IN R is green while
+audio comes back, red above 0 dB.
 
-**Jacks that do nothing for the track are dim**: the note jacks on an audio track or the master, and OUT on an
-instrument track (for now; on a drum track OUT carries what its Drum Out's lane INs bring in). Hover a dim jack and its tooltip says why; a cable on a dim jack gets an amber ring. **AUTO** works
-for every track. Bypassing a Track Out never sends IN to OUT: what comes back simply drops out.
+**A synth on a note track**: plug its output into **IN** and leave OUT free. The track gets a strip in the mixer, with
+a fader, pan and meter like an audio track. Several Track Outs can bring sound to one track; each is a source with its
+own **Use** and **Level** in the right-click menu (see
+[Several sources on one track](18-mixer.md#several-sources-on-one-track)). The screen shows **IN OFF** or the level
+while they change the sound, and an effect loop's **FX MIX 30%** or **FX OFF**.
+
+**Jacks that do nothing for the track are dim**: the note jacks on an audio track or the master. Hover a dim jack and
+its tooltip says why; a cable on a dim jack gets an amber ring. **AUTO** works for every track. Bypassing a Track Out
+never sends IN to OUT: what comes back simply drops out, and the track's sound passes by untouched.
 
 **The screen** shows the Roll's name, the track number in the track's colour, and the track name. It shows
 "No source" when no Roll is found, and "Track deleted" (amber) when its track was deleted: IN is then ignored and
@@ -228,10 +232,11 @@ jack to see which drum it is, for example "Snare pitch".
 | Jack | What it does |
 |---|---|
 | **OUT L / R** | The kit's sound before the drum track's fader: every lane **IN** mixed. Patch it into an effect for the whole kit. |
-| **IN L / R** (inputs) | The effect coming back, or a stereo drum machine. Mixed into the drum track before its fader. With one side patched, both sides hear it. The light beside it is green while audio comes in, red above 0 dB. |
+| **IN L / R** (inputs) | A stereo drum machine, added to the drum track before its fader; or, with OUT patched, the effect coming back, blended by its **Mix** in the mixer. With one side patched, both sides hear it. The light beside it is green while audio comes in, red above 0 dB. |
 
 What comes in on **IN L / R** never goes back out of OUT, so an effect loop can't feed back. With anything patched
-into an IN, the drum track gets a strip in the [mixer](18-mixer.md), with a fader, pan and meter for the whole kit.
+into an IN, the drum track gets a strip in the [mixer](18-mixer.md), with a fader, pan and meter for the whole kit; an
+effect loop on the kit adds a **Mix** strip after the lane strips.
 
 Lanes on outputs 9 to 16 reach only the poly jacks. A lane sends a short 1 ms trigger by default, a gate of a set
 length, or a gate as long as its note. See [Drums](09-drums.md#lane-settings).

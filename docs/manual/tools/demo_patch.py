@@ -9,7 +9,7 @@ polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step
 plays bars 5 to 8), hitvalues.vcv (the Drums track open on its Pitch lane: the snares tuned up step by step, the
 second a shaped curve, the hats with timbre) and audio.vcv (the demo with an audio track, "Loop", playing a
 synthesised 112 BPM drum loop from bar 5, its file in the patch's storage; Rack's patch archive format, so it carries
-the file).
+the file), with crossfade.vcv, takes.vcv and loops.vcv (effect loops on Loop and on the master) made from it.
 """
 
 import json
@@ -307,12 +307,14 @@ def drum_loop(path, bpm=112.0, bars=2, rate=44100):
     return n
 
 
-def audio_patch(out, crossfade=False, takes=False):
+def audio_patch(out, crossfade=False, takes=False, loops=False):
     """Writes audio.vcv: the demo with a "Loop" audio track playing a drum loop on the timeline from bar 5 and in
     the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer showing in the lower pane.
     With `crossfade` it writes crossfade.vcv instead: two copies of the loop overlapping by a bar, the second one
     reversed, and a curved fade in on the first, with the notes showing in the lower pane. With `takes` it writes
-    takes.vcv: the same loop with two more takes, the newest one a pass that stopped early, and the notes showing."""
+    takes.vcv: the same loop with two more takes, the newest one a pass that stopped early, and the notes showing.
+    With `loops` it writes loops.vcv: audio.vcv plus an effect loop on Loop (through Fundamental's Delay) and one on
+    the master (through its VCF), so the mixer shows their Mix strips."""
     song, _ = make_song()
     name = "Drum loop 112 BPM.wav"
     file = "audio/00000000-" + name
@@ -353,8 +355,28 @@ def audio_patch(out, crossfade=False, takes=False):
         song["nextId"] = ids.next + 10
         tessera = tessera_module(song, loop, PANEL_HP, True, "Loop")
         tessera["data"]["ui"]["overlay"].update({"mixerOpen": not (crossfade or takes), "mixerHeight": 300.0})
-        (root / "patch.json").write_text(json.dumps(patch([tessera] + outputs(PANEL_HP))))
-        name = "crossfade.vcv" if crossfade else "takes.vcv" if takes else "audio.vcv"
+        modules = [tessera] + outputs(PANEL_HP)
+        cables = []
+        if loops:
+            # Loop's Track Out runs through Fundamental's Delay and the master's through its VCF. Track Out jacks: IN L
+            # is input 0, OUT L output 7. Delay: IN is input 4, MIX output 0. VCF: IN is input 3, LPF output 0.
+            loop_out = output_module(2006, "TrackOut", "Loop", PANEL_HP + 44)
+            master_out = output_module(2007, "TrackOut", "Loop", PANEL_HP + 60)
+            master_out["data"]["track"] = song["master"]["id"]
+            loop_out["data"]["mix"] = 0.3
+            master_out["data"]["mix"] = 1.0
+            modules += [loop_out, fundamental(3101, "Delay", PANEL_HP + 50), master_out,
+                        fundamental(3102, "VCF", PANEL_HP + 66)]
+            for n, (mid, fx, fx_in, fx_out) in enumerate(((2006, 3101, 4, 0), (2007, 3102, 3, 0))):
+                cables.append({"id": 9000 + n * 2, "outputModuleId": mid, "outputId": 7, "inputModuleId": fx,
+                               "inputId": fx_in, "color": "#ffb437"})
+                cables.append({"id": 9001 + n * 2, "outputModuleId": fx, "outputId": fx_out, "inputModuleId": mid,
+                               "inputId": 0, "color": "#ffb437"})
+        body = patch(modules)
+        body["cables"] = cables
+        (root / "patch.json").write_text(json.dumps(body))
+        name = ("crossfade.vcv" if crossfade else "takes.vcv" if takes else "loops.vcv" if loops
+                else "audio.vcv")
         subprocess.run(["tar", "--zstd", "-cf", str(out / name), "-C", tmp, "patch.json", "modules"], check=True)
 
 
@@ -386,6 +408,7 @@ def main():
     audio_patch(out)
     audio_patch(out, crossfade=True)
     audio_patch(out, takes=True)
+    audio_patch(out, loops=True)
 
 
 if __name__ == "__main__":

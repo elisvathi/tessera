@@ -56,7 +56,8 @@ class MixerPane : public InteractiveView {
         static constexpr int kInputStrip = 100;
         bool isInput() const { return lane >= kInputStrip; }
         bool knob = false; // a short pane: `fader` is a level knob
-        int64_t inputModule = -1; // an input strip's output module; -1 = the track's clips
+        int64_t inputModule = -1; // an input strip's output module; -1 = the track's clips (the master's mix)
+        bool loop = false;        // an input strip that is an effect loop: its fader is the Mix (DECISIONS §153)
         std::string label;        // an input strip's name
         int lane = -1; // a drum track's lane IN (Drum Out output 0..7): a narrow strip after its track's
         GroupId group; // a group's strip, after its last track's (§3.5)
@@ -122,14 +123,30 @@ class MixerPane : public InteractiveView {
     void drawStrip(NVGcontext* vg, const Strip& s);
     /// A group's strip: its name and colour, pan, M, fader, meter and level, then "→ Master".
     void drawGroupStrip(NVGcontext* vg, const Strip& s, const TrackGroup& g);
-    /// A drum lane IN's narrow strip: the lane's name and colour, pan, fader, meter and level.
-    void drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t);
+    /// A narrow strip: a drum lane IN's (name and colour, pan, fader, meter and level) or an input's of a track or of
+    /// the master (null `t`); an effect loop's fader is its Mix.
+    void drawLaneStrip(NVGcontext* vg, const Strip& s, const Track* t);
     /// A strip in a short pane: level and pan knobs instead of a fader.
     void drawKnobStrip(NVGcontext* vg, const Strip& s);
     /// How loud a strip is now, in volts.
     float stripLevel(const Strip& s) const;
-    /// Whether `track` shows a strip per input: two or more inputs on a note or audio track.
+    /// Whether `track` (or the master) shows a strip per input: two or more inputs on a note or audio track, or the
+    /// master's mix and a Track Out of the master.
     bool hasInputStrips(TrackId track) const;
+
+  public:
+    /// While a strip's name is dragged to reorder the chain: the strip and where the pointer is, for the marker.
+    void showReorder(int strip, float x) {
+        reorderStrip = strip;
+        reorderX = x;
+    }
+    /// The input strip the chain module dropped at `x` lands before, as a module ID; -1 for the end of the chain.
+    int64_t reorderTarget(int strip, float x) const;
+
+  private:
+    int reorderStrip = -1;
+    float reorderX = 0;
+    float hintX = 12; // where "N tracks play notes only" starts
     /// Ends the live level and pan of the input strip being dragged, if any.
     void releaseInputPreview();
     std::optional<std::pair<TrackId, int64_t>> previewedInput;

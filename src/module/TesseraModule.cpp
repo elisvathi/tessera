@@ -8,6 +8,7 @@
 #include "../model/DeviceCommands.hpp"
 #include "../model/DeviceLookup.hpp"
 #include "../model/Json.hpp"
+#include "../model/Sends.hpp"
 #include "../model/Serialize.hpp"
 #include "CommandAction.hpp"
 #include "Registry.hpp"
@@ -377,7 +378,8 @@ void TesseraModule::audioStep() {
     // A cable on an output module's IN, or a track moving bus slot, changes what the player mixes.
     uint64_t planKey = 0;
     for (const MixPlan::Return& r : plan.returns)
-        planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1) * 2 + (r.source ? 1 : 0);
+        planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1) * 16 + (r.source ? 1 : 0) +
+                  (r.hasIn ? 2 : 0) + (r.loop ? 4 : 0) + uint64_t(r.delay) * 7919u;
     for (const auto& [track, slot] : plan.busSlots)
         planKey = planKey * 1000003u + track.value * 31u + uint64_t(slot + 1);
     for (TrackId track : plan.inputSolo)
@@ -436,12 +438,15 @@ MixPlan TesseraModule::currentMixPlan() const {
     for (const Track& t : songData.tracks)
         if (int slot = slots.slotOf(t.id); slot >= 0)
             plan.busSlots.push_back({t.id, slot});
-    // Output modules whose IN brings audio back feed their track, or the master (§2, §8.3).
-    for (OutputModuleBase* o : Registry::get().outputsOf(id)) {
+    // Output modules whose jacks join their track's (or the master's) chain, in its order (§2, §8.3, DECISIONS §153).
+    for (OutputModuleBase* o : orderedOutputs()) {
         if (int slot = o->activeSource(); slot >= 0)
             plan.returns.push_back({o->boundTrack(), slot, true});
-        if (int slot = o->activeReturn(); slot >= 0)
-            plan.returns.push_back({o->boundTrack(), slot, false});
+        if (int slot = o->chainSlot(); slot >= 0) {
+            bool loop = o->isLoop();
+            plan.returns.push_back(
+                {o->boundTrack(), slot, false, o->activeReturn() >= 0, loop, loop ? o->loopDelay() : 0});
+        }
         if (o->sourceSetting().solo)
             plan.inputSolo.push_back(o->boundTrack());
     }
@@ -450,24 +455,125 @@ MixPlan TesseraModule::currentMixPlan() const {
     return plan;
 }
 
-std::vector<OutputModuleBase*> TesseraModule::sourceModules(TrackId track) const {
-    std::vector<std::pair<rack::math::Vec, OutputModuleBase*>> found;
+std::vector<OutputModuleBase*> TesseraModule::orderedOutputs() const {
+    struct Found {
+        int order;
+        rack::math::Vec pos;
+        OutputModuleBase* module;
+    };
+    std::vector<Found> found;
     for (OutputModuleBase* o : Registry::get().outputsOf(id)) {
-        if (o->boundTrack() != track || (o->activeReturn() < 0 && o->activeSource() < 0))
-            continue;
         rack::math::Vec pos;
         if (APP->scene && APP->scene->rack)
             if (rack::app::ModuleWidget* w = APP->scene->rack->getModule(o->id))
                 pos = w->box.pos;
-        found.push_back({pos, o});
+        // Modules the user hasn't ordered yet come after the ordered ones.
+        found.push_back({o->chainOrder() >= 0 ? o->chainOrder() : INT32_MAX, pos, o});
     }
-    std::stable_sort(found.begin(), found.end(), [](const auto& a, const auto& b) {
-        return a.first.y != b.first.y ? a.first.y < b.first.y : a.first.x < b.first.x;
+    std::stable_sort(found.begin(), found.end(), [](const Found& a, const Found& b) {
+        if (a.order != b.order)
+            return a.order < b.order;
+        return a.pos.y != b.pos.y ? a.pos.y < b.pos.y : a.pos.x < b.pos.x;
     });
     std::vector<OutputModuleBase*> out;
-    for (const auto& f : found)
-        out.push_back(f.second);
+    for (const Found& f : found)
+        out.push_back(f.module);
     return out;
+}
+
+std::vector<OutputModuleBase*> TesseraModule::sourceModules(TrackId track) const {
+    std::vector<OutputModuleBase*> out;
+    for (OutputModuleBase* o : orderedOutputs())
+        if (o->boundTrack() == track && (o->activeReturn() >= 0 || o->activeSource() >= 0))
+            out.push_back(o);
+    return out;
+}
+
+std::vector<OutputModuleBase*> TesseraModule::chainModules(TrackId track) const {
+    std::vector<OutputModuleBase*> out;
+    for (OutputModuleBase* o : orderedOutputs())
+        if (o->boundTrack() == track && (o->chainSlot() >= 0 || o->activeSource() >= 0))
+            out.push_back(o);
+    return out;
+}
+
+void TesseraModule::loopsStep(const std::vector<std::pair<std::pair<int64_t, int>, std::pair<int64_t, int>>>& cables) {
+    const std::vector<OutputModuleBase*>& outputs = Registry::get().outputsOf(id);
+    // A loop's round trip: Tessera to its OUT is one sample, each cable one more, and its IN back to Tessera one.
+    // So 3 samples for a cable from OUT straight to IN, and one more for each module on the way.
+    std::map<int64_t, std::vector<int64_t>> next;
+    for (const auto& [from, to] : cables)
+        next[from.first].push_back(to.first);
+    for (OutputModuleBase* o : outputs) {
+        if (!o->isLoop())
+            continue;
+        std::set<int64_t> into; // modules with a cable into its IN
+        std::vector<int64_t> frontier;
+        bool direct = false;
+        for (const auto& [from, to] : cables) {
+            if (to.first == o->id && o->isInJack(to.second))
+                into.insert(from.first);
+            if (from.first == o->id && o->isOutJack(from.second)) {
+                if (to.first == o->id && o->isInJack(to.second))
+                    direct = true;
+                else
+                    frontier.push_back(to.first);
+            }
+        }
+        int modules = direct ? 0 : -1;
+        std::set<int64_t> seen{o->id};
+        for (int depth = 1; modules < 0 && depth <= 16 && !frontier.empty(); depth++) {
+            std::vector<int64_t> after;
+            for (int64_t m : frontier) {
+                if (!seen.insert(m).second)
+                    continue;
+                if (into.count(m)) {
+                    modules = depth;
+                    break;
+                }
+                for (int64_t n : next[m])
+                    after.push_back(n);
+            }
+            frontier = std::move(after);
+        }
+        // No way back found (IN fed from elsewhere): count one module, the usual case.
+        o->setLoopDelay(3 + (modules >= 0 ? modules : 1));
+    }
+
+    // Modules from a patch saved before the Mix existed played the dry sound and the return in full. Half Mix plays
+    // that; an audio track whose Clips were turned down (the old way to hear only the effect) gets its Clips back
+    // and a Mix that keeps the dry part where it was. Once a patch has settled, so the cables are there.
+    if (!sourcesSeeded || rack::system::getTime() - sourcesSeededAt < 0.5)
+        return;
+    std::set<uint64_t> clipsBack;
+    for (OutputModuleBase* o : outputs) {
+        if (o->status() != BindingStatus::Bound || !o->takeLegacyMix())
+            continue;
+        if (!o->isLoop() || o->activeReturn() < 0) {
+            o->setMix(1);
+            continue;
+        }
+        const Track* t = songData.findTrack(o->boundTrack());
+        if (!t)
+            continue; // the master: half Mix is what it played
+        if (t->type == TrackType::Audio) {
+            float g = t->clips.use ? dbToGain(t->clips.db) : 0.f;
+            if (g < 1) {
+                o->setMix(1 - g / 2);
+                clipsBack.insert(t->id.value);
+            }
+        } else if (!sendersTo(songData, t->id).empty()) {
+            o->setMix(1); // what it was sent was never heard straight
+        }
+    }
+    if (clipsBack.empty())
+        return;
+    for (Track& t : songData.tracks)
+        if (clipsBack.count(t.id.value)) {
+            t.clips.db = 0;
+            t.clips.use = true;
+        }
+    publish(ChangeSet::all());
 }
 
 void TesseraModule::sourcesStep() {
@@ -476,10 +582,14 @@ void TesseraModule::sourcesStep() {
         return;
     // Which output port feeds each input: the same cable into two INs of one track counts once (§7.8).
     std::map<std::pair<int64_t, int>, std::pair<int64_t, int>> feeds;
+    std::vector<std::pair<std::pair<int64_t, int>, std::pair<int64_t, int>>> cables;
     for (int64_t cableId : APP->engine->getCableIds())
         if (rack::engine::Cable* c = APP->engine->getCable(cableId))
-            if (c->inputModule && c->outputModule)
+            if (c->inputModule && c->outputModule) {
                 feeds[{c->inputModule->id, c->inputId}] = {c->outputModule->id, c->outputId};
+                cables.push_back({{c->outputModule->id, c->outputId}, {c->inputModule->id, c->inputId}});
+            }
+    loopsStep(cables);
     std::vector<TrackId> tracks;
     for (const Track& t : songData.tracks)
         tracks.push_back(t.id);
@@ -495,9 +605,10 @@ void TesseraModule::sourcesStep() {
                 if (!port)
                     if (auto it = feeds.find({o->id, input}); it != feeds.end())
                         port = it->second;
-            bool twice = port && o->activeSource() < 0 && !ports.insert(*port).second;
+            bool twice = port && o->activeSource() < 0 && !o->isLoop() && !ports.insert(*port).second;
             o->setCountedOnce(twice);
-            if (!twice)
+            // An effect loop isn't a second source: it works on the sound, it doesn't add one.
+            if (!twice && !o->isLoop())
                 counted.push_back(o->id);
         }
         if (!counted.empty())
@@ -528,7 +639,13 @@ void TesseraModule::sourcesStep() {
     sourcesSeeded = true;
 }
 
-bool TesseraModule::makesSound() const { return hasAudio(songData) || !currentMixPlan().returns.empty(); }
+bool TesseraModule::makesSound() const {
+    if (hasAudio(songData))
+        return true;
+    MixPlan plan = currentMixPlan();
+    return std::any_of(plan.returns.begin(), plan.returns.end(),
+                       [](const MixPlan::Return& r) { return r.hasIn || r.source; });
+}
 
 int TesseraModule::soundIndex(TrackId track) const {
     for (size_t i = 0; i < soundTracks.size(); i++)

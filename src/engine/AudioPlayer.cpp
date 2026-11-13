@@ -300,6 +300,14 @@ void AudioPlayer::startBlock(const Engine& engine) {
         TrackRun& run = runs[i];
         float own = t.own ? 1.f : 0.f;
         float heard = t.audible ? 1.f : 0.f;
+        // The own sound goes through the chain before it is heard, so ramping both at once would multiply two fades
+        // into one twice as steep. On mute the heard sound fades first, then the own sound; on unmute the other way.
+        if (!run.fresh) {
+            if (!t.audible && run.heardGain > 1e-6f)
+                own = run.outGain;
+            else if (t.audible && run.outGain < own - 1e-6f)
+                heard = run.heardGain;
+        }
         float heardOwn = t.audible && t.own ? 1.f : 0.f;
         // A drag on one send holds it where the hand is.
         uint64_t heldTo = 0;
@@ -407,6 +415,49 @@ void AudioPlayer::startBlock(const Engine& engine) {
     }
     masterStep = (master - masterGain) / kBlock;
     mixStep = (mix - mixGain) / kBlock;
+}
+
+inline void AudioPlayer::runChain(const std::vector<int>& stages, const std::vector<uint8_t>& loops, TrackId track,
+                                  const Rack& rack, float& l, float& r, float& inL, float& inR) {
+    if (!rack.returns)
+        return;
+    for (size_t k = 0; k < stages.size(); k++) {
+        int slot = stages[k];
+        if (slot < 0 || slot >= ReturnBus::kSlots)
+            continue;
+        // Only an effect loop has a cable on OUT, and only its dry part waits: a source skips both.
+        bool loop = k < loops.size() && loops[k];
+        if (!loop) {
+            float rl, rr;
+            if (rack.returns->read(rack.frame, slot, track, rl, rr)) {
+                l += rl;
+                r += rr;
+                inL += rl;
+                inR += rr;
+            }
+            continue;
+        }
+        float* line = loopLines[size_t(slot)].data();
+        rack.returns->writeOut(rack.frame, slot, track, l, r);
+        line[loopPos * 2] = l;
+        line[loopPos * 2 + 1] = r;
+        ReturnFrame back;
+        // Nothing came back (no IN cable, bypassed, removed): the sound passes on untouched.
+        if (!rack.returns->read(rack.frame, slot, track, back))
+            continue;
+        if (!back.loop) {
+            l += back.l;
+            r += back.r;
+            inL += back.l;
+            inR += back.r;
+            continue;
+        }
+        // The dry sound waits for the effect's round trip through the rack, so the two never comb against each other.
+        size_t d = size_t(std::clamp(back.delay, 0, kMaxLoopDelay - 1));
+        size_t at = (loopPos + size_t(kMaxLoopDelay) - d) % size_t(kMaxLoopDelay);
+        l = line[at * 2] * back.dry + back.l;
+        r = line[at * 2 + 1] * back.dry + back.r;
+    }
 }
 
 void AudioPlayer::process(const Engine& engine, float& left, float& right) { process(engine, left, right, Rack()); }
@@ -522,13 +573,9 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         if (i < count) {
             const AudioTrackPlay& tp = snapshot->tracks[i];
             run.clipsGain += run.clipsStep;
-            // OUT feeds the effects patched after this track, so it takes the clips before their Level: the Clips
-            // strip changes what is heard directly, and an effect keeps playing with the dry sound off.
-            float dryL = sl, dryR = sr;
             sl *= run.clipsGain * run.clipsPanL;
             sr *= run.clipsGain * run.clipsPanR;
-            // The track's own sources join its clips; OUT carries them before the fader; what comes back on IN joins
-            // after OUT, so an effect loop never feeds back (§2, §8.4).
+            // The track's own sources (a Drum Out's lane INs) join its clips.
             float srcL = 0, srcR = 0;
             if (rack.returns)
                 for (int slot : tp.sources) {
@@ -538,39 +585,27 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                         srcR += rr;
                     }
                 }
-            sl += srcL;
-            sr += srcR;
-            // A muted (or soloed-away) track's own sound stops, in OUT too; what other tracks send to it still
-            // goes out on OUT, so an effect's tail is ready on unmute (§4.5).
+            // A muted (or soloed-away) track's own sound stops; what other tracks send to it keeps coming, so an
+            // effect's tail is ready on unmute (§4.5).
             run.outGain += run.outStep;
             run.heardGain += run.heardStep;
             run.heardOwnGain += run.heardOwnStep;
-            float ownL = sl, ownR = sr;
-            sl *= run.outGain;
-            sr *= run.outGain;
-            float outL = (dryL + srcL) * run.outGain + sendBus[i][0],
-                  outR = (dryR + srcR) * run.outGain + sendBus[i][1];
+            sl = (sl + srcL) * run.outGain + sendBus[i][0];
+            sr = (sr + srcR) * run.outGain + sendBus[i][1];
             sendBus[i] = {0.f, 0.f};
-            run.outPeak = std::max(run.outPeak, std::max(std::abs(outL), std::abs(outR)));
-            if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
-                rack.out[tp.busSlot] = {tp.id.value, outL, outR};
-            float retL = 0, retR = 0;
-            if (rack.returns)
-                for (int slot : tp.returns) {
-                    float rl, rr;
-                    if (rack.returns->read(rack.frame, slot, tp.id, rl, rr)) {
-                        retL += rl;
-                        retR += rr;
-                    }
-                }
             if (tp.hearRollIn) {
-                retL += rack.rollInL;
-                retR += rack.rollInR;
+                sl += rack.rollInL;
+                sr += rack.rollInR;
             }
-            sl += retL;
-            sr += retR;
-            run.inL = tp.rollIn ? rack.rollInL : srcL + retL;
-            run.inR = tp.rollIn ? rack.rollInR : srcR + retR;
+            if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
+                rack.out[tp.busSlot] = {tp.id.value, sl, sr};
+            // Then its Track Outs in order: each adds what its IN brings, or, as an effect loop, sends the sound so far
+            // to its OUT and blends in what comes back (DECISIONS §153).
+            run.outPeak = std::max(run.outPeak, std::max(std::abs(sl), std::abs(sr)));
+            float inL = 0, inR = 0;
+            runChain(tp.returns, tp.loops, tp.id, rack, sl, sr, inL, inR);
+            run.inL = tp.rollIn ? rack.rollInL : srcL + inL;
+            run.inR = tp.rollIn ? rack.rollInR : srcR + inR;
             run.soundL = sl;
             run.soundR = sr;
             run.gainL += run.stepL;
@@ -589,8 +624,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                 sendBus[size_t(s.to)][1] += xr;
                 run.sendPeak[k] = std::max(run.sendPeak[k], std::max(std::abs(xl), std::abs(xr)));
             }
-            sl = (ownL * run.heardOwnGain + retL * run.heardGain) * run.gainL;
-            sr = (ownR * run.heardOwnGain + retR * run.heardGain) * run.gainR;
+            sl = postL * run.heardGain;
+            sr = postR * run.heardGain;
         } else {
             run.gainL += run.stepL;
             run.gainR += run.stepR;
@@ -652,6 +687,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         masterR += grr;
     }
     delayPos = (delayPos + 1) % size_t(kMaxDelay);
+    loopPos = (loopPos + 1) % size_t(kMaxLoopDelay);
     mixGain += mixStep;
     masterL *= mixGain;
     masterR *= mixGain;
@@ -659,14 +695,9 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         TrackId master(snapshot->masterId);
         if (rack.out)
             rack.out[kMaxTracks] = {master.value, masterL, masterR};
-        if (rack.returns)
-            for (int slot : snapshot->masterReturns) {
-                float rl, rr;
-                if (rack.returns->read(rack.frame, slot, master, rl, rr)) {
-                    masterL += rl;
-                    masterR += rr;
-                }
-            }
+        masterOutPeak = std::max(masterOutPeak, std::max(std::abs(masterL), std::abs(masterR)));
+        float inL = 0, inR = 0;
+        runChain(snapshot->masterReturns, snapshot->masterLoops, master, rack, masterL, masterR, inL, inR);
     }
     masterGain += masterStep;
     left = masterL * masterGain;
@@ -727,6 +758,9 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         if (peak > clipPeak.load(std::memory_order_relaxed))
             clipPeak.store(peak, std::memory_order_relaxed);
         masterPeakL = masterPeakR = 0;
+        masterOutMeter.store(std::max(masterOutPeak, masterOutMeter.load(std::memory_order_relaxed) * fall),
+                             std::memory_order_relaxed);
+        masterOutPeak = 0;
         // Tracks deleted while they sounded go once they are silent.
         while (ghosts > 0) {
             bool on = false;

@@ -1138,6 +1138,7 @@ Still open: the import level (decided by ear before release).
 The user: within a track, its inputs are mixed in any order, but aux/effect loops (sound out to a rack effect and back)
 must sit in an order the user sets, in a chain. To design with Phase 2: sources summed → effect slots in order (each a
 loop through the rack: OUT n → effect → IN n, before the fader, each adding about 2 samples) → fader and pan → sends.
-The user agreed this shape on 3 Nov. Still open for Phase 2: whether a slot is a Track Out in an "effect slot" role
-or a small module of its own.
+The user agreed this shape on 3 Nov. Built on 13 Nov with Track Out itself: a Track Out with a cable on OUT is an
+effect loop with a Mix, and the track's Track Outs run in an order set in the mixer (docs/DECISIONS.md §153, which
+wins over §2 and §7.8 here where they differ).
 

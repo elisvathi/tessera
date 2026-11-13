@@ -134,8 +134,8 @@ struct TrackOutWidget : rack::app::ModuleWidget {
     TrackOutModule* outputModule() const { return static_cast<TrackOutModule*>(module); }
 
     /// A veil over jack `id` and its label, dim when the jack's `role` does nothing for the bound track: note jacks
-    /// for audio tracks and the master, OUT for instrument tracks (until sends exist; a drum track's OUT carries its
-    /// Drum Out's lane INs), OUT and IN while following the editor's selection.
+    /// for audio tracks and the master, OUT and IN while following the editor's selection. OUT is never dim
+    /// otherwise: it carries the track's sound up to this module (DECISIONS §153).
     void addVeil(TrackOutModule* m, int id, bool input, Vec centerMm, int role) {
         auto* veil = new DimVeil;
         veil->module = m;
@@ -146,9 +146,7 @@ struct TrackOutWidget : rack::app::ModuleWidget {
                 return false;
             if (role == 0)
                 return kind == BoundKind::Audio || kind == BoundKind::Master;
-            if (mod.binding().followSelected)
-                return true;
-            return role == 1 && kind == BoundKind::Instrument;
+            return mod.binding().followSelected;
         };
         Rect mm(centerMm.x - 5.6f, centerMm.y - theme::metrics::kPanelLabelAboveJackMm - 2.4f, 11.2f,
                 theme::metrics::kPanelLabelAboveJackMm + 2.4f + 4.6f);

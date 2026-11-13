@@ -42,8 +42,10 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         if (l.drive == LaneDrive::Volume && !l.mute && !l.points.empty())
             snap.masterLane = l.points;
     for (const MixPlan::Return& r : plan.returns)
-        if (r.track == song.master.id)
+        if (r.track == song.master.id) {
             snap.masterReturns.push_back(r.slot);
+            snap.masterLoops.push_back(r.loop ? 1 : 0);
+        }
     snap.buffers = keep;
     auto hold = [&](const std::shared_ptr<const AudioBuffer>& b) {
         if (b && std::find(snap.buffers.begin(), snap.buffers.end(), b) == snap.buffers.end())
@@ -206,8 +208,12 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         AudioTrackPlay tp;
         tp.id = t.id;
         for (const MixPlan::Return& r : plan.returns)
-            if (r.track == t.id)
-                (r.source ? tp.sources : tp.returns).push_back(r.slot);
+            if (r.track == t.id && r.source) {
+                tp.sources.push_back(r.slot);
+            } else if (r.track == t.id) {
+                tp.returns.push_back(r.slot);
+                tp.loops.push_back(r.loop ? 1 : 0);
+            }
         for (const auto& [track, slot] : plan.busSlots)
             if (track == t.id)
                 tp.busSlot = slot;
@@ -274,13 +280,21 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             }
     }
     // Delay compensation: every track waits as long as the latest one is late, less its own lateness.
+    // A track's effect loops make it late by their round trips through the rack.
+    auto latency = [&](const Track& t) {
+        int samples = t.latencySamples;
+        for (const MixPlan::Return& r : plan.returns)
+            if (r.track == t.id && r.loop)
+                samples += r.delay;
+        return samples;
+    };
     int latest = 0;
     for (const AudioTrackPlay& tp : snap.tracks)
         if (const Track* t = song.findTrack(tp.id))
-            latest = std::max(latest, t->latencySamples);
+            latest = std::max(latest, latency(*t));
     for (AudioTrackPlay& tp : snap.tracks)
         if (const Track* t = song.findTrack(tp.id))
-            tp.delay = std::min(latest - t->latencySamples, AudioPlayer::kMaxDelay - 1);
+            tp.delay = std::min(latest - latency(*t), AudioPlayer::kMaxDelay - 1);
     // Each send by the index of its receiving track, which comes later in the order.
     for (size_t i = 0; i < snap.tracks.size(); i++) {
         const Track* t = song.findTrack(snap.tracks[i].id);

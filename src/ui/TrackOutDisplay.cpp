@@ -44,8 +44,13 @@ void TrackOutDisplay::gather() {
         sourceName += " · follows editor";
     // Its Level and Use as a source of the track, when they change the sound (§7.8). The screen is narrow, so they
     // take the place of the Tessera's name.
+    // An effect loop shows its Mix in the same place (DECISIONS §153).
     SourceLevel level = module->sourceSetting();
-    if (!level.use)
+    if (module->isLoop()) {
+        char mix[24];
+        snprintf(mix, sizeof mix, "FX MIX %.0f%%", double(module->shownMix() * 100));
+        sourceName = level.use ? std::string(mix) : "FX OFF";
+    } else if (!level.use)
         sourceName = "IN OFF";
     else if (level.db != 0)
         sourceName = "IN " + audioDraw::dbText(level.db);

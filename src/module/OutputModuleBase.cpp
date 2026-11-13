@@ -37,8 +37,10 @@ void OutputModuleBase::process(const ProcessArgs& args) {
 void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b, TrackId track) {
     bool on = b && audioOn.load(std::memory_order_relaxed);
     // The source Level and Use, ramped over about 5 ms so a change never clicks.
-    float target = inputTarget.load(std::memory_order_relaxed);
-    inputGain += (target - inputGain) * std::min(1.f, args.sampleTime / 0.005f);
+    float follow = std::min(1.f, args.sampleTime / 0.005f);
+    inputGain += (inputTarget.load(std::memory_order_relaxed) - inputGain) * follow;
+    wetGain += (wetTarget.load(std::memory_order_relaxed) - wetGain) * follow;
+    dryGain += (dryTarget.load(std::memory_order_relaxed) - dryGain) * follow;
     if (args.frame % 32 == 0) {
         float fall = float(std::pow(10.0, -20.0 / 20.0 * 32 * args.sampleTime));
         inputMeter.store(std::max(inputPeak, inputMeter.load(std::memory_order_relaxed) * fall),
@@ -46,10 +48,19 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         inputPeak = 0;
     }
     if (audioPorts.outL >= 0) {
-        const AudioOutFrame* f =
-            on ? b->readAudio(args.frame, audioSlot.load(std::memory_order_relaxed), track) : nullptr;
-        outputs[size_t(audioPorts.outL)].setVoltage(f ? f->l : 0.f);
-        outputs[size_t(audioPorts.outR)].setVoltage(f ? f->r : 0.f);
+        // OUT: the track's sound up to this module's place in its chain; without a return slot, before the chain.
+        float l = 0, r = 0;
+        int slot = returnSlot.load(std::memory_order_relaxed);
+        if (on && slot >= 0) {
+            b->returns().readOut(args.frame, slot, track, l, r);
+        } else if (on) {
+            if (const AudioOutFrame* f = b->readAudio(args.frame, audioSlot.load(std::memory_order_relaxed), track)) {
+                l = f->l;
+                r = f->r;
+            }
+        }
+        outputs[size_t(audioPorts.outL)].setVoltage(l);
+        outputs[size_t(audioPorts.outR)].setVoltage(r);
     }
     if (audioPorts.sourceCount > 0) {
         // Each source at its own level and pan (a lane strip in the mixer), ramped so a move never clicks.
@@ -106,10 +117,16 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         l = r;
     int slot = returnSlot.load(std::memory_order_relaxed);
     if (on && slot >= 0 && (hasL || hasR)) {
-        float gl = l * inputGain * inputPanL.load(std::memory_order_relaxed);
-        float gr = r * inputGain * inputPanR.load(std::memory_order_relaxed);
+        float gl = l * inputGain * wetGain * inputPanL.load(std::memory_order_relaxed);
+        float gr = r * inputGain * wetGain * inputPanR.load(std::memory_order_relaxed);
         inputPeak = std::max(inputPeak, std::max(std::fabs(gl), std::fabs(gr)));
-        b->returns().write(args.frame, slot, track, gl, gr);
+        ReturnFrame back;
+        back.l = gl;
+        back.r = gr;
+        back.dry = dryGain;
+        back.loop = loopOn.load(std::memory_order_relaxed);
+        back.delay = loopDelaySamples.load(std::memory_order_relaxed);
+        b->returns().write(args.frame, slot, track, back);
     }
     if (audioPorts.inLight >= 0) {
         // Green while audio arrives, red above 0 dB (10 V); the peak falls so short hits still show.
@@ -174,6 +191,17 @@ BoundKind OutputModuleBase::boundKind() const {
     return t->type == TrackType::Audio  ? BoundKind::Audio
            : t->type == TrackType::Drum ? BoundKind::Drum
                                         : BoundKind::Instrument;
+}
+
+int OutputModuleBase::chainSlot() const {
+    if (audioPorts.inL < 0 || !audioOn.load(std::memory_order_relaxed))
+        return -1;
+    bool in = inputs[size_t(audioPorts.inL)].channels > 0 || inputs[size_t(audioPorts.inR)].channels > 0;
+    return in || outPatched() ? returnSlot.load(std::memory_order_relaxed) : -1;
+}
+
+bool OutputModuleBase::isLoop() const {
+    return audioPorts.outL >= 0 && audioOn.load(std::memory_order_relaxed) && outPatched();
 }
 
 int OutputModuleBase::activeReturn() const {
@@ -270,7 +298,21 @@ void OutputModuleBase::refreshBinding() {
     balanceGains(heldPan ? *heldPan : setting.pan, panL, panR);
     inputPanL.store(panL, std::memory_order_relaxed);
     inputPanR.store(panR, std::memory_order_relaxed);
-    inputTarget.store(setting.use && !countedOnce && heardBySolo ? dbToGain(levelDb) : 0.f, std::memory_order_relaxed);
+    // An effect loop (DECISIONS §153) blends what comes back by its Mix; off, it lets the sound through untouched.
+    // Solo among the track's inputs and "counted once" are about sounds that add up, so they leave a loop alone.
+    bool loop = isLoop();
+    loopOn.store(loop, std::memory_order_relaxed);
+    float amount = heldMix ? *heldMix : mix;
+    if (loop) {
+        inputTarget.store(setting.use ? dbToGain(levelDb) : 0.f, std::memory_order_relaxed);
+        wetTarget.store(loopWet(amount), std::memory_order_relaxed);
+        dryTarget.store(setting.use ? loopDry(amount) : 1.f, std::memory_order_relaxed);
+    } else {
+        inputTarget.store(setting.use && !countedOnce && heardBySolo ? dbToGain(levelDb) : 0.f,
+                          std::memory_order_relaxed);
+        wetTarget.store(1.f, std::memory_order_relaxed);
+        dryTarget.store(1.f, std::memory_order_relaxed);
+    }
     // The sources' levels and pans: the drum track's lane IN settings, or what a drag in the mixer holds.
     if (audioPorts.sourceCount > 0) {
         const Track* t = src ? src->song().findTrack(bindingData.track) : nullptr;
@@ -333,6 +375,16 @@ void OutputModuleBase::setHeardBySolo(bool heard) {
     refreshBinding();
 }
 
+void OutputModuleBase::setMix(float amount) {
+    mix = std::clamp(amount, 0.f, 1.f);
+    refreshBinding();
+}
+
+void OutputModuleBase::holdMix(std::optional<float> amount) {
+    heldMix = amount ? std::optional<float>(std::clamp(*amount, 0.f, 1.f)) : std::nullopt;
+    refreshBinding();
+}
+
 void OutputModuleBase::setSourceSetting(SourceLevel level) {
     level.db = std::clamp(level.db, kSilentDb, kMaxFaderDb);
     setting = level;
@@ -387,6 +439,10 @@ json_t* OutputModuleBase::dataToJson() {
         json_object_set_new(root, "sourcePan", json_real(setting.pan));
     if (setting.solo)
         json_object_set_new(root, "sourceSolo", json_true());
+    if (audioPorts.inL >= 0)
+        json_object_set_new(root, "mix", json_real(mix));
+    if (chainPos >= 0)
+        json_object_set_new(root, "chain", json_integer(chainPos));
     return root;
 }
 
@@ -406,6 +462,15 @@ void OutputModuleBase::dataFromJson(json_t* root) {
     if (const json_t* pan = json_object_get(root, "sourcePan"))
         setting.pan = std::clamp(float(json_number_value(pan)), -1.f, 1.f);
     setting.solo = json_is_true(json_object_get(root, "sourceSolo"));
+    // Saved before effect loops had a Mix: half plays the dry sound and the return in full, as those patches did.
+    if (json_t* j = json_object_get(root, "mix"); json_is_number(j)) {
+        mix = std::clamp(float(json_number_value(j)), 0.f, 1.f);
+    } else if (audioPorts.inL >= 0) {
+        mix = 0.5f;
+        legacyMix = true;
+    }
+    if (json_t* j = json_object_get(root, "chain"); json_is_integer(j))
+        chainPos = int(json_integer_value(j));
 }
 
 } // namespace tessera

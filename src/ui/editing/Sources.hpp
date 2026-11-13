@@ -5,6 +5,7 @@
 
 #include <rack.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,7 +28,8 @@ struct Row {
 };
 
 /// The sources of `track` (or the master) now: "Clips" first on an audio track, "Mix" first on the master when it
-/// has other sources, then the modules by place in the rack ("Track Out 1", "Track Out 2", "Drum Out"). UI thread.
+/// has other sources, then the modules in the order of the track's chain ("Track Out 1", "Track Out 2", "Drum Out").
+/// UI thread.
 std::vector<Row> rowsOf(TesseraModule& m, TrackId track);
 
 /// Whether the list and its levels show: two or more sources, or one that is off or not at 0 dB (§7.8: levels show
@@ -53,8 +55,29 @@ void endInputPreview(EditorContext& ctx, TrackId track, int64_t module);
 /// Whether any input of `track` is soloed.
 bool anyInputSolo(EditorContext& ctx, TrackId track);
 
-/// Use and a Level slider for one output module, for its own right-click menu (one value shown in two places).
+/// Use and a Level slider for one output module, for its own right-click menu (one value shown in two places); an
+/// effect loop gets a Mix slider in place of the Level.
 void appendModuleItems(rack::ui::Menu* menu, OutputModuleBase* module);
+
+// Effect loops (DECISIONS §153): an output module with a cable on OUT blends what comes back by its Mix.
+
+/// The output module with Rack ID `id`, if it is still there.
+OutputModuleBase* moduleById(int64_t id);
+/// Whether the output module `module` is an effect loop now.
+bool isLoop(int64_t module);
+/// A loop's Mix (0..1) as shown: what a drag holds, else the saved one.
+float mixOf(int64_t module);
+/// Plays a Mix at once while a drag moves it; nullopt ends it.
+void previewMix(int64_t module, std::optional<float> mix);
+/// Saves a loop's Mix as one Rack undo step.
+void commitMix(int64_t module, float mix);
+/// "Mix 30%".
+std::string mixText(float mix);
+/// Moves output module `module` in the chain of `track` to just before module `before` (-1: to the end), as one
+/// Rack undo step. Every module of the chain keeps its new place in its patch data.
+void moveInChain(TesseraModule& m, TrackId track, int64_t module, int64_t before);
+/// What a chain module's strip is called: for a loop, the module its OUT is patched into ("Delay"), else `fallback`.
+std::string chainLabel(OutputModuleBase* module, const std::string& fallback);
 
 } // namespace sources
 } // namespace tessera

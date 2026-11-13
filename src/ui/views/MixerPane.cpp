@@ -72,22 +72,21 @@ ChipText chipText(TesseraModule& m, const Track* t) {
     for (OutputModuleBase* o : m.sourceModules(t->id))
         if (o->isBypassed())
             return {"Bypassed", true};
-    // Sends reach a track only through its OUT and the effect patched there (§7.6).
-    if (!sendersTo(song, t->id).empty()) {
-        bool out = false;
-        for (OutputModuleBase* o : audioActions::outputsFor(&m, t->id))
-            out |= o->outPatched();
-        if (!out)
-            return {"No OUT cable", true};
-    }
     std::vector<sources::Row> rows = sources::rowsOf(m, t->id);
     if (sources::needsList(rows)) {
-        int counted = 0, inUse = 0;
-        for (const sources::Row& r : rows)
+        int counted = 0, inUse = 0, loops = 0;
+        for (const sources::Row& r : rows) {
+            if (r.module && r.module->isLoop()) {
+                loops++;
+                continue;
+            }
             if (!r.countedOnce) {
                 counted++;
                 inUse += r.level.use ? 1 : 0;
             }
+        }
+        if (loops > 0)
+            return {std::to_string(counted) + " in \xC2\xB7 " + std::to_string(loops) + " fx"};
         if (inUse == 0)
             return {"No source in use", false, true};
         return {counted == 1 ? "1 source" : std::to_string(counted) + " sources"};
@@ -275,6 +274,71 @@ class LaneFaderGesture : public DragGesture {
     MixerPane::Strip s;
     float travel = 100;
     Channel start, now;
+};
+
+/// Drags an effect loop strip's fader: its Mix, 0..100% up the travel. Relative; Shift or Ctrl/Cmd for fine.
+class MixGesture : public DragGesture {
+  public:
+    MixGesture(MixerPane& pane, int strip, Vec press) : press(press) {
+        const MixerPane::Strip& s = pane.layoutStrips()[size_t(strip)];
+        module = s.inputModule;
+        label = s.label;
+        travel = s.knob ? kKnobTravel : std::max(10.f, s.fader.size.y);
+        start = now = sources::mixOf(module);
+    }
+    void update(Vec pos, Modifiers mods) override {
+        float scale = mods.shift || mods.ctrl ? kFine : 1.f;
+        now = std::clamp(start - (pos.y - press.y) / travel * scale, 0.f, 1.f);
+        sources::previewMix(module, now);
+    }
+    void commit() override { sources::commitMix(module, now); }
+    void cancel() override { sources::previewMix(module, std::nullopt); }
+    std::string readout() const override { return label + " " + sources::mixText(now); }
+    CursorShape cursor() const override { return CursorShape::ResizeV; }
+
+  private:
+    Vec press;
+    int64_t module = -1;
+    std::string label;
+    float travel = 100;
+    float start = 1, now = 1;
+};
+
+/// Drags an input strip by its name to move its module in the track's chain. A press without a move selects the
+/// track, as a click on the name does.
+class ReorderGesture : public DragGesture {
+  public:
+    ReorderGesture(MixerPane& pane, int strip, Vec press) : pane(pane), strip(strip), press(press) {
+        s = pane.layoutStrips()[size_t(strip)];
+    }
+    void update(Vec pos, Modifiers mods) override {
+        moved |= std::abs(pos.x - press.x) > 4;
+        at = pos.x;
+        pane.showReorder(moved ? strip : -1, at);
+    }
+    void commit() override {
+        pane.showReorder(-1, 0);
+        TesseraModule* m = pane.context().module();
+        if (!m)
+            return;
+        if (!moved) {
+            if (m->song().findTrack(s.track))
+                pane.context().state().selectedTrack = s.track;
+            return;
+        }
+        sources::moveInChain(*m, s.track, s.inputModule, pane.reorderTarget(strip, at));
+    }
+    void cancel() override { pane.showReorder(-1, 0); }
+    std::string readout() const override { return moved ? "Move " + s.label + " in the chain" : ""; }
+    CursorShape cursor() const override { return moved ? CursorShape::ResizeH : CursorShape::Hand; }
+
+  private:
+    MixerPane& pane;
+    int strip;
+    Vec press;
+    MixerPane::Strip s;
+    bool moved = false;
+    float at = 0;
 };
 
 /// Drags a pan knob up/down or sideways: relative, Shift or Ctrl/Cmd for fine.
@@ -669,6 +733,51 @@ void MixerPane::layout() {
                 s.pre = Rect(x + 2, s.fader.pos.y, 18, 11);
         }
     };
+    // A track's (or the master's) inputs in the order of its chain: the clips or the mix first, then its Track Outs.
+    // An effect loop's fader is its Mix; it has no pan or solo, and neither has the master's mix.
+    auto inputStrips = [&](TrackId track, float from) {
+        std::vector<Strip> out;
+        bool master = track == m->song().master.id;
+        const Track* t = m->song().findTrack(track);
+        int number = 0, adds = 0;
+        std::vector<OutputModuleBase*> inputs = m->sourceModules(track);
+        for (OutputModuleBase* o : inputs)
+            adds += o->isLoop() ? 0 : 1;
+        auto add = [&](OutputModuleBase* o, const std::string& label) {
+            Strip input;
+            input.track = track;
+            input.lane = Strip::kInputStrip + number++;
+            input.inputModule = o ? o->id : -1;
+            input.loop = o && o->isLoop();
+            input.label = label;
+            input.playerIndex = -1;
+            partsOf(input, from, laneWidth);
+            input.chip = Rect();
+            if (input.loop || master) {
+                input.pan = Rect();
+                input.solo = Rect();
+            }
+            out.push_back(input);
+            from += laneWidth + 1;
+        };
+        if (master)
+            add(nullptr, "Mix");
+        else if (t && t->type == TrackType::Audio)
+            add(nullptr, "Clips");
+        bool drum = t && t->type == TrackType::Drum;
+        int addNumber = 0;
+        for (OutputModuleBase* o : inputs) {
+            if (drum && !o->isLoop())
+                continue;
+            if (o->isLoop()) {
+                add(o, sources::chainLabel(o, "FX"));
+                continue;
+            }
+            addNumber++;
+            add(o, adds > 1 ? "IN " + std::to_string(addNumber) : "IN");
+        }
+        return out;
+    };
     float x = kGap;
     const TrackGroup* lastOfGroup = nullptr;
     for (const Track& t : m->song().tracks) {
@@ -686,27 +795,17 @@ void MixerPane::layout() {
         strips.push_back(s);
         x += stripWidth + kGap;
         lastOfGroup = groupOf(m->song(), t.id);
-        // A track with two or more inputs: a narrow strip for each, after the track's, unless folded.
-        if (hasInputStrips(t.id) && !ctx.state().foldedInputs.count(t.id.value)) {
-            std::vector<OutputModuleBase*> inputs = m->sourceModules(t.id);
-            int number = 0;
-            auto addInput = [&](int64_t module, const std::string& label) {
-                Strip input;
-                input.track = t.id;
-                input.lane = Strip::kInputStrip + number++;
-                input.inputModule = module;
-                input.label = label;
-                input.playerIndex = -1;
-                partsOf(input, x - kGap + 1, laneWidth);
-                input.chip = Rect();
-                strips.push_back(input);
-                x += laneWidth + 1;
-            };
-            if (t.type == TrackType::Audio)
-                addInput(-1, "Clips");
-            for (size_t k = 0; k < inputs.size(); k++)
-                addInput(inputs[k]->id, inputs.size() > 1 ? "IN " + std::to_string(k + 1) : "IN");
-        }
+        // A track with two or more inputs: a narrow strip for each, after the track's, unless folded. A drum track's
+        // lanes come first: they are its sound before its chain.
+        auto addInputs = [&] {
+            if (hasInputStrips(t.id) && !ctx.state().foldedInputs.count(t.id.value))
+                for (const Strip& input : inputStrips(t.id, x - kGap + 1)) {
+                    strips.push_back(input);
+                    x += laneWidth + 1;
+                }
+        };
+        if (t.type != TrackType::Drum)
+            addInputs();
         // A drum track's lane INs with a cable get narrow strips of their own, right after the track's (§8.1).
         if (t.type == TrackType::Drum)
             for (int k = 0; k < kDrumInputs; k++) {
@@ -724,6 +823,8 @@ void MixerPane::layout() {
                 strips.push_back(lane);
                 x += laneWidth + 1;
             }
+        if (t.type == TrackType::Drum)
+            addInputs();
         // After a group's last track that has a strip, the group's own strip.
         if (lastOfGroup) {
             bool more = false;
@@ -753,9 +854,17 @@ void MixerPane::layout() {
             }
         }
     }
+    hintX = x + 8;
+    float masterX = box.size.x - masterWidth - kGap;
+    TrackId masterId = m->song().master.id;
+    if (hasInputStrips(masterId) && !ctx.state().foldedInputs.count(masterId.value)) {
+        size_t n = m->sourceModules(masterId).size() + 1;
+        for (const Strip& input : inputStrips(masterId, masterX - float(n) * (laneWidth + 1)))
+            strips.push_back(input);
+    }
     Strip master;
     master.master = true;
-    partsOf(master, box.size.x - masterWidth - kGap, masterWidth);
+    partsOf(master, masterX, masterWidth);
     if (!knobs && !m->mainPatched() && audioActions::audioModuleInPatch())
         master.connect = Rect(master.box.pos.x + 4, master.readout.pos.y + 16, masterWidth - 8, 14);
     strips.push_back(master);
@@ -866,9 +975,17 @@ std::unique_ptr<DragGesture> MixerPane::startGesture(Vec pos, int button, Modifi
                 return nullptr;
             return std::make_unique<SendGesture>(*this, ctx, s, target, pos, std::max(10.f, s.fader.size.y));
         }
+        if (s.loop)
+            return std::make_unique<MixGesture>(*this, h.strip, pos);
         if (s.lane >= 0)
             return std::make_unique<LaneFaderGesture>(*this, h.strip, pos);
         return std::make_unique<FaderGesture>(*this, ctx, h.strip, pos);
+    }
+    case Part::Name: {
+        const Strip& s = strips[size_t(h.strip)];
+        if (s.isInput() && s.inputModule >= 0 && !ctx.state().showSends.valid())
+            return std::make_unique<ReorderGesture>(*this, h.strip, pos);
+        return nullptr;
     }
     case Part::Pan:
         return std::make_unique<PanGesture>(*this, ctx, h.strip, pos);
@@ -879,6 +996,24 @@ std::unique_ptr<DragGesture> MixerPane::startGesture(Vec pos, int button, Modifi
 
 void MixerPane::openTyping(const Strip& s) {
     TesseraModule* m = ctx.module();
+    if (s.loop) {
+        int64_t module = s.inputModule;
+        rack::ui::Menu* menu = rack::createMenu();
+        menu->addChild(rack::createMenuLabel(s.label + " mix (%): 100 is only the effect, 50 both in full"));
+        char text[16];
+        snprintf(text, sizeof text, "%.0f", double(sources::mixOf(module) * 100));
+        auto* field = new MenuTextField(text, [module](const std::string& typed) {
+            char* end = nullptr;
+            double v = std::strtod(typed.c_str(), &end);
+            if (end != typed.c_str())
+                sources::commitMix(module, float(v / 100));
+        });
+        menu->addChild(field);
+        menu->addChild(
+            rack::createMenuItem("Reset to 100%", "double-click", [module] { sources::commitMix(module, 1); }));
+        APP->event->setSelectedWidget(field);
+        return;
+    }
     if (s.lane >= 0) {
         Strip lane = s;
         float pan = shownPan(s);
@@ -914,10 +1049,32 @@ void MixerPane::openTyping(const Strip& s) {
 
 bool MixerPane::hasInputStrips(TrackId track) const {
     TesseraModule* m = ctx.module();
-    const Track* t = m ? m->song().findTrack(track) : nullptr;
-    if (!t || t->type == TrackType::Drum)
+    if (!m)
         return false;
-    return m->sourceModules(track).size() + (t->type == TrackType::Audio ? 1 : 0) >= 2;
+    if (track == m->song().master.id)
+        return !m->sourceModules(track).empty();
+    const Track* t = m->song().findTrack(track);
+    if (!t)
+        return false;
+    std::vector<OutputModuleBase*> inputs = m->sourceModules(track);
+    // A drum track's lanes have strips of their own; only an effect loop on its kit adds one.
+    if (t->type == TrackType::Drum)
+        return std::any_of(inputs.begin(), inputs.end(), [](OutputModuleBase* o) { return o->isLoop(); });
+    return inputs.size() + (t->type == TrackType::Audio ? 1 : 0) >= 2;
+}
+
+int64_t MixerPane::reorderTarget(int strip, float x) const {
+    if (strip < 0 || strip >= int(strips.size()))
+        return -1;
+    const Strip& moving = strips[size_t(strip)];
+    for (size_t i = 0; i < strips.size(); i++) {
+        const Strip& o = strips[i];
+        if (int(i) == strip || !o.isInput() || o.inputModule < 0 || o.track != moving.track)
+            continue;
+        if (x < o.box.getCenter().x)
+            return o.inputModule;
+    }
+    return -1;
 }
 
 void MixerPane::openChipMenu(const Strip& s) {
@@ -970,10 +1127,11 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
     Hit h = hitTest(pos);
     const Strip* s = h.strip >= 0 ? &strips[size_t(h.strip)] : nullptr;
     if (s && h.part == Part::Chip && s->lane < 0) {
-        if (!s->master && hasInputStrips(s->track)) {
+        TrackId owner = s->master ? m->song().master.id : s->track;
+        if (!s->group.valid() && hasInputStrips(owner)) {
             std::set<uint64_t>& folded = ctx.state().foldedInputs;
-            if (!folded.erase(s->track.value))
-                folded.insert(s->track.value);
+            if (!folded.erase(owner.value))
+                folded.insert(owner.value);
             return;
         }
         openChipMenu(*s);
@@ -1016,6 +1174,35 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
                 if (o->id == module)
                     audioActions::showInRack(o);
         }));
+        // Its neighbours in the chain, as the strips show them: moving left puts it before the one on its left.
+        int64_t left = -2, right = -2, afterRight = -1;
+        for (size_t i = 0; i < strips.size(); i++) {
+            if (int(i) != h.strip || i == 0)
+                continue;
+            const Strip& before = strips[i - 1];
+            if (before.isInput() && before.track == track && before.inputModule >= 0)
+                left = before.inputModule;
+        }
+        for (size_t i = size_t(h.strip) + 1; i < strips.size(); i++) {
+            const Strip& next = strips[i];
+            if (!next.isInput() || next.track != track || next.inputModule < 0)
+                break;
+            if (right == -2)
+                right = next.inputModule;
+            else {
+                afterRight = next.inputModule;
+                break;
+            }
+        }
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createMenuLabel("Drag the name sideways to move it in the chain"));
+        if (left != -2)
+            menu->addChild(rack::createMenuItem(
+                "Move left", "", [m, track, module, left] { sources::moveInChain(*m, track, module, left); }));
+        if (right != -2)
+            menu->addChild(rack::createMenuItem("Move right", "", [m, track, module, afterRight] {
+                sources::moveInChain(*m, track, module, afterRight);
+            }));
         return;
     }
     if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && !s->master && s->lane < 0 &&
@@ -1069,7 +1256,7 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         return;
     switch (h.part) {
     case Part::Name:
-        if (s && !s->master && !s->group.valid())
+        if (s && !s->master && !s->group.valid() && m->song().findTrack(s->track))
             ctx.state().selectedTrack = s->track;
         break;
     case Part::Mute:
@@ -1141,6 +1328,13 @@ void MixerPane::doubleClick(Vec pos, Modifiers mods) {
             m->perform(setGroupChannel(m->song(), s.group, {shownVolume(s), 0}, "Group pan centre"));
         return;
     }
+    if (s.loop) {
+        if (h.part == Part::Fader)
+            sources::commitMix(s.inputModule, 1);
+        else if (h.part == Part::Readout)
+            openTyping(s);
+        return;
+    }
     if (s.lane >= 0) {
         if (h.part == Part::Fader)
             setLane(s, {0, shownPan(s)}, laneName(s) + " volume 0 dB");
@@ -1178,6 +1372,11 @@ void MixerPane::wheel(Vec pos, Vec delta, Modifiers mods) {
     if (!m || h.part != Part::Fader || delta.y == 0 || ctx.state().showSends.valid())
         return;
     const Strip& s = strips[size_t(h.strip)];
+    if (s.loop) {
+        float mix = sources::mixOf(s.inputModule) + (mods.shift ? 0.01f : 0.05f) * (delta.y > 0 ? 1.f : -1.f);
+        sources::commitMix(s.inputModule, std::clamp(mix, 0.f, 1.f));
+        return;
+    }
     float step = (mods.shift ? kFine * 1 : kWheelDb) * (delta.y > 0 ? 1.f : -1.f);
     float now = shownVolume(s);
     float next = now <= kSilentDb ? (delta.y > 0 ? -60.f : kSilentDb) : std::clamp(now + step, kSilentDb, kMaxFaderDb);
@@ -1356,20 +1555,19 @@ void MixerPane::drawGroupStrip(NVGcontext* vg, const Strip& s, const TrackGroup&
         draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl, nvgTransRGBAf(c.bg0, 0.6f));
 }
 
-void MixerPane::drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t) {
+void MixerPane::drawLaneStrip(NVGcontext* vg, const Strip& s, const Track* t) {
     const theme::Palette& c = theme::colors();
     TesseraModule* m = ctx.module();
     // Set against its track's strip, a step darker, so the lanes read as part of the kit.
     draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl, theme::recessed(c, c.bg1, 0.35f));
     const DrumLane* first = nullptr;
-    for (const DrumLane& l : t.drumLanes)
-        if (l.outputIndex == s.lane) {
-            first = &l;
-            break;
-        }
-    if (s.isInput())
-        first = nullptr;
-    NVGcolor color = theme::track(first && first->color ? first->color : t.color);
+    if (t && !s.isInput())
+        for (const DrumLane& l : t->drumLanes)
+            if (l.outputIndex == s.lane) {
+                first = &l;
+                break;
+            }
+    NVGcolor color = theme::track(first && first->color ? first->color : t ? t->color : theme::kMasterColor);
     nvgBeginPath(vg);
     nvgRect(vg, s.box.pos.x, s.box.pos.y, s.box.size.x, 3);
     nvgFillColor(vg, color);
@@ -1397,11 +1595,13 @@ void MixerPane::drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t) {
         nvgStrokeWidth(vg, 1.5f);
         nvgStroke(vg);
     }
-    // Fader and meter: the lane's level after its fader and pan, measured by its Drum Out.
+    // Fader and meter: the lane's level after its fader and pan, measured by its Drum Out. An effect loop's fader is
+    // its Mix, straight up the travel.
     float volume = shownVolume(s);
     Rect groove(s.fader.getCenter().x - 1.5f, s.fader.pos.y, 3, s.fader.size.y);
     draw::roundedRect(vg, groove, 1.5f, theme::recessed(c, c.bg0, 0.6f));
-    float capY = s.fader.getBottom() - faderPos(volume) * s.fader.size.y;
+    float mix = s.loop ? sources::mixOf(s.inputModule) : 0;
+    float capY = s.fader.getBottom() - (s.loop ? mix : faderPos(volume)) * s.fader.size.y;
     bool heldNow = heldLanes.count({s.track.value, s.lane}) > 0;
     draw::roundedRect(vg, Rect(s.fader.pos.x - 2, capY - 5, s.fader.size.x + 4, 10), 2, heldNow ? c.accent : c.text1);
     float level = stripLevel(s);
@@ -1421,7 +1621,36 @@ void MixerPane::drawLaneStrip(NVGcontext* vg, const Strip& s, const Track& t) {
     drawMeter(vg, s.meter, level, level);
     draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler - 1, c.text0,
                          NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y, audioDraw::dbText(volume));
+    char percent[16];
+    snprintf(percent, sizeof percent, "%.0f%%", double(mix * 100));
+    draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y,
+               s.loop ? std::string(percent) : audioDraw::dbText(volume));
+    // "mix" under an effect loop's percentage, so it never reads as a level.
+    if (s.loop) {
+        draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler - 2, c.text2,
+                              NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::text(vg, small, s.box.getCenter().x, s.readout.getBottom() + 8, "mix");
+    }
+    // Dragging this strip's name: a marker where it would land.
+    if (reorderStrip >= 0 && reorderStrip < int(strips.size()) && &strips[size_t(reorderStrip)] == &s) {
+        draw::roundedRectStroke(vg, s.box, theme::metrics::kRadiusControl, c.accent, 1);
+        int64_t before = reorderTarget(reorderStrip, reorderX);
+        float x = -1;
+        for (const Strip& o : strips)
+            if (o.isInput() && o.track == s.track && o.inputModule >= 0) {
+                if (o.inputModule == before) {
+                    x = o.box.pos.x - 1;
+                    break;
+                }
+                x = o.box.getRight() + 1;
+            }
+        if (x >= 0) {
+            nvgBeginPath(vg);
+            nvgRect(vg, x - 1, s.box.pos.y, 2, s.box.size.y);
+            nvgFillColor(vg, c.accent);
+            nvgFill(vg);
+        }
+    }
 }
 
 float MixerPane::stripLevel(const Strip& s) const {
@@ -1435,9 +1664,11 @@ float MixerPane::stripLevel(const Strip& s) const {
         return std::max(player.level(s.playerIndex, 0), player.level(s.playerIndex, 1));
     float level = 0;
     if (s.isInput() && s.inputModule < 0) {
-        int index = m->soundIndex(s.track);
-        if (index >= 0 && sources::inputLevel(ctx, s.track, -1).use)
-            level = player.outLevel(index) * dbToGain(shownVolume(s));
+        // The sound before the chain, which the clips' (or the mix's) Level already scaled.
+        if (s.track == m->song().master.id)
+            level = player.masterOutLevel();
+        else if (int index = m->soundIndex(s.track); index >= 0)
+            level = player.outLevel(index);
     } else if (s.isInput()) {
         for (OutputModuleBase* o : audioActions::outputsFor(m, s.track))
             if (o->id == s.inputModule)
@@ -1456,7 +1687,7 @@ void MixerPane::drawKnobStrip(NVGcontext* vg, const Strip& s) {
     const Song& song = m->song();
     const Track* t = s.master ? nullptr : song.findTrack(s.track);
     const TrackGroup* group = s.group.valid() ? song.findGroup(s.group) : nullptr;
-    if (!s.master && !t && !group)
+    if (!s.master && !t && !group && !s.isInput())
         return;
     bool selected = t && s.lane < 0 && !group && ctx.state().selectedTrack == t->id;
     draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl,
@@ -1485,7 +1716,8 @@ void MixerPane::drawKnobStrip(NVGcontext* vg, const Strip& s) {
     // The level knob: its position on the outer ring, what is sounding on the ring inside it.
     TrackId target = ctx.state().showSends;
     bool showsSend = target.valid() && t && !s.master && s.lane < 0 && !group && s.track != target;
-    float position = faderPos(showsSend ? shownSend(s, target) : shownVolume(s));
+    float position =
+        s.loop ? sources::mixOf(s.inputModule) : faderPos(showsSend ? shownSend(s, target) : shownVolume(s));
     float low = float(M_PI) * 0.75f, sweep = float(M_PI) * 1.5f;
     Vec center = s.fader.getCenter();
     float radius = s.fader.size.y / 2 - 1.5f;
@@ -1530,7 +1762,10 @@ void MixerPane::drawKnobStrip(NVGcontext* vg, const Strip& s) {
     if (s.readout.size.x > 0) {
         draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler - 2, c.text1,
                              NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y, audioDraw::dbText(db));
+        char percent[16];
+        snprintf(percent, sizeof percent, "%.0f%%", double(position * 100));
+        draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y,
+                   s.loop ? std::string(percent) : audioDraw::dbText(db));
     }
 
     auto toggle = [&](const Rect& r, const char* text, bool on, NVGcolor lit) {
@@ -1566,6 +1801,10 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
             drawGroupStrip(vg, s, *g);
         return;
     }
+    if (s.isInput()) {
+        drawLaneStrip(vg, s, song.findTrack(s.track));
+        return;
+    }
     const Track* t = s.master ? nullptr : song.findTrack(s.track);
     // Show sends: other strips' faders are their sends to the target (§7.6).
     TrackId target = ctx.state().showSends;
@@ -1576,7 +1815,7 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         return;
     bool selected = t && ctx.state().selectedTrack == t->id;
     if (s.lane >= 0) {
-        drawLaneStrip(vg, s, *t);
+        drawLaneStrip(vg, s, t);
         return;
     }
     draw::roundedRect(vg, s.box, theme::metrics::kRadiusControl, selected ? nvgLerpRGBA(c.bg1, c.bg2, 0.6f) : c.bg1);
@@ -1600,19 +1839,17 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         std::string chip = ct.text;
         NVGcolor chipColor = ct.warn ? c.queue : ct.dim ? c.text2 : c.text1;
         if (s.master) {
-            std::vector<sources::Row> rows = sources::rowsOf(*m, m->song().master.id);
             chip = m->mainPatched() ? "MAIN" : "MAIN not patched";
             chipColor = m->mainPatched() ? c.text1 : c.queue;
-            if (sources::needsList(rows) && m->mainPatched())
-                chip = std::to_string(rows.size()) + " sources";
         }
         draw::roundedRect(vg, s.chip, theme::metrics::kRadiusControl, c.bg2);
         small.color = chipColor;
         draw::text(vg, small, s.chip.getCenter().x, s.chip.getCenter().y,
                    draw::ellipsize(vg, small, chip, s.chip.size.x - 4));
-        if (t && hasInputStrips(t->id)) {
+        TrackId owner = t ? t->id : song.master.id;
+        if (hasInputStrips(owner)) {
             // The arrow that folds the input strips.
-            bool open = !ctx.state().foldedInputs.count(t->id.value);
+            bool open = !ctx.state().foldedInputs.count(owner.value);
             float ax = s.chip.pos.x + 5, ay = s.chip.getCenter().y;
             nvgBeginPath(vg);
             if (open) {
@@ -1867,7 +2104,7 @@ void MixerPane::drawView(const DrawArgs& args) {
     if (notesOnly > 0) {
         draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2,
                              NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        float x = strips.size() > 1 ? strips[strips.size() - 2].box.getRight() + 12 : 12;
+        float x = hintX;
         std::string text =
             std::to_string(notesOnly) + (notesOnly == 1 ? " track plays" : " tracks play") + " notes only";
         draw::text(vg, hint, x, (band.size.x > 0 ? band.getBottom() : tab.size.y) + 14, text);

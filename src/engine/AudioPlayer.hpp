@@ -39,11 +39,14 @@ class AudioPlayer {
     /// The rack's side of one sample (§8.3, §8.4): the return bus to read output modules' IN jacks from, and the
     /// output bus's audio array to write each track's OUT to. Either may be null.
     struct Rack {
-        const ReturnBus* returns = nullptr;
+        ReturnBus* returns = nullptr;
         AudioOutFrame* out = nullptr;
         int64_t frame = 0;
         float rollInL = 0, rollInR = 0; // Roll's own IN jacks, in volts
     };
+
+    /// The longest round trip an effect loop's dry sound can wait for, in samples (DECISIONS §153).
+    static constexpr int kMaxLoopDelay = 64;
 
     /// Plays one sample: reads the engine's transport after its process(), plays the clips, mixes. `left` and
     /// `right` get the master in volts (10 V = 0 dB), ready for MAIN. With `rack`, each track's sound before its
@@ -67,6 +70,8 @@ class AudioPlayer {
                    : 0.f;
     }
     float masterLevel(int side) const { return masterMeter[size_t(side & 1)].load(std::memory_order_relaxed); }
+    /// The master's mix before its chain (what its first Track Out's OUT gets), in volts, louder side.
+    float masterOutLevel() const { return masterOutMeter.load(std::memory_order_relaxed); }
     /// The highest master peak (volts) since the last clearClip(), for the clip light.
     /// Plays clip `clip` alone from clip tick `tick` through track `track`, while the transport is stopped (UI thread).
     /// It stops by itself at the clip's end or when the transport starts.
@@ -304,6 +309,11 @@ class AudioPlayer {
     /// dip.
     float envelopeOf(const AudioInstancePlay& a, double songTick, double ticksPerClip, float seam) const;
     void startBlock(const Engine& engine);
+    /// Runs a track's (or the master's) Track Outs in order on its sound `l`, `r`: what an adding one brings in joins
+    /// it (and `inL`, `inR`, what recording takes); an effect loop (`loops`) gets the sound so far on its OUT, and its
+    /// return is blended in by its Mix, against the dry sound delayed by the loop's round trip.
+    void runChain(const std::vector<int>& stages, const std::vector<uint8_t>& loops, TrackId track, const Rack& rack,
+                  float& l, float& r, float& inL, float& inR);
 
     const AudioSnapshot* snapshot = nullptr;
     // Per snapshot track, then tracks deleted while they sounded ("ghosts") fading out after them.
@@ -330,6 +340,8 @@ class AudioPlayer {
     std::atomic<bool> masterAuto{false};
     std::atomic<float> masterAutoDb{0};
     float masterPeakL = 0, masterPeakR = 0;
+    float masterOutPeak = 0;
+    std::atomic<float> masterOutMeter{0};
 
     std::array<std::array<std::atomic<float>, 2>, kMaxTracks> meters{};
     std::array<std::atomic<float>, kMaxTracks> outMeters{};
@@ -356,6 +368,9 @@ class AudioPlayer {
     std::unique_ptr<float[]> delayMemory; // per bus slot, two channels of kMaxDelay; made once, never freed early
     std::atomic<float*> delays{nullptr};
     size_t delayPos = 0;
+    // The sound going into each return slot's effect loop, for its dry part to wait for the wet one.
+    std::array<std::array<float, 2 * kMaxLoopDelay>, ReturnBus::kSlots> loopLines{};
+    size_t loopPos = 0;
     std::atomic<bool> measuring{false};
     std::atomic<uint64_t> measureTrack{0};
     std::atomic<int64_t> measureResult{-2};

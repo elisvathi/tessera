@@ -119,9 +119,10 @@ struct SendPlay {
 /// jacks fill, with its mixer strip.
 struct AudioTrackPlay {
     TrackId id;
-    int busSlot = -1;         // where its sound before the fader goes on the output bus, for Track Out's OUT
-    std::vector<int> sources; // return bus slots that are the track's own sound (Drum Out's lane INs): they go to OUT
-    std::vector<int> returns; // return bus slots mixed in after OUT (an effect coming back), at 0 dB (§2)
+    int busSlot = -1;           // where its sound before its chain goes on the output bus
+    std::vector<int> sources;   // return bus slots that are the track's own sound (Drum Out's lane INs)
+    std::vector<int> returns;   // its output modules' return slots, in the order of its chain (DECISIONS §153)
+    std::vector<uint8_t> loops; // per entry of `returns`: 1 for an effect loop (its OUT has a cable)
     std::vector<AudioInstancePlay> instances; // sorted by position
     std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
     float clipsPan = 0;                        // the clips' own place left and right, as an input of the track
@@ -156,7 +157,8 @@ struct AudioSnapshot {
     uint64_t masterId = 0; // the master's TrackId value
     /// The master's Volume lane as fader positions (0..1) over song ticks; empty when none plays (muted or absent).
     std::vector<AutoPoint> masterLane;
-    std::vector<int> masterReturns; // return slots mixed into the master
+    std::vector<int> masterReturns;   // the master's chain: its output modules' return slots, in order
+    std::vector<uint8_t> masterLoops; // per entry of `masterReturns`: 1 for an effect loop
     /// Every buffer the clips point at, and recently dropped ones kept a little longer so a fade-out that started
     /// before this snapshot can finish reading them.
     std::vector<std::shared_ptr<const AudioBuffer>> buffers;

@@ -34,12 +34,13 @@ DrumOutModule::DrumOutModule() : OutputModuleBase(TrackType::Drum) {
         configInput(LANE_IN_INPUT + i, "Lane " + std::to_string(i + 1) + " audio")->description =
             "The sound of the drum on this lane (its module's output), mixed into the drum track and its OUT. A poly "
             "cable is summed";
-    const char* outHelp = "The kit's sound before the drum track's fader (every lane IN mixed), for an effect: patch "
-                          "it out and the effect's output back into IN. 10 V is full scale (0 dB)";
+    const char* outHelp = "The kit's sound up to this Drum Out (every lane IN mixed), for an effect: patch it into the "
+                          "effect and the effect's output back into Kit IN. What comes back then replaces the sound, "
+                          "blended by Mix in the mixer. 10 V is full scale (0 dB)";
     configOutput(KIT_OUT_L_OUTPUT, "Kit OUT left")->description = outHelp;
     configOutput(KIT_OUT_R_OUTPUT, "Kit OUT right")->description = outHelp;
-    const char* inHelp = "An effect on the kit coming back, or a stereo drum machine: mixed into the drum track before "
-                         "its fader. With one side patched, both sides hear it";
+    const char* inHelp = "A stereo drum machine, added to the drum track before its fader; or, with Kit OUT patched, "
+                         "an effect on the kit coming back. With one side patched, both sides hear it";
     configInput(KIT_IN_L_INPUT, "Kit IN left")->description = inHelp;
     configInput(KIT_IN_R_INPUT, "Kit IN right")->description = inHelp;
     configLight(KIT_IN_LIGHT, "Kit IN level")->description = "Green while audio comes back, red above 0 dB";

@@ -21,8 +21,6 @@ struct TrackOutPortInfo : rack::engine::PortInfo {
         if (role == Role::Notes && (kind == BoundKind::Audio || kind == BoundKind::Master))
             why = kind == BoundKind::Audio ? "Nothing comes out here for an audio track"
                                            : "Nothing comes out here for the master";
-        else if (role == Role::Out && kind == BoundKind::Instrument)
-            why = "Nothing comes out here yet for a note track: OUT will carry what other tracks send to it";
         else if ((role == Role::Out || role == Role::In) && m && m->binding().followSelected)
             why = "Off while Track Out follows the track selected in the editor";
         return why.empty() ? text : why + ". " + text;
@@ -47,12 +45,14 @@ TrackOutModule::TrackOutModule() : OutputModuleBase(std::nullopt, true) {
     out(TIMBRE_OUTPUT, "Timbre", "Per-note timbre expression, 0-10 V", Role::Notes);
     out(PRESS_OUTPUT, "Pressure", "Per-note pressure expression, 0-10 V", Role::Notes);
     out(AUTO_OUTPUT, "Automation", "One channel per automation lane", Role::Auto);
-    const char* outHelp = "The track's sound before its fader, for an effect: patch it out and the effect's output "
-                          "back into IN. 10 V is full scale (0 dB)";
+    const char* outHelp = "The track's sound up to this Track Out, for an effect: patch it into the effect and the "
+                          "effect's output back into IN. What comes back then replaces the sound, blended by Mix in "
+                          "the mixer. 10 V is full scale (0 dB)";
     out(OUT_L_OUTPUT, "OUT left", outHelp, Role::Out);
     out(OUT_R_OUTPUT, "OUT right", outHelp, Role::Out);
-    const char* inHelp = "Audio mixed into the track, before its fader, at 0 dB. A poly cable is summed; with one "
-                         "side patched, both sides hear it";
+    const char* inHelp = "Audio into the track, before its fader. With nothing on OUT it is added at 0 dB; with OUT "
+                         "patched it is the effect coming back. A poly cable is summed; with one side patched, both "
+                         "sides hear it";
     for (int id : {IN_L_INPUT, IN_R_INPUT}) {
         auto* info = configInput<TrackOutPortInfo>(id, id == IN_L_INPUT ? "IN left" : "IN right");
         info->role = Role::In;
