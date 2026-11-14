@@ -68,7 +68,39 @@ bool stripOpen(EditorContext& ctx) {
     const Track* t = track(ctx);
     if (!t)
         return false;
-    return !t->devices.empty() || !t->modulators.empty() || ctx.state().stripOpenedFor == t->id.value;
+    return !shownDevices(ctx).empty() || !shownModulators(ctx).empty() || !t->devices.empty() ||
+           ctx.state().stripOpenedFor == t->id.value || shownChain(ctx).isClip();
+}
+
+const Clip* shownNoteClip(EditorContext& ctx) {
+    TesseraModule* m = moduleOf(ctx);
+    const Track* t = track(ctx);
+    const Clip* clip = m && t ? m->song().findClip(clipActions::shownClip(ctx, *t)) : nullptr;
+    return clip && !clip->isAudio() ? clip : nullptr;
+}
+
+ChainOwner shownChain(EditorContext& ctx) {
+    const Track* t = track(ctx);
+    if (!t)
+        return ChainOwner();
+    const Clip* clip = shownNoteClip(ctx);
+    if (clip && clip->usesOwnChain() && !ctx.trackChainOpened)
+        return ChainOwner(clip->id);
+    return ChainOwner(t->id);
+}
+
+const std::vector<Device>& shownDevices(EditorContext& ctx) {
+    static const std::vector<Device> none;
+    TesseraModule* m = moduleOf(ctx);
+    const std::vector<Device>* devices = m ? devicesOf(m->song(), shownChain(ctx)) : nullptr;
+    return devices ? *devices : none;
+}
+
+const std::vector<Modulator>& shownModulators(EditorContext& ctx) {
+    static const std::vector<Modulator> none;
+    TesseraModule* m = moduleOf(ctx);
+    const std::vector<Modulator>* mods = m ? modulatorsOf(m->song(), shownChain(ctx)) : nullptr;
+    return mods ? *mods : none;
 }
 
 void setStripOpen(EditorContext& ctx, bool open) {
@@ -121,6 +153,8 @@ std::string whereName(const Song& song, const ModulatorPlace& place) {
         return "song";
     case ModLevel::Track:
         return "track";
+    case ModLevel::Clip:
+        return "clip";
     case ModLevel::Device:
     default: {
         const Device* d = findDevice(song, place.device);
@@ -136,29 +170,30 @@ void setKnob(EditorContext& ctx, const ParamRef& ref, float value) {
         m->perform(setParam(m->song(), ref, value));
 }
 
-void openDeviceBrowser(EditorContext& ctx, TrackId trackId, int index) {
+void openDeviceBrowser(EditorContext& ctx, ChainOwner owner, int index) {
     TesseraModule* m = moduleOf(ctx);
-    const Track* t = m ? m->song().findTrack(trackId) : nullptr;
-    if (!t)
+    const std::vector<Device>* chain = m ? devicesOf(m->song(), owner) : nullptr;
+    if (!chain)
         return;
+    const std::vector<Device>& devices = *chain;
     EditorContext* c = &ctx;
-    std::function<void(DeviceType, int)> pick = [c, trackId, index](DeviceType type, int) {
+    std::function<void(DeviceType, int)> pick = [c, owner, index](DeviceType type, int) {
         if (TesseraModule* mod = c->module()) {
-            CommandPtr command = addDevice(mod->song(), trackId, type, index, mod->ids());
+            CommandPtr command = addDevice(mod->song(), owner, type, index, mod->ids());
             mod->perform(std::move(command));
             setStripOpen(*c, true);
         }
     };
     SearchListOptions options;
     options.placeholder = "Search devices: arp, delay, key…";
-    if (index < 0 || index >= int(t->devices.size()))
-        options.footer = t->devices.empty() ? "adds the first device" : "adds after " + t->devices.back().name;
+    if (index < 0 || index >= int(devices.size()))
+        options.footer = devices.empty() ? "adds the first device" : "adds after " + devices.back().name;
     else if (index == 0)
-        options.footer = "adds before " + t->devices.front().name;
+        options.footer = "adds before " + devices.front().name;
     else
-        options.footer = "adds after " + t->devices[size_t(index - 1)].name;
-    if (int(t->devices.size()) >= kMaxDevices)
-        options.footer = "this track is full (16 devices)";
+        options.footer = "adds after " + devices[size_t(index - 1)].name;
+    if (int(devices.size()) >= kMaxDevices)
+        options.footer = owner.isClip() ? "this clip's chain is full (16 devices)" : "this track is full (16 devices)";
     openSearchList(itemsOf<DeviceType>(kDeviceTypeCount, pick), options);
 }
 
@@ -184,20 +219,31 @@ void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index) {
     openSearchList(items, options);
 }
 
-void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) {
+void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device) {
     TesseraModule* m = moduleOf(ctx);
-    const Track* t = m ? m->song().findTrack(trackId) : nullptr;
-    if (!t)
+    const Song* song = m ? &m->song() : nullptr;
+    const Clip* clip = song && owner.isClip() ? song->findClip(owner.clip) : nullptr;
+    TrackId trackId = clip ? trackUsing(*song, clip->id) : owner.track;
+    const Track* t = song ? song->findTrack(trackId) : nullptr;
+    const std::vector<Device>* chain = song ? devicesOf(*song, owner) : nullptr;
+    if (!t || !chain)
         return;
-    // The chips name where the new modulator lives; the level decides what it can reach.
-    std::vector<ModulatorPlace> places = {{ModLevel::Song, TrackId(), DeviceId()},
-                                          {ModLevel::Track, t->id, DeviceId()}};
+    // The chips name where the new modulator lives; the level decides what it can reach. A clip's own chain has its
+    // own modulators instead of the track's.
+    std::vector<ModulatorPlace> places = {{ModLevel::Song, TrackId(), DeviceId(), ClipId()}};
     SearchListOptions options;
     options.placeholder = "Search modulators: lfo, envelope, build…";
-    options.scopes = {"Whole song", t->name};
+    options.scopes = {"Whole song"};
+    if (clip) {
+        places.push_back({ModLevel::Clip, t->id, DeviceId(), clip->id});
+        options.scopes.push_back(clip->name.empty() ? "This clip" : clip->name);
+    } else {
+        places.push_back({ModLevel::Track, t->id, DeviceId(), ClipId()});
+        options.scopes.push_back(t->name);
+    }
     options.scope = 1;
-    for (const Device& d : t->devices) {
-        places.push_back({ModLevel::Device, t->id, d.id});
+    for (const Device& d : *chain) {
+        places.push_back({ModLevel::Device, t->id, d.id, owner.clip});
         options.scopes.push_back(d.name);
         if (d.id == device)
             options.scope = int(places.size()) - 1;
@@ -224,10 +270,7 @@ void openModulatorBrowser(EditorContext& ctx, TrackId trackId, DeviceId device) 
 }
 
 const Device* playheadsDevice(EditorContext& ctx) {
-    const Track* t = track(ctx);
-    if (!t)
-        return nullptr;
-    for (const Device& d : t->devices)
+    for (const Device& d : shownDevices(ctx))
         if (d.type == DeviceType::Playheads)
             return &d;
     return nullptr;
@@ -502,8 +545,9 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id) {
                     mod->perform(setDeviceDrumLanes(mod->song(), id, !affect));
             }));
     }
+    ChainOwner chain = ownerOf(m->song(), id);
     menu->addChild(rack::createMenuItem("Add a modulator to this device…", "",
-                                        [c, trackId, id] { openModulatorBrowser(*c, trackId, id); }));
+                                        [c, chain, id] { openModulatorBrowser(*c, chain, id); }));
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Delete", "Delete", [c, id] {
         if (TesseraModule* mod = c->module())
@@ -657,10 +701,7 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
                 mod->perform(addRoute(mod->song(), id, route));
             }));
         sub->addChild(new rack::ui::MenuSeparator);
-        sub->addChild(rack::createMenuItem("A new modulator…", "", [c] {
-            if (const Track* t = track(*c))
-                openModulatorBrowser(*c, t->id);
-        }));
+        sub->addChild(rack::createMenuItem("A new modulator…", "", [c] { openModulatorBrowser(*c, shownChain(*c)); }));
     }));
     if (!on.empty()) {
         menu->addChild(rack::createSubmenuItem("Remove modulation", "", [c, on](rack::ui::Menu* sub) {
@@ -694,10 +735,13 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
             if (const Track* t = track(ctx))
                 trackId = t->id; // a song modulator's setting: the track on show
         const Track* t = song.findTrack(trackId);
-        ClipId clip = t ? clipActions::shownClip(ctx, *t) : ClipId();
-        auto* arranger = rack::createMenuItem(
-            "Automate in the arranger", "", [c, ref, trackId] { automateKnob(*c, ref, LaneOwner::ofTrack(trackId)); });
-        arranger->disabled = !trackId.valid();
+        // A clip's own devices are automated in the clip, so the lane travels with them.
+        ChainOwner chain = ownerOf(song, ref);
+        ClipId clip = chain.isClip() ? chain.clip : t ? clipActions::shownClip(ctx, *t) : ClipId();
+        auto* arranger =
+            rack::createMenuItem("Automate in the arranger", chain.isClip() ? "own devices: in the clip" : "",
+                                 [c, ref, trackId] { automateKnob(*c, ref, LaneOwner::ofTrack(trackId)); });
+        arranger->disabled = !trackId.valid() || chain.isClip();
         menu->addChild(arranger);
         auto* inClip = rack::createMenuItem("Automate in this clip", "",
                                             [c, ref, clip] { automateKnob(*c, ref, LaneOwner::ofClip(clip)); });

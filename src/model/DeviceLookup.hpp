@@ -66,6 +66,14 @@ inline int deviceCount(const Track& track) { return deviceCount(track.devices); 
 /// The chain's Playheads device when it has one and it is on, else nullptr.
 const Device* activePlayheads(const std::vector<Device>& chain);
 inline const Device* activePlayheads(const Track& track) { return activePlayheads(track.devices); }
+/// The chain `clip`'s notes go through on track `t`: the clip's own while it plays through it, else the track's.
+inline const std::vector<Device>& chainPlaying(const Track& t, const Clip* clip) {
+    return clip && clip->usesOwnChain() ? clip->devices : t.devices;
+}
+/// The Playheads device that reads `clip` on track `t` (in the chain it plays through), when it is on.
+inline const Device* activePlayheads(const Track& t, const Clip* clip) {
+    return activePlayheads(chainPlaying(t, clip));
+}
 
 /// The knob or setting a reference points at (normalized), or nullptr when it doesn't exist.
 float* findParam(Song& song, const ParamRef& ref);

@@ -834,4 +834,26 @@ void drawDirectionIcon(NVGcontext* vg, Rect r, int value, NVGcolor color) {
     nvgStroke(vg);
 }
 
+void drawChainMark(NVGcontext* vg, float x, float cy, NVGcolor color, bool filled) {
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x + 5, cy);
+    nvgLineTo(vg, x + 7, cy);
+    nvgMoveTo(vg, x + 11.5f, cy);
+    nvgLineTo(vg, x + 13.5f, cy);
+    nvgStrokeColor(vg, color);
+    nvgStrokeWidth(vg, 1.3f);
+    nvgStroke(vg);
+    for (float dx : {0.6f, 7.1f, 13.6f}) {
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x + dx, cy - 2.9f, 4.3f, 5.8f, 1.2f);
+        if (filled) {
+            nvgFillColor(vg, color);
+            nvgFill(vg);
+        }
+        nvgStrokeColor(vg, color);
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+    }
+}
+
 } // namespace tessera::tiles

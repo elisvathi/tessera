@@ -16,6 +16,14 @@ const Track* track(EditorContext& ctx);
 /// Whether the device strip shows open. A track without devices keeps it closed, so a new track's notes
 /// get the room, unless the strip was opened by hand while that track was selected.
 bool stripOpen(EditorContext& ctx);
+/// The note clip shown for the selected track (the piano roll's), or null.
+const Clip* shownNoteClip(EditorContext& ctx);
+/// The chain the device strip shows and edits: the shown clip's own while it plays through it (unless the track's was
+/// opened from it), else the track's.
+ChainOwner shownChain(EditorContext& ctx);
+/// The devices and modulators of that chain (empty when there is none).
+const std::vector<Device>& shownDevices(EditorContext& ctx);
+const std::vector<Modulator>& shownModulators(EditorContext& ctx);
 /// Opens or closes the device strip for the selected track (the Devices button, F3, the closed bar).
 void setStripOpen(EditorContext& ctx, bool open);
 
@@ -33,12 +41,12 @@ NVGcolor colorOf(ModulatorId id);
 NVGcolor laneColor(const Song& song, const FoundLane& lane);
 
 /// The searchable list of devices; the pick goes in at `index` of the track's chain (-1 = the end).
-void openDeviceBrowser(EditorContext& ctx, TrackId track, int index);
+void openDeviceBrowser(EditorContext& ctx, ChainOwner owner, int index);
 /// The searchable list of modulators, with chips for where the new one lives (song, this track, a device).
 /// `device` lights that device's chip first.
 /// The device list, adding the picked device to a playhead's branch at `index` (-1 = the end).
 void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index);
-void openModulatorBrowser(EditorContext& ctx, TrackId track, DeviceId device = DeviceId());
+void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device = DeviceId());
 
 void openDeviceMenu(EditorContext& ctx, DeviceId device);
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);

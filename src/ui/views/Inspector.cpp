@@ -1050,7 +1050,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     y = row(vg, y, "Length", bars(clipActions::shownLength(song, *clip), song.timeSig));
     ClipSpan span = clipSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
     y = row(vg, y, "Loop",
-            activePlayheads(*t) ? "Playheads decide"
+            activePlayheads(*t, clip) ? "Playheads decide"
             : !span.looping
                 ? "Off"
                 : timeline::positionText(double(span.start), song.timeSig) + " – " +

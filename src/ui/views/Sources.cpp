@@ -359,7 +359,7 @@ std::vector<TimelineSource::PlayheadSegment> ClipSource::playheadSegments() {
     TesseraModule* m = ctx.module();
     const Track* t = m ? m->song().findTrack(track) : nullptr;
     const Clip* c = current();
-    const Device* device = t && c ? activePlayheads(*t) : nullptr;
+    const Device* device = t && c ? activePlayheads(*t, c) : nullptr;
     if (!device)
         return {};
     const Playhead* shown = deviceActions::shownPlayhead(ctx);

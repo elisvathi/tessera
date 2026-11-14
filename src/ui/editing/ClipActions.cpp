@@ -1,5 +1,7 @@
 #include "ClipActions.hpp"
 
+#include "DeviceActions.hpp"
+
 #include "AudioActions.hpp"
 #include "BounceActions.hpp"
 #include "ImportMidi.hpp"
@@ -248,6 +250,84 @@ void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipI
         }));
 }
 
+void appendDevicesMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    clips.erase(std::remove_if(clips.begin(), clips.end(),
+                               [&](ClipId id) {
+                                   const Clip* c = m->song().findClip(id);
+                                   return !c || c->isAudio();
+                               }),
+                clips.end());
+    if (clips.empty())
+        return;
+    int own = 0, kept = 0;
+    for (ClipId id : clips) {
+        const Clip* c = m->song().findClip(id);
+        own += c->usesOwnChain();
+        kept += c->hasOwnChain;
+    }
+    std::string state = own == int(clips.size()) ? "own" : own == 0 ? "track's" : "mixed";
+    EditorContext* c = &ctx;
+    menu->addChild(rack::createSubmenuItem("Devices", state, [c, clips, own, kept](rack::ui::Menu* sub) {
+        // One undo step for all the clips.
+        auto each = [c, clips](const std::string& name, auto make) {
+            TesseraModule* mod = c->module();
+            if (!mod)
+                return;
+            // Each made on the song as the ones before left it.
+            Song work = mod->song();
+            auto all = std::make_unique<CompoundCommand>(name);
+            for (ClipId id : clips) {
+                CommandPtr one = make(work, id, mod);
+                if (one) {
+                    one->apply(work);
+                    all->add(std::move(one));
+                }
+            }
+            if (!all->empty())
+                mod->perform(std::move(all));
+            c->trackChainOpened = false;
+        };
+        int n = int(clips.size());
+        sub->addChild(rack::createCheckMenuItem(
+            "Play through the track's devices", "", [own] { return own == 0; },
+            [each] {
+                each("Play through the track's devices",
+                     [](const Song& song, ClipId id, TesseraModule*) { return playTrackChain(song, id); });
+            }));
+        sub->addChild(rack::createCheckMenuItem(
+            "Play through its own devices", kept < n ? "a copy of the track's" : "", [own, n] { return own == n; },
+            [each, c] {
+                each("Play through own devices", [](const Song& song, ClipId id, TesseraModule* mod) {
+                    return playOwnChain(song, id, mod->ids());
+                });
+                deviceActions::setStripOpen(*c, true);
+            }));
+        sub->addChild(new rack::ui::MenuSeparator);
+        if (n == 1 && kept == 1)
+            sub->addChild(rack::createMenuItem("Use its devices for the whole track", "", [c, clips] {
+                TesseraModule* mod = c->module();
+                if (!mod)
+                    return;
+                TrackId track = trackUsing(mod->song(), clips[0]);
+                CommandPtr command = useOwnChainForTrack(mod->song(), clips[0], track, mod->ids());
+                if (!command) {
+                    c->toast("The track has no room for the clip's modulators");
+                    return;
+                }
+                mod->perform(std::move(command));
+            }));
+        auto* drop = rack::createMenuItem(n == 1 ? "Delete its own devices" : "Delete their own devices", "", [each] {
+            each("Delete own devices",
+                 [](const Song& song, ClipId id, TesseraModule*) { return deleteOwnChain(song, id); });
+        });
+        drop->disabled = kept == 0;
+        sub->addChild(drop);
+    }));
+}
+
 void appendScaleMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip) {
     EditorContext* c = &ctx;
     auto scale = [c, clip](double factor) {
@@ -410,7 +490,9 @@ std::string chipText(EditorContext& ctx, ClipId clip, bool shortText) {
     if (const Clip* cl = m ? m->song().findClip(clip) : nullptr) {
         text += "  ·  " + (cl->name.empty() ? std::string("Clip") : cl->name);
         text += "  ·  " + lengthLabel(m->song(), *cl);
-        if (const Device* d = t ? activePlayheads(*t) : nullptr) {
+        if (cl->usesOwnChain())
+            text += "  ·  own devices";
+        if (const Device* d = t ? activePlayheads(*t, cl) : nullptr) {
             size_t n = d->playheads.size();
             text += "  ·  read by " + std::to_string(n) + (n == 1 ? " playhead" : " playheads");
         }
@@ -466,6 +548,8 @@ void openChipMenu(EditorContext& ctx, TrackId track, ClipId clip) {
                 mod->perform(setClipField(mod->song(), id, &Clip::loopMode, on ? LoopMode::Loop : LoopMode::Off,
                                           on ? "Loop clip" : "Play clip once"));
         }));
+    if (!cl->isAudio())
+        appendDevicesMenu(menu, ctx, {id});
     menu->addChild(new rack::ui::MenuSeparator);
     appendLengthItems(menu, ctx, id);
     menu->addChild(new rack::ui::MenuSeparator);
@@ -493,8 +577,10 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
                                             [c, scene, track, id] { editTogether(*c, scene, track, id); }));
     menu->addChild(rack::createMenuItem("Rename", "", [c, id] { startRename(*c, id); }));
     appendColorMenu(menu, ctx, {id});
-    if (!clip->isAudio())
+    if (!clip->isAudio()) {
         appendScaleMenu(menu, ctx, id);
+        appendDevicesMenu(menu, ctx, {id});
+    }
     menu->addChild(rack::createMenuItem("Place in arrangement at playhead", "", [c, track, id] {
         TesseraModule* mod = c->module();
         Tick bar = ticksPerBar(mod->song().timeSig);

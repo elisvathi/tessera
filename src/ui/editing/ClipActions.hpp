@@ -37,6 +37,9 @@ void appendScaleMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
 /// "Colour": Track colour (the default, which follows the track) or one of the 16 colours, for every clip in `clips`
 /// as one undo step.
 void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips);
+/// "Devices ▸": whether the note clips play through their track's devices or their own (docs/DECISIONS.md §157), and
+/// throwing their own away; for one clip, making its own the track's too.
+void appendDevicesMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips);
 /// Opens a name field for the clip under the mouse; Enter or closing it renames the clip (one undo step).
 void startRename(EditorContext& ctx, ClipId clip);
 

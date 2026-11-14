@@ -79,13 +79,13 @@ class DeviceStrip : public InteractiveView {
             Power,
             Menu,
             Dot,
-            ResizeEdge,  // the strip's bottom edge: drag it for more or fewer rows, or the whole pane
-            TagBadge,    // the "A" on an automated tag: shows its lane
-            Insert,      // the + on a link: adds a device there
-            AddTile,     // "+ Add device" at the chain's end
-            Tile,        // a picture: a click selects its device
-            Tag,         // a setting on a picture
-            Switch,      // an on/off setting on a picture
+            ResizeEdge,   // the strip's bottom edge: drag it for more or fewer rows, or the whole pane
+            TagBadge,     // the "A" on an automated tag: shows its lane
+            Insert,       // the + on a link: adds a device there
+            AddTile,      // "+ Add device" at the chain's end
+            Tile,         // a picture: a click selects its device
+            Tag,          // a setting on a picture
+            Switch,       // an on/off setting on a picture
             PlayheadChip, // one playhead of a Playheads device: click to show its settings
             AddPlayhead,
             PlayheadOn,  // the shown playhead's On switch, next to the chips
@@ -94,7 +94,11 @@ class DeviceStrip : public InteractiveView {
             Slot,        // the empty frame: a dashed slot that adds the playhead's first own device
             MotionNotes, // a Motion card's "6 notes": selects them in the piano roll
             MotionJoin,  // a Motion card's "+ Selected": the selected notes join it
-            MotionLeave  // a Motion card's "− Selected": the selected notes leave it
+            MotionLeave, // a Motion card's "− Selected": the selected notes leave it
+            SourceCard,  // where the shown clip's notes enter: which chain they go through (only drawn)
+            SourceTrack, // its "Track" half: the clip plays through the track's devices
+            SourceOwn,   // its "Own" half: the clip plays through its own (the first time a copy of the track's)
+            ChainStub    // the chain not shown, folded at the end: a click opens it or switches to it
         };
         Kind kind;
         rack::math::Rect rect;
@@ -140,6 +144,10 @@ class DeviceStrip : public InteractiveView {
 
   private:
     const Track* track();
+    /// The devices of the chain shown: the shown clip's own, or the track's (deviceActions::shownChain).
+    const std::vector<Device>& chain();
+    /// The shown clip's colour, which its own devices wear.
+    NVGcolor clipTint();
     void layoutParts();
     /// A device's card at `x` with its top at `top`, in `tint`. Returns its right edge.
     float layoutCard(const Device& d, int index, float x, float top, NVGcolor tint);
@@ -185,6 +193,9 @@ class DeviceStrip : public InteractiveView {
     void drawCard(NVGcontext* vg, const Part& card);
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     void drawTag(NVGcontext* vg, const Part& part, bool hot);
+    /// The source card with its Track / Own switch, and the folded block of the chain not shown.
+    void drawSource(NVGcontext* vg, const Part& part, bool hot);
+    void drawStub(NVGcontext* vg, const Part& part, bool hot);
     void sampleScopes();
     /// How far the modulator list can scroll: 0 while every row fits.
     float modScrollMax();
@@ -225,6 +236,7 @@ class DeviceStrip : public InteractiveView {
     std::map<uint64_t, std::array<float, 40>> scopes;
     int scopeHead = 0;
     TrackId shownTrack;
+    ClipId shownClip; // another clip shown goes back to its own chain (EditorContext::trackChainOpened)
     TileLayer* tileLayer = nullptr;
     std::map<uint64_t, float> widestTag;           // per setting: its tag at its widest label
     std::map<uint64_t, tags::ValueList> lists;     // per setting: what its tag steps through

@@ -1,5 +1,7 @@
 #include "ArrangerLanes.hpp"
 
+#include "DeviceTiles.hpp"
+
 #include "../../model/Arrangement.hpp"
 #include "../../model/DeviceLookup.hpp"
 #include "../../model/LauncherCommands.hpp"
@@ -1248,7 +1250,7 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         }
         // Read by playheads: where they go, not the notes as written. Each timeline clip starts its playheads from
         // where it begins the clip, slower when stretched (as the engine reads it).
-        const Device* readers = clip->audio ? nullptr : activePlayheads(track);
+        const Device* readers = clip->audio ? nullptr : activePlayheads(track, clip);
         if (readers && body.size.y >= 6) {
             double t0 = std::max(double(a.position), time().xToTick(std::max(0.f, body.pos.x)));
             double t1 = std::min(double(instanceEnd(a)), time().xToTick(std::min(box.size.x, body.getRight())));
@@ -1337,6 +1339,12 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             right -= 10;
             drawLinkBadge(vg, right, cy, c.onTile);
             right -= 3;
+        }
+        // Its own devices: filled while it plays through them, hollow while it keeps them off.
+        if (clip->hasOwnChain && r.size.x > 50) {
+            right -= 18;
+            tiles::drawChainMark(vg, right, cy, c.onTile, clip->usesOwnChain());
+            right -= 4;
         }
         if (!extras.empty() && r.size.x > 60) {
             draw::TextStyle small = label;

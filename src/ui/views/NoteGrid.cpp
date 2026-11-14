@@ -1010,7 +1010,8 @@ const Playhead* NoteGrid::updateMoved() {
     TesseraModule* m = ctx.module();
     const Clip* clip = owner.clip();
     const Track* track = owner.track();
-    const Device* device = m && clip && track && track->type != TrackType::Drum ? activePlayheads(*track) : nullptr;
+    const Device* device =
+        m && clip && track && track->type != TrackType::Drum ? activePlayheads(*track, clip) : nullptr;
     const Playhead* p = device ? deviceActions::shownPlayhead(ctx) : nullptr;
     if (!p || !deviceActions::playheadPlaysNow(ctx, *p)) {
         moved.clear();
@@ -1135,7 +1136,7 @@ int NoteGrid::updateMotionMoved() {
         pass = int(std::max(0.0, std::floor(elapsed / double(span.length()))));
     // Playheads may read a note at any moment, so it moves to wherever the Motion's curves are now; a clip that
     // plays straight meets each note at its own place on each pass.
-    bool anyTime = activePlayheads(*track) != nullptr;
+    bool anyTime = activePlayheads(*track, clip) != nullptr;
     double songTick = m->playheadTicks();
     // Curves count from when the track's clip started, as the engine counts them: a launched clip's own time, or
     // the song's time since the timeline clip under it began (its offset and stretch don't count).
@@ -1196,7 +1197,7 @@ void NoteGrid::updateHeads() {
     TesseraModule* m = ctx.module();
     const Track* track = owner.track();
     const Clip* clip = owner.clip();
-    const Device* device = m && track && clip ? activePlayheads(*track) : nullptr;
+    const Device* device = m && track && clip ? activePlayheads(*track, clip) : nullptr;
     playheadsOn = device != nullptr;
     if (!device || !m->playing())
         return;

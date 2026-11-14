@@ -80,6 +80,9 @@ class EditorContext {
     /// The open device strip fills the notes pane (a short pane: devices in place of the notes). Set by the pane
     /// each frame; a curve opening then switches to the notes, where the curve is drawn.
     bool devicesFillPane = false;
+    /// The device strip shows the track's chain although the shown clip plays through its own (opened from the
+    /// folded block); back to the clip's when another clip is shown.
+    bool trackChainOpened = false;
     bool clipsOpenNarrow = false;  // a narrow song pane shows the clips although the timeline plays
     double toastUntil = 0;
     static constexpr double kToastSeconds = 4;

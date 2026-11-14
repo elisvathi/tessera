@@ -605,8 +605,17 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
 
     // The clip itself (every instance of it changes).
     menu->addChild(new rack::ui::MenuSeparator);
-    if (!audio)
+    if (!audio) {
         clipActions::appendScaleMenu(menu, *c, clipId);
+        // Devices for every selected clip, when the clicked one is among them.
+        std::vector<ClipId> clips = {clipId};
+        if (lanes.selection().count(clicked))
+            for (const arrange::Placed& p : lanes.committed())
+                if (lanes.selection().count(p.clip.id) &&
+                    std::find(clips.begin(), clips.end(), p.clip.clip) == clips.end())
+                    clips.push_back(p.clip.clip);
+        clipActions::appendDevicesMenu(menu, *c, clips);
+    }
     menu->addChild(rack::createBoolMenuItem(
         "Clip loops", "",
         [c, clipId] {

@@ -43,6 +43,8 @@ constexpr float kMotionJoin = 64;  // a Motion card's "+ Selected"
 constexpr float kMotionLeave = 64; // its "− Selected"
 constexpr float kMotionCount = 52; // and its "6 notes"
 constexpr float kTagPad = 8;
+constexpr float kSourceWidth = 150; // the source card at the chain's start
+constexpr float kStubWidth = 160;   // the folded chain at its end
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
 
@@ -51,17 +53,26 @@ struct Row {
     ModulatorPlace place;
 };
 
-/// Every modulator the selected track can use, as the list shows them: the song's, the track's, then each
-/// device's in chain order.
-std::vector<Row> modulatorRows(const Song& song, const Track& t) {
+/// Every modulator the shown chain can use, as the list shows them: the song's, then the track's or (for a clip's own
+/// chain) the clip's, then each device's in chain order.
+std::vector<Row> modulatorRows(const Song& song, const Track& t, ChainOwner owner) {
     std::vector<Row> rows;
     for (const Modulator& m : song.modulators)
-        rows.push_back({m.id, {ModLevel::Song, TrackId(), DeviceId()}});
+        rows.push_back({m.id, {ModLevel::Song, TrackId(), DeviceId(), ClipId()}});
+    const Clip* clip = owner.isClip() ? song.findClip(owner.clip) : nullptr;
+    if (clip) {
+        for (const Modulator& m : clip->modulators)
+            rows.push_back({m.id, {ModLevel::Clip, t.id, DeviceId(), clip->id}});
+        for (const Device& d : clip->devices)
+            for (const Modulator& m : d.modulators)
+                rows.push_back({m.id, {ModLevel::Device, t.id, d.id, clip->id}});
+        return rows;
+    }
     for (const Modulator& m : t.modulators)
-        rows.push_back({m.id, {ModLevel::Track, t.id, DeviceId()}});
+        rows.push_back({m.id, {ModLevel::Track, t.id, DeviceId(), ClipId()}});
     for (const Device& d : t.devices)
         for (const Modulator& m : d.modulators)
-            rows.push_back({m.id, {ModLevel::Device, t.id, d.id}});
+            rows.push_back({m.id, {ModLevel::Device, t.id, d.id, ClipId()}});
     return rows;
 }
 
@@ -247,11 +258,11 @@ class CardDrag : public DragGesture {
         TesseraModule* m = ctx.module();
         if (!m || at < 0)
             return;
-        TrackId track = ctx.state().selectedTrack;
+        ChainOwner to = deviceActions::shownChain(ctx);
         if (copy)
-            m->perform(copyDevice(m->song(), id, track, at, m->ids()));
+            m->perform(copyDevice(m->song(), id, to, at, m->ids()));
         else
-            m->perform(moveDevice(m->song(), id, track, at));
+            m->perform(moveDevice(m->song(), id, to, at));
     }
     void cancel() override { strip.dropIndex = -1; }
     std::string readout() const override { return copy ? "Copy here" : "Move here"; }
@@ -384,6 +395,14 @@ DeviceStrip::DeviceStrip(EditorContext& ctx) : InteractiveView(ctx) {
 // ---- Values ---------------------------------------------------------------------------------------------------
 
 const Track* DeviceStrip::track() { return deviceActions::track(ctx); }
+
+const std::vector<Device>& DeviceStrip::chain() { return deviceActions::shownDevices(ctx); }
+
+NVGcolor DeviceStrip::clipTint() {
+    const Track* t = track();
+    const Clip* clip = deviceActions::shownNoteClip(ctx);
+    return t && clip ? theme::track(clip->shownColor(t->color)) : theme::colors().accent;
+}
 
 const tags::ValueList& DeviceStrip::listOf(const TagRef& t) {
     uint64_t key = (uint64_t(t.type) << 32) | (uint64_t(t.ref.kind) << 24) | (uint64_t(t.spec.family) << 16) |
@@ -589,7 +608,9 @@ NVGcolor DeviceStrip::tintOf(const Device& d, int index) {
             return theme::playheadColor(p->color);
     if (d.type == DeviceType::Motion)
         return theme::playheadColor(d.color);
-    // The track's colour, so its devices read with its notes.
+    // A clip's own devices wear its colour; the track's wear the track's, so they read with its notes.
+    if (deviceActions::shownChain(ctx).isClip())
+        return clipTint();
     if (const Track* t = track())
         return theme::track(t->color);
     return theme::colors().accent;
@@ -611,7 +632,7 @@ float DeviceStrip::wantedHeight() {
     // A short pane has the Devices tab beside Notes: the closed bar would only take the notes' room.
     if (paneRoom < kOpenHeight + kMinNotes)
         return 0;
-    return t->devices.empty() && t->modulators.empty() ? 0 : kClosedHeight;
+    return chain().empty() && deviceActions::shownModulators(ctx).empty() && t->devices.empty() ? 0 : kClosedHeight;
 }
 
 void DeviceStrip::layoutParts() {
@@ -630,7 +651,7 @@ void DeviceStrip::layoutParts() {
     Rect block(kPad, kPad, kModWidth, h - 2 * kPad);
     parts.push_back({Kind::AddModulator, Rect(block.getRight() - 50, block.pos.y + 3, 46, 18)});
     float y = block.pos.y + kModHeader + 3 - modScroll;
-    for (const Row& r : modulatorRows(song, *t)) {
+    for (const Row& r : modulatorRows(song, *t, deviceActions::shownChain(ctx))) {
         Rect row(block.pos.x + 3, y, block.size.x - 6, kRow);
         if (row.pos.y >= block.pos.y + kModHeader && row.getBottom() <= block.getBottom()) {
             parts.push_back({Kind::ModulatorMap, Rect(row.getRight() - 21, y + 1, 20, 20), -1, -1, r.id.value});
@@ -650,11 +671,23 @@ void DeviceStrip::layoutParts() {
     // Each card with what follows it (a playhead's frame, the link) is one unit: rows break between units.
     std::vector<std::pair<size_t, size_t>> units;
     size_t unitStart = parts.size();
-    // "in", with the + that adds a device first.
+    // Where the shown clip's notes come in: the switch between the track's chain and its own. Then "in", with the +
+    // that adds a device first.
+    const Clip* clip = deviceActions::shownNoteClip(ctx);
+    if (clip) {
+        Rect card(x, top + mx::kDeviceCardTop, kSourceWidth, kCardHeight - mx::kDeviceCardTop);
+        parts.push_back({Kind::SourceCard, card, -1, -1, clip->id.value});
+        float half = (card.size.x - 20) / 2;
+        Rect seg(card.pos.x + 10, card.pos.y + 58, half, 28);
+        parts.push_back({Kind::SourceTrack, seg, -1, -1, clip->id.value});
+        parts.push_back({Kind::SourceOwn, Rect(seg.getRight(), seg.pos.y, half, seg.size.y), -1, -1, clip->id.value});
+        x += kSourceWidth;
+    }
+    const std::vector<Device>& devices = chain();
     parts.push_back({Kind::Insert, Rect(x, top, mx::kDeviceIo, kCardHeight), 0});
     x += mx::kDeviceIo;
-    for (size_t i = 0; i < t->devices.size(); i++) {
-        const Device& d = t->devices[i];
+    for (size_t i = 0; i < devices.size(); i++) {
+        const Device& d = devices[i];
         x = layoutCard(d, int(i), x, top, tintOf(d, int(i)));
         if (d.type == DeviceType::Playheads)
             if (const Playhead* p = shownPlayhead(d)) {
@@ -692,6 +725,14 @@ void DeviceStrip::layoutParts() {
     }
     parts.push_back({Kind::AddTile, Rect(x, top + mx::kDeviceCardTop, kAddWidth, mx::kDeviceCardHeader)});
     x += kAddWidth + mx::kDeviceIo + 8;
+    // The chain not shown, folded: the track's while the clip plays its own, or the clip's kept one.
+    if (clip && clip->hasOwnChain) {
+        x += 6;
+        parts.push_back({Kind::ChainStub,
+                         Rect(x, top + mx::kDeviceCardTop, kStubWidth, kCardHeight - mx::kDeviceCardTop), -1, -1,
+                         clip->id.value});
+        x += kStubWidth + 8;
+    }
     units.push_back({unitStart, parts.size()});
     contentWidth = x + scrollX - chainLeft;
     contentHeight = kOpenHeight;
@@ -943,8 +984,10 @@ const Device* DeviceStrip::cardDevice(int index) {
     const Track* t = track();
     if (!t)
         return nullptr;
-    if (index < kBranchBase)
-        return index >= 0 && index < int(t->devices.size()) ? &t->devices[size_t(index)] : nullptr;
+    if (index < kBranchBase) {
+        const std::vector<Device>& devices = chain();
+        return index >= 0 && index < int(devices.size()) ? &devices[size_t(index)] : nullptr;
+    }
     const Playhead* p = branchPlayhead();
     int k = index - kBranchBase;
     return p && k < int(p->branch.size()) ? &p->branch[size_t(k)] : nullptr;
@@ -981,7 +1024,7 @@ const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
 
 const DeviceStrip::Part* DeviceStrip::partAt(Vec pos) const {
     for (const Part& p : parts) {
-        if (p.kind == Kind::Frame)
+        if (p.kind == Kind::Frame || p.kind == Kind::SourceCard)
             continue; // only drawn: the parts on it take the clicks
         bool inChain = p.kind != Kind::AddModulator && p.kind != Kind::ModulatorRow && p.kind != Kind::ModulatorMap &&
                        p.kind != Kind::ClosedBar && p.kind != Kind::ResizeEdge;
@@ -1016,7 +1059,7 @@ float DeviceStrip::modScrollMax() {
     const Track* t = track();
     if (!t)
         return 0;
-    float rows = float(modulatorRows(ctx.module()->song(), *t).size());
+    float rows = float(modulatorRows(ctx.module()->song(), *t, deviceActions::shownChain(ctx)).size());
     float room = box.size.y - 2 * kPad - kModHeader - 6;
     return std::max(0.f, rows * (kRow + 1) - room);
 }
@@ -1046,9 +1089,17 @@ void DeviceStrip::step() {
             modScroll = 0;
             focusedTag.reset();
         }
+        const Clip* clip = deviceActions::shownNoteClip(ctx);
+        if ((clip ? clip->id : ClipId()) != shownClip) {
+            // Another clip: it shows the chain it plays through.
+            shownClip = clip ? clip->id : ClipId();
+            ctx.trackChainOpened = false;
+            scrollX = 0;
+        }
+        const std::vector<Device>& devices = chain();
         if (ctx.state().selectedDevice &&
             !(t && findDevice(ctx.module()->song(), DeviceId(ctx.state().selectedDevice)) &&
-              std::any_of(t->devices.begin(), t->devices.end(),
+              std::any_of(devices.begin(), devices.end(),
                           [&](const Device& d) { return d.id.value == ctx.state().selectedDevice; })))
             ctx.state().selectedDevice = 0;
         if (ctx.mappingModulator && !findModulator(ctx.module()->song(), ModulatorId(ctx.mappingModulator)))
@@ -1301,8 +1352,28 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             deviceActions::setStripOpen(ctx, true);
         break;
     case Kind::AddModulator:
-        deviceActions::openModulatorBrowser(ctx, t->id);
+        deviceActions::openModulatorBrowser(ctx, deviceActions::shownChain(ctx));
         break;
+    case Kind::SourceTrack:
+        ctx.trackChainOpened = false;
+        m->perform(playTrackChain(m->song(), ClipId(hit->id)));
+        break;
+    case Kind::SourceOwn:
+        ctx.trackChainOpened = false;
+        m->perform(playOwnChain(m->song(), ClipId(hit->id), m->ids()));
+        deviceActions::setStripOpen(ctx, true);
+        break;
+    case Kind::ChainStub: {
+        const Clip* clip = m->song().findClip(ClipId(hit->id));
+        if (!clip)
+            break;
+        if (clip->usesOwnChain())
+            ctx.trackChainOpened = !ctx.trackChainOpened; // open the other chain, or go back
+        else
+            m->perform(playOwnChain(m->song(), clip->id, m->ids())); // play through the kept one again
+        scrollX = 0;
+        break;
+    }
     case Kind::ModulatorRow:
     case Kind::Dot: {
         ctx.mappingModulator = 0;
@@ -1357,7 +1428,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             if (const Playhead* p = branchPlayhead())
                 deviceActions::openBranchBrowser(ctx, p->id, hit->device - kBranchBase);
         } else {
-            deviceActions::openDeviceBrowser(ctx, t->id, hit->device);
+            deviceActions::openDeviceBrowser(ctx, deviceActions::shownChain(ctx), hit->device);
         }
         break;
     case Kind::FramePlus:
@@ -1371,7 +1442,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         ctx.mappingModulator = 0;
         break;
     case Kind::AddTile:
-        deviceActions::openDeviceBrowser(ctx, t->id, -1);
+        deviceActions::openDeviceBrowser(ctx, deviceActions::shownChain(ctx), -1);
         break;
     case Kind::PlayheadChip:
         ctx.state().selectedPlayhead = hit->id;
@@ -1491,6 +1562,7 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
         return CursorShape::ResizeV;
     case Kind::Card:
     case Kind::Tile:
+    case Kind::SourceCard:
         return CursorShape::Arrow;
     default:
         return CursorShape::Hand;
@@ -1525,6 +1597,10 @@ void DeviceStrip::drawView(const DrawArgs& args) {
 
     nvgSave(vg);
     nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
+    // A clip's own chain sits on a wash of its colour, so it never reads as the track's.
+    if (deviceActions::shownChain(ctx).isClip())
+        draw::roundedRect(vg, Rect(chainLeft, 4, box.size.x - chainLeft - 4, box.size.y - 8), 14,
+                          nvgLerpRGBA(dc.ground, clipTint(), 0.07f));
     draw::TextStyle io{theme::fonts::ui(), 10.5f, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     const Playhead* branch = branchPlayhead();
     NVGcolor branchColor = branch ? theme::playheadColor(branch->color) : c.accent;
@@ -1641,6 +1717,12 @@ void DeviceStrip::drawView(const DrawArgs& args) {
             draw::text(vg, plus, mid.x, mid.y, "+");
             break;
         }
+        case Kind::SourceCard:
+            drawSource(vg, p, hot);
+            break;
+        case Kind::ChainStub:
+            drawStub(vg, p, hot);
+            break;
         case Kind::AddTile: {
             Rect r = p.rect;
             // A dashed pill.
@@ -1668,7 +1750,8 @@ void DeviceStrip::drawView(const DrawArgs& args) {
             draw::TextStyle add{theme::fonts::ui(), 12, hot ? c.text0 : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
             draw::text(vg, add, r.getCenter().x, r.getCenter().y, "+ Add device");
             draw::text(vg, io, r.getRight() + mx::kDeviceIo / 2, r.getCenter().y, "out");
-            if (t->devices.empty()) {
+            const Clip* shown = deviceActions::shownNoteClip(ctx);
+            if (chain().empty() && !(shown && shown->hasOwnChain)) {
                 draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextUi, c.text2,
                                      NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
                 draw::text(vg, hint, r.getRight() + mx::kDeviceIo + 10, r.getCenter().y,
@@ -2025,6 +2108,185 @@ void DeviceStrip::drawTag(NVGcontext* vg, const Part& part, bool hot) {
     nvgRestore(vg);
 }
 
+namespace {
+
+/// Names a list of clips as a sentence does: "Fill", "Fill and Break", "Fill, Break and Outro".
+std::string namesOf(const std::vector<std::string>& names) {
+    std::string out;
+    for (size_t i = 0; i < names.size(); i++)
+        out += (i == 0 ? "" : i + 1 == names.size() ? " and " : ", ") + names[i];
+    return out;
+}
+
+/// A clip's name as the strip says it.
+std::string clipName(const Clip& clip) { return clip.name.empty() ? "This clip" : clip.name; }
+
+/// The clips on a track that play through their own chain, other than `except`.
+std::vector<std::string> skippers(const Song& song, const Track& t, ClipId except) {
+    std::vector<std::string> names;
+    std::vector<ClipId> seen;
+    auto add = [&](ClipId id) {
+        const Clip* c = song.findClip(id);
+        if (!c || id == except || !c->usesOwnChain() || std::find(seen.begin(), seen.end(), id) != seen.end())
+            return;
+        seen.push_back(id);
+        names.push_back(clipName(*c));
+    };
+    for (const ClipSlot& s : t.slots)
+        if (s.clip)
+            add(*s.clip);
+    for (const ArrangerClip& a : t.arrangement)
+        add(a.clip);
+    return names;
+}
+
+/// Writes `text` from `x`, `y` in lines no wider than `width`, at most `lines` of them (the last cut short).
+void wrapText(NVGcontext* vg, const draw::TextStyle& style, float x, float y, float width, float lineHeight,
+              const std::string& text, int lines) {
+    std::string rest = text;
+    for (int line = 0; line < lines && !rest.empty(); line++) {
+        size_t take = rest.size();
+        if (line + 1 < lines)
+            while (take > 0 && draw::textWidth(vg, style, rest.substr(0, take)) > width) {
+                size_t space = rest.rfind(' ', take - 1);
+                take = space == std::string::npos ? 0 : space;
+            }
+        if (take == 0)
+            take = rest.size();
+        std::string part = rest.substr(0, take);
+        draw::text(vg, style, x, y + float(line) * lineHeight,
+                   line + 1 < lines ? part : draw::ellipsize(vg, style, part, width));
+        rest = take < rest.size() ? rest.substr(take + 1) : "";
+    }
+}
+
+} // namespace
+
+void DeviceStrip::drawSource(NVGcontext* vg, const Part& part, bool hot) {
+    const theme::Palette& c = theme::colors();
+    const theme::DeviceColors& dc = theme::deviceColors();
+    const Song& song = ctx.module()->song();
+    const Track* t = track();
+    const Clip* clip = song.findClip(ClipId(part.id));
+    if (!t || !clip)
+        return;
+    Rect r = part.rect;
+    draw::roundedRect(vg, r, 12, dc.card);
+    draw::roundedRectStroke(vg, r, 12, dc.cardEdge, 1);
+    NVGcolor clipColor = clipTint(), trackColor = theme::track(t->color);
+    float x = r.pos.x + 10, w = r.size.x - 20;
+    draw::TextStyle small{theme::fonts::ui(), 10.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, small, x, r.pos.y + 14, "Notes from");
+    draw::roundedRect(vg, Rect(x, r.pos.y + 27, 10, 10), 3, clipColor);
+    draw::TextStyle name{theme::fonts::uiStrong(), 12.5f, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, name, x + 16, r.pos.y + 32, draw::ellipsize(vg, name, clipName(*clip), w - 16));
+    draw::text(vg, small, x, r.pos.y + 48, "play through");
+    // The switch: Track | Own, the side that plays lit in its chain's colour.
+    bool own = clip->usesOwnChain();
+    Rect seg;
+    for (const Part& q : parts)
+        if (q.kind == Kind::SourceTrack && q.id == part.id)
+            seg = Rect(q.rect.pos, Vec(q.rect.size.x * 2, q.rect.size.y));
+    draw::roundedRect(vg, seg.grow(Vec(2, 2)), 9, dc.screen);
+    for (int side = 0; side < 2; side++) {
+        Rect half(seg.pos.x + float(side) * seg.size.x / 2, seg.pos.y, seg.size.x / 2, seg.size.y);
+        bool lit = (side == 1) == own;
+        bool over = hovered >= 0 && parts[size_t(hovered)].kind == (side ? Kind::SourceOwn : Kind::SourceTrack) &&
+                    parts[size_t(hovered)].id == part.id;
+        NVGcolor tint = side ? clipColor : trackColor;
+        if (lit) {
+            draw::roundedRect(vg, half, 7, nvgLerpRGBA(dc.card, tint, 0.26f));
+            draw::roundedRectStroke(vg, half, 7, nvgTransRGBAf(tint, 0.75f), 1);
+        } else if (over) {
+            draw::roundedRect(vg, half, 7, dc.tagHover);
+        }
+        draw::TextStyle label{theme::fonts::uiStrong(), 12, lit || over ? c.text0 : c.text1,
+                              NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        float cx = half.getCenter().x;
+        if (side == 1 && clip->hasOwnChain) {
+            tiles::drawChainMark(vg, cx - 22, half.getCenter().y, lit ? clipColor : c.text2, lit);
+            cx += 10;
+        }
+        draw::text(vg, label, cx, half.getCenter().y, side ? "Own" : "Track");
+    }
+    // What that means now, in a sentence.
+    std::string say;
+    std::vector<std::string> others = skippers(song, *t, clip->id);
+    if (own && !ctx.trackChainOpened)
+        say = clipName(*clip) + " skips the track's devices." + (chain().empty() ? " It plays dry." : "");
+    else if (own)
+        say = "Editing the track's devices. " + clipName(*clip) + " doesn't play through them.";
+    else if (!others.empty())
+        say = namesOf(others) + (others.size() == 1 ? " skips" : " skip") +
+              " these: " + (others.size() == 1 ? "it plays" : "they play") + " through their own.";
+    else
+        say = clip->hasOwnChain ? "Its own devices are kept, off for now." : "Same as every clip on " + t->name + ".";
+    draw::TextStyle note{theme::fonts::ui(), 10.5f, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    wrapText(vg, note, x, seg.getBottom() + 14, w, 13, say, 3);
+    (void)hot;
+}
+
+void DeviceStrip::drawStub(NVGcontext* vg, const Part& part, bool hot) {
+    const theme::Palette& c = theme::colors();
+    const Song& song = ctx.module()->song();
+    const Track* t = track();
+    const Clip* clip = song.findClip(ClipId(part.id));
+    if (!t || !clip)
+        return;
+    // It shows the track's chain while the clip's own is shown, and the clip's otherwise.
+    bool showsTrack = clip->usesOwnChain() && !ctx.trackChainOpened;
+    NVGcolor color = showsTrack ? theme::track(t->color) : clipTint();
+    const std::vector<Device>& devices = showsTrack ? t->devices : clip->devices;
+    Rect r = part.rect;
+    if (hot)
+        draw::roundedRect(vg, r, 14, nvgTransRGBAf(color, 0.08f));
+    // A dashed outline along its straight sides; solid when hovered.
+    if (hot) {
+        draw::roundedRectStroke(vg, r, 14, nvgTransRGBAf(color, 0.7f), 1);
+    } else {
+        nvgBeginPath(vg);
+        for (float x = r.pos.x + 14; x < r.getRight() - 14; x += 7) {
+            nvgMoveTo(vg, x, r.pos.y + 0.5f);
+            nvgLineTo(vg, std::min(x + 3.5f, r.getRight() - 14), r.pos.y + 0.5f);
+            nvgMoveTo(vg, x, r.getBottom() - 0.5f);
+            nvgLineTo(vg, std::min(x + 3.5f, r.getRight() - 14), r.getBottom() - 0.5f);
+        }
+        for (float y = r.pos.y + 14; y < r.getBottom() - 14; y += 7) {
+            nvgMoveTo(vg, r.pos.x + 0.5f, y);
+            nvgLineTo(vg, r.pos.x + 0.5f, std::min(y + 3.5f, r.getBottom() - 14));
+            nvgMoveTo(vg, r.getRight() - 0.5f, y);
+            nvgLineTo(vg, r.getRight() - 0.5f, std::min(y + 3.5f, r.getBottom() - 14));
+        }
+        nvgStrokeColor(vg, nvgTransRGBAf(color, 0.5f));
+        nvgStrokeWidth(vg, 1);
+        nvgStroke(vg);
+    }
+    float x = r.pos.x + 12, w = r.size.x - 24;
+    draw::roundedRect(vg, Rect(x, r.pos.y + 15, 8, 8), 2, color);
+    draw::TextStyle head{theme::fonts::uiStrong(), 11.5f, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    std::string title = showsTrack ? "The track's devices" : clipName(*clip) + "'s own";
+    draw::text(vg, head, x + 14, r.pos.y + 19, draw::ellipsize(vg, head, title, w - 14));
+    std::string list;
+    for (const Device& d : devices)
+        list += (list.empty() ? "" : " · ") + nameOf(d);
+    if (list.empty())
+        list = showsTrack ? "None" : "None: plays dry";
+    draw::TextStyle body{theme::fonts::ui(), 11, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    wrapText(vg, body, x, r.pos.y + 42, w, 14, list, 3);
+    std::string state = showsTrack             ? "Skipped for " + clipName(*clip)
+                        : clip->usesOwnChain() ? "What " + clipName(*clip) + " plays through"
+                                               : "Kept, off for now";
+    std::string action = showsTrack ? "Edit them" : clip->usesOwnChain() ? "Back to them" : "Play through them";
+    draw::TextStyle dim{theme::fonts::ui(), 10.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, dim, x, r.getBottom() - 34, draw::ellipsize(vg, dim, state, w));
+    draw::TextStyle link{theme::fonts::ui(), 11, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, link, x, r.getBottom() - 16, action);
+    nvgBeginPath(vg);
+    nvgRect(vg, x, r.getBottom() - 9, draw::textWidth(vg, link, action), 1);
+    nvgFillColor(vg, c.text2);
+    nvgFill(vg);
+}
+
 void DeviceStrip::drawClosed(NVGcontext* vg) {
     const theme::Palette& c = theme::colors();
     const Track* t = track();
@@ -2048,16 +2310,21 @@ void DeviceStrip::drawClosed(NVGcontext* vg) {
     float x = 22;
     draw::text(vg, dim, x, mid, "Devices");
     x += draw::textWidth(vg, dim, "Devices") + 10;
-    for (size_t i = 0; i < t->devices.size(); i++) {
+    const std::vector<Device>& devices = chain();
+    if (deviceActions::shownChain(ctx).isClip()) {
+        tiles::drawChainMark(vg, x, mid, clipTint(), true);
+        x += 24;
+    }
+    for (size_t i = 0; i < devices.size(); i++) {
         if (i > 0) {
             draw::text(vg, dim, x, mid, "→");
             x += draw::textWidth(vg, dim, "→") + 6;
         }
-        name.color = t->devices[i].on ? c.text1 : c.text2;
-        draw::text(vg, name, x, mid, nameOf(t->devices[i]));
-        x += draw::textWidth(vg, name, nameOf(t->devices[i])) + 6;
+        name.color = devices[i].on ? c.text1 : c.text2;
+        draw::text(vg, name, x, mid, nameOf(devices[i]));
+        x += draw::textWidth(vg, name, nameOf(devices[i])) + 6;
     }
-    size_t mods = modulatorRows(ctx.module()->song(), *t).size();
+    size_t mods = modulatorRows(ctx.module()->song(), *t, deviceActions::shownChain(ctx)).size();
     if (mods > 0)
         draw::text(vg, dim, x + 4, mid, "· " + std::to_string(mods) + (mods == 1 ? " modulator" : " modulators"));
     if (squeezed()) {
@@ -2153,7 +2420,7 @@ void DeviceStrip::drawModulators(NVGcontext* vg) {
         nvgLineCap(vg, NVG_ROUND);
         nvgStroke(vg);
     }
-    if (modulatorRows(song, *t).empty()) {
+    if (modulatorRows(song, *t, deviceActions::shownChain(ctx)).empty()) {
         draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextUi, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
         draw::textBox(vg, hint, block.pos.x + 10, block.pos.y + kModHeader + 10, block.size.x - 20,
                       "LFOs, envelopes and ramps that turn settings for you. + Add to start.");

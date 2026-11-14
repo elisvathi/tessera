@@ -1,5 +1,7 @@
 #include "SlotDraw.hpp"
 
+#include "DeviceTiles.hpp"
+
 #include "AudioClipDraw.hpp"
 
 #include "../../model/Arrangement.hpp"
@@ -319,14 +321,19 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     nvgIntersectScissor(vg, body.pos.x, body.pos.y, body.size.x, body.size.y);
     draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.onTile,
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    std::string label = draw::ellipsize(vg, name, clip->name.empty() ? "Clip" : clip->name, body.size.x - kTextPad);
+    // A clip with its own devices wears their mark at the right end: filled while it plays through them.
+    float markRoom = clip->hasOwnChain && body.size.x > 40 ? 22 : 0;
+    if (markRoom > 0)
+        tiles::drawChainMark(vg, body.getRight() - 21, body.getCenter().y, c.onTile, clip->usesOwnChain());
+    std::string label =
+        draw::ellipsize(vg, name, clip->name.empty() ? "Clip" : clip->name, body.size.x - kTextPad - markRoom);
     draw::text(vg, name, body.pos.x + 3, body.getCenter().y, label);
     // The notes (or the waveform) in miniature, in the room the name leaves; with playheads, where they go over one
     // pass of the clip instead (its notes as written aren't what plays).
     float previewLeft = body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
     const std::vector<DrumLane>* lanes = track->type == TrackType::Drum ? &track->drumLanes : nullptr;
-    Rect preview(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3, body.size.y - 6);
-    const Device* readers = clip->audio ? nullptr : activePlayheads(*track);
+    Rect preview(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3 - markRoom, body.size.y - 6);
+    const Device* readers = clip->audio ? nullptr : activePlayheads(*track, clip);
     if (clip->audio) {
         audioDraw::ClipState state = audioDraw::stateOf(*ctx.module(), *clip);
         std::string mark = audioDraw::stateText(state);

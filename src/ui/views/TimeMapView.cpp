@@ -72,7 +72,7 @@ class PathPointDrag : public DragGesture {
 
 const Device* TimeMapView::device() {
     const Track* t = owner.track();
-    return t ? activePlayheads(*t) : nullptr;
+    return t ? activePlayheads(*t, owner.clip()) : nullptr;
 }
 
 std::vector<TimeMapView::Row> TimeMapView::rows() {

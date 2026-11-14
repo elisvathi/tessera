@@ -324,9 +324,14 @@ void CurveView::commit(CurveDrawing drawing) {
             if (const devices::ParamInfo* info = devices::playheadParamInfo(ref.param))
                 name = p->name + " " + info->name;
     ModulatorId added;
-    CommandPtr add = animateWithCurve(m->song(), t->id, ref, name, std::move(drawing), m->ids(), &added);
+    // A setting in a clip's own chain gets a curve of the clip's, which travels with it.
+    ChainOwner owner = ownerOf(m->song(), ref);
+    if (!owner.isClip())
+        owner = ChainOwner(t->id);
+    CommandPtr add = animateWithCurve(m->song(), owner, ref, name, std::move(drawing), m->ids(), &added);
     if (!add) {
-        ctx.toast("This track has no room for another modulator");
+        ctx.toast(owner.isClip() ? "This clip has no room for another modulator"
+                                 : "This track has no room for another modulator");
         return;
     }
     m->perform(std::move(add));
