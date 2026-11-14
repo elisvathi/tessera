@@ -30,7 +30,7 @@ enum NoteRepeat { kRepeatRate, kRepeatGate, kRepeatDecay };
 enum Random { kRandomPitch, kRandomInKey, kDrop };
 enum Humanize { kHumanizeTiming, kHumanizeVelocity, kHumanizeLength };
 enum Groove { kGrooveSwing, kGrooveGrid };
-enum NoteFilter { kLowest, kHighest, kMinVelocity, kMaxVelocity, kEvery, kOffset, kChannel };
+enum NoteFilter { kLowest, kHighest, kMinVelocity, kMaxVelocity, kEvery, kOffset, kChannel /* a set: Kind::Mask */ };
 enum Motion { kMotionPitch, kMotionTime, kMotionLength, kMotionVelocity, kMotionInKey };
 } // namespace knob
 

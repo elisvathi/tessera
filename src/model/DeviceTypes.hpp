@@ -12,7 +12,9 @@
 namespace tessera::devices {
 
 struct ParamInfo {
-    enum class Kind : uint8_t { Number, Integer, Exponential, Choice, Toggle };
+    /// Mask: a set of up to 16 things (the Note Filter's channels), bit n for the n-th; stored as the set's number
+    /// over 65535, which a float holds exactly. Modulators, lanes and curves never move it.
+    enum class Kind : uint8_t { Number, Integer, Exponential, Choice, Toggle, Mask };
     const char* name;
     Kind kind = Kind::Number;
     float min = 0, max = 1; // display units; Exponential needs min > 0
@@ -22,6 +24,8 @@ struct ParamInfo {
 
     /// Knobs that can go below zero draw from their middle.
     bool bipolar() const { return kind != Kind::Choice && kind != Kind::Toggle && min < 0 && max > 0; }
+    /// Whether modulators, automation lanes and curves may move it.
+    bool movable() const { return kind != Kind::Mask; }
 };
 
 struct TypeInfo {

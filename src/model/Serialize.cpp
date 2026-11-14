@@ -1265,6 +1265,7 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     // and the master at 0 dB). A song saved at 7 has one or the other, and neither needs rewriting here. Version 8
     // gave the playheads' choices more rates and lengths (songFromJson keeps each saved choice by name; a song
     // without playheads has nothing to keep). Version 9 gave the Arpeggiator more patterns (kept by name the same way).
+    // Version 10 made the Note Filter's Channel a set of channels (songFromJson turns the one channel into a set).
     if (fromVersion == 6) {
         // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
         // notes for the written length by default, so at half speed a note stopped halfway while the playhead was
@@ -1461,6 +1462,64 @@ void growArpPatterns(Song& s) {
                     add(b);
         }
     growChoices(s, settings);
+}
+
+/// Before schema 10 the Note Filter's Channel was one choice: Any, or 1 to 16. It is now a set of channels: Any
+/// becomes the empty set (any channel), channel n the set with only channel n. A set is only picked by hand, so the
+/// lanes and modulations that moved the old choice are dropped.
+void channelsToSets(Song& s) {
+    constexpr int kOldChoices = 17; // Any, 1..16
+    const devices::ParamInfo& info = devices::deviceInfo(DeviceType::NoteFilter).params[size_t(chain::knob::kChannel)];
+    std::vector<uint64_t> filters;
+    auto convert = [&](Device& d) {
+        if (d.type != DeviceType::NoteFilter)
+            return;
+        filters.push_back(d.id.value);
+        if (d.params.size() <= size_t(chain::knob::kChannel))
+            return;
+        int channel = std::clamp(int(std::lround(d.params[chain::knob::kChannel] * (kOldChoices - 1))), 0, 16);
+        int set = channel > 0 ? 1 << (channel - 1) : 0;
+        d.params[chain::knob::kChannel] = devices::normalize(info, float(set));
+    };
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices) {
+            convert(d);
+            for (Playhead& p : d.playheads)
+                for (Device& b : p.branch)
+                    convert(b);
+        }
+    if (filters.empty())
+        return;
+    auto aimsAtChannel = [&](const ParamRef& r) {
+        return r.kind == ParamRef::Kind::Device && r.param == chain::knob::kChannel &&
+               std::find(filters.begin(), filters.end(), r.owner) != filters.end();
+    };
+    auto routes = [&](std::vector<Modulator>& list) {
+        for (Modulator& m : list)
+            m.routes.erase(std::remove_if(m.routes.begin(), m.routes.end(),
+                                          [&](const Modulation& r) {
+                                              return r.kind == Modulation::Kind::Param && aimsAtChannel(r.target);
+                                          }),
+                           m.routes.end());
+    };
+    auto lanes = [&](std::vector<AutomationEnvelope>& list) {
+        list.erase(std::remove_if(list.begin(), list.end(),
+                                  [&](const AutomationEnvelope& l) { return aimsAtChannel(l.paramTarget); }),
+                   list.end());
+    };
+    routes(s.modulators);
+    for (Track& t : s.tracks) {
+        routes(t.modulators);
+        lanes(t.automation);
+        for (Device& d : t.devices) {
+            routes(d.modulators);
+            for (Playhead& p : d.playheads)
+                for (Device& b : p.branch)
+                    routes(b.modulators);
+        }
+    }
+    for (auto& [id, clip] : s.clips)
+        lanes(clip.automation);
 }
 
 /// Before 13 Oct 2026 Random also had velocity (knob 3) and timing (knob 4). Those moved to the Humanize device: a
@@ -1676,6 +1735,8 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
         growPlayheadChoices(s);
     if (schemaVersion < 9)
         growArpPatterns(s);
+    if (schemaVersion < 10)
+        channelsToSets(s);
     normalize(s);
     return s;
 }

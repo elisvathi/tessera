@@ -60,7 +60,7 @@ struct Marker {
 struct Song {
     // 7 was taken twice, on two branches: the Playheads device and audio. 8: more playhead rates and lengths.
     // 9: more Arpeggiator patterns.
-    static constexpr int kSchemaVersion = 9;
+    static constexpr int kSchemaVersion = 10;
 
     TimeSig timeSig;
     float swing = 0;           // 0..1, shown as 50..75% (Swing.hpp)

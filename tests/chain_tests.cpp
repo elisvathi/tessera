@@ -958,9 +958,34 @@ TEST_CASE("Note Filter lets some notes through") {
     CHECK(pitchesOf(rig.out.notes) == std::vector<int>{62, 68});
 }
 
-TEST_CASE("Note Filter keeps one channel, or every channel") {
+TEST_CASE("Note Filter keeps a set of channels, or every channel") {
+    SUBCASE("channels 1 and 3") {
+        Rig rig;
+        rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 0b101}});
+        for (int i = 0; i < 4; i++) {
+            ChainNote n = rig.note(i * 10, 5, 60 + i);
+            n.channel = uint8_t(i + 1); // 1, 2, 3, 4
+            rig.push(n);
+        }
+        rig.run(100);
+        CHECK(pitchesOf(rig.out.notes) == std::vector<int>{60, 62});
+    }
+    SUBCASE("none picked: any channel") {
+        Rig rig;
+        rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 0}});
+        for (int i = 0; i < 4; i++) {
+            ChainNote n = rig.note(i * 10, 5, 60 + i);
+            n.channel = uint8_t(i * 5 + 1); // 1, 6, 11, 16
+            rig.push(n);
+        }
+        rig.run(100);
+        CHECK(pitchesOf(rig.out.notes) == std::vector<int>{60, 61, 62, 63});
+    }
+}
+
+TEST_CASE("Note Filter keeps one channel") {
     Rig rig;
-    rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 2}}); // the choice after Any: channel 2
+    rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 0b10}}); // only channel 2
     for (int i = 0; i < 4; i++) {
         ChainNote n = rig.note(i * 10, 5, 60 + i);
         n.channel = uint8_t(i % 2 + 1); // 1, 2, 1, 2

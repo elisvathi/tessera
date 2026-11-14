@@ -355,6 +355,8 @@ ModulatorId curveOn(const Song& song, const ParamRef& target) {
 
 void showCurveFor(EditorContext& ctx, const ParamRef& target) {
     TesseraModule* m = moduleOf(ctx);
+    if (const devices::ParamInfo* p = m ? infoOf(m->song(), target) : nullptr; p && !p->movable())
+        return; // a set is only picked by hand
     ModulatorId id = m ? curveOn(m->song(), target) : ModulatorId();
     showCurve(ctx, id);
     if (!id.valid())
@@ -607,7 +609,7 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
     const Song& song = m->song();
     const devices::ParamInfo* p = infoOf(song, ref);
     const float* value = findParam(song, ref);
-    if (!p || !value)
+    if (!p || !value || !p->movable())
         return;
     EditorContext* c = &ctx;
     rack::ui::Menu* menu = rack::createMenu();
@@ -916,6 +918,8 @@ void automateKnob(EditorContext& ctx, const ParamRef& ref, LaneOwner owner) {
         return;
     const Song& song = m->song();
     const devices::ParamInfo* info = infoOf(song, ref);
+    if (info && !info->movable())
+        return;
     const float* value = findParam(song, ref);
     if (!info || !value)
         return;

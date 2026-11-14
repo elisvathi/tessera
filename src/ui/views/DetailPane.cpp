@@ -24,10 +24,12 @@ DetailPane::DetailPane(EditorContext& ctx) : EditorPane(ctx, Pane::Detail) {
     ToolButton::Options o;
     o.text = "Devices";
     o.tooltip = withShortcut("Show the track's devices in this pane", Action::ToggleDevices);
-    o.action = [c] {
+    // A second click, with the devices showing, goes back to the notes.
+    o.action = [this, c] {
+        bool showing = !showsMixer() && c->module() && deviceActions::stripOpen(*c);
         c->state().mixerOpen = false;
         c->state().focus = Pane::Detail;
-        deviceActions::setStripOpen(*c, true);
+        deviceActions::setStripOpen(*c, !showing);
     };
     o.active = [this, c] { return c->module() && !showsMixer() && deviceActions::stripOpen(*c); };
     devicesTab = new ToolButton(o);

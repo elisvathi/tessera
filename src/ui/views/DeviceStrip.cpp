@@ -451,13 +451,12 @@ void DeviceStrip::setIndex(const TagRef& t, int index) {
 }
 
 uint16_t DeviceStrip::channelsOf(const Device& d) const {
-    if (channelPreview && channelPreview->first == d.id.value)
+    if (channelPreview && channelPreview->first == d.id.value && tagPanelOpen())
         return channelPreview->second;
     const devices::ParamInfo* info = devices::paramInfo(d.type, chain::knob::kChannel);
     if (!info || d.params.size() <= size_t(chain::knob::kChannel))
         return 0;
-    int ch = int(std::lround(devices::display(*info, d.params[size_t(chain::knob::kChannel)])));
-    return ch > 0 ? uint16_t(1u << (ch - 1)) : 0;
+    return uint16_t(std::lround(devices::display(*info, d.params[size_t(chain::knob::kChannel)])));
 }
 
 void DeviceStrip::setChannels(DeviceId id, uint16_t mask) {
@@ -466,14 +465,8 @@ void DeviceStrip::setChannels(DeviceId id, uint16_t mask) {
     const devices::ParamInfo* info = d ? devices::paramInfo(d->type, chain::knob::kChannel) : nullptr;
     if (!info)
         return;
-    int ch = 0;
-    for (int c = 0; c < 16; c++)
-        if (mask & (1u << c)) {
-            ch = c + 1;
-            break;
-        }
     deviceActions::setKnob(ctx, {ParamRef::Kind::Device, id.value, uint16_t(chain::knob::kChannel)},
-                           devices::normalize(*info, float(ch)));
+                           devices::normalize(*info, float(mask)));
 }
 
 tags::Values DeviceStrip::valuesOf(const Device& d, const Playhead* playhead) {

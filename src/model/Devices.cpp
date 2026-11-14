@@ -872,8 +872,9 @@ void Chain::noteFilter(const Message& m, const DeviceSlot& d, const Context& /*c
         std::swap(vlo, vhi);
     if (m.note.pitch < lo || m.note.pitch > hi || v < vlo - 0.5f || v > vhi + 0.5f)
         return;
-    int channel = choiceOf(d, knob::kChannel); // 0 = any
-    if (channel > 0 && m.note.channel != channel)
+    // A set of channels, bit n for channel n + 1; none picked passes every channel.
+    int channels = int(shown(d, knob::kChannel));
+    if (channels != 0 && (m.note.channel < 1 || m.note.channel > 16 || !(channels & (1 << (m.note.channel - 1)))))
         return;
     DeviceState& s = states[size_t(m.stage)];
     int every = std::max(1, int(shown(d, knob::kEvery)));

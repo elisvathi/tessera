@@ -2,6 +2,7 @@
 
 #include "../src/model/DeviceCommands.hpp"
 #include "../src/model/DeviceTypes.hpp"
+#include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
 #include "RandomSong.hpp"
@@ -528,6 +529,53 @@ TEST_CASE("songs from before devices load with empty chains") {
         CHECK(t.devices.empty());
         CHECK(t.modulators.empty());
     }
+}
+
+TEST_CASE("a Note Filter's one channel becomes a set of channels in older songs") {
+    Song song = makeDefaultSong();
+    addDemoClip(song);
+    DeviceId any = addDeviceTo(song, 0, DeviceType::NoteFilter);
+    DeviceId ten = addDeviceTo(song, 0, DeviceType::NoteFilter);
+    // Schema 9 saved the choice Any, 1..16 as 0..1 of its 17 places.
+    song.tracks[0].devices[0].params[chain::knob::kChannel] = 0;
+    song.tracks[0].devices[1].params[chain::knob::kChannel] = 10.f / 16;
+    ModulatorId lfo = addModulatorAt(song, songLevel());
+    song.modulators[0].routes.push_back(toKnob(ten, chain::knob::kChannel));
+    song.modulators[0].routes.push_back(toKnob(ten, chain::knob::kLowest));
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.paramTarget = {ParamRef::Kind::Device, ten.value, uint16_t(chain::knob::kChannel)};
+    lane.points = {{0, 0.5f, CurveType::Linear, 0}};
+    song.tracks[0].automation.push_back(lane);
+    json::Ref j(songToJson(song));
+    Song loaded = songFromJson(j.get(), 9);
+
+    const devices::ParamInfo& info = devices::deviceInfo(DeviceType::NoteFilter).params[chain::knob::kChannel];
+    const Device* a = findDevice(loaded, any);
+    const Device* b = findDevice(loaded, ten);
+    REQUIRE(a);
+    REQUIRE(b);
+    CHECK(devices::display(info, a->params[chain::knob::kChannel]) == 0); // any channel
+    CHECK(devices::display(info, b->params[chain::knob::kChannel]) == float(1 << 9)); // only channel 10
+    // A set is picked by hand: what moved the old choice is gone, the rest stays.
+    const Modulator* m = findModulator(loaded, lfo);
+    REQUIRE(m);
+    REQUIRE(m->routes.size() == 1);
+    CHECK(m->routes[0].target.param == chain::knob::kLowest);
+    CHECK(loaded.tracks[0].automation.empty());
+
+    // A song saved now keeps its set as it is.
+    Song again = throughJson(loaded);
+    CHECK(devices::display(info, findDevice(again, ten)->params[chain::knob::kChannel]) == float(1 << 9));
+}
+
+TEST_CASE("a channel set is never moved by a modulator") {
+    Song song = makeDefaultSong();
+    addDemoClip(song);
+    DeviceId filter = addDeviceTo(song, 0, DeviceType::NoteFilter);
+    ModulatorId lfo = addModulatorAt(song, songLevel());
+    CHECK(!reachable(song, songLevel(), lfo, toKnob(filter, chain::knob::kChannel)));
+    CHECK(reachable(song, songLevel(), lfo, toKnob(filter, chain::knob::kLowest)));
 }
 
 TEST_CASE("copying a device to another place makes an independent copy") {

@@ -27,6 +27,7 @@ ParamInfo choice(const char* name, std::vector<std::string> choices, int def) {
     return {name, K::Choice, 0, float(choices.size() - 1), float(def), "", std::move(choices)};
 }
 ParamInfo toggle(const char* name, bool def) { return {name, K::Toggle, 0, 1, def ? 1.f : 0.f, "", {}}; }
+ParamInfo mask(const char* name) { return {name, K::Mask, 0, 65535, 0, "", {}}; }
 
 const std::vector<std::string> kRateNames = {"8 bars", "4 bars", "2 bars", "1 bar", "1/2",   "1/4",
                                              "1/8",    "1/16",   "1/32",   "1/64",  "1/2 T", "1/4 T",
@@ -97,8 +98,7 @@ std::vector<TypeInfo> buildDevices() {
         "Note Filter",
         {integer("Lowest", 0, 127, 0), integer("Highest", 0, 127, 127), number("Min velocity", 0, 100, 0, "%"),
          number("Max velocity", 0, 100, 100, "%"), integer("Every", 1, 16, 1), integer("Offset", 0, 15, 0),
-         choice("Channel",
-                {"Any", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"}, 0)}};
+         mask("Channels")}};
     t[size_t(DeviceType::Playheads)] = {"Playheads",
                                         {choice("Restart", {"Clip start", "Every N bars"}, 0),
                                          integer("Restart bars", 1, 64, 4, "bars"),
@@ -263,6 +263,7 @@ float display(const ParamInfo& p, float n) {
     switch (p.kind) {
     case K::Integer:
     case K::Choice:
+    case K::Mask:
         return std::round(p.min + n * (p.max - p.min));
     case K::Toggle:
         return n >= 0.5f ? 1.f : 0.f;
@@ -286,6 +287,7 @@ float normalize(const ParamInfo& p, float v) {
         break;
     case K::Integer:
     case K::Choice:
+    case K::Mask:
         n = (std::round(v) - p.min) / (p.max - p.min);
         break;
     case K::Number:
@@ -308,6 +310,16 @@ std::string format(const ParamInfo& p, float n) {
     }
     case K::Toggle:
         return v > 0.5f ? "On" : "Off";
+    case K::Mask: {
+        int bits = int(v);
+        if (bits == 0)
+            return "Any";
+        std::string out;
+        for (int k = 0; k < 16; k++)
+            if (bits & (1 << k))
+                out += (out.empty() ? "" : ", ") + std::to_string(k + 1);
+        return out;
+    }
     case K::Integer:
         snprintf(text, sizeof(text), p.min < 0 ? "%+.0f%s%s" : "%.0f%s%s", double(v), p.unit[0] ? " " : "", p.unit);
         return text;

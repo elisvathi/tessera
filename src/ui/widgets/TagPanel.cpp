@@ -112,6 +112,9 @@ class TagPanelWidget : public rack::widget::OpaqueWidget {
             openPanel = nullptr;
         if (!picked && !spec.channels && spec.preview)
             spec.preview(-1);
+        // Channels picked by typing are kept however the panel closes, as its footer says.
+        if (!picked && spec.channels && mask != spec.mask && spec.pickMask)
+            spec.pickMask(mask);
     }
 
     PanelField* textField() { return field; }

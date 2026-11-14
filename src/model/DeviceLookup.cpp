@@ -1,5 +1,7 @@
 #include "DeviceLookup.hpp"
 
+#include "DeviceTypes.hpp"
+
 #include <algorithm>
 
 namespace tessera {
@@ -171,6 +173,11 @@ bool reachable(const Song& song, const ModulatorPlace& place, ModulatorId self, 
     }
     if (!findParam(song, m.target))
         return false;
+    // A set (the Note Filter's channels) is only ever picked by hand.
+    if (m.target.kind == ParamRef::Kind::Device)
+        if (const Device* d = findDevice(song, DeviceId(m.target.owner)))
+            if (const devices::ParamInfo* info = devices::paramInfo(d->type, m.target.param); info && !info->movable())
+                return false;
     if (m.target.kind == ParamRef::Kind::Modulator && m.target.owner == self.value)
         return false; // its own settings would feed back on themselves
     switch (place.level) {
