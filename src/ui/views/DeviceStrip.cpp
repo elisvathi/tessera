@@ -2203,6 +2203,11 @@ void DeviceStrip::drawForeground(const DrawArgs& args) {
         }
         if (ctx.module()->automated(ref))
             text += std::string(text.empty() ? "" : "   ") + "(click the A to show the lane)";
+        // Nothing moves it: say what it is and how to change it.
+        if (text.empty())
+            text = std::string(t.spec.family == Family::Direction ? "Direction" : info ? info->name : "") +
+                   (t.spec.family == Family::Channels ? ": click to pick channels"
+                                                      : ": drag or scroll to change, click for every choice");
         if (!text.empty()) {
             draw::TextStyle style{theme::fonts::ui(), 10, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
             float w = draw::textWidth(vg, style, text) + 12;
