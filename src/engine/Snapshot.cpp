@@ -186,6 +186,7 @@ int channelsOf(const std::vector<LanePlayback>& lanes) {
 
 ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick swingStep, uint8_t key) {
     ClipPlayback out;
+    out.ownChain = clip.usesOwnChain() ? clip.id.value : 0;
     out.looping = clip.loopMode == LoopMode::Loop;
     out.loopStart = out.looping ? clip.loopStart : 0;
     out.loopEnd = out.looping ? clip.loopEnd : clip.contentEnd();
@@ -405,6 +406,8 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         inst.row = stack.row.count(a.id) ? stack.row.at(a.id) : 0;
         if (playback->loopLength() > 0)
             tp->instances.push_back(inst);
+        if (clip->usesOwnChain())
+            tp->arrangementChains.push_back({a.position, instanceEnd(a), clip->id.value});
         if (clip->automation.empty() || (playback->lanes.empty() && playback->knobLanes.empty()))
             continue;
         tp->arrangementLanes.push_back(inst);
@@ -441,7 +444,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
 }
 
 /// Devices that pass notes through and their order, switch and drum setting: what notes in flight depend on.
-uint64_t chainStructure(const Track& track) {
+uint64_t chainStructure(const std::vector<Device>& chain) {
     uint64_t h = 1469598103934665603ull;
     auto add = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
     auto device = [&](const Device& d) {
@@ -449,7 +452,7 @@ uint64_t chainStructure(const Track& track) {
         add(uint64_t(d.type));
         add(uint64_t(d.on) << 1 | uint64_t(d.affectDrumLanes));
     };
-    for (const Device& d : track.devices) {
+    for (const Device& d : chain) {
         device(d);
         for (const Playhead& p : d.playheads)
             for (const Device& b : p.branch)
@@ -469,13 +472,10 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         return first;
     };
 
-    snap.chains.resize(song.tracks.size());
-    for (size_t i = 0; i < song.tracks.size(); i++) {
-        const Track& track = song.tracks[i];
-        ChainPlayback& chain = snap.chains[i];
-        const Device* reader = activePlayheads(track);
+    auto buildChain = [&](const std::vector<Device>& devices, ChainPlayback& chain) {
+        const Device* reader = activePlayheads(devices);
         bool beforeReader = reader != nullptr;
-        for (const Device& d : track.devices) {
+        for (const Device& d : devices) {
             if (&d == reader)
                 beforeReader = false;
             if (d.type == DeviceType::Motion && beforeReader) {
@@ -526,7 +526,27 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
             chain.devices.push_back(dp);
             chain.active |= d.on;
         }
-        chain.structure = chainStructure(track);
+        chain.structure = chainStructure(devices);
+    };
+    snap.chains.resize(song.tracks.size());
+    snap.trackChains = song.tracks.size();
+    for (size_t i = 0; i < song.tracks.size(); i++)
+        buildChain(song.tracks[i].devices, snap.chains[i]);
+    // Then the own chains of the clips the tracks play, each once.
+    for (const Track& track : song.tracks) {
+        auto addClip = [&](ClipId id) {
+            const Clip* clip = song.findClip(id);
+            if (!clip || !clip->usesOwnChain() || snap.ownChainOf(id.value))
+                return;
+            snap.chains.emplace_back();
+            snap.chains.back().clip = id.value;
+            buildChain(clip->devices, snap.chains.back());
+        };
+        for (const ClipSlot& slot : track.slots)
+            if (slot.clip)
+                addClip(*slot.clip);
+        for (const ArrangerClip& a : track.arrangement)
+            addClip(a.clip);
     }
 
     forEachModulator(song, [&](const Modulator& m, const ModulatorPlace& place) {
@@ -546,7 +566,11 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         mp.segmentStart = m.segmentStart;
         mp.segmentEnd = m.segmentEnd;
         snap.modulators.push_back(mp);
-        if (mp.track >= 0)
+        // A clip's modulators (and its devices' own) restart with the notes that go through its chain.
+        ChainPlayback* own = place.clip.valid() ? const_cast<ChainPlayback*>(snap.ownChainOf(place.clip.value)) : nullptr;
+        if (own)
+            own->modulatorSlots.push_back(slot);
+        else if (mp.track >= 0)
             snap.chains[size_t(mp.track)].modulatorSlots.push_back(slot);
     });
     // Curve modulators on playhead settings: the playheads read them where they read the clip.

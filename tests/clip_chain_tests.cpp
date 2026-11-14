@@ -5,6 +5,7 @@
 #include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/LauncherCommands.hpp"
+#include "../src/model/Render.hpp"
 #include "../src/model/Serialize.hpp"
 
 using namespace tessera;
@@ -261,5 +262,40 @@ TEST_SUITE("clip chains") {
         // Back on the track's chain, the clip's playheads need nothing.
         applyChecked(r.song, playTrackChain(r.song, r.fill));
         CHECK(r.song.voiceBlocks(r.song.tracks[0]).size() == 1);
+    }
+
+    TEST_CASE("MIDI export with devices applied plays each timeline clip through its own choice of chain") {
+        Rig r;
+        Track& t = r.song.tracks[0];
+        t.devices.clear();
+        t.modulators.clear();
+        r.clip(r.fill).notes[0].motion = DeviceId();
+        Device up = devices::makeDevice(DeviceType::Transpose, DeviceId(r.song.nextId++));
+        up.params[size_t(chain::knob::kSemitones)] =
+            devices::normalize(*devices::paramInfo(DeviceType::Transpose, chain::knob::kSemitones), 7);
+        t.devices.push_back(up);
+        applyChecked(r.song, playOwnChain(r.song, r.fill, idsFrom(r.song)));
+        Device& own = r.clip(r.fill).devices[0];
+        own.params[size_t(chain::knob::kSemitones)] =
+            devices::normalize(*devices::paramInfo(DeviceType::Transpose, chain::knob::kSemitones), 12);
+        for (auto [clip, at] : {std::pair<ClipId, Tick>{r.verse, 0}, {r.fill, 4 * kPpq}, {r.verse, 8 * kPpq}}) {
+            ArrangerClip a;
+            a.id = r.song.newId<ArrangementId>();
+            a.clip = clip;
+            a.position = at;
+            a.length = 4 * kPpq;
+            r.song.tracks[0].arrangement.push_back(a);
+        }
+        render::Options o;
+        o.devices = render::DeviceMode::Applied;
+        std::vector<int> pitches;
+        for (const render::ExportNote& n : render::trackNotes(r.song, r.song.tracks[0].id, o, {}))
+            pitches.push_back(n.pitch);
+        CHECK(pitches == std::vector<int>{67, 72, 67});
+        o.devices = render::DeviceMode::Bypassed;
+        pitches.clear();
+        for (const render::ExportNote& n : render::trackNotes(r.song, r.song.tracks[0].id, o, {}))
+            pitches.push_back(n.pitch);
+        CHECK(pitches == std::vector<int>{60, 60, 60});
     }
 }

@@ -416,6 +416,13 @@ class Engine {
         // The device chain: what the snapshot says, and the runtime (an index into `chains`, -1 for none).
         const ChainPlayback* chainInfo = nullptr;
         int chain = -1;
+        // While a clip with its own chain plays (docs/DECISIONS.md §157), that chain and its runtime: the clip's notes
+        // go through it instead of the track's. Live keys and notes from a listened track keep the track's chain.
+        const ChainPlayback* ownInfo = nullptr;
+        uint64_t ownClip = 0;
+        int ownChain = -1;
+        /// The chain the playing clip's notes go through: what its playheads and its note modulators come from.
+        const ChainPlayback* readInfo() const { return ownInfo ? ownInfo : chainInfo; }
         uint64_t outputVersion(uint64_t epoch) const {
             return voices.changeCount() + drums.changeCount() + autoChanges + epoch;
         }
@@ -490,7 +497,7 @@ class Engine {
                                   double playAtFrom);
     /// Whether the track's clips are read by playheads.
     static bool readByPlayheads(const TrackState& state) {
-        return state.chainInfo && state.chainInfo->playheadKnobs >= 0;
+        return state.readInfo() && state.readInfo()->playheadKnobs >= 0;
     }
     void playSource(const TrackPlayback& track, TrackState& state, double from, double to);
     void playArrangement(const TrackPlayback& track, TrackState& state, double from, double to);
@@ -602,7 +609,7 @@ class Engine {
     // Device chains run on the engine clock (freeTick), which also runs while stopped, so live notes go through
     // them too. Voices end on the same clock.
     struct ChainRuntime {
-        TrackId owner;
+        uint64_t owner = 0; // the track's ID value, or for a clip's own chain the clip's
         uint64_t structure = 0;
         chain::Chain chain;
     };
@@ -629,10 +636,22 @@ class Engine {
         return track.audible || (track.busSlot >= 0 && track.busSlot < kMaxTracks && feeds[size_t(track.busSlot)]);
     }
     void runChain(const TrackPlayback& track, TrackState& state, double until);
+    /// Runs one runtime (`runtime`, with the devices of `info`) up to `until`.
+    void runChainOf(const TrackPlayback& track, TrackState& state, int runtime, const ChainPlayback* info,
+                    double until);
+    /// Makes the track's clip notes go through the own chain of clip `clip` (its ID value), or through the track's
+    /// chain for 0. What the old own chain still held is dropped.
+    void useOwnChain(TrackState& state, uint64_t clip);
+    /// A runtime for the chain with key `key` (a track's or a clip's ID value): the one it had, else a free one,
+    /// cleared. -1 when none is free.
+    int claimRuntime(uint64_t key, uint64_t structure);
+    /// The earliest message waiting in either of a track's chains, on the engine clock.
+    double chainDue(const TrackState& state) const;
     void assignChains();
     /// Voices of notes whose end only the chain would have sent (legato, held notes) end now.
     void releaseOpenVoices(TrackState& state);
-    void triggerModulators(const TrackState& state, const chain::ChainNote& note);
+    /// Restarts the modulators of chain `info` that notes restart (envelopes, note followers).
+    void triggerModulators(const ChainPlayback* info, const chain::ChainNote& note);
     void advanceModulation();
     /// What each track's knob lanes set this block (before modulation reads them).
     void advanceKnobLanes();
@@ -752,7 +771,9 @@ class Engine {
     std::array<std::array<std::array<int8_t, 128>, 16>, 3> livePitch{};
 
     // Devices and modulators. Large tables live on the heap, allocated once.
-    std::unique_ptr<std::array<ChainRuntime, kMaxTracks>> chains;
+    /// A track's chain and the own chain of the clip it plays: at most two runtimes per track.
+    static constexpr int kChainRuntimes = 2 * kMaxTracks;
+    std::unique_ptr<std::array<ChainRuntime, kChainRuntimes>> chains;
     std::unique_ptr<float[]> knobValues; // knob table with modulation, as the devices read it
     std::unique_ptr<std::array<mods::State, kMaxModulatorSlots>> modStates;
     std::unique_ptr<std::atomic<float>[]> liveKnobs;      // for the UI

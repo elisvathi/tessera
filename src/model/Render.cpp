@@ -581,6 +581,38 @@ std::vector<Played> sourceNotes(const Song& song, const Track& t, const Options&
     return playedNotes(song, t, o, keys);
 }
 
+/// The parts of a track by the chain they play through (docs/DECISIONS.md §157): the track with the timeline clips that
+/// use its devices, then for each clip with its own chain a copy of the track holding that chain's devices and
+/// modulators and only that clip's timeline copies. A track whose clips all use its devices is one part.
+std::vector<Track> chainParts(const Song& song, const Track& t) {
+    std::vector<ClipId> own;
+    for (const ArrangerClip& a : t.arrangement)
+        if (const Clip* c = song.findClip(a.clip);
+            c && c->usesOwnChain() && std::find(own.begin(), own.end(), a.clip) == own.end())
+            own.push_back(a.clip);
+    if (own.empty())
+        return {t};
+    std::vector<Track> parts;
+    parts.push_back(t);
+    auto& base = parts.back().arrangement;
+    base.erase(std::remove_if(base.begin(), base.end(),
+                              [&](const ArrangerClip& a) {
+                                  return std::find(own.begin(), own.end(), a.clip) != own.end();
+                              }),
+               base.end());
+    for (ClipId id : own) {
+        const Clip& clip = *song.findClip(id);
+        Track part = t;
+        part.devices = clip.devices;
+        part.modulators = clip.modulators;
+        part.arrangement.erase(std::remove_if(part.arrangement.begin(), part.arrangement.end(),
+                                              [&](const ArrangerClip& a) { return a.clip != id; }),
+                               part.arrangement.end());
+        parts.push_back(std::move(part));
+    }
+    return parts;
+}
+
 /// The notes a track's device chain plays from `notes` (docs/DEVICES.md §6), with the same code as playback.
 std::vector<Played> throughChain(const Song& song, const Track& t, const std::vector<Played>& notes, double until,
                                  double tempo, const std::vector<Scale>& keys) {
@@ -592,6 +624,26 @@ std::vector<Played> throughChain(const Song& song, const Track& t, const std::ve
     std::vector<Played> out;
     for (const chainrender::Note& n : chainrender::run(song, t, in, until, tempo, keys))
         out.push_back({n.start, n.end, n.pitch, n.velocity, n.release, n.source, n.pass, n.origin, n.key, n.channel});
+    return out;
+}
+
+/// What a track plays: its clips as written, or with devices applied what each of its chains plays (a clip with its
+/// own chain through that chain), in time order.
+std::vector<Played> trackPlayed(const Song& song, const Track& t, const Options& o, double until, double tempo) {
+    if (o.devices != DeviceMode::Applied) {
+        std::vector<Scale> keys;
+        return sourceNotes(song, t, o, keys);
+    }
+    std::vector<Track> parts = chainParts(song, t);
+    std::vector<Played> out;
+    for (const Track& part : parts) {
+        std::vector<Scale> keys;
+        std::vector<Played> source = sourceNotes(song, part, o, keys);
+        std::vector<Played> played = throughChain(song, part, source, until, tempo, keys);
+        out.insert(out.end(), played.begin(), played.end());
+    }
+    if (parts.size() > 1)
+        std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
     return out;
 }
 
@@ -997,10 +1049,7 @@ smf::File renderSong(const Song& song, const Options& o, const Context& ctx, con
         int ch = channelOf(song, o, t.id) - 1;
         smf::Track out;
         out.events.push_back(smf::trackName(0, t.name));
-        std::vector<Scale> keys;
-        std::vector<Played> played = sourceNotes(song, t, o, keys);
-        if (o.devices == DeviceMode::Applied)
-            played = throughChain(song, t, played, double(to), ctx.tempo, keys);
+        std::vector<Played> played = trackPlayed(song, t, o, double(to), ctx.tempo);
         emitNotes(out, played, ch, from, to, o);
         emitAutomation(out, song, t, ch, from, to, o);
         file.tracks.push_back(std::move(out));
@@ -1031,10 +1080,7 @@ std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Option
     const Track* t = song.findTrack(track);
     if (!t)
         return out;
-    std::vector<Scale> keys;
-    std::vector<Played> played = sourceNotes(song, *t, o, keys);
-    if (o.devices == DeviceMode::Applied)
-        played = throughChain(song, *t, played, double(songEnd(song)), ctx.tempo, keys);
+    std::vector<Played> played = trackPlayed(song, *t, o, double(songEnd(song)), ctx.tempo);
     for (const Played& p : played) {
         out.push_back({p.start, p.end, p.pitch, p.velocity, p.release, p.channel, {}, {}, {}});
         if (p.source) {

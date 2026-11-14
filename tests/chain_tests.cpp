@@ -2611,3 +2611,140 @@ TEST_CASE("engine: one to three playheads at any speed start the first note on t
         }
     }
 }
+
+// ---- A clip's own chain (docs/DECISIONS.md §157) -----------------------------------------------------------------
+
+namespace {
+
+/// Gives clip `clip` its own chain with one Transpose of `semitones` (playing through it).
+void ownTranspose(Song& song, ClipId clip, float semitones) {
+    Clip& c = song.clips.at(clip);
+    c.hasOwnChain = c.playsOwnChain = true;
+    Device d = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+    d.params = knobsOf(DeviceType::Transpose, {{chain::knob::kSemitones, semitones}});
+    c.devices = {d};
+}
+
+/// The pitches the first track's gated voices play, low to high.
+std::vector<int> sounding(const Harness& h) {
+    std::vector<int> out;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            out.push_back(h.pitch(v));
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+/// A second clip with one note of `pitch` in a new scene, its slot on the first track.
+ClipId addSceneClip(Song& song, int pitch) {
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.length = kPpq;
+    n.pitch = int8_t(pitch);
+    clip.notes.push_back(n);
+    song.clips.emplace(clip.id, clip);
+    song.scenes.resize(song.scenes.size() + 1);
+    song.tracks[0].slots.resize(song.scenes.size());
+    song.tracks[0].slots.back().clip = clip.id;
+    return clip.id;
+}
+
+} // namespace
+
+TEST_CASE("engine: a clip with its own chain plays through it instead of the track's") {
+    Song song = songWith({{0, 240, 60}, {480, 240, 62}});
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ClipId clip = song.clips.begin()->first;
+    ownTranspose(song, clip, 12);
+    Harness h(song);
+    h.step();
+    CHECK(h.pitch() == 72);
+
+    SUBCASE("back on the track's chain, the next note goes through it") {
+        h.song.clips.at(clip).playsOwnChain = false;
+        h.republish();
+        h.runTo(480 * kSamplesPerTick);
+        CHECK(sounding(h) == std::vector<int>{69});
+    }
+    SUBCASE("an empty chain of its own plays the notes dry") {
+        h.song.clips.at(clip).devices.clear();
+        h.republish();
+        h.runTo(480 * kSamplesPerTick);
+        CHECK(sounding(h) == std::vector<int>{62});
+    }
+}
+
+TEST_CASE("engine: launching clips switches between their chains and the track's, leaving no gate high") {
+    Song song = songWith({{0, kPpq, 60}}, 4 * kPpq, 1);
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ClipId fill = addSceneClip(song, 60);
+    ownTranspose(song, fill, 12);
+    Device echo = devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>());
+    song.clips.at(fill).devices.push_back(echo);
+    song.launchQuantize = LaunchQuantize::Off;
+    Harness h(song);
+    h.step();
+    CHECK(h.pitch() == 67);
+    // The one voice takes a moment to start again (the retrigger gap).
+    h.engine.launch({LaunchEvent::Kind::Scene, 0, 1, true});
+    h.runTo(h.sample + 100);
+    CHECK(sounding(h) == std::vector<int>{72});
+    // Its Echo repeats come while Fill plays; launching the first clip again cuts them.
+    h.runTo(h.sample + 300 * kSamplesPerTick);
+    h.engine.launch({LaunchEvent::Kind::Scene, 0, 0, true});
+    h.runTo(h.sample + 100);
+    CHECK(sounding(h) == std::vector<int>{67});
+    h.runTo(h.sample + 2 * kPpq * kSamplesPerTick);
+    CHECK_FALSE(h.anyGate());
+    h.engine.stop();
+    h.step();
+    CHECK_FALSE(h.anyGate());
+}
+
+TEST_CASE("engine: on the timeline each clip plays through its own choice of chain") {
+    Song song = songWith({{0, kPpq, 60}}, 4 * kPpq, 1);
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ClipId verse = song.clips.begin()->first;
+    ClipId fill = addSceneClip(song, 60);
+    ownTranspose(song, fill, 12);
+    for (auto [clip, at] : {std::pair<ClipId, Tick>{verse, 0}, {fill, 4 * kPpq}, {verse, 8 * kPpq}}) {
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip;
+        a.position = at;
+        a.length = 4 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+    }
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    std::vector<int> heard;
+    bool was = false;
+    while (h.sample < 12 * kPpq * kSamplesPerTick) {
+        h.step();
+        if (h.gate() && !was)
+            heard.push_back(h.pitch());
+        was = h.gate();
+    }
+    CHECK(heard == std::vector<int>{67, 72, 67});
+}
+
+TEST_CASE("engine: live keys go through the track's chain while a clip plays through its own") {
+    Song song = songWith({{0, kPpq, 48}}, 4 * kPpq, 2);
+    song.tracks[0].armed = true;
+    song.tracks[0].monitor = true;
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ownTranspose(song, song.clips.begin()->first, 12);
+    Harness h(song);
+    h.step();
+    h.engine.liveNote({LiveSource::Midi, 0, 64, 0.9f, true});
+    h.step();
+    CHECK(sounding(h) == std::vector<int>{60, 71});
+    h.engine.liveNote({LiveSource::Midi, 0, 64, 0, false});
+    h.runTo(h.sample + 2 * kPpq * kSamplesPerTick);
+    CHECK_FALSE(h.anyGate());
+}

@@ -30,7 +30,7 @@ Engine::Engine()
     : playheadClocks(std::make_unique<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>>()),
       trackStore(std::make_unique<std::array<TrackState, kMaxTracks>>()),
       previousStore(std::make_unique<std::array<TrackState, kMaxTracks>>()), tracks(*trackStore),
-      previous(*previousStore), chains(std::make_unique<std::array<ChainRuntime, kMaxTracks>>()),
+      previous(*previousStore), chains(std::make_unique<std::array<ChainRuntime, kChainRuntimes>>()),
       knobValues(std::make_unique<float[]>(size_t(kMaxKnobs))),
       modStates(std::make_unique<std::array<mods::State, kMaxModulatorSlots>>()),
       liveKnobs(new std::atomic<float>[size_t(kMaxKnobs)]()), liveBases(new std::atomic<float>[size_t(kMaxKnobs)]()),
@@ -128,6 +128,13 @@ void Engine::setSnapshot(const Snapshot* s) {
             moveVoiceState(state, moved);
         reattachCurves(tp, state);
         state.chainInfo = i < s->chains.size() ? &s->chains[i] : nullptr;
+        // A launched clip plays through its own chain if it has one now; on the timeline the chain follows the song
+        // (fireArrangement), and one that is gone gives way to the track's.
+        if (const ClipPlayback* launched = tp.slot(state.playing))
+            state.ownClip = launched->ownChain;
+        state.ownInfo = s->ownChainOf(state.ownClip);
+        if (!state.ownInfo)
+            state.ownClip = 0;
         renumberReaders(state);
         state.autoChannels = std::max(tp.autoChannels, state.chainInfo ? state.chainInfo->autoChannels : 0);
         // Lanes may have come or gone: live controls find their channels again when they next move.
@@ -176,8 +183,11 @@ void Engine::setSnapshot(const Snapshot* s) {
                     feeds[size_t(from.busSlot)] = true;
             }
         }
-    for (size_t i = trackCount; i < tracks.size(); i++)
-        tracks[i].chain = -1;
+    for (size_t i = trackCount; i < tracks.size(); i++) {
+        tracks[i].chain = tracks[i].ownChain = -1;
+        tracks[i].ownInfo = nullptr;
+        tracks[i].ownClip = 0;
+    }
     // Tracks moved to new indices: wakeAll() above brought every voice clock to now (new tracks start there).
     clockOf.fill(clockAt);
     assignChains();
@@ -188,7 +198,7 @@ void Engine::setSnapshot(const Snapshot* s) {
         }
         // A playhead turned off (its dot, Shift+M, another one soloed) stops its notes now, not when they end.
         // One a curve or a lane turns off stops when the playheads next read (Engine::playPlayheads).
-        if (const ChainPlayback* chain = tracks[i].chainInfo) {
+        if (const ChainPlayback* chain = tracks[i].readInfo()) {
             auto& clocks = (*playheadClocks)[i];
             for (size_t k = 0; k < chain->playheads.size() && k < clocks.size(); k++) {
                 const PlayheadPlayback& p = chain->playheads[k];
@@ -206,50 +216,113 @@ void Engine::setSnapshot(const Snapshot* s) {
 }
 
 void Engine::assignChains() {
-    // Runtimes stay with their track (by ID), so notes in flight carry over an edit.
-    std::array<bool, kMaxTracks> taken{};
+    // Runtimes stay with their chain (by its track's or clip's ID), so notes in flight carry over an edit.
+    std::array<bool, kChainRuntimes> taken{};
+    auto kept = [&](uint64_t key) {
+        for (size_t r = 0; key && r < chains->size(); r++)
+            if ((*chains)[r].owner == key) {
+                taken[r] = true;
+                return int(r);
+            }
+        return -1;
+    };
+    auto fresh = [&](uint64_t key, const ChainPlayback* info) {
+        for (size_t r = 0; r < chains->size(); r++) {
+            if (taken[r])
+                continue;
+            taken[r] = true;
+            ChainRuntime& rt = (*chains)[r];
+            rt.owner = key;
+            rt.structure = info ? info->structure : 0;
+            rt.chain.clear();
+            return int(r);
+        }
+        return -1;
+    };
     for (size_t i = 0; i < trackCount; i++) {
         TrackState& state = tracks[i];
-        state.chain = -1;
-        for (size_t r = 0; r < chains->size(); r++) {
-            if ((*chains)[r].owner == state.id) {
-                state.chain = int(r);
-                taken[r] = true;
-                break;
-            }
-        }
+        state.chain = kept(state.id.value);
+        state.ownChain = state.ownInfo ? kept(state.ownClip) : -1;
     }
     for (size_t i = 0; i < trackCount; i++) {
         TrackState& state = tracks[i];
-        if (state.chain < 0) {
-            for (size_t r = 0; r < chains->size(); r++) {
-                if (taken[r])
-                    continue;
-                taken[r] = true;
-                ChainRuntime& fresh = (*chains)[r];
-                fresh.owner = state.id;
-                fresh.structure = state.chainInfo ? state.chainInfo->structure : 0;
-                fresh.chain.clear();
-                state.chain = int(r);
-                break;
-            }
-        }
         if (state.chain < 0)
-            continue;
-        ChainRuntime& rt = (*chains)[size_t(state.chain)];
-        // Expression curves live in the old snapshot, which is about to be freed.
-        rt.chain.dropExtras();
-        uint64_t structure = state.chainInfo ? state.chainInfo->structure : 0;
-        if (rt.structure != structure) {
-            // Devices came or went: what they held is dropped, and notes waiting for them to end end now.
-            rt.structure = structure;
-            rt.chain.clear();
-            releaseOpenVoices(state);
+            state.chain = fresh(state.id.value, state.chainInfo);
+        if (state.ownInfo && state.ownChain < 0)
+            state.ownChain = fresh(state.ownClip, state.ownInfo);
+        if (state.ownChain < 0) {
+            state.ownInfo = nullptr;
+            state.ownClip = 0;
+        }
+        for (auto [runtime, info] : {std::pair<int, const ChainPlayback*>{state.chain, state.chainInfo},
+                                     {state.ownChain, state.ownInfo}}) {
+            if (runtime < 0)
+                continue;
+            ChainRuntime& rt = (*chains)[size_t(runtime)];
+            // Expression curves live in the old snapshot, which is about to be freed.
+            rt.chain.dropExtras();
+            uint64_t structure = info ? info->structure : 0;
+            if (rt.structure != structure) {
+                // Devices came or went: what they held is dropped, and notes waiting for them to end end now.
+                rt.structure = structure;
+                rt.chain.clear();
+                releaseOpenVoices(state);
+            }
         }
     }
     for (size_t r = 0; r < chains->size(); r++)
         if (!taken[r])
-            (*chains)[r].owner = TrackId();
+            (*chains)[r].owner = 0;
+}
+
+int Engine::claimRuntime(uint64_t key, uint64_t structure) {
+    for (size_t r = 0; r < chains->size(); r++)
+        if ((*chains)[r].owner == key)
+            return int(r);
+    for (size_t r = 0; r < chains->size(); r++) {
+        ChainRuntime& rt = (*chains)[r];
+        if (rt.owner != 0)
+            continue;
+        rt.owner = key;
+        rt.structure = structure;
+        rt.chain.clear();
+        return int(r);
+    }
+    return -1;
+}
+
+void Engine::useOwnChain(TrackState& state, uint64_t clip) {
+    const ChainPlayback* info = snapshot ? snapshot->ownChainOf(clip) : nullptr;
+    if (!info)
+        clip = 0;
+    if (clip == state.ownClip)
+        return;
+    if (state.ownChain >= 0) {
+        // Switching clips cuts what the old chain still held, as a launch does; its notes already sounding end as
+        // they would, and open ones end now.
+        ChainRuntime& old = (*chains)[size_t(state.ownChain)];
+        old.chain.clear();
+        old.owner = 0;
+        releaseOpenVoices(state);
+    }
+    state.ownClip = clip;
+    state.ownInfo = info;
+    state.ownChain = info ? claimRuntime(clip, info->structure) : -1;
+    if (state.ownChain < 0) {
+        state.ownInfo = nullptr;
+        state.ownClip = 0;
+    }
+    // Another chain may have other playheads: they read again from now.
+    renumberReaders(state);
+    rewindPlayheads(state);
+}
+
+double Engine::chainDue(const TrackState& state) const {
+    double due = INFINITY;
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            due = std::min(due, (*chains)[size_t(runtime)].chain.nextDue());
+    return due;
 }
 
 void Engine::releaseOpenVoices(TrackState& state) {
@@ -411,8 +484,9 @@ void Engine::pushCaptureStop(const TrackPlayback& tp) {
 }
 
 void Engine::releaseAll(TrackState& state) {
-    if (state.chain >= 0)
-        (*chains)[size_t(state.chain)].chain.clear();
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            (*chains)[size_t(runtime)].chain.clear();
     clearPending(state);
     state.voices.releaseAll();
     state.drums.releaseAll();
@@ -426,9 +500,9 @@ void Engine::renumberReaders(TrackState& state) {
     // follows it by its ID (so turning another off never stops its notes).
     std::array<uint8_t, playheads::kMaxPlayheads + 1> now{};
     std::array<uint64_t, playheads::kMaxPlayheads> ids{};
-    if (state.chainInfo)
-        for (size_t k = 0; k < state.chainInfo->playheads.size() && k < ids.size(); k++)
-            ids[k] = state.chainInfo->playheads[k].id;
+    if (const ChainPlayback* reader = state.readInfo())
+        for (size_t k = 0; k < reader->playheads.size() && k < ids.size(); k++)
+            ids[k] = reader->playheads[k].id;
     for (size_t old = 0; old < state.readerIds.size(); old++)
         for (size_t k = 0; k < ids.size() && state.readerIds[old] != 0; k++)
             if (ids[k] == state.readerIds[old])
@@ -448,8 +522,9 @@ void Engine::silencePlayhead(TrackState& state, uint8_t lane) {
         if (state.pending[size_t(i)].lane != lane)
             state.pending[size_t(kept++)] = state.pending[size_t(i)];
     state.pendingCount = kept;
-    if (state.chain >= 0)
-        (*chains)[size_t(state.chain)].chain.dropLane(lane);
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            (*chains)[size_t(runtime)].chain.dropLane(lane);
     for (int v = 0; v < kMaxTrackVoices; v++) {
         if (state.voiceReader[size_t(v)] != lane)
             continue;
@@ -828,8 +903,9 @@ void Engine::applyQueued() {
 
 void Engine::releaseClipVoices(TrackState& state) {
     // Live notes in the chain lose what the devices held for them; their key release still ends them.
-    if (state.chain >= 0)
-        (*chains)[size_t(state.chain)].chain.clear();
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            (*chains)[size_t(runtime)].chain.clear();
     rewindPlayheads(state);
     state.pendingCount = 0;
     state.drums.releaseAll();
@@ -950,6 +1026,8 @@ void Engine::switchTo(const TrackPlayback& tp, TrackState& state, int slot, doub
     state.queuedClipTime = NAN;
     state.playing = tp.slot(slot) ? slot : kNoSlot;
     state.playingClip = state.playing >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
+    const ClipPlayback* launched = tp.slot(state.playing);
+    useOwnChain(state, launched ? launched->ownChain : 0);
     state.queued = kNothingQueued;
     state.launchTick = at;
     state.cursor = 0;
@@ -1052,7 +1130,7 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
                 continue; // no chain message or note end is due (idleUntilControl)
             catchUp(i, sample);
             TrackState& state = tracks[i];
-            if (state.chain >= 0 && (*chains)[size_t(state.chain)].chain.nextDue() < freeTick)
+            if (chainDue(state) < freeTick)
                 runChain(*snapshot->tracks[i], state, freeTick);
             if (state.voices.earliestEnd() < freeTick)
                 state.voices.releaseEndedBefore(freeTick);
@@ -1132,7 +1210,7 @@ bool Engine::idleUntilControl(const TrackState& state, uint64_t sample) const {
     if (state.busSlot >= 0 && (state.written[0] != version || state.written[1] != version))
         return false;
     // Playing, scheduling wakes the track for anything due. Stopped, nothing does: only idle without work in flight.
-    if (!playing && (state.voices.anyEnding() || (state.chain >= 0 && !(*chains)[size_t(state.chain)].chain.idle())))
+    if (!playing && (state.voices.anyEnding() || std::isfinite(chainDue(state))))
         return false;
     return true;
 }
@@ -1174,8 +1252,7 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
     constexpr double kEarly = 1e-6;
     // Voice ends and the chain's messages are on the engine clock.
     double wake = state.voices.earliestEnd() - clockOffset();
-    if (state.chain >= 0)
-        wake = std::min(wake, (*chains)[size_t(state.chain)].chain.nextDue() - clockOffset());
+    wake = std::min(wake, chainDue(state) - clockOffset());
     for (int i = 0; i < state.pendingCount; i++)
         wake = std::min(wake, state.pending[size_t(i)].start);
     if (state.queued != kNothingQueued)
@@ -1235,7 +1312,7 @@ void Engine::scheduleTrackNow(const TrackPlayback& track, TrackState& state, dou
         from = at;
     }
     playSource(track, state, from, curPlay);
-    if (state.chain >= 0)
+    if (state.chain >= 0 || state.ownChain >= 0)
         runChain(track, state, curPlay + clockOffset());
 }
 
@@ -1265,6 +1342,7 @@ void Engine::playArrangement(const TrackPlayback& track, TrackState& state, doub
 }
 
 void Engine::fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom) {
+    useOwnChain(state, track.ownChainAt(from));
     // Inside the song loop, a note never sounds past the loop end.
     if (replacing(track) || readByPlayheads(state)) {
         while (state.arrangementCursor < track.arrangement.size() &&
@@ -1392,7 +1470,7 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
 
 void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
                            double from, double stretch, double first, double last) {
-    const ChainPlayback& chain = *state.chainInfo;
+    const ChainPlayback& chain = *state.readInfo();
     TimeSig ts = snapshot->timeSig;
     const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
     bool once =
@@ -1825,13 +1903,16 @@ void Engine::startNote(const TrackPlayback& track, TrackState& state, const Note
 
 void Engine::deliver(const TrackPlayback& track, TrackState& state, const chain::ChainNote& note) {
     forwardNote(track, note, ListenSource::TrackBefore);
-    triggerModulators(state, note);
-    if (!chainActive(state)) {
+    // A clip's note goes through the clip's own chain when it plays through one; live keys and notes from a listened
+    // track go through the track's.
+    bool own = state.ownChain >= 0 && state.ownInfo && forwardDepth == 0 && !(note.id & chain::kLiveNote);
+    triggerModulators(own ? state.ownInfo : state.chainInfo, note);
+    if (own ? !state.ownInfo->active : !chainActive(state)) {
         sound(track, state, note);
         return;
     }
     chain::ChainNote n = note;
-    chain::Chain& c = (*chains)[size_t(state.chain)].chain;
+    chain::Chain& c = (*chains)[size_t(own ? state.ownChain : state.chain)].chain;
     if (n.id == 0)
         n.id = c.newId();
     c.push(n);
@@ -1949,12 +2030,18 @@ void Engine::endInput(const TrackPlayback& track, TrackState& state, uint32_t id
 }
 
 void Engine::runChain(const TrackPlayback& track, TrackState& state, double until) {
-    if (state.chain < 0 || !state.chainInfo || !snapshot)
+    runChainOf(track, state, state.chain, state.chainInfo, until);
+    runChainOf(track, state, state.ownChain, state.ownInfo, until);
+}
+
+void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runtime, const ChainPlayback* info,
+                        double until) {
+    if (runtime < 0 || !info || !snapshot)
         return;
-    chain::Chain& c = (*chains)[size_t(state.chain)].chain;
+    chain::Chain& c = (*chains)[size_t(runtime)].chain;
     if (c.idle())
         return;
-    const std::vector<DevicePlayback>& devices = state.chainInfo->devices;
+    const std::vector<DevicePlayback>& devices = info->devices;
     std::array<chain::DeviceSlot, kMaxDevices> slots;
     int count = std::min<int>(int(devices.size()), kMaxDevices);
     for (int k = 0; k < count; k++) {
@@ -1980,8 +2067,8 @@ void Engine::runChain(const TrackPlayback& track, TrackState& state, double unti
     c.run(until, context, sink);
 }
 
-void Engine::triggerModulators(const TrackState& state, const chain::ChainNote& note) {
-    if (!state.chainInfo || state.chainInfo->modulatorSlots.empty())
+void Engine::triggerModulators(const ChainPlayback* info, const chain::ChainNote& note) {
+    if (!info || info->modulatorSlots.empty())
         return;
     double at = songTickAt(note.start - clockOffset());
     mods::NoteValues values;
@@ -1994,7 +2081,7 @@ void Engine::triggerModulators(const TrackState& state, const chain::ChainNote& 
     }
     mods::Clock clock;
     clock.ticksPerSecond = bpm * kPpq / 60.0;
-    for (int slot : state.chainInfo->modulatorSlots)
+    for (int slot : info->modulatorSlots)
         mods::trigger((*modStates)[size_t(slot)], at, note.end - note.start, values, clock);
 }
 

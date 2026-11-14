@@ -10,9 +10,13 @@ using namespace tessera;
 
 namespace {
 
+/// Where a test's Transpose and Echo go: nowhere, on each track, or in each clip's own chain.
+enum class Devices { None, OnTrack, OnClip };
+
 /// `tracks` tracks, each looping a bar of 4-note chords on every 1/16, with automation, all launched; with
 /// `playheads`, a Playheads device reads each clip with that many playheads.
-double secondOfAudio(int tracks, bool busy = true, bool automation = true, int playheads = 0) {
+double secondOfAudio(int tracks, bool busy = true, bool automation = true, int playheads = 0,
+                     Devices chain = Devices::None) {
     Song song;
     for (int t = 0; t < tracks; t++) {
         Track track;
@@ -46,6 +50,12 @@ double secondOfAudio(int tracks, bool busy = true, bool automation = true, int p
                 d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), i));
             track.devices.push_back(d);
         }
+        if (chain != Devices::None) {
+            std::vector<Device>& list = chain == Devices::OnTrack ? track.devices : clip.devices;
+            list.push_back(devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>()));
+            list.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+            clip.hasOwnChain = clip.playsOwnChain = chain == Devices::OnClip;
+        }
         song.clips.emplace(clip.id, clip);
         song.tracks.push_back(track);
     }
@@ -71,10 +81,10 @@ double secondOfAudio(int tracks, bool busy = true, bool automation = true, int p
 }
 
 /// The best of three runs: other work on the machine only ever makes a run slower.
-double bestOf3(int tracks, bool busy = true, bool automation = true, int playheads = 0) {
-    double best = secondOfAudio(tracks, busy, automation, playheads);
+double bestOf3(int tracks, bool busy = true, bool automation = true, int playheads = 0, Devices chain = Devices::None) {
+    double best = secondOfAudio(tracks, busy, automation, playheads, chain);
     for (int i = 0; i < 2; i++)
-        best = std::min(best, secondOfAudio(tracks, busy, automation, playheads));
+        best = std::min(best, secondOfAudio(tracks, busy, automation, playheads, chain));
     return best;
 }
 
@@ -96,5 +106,17 @@ TEST_CASE("performance: the engine stays inside its CPU budget (DESIGN.md §18)"
     CHECK(heads16 < 8); // four playheads read four times the notes: about four busy tracks' worth, no more
 #else
     CHECK(busy64 < 400); // unoptimized with sanitizers: only a guard against something quadratic
+#endif
+}
+
+TEST_CASE("performance: a clip's own chain costs what the same devices on its track cost") {
+    double onTrack = bestOf3(16, true, true, 0, Devices::OnTrack);
+    double onClip = bestOf3(16, true, true, 0, Devices::OnClip);
+    MESSAGE("16 busy tracks through a Transpose and an Echo: " << onTrack << "% of a core on the tracks, " << onClip
+                                                              << "% in each clip's own chain");
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
+    CHECK(onClip < onTrack * 1.3 + 0.1);
+#else
+    CHECK(onClip < onTrack * 2 + 5);
 #endif
 }

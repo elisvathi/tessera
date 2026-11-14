@@ -96,6 +96,9 @@ struct ClipPlayback {
     };
     std::vector<MotionNotes> motions;
 
+    /// The clip's ID value when it plays through its own device chain (Snapshot::ownChainOf), 0 for its track's.
+    uint64_t ownChain = 0;
+
     Tick loopLength() const { return loopEnd - loopStart; }
     // Where a playhead without a segment of its own reads (playheadSpan()).
     Tick segmentStart = 0;
@@ -170,6 +173,23 @@ struct TrackPlayback {
     std::vector<LanePlayback> lanes;
     std::vector<KnobLanePlayback> knobLanes;
     std::vector<InstanceLanes> arrangementLanes;
+    /// Where timeline clips with their own device chain play (song ticks, sorted by start): their notes go through
+    /// that chain. Overlapping stacked clips: the first that covers a moment decides.
+    struct ChainSpan {
+        Tick start = 0, end = 0;
+        uint64_t clip = 0;
+    };
+    std::vector<ChainSpan> arrangementChains;
+    /// The clip whose own chain plays at song tick `t` on the timeline; 0 for the track's chain.
+    uint64_t ownChainAt(double t) const {
+        for (const ChainSpan& c : arrangementChains) {
+            if (double(c.start) > t)
+                break;
+            if (t < double(c.end))
+                return c.clip;
+        }
+        return 0;
+    }
     /// Every timeline clip that plays, sorted by position, for playheads to read (docs/design/PLAYHEADS.md).
     std::vector<InstanceLanes> instances;
     std::vector<NoteExtras> arrangementExtras;
@@ -241,8 +261,9 @@ struct PlayheadPlayback {
     int knobCount = 0;
 };
 
-/// A track's device chain.
+/// A device chain: a track's, or a clip's own.
 struct ChainPlayback {
+    uint64_t clip = 0; // a clip's own chain: its ClipId value; 0 for a track's
     std::vector<DevicePlayback> devices; // the Playheads device is not among them: it reads the clip instead
     /// The track's Playheads device, when it has one that is on: its playheads and where its own knobs are.
     std::vector<PlayheadPlayback> playheads;
@@ -325,11 +346,20 @@ struct Snapshot {
     // Devices and modulators: rebuilt with every snapshot (they are small), so track playback stays shared.
     std::vector<float> knobs;          // every device knob and modulator setting, normalized
     std::vector<KnobOwner> owners;     // sorted by kind, then ID
-    std::vector<ChainPlayback> chains; // per track, display order
+    /// Per track in display order, then the own chains of the clips that play through theirs.
+    std::vector<ChainPlayback> chains;
+    size_t trackChains = 0;
     std::vector<ModulatorPlayback> modulators;
     std::vector<KnobModulation> modulated; // knobs that modulators move
     std::vector<int> laneKnobs;            // knobs that knob lanes turn, sorted
 
+    /// The own chain of clip `clip` (its ID value), or nullptr when it doesn't play through one.
+    const ChainPlayback* ownChainOf(uint64_t clip) const {
+        for (size_t i = trackChains; clip && i < chains.size(); i++)
+            if (chains[i].clip == clip)
+                return &chains[i];
+        return nullptr;
+    }
     /// The knob table index of a device knob or modulator setting; -1 when it isn't there.
     int knobIndex(const ParamRef& ref) const;
 };
