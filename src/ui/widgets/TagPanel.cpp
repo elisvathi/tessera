@@ -687,6 +687,30 @@ void PanelField::onSelectKey(const SelectKeyEvent& e) {
 
 void PanelField::onChange(const ChangeEvent& e) { panel->typed(getText()); }
 
+/// The panel's backdrop: a click outside the panel closes it, as for any menu, except a quick second click on the tag
+/// that opened it, which is the second half of a double-click: that closes it and resets the setting.
+class TagPanelOverlay : public rack::ui::MenuOverlay {
+  public:
+    /// How soon after the panel opens a click on its tag still counts as a double-click, in seconds.
+    static constexpr double kAgain = 0.4;
+    rack::math::Rect tagBox;
+    std::function<void()> reset;
+    double openedAt = rack::system::getTime();
+
+    void onButton(const ButtonEvent& e) override {
+        bool onPanel = !children.empty() && children.front()->box.contains(e.pos);
+        if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && reset && !onPanel &&
+            tagBox.contains(e.pos) && rack::system::getTime() - openedAt < kAgain) {
+            e.consume(this);
+            std::function<void()> again = reset;
+            requestDelete();
+            again();
+            return;
+        }
+        MenuOverlay::onButton(e);
+    }
+};
+
 } // namespace
 
 bool tagPanelOpen() { return openPanel != nullptr; }
@@ -694,7 +718,9 @@ bool tagPanelOpen() { return openPanel != nullptr; }
 void openTagPanel(TagPanelSpec spec) {
     if (openPanel)
         openPanel->close();
-    auto* overlay = new rack::ui::MenuOverlay;
+    auto* overlay = new TagPanelOverlay;
+    overlay->tagBox = spec.tagBox;
+    overlay->reset = spec.reset;
     APP->scene->addChild(overlay);
     float below = spec.below, centerX = spec.centerX;
     auto* panel = new TagPanelWidget(std::move(spec));

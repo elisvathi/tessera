@@ -122,8 +122,10 @@ Mode uses).
   change; letting go is one undo step. Hold **Shift** for smaller steps.
 - **Mouse wheel** over a tag: one step.
 - **Arrow keys**: one step on the tag you last touched.
-- **Double-click** a tag to set it back to its default.
-- On/off settings (In key, Hold) are small switches: click to flip them.
+- **Double-click** a tag to set it back to its default (a Note Filter's channels back to any). The first click opens
+  the tag's panel; the second closes it again and resets the setting, as one undo step.
+- On/off settings (In key, Hold) are small switches: click to flip them, double-click to set them back to their
+  default.
 
 ### A tag's panel
 

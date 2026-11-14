@@ -34,6 +34,10 @@ struct TagPanelSpec {
     /// Where the panel opens, in scene coordinates: under `below` (the bottom of the picture it changes, so the
     /// picture stays in view while choices are previewed), centred on `centerX`. Negative: under the mouse.
     float below = -1, centerX = -1;
+    /// The tag that opened the panel, in scene coordinates, and what a double-click on it does: the first click opened
+    /// the panel, so a second click there soon after closes it and calls `reset` (back to the default).
+    rack::math::Rect tagBox;
+    std::function<void()> reset;
     /// Links along the bottom: "Draw a curve", "Modulate, automate…". Each closes the panel first.
     std::vector<std::pair<std::string, std::function<void()>>> links;
 };

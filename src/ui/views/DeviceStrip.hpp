@@ -126,6 +126,8 @@ class DeviceStrip : public InteractiveView {
     void setIndex(const TagRef& t, int index);
     /// Opens a tag's panel under the mouse.
     void openPanel(const TagRef& t);
+    /// Sets a tag back to its default (a channel set to any channel) as one undo step: what a double-click does.
+    void resetTag(const TagRef& t);
 
   protected:
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;

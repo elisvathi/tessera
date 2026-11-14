@@ -1112,6 +1112,12 @@ void DeviceStrip::openPanel(const TagRef& t) {
     for (size_t i = 0; i < parts.size(); i++)
         if ((parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch) && parts[i].tag >= 0 &&
             tagRefs[size_t(parts[i].tag)] == t) {
+            Vec a = getAbsoluteOffset(parts[i].rect.pos), b = getAbsoluteOffset(parts[i].rect.getBottomRight());
+            spec.tagBox = Rect(a, b.minus(a));
+            spec.reset = [weak, t] {
+                if (auto s = weak.lock())
+                    (*s)->resetTag(t);
+            };
             for (const Part& q : parts)
                 if (q.kind == Kind::Tile && q.rect.contains(parts[i].rect.getCenter())) {
                     spec.below = getAbsoluteOffset(Vec(0, q.rect.getBottom())).y;
@@ -1430,12 +1436,16 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
 
 void DeviceStrip::doubleClick(Vec pos, Modifiers mods) {
     const Part* hit = partAt(pos);
-    if (!hit || hit->kind != Kind::Tag || ctx.mappingModulator)
+    if (!hit || (hit->kind != Kind::Tag && hit->kind != Kind::Switch) || ctx.mappingModulator)
         return;
-    TagRef t = tagRefs[size_t(hit->tag)];
+    resetTag(tagRefs[size_t(hit->tag)]);
+}
+
+void DeviceStrip::resetTag(const TagRef& t) {
+    focusedTag = t;
     if (t.spec.family == Family::Channels)
         setChannels(DeviceId(t.ref.owner), 0);
-    else
+    else if (indexOf(t) != listOf(t).def)
         setIndex(t, listOf(t).def);
 }
 
@@ -2209,8 +2219,9 @@ void DeviceStrip::drawForeground(const DrawArgs& args) {
         // Nothing moves it: say what it is and how to change it.
         if (text.empty())
             text = std::string(t.spec.family == Family::Direction ? "Direction" : info ? info->name : "") +
-                   (t.spec.family == Family::Channels ? ": click to pick channels"
-                                                      : ": drag or scroll to change, click for every choice");
+                   (t.spec.family == Family::Channels ? ": click to pick channels, double-click for any"
+                                                      : ": drag or scroll to change, click for every choice, "
+                                                        "double-click to reset");
         if (!text.empty()) {
             draw::TextStyle style{theme::fonts::ui(), 10, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
             float w = draw::textWidth(vg, style, text) + 12;
