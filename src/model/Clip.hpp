@@ -2,6 +2,7 @@
 
 #include "AudioSource.hpp"
 #include "Automation.hpp"
+#include "Device.hpp"
 #include "Note.hpp"
 #include "ScaleRef.hpp"
 
@@ -49,8 +50,17 @@ struct Clip {
     std::optional<ScaleRef> scaleOverride;
     std::optional<LaunchQuantize> launchQuantize; // overrides the song's setting for this clip
     std::optional<AudioContent> audio;            // set on audio clips, which have no notes
+    /// The clip's own device chain (docs/DECISIONS.md §157): while `playsOwnChain` is set it plays only through these
+    /// devices and modulators, and its track's chain is skipped for it. `hasOwnChain` says it has one at all (an
+    /// empty one plays dry); switching back to the track's keeps it. Audio clips have none.
+    bool hasOwnChain = false;
+    bool playsOwnChain = false;
+    std::vector<Device> devices;
+    std::vector<Modulator> modulators;
 
     bool isAudio() const { return audio.has_value(); }
+    /// Whether its notes go through its own chain now, not its track's.
+    bool usesOwnChain() const { return hasOwnChain && playsOwnChain; }
 
     const Note* findNote(NoteId noteId) const;
     /// The most unmuted notes that sound at the same moment while the clip plays.
@@ -71,7 +81,9 @@ struct Clip {
         return id == o.id && name == o.name && color == o.color && ownColor == o.ownColor && length == o.length &&
                loopStart == o.loopStart &&
                loopEnd == o.loopEnd && loopMode == o.loopMode && notes == o.notes && automation == o.automation &&
-               scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize && audio == o.audio;
+               scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize && audio == o.audio &&
+               hasOwnChain == o.hasOwnChain && playsOwnChain == o.playsOwnChain && devices == o.devices &&
+               modulators == o.modulators;
     }
 };
 

@@ -8,24 +8,39 @@ namespace tessera {
 
 namespace {
 
-template <typename SongT, typename DeviceT>
-DeviceT* findDeviceIn(SongT& song, DeviceId id, TrackId* track) {
+/// Calls `f(devices, owner)` for every chain in the song: each track's, then each clip's own.
+template <typename SongT, typename F>
+void forEachChain(SongT& song, F&& f) {
     for (auto& t : song.tracks)
-        for (auto& d : t.devices) {
-            if (d.id == id) {
-                if (track)
-                    *track = t.id;
-                return &d;
-            }
+        f(t.devices, ChainOwner(t.id));
+    for (auto& [id, c] : song.clips)
+        if (!c.devices.empty())
+            f(c.devices, ChainOwner(id));
+}
+
+/// The track a chain plays on: the track itself, or the first track using the clip.
+TrackId trackOfOwner(const Song& song, ChainOwner owner) {
+    return owner.isClip() ? trackUsing(song, owner.clip) : owner.track;
+}
+
+template <typename SongT, typename DeviceT>
+DeviceT* findDeviceIn(SongT& song, DeviceId id, ChainOwner* owner) {
+    DeviceT* found = nullptr;
+    forEachChain(song, [&](auto& chain, ChainOwner o) {
+        for (auto& d : chain) {
+            if (found)
+                return;
+            if (d.id == id)
+                found = &d;
             for (auto& p : d.playheads)
                 for (auto& b : p.branch)
-                    if (b.id == id) {
-                        if (track)
-                            *track = t.id;
-                        return &b;
-                    }
+                    if (!found && b.id == id)
+                        found = &b;
+            if (found && owner)
+                *owner = o;
         }
-    return nullptr;
+    });
+    return found;
 }
 
 template <typename SongT, typename ModT>
@@ -33,91 +48,180 @@ ModT* findModulatorIn(SongT& song, ModulatorId id, ModulatorPlace* place) {
     for (auto& m : song.modulators)
         if (m.id == id) {
             if (place)
-                *place = {ModLevel::Song, TrackId(), DeviceId()};
+                *place = {ModLevel::Song, TrackId(), DeviceId(), ClipId()};
             return &m;
         }
-    for (auto& t : song.tracks) {
+    for (auto& t : song.tracks)
         for (auto& m : t.modulators)
             if (m.id == id) {
                 if (place)
-                    *place = {ModLevel::Track, t.id, DeviceId()};
+                    *place = {ModLevel::Track, t.id, DeviceId(), ClipId()};
                 return &m;
             }
-        for (auto& d : t.devices)
+    for (auto& [cid, c] : song.clips)
+        for (auto& m : c.modulators)
+            if (m.id == id) {
+                if (place)
+                    *place = {ModLevel::Clip, trackUsing(song, cid), DeviceId(), cid};
+                return &m;
+            }
+    ModT* found = nullptr;
+    forEachChain(song, [&](auto& chain, ChainOwner o) {
+        for (auto& d : chain)
             for (auto& m : d.modulators)
-                if (m.id == id) {
+                if (!found && m.id == id) {
+                    found = &m;
                     if (place)
-                        *place = {ModLevel::Device, t.id, d.id};
-                    return &m;
+                        *place = {ModLevel::Device, trackOfOwner(song, o), d.id, o.clip};
                 }
-    }
-    return nullptr;
+    });
+    return found;
 }
 
 template <typename SongT, typename PlayheadT>
-PlayheadT* findPlayheadIn(SongT& song, PlayheadId id, TrackId* track, DeviceId* device) {
-    for (auto& t : song.tracks)
-        for (auto& d : t.devices)
+PlayheadT* findPlayheadIn(SongT& song, PlayheadId id, ChainOwner* owner, DeviceId* device) {
+    PlayheadT* found = nullptr;
+    forEachChain(song, [&](auto& chain, ChainOwner o) {
+        for (auto& d : chain)
             for (auto& p : d.playheads)
-                if (p.id == id) {
-                    if (track)
-                        *track = t.id;
+                if (!found && p.id == id) {
+                    found = &p;
+                    if (owner)
+                        *owner = o;
                     if (device)
                         *device = d.id;
-                    return &p;
                 }
-    return nullptr;
+    });
+    return found;
 }
 
 } // namespace
 
 Playhead* findPlayhead(Song& song, PlayheadId id, TrackId* track, DeviceId* device) {
-    return findPlayheadIn<Song, Playhead>(song, id, track, device);
+    return const_cast<Playhead*>(findPlayhead(static_cast<const Song&>(song), id, track, device));
 }
 const Playhead* findPlayhead(const Song& song, PlayheadId id, TrackId* track, DeviceId* device) {
-    return findPlayheadIn<const Song, const Playhead>(song, id, track, device);
+    ChainOwner owner;
+    const Playhead* p = findPlayheadIn<const Song, const Playhead>(song, id, &owner, device);
+    if (p && track)
+        *track = trackOfOwner(song, owner);
+    return p;
 }
 
 std::vector<Device>* chainOf(Song& song, DeviceId id, PlayheadId* playhead) {
-    for (Track& t : song.tracks)
-        for (Device& d : t.devices) {
+    std::vector<Device>* found = nullptr;
+    forEachChain(song, [&](std::vector<Device>& chain, ChainOwner) {
+        for (Device& d : chain) {
+            if (found)
+                return;
             if (d.id == id) {
                 if (playhead)
                     *playhead = PlayheadId();
-                return &t.devices;
+                found = &chain;
             }
             for (Playhead& p : d.playheads)
-                for (const Device& b : p.branch)
-                    if (b.id == id) {
-                        if (playhead)
-                            *playhead = p.id;
-                        return &p.branch;
-                    }
+                if (!found && std::any_of(p.branch.begin(), p.branch.end(), [&](const Device& b) { return b.id == id; })) {
+                    if (playhead)
+                        *playhead = p.id;
+                    found = &p.branch;
+                }
         }
-    return nullptr;
+    });
+    return found;
 }
 
-int deviceCount(const Track& track) {
-    int n = int(track.devices.size());
-    for (const Device& d : track.devices)
+int deviceCount(const std::vector<Device>& chain) {
+    int n = int(chain.size());
+    for (const Device& d : chain)
         for (const Playhead& p : d.playheads)
             n += int(p.branch.size());
     return n;
 }
 
-const Device* activePlayheads(const Track& track) {
-    for (const Device& d : track.devices)
+const Device* activePlayheads(const std::vector<Device>& chain) {
+    for (const Device& d : chain)
         if (d.type == DeviceType::Playheads)
             return d.on ? &d : nullptr;
     return nullptr;
 }
 
-Device* findDevice(Song& song, DeviceId id, TrackId* track) { return findDeviceIn<Song, Device>(song, id, track); }
+std::vector<Device>* devicesOf(Song& song, ChainOwner owner) {
+    return const_cast<std::vector<Device>*>(devicesOf(static_cast<const Song&>(song), owner));
+}
+const std::vector<Device>* devicesOf(const Song& song, ChainOwner owner) {
+    if (owner.isClip()) {
+        const Clip* c = song.findClip(owner.clip);
+        return c ? &c->devices : nullptr;
+    }
+    const Track* t = song.findTrack(owner.track);
+    return t ? &t->devices : nullptr;
+}
+std::vector<Modulator>* modulatorsOf(Song& song, ChainOwner owner) {
+    return const_cast<std::vector<Modulator>*>(modulatorsOf(static_cast<const Song&>(song), owner));
+}
+const std::vector<Modulator>* modulatorsOf(const Song& song, ChainOwner owner) {
+    if (owner.isClip()) {
+        const Clip* c = song.findClip(owner.clip);
+        return c ? &c->modulators : nullptr;
+    }
+    const Track* t = song.findTrack(owner.track);
+    return t ? &t->modulators : nullptr;
+}
+
+ChainOwner ownerOf(const Song& song, DeviceId id) {
+    ChainOwner owner;
+    findDeviceIn<const Song, const Device>(song, id, &owner);
+    return owner;
+}
+
+ChainOwner ownerOf(const Song& song, const ParamRef& ref) {
+    if (ref.kind == ParamRef::Kind::Device)
+        return ownerOf(song, DeviceId(ref.owner));
+    if (ref.kind == ParamRef::Kind::Playhead) {
+        ChainOwner owner;
+        findPlayheadIn<const Song, const Playhead>(song, PlayheadId(ref.owner), &owner, nullptr);
+        return owner;
+    }
+    ModulatorPlace place;
+    if (!findModulator(song, ModulatorId(ref.owner), &place))
+        return ChainOwner();
+    switch (place.level) {
+    case ModLevel::Track:
+        return ChainOwner(place.track);
+    case ModLevel::Clip:
+        return ChainOwner(place.clip);
+    case ModLevel::Device:
+        return place.clip.valid() ? ChainOwner(place.clip) : ChainOwner(place.track);
+    case ModLevel::Song:
+    default:
+        return ChainOwner();
+    }
+}
+
+TrackId trackUsing(const Song& song, ClipId clip) {
+    for (const Track& t : song.tracks) {
+        for (const ClipSlot& s : t.slots)
+            if (s.clip == clip)
+                return t.id;
+        for (const ArrangerClip& a : t.arrangement)
+            if (a.clip == clip)
+                return t.id;
+    }
+    return TrackId();
+}
+
+Device* findDevice(Song& song, DeviceId id, TrackId* track) {
+    return const_cast<Device*>(findDevice(static_cast<const Song&>(song), id, track));
+}
 const Device* findDevice(const Song& song, DeviceId id, TrackId* track) {
-    return findDeviceIn<const Song, const Device>(song, id, track);
+    ChainOwner owner;
+    const Device* d = findDeviceIn<const Song, const Device>(song, id, &owner);
+    if (d && track)
+        *track = trackOfOwner(song, owner);
+    return d;
 }
 Modulator* findModulator(Song& song, ModulatorId id, ModulatorPlace* place) {
-    return findModulatorIn<Song, Modulator>(song, id, place);
+    return const_cast<Modulator*>(findModulator(static_cast<const Song&>(song), id, place));
 }
 const Modulator* findModulator(const Song& song, ModulatorId id, ModulatorPlace* place) {
     return findModulatorIn<const Song, const Modulator>(song, id, place);
@@ -185,6 +289,10 @@ bool reachable(const Song& song, const ModulatorPlace& place, ModulatorId self, 
         return true;
     case ModLevel::Track:
         return trackOf(song, m.target) == place.track;
+    case ModLevel::Clip: {
+        ChainOwner owner = ownerOf(song, m.target);
+        return owner.isClip() && owner.clip == place.clip;
+    }
     case ModLevel::Device: {
         if (m.target.kind == ParamRef::Kind::Device)
             return m.target.owner == place.device.value;
@@ -203,13 +311,23 @@ bool reachable(const Song& song, const ModulatorPlace& place, ModulatorId self, 
 
 void forEachModulator(Song& song, const std::function<void(Modulator&, const ModulatorPlace&)>& f) {
     for (Modulator& m : song.modulators)
-        f(m, {ModLevel::Song, TrackId(), DeviceId()});
+        f(m, {ModLevel::Song, TrackId(), DeviceId(), ClipId()});
     for (Track& t : song.tracks) {
         for (Modulator& m : t.modulators)
-            f(m, {ModLevel::Track, t.id, DeviceId()});
+            f(m, {ModLevel::Track, t.id, DeviceId(), ClipId()});
         for (Device& d : t.devices)
             for (Modulator& m : d.modulators)
-                f(m, {ModLevel::Device, t.id, d.id});
+                f(m, {ModLevel::Device, t.id, d.id, ClipId()});
+    }
+    for (auto& [id, c] : song.clips) {
+        if (c.modulators.empty() && c.devices.empty())
+            continue;
+        TrackId track = trackUsing(song, id);
+        for (Modulator& m : c.modulators)
+            f(m, {ModLevel::Clip, track, DeviceId(), id});
+        for (Device& d : c.devices)
+            for (Modulator& m : d.modulators)
+                f(m, {ModLevel::Device, track, d.id, id});
     }
 }
 

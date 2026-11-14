@@ -1064,6 +1064,16 @@ json_t* clipToJson(const Clip& c) {
         setString(j, "launchQuantize", enumName(*c.launchQuantize, kLaunchQuantize));
     if (c.audio)
         set(j, "audio", audioToJson(*c.audio));
+    if (c.hasOwnChain) {
+        json_t* own = json_object();
+        set(own, "plays", json_boolean(c.playsOwnChain));
+        json_t* devices = json_array();
+        for (const Device& d : c.devices)
+            json_array_append_new(devices, deviceToJson(d));
+        set(own, "devices", devices);
+        set(own, "modulators", modulatorListToJson(c.modulators));
+        set(j, "ownChain", own);
+    }
     return j;
 }
 
@@ -1090,6 +1100,12 @@ Clip clipFromJson(const json_t* j) {
         c.launchQuantize = enumFromName(get(j, "launchQuantize"), kLaunchQuantize, LaunchQuantize::Bar);
     if (json_is_object(get(j, "audio")))
         c.audio = audioFromJson(get(j, "audio"));
+    if (const json_t* own = get(j, "ownChain"); json_is_object(own) && !c.audio) {
+        c.hasOwnChain = true;
+        c.playsOwnChain = json_is_true(get(own, "plays"));
+        forEach(get(own, "devices"), [&](const json_t* d) { c.devices.push_back(deviceFromJson(d)); });
+        c.modulators = modulatorListFromJson(get(own, "modulators"));
+    }
     return c;
 }
 
@@ -1267,6 +1283,7 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     // without playheads has nothing to keep). Version 9 gave the Arpeggiator more patterns (kept by name the same way).
     // Version 10 made the Note Filter's Channel a set of channels (songFromJson turns the one channel into a set).
     // Version 11 gave every length and synced rate the one scale, short to long (kept by name, like version 8).
+    // Version 12 let a clip have its own device chain; older songs have none, so nothing changes for them.
     if (fromVersion == 6) {
         // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
         // notes for the written length by default, so at half speed a note stopped halfway while the playhead was

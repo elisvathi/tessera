@@ -33,12 +33,12 @@ enum class ModulatorType : uint8_t { Lfo, Envelope, Steps, Random, Ramp, Macro, 
 constexpr int kModulatorTypeCount = 8;
 
 /// Where a modulator lives, which decides what it may reach (docs/DEVICES.md §1.2).
-enum class ModLevel : uint8_t { Song, Track, Device };
+enum class ModLevel : uint8_t { Song, Track, Device, Clip };
 
-constexpr int kMaxDevices = 16;      // per track
+constexpr int kMaxDevices = 16;      // per chain: a track's, or a clip's own
 constexpr int kMaxDeviceParams = 16; // knobs per device
 constexpr int kMaxSongModulators = 16;
-constexpr int kMaxTrackModulators = 8;
+constexpr int kMaxTrackModulators = 8; // a clip's own modulators too
 constexpr int kMaxDeviceModulators = 4;
 constexpr int kMaxRoutes = 8; // targets per modulator
 constexpr int kMaxModulationsPerKnob = 4;

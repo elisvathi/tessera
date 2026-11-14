@@ -11,8 +11,8 @@
 /// edit isn't possible or changes nothing, so no empty undo step is recorded.
 namespace tessera {
 
-/// The chain parts of a song an edit touched: the song's modulators, and the devices and modulators of some
-/// tracks. Only touched parts are stored.
+/// The chain parts of a song an edit touched: the song's modulators, the devices and modulators of some tracks, and
+/// the own chains of some clips. Only touched parts are stored.
 struct ChainParts {
     std::optional<std::vector<Modulator>> songModulators;
     struct TrackChain {
@@ -24,6 +24,18 @@ struct ChainParts {
         }
     };
     std::vector<TrackChain> tracks;
+    /// A clip's own chain and whether it has one and plays through it.
+    struct ClipChain {
+        ClipId clip;
+        bool hasOwn = false, playsOwn = false;
+        std::vector<Device> devices;
+        std::vector<Modulator> modulators;
+        bool operator==(const ClipChain& o) const {
+            return clip == o.clip && hasOwn == o.hasOwn && playsOwn == o.playsOwn && devices == o.devices &&
+                   modulators == o.modulators;
+        }
+    };
+    std::vector<ClipChain> clips;
 };
 
 /// Swaps chain parts between two states. Moving a device between tracks, removing one (and the routes that
@@ -48,22 +60,22 @@ class ReplaceChains : public Command {
 
 // ---- Devices ------------------------------------------------------------------------------------------------
 
-/// A new device at `index` in the track's chain (clamped; -1 = the end). Null at kMaxDevices. A Playheads device
+/// A new device at `index` in a chain, a track's or a clip's own (clamped; -1 = the end). Null at kMaxDevices. A Playheads device
 /// goes first with two playheads (only Motion devices may come before it), and only when the track has none; other
 /// devices never go before it. A Motion device goes anywhere; by default (-1) before the Playheads device, named
 /// "Motion N" in a colour of its own.
-CommandPtr addDevice(const Song& song, TrackId track, DeviceType type, int index, const NextId& nextId,
+CommandPtr addDevice(const Song& song, ChainOwner owner, DeviceType type, int index, const NextId& nextId,
                      DeviceId* added = nullptr);
 /// Removes a device with its modulators, and every route that pointed at them.
 CommandPtr removeDevice(const Song& song, DeviceId id);
-/// Moves a device to `index` in a track's chain (the same track or another). Its own modulators move along;
-/// routes that end up out of reach are removed.
-CommandPtr moveDevice(const Song& song, DeviceId id, TrackId toTrack, int index);
+/// Moves a device to `index` in a chain (the same or another, a track's or a clip's own). Its own modulators move
+/// along; routes that end up out of reach are removed.
+CommandPtr moveDevice(const Song& song, DeviceId id, ChainOwner to, int index);
 /// A copy right after the original, with new IDs. Routes inside the copy point at the copy.
 CommandPtr duplicateDevice(const Song& song, DeviceId id, const NextId& nextId);
-/// A copy at `index` of a track's chain (positions counted in the chain as it is; -1 = the end), as Ctrl+drag
-/// makes. New IDs; routes inside the copy point at the copy, and any that end up out of reach go.
-CommandPtr copyDevice(const Song& song, DeviceId id, TrackId toTrack, int index, const NextId& nextId);
+/// A copy at `index` of a chain (positions counted in the chain as it is; -1 = the end), as Ctrl+drag makes. New
+/// IDs; routes inside the copy point at the copy, and any that end up out of reach go.
+CommandPtr copyDevice(const Song& song, DeviceId id, ChainOwner to, int index, const NextId& nextId);
 CommandPtr setDeviceOn(const Song& song, DeviceId id, bool on);
 CommandPtr setDeviceDrumLanes(const Song& song, DeviceId id, bool affect);
 CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name);
@@ -96,6 +108,22 @@ CommandPtr setPlayheadPath(const Song& song, PlayheadId id, std::vector<AutoPoin
 /// Moves notes of a clip with a Motion device, or (an invalid `motion`) stops them moving. One undo step.
 CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, DeviceId motion);
 
+// ---- A clip's own chain (docs/DECISIONS.md §157) ------------------------------------------------------------
+
+/// Makes the clip play through its own devices. The first time it gets them as a copy of its track's chain (new
+/// IDs), with the track's modulators that move those devices, so it sounds the same until changed; its notes that
+/// move with a Motion device move with the copy. Afterwards it switches back to the chain it kept. Null for an audio
+/// clip, one that already plays its own, or one no track uses the first time.
+CommandPtr playOwnChain(const Song& song, ClipId clip, const NextId& nextId);
+/// Makes the clip play through its track's devices again. It keeps its own chain, to switch back to.
+CommandPtr playTrackChain(const Song& song, ClipId clip);
+/// Throws the clip's own chain away (with routes that pointed into it): it plays through its track's again.
+CommandPtr deleteOwnChain(const Song& song, ClipId clip);
+/// Makes the clip's own chain the track's: the track's devices become a copy of it (new IDs), its modulators join the
+/// track's, and the clip plays through the track's chain (keeping its own). Notes of other clips that moved with a
+/// Motion device of the old chain stop moving.
+CommandPtr useOwnChainForTrack(const Song& song, ClipId clip, TrackId track, const NextId& nextId);
+
 // ---- Modulators ---------------------------------------------------------------------------------------------
 
 /// A new modulator at `place`, named "LFO", "LFO 2"... Null when that level is full.
@@ -118,10 +146,10 @@ struct CurveDrawing {
 void tidyCurve(CurveDrawing& d);
 /// A Curve modulator's drawing (tidied first).
 CommandPtr setCurve(const Song& song, ModulatorId id, CurveDrawing drawing);
-/// Starts moving `target` with a drawn shape, in one undo step: a new Curve modulator on `track` (named after the
-/// setting), turning the target all the way, so a point's height is the setting's own value. Null when the track
-/// has no room for another modulator.
-CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& target, const std::string& name,
+/// Starts moving `target` with a drawn shape, in one undo step: a new Curve modulator of `owner` (a track, or a
+/// clip's own chain; named after the setting), turning the target all the way, so a point's height is the setting's
+/// own value. Null when there is no room for another modulator there.
+CommandPtr animateWithCurve(const Song& song, ChainOwner owner, const ParamRef& target, const std::string& name,
                             CurveDrawing drawing, const NextId& nextId, ModulatorId* added = nullptr);
 
 /// Adds a route. Null when the target is out of reach, the modulator has kMaxRoutes routes, the knob already
@@ -146,5 +174,8 @@ void renewIds(std::vector<Device>& devices, std::vector<Modulator>& modulators, 
 void retarget(ParamRef& ref, const ChainRemap& remap);
 /// Points every route of the copied devices and modulators at the copies.
 void retargetRoutes(std::vector<Device>& devices, std::vector<Modulator>& modulators, const ChainRemap& remap);
+/// Gives a copied clip's own chain new IDs and points its routes, its lanes and its notes' Motion devices at the
+/// copies.
+void renewClipChain(Clip& clip, const NextId& nextId);
 
 } // namespace tessera

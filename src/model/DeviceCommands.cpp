@@ -19,6 +19,8 @@ ChangeSet ReplaceChains::changes() const {
     ChangeSet c;
     for (const ChainParts::TrackChain& t : after.tracks)
         c.tracks.push_back(t.track);
+    for (const ChainParts::ClipChain& k : after.clips)
+        c.clips.push_back(k.clip);
     return c;
 }
 
@@ -33,18 +35,43 @@ void ReplaceChains::set(Song& song, const ChainParts& parts) {
         track->devices = t.devices;
         track->modulators = t.modulators;
     }
+    for (const ChainParts::ClipChain& k : parts.clips) {
+        Clip* clip = song.findClip(k.clip);
+        assert(clip && "ReplaceChains on a missing clip");
+        if (!clip)
+            continue;
+        clip->hasOwnChain = k.hasOwn;
+        clip->playsOwnChain = k.playsOwn;
+        clip->devices = k.devices;
+        clip->modulators = k.modulators;
+    }
 }
 
 namespace {
 
-/// The parts of a song chain edits work on. Clips are left out: they can be large and no chain edit reads them.
+/// The parts of a song chain edits work on. Of each clip only its own chain comes along: notes can be many and no
+/// chain edit reads them.
 Song chainsOf(const Song& song) {
     Song work;
     work.timeSig = song.timeSig;
     work.tracks = song.tracks;
     work.modulators = song.modulators;
     work.nextId = song.nextId;
+    for (const auto& [id, c] : song.clips) {
+        Clip& k = work.clips[id];
+        k.id = id;
+        k.audio = c.audio ? std::optional<AudioContent>(AudioContent()) : std::nullopt;
+        k.hasOwnChain = c.hasOwnChain;
+        k.playsOwnChain = c.playsOwnChain;
+        k.devices = c.devices;
+        k.modulators = c.modulators;
+    }
     return work;
+}
+
+/// A clip's chain as a part of a ChainParts.
+ChainParts::ClipChain clipChainOf(const Clip& c) {
+    return {c.id, c.hasOwnChain, c.playsOwnChain, c.devices, c.modulators};
 }
 
 /// Runs `edit` on a copy of the song's chains and turns what it changed into one command. `edit` returns
@@ -69,7 +96,15 @@ CommandPtr chainEdit(const Song& song, const std::string& name, Edit&& edit) {
         before.tracks.push_back({a.id, a.devices, a.modulators});
         after.tracks.push_back({b.id, b.devices, b.modulators});
     }
-    if (!before.songModulators && before.tracks.empty())
+    for (const auto& [id, b] : work.clips) {
+        const Clip* a = song.findClip(id);
+        assert(a && "chain edits never add clips");
+        if (!a || clipChainOf(*a) == clipChainOf(b))
+            continue;
+        before.clips.push_back(clipChainOf(*a));
+        after.clips.push_back(clipChainOf(b));
+    }
+    if (!before.songModulators && before.tracks.empty() && before.clips.empty())
         return nullptr;
     return std::make_unique<ReplaceChains>(name, std::move(before), std::move(after));
 }
@@ -83,10 +118,13 @@ std::vector<Modulator>* modulatorsAt(Song& song, const ModulatorPlace& place) {
         Track* t = song.findTrack(place.track);
         return t ? &t->modulators : nullptr;
     }
+    case ModLevel::Clip: {
+        Clip* c = song.findClip(place.clip);
+        return c && !c->isAudio() ? &c->modulators : nullptr;
+    }
     case ModLevel::Device: {
-        TrackId track;
-        Device* d = findDevice(song, place.device, &track);
-        return d && track == place.track ? &d->modulators : nullptr;
+        Device* d = findDevice(song, place.device);
+        return d && ownerOf(song, place.device).clip == place.clip ? &d->modulators : nullptr;
     }
     }
     return nullptr;
@@ -97,6 +135,7 @@ size_t limitAt(ModLevel level) {
     case ModLevel::Song:
         return kMaxSongModulators;
     case ModLevel::Track:
+    case ModLevel::Clip:
         return kMaxTrackModulators;
     case ModLevel::Device:
     default:
@@ -118,8 +157,8 @@ std::string freeName(const std::vector<Modulator>& mods, const std::string& base
     }
 }
 
-std::vector<Device>::iterator deviceIn(Track& track, DeviceId id) {
-    return std::find_if(track.devices.begin(), track.devices.end(), [&](const Device& d) { return d.id == id; });
+std::vector<Device>::iterator deviceIn(std::vector<Device>& chain, DeviceId id) {
+    return std::find_if(chain.begin(), chain.end(), [&](const Device& d) { return d.id == id; });
 }
 
 Modulation* routeAt(Song& song, ModulatorId id, int index) {
@@ -149,36 +188,55 @@ std::string deviceName(const Song& song, DeviceId id) {
 }
 
 /// How many Motion devices lead the chain: the only devices allowed before Playheads.
-int leadingMotions(const Track& track) {
+int leadingMotions(const std::vector<Device>& chain) {
     int n = 0;
-    while (n < int(track.devices.size()) && track.devices[size_t(n)].type == DeviceType::Motion)
+    while (n < int(chain.size()) && chain[size_t(n)].type == DeviceType::Motion)
         n++;
     return n;
 }
 
 /// The first chain position other devices may take: after the Playheads device, which only Motion devices precede.
-int firstFree(const Track& track) {
-    for (size_t i = 0; i < track.devices.size(); i++)
-        if (track.devices[i].type == DeviceType::Playheads)
+int firstFree(const std::vector<Device>& chain) {
+    for (size_t i = 0; i < chain.size(); i++)
+        if (chain[i].type == DeviceType::Playheads)
             return int(i) + 1;
     return 0;
 }
 
-bool hasPlayheads(const Track& track) {
-    return std::any_of(track.devices.begin(), track.devices.end(),
-                       [](const Device& d) { return d.type == DeviceType::Playheads; });
+bool hasPlayheads(const std::vector<Device>& chain) {
+    return std::any_of(chain.begin(), chain.end(), [](const Device& d) { return d.type == DeviceType::Playheads; });
 }
 
 /// Puts a device into a chain at `at` (clamped): a Playheads device goes first but for leading Motion devices,
 /// others after it; a Motion device may go anywhere.
-void insertDevice(Track& track, int at, Device device) {
+void insertDevice(std::vector<Device>& chain, int at, Device device) {
     if (device.type == DeviceType::Playheads)
-        at = leadingMotions(track);
+        at = leadingMotions(chain);
     else if (device.type == DeviceType::Motion)
-        at = std::clamp(at, 0, int(track.devices.size()));
+        at = std::clamp(at, 0, int(chain.size()));
     else
-        at = std::clamp(at, firstFree(track), int(track.devices.size()));
-    track.devices.insert(track.devices.begin() + at, std::move(device));
+        at = std::clamp(at, firstFree(chain), int(chain.size()));
+    chain.insert(chain.begin() + at, std::move(device));
+}
+
+/// The clips a chain plays: the clip itself, or every clip in the track's slots and on its timeline.
+std::vector<const Clip*> clipsPlayedBy(const Song& song, ChainOwner owner) {
+    std::vector<const Clip*> clips;
+    if (owner.isClip()) {
+        if (const Clip* c = song.findClip(owner.clip))
+            clips.push_back(c);
+        return clips;
+    }
+    const Track* t = song.findTrack(owner.track);
+    if (!t)
+        return clips;
+    for (const ClipSlot& s : t->slots)
+        if (const Clip* c = s.clip ? song.findClip(*s.clip) : nullptr)
+            clips.push_back(c);
+    for (const ArrangerClip& a : t->arrangement)
+        if (const Clip* c = song.findClip(a.clip))
+            clips.push_back(c);
+    return clips;
 }
 
 /// The playhead the device gets next: named and coloured by its place, on the lowest channel nobody uses. It starts
@@ -224,23 +282,19 @@ std::string modulatorName(const Song& song, ModulatorId id) {
 
 // ---- Devices ------------------------------------------------------------------------------------------------
 
-CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int index, const NextId& nextId,
+CommandPtr addDevice(const Song& song, ChainOwner owner, DeviceType type, int index, const NextId& nextId,
                      DeviceId* added) {
-    const Track* existing = song.findTrack(trackId);
+    const std::vector<Device>* existing = devicesOf(song, owner);
     if (!existing || deviceCount(*existing) >= kMaxDevices)
+        return nullptr;
+    if (owner.isClip() && song.findClip(owner.clip)->isAudio())
         return nullptr;
     if (type == DeviceType::Playheads && hasPlayheads(*existing))
         return nullptr;
     Device device = devices::makeDevice(type, DeviceId(nextId()));
     if (type == DeviceType::Groove) {
-        // Its grid suits the track's notes: a pattern of 1/8s wouldn't move at all on 1/16s.
-        std::vector<const Clip*> clips;
-        for (const ClipSlot& s : existing->slots)
-            if (const Clip* c = s.clip ? song.findClip(*s.clip) : nullptr)
-                clips.push_back(c);
-        for (const ArrangerClip& a : existing->arrangement)
-            if (const Clip* c = song.findClip(a.clip))
-                clips.push_back(c);
+        // Its grid suits the notes it plays: a pattern of 1/8s wouldn't move at all on 1/16s.
+        std::vector<const Clip*> clips = clipsPlayedBy(song, owner);
         const devices::ParamInfo& grid = devices::deviceInfo(type).params[size_t(chain::knob::kGrooveGrid)];
         device.params[size_t(chain::knob::kGrooveGrid)] =
             devices::normalize(grid, swingStepFor(clips) == kPpq / 2 ? 1.f : 0.f);
@@ -254,7 +308,7 @@ CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int ind
         // "Motion 1", "Motion 2"…, each in a colour no playhead or other Motion on the track wears.
         std::vector<int> used;
         int count = 0;
-        for (const Device& d : existing->devices) {
+        for (const Device& d : *existing) {
             if (d.type == DeviceType::Motion) {
                 used.push_back(d.color);
                 count++;
@@ -274,15 +328,14 @@ CommandPtr addDevice(const Song& song, TrackId trackId, DeviceType type, int ind
             index = leadingMotions(*existing);
     }
     return chainEdit(song, "Add " + device.name, [&](Song& work) {
-        Track& track = *work.findTrack(trackId);
-        insertDevice(track, index < 0 ? int(track.devices.size()) : index, device);
+        std::vector<Device>& chain = *devicesOf(work, owner);
+        insertDevice(chain, index < 0 ? int(chain.size()) : index, device);
         return true;
     });
 }
 
 CommandPtr removeDevice(const Song& song, DeviceId id) {
-    TrackId trackId;
-    if (!findDevice(song, id, &trackId))
+    if (!findDevice(song, id))
         return nullptr;
     return chainEdit(song, "Remove " + deviceName(song, id), [&](Song& work) {
         std::vector<Device>& chain = *chainOf(work, id);
@@ -292,31 +345,33 @@ CommandPtr removeDevice(const Song& song, DeviceId id) {
     });
 }
 
-CommandPtr moveDevice(const Song& song, DeviceId id, TrackId toTrack, int index) {
-    TrackId fromTrack;
-    if (!findDevice(song, id, &fromTrack))
+CommandPtr moveDevice(const Song& song, DeviceId id, ChainOwner to, int index) {
+    ChainOwner from = ownerOf(song, id);
+    if (!from.valid())
         return nullptr;
-    const Track* target = song.findTrack(toTrack);
-    if (!target || (toTrack != fromTrack && deviceCount(*target) >= kMaxDevices))
+    const std::vector<Device>* target = devicesOf(song, to);
+    if (!target || (to != from && deviceCount(*target) >= kMaxDevices))
+        return nullptr;
+    if (to.isClip() && song.findClip(to.clip)->isAudio())
         return nullptr;
     PlayheadId inBranch;
     chainOf(const_cast<Song&>(song), id, &inBranch);
     if (inBranch.valid())
         return nullptr; // branch devices stay in their branch
-    if (findDevice(song, id)->type == DeviceType::Playheads && toTrack != fromTrack && hasPlayheads(*target))
+    if (findDevice(song, id)->type == DeviceType::Playheads && to != from && hasPlayheads(*target))
         return nullptr;
     return chainEdit(song, "Move " + deviceName(song, id), [&](Song& work) {
-        Track& from = *work.findTrack(fromTrack);
-        auto it = deviceIn(from, id);
-        int oldIndex = int(it - from.devices.begin());
+        std::vector<Device>& fromChain = *devicesOf(work, from);
+        auto it = deviceIn(fromChain, id);
+        int oldIndex = int(it - fromChain.begin());
         Device device = std::move(*it);
-        from.devices.erase(it);
-        Track& to = *work.findTrack(toTrack);
-        int at = index < 0 ? int(to.devices.size()) : index;
+        fromChain.erase(it);
+        std::vector<Device>& toChain = *devicesOf(work, to);
+        int at = index < 0 ? int(toChain.size()) : index;
         // `index` counts positions in the chain as it was, so moving right past itself lands one earlier.
-        if (toTrack == fromTrack && at > oldIndex)
+        if (to == from && at > oldIndex)
             at--;
-        insertDevice(to, at, std::move(device));
+        insertDevice(toChain, at, std::move(device));
         pruneRoutes(work);
         return true;
     });
@@ -327,11 +382,12 @@ CommandPtr duplicateDevice(const Song& song, DeviceId id, const NextId& nextId) 
     const Device* original = findDevice(song, id, &trackId);
     if (!original)
         return nullptr;
+    ChainOwner owner = ownerOf(song, id);
     PlayheadId inBranch;
     chainOf(const_cast<Song&>(song), id, &inBranch);
     if (inBranch.valid()) {
         const Playhead* p = findPlayhead(song, inBranch);
-        if (int(p->branch.size()) >= kMaxBranchDevices || deviceCount(*song.findTrack(trackId)) >= kMaxDevices)
+        if (int(p->branch.size()) >= kMaxBranchDevices || deviceCount(*devicesOf(song, owner)) >= kMaxDevices)
             return nullptr;
         Device copy = *original;
         copy.id = DeviceId(nextId());
@@ -342,20 +398,19 @@ CommandPtr duplicateDevice(const Song& song, DeviceId id, const NextId& nextId) 
             return true;
         });
     }
-    const Track& track = *song.findTrack(trackId);
-    int at = int(std::find_if(track.devices.begin(), track.devices.end(), [&](const Device& d) { return d.id == id; }) -
-                 track.devices.begin());
-    CommandPtr command = copyDevice(song, id, trackId, at + 1, nextId);
+    const std::vector<Device>& chain = *devicesOf(song, owner);
+    int at = int(std::find_if(chain.begin(), chain.end(), [&](const Device& d) { return d.id == id; }) - chain.begin());
+    CommandPtr command = copyDevice(song, id, owner, at + 1, nextId);
     return command ? std::make_unique<ReplaceChains>("Duplicate " + original->name,
                                                      static_cast<ReplaceChains&>(*command).partsBefore(),
                                                      static_cast<ReplaceChains&>(*command).partsAfter())
                    : nullptr;
 }
 
-CommandPtr copyDevice(const Song& song, DeviceId id, TrackId toTrack, int index, const NextId& nextId) {
+CommandPtr copyDevice(const Song& song, DeviceId id, ChainOwner to, int index, const NextId& nextId) {
     const Device* original = findDevice(song, id);
-    const Track* target = song.findTrack(toTrack);
-    if (!original || !target)
+    const std::vector<Device>* target = devicesOf(song, to);
+    if (!original || !target || (to.isClip() && song.findClip(to.clip)->isAudio()))
         return nullptr;
     int adds = 1;
     for (const Playhead& p : original->playheads)
@@ -370,8 +425,8 @@ CommandPtr copyDevice(const Song& song, DeviceId id, TrackId toTrack, int index,
     renewIds(copy, noTrackModulators, nextId, remap);
     retargetRoutes(copy, noTrackModulators, remap);
     return chainEdit(song, "Copy " + original->name, [&](Song& work) {
-        Track& track = *work.findTrack(toTrack);
-        insertDevice(track, index < 0 ? int(track.devices.size()) : index, std::move(copy.front()));
+        std::vector<Device>& chain = *devicesOf(work, to);
+        insertDevice(chain, index < 0 ? int(chain.size()) : index, std::move(copy.front()));
         pruneRoutes(work);
         return true;
     });
@@ -462,10 +517,10 @@ CommandPtr addPlayhead(const Song& song, DeviceId deviceId, const NextId& nextId
 }
 
 CommandPtr addBranchDevice(const Song& song, PlayheadId id, DeviceType type, int index, const NextId& nextId) {
-    TrackId trackId;
-    const Playhead* p = findPlayhead(song, id, &trackId);
-    if (!p || type == DeviceType::Playheads || int(p->branch.size()) >= kMaxBranchDevices ||
-        deviceCount(*song.findTrack(trackId)) >= kMaxDevices)
+    const Playhead* p = findPlayhead(song, id);
+    const std::vector<Device>* chain = devicesOf(song, ownerOf(song, ParamRef{ParamRef::Kind::Playhead, id.value, 0}));
+    if (!p || !chain || type == DeviceType::Playheads || int(p->branch.size()) >= kMaxBranchDevices ||
+        deviceCount(*chain) >= kMaxDevices)
         return nullptr;
     Device device = devices::makeDevice(type, DeviceId(nextId()));
     return playheadEdit(song, id, "Add " + device.name + " to " + p->name, [&](Device&, Playhead& ph) {
@@ -645,11 +700,11 @@ CommandPtr setCurve(const Song& song, ModulatorId id, CurveDrawing drawing) {
     });
 }
 
-CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& target, const std::string& name,
+CommandPtr animateWithCurve(const Song& song, ChainOwner owner, const ParamRef& target, const std::string& name,
                             CurveDrawing drawing, const NextId& nextId, ModulatorId* added) {
     tidyCurve(drawing);
-    const Track* t = song.findTrack(track);
-    if (!t || t->modulators.size() >= size_t(kMaxTrackModulators))
+    const std::vector<Modulator>* existing = modulatorsOf(song, owner);
+    if (!existing || existing->size() >= size_t(kMaxTrackModulators))
         return nullptr;
     ModulatorId id(nextId());
     Modulation route;
@@ -657,24 +712,25 @@ CommandPtr animateWithCurve(const Song& song, TrackId track, const ParamRef& tar
     route.target = target;
     route.amount = 1;
     ModulatorPlace place;
-    place.level = ModLevel::Track;
-    place.track = track;
+    place.level = owner.isClip() ? ModLevel::Clip : ModLevel::Track;
+    place.track = owner.isClip() ? trackUsing(song, owner.clip) : owner.track;
+    place.clip = owner.clip;
     if (!reachable(song, place, id, route))
         return nullptr;
     if (added)
         *added = id;
     return chainEdit(song, "Animate " + name, [&](Song& work) {
-        Track* wt = work.findTrack(track);
-        if (!wt)
+        std::vector<Modulator>* list = modulatorsOf(work, owner);
+        if (!list)
             return false;
         Modulator m = devices::makeModulator(ModulatorType::Curve, id);
-        m.name = freeName(wt->modulators, name);
+        m.name = freeName(*list, name);
         m.length = drawing.length;
         m.points = drawing.points;
         m.segmentStart = drawing.segmentStart;
         m.segmentEnd = drawing.segmentEnd;
         m.routes.push_back(route);
-        wt->modulators.push_back(m);
+        list->push_back(m);
         return true;
     });
 }
@@ -693,6 +749,8 @@ std::string routeProblem(const Song& song, ModulatorId id, const Modulation& rou
             return "A track modulator only reaches its own track";
         case ModLevel::Device:
             return "A device modulator only reaches its own device";
+        case ModLevel::Clip:
+            return "A clip's modulator only reaches the clip's own devices";
         case ModLevel::Song:
         default:
             return "That target doesn't exist";
@@ -742,6 +800,128 @@ CommandPtr setRouteAmount(const Song& song, ModulatorId id, int index, float amo
     });
 }
 
+// ---- A clip's own chain --------------------------------------------------------------------------------------
+
+namespace {
+
+/// Points the notes that move with a copied Motion device at the copy.
+void retargetMotions(std::vector<Note>& notes, const ChainRemap& remap) {
+    for (Note& n : notes)
+        if (n.motion.valid()) {
+            auto it = remap.find(n.motion.value);
+            if (it != remap.end())
+                n.motion = DeviceId(it->second);
+        }
+}
+
+/// Track modulators that move something in `chain` (by device, playhead or device modulator IDs), copied for a clip's
+/// own chain: with only those routes, renewed and pointed at the copies through `remap`.
+std::vector<Modulator> modulatorsFor(const std::vector<Modulator>& trackMods, const ChainRemap& remap,
+                                     const NextId& nextId, ChainRemap& renewed) {
+    std::vector<Modulator> out;
+    for (const Modulator& m : trackMods) {
+        Modulator copy = m;
+        copy.routes.clear();
+        for (const Modulation& r : m.routes)
+            if (r.kind == Modulation::Kind::Param && remap.count(r.target.owner)) {
+                Modulation moved = r;
+                retarget(moved.target, remap);
+                copy.routes.push_back(moved);
+            }
+        if (copy.routes.empty())
+            continue;
+        uint64_t fresh = nextId();
+        renewed[m.id.value] = fresh;
+        copy.id = ModulatorId(fresh);
+        out.push_back(copy);
+    }
+    return out;
+}
+
+} // namespace
+
+CommandPtr playOwnChain(const Song& song, ClipId clipId, const NextId& nextId) {
+    const Clip* clip = song.findClip(clipId);
+    if (!clip || clip->isAudio() || clip->usesOwnChain())
+        return nullptr;
+    if (clip->hasOwnChain)
+        return chainEdit(song, "Play " + clip->name + " through its own devices", [&](Song& work) {
+            work.findClip(clipId)->playsOwnChain = true;
+            return true;
+        });
+    const Track* track = song.findTrack(trackUsing(song, clipId));
+    if (!track)
+        return nullptr;
+    // A copy of the track's chain, so the clip sounds the same until it is changed.
+    std::vector<Device> devices = track->devices;
+    std::vector<Modulator> none;
+    ChainRemap remap;
+    renewIds(devices, none, nextId, remap);
+    retargetRoutes(devices, none, remap);
+    ChainRemap renewed;
+    std::vector<Modulator> modulators = modulatorsFor(track->modulators, remap, nextId, renewed);
+    std::vector<Note> notes = clip->notes;
+    retargetMotions(notes, remap);
+    auto chain = chainEdit(song, "Give " + clip->name + " its own devices", [&](Song& work) {
+        Clip& c = *work.findClip(clipId);
+        c.hasOwnChain = c.playsOwnChain = true;
+        c.devices = devices;
+        c.modulators = modulators;
+        return true;
+    });
+    if (!chain || notes == clip->notes)
+        return chain;
+    auto both = std::make_unique<CompoundCommand>(chain->name());
+    both->add(std::move(chain));
+    both->add(replaceNotes(both->name(), clipId, clip->notes, notes));
+    return both;
+}
+
+CommandPtr playTrackChain(const Song& song, ClipId clipId) {
+    const Clip* clip = song.findClip(clipId);
+    if (!clip || !clip->usesOwnChain())
+        return nullptr;
+    return chainEdit(song, "Play " + clip->name + " through the track's devices", [&](Song& work) {
+        work.findClip(clipId)->playsOwnChain = false;
+        return true;
+    });
+}
+
+CommandPtr deleteOwnChain(const Song& song, ClipId clipId) {
+    const Clip* clip = song.findClip(clipId);
+    if (!clip || !clip->hasOwnChain)
+        return nullptr;
+    return chainEdit(song, "Delete " + clip->name + "'s own devices", [&](Song& work) {
+        Clip& c = *work.findClip(clipId);
+        c.hasOwnChain = c.playsOwnChain = false;
+        c.devices.clear();
+        c.modulators.clear();
+        pruneRoutes(work);
+        return true;
+    });
+}
+
+CommandPtr useOwnChainForTrack(const Song& song, ClipId clipId, TrackId trackId, const NextId& nextId) {
+    const Clip* clip = song.findClip(clipId);
+    const Track* track = song.findTrack(trackId);
+    if (!clip || !track || !clip->hasOwnChain ||
+        track->modulators.size() + clip->modulators.size() > size_t(kMaxTrackModulators))
+        return nullptr;
+    std::vector<Device> devices = clip->devices;
+    std::vector<Modulator> modulators = clip->modulators;
+    ChainRemap remap;
+    renewIds(devices, modulators, nextId, remap);
+    retargetRoutes(devices, modulators, remap);
+    return chainEdit(song, "Use " + clip->name + "'s devices for " + track->name, [&](Song& work) {
+        Track& t = *work.findTrack(trackId);
+        t.devices = devices;
+        t.modulators.insert(t.modulators.end(), modulators.begin(), modulators.end());
+        work.findClip(clipId)->playsOwnChain = false;
+        pruneRoutes(work);
+        return true;
+    });
+}
+
 // ---- Copying ------------------------------------------------------------------------------------------------
 
 void renewIds(std::vector<Device>& devices, std::vector<Modulator>& modulators, const NextId& nextId,
@@ -782,6 +962,17 @@ void retargetRoutes(std::vector<Device>& devices, std::vector<Modulator>& modula
             fix(m);
     for (Modulator& m : modulators)
         fix(m);
+}
+
+void renewClipChain(Clip& clip, const NextId& nextId) {
+    if (clip.devices.empty() && clip.modulators.empty())
+        return;
+    ChainRemap remap;
+    renewIds(clip.devices, clip.modulators, nextId, remap);
+    retargetRoutes(clip.devices, clip.modulators, remap);
+    for (AutomationEnvelope& lane : clip.automation)
+        retarget(lane.paramTarget, remap);
+    retargetMotions(clip.notes, remap);
 }
 
 } // namespace tessera
