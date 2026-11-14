@@ -33,6 +33,12 @@ a later feature).
 
 ### 1.1 The device strip
 
+> **Since 14 Nov 2026 the cards are pictures with tags, not knobs: see DECISIONS §154.** The knob layout below is the
+> earlier design; the strip, browser, modulator list and mapping still work as described, with tags in place of knobs.
+> As built: `ui/views/DeviceStrip` (cards, tags, frame, rows), `ui/views/DeviceTiles` (the pictures, cached per
+> picture), `ui/widgets/TagPanel` (a tag's panel), `ui/interaction/DeviceTags` (what goes on which picture, value
+> lists, typing, captions; no Rack, unit tested).
+
 Agreed with the user on a design canvas (claude.ai artifact "Tessera Devices view"). The devices sit in a strip of
 fixed height (about 128 px) **above the piano roll** (and above the drum step grid), so notes and what shapes them
 are seen together and the pane never shows empty space. The **Devices** button in the detail pane's header opens

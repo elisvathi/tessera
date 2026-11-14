@@ -4,17 +4,28 @@
 time, an echo repeats notes, a chord device turns one note into three. The notes in your clips don't change; you can
 switch a device off at any time.
 
-**Modulators** (LFOs, envelopes, steps…) turn device knobs by themselves, so the music keeps moving.
+**Modulators** (LFOs, envelopes, steps…) move device settings by themselves, so the music keeps moving.
 
 ## The device strip
 
 Click **Devices** in the notes header (or press **F3**) to open the strip above the notes. It shows the selected
-track's devices from left to right, in the order the notes flow through them: **in** → devices → **out**.
+track's devices from left to right, in the order the notes flow through them: **in** → devices → **out**. Each device
+is a card in the track's colour, with one to three small pictures that show what it does to the notes.
 
 ![The device strip: an LFO, an Arpeggiator and an Echo on the Chords track](images/device-strip.png)
 
 When the strip is closed, a track with devices shows a thin bar naming its chain ("Arpeggiator → Echo"). Click it to
 open the strip. A track without devices keeps the strip closed.
+
+**Room for more cards.** The strip shows one row of cards and scrolls sideways when they don't fit. When the cards
+need more than one row, a small grip sits in the middle of the strip's bottom edge: drag it down for more rows, up for
+fewer. The cards then wrap from one row to the next, and the mouse wheel scrolls up and down. The strip grows only as
+far as its cards need, and it always leaves the notes some room.
+
+**A short pane.** When the pane is too short for one row of cards and the notes together (the editor in the module
+panel, for example), the devices take the whole pane. **Devices** then sits beside **Notes** (and **Mixer**) at the
+left of the pane's header: click it to see the devices, and click **Notes**, or **Devices** again, to go back to the
+notes.
 
 ## Adding devices
 
@@ -30,12 +41,12 @@ A track holds up to 16 devices.
 
 ## The devices
 
-| Device | What it does | Its knobs |
+| Device | What it does | Its settings |
 |---|---|---|
 | **Transpose** | Moves notes up or down. | Semitones, Octaves, Key steps (moves within the key). |
-| **Scale** | Keeps every note in a key. | Key from (Clip, Song, Fixed), Root, Scale, Notes off key (Nearest, Up, Down, or Drop them). Root and Scale hide unless Key from is Fixed. |
+| **Scale** | Keeps every note in a key. | Key from (Clip, Song, Fixed), Root, Scale, Notes off key (Nearest, Up, Down, or Drop them). Root and Scale are faint unless Key from is Fixed. |
 | **Chord** | Turns each note into a chord. | Chord, In key, Inversion, Voicing (Close, Open, Drop 2), Strum. |
-| **Note Length** | Makes notes shorter, longer or legato. | Mode (Scale, Fixed, Legato), Scale %, Length, Overlap. |
+| **Note Length** | Makes notes shorter, longer or legato. | Mode (Scale, Fixed, Legato), and the one setting that mode uses: Scale %, Length or Overlap. |
 | **Arpeggiator** | Plays held notes one at a time. | Pattern (see below), Rate, Gate, Octaves, Swing, Velocity (As played, Fixed, Accent), Hold. |
 | **Note Repeat** | Plays every note again and again for as long as it lasts, so a held chord repeats as a chord. | Rate, Gate, Decay (each repeat a little quieter). |
 | **Echo** | Repeats notes, fading out, like a delay. | Time, Repeats, Decay, Pitch (per repeat), Gate. |
@@ -43,7 +54,7 @@ A track holds up to 16 devices.
 | **Humanize** | Loosens timing, velocity and length a little, differently on each pass. | Timing (only ever later), Velocity, Length. |
 | **Random** | Changes pitches and drops notes, differently on each pass. | Pitch (steps), In key, Drop (chance to skip a note). |
 | **Groove** | Swings this track its own way, in place of the song's swing: a straight bass under swung drums, or extra-swung hats. Turn its Swing with an LFO or a lane to ride it. A new Groove starts on the grid most of the track's off-beat notes sit on. | Swing (50% straight to 75%), Grid (1/16 or 1/8). |
-| **Note Filter** | Lets only some notes through. | Lowest, Highest, Min velocity, Max velocity, Every (play every Nth note), Offset, Channel (Any or 1 to 16). |
+| **Note Filter** | Lets only some notes through. | Lowest, Highest, Min velocity, Max velocity, Every (play every Nth note), Offset, Channels (any channel, or a set of them such as 1–4 and 10). |
 | **Motion** | Moves the notes that joined it, a little differently on each pass. See [Notes that drift](#notes-that-drift). | Pitch (steps), Time (a delay in 1/16 steps), Length, Velocity, In key. |
 
 **Playheads** is different from the others: it doesn't change notes, it reads the clip. See
@@ -85,22 +96,59 @@ time.
 
 ## Using a device card
 
-- **Power button** (top left): bypass the device. The notes pass through unchanged.
-- **⋯ menu**: rename, duplicate, delete, reset knobs, affect drum lanes, add a modulator to this device.
-- **Drag the card's header** to move it in the chain. An orange line shows where it will land. **Ctrl+drag** copies it.
+- **Power dot** (top left): bypass the device. The dot turns hollow, the pictures fade, and the notes pass through
+  unchanged.
+- **⋯ menu**: rename, duplicate, delete, reset its settings, affect drum lanes, add a modulator to this device.
+- **Drag the card's header** to move it in the chain. A line shows where it will land. **Ctrl+drag** copies it.
 - Click a card, then **Delete** removes it and **Ctrl+D** duplicates it.
 
-### Knobs
+### Pictures and tags
 
-- **Drag** up or down (Shift for fine steps). You hear the change while you drag; it is one undo step.
-- **Double-click** resets the knob.
-- **Click the value** to type it.
-- **Right-click** for: Reset, Type a value, **Modulate with ▸**, **Remove modulation ▸**, **Automate in the
-  arranger**, **Automate in this clip**.
-- Choices (like Pattern) are small menus. Switches (like Hold) flip on a click.
+Each picture shows one idea with a few bold shapes: grey outlines are the notes going in, shapes in the card's colour
+the notes coming out. A line along its bottom says what the picture can't show, and follows the settings: the notes
+an arpeggio plays on C E G, the notes of a chord on C, "A fifth up", "A canon, 1/8 behind".
 
-A knob draws an orange arc for its value. Each modulation adds a ring in the modulator's colour, showing how far it can
-push the knob, a white dot shows where the knob is right now, and the value under it reads what plays now.
+The settings sit on the pictures as **tags**, pill-shaped labels with the value; the first tag on each picture is
+tinted. A short word comes before the value only where the number alone would be unclear ("Gate 50%", "× 3").
+Lengths read as fractions, with a small **T** for triplet and **D** for dotted. A setting that does nothing right now is
+faint (Times and Curve while Piece is Off); one that doesn't apply is left out (Note Length shows only the setting its
+Mode uses).
+
+- **Drag** a tag left, right, up or down to step through its values. The picture redraws as you drag and you hear the
+  change; letting go is one undo step. Hold **Shift** for smaller steps.
+- **Mouse wheel** over a tag: one step.
+- **Arrow keys**: one step on the tag you last touched.
+- **Double-click** a tag to set it back to its default.
+- On/off settings (In key, Hold) are small switches: click to flip them.
+
+### A tag's panel
+
+Click or right-click a tag to open its panel: the setting's name, a box to type in, and every choice.
+
+![The panel of Echo's Time: a box to type in, and the lengths in rows of straight, triplet and dotted](images/tag-panel.png)
+
+- **Type** to find the closest choice: "1/8t", "3/16", "1 bar", "1.5", "reverse", "ease out". **Enter** picks it.
+- Lengths are laid out in rows: straight, triplet and dotted. A playhead's Rate is laid out as faster, normal and slower,
+  its Curve as drawn shapes, its Direction with small pictures.
+- **Hover** a choice to see it in the picture; nothing changes until you click it. **Esc** or a click outside closes
+  the panel and leaves the setting as it was.
+- **Back to …** sets the default.
+- **Draw a curve** opens a curve for the setting in the lower pane (see [Curves](#playheads) below), and
+  **Modulate, automate…** has **Modulate with ▸**, **Remove modulation ▸**, **Automate in the arranger** and
+  **Automate in this clip**.
+
+The Note Filter's **Channels** panel has **Any** and the 16 channels to switch on and off; each click keeps the change.
+You can also type a set: "1-4, 10", "any" or "all".
+
+### When something moves a setting
+
+- **A lane sets it:** the tag takes the lane's colour, and an **A** sits on its corner. Click the A to see the lane.
+- **A modulator or a curve moves it:** a dot in the modulator's colour sits on the tag's corner.
+- **How far:** a thin bar under the tag spans the setting's whole range. A lane shows the range it covers, from its
+  lowest to its highest point; each modulation shows how far it reaches from where the setting is set, in the
+  modulator's colour. A white dot shows where the setting is right now.
+- The tag and its picture show the value as it plays now. Hover the tag to read each range in words, such as
+  "Semitones: −5 st to +7 st".
 
 ## Playheads
 
@@ -119,27 +167,28 @@ reads light up in its colour, and so do their keys on the piano at the left. The
 with playheads, it doesn't say what plays.
 
 **The card.** The chips beside its name are the playheads: click one to show it (the card takes its colour), **+** adds
-one (up to 16). The dot at a chip's left end turns that playhead off and on without losing its settings: it is hollow
-while the playhead is off (also while a curve or a lane has turned it off). Alt-click the dot to solo it, or press
+one (up to 16). The switch after the chips turns the shown playhead off and on without losing its settings, and so
+does the dot at a chip's left end: it is hollow while the playhead is off (also while a curve or a lane has turned it
+off). Alt-click the dot to solo it, or press
 **Shift+M** to turn the shown playhead off and on. A playhead you turn off stops at once: the note it was playing ends
 there, and the notes its own devices still had to play (an Echo's repeats) don't come. Right-click a chip to rename it,
 pick its **Channel** (see [A sound for each playhead](#a-sound-for-each-playhead); the chip shows it), turn it **On**
 or off, solo it, duplicate or delete it, or **Switch it on and off in time…** with a curve. Under the chips, the shown
-playhead's settings, in two groups: **MOVE** (whether, how and when it travels) and **REPEAT** (what it plays again, and how
-the repeats are spaced). A setting still at its default draws faint, so the ones you changed stand out:
+playhead's settings on three pictures: how it moves (Direction and Rate), where it starts (Offset), and what it plays
+again (Piece × Times, and the Curve that spaces the repeats):
 
-![A Playheads card: MOVE with Rate, Direction and Offset; REPEAT with Piece 1/16, Times 4 and Curve Ease in, its four hits bunching up toward the end](images/playhead-repeat.png)
+![A Playheads card: Forward at 1×, Offset 0, and Piece 1/16 × 4 with Curve Ease in, its four hits bunching up toward the end](images/playhead-repeat.png)
 
 | Setting | What it does |
 |---|---|
-| **On** | Whether it plays: the switch is the dot on its chip. Its name opens a curve, so the playhead can come in and drop out as the song plays (see **Curves** below). |
+| **On** | Whether it plays: the switch after the chips, or the dot on its chip. Right-click the chip for a curve on it, so the playhead can come in and drop out as the song plays (see **Curves** below). |
 | **Rate** | Speed against the song, from 1/32x to 32x: halves and doubles, thirds (1/3x, 2/3x, 4/3x, 3x…), dotted speeds (3/8x, 3/4x, 3/2x) and fives (4/5x, 5/4x). |
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size (1/32 to 2 bars, triplets too). |
 | **Offset** | Plays this playhead's notes later (+) or earlier (−) than it reads them, by a note value: 1/64 up to a bar either way, with triplet (T) and dotted (D) values, and every 1/16 between (+5/16, +7/16…). Its line over the notes trails or leads by as much, so it crosses each note when you hear it. Two playheads on the same segment, one at **+1/4**, make a round. Double-click it to set it back to **0**. At the very start of a clip, a late playhead waits for its offset, and an early one skips the notes that would have come before the clip started. When the clip loops, notes carry over the loop as usual. A clip's end is a hard stop: a late note that would sound after the clip ends doesn't play, and an early playhead doesn't play notes from past the end. That holds for a timeline clip, and for a launched clip that doesn't loop. When a curve or a lane moves Offset later while the clip plays, the playhead waits until the new time catches up. It never plays the same notes twice. Moved earlier, it skips ahead. |
 | **Piece** | The size of the piece it plays again: Off, or 1/64 up to 4 bars, with triplet (T) and dotted (D) sizes between. With **Times**, it plays each piece that many times, then moves on one piece: Piece 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
-| **Times** | How many times each piece plays, 2 to 16. Click to type it, or drag up and down. |
+| **Times** | How many times each piece plays, 2 to 16. |
 | **Curve** | How the repeats are spaced in time (see [Spacing the repeats](#spacing-the-repeats)). **Straight** spaces them evenly. |
-| **More** | Rarer settings: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed, 1/64 to 2 bars), Path (from the settings, or drawn in the time map), and rename, channel, on, solo, duplicate, delete. Each of these settings' lists ends with **Draw a curve for it** and **Automate or modulate…**, so the rarer settings can move in time too. |
+| **Rarer settings** | Right-click a playhead's chip: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed, 1/64 to 2 bars), Path (from the settings, or drawn in the time map), and rename, channel, on, solo, duplicate, delete. Each of these settings' lists ends with **Draw a curve for it** and **Automate or modulate…**, so the rarer settings can move in time too. |
 
 Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
 playhead's own chain, like any other note change. Songs made when a playhead had its own Octave, Steps and Velocity
@@ -167,19 +216,20 @@ steps back. An off playhead's path is faint. One small stripe per playhead sits 
 off), and the piano roll's title adds "read by 3 playheads". The paths follow the settings as you set them; curves
 on them play but aren't drawn there.
 
-**Curves.** Any setting can move by itself, on this card or any device card. Click a setting's name (underlined) and
-a curve for it opens in the piano roll's lower pane. On this card that is On, Rate, Direction, Offset, Piece, Times and Curve
-(and the rarer settings, from **More**, and the segment, from its right-click menu): a curve on On can bring the
+**Curves.** Any setting can move by itself, on this card or any device card. Click a setting's tag and pick **Draw a
+curve** in its panel: a curve for it opens in the piano roll's lower pane. On this card that is Direction, Rate,
+Offset, Piece, Times and Curve (On, and the rarer settings, from a chip's right-click menu, and the segment, from its
+right-click menu): a curve on On can bring the
 playhead in for bars 5 to 8 only, one on Direction can turn it round in bar 2, one on Piece can start repeating halfway
 through. On has two rows: the curve on its top row leaves it on, a step down to the row below turns it off. (The step
-orders in the Direction dropdown, such as Outside in, stay as you pick them.) Click to add a point: that makes a
+orders in the Direction panel, such as Outside in, stay as you pick them.) Click to add a point: that makes a
 **Curve** modulator on the track (see [Modulators](#modulators)), named after the playhead and the setting, such as
 "Bass Rate".
 
 - **Up and down are the setting's own values.** For Octaves or Key steps each row is one value, labelled with what
   plays, and points snap to the rows (hold **Alt** to place them between rows). The rows cover everything the setting
-  can reach. The dashed line is the knob as you set it: the curve adds to it, so with the knob on +2 a point on the
-  +5 row plays +5, and turning the knob moves the whole line.
+  can reach. The dashed line is the setting as you set it: the curve adds to it, so with the setting on +2 a point
+  on the +5 row plays +5, and changing the setting moves the whole line.
 - **Two kinds of point.** A square is a **Step**: it holds its value until the next point. A circle is a **Ramp**:
   it glides to the next point. A new point takes the kind of the point before it; the first point on a setting with
   rows is a Step. A ramp across rows is heard one row at a time, drawn as dotted stairs under it.
@@ -206,7 +256,8 @@ orders in the Direction dropdown, such as Outside in, stay as you pick them.) Cl
   play bars 5 to 8, or draw 100 bars with the segment covering them all for a slow change over the song. A new curve
   is as long as the clip, with the segment covering all of it.
 
-Drag points, double-click to delete one. A knob with a curve has a dotted ring and its name underlined. While the song
+Drag points, double-click to delete one. A tag that a curve moves has a dot in the curve's colour on its corner and a
+bar under it showing how far the curve takes it. While the song
 plays, a playhead line crosses the curve where it reads now.
 
 ![A curve on the Bass track's Key steps: 16 bars drawn, bars 5 to 8 play, two ramp points picked](images/curve-pane.png)
@@ -244,21 +295,22 @@ only.
 
 ### Spacing the repeats
 
-The top of the REPEAT block shows where the repeats of one group land: Piece 1/16, Times 4 is four hits in a beat.
+The third picture on the Playheads card shows where the repeats of one group land: Piece 1/16, Times 4 is four hits in
+a beat.
 **Curve** keeps the same hits in the same time, but spaces them differently. Eight repeats over eight seconds come one
 a second when the Curve is **Straight**; with **Ease in** they start far apart and bunch up at the end, like a
 bouncing ball; with **Ease out** they start bunched up and slow down. The first hit of each group stays where it was,
 so the next group still lands on time. Dots under the hits show where they would land straight.
 
-When a curve, another modulator or a lane moves Piece, Times or Curve, the block shows them as they play now: their
-boxes and names take the playhead's colour, and the hits follow.
+When a curve, another modulator or a lane moves Piece, Times or Curve, the picture shows them as they play now, and so
+do their tags.
 
-Click the Curve for its list; each shape is drawn beside its name. **Ease in** and **Ease out** come soft, medium and
+Click the Curve tag for its panel; each shape is drawn. **Ease in** and **Ease out** come soft, medium and
 hard; then **Ease in-out** (slow, fast, slow), **Swing light** and **Swing heavy** (the first half lingers) and
 **Stairs** (slow-fast steps). With Piece off, Times and Curve are faint: there is nothing to space.
 
-With **Length → Follows playhead** (the default), a held note lasts until the next repeat. A drawn path (More › Path ›
-Drawn) replaces the repeats and their spacing.
+With **Length → Follows playhead** (the default), a held note lasts until the next repeat. A drawn path (a chip's right-click menu ›
+Path › Drawn) replaces the repeats and their spacing.
 
 ### The time map
 
@@ -281,8 +333,18 @@ in either direction. A drawn path says where the playhead is at every moment.
 ### Devices for one playhead
 
 Right after the Playheads card come the shown playhead's own devices: devices only that playhead's notes go through,
-before the rest of the chain. Each has a thin bar in the playhead's colour along its top and its dot in the title.
-Click the **+** right after the Playheads card to add one (up to 4 per playhead). Give the slow reversed playhead an
+before the rest of the chain. They sit in a frame in the playhead's colour, with "Melody only" (its name) written down
+its side; the cards inside take that colour too. Click the round **+** at the frame's end to add one (up to 4 per
+playhead).
+
+![Melody's own devices: an Echo in a frame in Melody's colour, after the Playheads card](images/playhead-own-devices.png)
+
+A playhead without its own devices shows a slim dashed slot with a **+** and "Bass only" down its side. Click it to
+add the first one.
+
+![The Bass playhead has no devices of its own: a slim dashed slot after the Playheads card](images/playhead-empty-slot.png)
+
+ Give the slow reversed playhead an
 Echo, or move the fast one up an octave with Transpose, while the devices after them still shape every playhead. Click another chip to see its branch. Branch devices count toward the
 track's 16 devices; their cards stay in their branch (they can't be dragged out).
 
@@ -308,16 +370,16 @@ add more notes later, select them and click **+ Selected** on the card; to take 
 **MOTION** line says which Motion device the selected notes move with, and opens the same choices. Notes from any clip
 on the track can join the same Motion device.
 
-**Its knobs.** **Pitch** (steps, in the key unless **In key** is off), **Time** (a delay in 1/16 steps), **Length**
-and **Velocity**. To make them change, click a knob's name: its curve opens in the lower pane (see
+**Its settings.** **Pitch** (steps, in the key unless **In key** is off), **Time** (a delay in 1/16 steps), **Length**
+and **Velocity**. To make them change, click a tag and pick **Draw a curve**: its curve opens in the lower pane (see
 [Modulators](#modulators)). For one value each pass of the clip ("up one step a pass for four passes, then back"),
-right-click a knob for **Drift per pass**: a **Steps** modulator set to **Per pass**, one step each pass. Any modulator
-or automation lane can move these knobs too.
+click a tag, then **Modulate, automate…** › **Drift per pass**: a **Steps** modulator set to **Per pass**, one step each pass. Any modulator
+or automation lane can move these settings too.
 
 **Seeing it.** A note a Motion moves shows where it plays, in the Motion's colour: the written note turns see-through
 with a dashed outline, a thin line runs from its middle (a dot) to the middle of the note where it sounds, and that
-note says what changed ("+7 st", "+2 steps", or both). It sits at the new pitch, starts later by the Time knob and
-is as long as Length makes it. With curves on the knobs it follows them: with playheads (which can read the note at
+note says what changed ("+7 st", "+2 steps", or both). It sits at the new pitch, starts later by the Time setting and
+is as long as Length makes it. With curves on its settings it follows them: with playheads (which can read the note at
 any moment) it is where the curves are right now, moving as the song plays; without, it is the pass playing now (the
 first one when stopped). When the note moves out of view, a marker at the top or bottom edge
 of its column says how far ("▼ −7 st").
@@ -340,8 +402,8 @@ The **MODULATORS** list on the left of the strip holds the modulators. Click **+
 top chooses where it lives:
 
 - **Whole song**: one modulator for every track, for example one LFO that sweeps several tracks together.
-- **The track**: it can turn any knob of this track's devices.
-- **A device**: it can turn only that device's knobs.
+- **The track**: it can move any setting of this track's devices.
+- **A device**: it can move only that device's settings.
 
 ![The modulator browser](images/modulator-browser.png)
 
@@ -352,7 +414,7 @@ top chooses where it lives:
 | **Steps** | A pattern of values you draw (1 to 16 steps). | Steps, Rate, Smooth, Bipolar. |
 | **Random** | A new random value at a steady rate. | Rate, Smooth, Bipolar. |
 | **Ramp** | Rises or falls over several bars: builds and fades. | Length (bars), Direction, Then (Hold or Loop), Curve. |
-| **Macro** | One knob you turn (or automate) that moves many knobs at once. | Value. |
+| **Macro** | One value you turn (or automate) that moves many settings at once. | Value. |
 | **Note** | Follows the last note. | Follows (Velocity, Pitch, Release, Timbre, Pressure), Smooth. |
 | **Curve** | A shape you draw, of any length; the part its segment marks plays and repeats. | None: Length and the segment sit over the drawing. |
 
@@ -369,19 +431,22 @@ Click a row to open its settings (a Curve opens its drawing instead, see above):
 
 ![An LFO's settings](images/modulator-popover.png)
 
-The **MOVES** list in the popover shows every knob the modulator turns, with its amount and a **×** to remove it.
+The **MOVES** list in the popover shows every setting the modulator moves, with its amount and a **×** to remove it.
 Right-click a row in the list to rename or remove the modulator.
 
-### Connecting a modulator to knobs
+### Connecting a modulator to settings
 
 1. Click the modulator's **↗** (or **Map to knobs** in its popover; for a Curve, **Moves ▾** › **Map to more knobs**).
-2. The knobs it can reach light up. A message says "Mapping LFO · drag a lit knob up or down".
-3. **Drag a lit knob** up for a positive amount, down for a negative one. A click adds +50%.
+2. The tags it can reach light up in its colour; the others fade. A message says "Mapping LFO · drag a lit tag up or
+   down".
+3. **Drag a lit tag** up for a positive amount, down for a negative one. The bar under the tag shows how far it will
+   reach. A click adds +50%.
 4. Press **Esc**, or click empty strip space, to finish.
 
-![Mapping an LFO: the knobs it can reach are lit](images/device-mapping.png)
+![Mapping an LFO: the tags it can reach are lit](images/device-mapping.png)
 
-A knob takes up to four modulations. Modulation adds to the knob's own value (or to its automation).
+A setting takes up to four modulations. Modulation adds to the setting's own value (or to its automation). The Note
+Filter's Channels are only ever picked by hand: modulators, lanes and curves can't move them.
 
 ### Sending a modulator out as CV
 
@@ -393,23 +458,23 @@ its row):
 
 So one LFO can move an arpeggiator's gate and a filter in your patch together.
 
-## Automating a device knob
+## Automating a device setting
 
-Right-click a knob and choose:
+Click or right-click a tag, pick **Modulate, automate…** in its panel, and choose:
 
 - **Automate in the arranger**: a lane under the track, in song time. Its header reads, for example, "Arpeggiator ·
   Gate".
 - **Automate in this clip**: a lane in the piano roll's lower pane, looping with the clip.
 
-A new lane starts flat at the knob's value, so nothing changes until you draw. Once a knob has a lane, the menu says
-**Show its lane** instead. Edit the lane like any automation lane ([Automation](12-automation.md)); its values are
-shown in the knob's own units.
+A new lane starts flat at the setting's value, so nothing changes until you draw. Once a setting has a lane, its tag
+takes the lane's colour and shows an **A**: click the A to see the lane (the menu also says **Show its lane**). Edit
+the lane like any automation lane ([Automation](12-automation.md)); its values are shown in the setting's own units.
 
-- Knob lanes play only while the transport runs. When stopped, the knob is free to turn and try out.
-- A knob held with the mouse wins while you hold it, then the lane takes over again.
-- Arm the track and record to capture your knob moves (Touch, Latch, Write). A clip's knob lane records while that
+- Setting lanes play only while the transport runs. When stopped, the setting is free to change and try out.
+- A tag held with the mouse wins while you hold it, then the lane takes over again.
+- Arm the track and record to capture your moves (Touch, Latch, Write). A clip's setting lane records while that
   clip plays.
-- Knob lanes don't use an AUTO channel. A track or clip can have 16 of them.
+- Setting lanes don't use an AUTO channel. A track or clip can have 16 of them.
 - If the device is deleted, the lane says **Target missing** until you undo.
 
 ## Live playing and recording

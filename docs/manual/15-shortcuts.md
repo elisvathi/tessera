@@ -90,7 +90,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Tab | Switch pane (song, lower pane) |
 | Shift+Tab | Maximize the pane, or restore the panes |
 | F2 | Widen / narrow the clips beside the timeline |
-| F3 | Device strip above the notes |
+| F3 | Devices: above the notes, or in their place in a short pane |
 | F4 | Show the mixer or the notes in the lower pane |
 | Ctrl+B | Bounce the selected track to a new track |
 | Ctrl+Alt+E | Export audio |

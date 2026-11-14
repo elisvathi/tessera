@@ -7,8 +7,8 @@ play. It appears as soon as the song has an audio track.
 
 ## Opening it
 
-The mixer shares the lower pane with the notes (or the audio editor). Its header starts with **Notes | Mixer**
-(**Audio | Mixer** when an audio track is selected): click **Mixer** to show the mixer there, the other name to go
+The mixer shares the lower pane with the notes (or the audio editor), and in a short pane with the devices too. Its
+header starts with **Notes | Mixer** (**Audio | Mixer** when an audio track is selected): click **Mixer** to show the mixer there, the other name to go
 back, or press **F4** to switch. Clicking any clip also goes back to it. The switch appears once
 something in the song makes sound.
 

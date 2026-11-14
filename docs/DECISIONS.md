@@ -2515,3 +2515,44 @@ the user asked "why can't Track Out simply be that solution?", and it can.
   note or drum track that receives sends gets 100% (its sends were never heard dry). Two old loops on one track were
   parallel and are now in series: not exact, accepted.
 - Not done: a Mix lane for automation; a loop's own latency beyond its cable path (type it as the track's Latency).
+
+## 154. Devices show what they do as pictures, with their settings as tags (14 Nov)
+
+Agreed on a working page (claude.ai artifact "Tessera Device Pictures"), after knobs, phone-style wheels and a grid of
+equal value boxes were turned down. Where the page and the earlier design disagree, the page wins.
+
+- **Pictures.** Each card holds one to three small pictures (100 px tall, widths per device from the page). One idea
+  each, a few bold shapes: grey outlines for notes going in, the card's colour for notes coming out. No grids, no mini
+  piano rolls. Each has a caption that says what the picture can't, and follows the values ("A fifth up", "On C: C E
+  G", "A canon, 1/8 behind"); never the obvious ("One note in, a chord out" was turned down). Scale's caption names the
+  notes of the key it works in now (song or clip), not a stand-in.
+- **Tags.** Every setting is a pill on its picture; the first on a picture is tinted. Drag any way, wheel and arrow
+  keys step it; double-click resets; one drag is one undo step. Click or right-click opens a panel: type to find the
+  closest choice, lengths in straight / triplet / dotted rows, curves drawn, directions with pictures, rates as faster /
+  normal / slower; hover previews only the picture. The panel opens below (or above) the picture, not over it as on the
+  page, so the preview can be seen. Today's right-click items stay reachable from the panel (**Draw a curve**,
+  **Modulate, automate…**). A tag that doesn't fit widens its picture.
+- **What moves a setting.** A lane washes its tag in the lane's colour with an **A** on the corner (click: show the
+  lane); a modulator or curve puts a dot in its colour there. A thin bar under the tag shows how far each moves it
+  (a lane's lowest to highest point, a modulation's reach from where it is set) and a dot where it is now (user: "I
+  can't see the automation depth").
+- **Colours.** A card wears its track's colour (not the clip's: devices belong to the track and must not change as clips
+  do). The Playheads card and a playhead's own devices wear the playhead's colour; Motion keeps its own.
+- **Playheads card.** Three pictures: how it moves (Direction with the step orders in its panel, Rate), where it starts
+  (Offset), the repeat (Piece × Times, Curve). Chips in the title, the shown playhead's On switch after them. The
+  rarer settings stay in a chip's right-click menu (the More button is gone).
+- **A playhead's own devices** sit in a frame in its colour, "<Name> only" down its side, a round + at its end; with none,
+  a slim dashed slot. No big empty box.
+- **Resizing.** One row scrolls sideways (the user's pick). Dragging the bottom edge adds rows, up to the rows the cards
+  need at this width and never so deep the notes lose their room; then cards wrap. A pane too short for one row plus
+  the notes shows the devices in place of the notes, with **Devices** as a tab beside **Notes | Mixer** (a second click
+  goes back to the notes). The rows are a size, kept per editor (ViewState::stripRows).
+- **Note Filter channels are a set.** The Channel choice (Any, 1–16) became a 16-bit set (ParamInfo::Kind::Mask,
+  stored as the set over 65535, which a float holds exactly); none picked means any channel. Schema 10: Any becomes
+  the empty set, channel n only bit n−1, and lanes or modulations on the old choice are dropped. A set is only picked by
+  hand: `movable()` keeps it out of modulation, lanes and curves.
+- **Performance.** Each picture is drawn once into its own framebuffer and redrawn only when what it shows changes
+  (values are snapped to the tags' steps, so a modulated setting redraws per step, not per frame). Budget: the strip
+  under 0.5 ms of UI time a frame, a picture redraw under 0.3 ms. Measured in the hidden Rack with 11 devices: about
+  0.05 ms layout and 0.1 ms drawing a frame, no redraws while playing or scrolling, about 0.16 ms per redraw.
+- Still open: clip-level devices (a separate task).

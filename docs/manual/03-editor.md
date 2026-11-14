@@ -62,7 +62,8 @@ more room.
   track is selected): the lower pane shows the clip or the [mixer](18-mixer.md), never both. **F4** switches, and
   clicking any clip goes back to it.
 - **F2** widens the clips beside the timeline (handy when performing). Press it again to narrow them.
-- **F3** opens the device strip above the notes. See [Devices](13-devices.md).
+- **F3** opens the device strip above the notes. In a pane too short for both, the devices take the whole pane and
+  **Devices** joins **Notes | Mixer** at the left of the header. See [Devices](13-devices.md).
 
 ## Tools
 
@@ -172,8 +173,10 @@ about 40 HP and it folds back to 30 HP. One undo restores the width and the neig
 
 - It shows the same song and the same editing tools as the full editor, just smaller. Edits in one show at once in
   the other, and so does what you see: what is open, which pane is maximized, zoom and scroll, track heights and open automation lanes.
-  Close the full editor and the panel editor is where you left off. Only the header, clips, mixer and curve pane sizes
-  stay separate, since the windows differ.
+  Close the full editor and the panel editor is where you left off. Only the header, clips, mixer, curve pane and
+  device strip sizes stay separate, since the windows differ.
+- The lower pane is short there, so the devices take its place instead of sitting above the notes: switch with
+  **Notes | Devices** at the left of its header.
 - Play, stop, record and loop sit at the top left. **Full editor** (a window with an arrow) and **maximize** sit at
   the top right.
 - When the song pane is narrower than 600 px and the timeline plays, the clips fold into a **CLIPS** tab. Click it to

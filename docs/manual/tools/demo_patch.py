@@ -5,7 +5,8 @@ Run it with an output folder: `demo_patch.py build/manual-rack`. It writes demo.
 modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the modules zoomed in), first.vcv
 (Roll, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Roll alone) and
 polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own), playheads.vcv
-(Lead read by three playheads), curve.vcv (the Bass track open, a 16-bar Curve on its Transpose's key steps that
+(Lead read by three playheads), devices.vcv (the Chords track open with an Arpeggiator and an Echo, and a track LFO
+that moves the arpeggio's Gate), curve.vcv (the Bass track open, a 16-bar Curve on its Transpose's key steps that
 plays bars 5 to 8), hitvalues.vcv (the Drums track open on its Pitch lane: the snares tuned up step by step, the
 second a shaped curve, the hats with timbre) and audio.vcv (the demo with an audio track, "Loop", playing a
 synthesised 112 BPM drum loop from bar 5, its file in the patch's storage; Rack's patch archive format, so it carries
@@ -245,6 +246,25 @@ def playheads_module():
     return module
 
 
+def devices_module():
+    """The demo song with the Chords track open: an Arpeggiator (Up-down, 1/16, Gate 50%) and an Echo (1/8 T, three
+    repeats climbing a fifth), and a track LFO moving the Arpeggiator's Gate by 35%. The device strip is open."""
+    song, _ = make_song()
+    chords = next(t for t in song["tracks"] if t["name"] == "Chords")
+    arp = {"id": ids.take(), "type": "arpeggiator", "name": "", "on": True,
+           "params": [2 / 6, 7 / 16, 45 / 195, 0.0, 0.0, 0.0, 0.0]}  # schema 8: seven patterns
+    echo = {"id": ids.take(), "type": "echo", "name": "", "on": True,
+            "params": [12 / 16, 2 / 15, 0.3, 19 / 24, 45 / 95]}
+    chords["devices"] = [arp, echo]
+    chords["modulators"] = [{"id": ids.take(), "type": "lfo", "name": "LFO 1", "params": [],
+                             "routes": [{"kind": "param", "amount": 0.35, "target": ["device", arp["id"], 2]}]}]
+    song["nextId"] = ids.next + 10
+    verse = next(c for c in song["clips"] if c["name"] == "Verse chords")
+    module = tessera_module(song, verse, PANEL_HP, False, "Chords")
+    module["data"]["ui"]["overlay"]["deviceStrip"] = True
+    return module
+
+
 def curve_module():
     """The demo song with the Bass track open: a Transpose device whose Key steps a Curve modulator moves. The curve
     is 16 bars of steps and one ramp; its segment plays bars 5 to 8. The device strip is open."""
@@ -403,6 +423,7 @@ def main():
                                                          outputs(hp))))
     (out / "playheads.vcv").write_text(json.dumps(patch([playheads_module()] + outputs(hp))))
     (out / "curve.vcv").write_text(json.dumps(patch([curve_module()] + outputs(hp))))
+    (out / "devices.vcv").write_text(json.dumps(patch([devices_module()] + outputs(hp))))
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Roll",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
     audio_patch(out)
