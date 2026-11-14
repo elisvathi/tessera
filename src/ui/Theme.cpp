@@ -266,6 +266,35 @@ NVGcolor recessed(const Palette& p, NVGcolor base, float strength) {
 
 const Palette& panelColors() { return paletteOf(chosen); }
 
+const DeviceColors& deviceColors() {
+    static DeviceColors d;
+    static uint64_t made = ~uint64_t(0);
+    if (made != generation()) {
+        made = generation();
+        const Palette& p = colors();
+        auto mix = [](NVGcolor a, NVGcolor b, float t) { return nvgLerpRGBA(a, b, t); };
+        d.ground = p.ground;
+        d.card = p.bg1;
+        d.cardEdge = p.dark ? recessed(p, p.ground, 0.1f) : p.line1;
+        d.screen = p.dark ? mix(p.ground, p.bg0, 0.25f) : recessed(p, p.bg0, 0.12f);
+        d.shade = nvgRGBAf(0, 0, 0, p.dark ? 0.18f : 0.06f);
+        d.tag = p.dark ? p.bg2 : p.bg1;
+        d.tagHover = mix(d.tag, p.line2, 0.4f);
+        d.tagEdge = p.line2;
+        d.ghost = mix(p.line2, p.text2, 0.45f);
+        d.ghostDash = mix(p.line2, p.text2, 0.27f);
+        d.base = p.line2;
+        d.tick = mix(p.line2, p.text2, 0.2f);
+        d.guide = mix(p.line2, p.text2, 0.6f);
+        d.key = p.dark ? p.bg2 : mix(p.bg0, p.line2, 0.35f);
+        d.keyBlack = p.dark ? mix(p.bg0, p.bg2, 0.45f) : mix(p.bg0, p.line2, 0.7f);
+        d.caption = p.text1;
+        d.link = p.line2;
+        d.glow = p.dark ? 0.38f : 0.18f;
+    }
+    return d;
+}
+
 const Palette& screenColors() {
     static const Palette p = [] {
         Palette s = slate();

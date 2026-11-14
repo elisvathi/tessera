@@ -2,6 +2,7 @@
 
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
+#include "../editing/DeviceActions.hpp"
 #include "../interaction/Shortcuts.hpp"
 #include "../widgets/ToolButton.hpp"
 #include "DeviceStrip.hpp"
@@ -18,6 +19,20 @@ DetailPane::DetailPane(EditorContext& ctx) : EditorPane(ctx, Pane::Detail) {
     addChild(strip); // after the editor: it sits over its top
     popover = new ModulatorPopover(ctx);
     addChild(popover); // last: it floats over the notes
+    // In a short pane the devices take the notes' place, so Devices is a third tab.
+    EditorContext* c = &ctx;
+    ToolButton::Options o;
+    o.text = "Devices";
+    o.tooltip = withShortcut("Show the track's devices in this pane", Action::ToggleDevices);
+    o.action = [c] {
+        c->state().mixerOpen = false;
+        c->state().focus = Pane::Detail;
+        deviceActions::setStripOpen(*c, true);
+    };
+    o.active = [this, c] { return c->module() && !showsMixer() && deviceActions::stripOpen(*c); };
+    devicesTab = new ToolButton(o);
+    devicesTab->visible = false;
+    addChild(devicesTab);
 }
 
 void DetailPane::reserveHeader(float px) {
@@ -39,11 +54,18 @@ void DetailPane::setMixer(MixerPane* m) {
         o.text = toMixer ? "Mixer" : "Notes";
         o.tooltip = withShortcut(toMixer ? "Show the mixer in this pane" : "Show the selected clip in this pane",
                                  Action::ToggleMixer);
-        o.action = [c, toMixer] {
+        o.action = [this, c, toMixer] {
             c->state().mixerOpen = toMixer;
             c->state().focus = Pane::Detail;
+            // In a short pane the devices fill it: Notes goes back to the notes.
+            if (!toMixer && shortPane && c->module())
+                deviceActions::setStripOpen(*c, false);
         };
-        o.active = [c, toMixer] { return c->state().mixerOpen == toMixer; };
+        o.active = [this, c, toMixer] {
+            if (toMixer)
+                return c->state().mixerOpen;
+            return !c->state().mixerOpen && !(shortPane && c->module() && deviceActions::stripOpen(*c));
+        };
         auto* b = new ToolButton(o);
         addChild(b);
         (toMixer ? mixerTab : notesTab) = b;
@@ -75,6 +97,12 @@ void DetailPane::layout() {
     // The strip never runs past the pane: a module's drawing isn't clipped, it would cover the rack below.
     float stripHeight = ctx.module() ? strip->wantedHeight() : 0;
     float room = std::max(0.f, box.size.y - theme::metrics::kPaneHeader);
+    strip->paneRoom = room;
+    shortPane = room < DeviceStrip::kOpenHeight + DeviceStrip::kMinNotes;
+    // Open with too little room left for the notes, the devices take the whole pane: the Devices button then
+    // switches between devices and notes.
+    if (ctx.module() && deviceActions::stripOpen(ctx) && room - stripHeight < DeviceStrip::kMinNotes)
+        stripHeight = room;
     if (stripHeight > room)
         stripHeight = room >= DeviceStrip::kMinOpenHeight ? room : std::min(DeviceStrip::kClosedHeight, room);
     strip->roomBelow = room - stripHeight;
@@ -95,15 +123,33 @@ void DetailPane::layout() {
     popover->visible = height > 40;
     popover->box = rack::math::Rect(x, y, ModulatorPopover::kWidth, height);
     // With something that makes sound, the header starts with the Notes | Mixer switch.
+    // In a short pane Devices joins them, wider for its count.
     bool sound = mixer && mixer->hasSound();
-    float switchRoom = sound ? 2 * kSwitchWidth + 8 : 0;
-    roll->headerLeft = switchRoom;
+    bool tabs = sound || shortPane;
+    float h = theme::metrics::kPaneHeader - 6, tx = 4;
     if (notesTab) {
-        float h = theme::metrics::kPaneHeader - 6;
-        notesTab->box = rack::math::Rect(4, 3, kSwitchWidth, h);
-        mixerTab->box = rack::math::Rect(4 + kSwitchWidth + 2, 3, kSwitchWidth, h);
-        notesTab->visible = mixerTab->visible = sound;
+        notesTab->visible = tabs;
+        mixerTab->visible = sound;
+        if (tabs) {
+            notesTab->box = rack::math::Rect(tx, 3, kSwitchWidth, h);
+            tx += kSwitchWidth + 2;
+        }
+        if (sound) {
+            mixerTab->box = rack::math::Rect(tx, 3, kSwitchWidth, h);
+            tx += kSwitchWidth + 2;
+        }
     }
+    devicesTab->visible = shortPane && ctx.module();
+    if (devicesTab->visible) {
+        const Track* t = deviceActions::track(ctx);
+        size_t n = t ? t->devices.size() : 0;
+        devicesTab->setText(n > 0 ? "Devices " + std::to_string(n) : "Devices");
+        devicesTab->box = rack::math::Rect(tx, 3, kSwitchWidth + 22, h);
+        tx += kSwitchWidth + 24;
+    }
+    float switchRoom = tabs ? tx + 6 : 0;
+    roll->headerLeft = switchRoom;
+    roll->devicesInTabs = devicesTab->visible;
     roll->layout();
     if (mixer) {
         bool show = showsMixer();

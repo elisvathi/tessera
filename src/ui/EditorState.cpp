@@ -109,6 +109,7 @@ json_t* viewToJson(const ViewState& v) {
     setNumber(j, "launcherPanelWidth", v.launcherPanelWidth);
     setNumber(j, "mixerHeight", v.mixerHeight);
     setNumber(j, "curveHeight", v.curveHeight);
+    setInt(j, "stripRows", v.stripRows);
     return j;
 }
 
@@ -122,6 +123,7 @@ ViewState viewFromJson(const json_t* j, ViewState v = ViewState()) {
     v.launcherScrollX = std::max(0.0, numberAt(get(j, "launcherScroll"), 0, 0));
     v.launcherScrollY = std::max(0.0, numberAt(get(j, "launcherScroll"), 1, 0));
     v.curveHeight = std::clamp(getNumber(j, "curveHeight", 0), 0.0, 4000.0);
+    v.stripRows = int(std::clamp<int64_t>(getInt(j, "stripRows", v.stripRows), 1, 8));
     return v;
 }
 

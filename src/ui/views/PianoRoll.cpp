@@ -547,13 +547,16 @@ void PianoRollView::layout() {
     auto placeChip = [this](bool shortText) {
         placeClipChip(ctx, clipChip, source.clip, shortText, box.size.x - headerLeft);
         clipChip->box.pos.x += headerLeft;
-        devicesToggle->box = rack::math::Rect(clipChip->box.getRight() + 4, 3, kDevicesToggleWidth, kPaneHeader - 6);
+        devicesToggle->box = rack::math::Rect(clipChip->box.getRight() + 4, 3, devicesInTabs ? 0 : kDevicesToggleWidth,
+                                              kPaneHeader - 6);
     };
     placeChip(false);
     if (layoutToolbar(kPaneHeader)) {
         placeChip(true);
         layoutToolbar(kPaneHeader);
     }
+    if (devicesInTabs)
+        devicesToggle->visible = false;
 }
 
 bool PianoRollView::audioMode() {

@@ -83,6 +83,30 @@ struct KeyColors {
 };
 const KeyColors& keyColors();
 
+/// The device strip's cards and pictures (docs/DEVICES.md §1.1), made from the editor's palette so they follow every
+/// scheme. A picture draws notes going in as `ghost` outlines and notes coming out in its card's colour.
+struct DeviceColors {
+    NVGcolor ground;    // behind the cards
+    NVGcolor card;      // a card
+    NVGcolor cardEdge;  // its outline
+    NVGcolor screen;    // a picture's background
+    NVGcolor shade;     // the inner shadow at a picture's top
+    NVGcolor tag;       // a tag's pill
+    NVGcolor tagHover;  // a hovered tag
+    NVGcolor tagEdge;   // its outline
+    NVGcolor ghost;     // notes going in
+    NVGcolor ghostDash; // notes left out (drawn dashed)
+    NVGcolor base;      // the time line under a picture
+    NVGcolor tick;      // small marks on it
+    NVGcolor guide;     // grey arrows, crosses and stems
+    NVGcolor key;       // a piano key that is out of the key
+    NVGcolor keyBlack;
+    NVGcolor caption;
+    NVGcolor link;      // the line from card to card
+    float glow;         // how strongly coloured shapes glow (less on light schemes)
+};
+const DeviceColors& deviceColors();
+
 /// "Colour scheme" items: one check item per scheme.
 void appendSchemeMenu(rack::ui::Menu* menu);
 
@@ -169,6 +193,27 @@ constexpr float kPanelLabelAboveJackMm = 6.4f; // label baseline offset above a 
 constexpr float kDisplaySmall = 9;
 constexpr float kDisplayLarge = 22;
 constexpr float kStatusBar = 3; // colored strip at the top of an output display
+
+// The device strip (docs/DEVICES.md §1.1): cards of pictures, each picture with its tags on it.
+constexpr float kDeviceTile = 100;        // a picture's height
+constexpr float kDeviceTileRadius = 9;
+constexpr float kDeviceTileGap = 8;       // between the pictures of a card
+constexpr float kDeviceCardHeader = 30;
+constexpr float kDeviceCardRadius = 12;
+constexpr float kDeviceCardTop = 6;       // room above the header
+constexpr float kDeviceCardPad = 12;      // left, right and below the pictures
+constexpr float kDeviceTag = 22;          // a tag's height
+constexpr float kDeviceTagInset = 9;      // tags from a picture's edges
+constexpr float kDeviceTagGap = 6;
+constexpr float kDeviceTagText = 12;
+constexpr float kDeviceCaptionText = 10.5f;
+constexpr float kDeviceLink = 26;         // the gap between cards, with its line
+constexpr float kDeviceIo = 34;           // "in" and "out"
+constexpr float kDeviceSpine = 26;        // a playhead frame's side, with "<Name> only" written down it
+constexpr float kDeviceSlot = 46;         // an empty playhead frame
+constexpr float kDeviceFrameOut = 7;      // how far a playhead frame reaches past its cards
+constexpr float kDevicePlus = 24;         // the round + at a frame's end
+constexpr float kDeviceGlow = 5;          // a coloured shape's glow
 
 // Audio clips (docs/design/AUDIO_MIXER.md §6.1)
 constexpr float kAudioHandle = 7;          // fade handles and curve dots, as drawn

@@ -77,6 +77,7 @@ struct ViewState {
     double launcherScrollX = 0;     // px across the track columns
     double launcherScrollY = 0;     // px down the scenes
     double curveHeight = 0;         // the curve pane's height when dragged, px; 0 = the default
+    int stripRows = 1;              // rows of device cards the open strip shows, up to the rows its cards need
 
     /// Forgets the clips panel scroll, which belongs to one song. The pane layout stays.
     void forgetSong();

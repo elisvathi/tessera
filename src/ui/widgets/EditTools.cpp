@@ -267,7 +267,7 @@ ToolButton* makeDevicesToggle(EditorContext& ctx) {
     EditorContext* c = &ctx;
     ToolButton::Options o;
     o.text = "Devices";
-    o.tooltip = withShortcut("The track's devices, above its notes", Action::ToggleDevices);
+    o.tooltip = withShortcut("The track's devices: above its notes, or in their place when the pane is short", Action::ToggleDevices);
     o.action = [c] { deviceActions::setStripOpen(*c, !deviceActions::stripOpen(*c)); };
     o.active = [c] { return c->module() && deviceActions::stripOpen(*c); };
     o.filled = true;

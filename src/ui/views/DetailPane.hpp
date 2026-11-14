@@ -52,6 +52,9 @@ class DetailPane : public EditorPane {
     MixerPane* mixer = nullptr;
     ToolButton* notesTab = nullptr;
     ToolButton* mixerTab = nullptr;
+    ToolButton* devicesTab = nullptr;
+    /// Too short for devices and notes together: Devices is a tab beside Notes and Mixer, and takes the whole pane.
+    bool shortPane = false;
     float rightReserve = 0;
 };
 

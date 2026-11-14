@@ -74,12 +74,12 @@ TEST_LIBS += $(shell pkg-config --libs samplerate 2>/dev/null || echo -lsamplera
 TEST_SOURCES := $(wildcard tests/*.cpp src/model/*.cpp src/engine/*.cpp) \
 	src/ui/interaction/Axes.cpp src/ui/interaction/Shortcuts.cpp src/ui/interaction/Snap.cpp \
 	src/ui/editing/NoteHitTest.cpp src/ui/interaction/TrackRows.cpp src/ui/EditorState.cpp \
-	src/ui/interaction/Search.cpp \
+	src/ui/interaction/Search.cpp src/ui/interaction/DeviceTags.cpp \
 	$(wildcard src/audio/*.cpp src/audio/stretch/*.cpp)
 TEST_HEADERS := $(wildcard tests/*.h tests/*.hpp src/model/*.hpp src/engine/*.hpp) \
 	src/ui/interaction/Axes.hpp src/ui/interaction/Navigation.hpp src/ui/interaction/Shortcuts.hpp \
 	src/ui/interaction/Snap.hpp src/ui/editing/NoteHitTest.hpp src/ui/interaction/TrackRows.hpp \
-	src/ui/EditorState.hpp \
+	src/ui/EditorState.hpp src/ui/interaction/DeviceTags.hpp \
 	src/module/OutputBus.hpp src/module/AudioHandoff.hpp src/module/PasteRemaps.hpp
 TEST_BIN := build/tests/tessera_tests
 

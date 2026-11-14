@@ -1,11 +1,16 @@
 #include "DeviceStrip.hpp"
 
 #include "../../model/Modulators.hpp"
+#include "../../model/Playheads.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
+#include "../editing/ClipActions.hpp"
 #include "../editing/DeviceActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
+#include "../widgets/CachedLayer.hpp"
 #include "../widgets/Draw.hpp"
+#include "../widgets/TagPanel.hpp"
+#include "DeviceTiles.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -15,64 +20,31 @@ namespace tessera {
 using rack::math::Rect;
 using rack::math::Vec;
 using Kind = DeviceStrip::Part::Kind;
+using tags::Family;
+namespace mx = theme::metrics;
 
 namespace {
 
-/// A Scale device's Root and Scale knobs only matter when its key comes from "Fixed"; with Clip or Song they
-/// hide, so the card shrinks to the knobs that do something.
-bool paramVisible(const Device& d, int k) {
-    if (d.type != DeviceType::Scale || (k != chain::knob::kRoot && k != chain::knob::kScale))
-        return true;
-    const std::vector<devices::ParamInfo>& params = devices::deviceInfo(d.type).params;
-    int keyFrom = 0;
-    if (chain::knob::kKeyFrom < int(d.params.size()) && chain::knob::kKeyFrom < int(params.size()) &&
-        params[size_t(chain::knob::kKeyFrom)].kind == devices::ParamInfo::Kind::Choice)
-        keyFrom = int(std::lround(d.params[size_t(chain::knob::kKeyFrom)] *
-                                  float(params[size_t(chain::knob::kKeyFrom)].choices.size() - 1)));
-    return keyFrom == int(chain::KeyFrom::Fixed);
-}
-
-constexpr float kPad = 8;
+constexpr float kPad = 8;  // around the modulator list
+constexpr float kTop = DeviceStrip::kTop; // the cards' top: room above for a playhead frame
+constexpr float kEdge = 8;                 // the strip's bottom edge that resizes it
 constexpr float kModWidth = 214;
 constexpr float kModHeader = 24;
 constexpr float kRow = 22;
-constexpr float kCardHeader = 24;
-constexpr float kCell = 60;
-constexpr float kCardPad = 4;
-constexpr float kConnector = 26;
-constexpr float kInWidth = 30;
-constexpr float kAddTile = 92;
-constexpr float kOutWidth = 40;
-constexpr float kKnobRadius = 13.5f;
-constexpr float kKnobPx = 160;   // dragging this far turns a knob end to end
+constexpr float kCardHeight = mx::kDeviceCardTop + mx::kDeviceCardHeader + mx::kDeviceTile + mx::kDeviceCardPad;
+static_assert(kCardHeight == DeviceStrip::kCardHeight, "the strip's rows follow the card's height");
+constexpr float kHeaderMid = mx::kDeviceCardTop + mx::kDeviceCardHeader / 2; // the header's middle, from the top
+constexpr float kAddWidth = 112;
 constexpr float kAmountPx = 100; // dragging this far sets a modulation to its full amount
-constexpr float kPi = 3.14159265f;
-constexpr float kChip = 78; // a playhead's chip on a Playheads card
-constexpr float kChipHeight = 18;
-constexpr float kChipDot = 16;      // the on/off dot at a chip's left end
-constexpr float kMotionJoin = 64;   // a Motion card's "+ Selected"
-constexpr float kMotionLeave = 64;  // its "− Selected"
-constexpr float kMotionCount = 52;  // and its "6 notes"
-constexpr float kKnobGroupGap = 14; // between a playhead's settings and the device's own
-constexpr float kGroupGap = 10;     // between the groups of a Playheads card (MOVE, REPEAT, More)
-constexpr float kRepeatBlock = 224; // the REPEAT block: its hits, Piece × Times and Curve
+constexpr float kChipHeight = 20;
+constexpr float kChipDot = 18;     // the on/off dot at a chip's left end
+constexpr float kSwitchW = 30;     // the shown playhead's On switch
+constexpr float kMotionJoin = 64;  // a Motion card's "+ Selected"
+constexpr float kMotionLeave = 64; // its "− Selected"
+constexpr float kMotionCount = 52; // and its "6 notes"
+constexpr float kTagPad = 8;
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
-
-float angleOf(float t) { return (135.f + 270.f * std::clamp(t, 0.f, 1.f)) * kPi / 180.f; }
-
-void arc(NVGcontext* vg, Vec c, float r, float t0, float t1, NVGcolor color, float width) {
-    if (t1 < t0)
-        std::swap(t0, t1);
-    if (t1 - t0 < 0.002f)
-        return;
-    nvgBeginPath(vg);
-    nvgArc(vg, c.x, c.y, r, angleOf(t0), angleOf(t1), NVG_CW);
-    nvgStrokeColor(vg, color);
-    nvgStrokeWidth(vg, width);
-    nvgLineCap(vg, NVG_ROUND);
-    nvgStroke(vg);
-}
 
 struct Row {
     ModulatorId id;
@@ -93,25 +65,81 @@ std::vector<Row> modulatorRows(const Song& song, const Track& t) {
     return rows;
 }
 
+/// A device's name as its card shows it: its own, or its type's when it has none.
+std::string nameOf(const Device& d) { return d.name.empty() ? devices::deviceInfo(d.type).name : d.name; }
+
+const devices::ParamInfo* infoOf(const ParamRef& ref, DeviceType type) {
+    return ref.kind == ParamRef::Kind::Playhead ? devices::playheadParamInfo(ref.param)
+                                                : devices::paramInfo(type, ref.param);
+}
+
+/// What a tag reads: its value's label, or for a step order its order and step size, or a channel set.
+std::string tagLabel(DeviceStrip& strip, const DeviceStrip::TagRef& t, const tags::Values& v) {
+    if (t.spec.family == Family::Channels)
+        return tags::channelsText(v.channels);
+    const tags::ValueList& list = strip.listOf(t);
+    int i = strip.indexOf(t);
+    if (i < 0 || i >= list.size())
+        return "";
+    if (t.spec.family == Family::Direction && i >= 4) {
+        const std::vector<std::string>& steps = playheads::orderStepNames();
+        return list.labels[size_t(i)] + " " +
+               steps[size_t(std::clamp(int(std::lround(v[playheads::knob::kOrderStep])), 0, int(steps.size()) - 1))];
+    }
+    return list.labels[size_t(i)];
+}
+
+float tagWidth(NVGcontext* vg, const tags::TagSpec& spec, const std::string& label, const std::string& name) {
+    const theme::Palette& c = theme::colors();
+    if (spec.family == Family::Toggle) {
+        draw::TextStyle st{theme::fonts::ui(), mx::kDeviceTagText, c.text1};
+        return kTagPad + draw::textWidth(vg, st, name) + 4 + 22 + 4;
+    }
+    float w = 2 * kTagPad + tiles::drawValue(vg, 0, 0, label, mx::kDeviceTagText, c.text0, false);
+    if (spec.prefix[0]) {
+        draw::TextStyle pre{theme::fonts::ui(), mx::kDeviceTagText, c.text2};
+        w += draw::textWidth(vg, pre, spec.prefix) + 4;
+    }
+    return w;
+}
+
 // ---- Gestures -------------------------------------------------------------------------------------------------
 
-/// Turning a knob: the engine plays it while dragging; one undo step on release.
-class KnobDrag : public DragGesture {
+/// Dragging a tag left, right, up or down steps through its values; the picture follows and the engine plays it.
+/// One undo step on release.
+class TagDrag : public DragGesture {
   public:
-    KnobDrag(DeviceStrip& strip, EditorContext& ctx, ParamRef ref, float start, devices::ParamInfo info, Vec press)
-        : strip(strip), ctx(ctx), ref(ref), start(start), value(start), info(std::move(info)), press(press) {}
-    void update(Vec pos, Modifiers mods) override {
-        value = std::clamp(start + (press.y - pos.y) / kKnobPx * (mods.shift ? 0.2f : 1.f), 0.f, 1.f);
-        if (info.kind == devices::ParamInfo::Kind::Integer)
-            value = devices::normalize(info, devices::display(info, value));
-        strip.knobPreview = std::make_pair(ref, value);
+    TagDrag(DeviceStrip& strip, EditorContext& ctx, DeviceStrip::TagRef t, Vec press)
+        : strip(strip), ctx(ctx), t(t), list(strip.listOf(t)), press(press) {
+        start = index = strip.indexOf(t);
         if (TesseraModule* m = ctx.module())
-            m->holdKnob(ref, value);
+            if (const devices::ParamInfo* p = deviceActions::infoOf(m->song(), t.ref))
+                info = *p;
+    }
+    void update(Vec pos, Modifiers mods) override {
+        int n = std::max(1, list.size());
+        float px = std::clamp(190.f / float(n), 2.5f, 14.f) * (mods.shift ? 3.f : 1.f);
+        float d = (pos.x - press.x) - (pos.y - press.y);
+        index = std::clamp(start + int(std::lround(d / px)), 0, n - 1);
+        if (t.spec.family == Family::Direction) {
+            strip.directionPreview = std::make_pair(t.ref.owner, index);
+            return;
+        }
+        value = devices::normalize(info, list.values[size_t(index)]);
+        strip.knobPreview = std::make_pair(t.ref, value);
+        if (TesseraModule* m = ctx.module())
+            m->holdKnob(t.ref, value);
     }
     void commit() override {
+        if (t.spec.family == Family::Direction) {
+            strip.directionPreview.reset();
+            if (index != start)
+                strip.setIndex(t, index);
+            return;
+        }
         TesseraModule* m = ctx.module();
-        if (const AutomationEnvelope* lane = m ? m->recordingKnobLane(ref) : nullptr) {
-            // Recording: the lane takes the move. In Latch and Write the knob stays where the hand left it until
+        if (const AutomationEnvelope* lane = m ? m->recordingKnobLane(t.ref) : nullptr) {
+            // Recording: the lane takes the move. In Latch and Write the setting stays where the hand left it until
             // the pass ends.
             strip.knobPreview.reset();
             if (lane->recordMode == AutoRecordMode::Touch)
@@ -119,12 +147,18 @@ class KnobDrag : public DragGesture {
             return;
         }
         finish();
-        if (value != start)
-            deviceActions::setKnob(ctx, ref, value);
+        if (index != start)
+            deviceActions::setKnob(ctx, t.ref, value);
     }
-    void cancel() override { finish(); }
-    std::string readout() const override { return std::string(info.name) + "  " + devices::format(info, value); }
-    CursorShape cursor() const override { return CursorShape::ResizeV; }
+    void cancel() override {
+        strip.directionPreview.reset();
+        finish();
+    }
+    std::string readout() const override {
+        return (t.spec.family == Family::Direction ? std::string("Direction") : std::string(info.name)) + "  " +
+               (index >= 0 && index < list.size() ? list.labels[size_t(index)] : "");
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
 
   private:
     void finish() {
@@ -134,13 +168,15 @@ class KnobDrag : public DragGesture {
     }
     DeviceStrip& strip;
     EditorContext& ctx;
-    ParamRef ref;
-    float start, value;
-    devices::ParamInfo info;
+    DeviceStrip::TagRef t;
+    tags::ValueList list;
+    devices::ParamInfo info{""};
     Vec press;
+    int start = 0, index = 0;
+    float value = 0;
 };
 
-/// Mapping: dragging a lit knob sets how far the modulator moves it (up positive, down negative).
+/// Mapping: dragging a lit tag sets how far the modulator moves it (up positive, down negative).
 class AmountDrag : public DragGesture {
   public:
     AmountDrag(DeviceStrip& strip, EditorContext& ctx, ModulatorId mod, ParamRef ref, Vec press)
@@ -193,12 +229,15 @@ class AmountDrag : public DragGesture {
 /// Dragging a card by its header: reorder, or with Ctrl a copy at the drop place.
 class CardDrag : public DragGesture {
   public:
-    CardDrag(DeviceStrip& strip, EditorContext& ctx, DeviceId id, std::vector<float> centers)
-        : strip(strip), ctx(ctx), id(id), centers(std::move(centers)) {}
+    CardDrag(DeviceStrip& strip, EditorContext& ctx, DeviceId id, std::vector<Rect> cards)
+        : strip(strip), ctx(ctx), id(id), cards(std::move(cards)) {}
     void update(Vec pos, Modifiers mods) override {
+        // Cards are in reading order, wrapped onto rows: count those before the pointer.
         int at = 0;
-        while (at < int(centers.size()) && pos.x > centers[size_t(at)])
-            at++;
+        for (const Rect& r : cards)
+            if (pos.y > r.getBottom() + DeviceStrip::kRowGap / 2 || (pos.y >= r.pos.y - DeviceStrip::kRowGap / 2 &&
+                                                                      pos.x > r.getCenter().x))
+                at++;
         strip.dropIndex = at;
         copy = copy || mods.ctrl; // stays a copy once asked for, like note and clip drags
     }
@@ -223,27 +262,366 @@ class CardDrag : public DragGesture {
     DeviceStrip& strip;
     EditorContext& ctx;
     DeviceId id;
-    std::vector<float> centers;
+    std::vector<Rect> cards;
     bool copy = false;
+};
+
+/// Dragging the strip's bottom edge: more or fewer rows of cards, or near the pane's bottom the whole pane. The
+/// strip's size is the editor's, not the song's: no undo step.
+class StripResize : public DragGesture {
+  public:
+    StripResize(DeviceStrip& strip, EditorContext& ctx) : strip(strip), ctx(ctx) {}
+    void update(Vec pos, Modifiers) override {
+        int rows = std::clamp(int(std::lround((pos.y - 2 * DeviceStrip::kTop + DeviceStrip::kRowGap) /
+                                              (DeviceStrip::kCardHeight + DeviceStrip::kRowGap))),
+                              1, std::max(1, strip.rowsNeeded));
+        // Never so deep that the notes lose their room: the strip only takes the whole pane when one row is too much.
+        while (rows > 1 && strip.paneRoom - DeviceStrip::heightFor(rows) < DeviceStrip::kMinNotes)
+            rows--;
+        ctx.view().stripRows = rows;
+    }
+    std::string readout() const override {
+        int rows = ctx.view().stripRows;
+        return rows <= 1 ? "1 row" : std::to_string(rows) + " rows";
+    }
+    CursorShape cursor() const override { return CursorShape::ResizeV; }
+
+  private:
+    DeviceStrip& strip;
+    EditorContext& ctx;
 };
 
 } // namespace
 
-// ---- Layout ---------------------------------------------------------------------------------------------------
+// ---- Cached pictures ------------------------------------------------------------------------------------------
+
+/// The pictures of the cards on show, each drawn once into its own framebuffer and redrawn only when what it shows
+/// changes (a value, the tint, the scheme). Clipped to the chain, so pictures scrolled under the modulator list hide.
+class TileLayer : public rack::widget::Widget {
+  public:
+    float clipLeft = 0;
+
+    /// Marks every picture unused; show() marks the ones drawn this frame.
+    void beginFrame() {
+        for (auto& [key, t] : tiles)
+            t->used = false;
+    }
+
+    /// Shows a picture at `pos`. `hash` sums up everything it draws; the caption is only worked out when it changed.
+    void show(uint64_t key, Vec pos, float width, DeviceType type, int tile, const tags::Values& values, NVGcolor tint,
+              float alpha, uint64_t hash, const std::function<std::string()>& caption) {
+        std::unique_ptr<Tile>& t = tiles[key];
+        if (!t) {
+            t = std::make_unique<Tile>();
+            Tile* raw = t.get();
+            t->layer = new CachedLayer([raw](NVGcontext* vg, Vec) {
+                tiles::drawTile(vg, raw->type, raw->tile, raw->values, raw->width, raw->tint, raw->caption);
+            });
+            addChild(t->layer);
+        }
+        t->used = true;
+        t->alpha = alpha;
+        if (t->hash != hash || t->width != width) {
+            t->hash = hash;
+            t->type = type;
+            t->tile = tile;
+            t->values = values;
+            t->tint = tint;
+            t->width = width;
+            t->caption = caption();
+        }
+        t->layer->box.pos = pos;
+        t->layer->setSize(Vec(width, mx::kDeviceTile));
+        t->layer->setKey(hash);
+    }
+
+    /// Frees the pictures not shown this frame.
+    void endFrame() {
+        for (auto it = tiles.begin(); it != tiles.end();) {
+            if (it->second->used) {
+                ++it;
+                continue;
+            }
+            removeChild(it->second->layer);
+            delete it->second->layer;
+            it = tiles.erase(it);
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        nvgSave(args.vg);
+        nvgIntersectScissor(args.vg, clipLeft, 0, box.size.x - clipLeft, box.size.y);
+        for (auto& [key, t] : tiles) {
+            nvgSave(args.vg);
+            nvgGlobalAlpha(args.vg, t->alpha);
+            drawChild(t->layer, args);
+            nvgRestore(args.vg);
+        }
+        nvgRestore(args.vg);
+    }
+
+  private:
+    struct Tile {
+        CachedLayer* layer = nullptr;
+        DeviceType type = DeviceType::Transpose;
+        int tile = 0;
+        tags::Values values;
+        NVGcolor tint;
+        float width = 0, alpha = 1;
+        std::string caption;
+        uint64_t hash = ~uint64_t(0);
+        bool used = false;
+    };
+    std::map<uint64_t, std::unique_ptr<Tile>> tiles;
+};
+
+DeviceStrip::DeviceStrip(EditorContext& ctx) : InteractiveView(ctx) {
+    tileLayer = new TileLayer;
+    addChild(tileLayer);
+    self = std::make_shared<DeviceStrip*>(this);
+}
+
+// ---- Values ---------------------------------------------------------------------------------------------------
 
 const Track* DeviceStrip::track() { return deviceActions::track(ctx); }
+
+const tags::ValueList& DeviceStrip::listOf(const TagRef& t) {
+    uint64_t key = (uint64_t(t.type) << 32) | (uint64_t(t.ref.kind) << 24) | (uint64_t(t.spec.family) << 16) |
+                   uint64_t(t.ref.param);
+    auto it = lists.find(key);
+    if (it == lists.end())
+        it = lists.emplace(key, tags::valueList(t.type, t.spec)).first;
+    return it->second;
+}
+
+float DeviceStrip::shownValue(const ParamRef& ref) {
+    if (knobPreview && knobPreview->first == ref)
+        return knobPreview->second;
+    TesseraModule* m = ctx.module();
+    const float* stored = m ? findParam(m->song(), ref) : nullptr;
+    if (!stored)
+        return 0;
+    if (modulationsOn(m->song(), ref) > 0 || m->automated(ref))
+        return m->liveKnob(ref);
+    return *stored;
+}
+
+int DeviceStrip::indexOf(const TagRef& t) {
+    const tags::ValueList& list = listOf(t);
+    if (t.spec.family == Family::Direction) {
+        if (directionPreview && directionPreview->first == t.ref.owner)
+            return directionPreview->second;
+        const devices::ParamInfo* dir = devices::playheadParamInfo(playheads::knob::kDirection);
+        const devices::ParamInfo* order = devices::playheadParamInfo(playheads::knob::kOrder);
+        ParamRef o = t.ref;
+        o.param = uint16_t(playheads::knob::kOrder);
+        int ord = int(std::lround(devices::display(*order, shownValue(o))));
+        return ord > 0 ? std::min(3 + ord, tags::kDirectionValues - 1)
+                       : int(std::lround(devices::display(*dir, shownValue(t.ref))));
+    }
+    TesseraModule* m = ctx.module();
+    const devices::ParamInfo* info = m ? deviceActions::infoOf(m->song(), t.ref) : nullptr;
+    if (!info || list.values.empty())
+        return 0;
+    return list.nearest(devices::display(*info, shownValue(t.ref)));
+}
+
+void DeviceStrip::setIndex(const TagRef& t, int index) {
+    TesseraModule* m = ctx.module();
+    const tags::ValueList& list = listOf(t);
+    if (!m || list.values.empty())
+        return;
+    index = std::clamp(index, 0, list.size() - 1);
+    if (t.spec.family == Family::Direction) {
+        using namespace playheads::knob;
+        if (index < 4)
+            deviceActions::setPlayheadValues(ctx, PlayheadId(t.ref.owner), {{kDirection, float(index)}, {kOrder, 0}},
+                                             "Set direction");
+        else
+            deviceActions::setPlayheadValues(ctx, PlayheadId(t.ref.owner), {{kOrder, float(index - 3)}}, "Set order");
+        return;
+    }
+    const devices::ParamInfo* info = deviceActions::infoOf(m->song(), t.ref);
+    const float* stored = findParam(m->song(), t.ref);
+    if (!info || !stored)
+        return;
+    float n = devices::normalize(*info, list.values[size_t(index)]);
+    if (n != *stored)
+        deviceActions::setKnob(ctx, t.ref, n);
+}
+
+uint16_t DeviceStrip::channelsOf(const Device& d) const {
+    if (channelPreview && channelPreview->first == d.id.value)
+        return channelPreview->second;
+    const devices::ParamInfo* info = devices::paramInfo(d.type, chain::knob::kChannel);
+    if (!info || d.params.size() <= size_t(chain::knob::kChannel))
+        return 0;
+    int ch = int(std::lround(devices::display(*info, d.params[size_t(chain::knob::kChannel)])));
+    return ch > 0 ? uint16_t(1u << (ch - 1)) : 0;
+}
+
+void DeviceStrip::setChannels(DeviceId id, uint16_t mask) {
+    TesseraModule* m = ctx.module();
+    const Device* d = m ? findDevice(m->song(), id) : nullptr;
+    const devices::ParamInfo* info = d ? devices::paramInfo(d->type, chain::knob::kChannel) : nullptr;
+    if (!info)
+        return;
+    int ch = 0;
+    for (int c = 0; c < 16; c++)
+        if (mask & (1u << c)) {
+            ch = c + 1;
+            break;
+        }
+    deviceActions::setKnob(ctx, {ParamRef::Kind::Device, id.value, uint16_t(chain::knob::kChannel)},
+                           devices::normalize(*info, float(ch)));
+}
+
+tags::Values DeviceStrip::valuesOf(const Device& d, const Playhead* playhead) {
+    tags::Values v;
+    const std::vector<float>& params = playhead ? playhead->params : d.params;
+    ParamRef::Kind kind = playhead ? ParamRef::Kind::Playhead : ParamRef::Kind::Device;
+    uint64_t owner = playhead ? playhead->id.value : d.id.value;
+    for (size_t k = 0; k < params.size() && k < v.v.size(); k++) {
+        const devices::ParamInfo* info =
+            playhead ? devices::playheadParamInfo(int(k)) : devices::paramInfo(d.type, int(k));
+        if (info)
+            v.v[k] = devices::display(*info, params[k]);
+    }
+    // Settings on tags read as their tags do: previewed, live, snapped to the tag's steps.
+    for (const tags::TileSpec& tile : tags::tilesOf(d.type))
+        for (const tags::TagSpec& spec : tile.tags) {
+            if (spec.family == Family::Channels || spec.param < 0 || spec.param >= int(v.v.size()))
+                continue;
+            TagRef t{{kind, owner, uint16_t(spec.param)}, d.type, spec, nvgRGBf(0, 0, 0)};
+            const tags::ValueList& list = listOf(t);
+            int i = indexOf(t);
+            if (spec.family == Family::Direction) {
+                v.v[size_t(playheads::knob::kDirection)] = i < 4 ? float(i) : 0.f;
+                v.v[size_t(playheads::knob::kOrder)] = i < 4 ? 0.f : float(i - 3);
+            } else if (i >= 0 && i < list.size()) {
+                v.v[size_t(spec.param)] = list.values[size_t(i)];
+            }
+        }
+    if (d.type == DeviceType::NoteFilter)
+        v.channels = channelsOf(d);
+    if (d.type == DeviceType::Scale && ctx.module()) {
+        // The key it works in when it follows the clip or the song.
+        const Song& song = ctx.module()->song();
+        ScaleRef key = song.scale;
+        if (const Track* t = track())
+            if (const Clip* clip = song.findClip(clipActions::shownClip(ctx, *t)))
+                if (clip->scaleOverride && v.i(chain::knob::kKeyFrom) == int(chain::KeyFrom::Clip))
+                    key = *clip->scaleOverride;
+        Scale s = resolveScale(key, song.customScales);
+        v.keyRoot = s.root();
+        v.keyMask = s.mask();
+    }
+    return v;
+}
+
+std::optional<NVGcolor> DeviceStrip::modulatorColorOn(const ParamRef& ref) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return std::nullopt;
+    std::optional<NVGcolor> color;
+    forEachModulator(m->song(), [&](const Modulator& mod, const ModulatorPlace&) {
+        if (color)
+            return;
+        for (const Modulation& r : mod.routes)
+            if (r.kind == Modulation::Kind::Param && r.target == ref)
+                color = deviceActions::colorOf(mod.id);
+    });
+    return color;
+}
+
+std::vector<DeviceStrip::Span> DeviceStrip::spansOn(const ParamRef& ref) {
+    std::vector<Span> out;
+    TesseraModule* m = ctx.module();
+    const float* stored = m ? findParam(m->song(), ref) : nullptr;
+    if (!stored)
+        return out;
+    const Song& song = m->song();
+    for (const FoundLane& f : lanesTurning(song, ref)) {
+        if (f.lane->points.empty())
+            continue;
+        float lo = 1, hi = 0;
+        for (const AutoPoint& p : f.lane->points) {
+            lo = std::min(lo, p.value);
+            hi = std::max(hi, p.value);
+        }
+        out.push_back({lo, hi, deviceActions::laneColor(song, f), f.lane->name.empty() ? "Its lane" : f.lane->name});
+    }
+    // Modulations reach from where the setting is (as set, or as its lane has it).
+    float base = m->automated(ref) ? m->knobBase(ref) : *stored;
+    bool previewed = false;
+    forEachModulator(song, [&](const Modulator& mod, const ModulatorPlace&) {
+        for (const Modulation& r : mod.routes) {
+            if (r.kind != Modulation::Kind::Param || !(r.target == ref))
+                continue;
+            float amount = r.amount;
+            if (amountPreview && amountPreview->first == ref && mod.id.value == ctx.mappingModulator) {
+                amount = amountPreview->second;
+                previewed = true;
+            }
+            float a = base, b = base + amount;
+            if (mod.type == ModulatorType::Curve && !mod.points.empty()) {
+                // A curve's 0.5 is no change; its points reach both ways.
+                float lo = 1, hi = 0;
+                for (const AutoPoint& p : mod.points) {
+                    lo = std::min(lo, p.value);
+                    hi = std::max(hi, p.value);
+                }
+                a = base + amount * (2 * lo - 1);
+                b = base + amount * (2 * hi - 1);
+            } else if (mods::bipolar(mod.type, mod.params.data())) {
+                a = base - amount;
+            }
+            out.push_back({std::clamp(std::min(a, b), 0.f, 1.f), std::clamp(std::max(a, b), 0.f, 1.f),
+                           deviceActions::colorOf(mod.id), mod.name});
+        }
+    });
+    if (amountPreview && amountPreview->first == ref && !previewed)
+        out.push_back({std::clamp(std::min(base, base + amountPreview->second), 0.f, 1.f),
+                       std::clamp(std::max(base, base + amountPreview->second), 0.f, 1.f),
+                       deviceActions::colorOf(ModulatorId(ctx.mappingModulator)), ""});
+    return out;
+}
+
+NVGcolor DeviceStrip::tintOf(const Device& d, int index) {
+    if (d.type == DeviceType::Playheads)
+        if (const Playhead* p = shownPlayhead(d))
+            return theme::playheadColor(p->color);
+    if (index >= kBranchBase)
+        if (const Playhead* p = branchPlayhead())
+            return theme::playheadColor(p->color);
+    if (d.type == DeviceType::Motion)
+        return theme::playheadColor(d.color);
+    // The track's colour, so its devices read with its notes.
+    if (const Track* t = track())
+        return theme::track(t->color);
+    return theme::colors().accent;
+}
+
+// ---- Layout ---------------------------------------------------------------------------------------------------
 
 float DeviceStrip::wantedHeight() {
     const Track* t = ctx.module() ? track() : nullptr;
     if (!t)
         return 0;
     if (deviceActions::stripOpen(ctx))
-        return kOpenHeight;
+    {
+        int rows = std::clamp(ctx.view().stripRows, 1, std::max(1, rowsNeeded));
+        while (rows > 1 && paneRoom - heightFor(rows) < kMinNotes)
+            rows--;
+        return heightFor(rows);
+    }
     return t->devices.empty() && t->modulators.empty() ? 0 : kClosedHeight;
 }
 
 void DeviceStrip::layoutParts() {
     parts.clear();
+    tagRefs.clear();
+    pending.clear();
     const Track* t = track();
     if (!t)
         return;
@@ -265,76 +643,302 @@ void DeviceStrip::layoutParts() {
         y += kRow + 1;
     }
 
+    // The bottom edge resizes the strip when the cards need more than one row; first, so it wins over what it
+    // overlaps.
+    if (resizable())
+        parts.push_back({Kind::ResizeEdge, Rect(0, h - kEdge, box.size.x, kEdge)});
+
     chainLeft = block.getRight() + 4;
     float x = chainLeft - scrollX;
-    parts.push_back({Kind::Insert, Rect(x, kPad, kInWidth, h - 2 * kPad), 0});
-    x += kInWidth;
-    float bodyTop = kPad + kCardHeader;
-    float y0 = bodyTop + (h - 2 * kPad - kCardHeader - 64) / 2;
+    float top = kTop;
+    // Each card with what follows it (a playhead's frame, the link) is one unit: rows break between units.
+    std::vector<std::pair<size_t, size_t>> units;
+    size_t unitStart = parts.size();
+    // "in", with the + that adds a device first.
+    parts.push_back({Kind::Insert, Rect(x, top, mx::kDeviceIo, kCardHeight), 0});
+    x += mx::kDeviceIo;
     for (size_t i = 0; i < t->devices.size(); i++) {
         const Device& d = t->devices[i];
-        if (d.type == DeviceType::Playheads) {
-            x = layoutPlayheads(d, int(i), x, y0);
+        x = layoutCard(d, int(i), x, top, tintOf(d, int(i)));
+        if (d.type == DeviceType::Playheads)
             if (const Playhead* p = shownPlayhead(d)) {
-                // The shown playhead's branch, on a band in its colour: devices only its notes go through.
-                size_t band = parts.size();
-                float left = x;
-                parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), kBranchBase});
-                x += kConnector;
-                for (size_t k = 0; k < p->branch.size(); k++) {
-                    x = layoutCard(p->branch[k], kBranchBase + int(k), x, y0);
-                    parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), kBranchBase + int(k) + 1});
-                    x += kConnector;
+                // The shown playhead's own devices: a frame in its colour, or a slim dashed slot when it has none.
+                x += mx::kDeviceLink;
+                Rect frame(x, top - mx::kDeviceFrameOut, mx::kDeviceSlot, kCardHeight + 2 * mx::kDeviceFrameOut);
+                if (p->branch.empty()) {
+                    parts.push_back({Kind::Slot, frame, -1, -1, p->id.value});
+                    x += mx::kDeviceSlot;
+                } else {
+                    size_t at = parts.size();
+                    x += mx::kDeviceSpine;
+                    for (size_t k = 0; k < p->branch.size(); k++) {
+                        if (k > 0) {
+                            parts.push_back({Kind::Insert, Rect(x, top, mx::kDeviceLink, kCardHeight),
+                                             kBranchBase + int(k)});
+                            x += mx::kDeviceLink;
+                        }
+                        x = layoutCard(p->branch[k], kBranchBase + int(k), x, top, theme::playheadColor(p->color));
+                    }
+                    x += mx::kDeviceLink;
+                    parts.push_back({Kind::FramePlus, Rect(x, top + kHeaderMid - mx::kDevicePlus / 2, mx::kDevicePlus,
+                                                           mx::kDevicePlus),
+                                     -1, -1, p->id.value});
+                    x += mx::kDevicePlus + 9;
+                    frame.size.x = x - frame.pos.x;
+                    // Drawn first, under its cards; it takes no clicks.
+                    parts.insert(parts.begin() + long(at), {Kind::Frame, frame, -1, -1, p->id.value});
                 }
-                parts.insert(parts.begin() + long(band),
-                             {Kind::BranchBand, Rect(left, kPad, x - left, h - 2 * kPad), -1, -1, p->id.value});
             }
-            parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), int(i) + 1});
-            x += kConnector;
-            continue;
-        }
-        x = layoutCard(d, int(i), x, y0);
-        parts.push_back({Kind::Insert, Rect(x, kPad, kConnector, h - 2 * kPad), int(i) + 1});
-        x += kConnector;
+        parts.push_back({Kind::Insert, Rect(x, top, mx::kDeviceLink, kCardHeight), int(i) + 1});
+        x += mx::kDeviceLink;
+        units.push_back({unitStart, parts.size()});
+        unitStart = parts.size();
     }
-    parts.push_back({Kind::AddTile, Rect(x, kPad, kAddTile, h - 2 * kPad)});
-    x += kAddTile + kOutWidth;
+    parts.push_back({Kind::AddTile, Rect(x, top + mx::kDeviceCardTop, kAddWidth, mx::kDeviceCardHeader)});
+    x += kAddWidth + mx::kDeviceIo + 8;
+    units.push_back({unitStart, parts.size()});
     contentWidth = x + scrollX - chainLeft;
+    contentHeight = kOpenHeight;
+    flowRows(units);
+    showTiles();
 }
 
-float DeviceStrip::layoutCard(const Device& d, int index, float x, float knobTop) {
+void DeviceStrip::flowRows(const std::vector<std::pair<size_t, size_t>>& units) {
     float h = box.size.y;
-    int n = 0;
-    for (int k = 0; k < int(devices::deviceInfo(d.type).params.size()); k++)
-        n += int(paramVisible(d, k));
-    Rect card(x, kPad, 2 * kCardPad + n * kCell, h - 2 * kPad);
-    parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
-    Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
+    int fit = int(std::floor((h - 2 * kTop + kRowGap) / (kCardHeight + kRowGap)));
+    // A unit's width: from its first part's left to its last part's right ("out" follows the add button).
+    auto extent = [&](const std::pair<size_t, size_t>& u) {
+        float a = INFINITY, b = -INFINITY;
+        for (size_t k = u.first; k < u.second; k++) {
+            if (parts[k].kind == Kind::Frame || parts[k].kind == Kind::Slot || parts[k].kind == Kind::Card ||
+                parts[k].kind == Kind::Insert || parts[k].kind == Kind::AddTile) {
+                a = std::min(a, parts[k].rect.pos.x);
+                b = std::max(b, parts[k].rect.getRight() + (parts[k].kind == Kind::AddTile ? mx::kDeviceIo : 0));
+            }
+        }
+        return std::make_pair(a, b);
+    };
+    float right = box.size.x - 8;
+    {
+        // The rows the cards need at this width, wrapped or not.
+        float cx = chainLeft;
+        int need = 1;
+        for (const auto& u : units) {
+            auto [a, b] = extent(u);
+            if (!(b > a))
+                continue;
+            if (cx > chainLeft && cx + (b - a) > right) {
+                need++;
+                cx = chainLeft;
+            }
+            cx += b - a;
+        }
+        rowsNeeded = need;
+    }
+    if (fit < 2) {
+        scrollY = 0;
+        return; // one row: it scrolls sideways
+    }
+    float left = chainLeft - scrollX;
+    float cx = left, widest = 0;
+    int row = 0;
+    for (const auto& u : units) {
+        auto [a, b] = extent(u);
+        if (!(b > a))
+            continue;
+        float w = b - a;
+        if (cx > left && cx + w > right) {
+            row++;
+            cx = left;
+        }
+        float dx = cx - a, dy = float(row) * (kCardHeight + kRowGap) - scrollY;
+        for (size_t k = u.first; k < u.second; k++)
+            parts[k].rect.pos = parts[k].rect.pos.plus(Vec(dx, dy));
+        cx += w;
+        widest = std::max(widest, cx - left);
+    }
+    contentWidth = widest + 8;
+    contentHeight = heightFor(row + 1);
+}
+
+void DeviceStrip::showTiles() {
+    for (const Part& p : parts) {
+        if (p.kind != Kind::Tile)
+            continue;
+        for (const PendingTile& t : pending)
+            if (t.device == p.device && t.tile == p.tile) {
+                DeviceType type = t.type;
+                int tile = t.tile;
+                const tags::Values& values = t.values;
+                tileLayer->show(t.key, p.rect.pos, t.width, t.type, t.tile, t.values, t.tint, t.alpha, t.hash,
+                                [type, tile, &values] { return tags::caption(type, tile, values); });
+            }
+    }
+    pending.clear();
+}
+
+float DeviceStrip::tileWidth(DeviceType type, const tags::TileSpec& spec, ParamRef::Kind kind, uint64_t owner) {
+    NVGcontext* vg = APP->window->vg;
+    if (type == DeviceType::NoteLength || !vg)
+        return spec.width; // only one of its settings shows at a time, and it fits
+    float sum = 0;
+    for (const tags::TagSpec& s : spec.tags) {
+        uint64_t key = (uint64_t(type) << 32) | (uint64_t(kind) << 24) | uint64_t(s.param);
+        auto it = widestTag.find(key);
+        if (it == widestTag.end()) {
+            TagRef t{{kind, owner, uint16_t(s.param)}, type, s, nvgRGBf(0, 0, 0)};
+            const devices::ParamInfo* info = infoOf(t.ref, type);
+            std::string name = info ? info->name : "";
+            float widest = 0;
+            if (s.family == Family::Channels)
+                widest = tagWidth(vg, s, "1–4, 10", name);
+            else if (s.family == Family::Toggle)
+                widest = tagWidth(vg, s, "", name);
+            else
+                for (const std::string& label : listOf(t).labels)
+                    widest = std::max(widest, tagWidth(vg, s, label + (s.family == Family::Direction ? " 1/16" : ""), name));
+            it = widestTag.emplace(key, widest).first;
+        }
+        sum += it->second;
+    }
+    sum += float(spec.tags.size() - 1) * mx::kDeviceTagGap + 2 * mx::kDeviceTagInset;
+    return std::max(spec.width, std::ceil(sum));
+}
+
+float DeviceStrip::layoutTiles(const Device& d, int index, float x, float top, ParamRef::Kind kind, uint64_t owner,
+                               const tags::Values& values, NVGcolor tint, float minWidth) {
+    NVGcontext* vg = APP->window->vg;
+    const std::vector<tags::TileSpec>& specs = tags::tilesOf(d.type);
+    float tx = x, ty = top + mx::kDeviceCardTop + mx::kDeviceCardHeader;
+    // Each setting's hash, so a picture only redraws when what it shows changed.
+    uint64_t hash = 1469598103934665603ull;
+    for (float f : values.v)
+        hash = hashMix(hash, double(f));
+    hash = hashMix(hash, double(values.channels) + 65536.0 * values.keyRoot + 1e6 * values.keyMask);
+    hash = hashMix(hash, double(tint.r) + 3 * double(tint.g) + 9 * double(tint.b));
+    for (size_t ti = 0; ti < specs.size(); ti++) {
+        const tags::TileSpec& spec = specs[ti];
+        float w = tileWidth(d.type, spec, kind, owner);
+        if (ti + 1 == specs.size())
+            w = std::max(w, minWidth - (tx - x)); // a wide header widens the last picture
+        Rect tile(tx, ty, w, mx::kDeviceTile);
+        // The tags on it, spread across its top; settings that don't apply now are left out or faint.
+        struct Placed {
+            TagRef t;
+            float width;
+            bool first, dim;
+        };
+        std::vector<Placed> placed;
+        for (size_t k = 0; k < spec.tags.size(); k++) {
+            const tags::TagSpec& s = spec.tags[k];
+            if (tags::hidden(d.type, s.param, values))
+                continue;
+            TagRef t{{kind, owner, uint16_t(s.param)}, d.type, s, tint};
+            const devices::ParamInfo* info = infoOf(t.ref, d.type);
+            float width = vg ? tagWidth(vg, s, tagLabel(*this, t, values), info ? info->name : "") : 60;
+            placed.push_back({t, width, k == 0, tags::dimmed(d.type, s.param, values)});
+        }
+        float total = 0;
+        for (const Placed& p : placed)
+            total += p.width;
+        float room = w - 2 * mx::kDeviceTagInset;
+        float gap = placed.size() > 1 ? std::max(mx::kDeviceTagGap, (room - total) / float(placed.size() - 1)) : 0;
+        float px = tx + mx::kDeviceTagInset;
+        for (const Placed& p : placed) {
+            Part part{p.t.spec.family == Family::Toggle ? Kind::Switch : Kind::Tag,
+                      Rect(px, ty + mx::kDeviceTagInset, p.width, mx::kDeviceTag),
+                      index,
+                      p.t.ref.param,
+                      owner};
+            part.tag = int(tagRefs.size());
+            part.first = p.first;
+            part.dim = p.dim;
+            // An automated setting wears an "A" on its corner, which shows its lane; before the tag so it wins.
+            if (p.t.spec.family != Family::Channels && ctx.module()->automated(p.t.ref)) {
+                Part badge = part;
+                badge.kind = Kind::TagBadge;
+                badge.rect = Rect(part.rect.getRight() - 8, part.rect.pos.y - 6, 14, 14);
+                parts.push_back(badge);
+            }
+            tagRefs.push_back(p.t);
+            parts.push_back(part);
+            px += p.width + gap;
+        }
+        Part tilePart{Kind::Tile, tile, index, -1, d.id.value};
+        tilePart.tile = int(ti);
+        parts.push_back(tilePart);
+        pending.push_back({index, int(ti), owner * 8 + ti + (kind == ParamRef::Kind::Playhead ? 4 : 0),
+                           hashMix(hash, double(ti) + w), d.type, values, tint, w, d.on ? 1.f : 0.4f});
+        tx += w + mx::kDeviceTileGap;
+    }
+    return tx - mx::kDeviceTileGap;
+}
+
+float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NVGcolor tint) {
+    NVGcontext* vg = APP->window->vg;
+    const theme::Palette& c = theme::colors();
+    float mid = top + kHeaderMid;
+    draw::TextStyle nameStyle{theme::fonts::uiStrong(), 13, c.text0};
+    float nameW = vg ? draw::textWidth(vg, nameStyle, nameOf(d)) : 80;
+    float left = x + mx::kDeviceCardPad;
+    parts.push_back({Kind::Power, Rect(left, mid - 9, 18, 18), index, -1, d.id.value});
+    float hx = left + 18 + 8 + nameW + 8;
+    const Playhead* shown = d.type == DeviceType::Playheads ? shownPlayhead(d) : nullptr;
+    if (d.type == DeviceType::Playheads) {
+        // The playheads, as chips after the card's name, then the shown one's On switch.
+        draw::TextStyle chipStyle{theme::fonts::uiStrong(), 11.5f, c.text0};
+        for (size_t k = 0; k < d.playheads.size(); k++) {
+            const Playhead& p = d.playheads[k];
+            std::string label = p.solo ? "S · " + p.name : p.name;
+            float w = 7 + 7 + 6 + (vg ? draw::textWidth(vg, chipStyle, label) : 60) + 9;
+            parts.push_back({Kind::PlayheadChip, Rect(hx, mid - kChipHeight / 2, w, kChipHeight), index, int(k),
+                             p.id.value});
+            hx += w + 6;
+        }
+        if (int(d.playheads.size()) < playheads::kMaxPlayheads) {
+            parts.push_back({Kind::AddPlayhead, Rect(hx, mid - kChipHeight / 2, kChipHeight + 6, kChipHeight), index, -1,
+                             d.id.value});
+            hx += kChipHeight + 6 + 8;
+        }
+        if (shown) {
+            parts.push_back({Kind::PlayheadOn, Rect(hx, mid - 8.5f, kSwitchW, 17), index, -1, shown->id.value});
+            hx += kSwitchW + 8;
+        }
+    }
+    float rightNeed = 18 + float(d.modulators.size()) * 11 + 8;
+    if (d.type == DeviceType::Motion)
+        rightNeed += kMotionJoin + kMotionLeave + kMotionCount + 16;
+    if (index >= kBranchBase)
+        rightNeed += 12;
+    float headerWidth = hx - x + rightNeed + mx::kDeviceCardPad;
+
+    ParamRef::Kind kind = shown ? ParamRef::Kind::Playhead : ParamRef::Kind::Device;
+    uint64_t owner = shown ? shown->id.value : d.id.value;
+    tags::Values values = valuesOf(d, shown);
+    float tilesRight = left;
+    if (d.type != DeviceType::Playheads || shown)
+        tilesRight = layoutTiles(d, index, left, top, kind, owner, values, tint, headerWidth - 2 * mx::kDeviceCardPad);
+    float width = std::max(headerWidth, tilesRight + mx::kDeviceCardPad - x);
+    Rect card(x, top, width, kCardHeight);
+
+    Rect menu(card.getRight() - mx::kDeviceCardPad - 18, mid - 9, 18, 18);
     parts.push_back({Kind::Menu, menu, index, -1, d.id.value});
     for (size_t k = 0; k < d.modulators.size(); k++)
-        parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, kPad + 7, 10, 10), index, int(k),
+        parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, mid - 5, 10, 10), index, int(k),
                          d.modulators[k].id.value});
     if (d.type == DeviceType::Motion) {
         // Which notes move: "+ Selected" adds the piano roll's selection, "− Selected" takes it out again, "6 notes"
         // selects them there.
         float right = menu.pos.x - 6 - float(d.modulators.size()) * 11;
-        Rect leave(right - kMotionLeave, kPad + 4, kMotionLeave, kChipHeight);
-        Rect join(leave.pos.x - 4 - kMotionJoin, kPad + 4, kMotionJoin, kChipHeight);
-        Rect count(join.pos.x - 4 - kMotionCount, kPad + 4, kMotionCount, kChipHeight);
+        Rect leave(right - kMotionLeave, mid - 9, kMotionLeave, 18);
+        Rect join(leave.pos.x - 4 - kMotionJoin, mid - 9, kMotionJoin, 18);
+        Rect count(join.pos.x - 4 - kMotionCount, mid - 9, kMotionCount, 18);
         parts.push_back({Kind::MotionLeave, leave, index, -1, d.id.value});
         parts.push_back({Kind::MotionJoin, join, index, -1, d.id.value});
         parts.push_back({Kind::MotionNotes, count, index, -1, d.id.value});
     }
-    parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
-    for (int k = 0, cell = 0; k < int(devices::deviceInfo(d.type).params.size()); k++) {
-        if (!paramVisible(d, k))
-            continue;
-        float cx = card.pos.x + kCardPad + float(cell++) * kCell;
-        // Its name opens its curve in the lower pane, as on the Playheads card.
-        parts.push_back({Kind::CurveLabel, Rect(cx, knobTop + 40, kCell, 12), index, k, d.id.value});
-        parts.push_back({Kind::KnobValue, Rect(cx, knobTop + 52, kCell, 13), index, k, d.id.value});
-        parts.push_back({Kind::Knob, Rect(cx, knobTop - 2, kCell, 54), index, k, d.id.value});
-    }
+    parts.push_back({Kind::CardHeader, Rect(card.pos.x, top, card.size.x, mx::kDeviceCardTop + mx::kDeviceCardHeader),
+                     index, -1, d.id.value});
     parts.push_back({Kind::Card, card, index, -1, d.id.value});
     return card.getRight();
 }
@@ -379,97 +983,21 @@ const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
     return d.playheads.empty() ? nullptr : &d.playheads.front();
 }
 
-float DeviceStrip::layoutPlayheads(const Device& d, int index, float x, float knobTop) {
-    float h = box.size.y;
-    const Playhead* shown = shownPlayhead(d);
-    using namespace playheads::knob;
-    // One row in two groups: MOVE (whether, how and when it travels: On, Rate, Direction, Offset) and REPEAT (piece,
-    // times and how
-    // the repeats are spaced), then More. Pitch and loudness are devices in the playhead's own chain (Transpose,
-    // Velocity); its channel and Notes are set once, so they live in the chip's and More's menus.
-    float chips = 96 + float(d.playheads.size()) * (kChip + 4) + kChipHeight + 40;
-    float controls = 4 * kCell + kGroupGap + kRepeatBlock + kGroupGap + kCell;
-    Rect card(x, kPad, 2 * kCardPad + std::max(chips, controls), h - 2 * kPad);
-    parts.push_back({Kind::Power, Rect(card.pos.x + 4, kPad + 3, 18, 18), index, -1, d.id.value});
-    Rect menu(card.getRight() - 22, kPad + 3, 18, 18);
-    parts.push_back({Kind::Menu, menu, index, -1, d.id.value});
-
-    // The playheads, as chips beside the card's name.
-    float cx = card.pos.x + 96;
-    for (size_t k = 0; k < d.playheads.size(); k++) {
-        parts.push_back(
-            {Kind::PlayheadChip, Rect(cx, kPad + 3, kChip, kChipHeight), index, int(k), d.playheads[k].id.value});
-        cx += kChip + 4;
-    }
-    if (int(d.playheads.size()) < playheads::kMaxPlayheads)
-        parts.push_back({Kind::AddPlayhead, Rect(cx, kPad + 3, kChipHeight + 8, kChipHeight), index, -1, d.id.value});
-    parts.push_back({Kind::CardHeader, Rect(card.pos.x, kPad, card.size.x, kCardHeader), index, -1, d.id.value});
-
-    if (shown) {
-        uint64_t id = shown->id.value;
-        auto label = [&](float lx, float width, int param) {
-            parts.push_back(
-                {Kind::CurveLabel, Rect(lx, knobTop + 40, width, 12), index, param, id, ParamRef::Kind::Playhead});
-        };
-        float kx = card.pos.x + kCardPad;
-        parts.push_back({Kind::GroupLabel, Rect(kx, knobTop - 12, 4 * kCell, 10), index, 0, id});
-        // On: the chip's dot, here with a name that opens its curve, so the playhead can come in and drop out in time.
-        label(kx, kCell, kOn);
-        parts.push_back({Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kOn, id, ParamRef::Kind::Playhead});
-        kx += kCell;
-        // Rate
-        label(kx, kCell, kRate);
-        parts.push_back(
-            {Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, kRate, id, ParamRef::Kind::Playhead});
-        parts.push_back(
-            {Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kRate, id, ParamRef::Kind::Playhead, true});
-        kx += kCell;
-        // Direction: its name opens a curve for the direction; the dropdown also holds the step orders.
-        label(kx, kCell, kDirection);
-        parts.push_back({Kind::PlayheadDirection, Rect(kx, knobTop - 2, kCell, 54), index, -1, id});
-        kx += kCell;
-        // Offset: when its notes play, drawn from the middle (0) like a knob that goes both ways.
-        label(kx, kCell, kTimeOffset);
-        parts.push_back(
-            {Kind::KnobValue, Rect(kx, knobTop + 52, kCell, 13), index, kTimeOffset, id, ParamRef::Kind::Playhead});
-        Part offset{Kind::Knob, Rect(kx, knobTop - 2, kCell, 54), index, kTimeOffset,
-                    id,         ParamRef::Kind::Playhead,         true};
-        offset.centred = true;
-        parts.push_back(offset);
-        kx += kCell + kGroupGap;
-
-        // The REPEAT block: where its hits land on top, then Piece × Times and Curve, each name opening its curve.
-        float bx = kx;
-        parts.push_back({Kind::GroupLabel, Rect(bx, knobTop - 12, kRepeatBlock, 10), index, 1, id});
-        float boxTop = knobTop + 20;
-        Rect piece(bx + 6, boxTop, 54, 18), times(bx + 78, boxTop, 34, 18), curve(bx + 120, boxTop, 98, 18);
-        label(piece.pos.x, piece.size.x, kRepeatSize);
-        label(times.pos.x - 6, times.size.x + 12, kRepeatTimes);
-        label(curve.pos.x, curve.size.x, kCurve);
-        Part p{Kind::Knob, piece, index, kRepeatSize, id, ParamRef::Kind::Playhead};
-        p.compact = true;
-        parts.push_back(p);
-        parts.push_back({Kind::KnobValue, times, index, kRepeatTimes, id, ParamRef::Kind::Playhead});
-        p.rect = curve;
-        p.param = kCurve;
-        parts.push_back(p);
-        parts.push_back({Kind::RepeatBlock, Rect(bx, knobTop - 1, kRepeatBlock, 58), index, -1, id});
-        kx += kRepeatBlock + kGroupGap;
-
-        parts.push_back({Kind::PlayheadMore, Rect(kx + kCell / 2 - 13, knobTop + 6, 26, 26), index, -1, id});
-    }
-    parts.push_back({Kind::Card, card, index, -1, d.id.value});
-    return card.getRight();
-}
-
 const DeviceStrip::Part* DeviceStrip::partAt(Vec pos) const {
     for (const Part& p : parts) {
-        if (p.kind == Kind::BranchBand || p.kind == Kind::GroupLabel || p.kind == Kind::RepeatBlock)
-            continue; // only drawn: the parts on them take the clicks
+        if (p.kind == Kind::Frame)
+            continue; // only drawn: the parts on it take the clicks
         bool inChain = p.kind != Kind::AddModulator && p.kind != Kind::ModulatorRow && p.kind != Kind::ModulatorMap &&
-                       p.kind != Kind::ClosedBar;
+                       p.kind != Kind::ClosedBar && p.kind != Kind::ResizeEdge;
         if (inChain && pos.x < chainLeft)
             continue; // the modulator list covers what scrolled under it
+        if (p.kind == Kind::Insert) {
+            // Only its round + takes clicks: the link around it is just a line.
+            Vec c(p.rect.getCenter().x, p.rect.pos.y + kHeaderMid + (p.device == 0 ? 16 : 0));
+            if (pos.minus(c).norm() <= 10)
+                return &p;
+            continue;
+        }
         if (p.rect.contains(pos))
             return &p;
     }
@@ -509,12 +1037,18 @@ void DeviceStrip::sampleScopes() {
 }
 
 void DeviceStrip::step() {
+    // The pointer left the strip: nothing is hovered any more (the hover note under a tag goes too).
+    if (!hasGesture() && !Rect(Vec(), box.size).contains(localMouse()))
+        hovered = -1;
+    tileLayer->box = Rect(Vec(), box.size);
+    tileLayer->beginFrame();
     if (ctx.module()) {
         const Track* t = track();
         if (t && t->id != shownTrack) {
             shownTrack = t->id;
             scrollX = 0;
             modScroll = 0;
+            focusedTag.reset();
         }
         if (ctx.state().selectedDevice &&
             !(t && findDevice(ctx.module()->song(), DeviceId(ctx.state().selectedDevice)) &&
@@ -525,17 +1059,34 @@ void DeviceStrip::step() {
             ctx.mappingModulator = 0;
         float most = std::max(0.f, contentWidth - (box.size.x - chainLeft));
         scrollX = std::clamp(scrollX, 0.f, most);
+        scrollY = std::clamp(scrollY, 0.f, std::max(0.f, contentHeight - box.size.y));
         // Never scrolled past the end: removing modulators (or a wheel turn while the list fits) can't empty it.
         modScroll = std::clamp(modScroll, 0.f, modScrollMax());
         layoutParts();
         sampleScopes();
+        if (focusedTag && !findParam(ctx.module()->song(), focusedTag->ref))
+            focusedTag.reset();
     }
+    tileLayer->clipLeft = chainLeft;
+    tileLayer->endFrame();
     InteractiveView::step();
 }
 
 bool DeviceStrip::handleAction(Action action) {
     TesseraModule* m = ctx.module();
-    if (!m || !ctx.state().selectedDevice || !deviceActions::stripOpen(ctx))
+    if (!m || !deviceActions::stripOpen(ctx))
+        return false;
+    // The arrow keys step the tag last touched.
+    if (focusedTag && focusedTag->spec.family != Family::Channels && findParam(m->song(), focusedTag->ref)) {
+        int delta = action == Action::TransposeUp || action == Action::NudgeRight  ? 1
+                    : action == Action::TransposeDown || action == Action::NudgeLeft ? -1
+                                                                                     : 0;
+        if (delta != 0) {
+            setIndex(*focusedTag, indexOf(*focusedTag) + delta);
+            return true;
+        }
+    }
+    if (!ctx.state().selectedDevice)
         return false;
     DeviceId id(ctx.state().selectedDevice);
     switch (action) {
@@ -551,6 +1102,95 @@ bool DeviceStrip::handleAction(Action action) {
     }
 }
 
+void DeviceStrip::openPanel(const TagRef& t) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    focusedTag = t;
+    panelTag = t;
+    std::weak_ptr<DeviceStrip*> weak = self;
+    EditorContext* c = &ctx;
+    TagPanelSpec spec;
+    spec.tint = t.tint;
+    // Under the picture the tag sits on, so the picture shows what each choice would do.
+    for (size_t i = 0; i < parts.size(); i++)
+        if ((parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch) && parts[i].tag >= 0 &&
+            tagRefs[size_t(parts[i].tag)] == t) {
+            for (const Part& q : parts)
+                if (q.kind == Kind::Tile && q.rect.contains(parts[i].rect.getCenter())) {
+                    spec.below = getAbsoluteOffset(Vec(0, q.rect.getBottom())).y;
+                    spec.centerX = getAbsoluteOffset(q.rect.getCenter()).x;
+                }
+            break;
+        }
+    if (t.spec.family == Family::Channels) {
+        const Device* d = findDevice(m->song(), DeviceId(t.ref.owner));
+        if (!d)
+            return;
+        DeviceId id = d->id;
+        spec.title = "Channels";
+        spec.channels = true;
+        spec.mask = channelsOf(*d);
+        spec.previewMask = [weak, id](uint16_t mask) {
+            if (auto s = weak.lock())
+                (*s)->channelPreview = std::make_pair(id.value, mask);
+        };
+        spec.pickMask = [weak, id](uint16_t mask) {
+            if (auto s = weak.lock()) {
+                (*s)->channelPreview.reset();
+                (*s)->setChannels(id, mask);
+            }
+        };
+        openTagPanel(std::move(spec));
+        return;
+    }
+    const devices::ParamInfo* info = deviceActions::infoOf(m->song(), t.ref);
+    spec.title = t.spec.family == Family::Direction ? "Direction" : info ? info->name : "";
+    spec.list = listOf(t);
+    spec.current = indexOf(t);
+    spec.preview = [weak, t](int i) {
+        auto s = weak.lock();
+        if (!s)
+            return;
+        DeviceStrip* strip = *s;
+        if (t.spec.family == Family::Direction) {
+            if (i < 0)
+                strip->directionPreview.reset();
+            else
+                strip->directionPreview = std::make_pair(t.ref.owner, i);
+            return;
+        }
+        TesseraModule* mm = strip->ctx.module();
+        const devices::ParamInfo* p = mm ? deviceActions::infoOf(mm->song(), t.ref) : nullptr;
+        if (i < 0 || !p)
+            strip->knobPreview.reset();
+        else
+            strip->knobPreview = std::make_pair(t.ref, devices::normalize(*p, strip->listOf(t).values[size_t(i)]));
+    };
+    spec.pick = [weak, t](int i) {
+        if (auto s = weak.lock()) {
+            (*s)->knobPreview.reset();
+            (*s)->directionPreview.reset();
+            (*s)->setIndex(t, i);
+        }
+    };
+    if (t.spec.family == Family::Direction) {
+        spec.steps = playheads::orderStepNames();
+        ParamRef step = t.ref;
+        step.param = uint16_t(playheads::knob::kOrderStep);
+        if (const float* v = findParam(m->song(), step))
+            spec.step = int(std::lround(devices::display(*devices::playheadParamInfo(playheads::knob::kOrderStep), *v)));
+        PlayheadId id(t.ref.owner);
+        spec.pickStep = [c, id](int s) {
+            deviceActions::setPlayheadValues(*c, id, {{playheads::knob::kOrderStep, float(s)}}, "Set step size");
+        };
+    }
+    ParamRef ref = t.ref;
+    spec.links.push_back({"Draw a curve", [c, ref] { deviceActions::showCurveFor(*c, ref); }});
+    spec.links.push_back({"Modulate, automate…", [c, ref] { deviceActions::openKnobMenu(*c, ref); }});
+    openTagPanel(std::move(spec));
+}
+
 // ---- Input ----------------------------------------------------------------------------------------------------
 
 std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modifiers mods) {
@@ -561,17 +1201,14 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
     Part p = *hit;
     EditorContext* c = &ctx;
     switch (p.kind) {
-    case Kind::Knob:
-    case Kind::KnobValue: {
-        ParamRef ref = knobRef(p);
-        const devices::ParamInfo* info = deviceActions::infoOf(m->song(), ref);
-        const float* value = findParam(m->song(), ref);
-        if (!info || !value)
-            return nullptr;
+    case Kind::Tag: {
+        TagRef t = tagRefs[size_t(p.tag)];
+        focusedTag = t;
         if (ctx.mappingModulator) {
-            if (!reachableNow(ref))
+            if (t.spec.family == Family::Channels || !reachableNow(t.ref))
                 return nullptr;
             ModulatorId mod(ctx.mappingModulator);
+            ParamRef ref = t.ref;
             // A click without a drag adds a modulation of +50%.
             return std::make_unique<ClickOrDrag>(std::make_unique<AmountDrag>(*this, ctx, mod, ref, pos), pos,
                                                  [c, mod, ref] {
@@ -584,31 +1221,22 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
                                                      mm->perform(addRoute(mm->song(), mod, route));
                                                  });
         }
-        if (info->kind == devices::ParamInfo::Kind::Toggle)
-            return nullptr; // a click flips it
-        const Track* t = track();
-        DeviceId device(p.refKind == ParamRef::Kind::Device || !t ? p.id : t->devices[size_t(p.device)].id.value);
-        std::function<void()> onClick;
-        if (p.kind == Kind::KnobValue)
-            onClick = [c, ref] { deviceActions::openTyping(*c, ref); };
-        else if (info->kind == devices::ParamInfo::Kind::Choice)
-            onClick = [c, ref] { deviceActions::openChoiceMenu(*c, ref); };
-        else
-            onClick = [c, device] { c->state().selectedDevice = device.value; };
-        // An automated knob starts from where its lane has it, so it doesn't jump.
-        float start = m->automated(ref) ? m->knobBase(ref) : *value;
-        return std::make_unique<ClickOrDrag>(std::make_unique<KnobDrag>(*this, ctx, ref, start, *info, pos), pos,
-                                             onClick);
+        if (t.spec.family == Family::Channels)
+            return nullptr; // a click opens its panel
+        return std::make_unique<ClickOrDrag>(std::make_unique<TagDrag>(*this, ctx, t, pos), pos,
+                                             [this, t] { openPanel(t); });
     }
+    case Kind::ResizeEdge:
+        return std::make_unique<StripResize>(*this, ctx);
     case Kind::CardHeader: {
         if (p.device >= kBranchBase)
             return nullptr; // branch devices stay in their branch: a click selects them
-        std::vector<float> centers;
+        std::vector<Rect> cards;
         for (const Part& q : parts)
             if (q.kind == Kind::Card && q.device < kBranchBase)
-                centers.push_back(q.rect.getCenter().x);
+                cards.push_back(q.rect);
         DeviceId device(p.id);
-        return std::make_unique<ClickOrDrag>(std::make_unique<CardDrag>(*this, ctx, device, centers), pos,
+        return std::make_unique<ClickOrDrag>(std::make_unique<CardDrag>(*this, ctx, device, cards), pos,
                                              [c, device] { c->state().selectedDevice = device.value; });
     }
     default:
@@ -622,18 +1250,21 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     if (!m || !t)
         return;
     const Part* hit = partAt(pos);
+    if (!hit || (hit->kind != Kind::Tag && hit->kind != Kind::Switch))
+        focusedTag.reset();
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         if (!hit)
             return;
         switch (hit->kind) {
-        case Kind::Knob:
-        case Kind::KnobValue:
-            deviceActions::openKnobMenu(ctx, knobRef(*hit));
+        case Kind::Tag:
+        case Kind::Switch:
+            openPanel(tagRefs[size_t(hit->tag)]);
             break;
         case Kind::Card:
         case Kind::CardHeader:
         case Kind::Power:
         case Kind::Menu:
+        case Kind::Tile:
             deviceActions::openDeviceMenu(ctx, DeviceId(hit->id));
             break;
         case Kind::ModulatorRow:
@@ -645,8 +1276,8 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             ctx.state().selectedPlayhead = hit->id;
             deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
             break;
-        case Kind::CurveLabel:
-            deviceActions::openKnobMenu(ctx, knobRef(*hit));
+        case Kind::PlayheadOn:
+            deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
             break;
         default:
             break;
@@ -698,23 +1329,42 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     case Kind::Menu:
         deviceActions::openDeviceMenu(ctx, DeviceId(hit->id));
         break;
-    case Kind::Knob: {
-        // Only toggles get here: they flip on a click.
-        ParamRef ref = knobRef(*hit);
-        if (const float* v = findParam(m->song(), ref))
-            deviceActions::setKnob(ctx, ref, *v >= 0.5f ? 0.f : 1.f);
+    case Kind::Tag:
+        // Only channel sets get here (other tags open their panel through their gesture).
+        if (!ctx.mappingModulator)
+            openPanel(tagRefs[size_t(hit->tag)]);
+        break;
+    case Kind::TagBadge: {
+        // The automated setting's lane, in the arranger or the clip.
+        std::vector<FoundLane> lanes = lanesTurning(m->song(), tagRefs[size_t(hit->tag)].ref);
+        if (!lanes.empty())
+            deviceActions::showLane(ctx, lanes.front().owner, lanes.front().lane->id);
+        break;
+    }
+    case Kind::Switch: {
+        TagRef tag = tagRefs[size_t(hit->tag)];
+        focusedTag = tag;
+        if (ctx.mappingModulator)
+            break;
+        if (const float* v = findParam(m->song(), tag.ref))
+            deviceActions::setKnob(ctx, tag.ref, *v >= 0.5f ? 0.f : 1.f);
         break;
     }
     case Kind::Insert:
         if (hit->device >= kBranchBase) {
-            const Playhead* p = branchPlayhead();
-            if (p)
+            if (const Playhead* p = branchPlayhead())
                 deviceActions::openBranchBrowser(ctx, p->id, hit->device - kBranchBase);
         } else {
             deviceActions::openDeviceBrowser(ctx, t->id, hit->device);
         }
         break;
+    case Kind::FramePlus:
+    case Kind::Slot:
+        deviceActions::openBranchBrowser(ctx, PlayheadId(hit->id), -1);
+        break;
     case Kind::CardHeader:
+    case Kind::Tile:
+    case Kind::Card:
         ctx.state().selectedDevice = hit->id;
         ctx.mappingModulator = 0;
         break;
@@ -727,14 +1377,8 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         if (pos.x < hit->rect.pos.x + kChipDot)
             deviceActions::togglePlayheadOn(ctx, mods.alt);
         break;
-    case Kind::PlayheadDirection:
-        deviceActions::openDirectionMenu(ctx, PlayheadId(hit->id));
-        break;
-    case Kind::PlayheadMore:
-        deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
-        break;
-    case Kind::CurveLabel:
-        deviceActions::showCurveFor(ctx, knobRef(*hit));
+    case Kind::PlayheadOn:
+        deviceActions::togglePlayheadOn(ctx, mods.alt);
         break;
     case Kind::MotionNotes: {
         // Its notes in the shown clip, selected.
@@ -769,7 +1413,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
                 if (n.motion.value == hit->id && sel.notes.count(n.id))
                     notes.push_back(n.id);
         if (notes.empty()) {
-            ctx.toast("Select notes of this Motion in the piano roll, then click \u2212 Selected");
+            ctx.toast("Select notes of this Motion in the piano roll, then click − Selected");
             break;
         }
         m->perform(setNotesMotion(m->song(), sel.clip, notes, DeviceId()));
@@ -783,10 +1427,6 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         }
         break;
     }
-    case Kind::Card:
-        ctx.state().selectedDevice = hit->id;
-        ctx.mappingModulator = 0;
-        break;
     default:
         break;
     }
@@ -794,18 +1434,33 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
 
 void DeviceStrip::doubleClick(Vec pos, Modifiers mods) {
     const Part* hit = partAt(pos);
-    TesseraModule* m = ctx.module();
-    if (!hit || !m || hit->kind != Kind::Knob || ctx.mappingModulator)
+    if (!hit || hit->kind != Kind::Tag || ctx.mappingModulator)
         return;
-    ParamRef ref = knobRef(*hit);
-    if (const devices::ParamInfo* info = deviceActions::infoOf(m->song(), ref))
-        if (info->kind != devices::ParamInfo::Kind::Toggle)
-            deviceActions::setKnob(ctx, ref, devices::defaultNormalized(*info));
+    TagRef t = tagRefs[size_t(hit->tag)];
+    if (t.spec.family == Family::Channels)
+        setChannels(DeviceId(t.ref.owner), 0);
+    else
+        setIndex(t, listOf(t).def);
 }
 
 void DeviceStrip::wheel(Vec pos, Vec delta, Modifiers mods) {
     if (pos.x < chainLeft) {
         modScroll = std::clamp(modScroll - delta.y * 0.5f, 0.f, modScrollMax());
+        return;
+    }
+    // A vertical turn over a tag steps it once; anything else scrolls the chain.
+    const Part* hit = partAt(pos);
+    if (hit && hit->kind == Kind::Tag && !ctx.mappingModulator && std::fabs(delta.y) > std::fabs(delta.x)) {
+        TagRef t = tagRefs[size_t(hit->tag)];
+        if (t.spec.family != Family::Channels) {
+            focusedTag = t;
+            setIndex(t, indexOf(t) + (delta.y > 0 ? 1 : -1));
+            return;
+        }
+    }
+    // Rows taller than the strip scroll up and down; a row wider than it scrolls sideways.
+    if (contentHeight > box.size.y + 1 && delta.x == 0 && !mods.shift) {
+        scrollY = std::clamp(scrollY - delta.y, 0.f, contentHeight - box.size.y);
         return;
     }
     float most = std::max(0.f, contentWidth - (box.size.x - chainLeft));
@@ -818,14 +1473,18 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
     if (!hit)
         return CursorShape::Arrow;
     switch (hit->kind) {
-    case Kind::Knob:
-    case Kind::KnobValue:
-        if (ctx.mappingModulator && !reachableNow(knobRef(*hit)))
-            return CursorShape::NotAllowed;
-        return CursorShape::ResizeV;
+    case Kind::Tag: {
+        const TagRef& t = tagRefs[size_t(hit->tag)];
+        if (ctx.mappingModulator)
+            return reachableNow(t.ref) ? CursorShape::ResizeV : CursorShape::NotAllowed;
+        return t.spec.family == Family::Channels ? CursorShape::Hand : CursorShape::ResizeH;
+    }
     case Kind::CardHeader:
         return CursorShape::Move;
+    case Kind::ResizeEdge:
+        return CursorShape::ResizeV;
     case Kind::Card:
+    case Kind::Tile:
         return CursorShape::Arrow;
     default:
         return CursorShape::Hand;
@@ -837,9 +1496,10 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
 void DeviceStrip::drawView(const DrawArgs& args) {
     NVGcontext* vg = args.vg;
     const theme::Palette& c = theme::colors();
+    const theme::DeviceColors& dc = theme::deviceColors();
     nvgBeginPath(vg);
     nvgRect(vg, 0, 0, box.size.x, box.size.y);
-    nvgFillColor(vg, nvgLerpRGBA(c.bg0, c.bg1, 0.35f));
+    nvgFillColor(vg, dc.ground);
     nvgFill(vg);
     nvgBeginPath(vg);
     nvgRect(vg, 0, box.size.y - 1, box.size.x, 1);
@@ -859,78 +1519,502 @@ void DeviceStrip::drawView(const DrawArgs& args) {
 
     nvgSave(vg);
     nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
-    draw::TextStyle small{theme::fonts::ui(), 9.5f, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::TextStyle io{theme::fonts::ui(), 10.5f, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    const Playhead* branch = branchPlayhead();
+    NVGcolor branchColor = branch ? theme::playheadColor(branch->color) : c.accent;
+    // Frames and slots first: the cards sit on them.
+    for (size_t i = 0; i < parts.size(); i++) {
+        const Part& p = parts[i];
+        bool hot = int(i) == hovered;
+        if (p.kind == Kind::Frame || p.kind == Kind::Slot) {
+            // The link from the Playheads card, in the playhead's colour.
+            nvgBeginPath(vg);
+            nvgRect(vg, p.rect.pos.x - mx::kDeviceLink, p.rect.pos.y + mx::kDeviceFrameOut + kHeaderMid - 0.5f,
+                    mx::kDeviceLink, 1);
+            nvgFillColor(vg, nvgTransRGBAf(branchColor, 0.7f));
+            nvgFill(vg);
+        }
+        if (p.kind == Kind::Frame) {
+            draw::roundedRect(vg, p.rect, 17, nvgLerpRGBA(dc.ground, branchColor, 0.07f));
+            draw::roundedRectStroke(vg, p.rect, 17, nvgTransRGBAf(branchColor, 0.42f), 1);
+            draw::TextStyle spine{theme::fonts::uiStrong(), 11, branchColor, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            nvgSave(vg);
+            nvgTranslate(vg, p.rect.pos.x + mx::kDeviceSpine / 2, p.rect.getCenter().y);
+            nvgRotate(vg, -3.14159265f / 2);
+            draw::text(vg, spine, 0, 0, draw::ellipsize(vg, spine, branch ? branch->name + " only" : "", p.rect.size.y - 16));
+            nvgRestore(vg);
+        } else if (p.kind == Kind::Slot) {
+            NVGcolor fill = nvgLerpRGBA(dc.ground, branchColor, hot ? 0.1f : 0.05f);
+            draw::roundedRect(vg, p.rect, 17, fill);
+            if (hot) {
+                draw::roundedRectStroke(vg, p.rect, 17, nvgTransRGBAf(branchColor, 0.55f), 1);
+            } else {
+                // A dashed outline: dashes along its straight sides, its round ends drawn whole but faint.
+                nvgBeginPath(vg);
+                Rect r = p.rect;
+                int dashes = int(std::max(0.f, r.size.y - 34) / 6);
+                for (int k = 0; k < dashes; k++) {
+                    float y = r.pos.y + 17 + float(k) * 6;
+                    nvgMoveTo(vg, r.pos.x + 0.5f, y);
+                    nvgLineTo(vg, r.pos.x + 0.5f, std::min(y + 3, r.getBottom() - 17));
+                    nvgMoveTo(vg, r.getRight() - 0.5f, y);
+                    nvgLineTo(vg, r.getRight() - 0.5f, std::min(y + 3, r.getBottom() - 17));
+                }
+                nvgStrokeColor(vg, nvgTransRGBAf(branchColor, 0.55f));
+                nvgStrokeWidth(vg, 1);
+                nvgStroke(vg);
+                nvgSave(vg);
+                nvgIntersectScissor(vg, r.pos.x - 1, r.pos.y - 1, r.size.x + 2, 18);
+                draw::roundedRectStroke(vg, r, 17, nvgTransRGBAf(branchColor, 0.4f), 1);
+                nvgRestore(vg);
+                nvgSave(vg);
+                nvgIntersectScissor(vg, r.pos.x - 1, r.getBottom() - 17, r.size.x + 2, 18);
+                draw::roundedRectStroke(vg, r, 17, nvgTransRGBAf(branchColor, 0.4f), 1);
+                nvgRestore(vg);
+            }
+            Vec mid(p.rect.getCenter().x, p.rect.pos.y + mx::kDeviceFrameOut + kHeaderMid + 4);
+            Rect plus(mid.x - mx::kDevicePlus / 2, mid.y - mx::kDevicePlus / 2, mx::kDevicePlus, mx::kDevicePlus);
+            draw::roundedRect(vg, plus, mx::kDevicePlus / 2, nvgTransRGBAf(branchColor, hot ? 0.3f : 0.16f));
+            draw::roundedRectStroke(vg, plus, mx::kDevicePlus / 2, nvgTransRGBAf(branchColor, 0.6f), 1);
+            draw::TextStyle plusText{theme::fonts::ui(), 15, branchColor, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, plusText, mid.x, mid.y, "+");
+            draw::TextStyle side{theme::fonts::uiStrong(), 11, branchColor, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            nvgSave(vg);
+            nvgTranslate(vg, mid.x, (plus.getBottom() + p.rect.getBottom()) / 2);
+            nvgRotate(vg, -3.14159265f / 2);
+            draw::text(vg, side, 0, 0, branch ? branch->name + " only" : "");
+            nvgRestore(vg);
+        }
+    }
     for (size_t i = 0; i < parts.size(); i++) {
         const Part& p = parts[i];
         bool hot = int(i) == hovered;
         switch (p.kind) {
         case Kind::Insert: {
-            Vec mid = p.rect.getCenter();
-            bool first = p.device == 0 && p.rect.size.x == kInWidth;
-            if (first) {
-                draw::text(vg, small, mid.x, mid.y - 14, "in");
+            float cy = p.rect.pos.y + kHeaderMid;
+            float cx = p.rect.getCenter().x;
+            NVGcolor ring = dc.link;
+            bool inBranch = p.device >= kBranchBase;
+            if (inBranch)
+                ring = branchColor;
+            if (p.device == 0) {
+                draw::text(vg, io, cx, cy, "in");
+                cy += 16;
             } else {
+                // The link between two cards, in the playhead's colour inside its frame.
                 nvgBeginPath(vg);
-                nvgRect(vg, p.rect.pos.x, mid.y - 0.5f, p.rect.size.x, 1);
-                nvgFillColor(vg, c.line1);
+                nvgRect(vg, p.rect.pos.x, cy - 0.5f, p.rect.size.x, 1);
+                nvgFillColor(vg, inBranch ? nvgTransRGBAf(branchColor, 0.7f) : dc.link);
                 nvgFill(vg);
             }
-            // The insert button is faint until hovered: the row stays calm. One that adds to a playhead's own
-            // chain wears its colour, so it reads apart from the shared chain's button next to it.
-            NVGcolor ring = c.line2;
-            if (p.device >= kBranchBase)
-                if (const Playhead* ph = branchPlayhead())
-                    ring = theme::playheadColor(ph->color);
+            // Its + is faint until hovered, so the row stays calm.
             nvgBeginPath(vg);
-            nvgCircle(vg, mid.x, mid.y, 9);
-            nvgFillColor(vg, nvgTransRGBAf(c.bg2, hot ? 1.f : 0.6f));
+            nvgCircle(vg, cx, cy, 7);
+            nvgFillColor(vg, hot ? c.bg2 : dc.ground);
             nvgFill(vg);
-            nvgStrokeColor(vg, nvgTransRGBAf(ring, hot ? 1.f : 0.5f));
+            nvgStrokeColor(vg, nvgTransRGBAf(ring, hot ? 1.f : 0.6f));
             nvgStrokeWidth(vg, 1);
             nvgStroke(vg);
             nvgBeginPath(vg);
-            nvgRect(vg, mid.x - 4, mid.y - 0.6f, 8, 1.2f);
-            nvgRect(vg, mid.x - 0.6f, mid.y - 4, 1.2f, 8);
-            nvgFillColor(vg, nvgTransRGBAf(c.text0, hot ? 1.f : 0.35f));
+            nvgRect(vg, cx - 3, cy - 0.5f, 6, 1);
+            nvgRect(vg, cx - 0.5f, cy - 3, 1, 6);
+            nvgFillColor(vg, nvgTransRGBAf(c.text0, hot ? 1.f : 0.4f));
             nvgFill(vg);
             break;
         }
-        case Kind::AddTile: {
-            draw::roundedRect(vg, p.rect, 6, hot ? c.bg2 : nvgTransRGBAf(c.bg1, 0.6f));
-            draw::roundedRectStroke(vg, p.rect, 6, hot ? c.line2 : c.line1, 1);
-            draw::TextStyle add{theme::fonts::ui(), theme::metrics::kTextUi, hot ? c.text0 : c.text1,
-                                NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        case Kind::FramePlus: {
             Vec mid = p.rect.getCenter();
-            add.size = 16;
-            draw::text(vg, add, mid.x, mid.y - 9, "+");
-            add.size = theme::metrics::kTextUi;
-            draw::text(vg, add, mid.x, mid.y + 9, "Add device");
-            draw::text(vg, small, p.rect.getRight() + kOutWidth / 2, mid.y + 12, "out");
+            // The link from the last card to it.
             nvgBeginPath(vg);
-            float ax = p.rect.getRight() + kOutWidth / 2;
-            nvgMoveTo(vg, ax - 7, mid.y);
-            nvgLineTo(vg, ax + 6, mid.y);
-            nvgMoveTo(vg, ax + 2.5f, mid.y - 3.5f);
-            nvgLineTo(vg, ax + 6, mid.y);
-            nvgLineTo(vg, ax + 2.5f, mid.y + 3.5f);
-            nvgStrokeColor(vg, c.line2);
-            nvgStrokeWidth(vg, 1.3f);
+            nvgRect(vg, p.rect.pos.x - mx::kDeviceLink, mid.y - 0.5f, mx::kDeviceLink, 1);
+            nvgFillColor(vg, nvgTransRGBAf(branchColor, 0.7f));
+            nvgFill(vg);
+            draw::roundedRect(vg, p.rect, mx::kDevicePlus / 2, nvgTransRGBAf(branchColor, hot ? 0.3f : 0.16f));
+            draw::roundedRectStroke(vg, p.rect, mx::kDevicePlus / 2, nvgTransRGBAf(branchColor, 0.6f), 1);
+            draw::TextStyle plus{theme::fonts::ui(), 15, branchColor, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, plus, mid.x, mid.y, "+");
+            break;
+        }
+        case Kind::AddTile: {
+            Rect r = p.rect;
+            // A dashed pill.
+            draw::roundedRect(vg, r, 10, hot ? c.bg2 : nvgRGBAf(0, 0, 0, 0));
+            nvgBeginPath(vg);
+            int dashes = int(std::max(0.f, r.size.x - 20) / 6);
+            for (int k = 0; k < dashes; k++) {
+                float x = r.pos.x + 10 + float(k) * 6;
+                nvgMoveTo(vg, x, r.pos.y + 0.5f);
+                nvgLineTo(vg, std::min(x + 3, r.getRight() - 10), r.pos.y + 0.5f);
+                nvgMoveTo(vg, x, r.getBottom() - 0.5f);
+                nvgLineTo(vg, std::min(x + 3, r.getRight() - 10), r.getBottom() - 0.5f);
+            }
+            nvgStrokeColor(vg, dc.tagEdge);
+            nvgStrokeWidth(vg, 1);
             nvgStroke(vg);
+            nvgSave(vg);
+            nvgIntersectScissor(vg, r.pos.x - 1, r.pos.y - 1, 11, r.size.y + 2);
+            draw::roundedRectStroke(vg, r, 10, dc.tagEdge, 1);
+            nvgRestore(vg);
+            nvgSave(vg);
+            nvgIntersectScissor(vg, r.getRight() - 10, r.pos.y - 1, 11, r.size.y + 2);
+            draw::roundedRectStroke(vg, r, 10, dc.tagEdge, 1);
+            nvgRestore(vg);
+            draw::TextStyle add{theme::fonts::ui(), 12, hot ? c.text0 : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, add, r.getCenter().x, r.getCenter().y, "+ Add device");
+            draw::text(vg, io, r.getRight() + mx::kDeviceIo / 2, r.getCenter().y, "out");
             if (t->devices.empty()) {
                 draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextUi, c.text2,
                                      NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-                draw::text(vg, hint, p.rect.getRight() + kOutWidth + 10, mid.y,
+                draw::text(vg, hint, r.getRight() + mx::kDeviceIo + 10, r.getCenter().y,
                            "Devices change the notes on their way out: arpeggiator, chord, scale, echo…");
             }
             break;
         }
         case Kind::Card:
-            if (const Device* d = cardDevice(p.device))
-                drawCard(vg, *d, p.device);
+            drawCard(vg, p);
             break;
         default:
             break;
         }
+    }
+    nvgRestore(vg);
+}
+
+void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
+    const Device* dp = cardDevice(cardPart.device);
+    if (!dp)
+        return;
+    const Device& d = *dp;
+    int index = cardPart.device;
+    const theme::Palette& c = theme::colors();
+    const theme::DeviceColors& dc = theme::deviceColors();
+    Rect r = cardPart.rect;
+    float radius = mx::kDeviceCardRadius;
+    bool selected = ctx.state().selectedDevice == d.id.value;
+    NVGcolor tint = tintOf(d, index);
+    // A soft shadow that falls below it, barely past its sides, then the card.
+    nvgBeginPath(vg);
+    nvgRect(vg, r.pos.x - 20, r.pos.y, r.size.x + 40, r.size.y + 34);
+    nvgFillPaint(vg, nvgBoxGradient(vg, r.pos.x + 6, r.pos.y + 10, r.size.x - 12, r.size.y, radius, 24,
+                                    nvgRGBAf(0, 0, 0, c.dark ? 0.12f : 0.05f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    draw::roundedRect(vg, r, radius, dc.card);
+    NVGcolor border = selected ? c.select : dc.cardEdge;
+    // A device modulator being mapped outlines its own device: the only one it may reach.
+    if (ctx.mappingModulator) {
+        ModulatorPlace place;
+        if (findModulator(ctx.module()->song(), ModulatorId(ctx.mappingModulator), &place) &&
+            place.level == ModLevel::Device && place.device == d.id)
+            border = deviceActions::colorOf(ModulatorId(ctx.mappingModulator));
+    }
+    draw::roundedRectStroke(vg, r, radius, border, selected ? 1.5f : 1);
+
+    float mid = r.pos.y + kHeaderMid;
+    for (size_t i = 0; i < parts.size(); i++) {
+        const Part& p = parts[i];
+        if (p.device != index)
+            continue;
+        bool hot = int(i) == hovered;
+        switch (p.kind) {
+        case Kind::Power: {
+            // A dot in the card's colour with a soft ring; hollow when bypassed.
+            Vec m = p.rect.getCenter();
+            if (hot) {
+                nvgBeginPath(vg);
+                nvgCircle(vg, m.x, m.y, 9);
+                nvgFillColor(vg, c.bg2);
+                nvgFill(vg);
+            }
+            nvgBeginPath(vg);
+            nvgCircle(vg, m.x, m.y, 4);
+            if (d.on) {
+                nvgFillColor(vg, tint);
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgCircle(vg, m.x, m.y, 5.5f);
+                nvgStrokeColor(vg, nvgTransRGBAf(tint, 0.22f));
+                nvgStrokeWidth(vg, 3);
+                nvgStroke(vg);
+            } else {
+                nvgStrokeColor(vg, c.text2);
+                nvgStrokeWidth(vg, 1.5f);
+                nvgStroke(vg);
+            }
+            // The device's name after it.
+            draw::TextStyle name{theme::fonts::uiStrong(), 13, d.on ? c.text0 : c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+            float nx = p.rect.getRight() + 8;
+            if (d.type == DeviceType::Motion) {
+                // Its colour, the one its notes' corners wear.
+                draw::roundedRect(vg, Rect(nx, mid - 4, 8, 8), 2, theme::playheadColor(d.color));
+                nx += 13;
+            }
+            float room = r.getRight() - mx::kDeviceCardPad - 26 - nx;
+            if (d.type == DeviceType::Motion)
+                room -= kMotionJoin + kMotionLeave + kMotionCount + 16;
+            draw::text(vg, name, nx, mid, draw::ellipsize(vg, name, nameOf(d), std::max(30.f, room)));
+            break;
+        }
+        case Kind::Menu: {
+            if (hot)
+                draw::roundedRect(vg, p.rect, 4, c.bg2);
+            Vec m = p.rect.getCenter();
+            nvgBeginPath(vg);
+            for (int k = -1; k <= 1; k++)
+                nvgCircle(vg, m.x + float(k) * 4.5f, m.y, 1.4f);
+            nvgFillColor(vg, c.text2);
+            nvgFill(vg);
+            // A device in a playhead's own chain shows that playhead's dot left of its menu.
+            if (index >= kBranchBase) {
+                float left = p.rect.pos.x;
+                for (const Part& q : parts)
+                    if (q.device == index && q.kind == Kind::Dot)
+                        left = std::min(left, q.rect.pos.x);
+                nvgBeginPath(vg);
+                nvgCircle(vg, left - 7, mid, 3.5f);
+                nvgFillColor(vg, tint);
+                nvgFill(vg);
+            }
+            break;
+        }
+        case Kind::Dot: {
+            Vec m = p.rect.getCenter();
+            nvgBeginPath(vg);
+            nvgCircle(vg, m.x, m.y, hot ? 4 : 3);
+            nvgFillColor(vg, deviceActions::colorOf(ModulatorId(p.id)));
+            nvgFill(vg);
+            break;
+        }
+        case Kind::PlayheadChip:
+            drawPlayheadChip(vg, d, p, hot);
+            break;
+        case Kind::AddPlayhead: {
+            draw::roundedRect(vg, p.rect, kChipHeight / 2, hot ? c.bg2 : nvgRGBAf(0, 0, 0, 0));
+            draw::roundedRectStroke(vg, p.rect, kChipHeight / 2, hot ? c.line2 : c.line1, 1);
+            draw::TextStyle plus{theme::fonts::ui(), 14, hot ? c.text0 : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, plus, p.rect.getCenter().x, p.rect.getCenter().y, "+");
+            break;
+        }
+        case Kind::PlayheadOn: {
+            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
+            if (!ph)
+                break;
+            bool on = deviceActions::playheadPlaysNow(ctx, *ph);
+            draw::roundedRect(vg, p.rect, p.rect.size.y / 2, on ? tint : c.line2);
+            nvgBeginPath(vg);
+            nvgCircle(vg, on ? p.rect.getRight() - 8.5f : p.rect.pos.x + 8.5f, p.rect.getCenter().y, 6.5f);
+            nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.96f));
+            nvgFill(vg);
+            break;
+        }
+        case Kind::MotionNotes:
+        case Kind::MotionJoin:
+        case Kind::MotionLeave: {
+            NVGcolor color = theme::playheadColor(d.color);
+            bool count = p.kind == Kind::MotionNotes;
+            int notes = count ? motionNoteCount(d.id) : 0;
+            draw::roundedRect(vg, p.rect, 9,
+                              count && notes > 0 ? nvgTransRGBAf(color, hot ? 0.3f : 0.18f) : (hot ? c.bg2 : dc.card));
+            draw::roundedRectStroke(vg, p.rect, 9, count && notes > 0 ? color : c.line1, 1);
+            draw::TextStyle text{theme::fonts::ui(), 10.5f, count ? (notes > 0 ? c.text0 : c.text2) : c.accent,
+                                 NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, text, p.rect.getCenter().x, p.rect.getCenter().y,
+                       count                        ? (notes == 1 ? "1 note" : std::to_string(notes) + " notes")
+                       : p.kind == Kind::MotionJoin ? "+ Selected"
+                                                    : "− Selected");
+            break;
+        }
+        default:
+            break;
+        }
+    }
+    if (d.type == DeviceType::Playheads && d.playheads.empty()) {
+        draw::TextStyle hint{theme::fonts::ui(), 11, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        draw::text(vg, hint, r.pos.x + mx::kDeviceCardPad, r.pos.y + 90, "Add a playhead with + to read the clip");
+    }
+}
+
+void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot) {
+    const theme::Palette& c = theme::colors();
+    if (part.param < 0 || part.param >= int(d.playheads.size()))
+        return;
+    const Playhead& p = d.playheads[size_t(part.param)];
+    const Playhead* shown = shownPlayhead(d);
+    bool selected = shown && shown->id == p.id;
+    NVGcolor color = theme::playheadColor(p.color);
+    float radius = kChipHeight / 2;
+    if (selected || hot)
+        draw::roundedRect(vg, part.rect, radius, selected ? nvgTransRGBAf(color, 0.15f) : c.bg2);
+    if (selected)
+        draw::roundedRectStroke(vg, part.rect, radius, nvgTransRGBAf(color, 0.6f), 1);
+    Vec mid = part.rect.getCenter();
+    // Its dot: filled when it plays, hollow when it is off; a curve or a lane on its On switches it as the song plays.
+    bool on = deviceActions::playheadPlaysNow(ctx, p);
+    nvgBeginPath(vg);
+    nvgCircle(vg, part.rect.pos.x + 10.5f, mid.y, 3.5f);
+    if (!on) {
+        nvgStrokeColor(vg, color);
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
+    } else {
+        nvgFillColor(vg, color);
+        nvgFill(vg);
+    }
+    draw::TextStyle name{selected ? theme::fonts::uiStrong() : theme::fonts::ui(), 11.5f,
+                         selected ? c.text0 : (on ? c.text1 : c.text2), NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    std::string label = p.solo ? "S · " + p.name : p.name;
+    draw::text(vg, name, part.rect.pos.x + 20, mid.y, draw::ellipsize(vg, name, label, part.rect.size.x - 24));
+}
+
+void DeviceStrip::drawTag(NVGcontext* vg, const Part& part, bool hot) {
+    if (part.tag < 0 || part.tag >= int(tagRefs.size()))
+        return;
+    TesseraModule* m = ctx.module();
+    const TagRef& t = tagRefs[size_t(part.tag)];
+    const theme::Palette& c = theme::colors();
+    const theme::DeviceColors& dc = theme::deviceColors();
+    const Device* d = cardDevice(part.device);
+    const devices::ParamInfo* info = deviceActions::infoOf(m->song(), t.ref);
+    if (!d || !info)
+        return;
+    Rect r = part.rect;
+    float radius = r.size.y / 2;
+    bool mapping = ctx.mappingModulator != 0;
+    bool lit = mapping && t.spec.family != Family::Channels && reachableNow(t.ref);
+    std::optional<NVGcolor> moved =
+        t.spec.family == Family::Channels ? std::nullopt : modulatorColorOn(t.ref);
+    bool automated = t.spec.family != Family::Channels && m->automated(t.ref);
+    NVGcolor laneColor = c.accent;
+    if (automated) {
+        std::vector<FoundLane> lanes = lanesTurning(m->song(), t.ref);
+        if (!lanes.empty())
+            laneColor = deviceActions::laneColor(m->song(), lanes.front());
+    }
+    bool active = focusedTag && *focusedTag == t &&
+                  ((hasGesture() && hovered >= 0) || (panelTag && *panelTag == t && tagPanelOpen()));
+    nvgSave(vg);
+    float alpha = d->on ? 1.f : 0.4f;
+    if (part.dim)
+        alpha *= 0.38f;
+    if (mapping && !lit)
+        alpha *= 0.3f;
+    nvgGlobalAlpha(vg, alpha);
+
+    // Its pill: a soft drop shadow, then the face, tinted when it is the first on its picture.
+    nvgBeginPath(vg);
+    nvgRect(vg, r.pos.x - 4, r.pos.y - 2, r.size.x + 8, r.size.y + 8);
+    nvgFillPaint(vg, nvgBoxGradient(vg, r.pos.x + 1, r.pos.y + 1.5f, r.size.x - 2, r.size.y, radius, 4,
+                                    nvgRGBAf(0, 0, 0, c.dark ? 0.2f : 0.06f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    NVGcolor face = hot ? dc.tagHover : dc.tag;
+    NVGcolor edge = dc.tagEdge;
+    if (part.first && t.spec.family != Family::Toggle) {
+        face = nvgLerpRGBA(dc.card, t.tint, hot ? 0.3f : 0.22f);
+        edge = nvgTransRGBAf(t.tint, 0.7f);
+    }
+    if (lit) {
+        NVGcolor mc = deviceActions::colorOf(ModulatorId(ctx.mappingModulator));
+        face = nvgLerpRGBA(dc.tag, mc, 0.25f);
+        edge = mc;
+    } else if (moved) {
+        edge = *moved;
+    } else if (automated) {
+        // A lane sets it: the whole tag takes the lane's colour, not only its outline.
+        face = nvgLerpRGBA(dc.tag, laneColor, hot ? 0.34f : 0.26f);
+        edge = laneColor;
+    }
+    draw::roundedRect(vg, r, radius, face);
+    draw::roundedRectStroke(vg, r, radius, edge, moved || automated || lit ? 1.5f : 1);
+    if (active) {
+        draw::roundedRectStroke(vg, r.grow(Vec(1, 1)), radius + 1, t.tint, 1.5f);
+        draw::roundedRectStroke(vg, r.grow(Vec(3.5f, 3.5f)), radius + 3.5f, nvgTransRGBAf(t.tint, 0.18f), 3);
+    } else if (focusedTag && *focusedTag == t) {
+        draw::roundedRectStroke(vg, r.grow(Vec(1.5f, 1.5f)), radius + 1.5f, nvgTransRGBAf(t.tint, 0.6f), 1);
+    }
+
+    float cy = r.getCenter().y;
+    if (t.spec.family == Family::Toggle) {
+        // A small switch after its name; as it plays now when something moves it.
+        bool on = shownValue(t.ref) >= 0.5f;
+        draw::TextStyle name{theme::fonts::ui(), mx::kDeviceTagText, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        draw::text(vg, name, r.pos.x + kTagPad, cy, info->name);
+        Rect sw(r.getRight() - 4 - 22, cy - 6.5f, 22, 13);
+        draw::roundedRect(vg, sw, 6.5f, on ? t.tint : c.line2);
+        nvgBeginPath(vg);
+        nvgCircle(vg, on ? sw.getRight() - 6.5f : sw.pos.x + 6.5f, cy, 4.5f);
+        nvgFillColor(vg, nvgRGBf(0.9f, 0.91f, 0.92f));
+        nvgFill(vg);
+    } else {
+        float x = r.pos.x + kTagPad;
+        if (t.spec.prefix[0]) {
+            draw::TextStyle pre{theme::fonts::ui(), mx::kDeviceTagText, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+            draw::text(vg, pre, x, cy, t.spec.prefix);
+            x += draw::textWidth(vg, pre, t.spec.prefix) + 4;
+        }
+        tags::Values v;
+        if (t.spec.family == Family::Channels)
+            v.channels = channelsOf(*d);
+        else if (t.spec.family == Family::Direction) {
+            ParamRef step = t.ref;
+            step.param = uint16_t(playheads::knob::kOrderStep);
+            if (const float* s = findParam(m->song(), step))
+                v.v[size_t(playheads::knob::kOrderStep)] =
+                    devices::display(*devices::playheadParamInfo(playheads::knob::kOrderStep), *s);
+        }
+        nvgSave(vg);
+        nvgIntersectScissor(vg, r.pos.x, r.pos.y, r.size.x - 4, r.size.y);
+        tiles::drawValue(vg, x, cy, tagLabel(*this, t, v), mx::kDeviceTagText,
+                         automated && !lit ? nvgLerpRGBA(c.text0, laneColor, 0.35f) : c.text0);
+        nvgRestore(vg);
+    }
+    // Under it, the depth bar: how far each lane and modulation moves it across its whole range, and where it is now.
+    if (t.spec.family != Family::Channels && t.spec.family != Family::Toggle) {
+        std::vector<Span> spans = spansOn(t.ref);
+        if (!spans.empty()) {
+            // At least 48 px wide under a short tag, so a small reach still shows.
+            float bw = std::max(48.f, r.size.x - radius * 1.2f);
+            float x0 = r.getCenter().x - bw / 2, x1 = x0 + bw, y = r.getBottom() + 3;
+            float w = x1 - x0;
+            draw::roundedRect(vg, Rect(x0, y, w, 3), 1.5f, nvgTransRGBAf(dc.tagEdge, 0.7f));
+            for (size_t k = 0; k < spans.size() && k < 3; k++) {
+                float yy = y + float(k) * 4;
+                if (k > 0)
+                    draw::roundedRect(vg, Rect(x0, yy, w, 3), 1.5f, nvgTransRGBAf(dc.tagEdge, 0.5f));
+                float a = x0 + spans[k].from * w, b = x0 + spans[k].to * w;
+                draw::roundedRect(vg, Rect(a, yy, std::max(3.f, b - a), 3), 1.5f, spans[k].color);
+            }
+            float live = std::clamp(shownValue(t.ref), 0.f, 1.f);
+            nvgBeginPath(vg);
+            nvgCircle(vg, x0 + live * w, y + 1.5f, 2.6f);
+            nvgFillColor(vg, c.text0);
+            nvgFill(vg);
+            nvgStrokeColor(vg, dc.screen);
+            nvgStrokeWidth(vg, 1);
+            nvgStroke(vg);
+        }
+    }
+    // On its corner: an "A" in the lane's colour when a lane sets it (a click shows the lane), else a dot in the
+    // modulator's colour when a modulator or a curve moves it.
+    Vec corner(r.getRight() - 1, r.pos.y + 1);
+    if (automated) {
+        bool badgeHot = hovered >= 0 && parts[size_t(hovered)].kind == Kind::TagBadge &&
+                        parts[size_t(hovered)].tag == part.tag;
+        nvgBeginPath(vg);
+        nvgCircle(vg, corner.x, corner.y, badgeHot ? 8.5f : 7.5f);
+        nvgFillColor(vg, laneColor);
+        nvgFill(vg);
+        nvgStrokeColor(vg, dc.card);
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
+        draw::TextStyle a{theme::fonts::uiStrong(), 10, c.onTile, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::text(vg, a, corner.x, corner.y + 0.5f, "A");
+    } else if (moved) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, corner.x, corner.y, 4);
+        nvgFillColor(vg, *moved);
+        nvgFill(vg);
+        nvgStrokeColor(vg, dc.card);
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
     }
     nvgRestore(vg);
 }
@@ -964,8 +2048,8 @@ void DeviceStrip::drawClosed(NVGcontext* vg) {
             x += draw::textWidth(vg, dim, "→") + 6;
         }
         name.color = t->devices[i].on ? c.text1 : c.text2;
-        draw::text(vg, name, x, mid, t->devices[i].name);
-        x += draw::textWidth(vg, name, t->devices[i].name) + 6;
+        draw::text(vg, name, x, mid, nameOf(t->devices[i]));
+        x += draw::textWidth(vg, name, nameOf(t->devices[i])) + 6;
     }
     size_t mods = modulatorRows(ctx.module()->song(), *t).size();
     if (mods > 0)
@@ -1066,554 +2150,8 @@ void DeviceStrip::drawModulators(NVGcontext* vg) {
     if (modulatorRows(song, *t).empty()) {
         draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextUi, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
         draw::textBox(vg, hint, block.pos.x + 10, block.pos.y + kModHeader + 10, block.size.x - 20,
-                      "LFOs, envelopes and ramps that turn knobs for you. + Add to start.");
+                      "LFOs, envelopes and ramps that turn settings for you. + Add to start.");
     }
-}
-
-void DeviceStrip::drawCard(NVGcontext* vg, const Device& d, int index) {
-    const theme::Palette& c = theme::colors();
-    const Part* card = nullptr;
-    for (const Part& p : parts)
-        if (p.kind == Kind::Card && p.device == index)
-            card = &p;
-    if (!card)
-        return;
-    Rect r = card->rect;
-    bool selected = ctx.state().selectedDevice == d.id.value;
-    NVGcolor border = selected ? c.select : c.line0;
-    // The Playheads card takes the colour of the playhead it shows.
-    if (d.type == DeviceType::Playheads)
-        if (const Playhead* ph = shownPlayhead(d))
-            border = theme::playheadColor(ph->color);
-    // A device modulator being mapped outlines its own device: the only one it may reach.
-    if (ctx.mappingModulator) {
-        ModulatorPlace place;
-        if (findModulator(ctx.module()->song(), ModulatorId(ctx.mappingModulator), &place) &&
-            place.level == ModLevel::Device && place.device == d.id)
-            border = deviceActions::colorOf(ModulatorId(ctx.mappingModulator));
-    }
-    draw::roundedRect(vg, r, 6, c.bg1);
-    // A device in a playhead's own chain wears that playhead's colour as a cap along its top.
-    if (index >= kBranchBase)
-        if (const Track* t = track(); t && !t->devices.empty())
-            if (const Playhead* ph = branchPlayhead()) {
-                NVGcolor color = theme::playheadColor(ph->color);
-                nvgSave(vg);
-                nvgIntersectScissor(vg, r.pos.x, r.pos.y, r.size.x, theme::metrics::kBranchCap);
-                draw::roundedRect(vg, r, 6, color);
-                nvgRestore(vg);
-                // Its dot in the title too, left of the menu and modulator dots.
-                float left = r.getRight();
-                for (const Part& p : parts)
-                    if (p.device == index && (p.kind == Kind::Menu || p.kind == Kind::Dot))
-                        left = std::min(left, p.rect.pos.x);
-                nvgBeginPath(vg);
-                nvgCircle(vg, left - 6, r.pos.y + kCardHeader / 2, 3.5f);
-                nvgFillColor(vg, color);
-                nvgFill(vg);
-            }
-    draw::roundedRectStroke(vg, r, 6, border, selected ? 1.5f : 1);
-    nvgBeginPath(vg);
-    nvgRect(vg, r.pos.x, r.pos.y + kCardHeader, r.size.x, 1);
-    nvgFillColor(vg, c.line0);
-    nvgFill(vg);
-
-    for (size_t i = 0; i < parts.size(); i++) {
-        const Part& p = parts[i];
-        if (p.device != index)
-            continue;
-        bool hot = int(i) == hovered;
-        switch (p.kind) {
-        case Kind::Power: {
-            Vec m = p.rect.getCenter();
-            nvgBeginPath(vg);
-            nvgCircle(vg, m.x, m.y, 9);
-            nvgFillColor(vg, d.on ? nvgTransRGBAf(c.accent, 0.18f) : (hot ? c.line0 : nvgRGBAf(0, 0, 0, 0)));
-            nvgFill(vg);
-            nvgBeginPath(vg);
-            nvgArc(vg, m.x, m.y + 0.5f, 4, -kPi / 2 + 0.75f, -kPi / 2 - 0.75f + 2 * kPi, NVG_CW);
-            nvgMoveTo(vg, m.x, m.y - 4.5f);
-            nvgLineTo(vg, m.x, m.y - 0.5f);
-            nvgStrokeColor(vg, d.on ? c.accent : c.text2);
-            nvgStrokeWidth(vg, 1.4f);
-            nvgLineCap(vg, NVG_ROUND);
-            nvgStroke(vg);
-            break;
-        }
-        case Kind::Menu: {
-            if (hot)
-                draw::roundedRect(vg, p.rect, 4, c.line0);
-            Vec m = p.rect.getCenter();
-            nvgBeginPath(vg);
-            for (int k = -1; k <= 1; k++)
-                nvgCircle(vg, m.x + float(k) * 4, m.y, 1.2f);
-            nvgFillColor(vg, c.text1);
-            nvgFill(vg);
-            break;
-        }
-        case Kind::Dot: {
-            Vec m = p.rect.getCenter();
-            nvgBeginPath(vg);
-            nvgCircle(vg, m.x, m.y, hot ? 4 : 3);
-            nvgFillColor(vg, deviceActions::colorOf(ModulatorId(p.id)));
-            nvgFill(vg);
-            break;
-        }
-        case Kind::PlayheadChip:
-            drawPlayheadChip(vg, d, p, hot);
-            break;
-        case Kind::PlayheadDirection: {
-            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
-            if (!ph)
-                break;
-            ParamRef ref{ParamRef::Kind::Playhead, ph->id.value, uint16_t(playheads::knob::kDirection)};
-            drawDropdown(vg, p, "Direction", deviceActions::directionText(*ph), hot, &ref);
-            break;
-        }
-        case Kind::GroupLabel:
-            drawGroupLabel(vg, p);
-            break;
-        case Kind::RepeatBlock:
-            if (const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id)))
-                drawRepeatBlock(vg, p, *ph);
-            break;
-        case Kind::PlayheadMore: {
-            Vec m = p.rect.getCenter();
-            nvgBeginPath(vg);
-            nvgCircle(vg, m.x, m.y, 13);
-            nvgFillColor(vg, hot ? c.line0 : c.bg2);
-            nvgFill(vg);
-            nvgBeginPath(vg);
-            for (int k = -1; k <= 1; k++)
-                nvgCircle(vg, m.x + float(k) * 4.5f, m.y, 1.4f);
-            nvgFillColor(vg, c.text1);
-            nvgFill(vg);
-            draw::TextStyle more{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-            draw::text(vg, more, m.x, p.rect.getBottom() + 14, "More");
-            break;
-        }
-        case Kind::AddPlayhead: {
-            draw::roundedRect(vg, p.rect, kChipHeight / 2, hot ? c.bg2 : nvgRGBAf(0, 0, 0, 0));
-            draw::roundedRectStroke(vg, p.rect, kChipHeight / 2, hot ? c.line2 : c.line1, 1);
-            draw::TextStyle plus{theme::fonts::ui(), 14, hot ? c.text0 : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-            draw::text(vg, plus, p.rect.getCenter().x, p.rect.getCenter().y, "+");
-            break;
-        }
-        case Kind::CardHeader: {
-            float right = r.getRight() - 26 - float(d.modulators.size()) * 11;
-            float left = r.pos.x + 26;
-            if (d.type == DeviceType::Motion) {
-                right -= kMotionJoin + kMotionLeave + kMotionCount + 16;
-                // Its colour, the one its notes' corners wear.
-                draw::roundedRect(vg, Rect(left, p.rect.getCenter().y - 4, 8, 8), 2, theme::playheadColor(d.color));
-                left += 13;
-            }
-            draw::TextStyle name{theme::fonts::uiStrong(), 11.5f, d.on ? c.text0 : c.text2,
-                                 NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-            draw::text(vg, name, left, p.rect.getCenter().y, draw::ellipsize(vg, name, d.name, right - left - 4));
-            break;
-        }
-        case Kind::MotionNotes:
-        case Kind::MotionJoin:
-        case Kind::MotionLeave: {
-            NVGcolor color = theme::playheadColor(d.color);
-            bool count = p.kind == Kind::MotionNotes;
-            int notes = count ? motionNoteCount(d.id) : 0;
-            draw::roundedRect(vg, p.rect, kChipHeight / 2,
-                              count && notes > 0 ? nvgTransRGBAf(color, hot ? 0.3f : 0.18f) : (hot ? c.bg2 : c.bg1));
-            draw::roundedRectStroke(vg, p.rect, kChipHeight / 2, count && notes > 0 ? color : c.line1, 1);
-            draw::TextStyle text{theme::fonts::ui(), 10.5f, count ? (notes > 0 ? c.text0 : c.text2) : c.accent,
-                                 NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-            draw::text(vg, text, p.rect.getCenter().x, p.rect.getCenter().y,
-                       count                        ? (notes == 1 ? "1 note" : std::to_string(notes) + " notes")
-                       : p.kind == Kind::MotionJoin ? "+ Selected"
-                                                    : "\u2212 Selected");
-            break;
-        }
-        default:
-            break;
-        }
-    }
-    // A bypassed device fades: its knobs still turn, but nothing passes through it.
-    nvgSave(vg);
-    if (!d.on)
-        nvgGlobalAlpha(vg, 0.4f);
-    for (const Part& p : parts)
-        if (p.kind == Kind::Knob && p.device == index && !p.compact)
-            drawKnob(vg, p);
-    nvgRestore(vg);
-}
-
-void DeviceStrip::drawDropdown(NVGcontext* vg, const Part& part, const std::string& label, const std::string& value,
-                               bool hot, const ParamRef* curveOf) {
-    const theme::Palette& c = theme::colors();
-    nvgSave(vg);
-    float cx = part.rect.getCenter().x;
-    float top = part.rect.pos.y + 2;
-    Rect box(cx - 28, top + 9, 56, 20);
-    draw::roundedRect(vg, box, 4, hot ? c.line0 : c.bg2);
-    draw::TextStyle text{theme::fonts::ui(), 10.5f, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    draw::text(vg, text, cx - 3, box.getCenter().y, draw::ellipsize(vg, text, value, box.size.x - 16));
-    float ax = box.getRight() - 7, ay = box.getCenter().y;
-    nvgBeginPath(vg);
-    nvgMoveTo(vg, ax - 3, ay - 1.5f);
-    nvgLineTo(vg, ax, ay + 1.5f);
-    nvgLineTo(vg, ax + 3, ay - 1.5f);
-    nvgStrokeColor(vg, c.text1);
-    nvgStrokeWidth(vg, 1.2f);
-    nvgStroke(vg);
-    draw::TextStyle name{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    bool curved = false;
-    NVGcolor color = c.text1;
-    if (curveOf) {
-        // Like a knob's name: it opens the setting's curve, and takes the playhead's colour when there is one.
-        const Song& song = ctx.module()->song();
-        curved = deviceActions::curveOn(song, *curveOf).valid();
-        if (const Playhead* ph = findPlayhead(song, PlayheadId(curveOf->owner)))
-            color = theme::playheadColor(ph->color);
-        if (curved)
-            name.color = color;
-    }
-    draw::text(vg, name, cx, top + 46, label);
-    if (curveOf) {
-        float w = draw::textWidth(vg, name, label);
-        nvgBeginPath(vg);
-        nvgRect(vg, cx - w / 2, top + 52, w, 1);
-        nvgFillColor(vg, curved ? color : nvgTransRGBAf(c.text2, 0.4f));
-        nvgFill(vg);
-    }
-    nvgRestore(vg);
-}
-
-void DeviceStrip::drawGroupLabel(NVGcontext* vg, const Part& part) {
-    const theme::Palette& c = theme::colors();
-    const char* name = part.param == 0 ? "MOVE" : "REPEAT";
-    draw::TextStyle text{theme::fonts::uiStrong(), 8.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    float y = part.rect.getCenter().y;
-    nvgSave(vg);
-    nvgTextLetterSpacing(vg, 1.2f);
-    draw::text(vg, text, part.rect.pos.x + 4, y, name);
-    float w = draw::textWidth(vg, text, name) + float(std::strlen(name)) * 1.2f;
-    nvgRestore(vg);
-    nvgBeginPath(vg);
-    nvgRect(vg, part.rect.pos.x + 10 + w, y, std::max(0.f, part.rect.size.x - 14 - w), 1);
-    nvgFillColor(vg, c.line2);
-    nvgFill(vg);
-}
-
-void DeviceStrip::drawRepeatBlock(NVGcontext* vg, const Part& part, const Playhead& p) {
-    const theme::Palette& c = theme::colors();
-    TesseraModule* m = ctx.module();
-    const Song& song = m->song();
-    using namespace playheads::knob;
-    const auto& info = devices::playheadInfo().params;
-    auto refOf = [&](int k) { return ParamRef{ParamRef::Kind::Playhead, p.id.value, uint16_t(k)}; };
-    // Whether a modulator or a lane moves a setting: then the block shows it as it plays now, marked, so what is
-    // drawn is what is heard.
-    auto moved = [&](int k) { return modulationsOn(song, refOf(k)) > 0 || m->automated(refOf(k)); };
-    auto value = [&](int k) {
-        ParamRef ref = refOf(k);
-        float v = knobPreview && knobPreview->first == ref ? knobPreview->second
-                  : moved(k)                               ? m->liveKnob(ref)
-                                                           : p.params[size_t(k)];
-        return int(std::lround(devices::display(info[size_t(k)], v)));
-    };
-    int size = value(kRepeatSize), times = value(kRepeatTimes), curve = value(kCurve);
-    bool on = size > 0;
-    auto [bend, strength] = playheads::curveShape(curve);
-    bool curved = on && bend != playheads::Bend::Straight;
-    NVGcolor color = theme::playheadColor(p.color);
-    Rect r = part.rect;
-    draw::roundedRect(vg, r, 6, nvgLerpRGBA(c.bg0, c.bg1, 0.3f));
-    draw::roundedRectStroke(vg, r, 6, c.line1, 1);
-
-    // Where the repeats of one group land: bars in the playhead's colour, dots where they would land straight.
-    Rect strip(r.pos.x + 6, r.pos.y + 4, r.size.x - 12, 12);
-    draw::roundedRect(vg, strip, 3, c.bg1);
-    if (on) {
-        for (int k = 0; k < times; k++) {
-            float g = float(k) / float(times);
-            float f = curved ? float(playheads::unwarp(bend, strength, g)) : g;
-            if (curved) {
-                nvgBeginPath(vg);
-                nvgCircle(vg, strip.pos.x + 4 + g * (strip.size.x - 8), strip.getBottom() - 2, 1.2f);
-                nvgFillColor(vg, c.text2);
-                nvgFill(vg);
-            }
-            draw::roundedRect(vg, Rect(strip.pos.x + 3 + f * (strip.size.x - 8), strip.pos.y + 2, 2.5f, 7), 1, color);
-        }
-    } else {
-        draw::TextStyle hint{theme::fonts::ui(), 8.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        draw::text(vg, hint, strip.pos.x + 5, strip.getCenter().y, "Off: pick a piece to play again");
-    }
-
-    // The three controls and their names, from their parts.
-    auto hot = [&](const Part& q) { return hovered >= 0 && &parts[size_t(hovered)] == &q; };
-    draw::TextStyle mono{theme::fonts::mono(), 10, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    draw::TextStyle name{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    auto chevron = [&](float x, float y) {
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, x - 3, y - 1.5f);
-        nvgLineTo(vg, x, y + 1.5f);
-        nvgLineTo(vg, x + 3, y - 1.5f);
-        nvgStrokeColor(vg, c.text1);
-        nvgStrokeWidth(vg, 1.2f);
-        nvgStroke(vg);
-    };
-    for (const Part& q : parts) {
-        if (q.device != part.device || q.id != part.id || q.refKind != ParamRef::Kind::Playhead)
-            continue;
-        if (q.param != kRepeatSize && q.param != kRepeatTimes && q.param != kCurve)
-            continue;
-        if (q.rect.pos.x < r.pos.x || q.rect.getRight() > r.getRight())
-            continue; // not this block's
-        bool faint = !on && q.param != kRepeatSize;
-        nvgSave(vg);
-        if (faint)
-            nvgGlobalAlpha(vg, 0.4f);
-        ParamRef ref = refOf(q.param);
-        bool live = moved(q.param);
-        if (q.kind == Kind::CurveLabel) {
-            bool hasCurve = live || deviceActions::curveOn(song, ref).valid();
-            draw::TextStyle n = name;
-            if (hasCurve)
-                n.color = color;
-            const char* text = info[size_t(q.param)].name;
-            float cx = q.rect.getCenter().x;
-            draw::text(vg, n, cx, q.rect.getCenter().y, text);
-            float w = draw::textWidth(vg, n, text);
-            nvgBeginPath(vg);
-            nvgRect(vg, cx - w / 2, q.rect.getCenter().y + 6, w, 1);
-            nvgFillColor(vg, hasCurve ? color : nvgTransRGBAf(c.text2, 0.4f));
-            nvgFill(vg);
-        } else if (q.param == kRepeatSize) {
-            draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
-            if (live)
-                draw::roundedRectStroke(vg, q.rect, 4, color, 1);
-            draw::text(vg, mono, q.rect.getCenter().x - 4, q.rect.getCenter().y,
-                       on ? playheads::repeatNames()[size_t(size)] : "Off");
-            chevron(q.rect.getRight() - 8, q.rect.getCenter().y);
-        } else if (q.param == kRepeatTimes) {
-            draw::text(vg, mono, q.rect.pos.x - 6, q.rect.getCenter().y, "\u00d7");
-            draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
-            if (live)
-                draw::roundedRectStroke(vg, q.rect, 4, color, 1);
-            draw::text(vg, mono, q.rect.getCenter().x, q.rect.getCenter().y, std::to_string(times));
-        } else {
-            draw::roundedRect(vg, q.rect, 4, hot(q) ? c.line0 : c.bg2);
-            if (curved || live)
-                draw::roundedRectStroke(vg, q.rect, 4, color, 1);
-            Rect icon(q.rect.pos.x + 5, q.rect.pos.y + 3, 18, q.rect.size.y - 6);
-            deviceActions::drawCurveIcon(vg, icon, curve, curved ? color : c.text1, 1.3f);
-            draw::TextStyle t{theme::fonts::ui(), 10, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-            draw::text(vg, t, icon.getRight() + 5, q.rect.getCenter().y,
-                       draw::ellipsize(vg, t, playheads::curveNames()[size_t(curve)],
-                                       q.rect.getRight() - icon.getRight() - 18));
-            chevron(q.rect.getRight() - 8, q.rect.getCenter().y);
-        }
-        nvgRestore(vg);
-    }
-}
-
-void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot) {
-    const theme::Palette& c = theme::colors();
-    if (part.param < 0 || part.param >= int(d.playheads.size()))
-        return;
-    const Playhead& p = d.playheads[size_t(part.param)];
-    const Playhead* shown = shownPlayhead(d);
-    bool selected = shown && shown->id == p.id;
-    NVGcolor color = theme::playheadColor(p.color);
-    float radius = kChipHeight / 2;
-    draw::roundedRect(vg, part.rect, radius, selected ? nvgTransRGBAf(color, 0.22f) : (hot ? c.bg2 : c.bg1));
-    draw::roundedRectStroke(vg, part.rect, radius, selected || hot ? color : nvgTransRGBAf(color, 0.5f), 1);
-    Vec mid = part.rect.getCenter();
-    // Its on/off switch: filled when it plays, hollow when it is off; a curve or a lane on its On switches it as the
-    // song plays.
-    bool on = deviceActions::playheadPlaysNow(ctx, p);
-    nvgBeginPath(vg);
-    nvgCircle(vg, part.rect.pos.x + 9, mid.y, 3.5f);
-    if (!on) {
-        nvgStrokeColor(vg, color);
-        nvgStrokeWidth(vg, 1.3f);
-        nvgStroke(vg);
-    } else {
-        nvgFillColor(vg, color);
-        nvgFill(vg);
-    }
-    // The channel at the right end: what a Track Out set to that channel plays.
-    std::string channel = p.channel == 0 ? "–" : std::to_string(p.channel);
-    draw::TextStyle ch{theme::fonts::mono(), 9.5f, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
-    draw::text(vg, ch, part.rect.getRight() - 7, mid.y, channel);
-    float chWidth = draw::textWidth(vg, ch, channel);
-    draw::TextStyle name{theme::fonts::ui(), 10.5f, on ? c.text0 : c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    std::string label = p.solo ? "S · " + p.name : p.name;
-    draw::text(vg, name, part.rect.pos.x + 16, mid.y,
-               draw::ellipsize(vg, name, label, part.rect.size.x - 16 - chWidth - 12));
-}
-
-void DeviceStrip::drawKnob(NVGcontext* vg, const Part& part) {
-    const theme::Palette& c = theme::colors();
-    TesseraModule* m = ctx.module();
-    const Song& song = m->song();
-    ParamRef ref = knobRef(part);
-    const devices::ParamInfo* info = deviceActions::infoOf(song, ref);
-    const float* stored = findParam(song, ref);
-    if (!info || !stored)
-        return;
-    // An automated knob shows what its lane sets while the song plays, in the lane's colour.
-    bool automated = m->automated(ref);
-    float base = knobPreview && knobPreview->first == ref ? knobPreview->second
-                 : automated                              ? m->knobBase(ref)
-                                                          : *stored;
-    NVGcolor valueColor = c.accent;
-    if (automated) {
-        std::vector<FoundLane> lanes = lanesTurning(song, ref);
-        if (!lanes.empty())
-            valueColor = deviceActions::laneColor(song, lanes.front());
-    }
-    // A playhead's knobs take its colour; one with a curve shows it.
-    bool curved = deviceActions::curveOn(song, ref).valid();
-    if (ref.kind == ParamRef::Kind::Playhead && !automated)
-        if (const Playhead* ph = findPlayhead(song, PlayheadId(ref.owner)))
-            valueColor = theme::playheadColor(ph->color);
-    bool mapping = ctx.mappingModulator != 0;
-    bool lit = mapping && reachableNow(ref);
-    nvgSave(vg);
-    if (mapping && !lit)
-        nvgGlobalAlpha(vg, 0.3f);
-
-    float cx = part.rect.getCenter().x;
-    float top = part.rect.pos.y + 2;
-    Vec center(cx, top + 19);
-    draw::TextStyle label{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    draw::TextStyle value{theme::fonts::mono(), 9.5f, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    std::string shown = devices::format(*info, base);
-
-    // Modulations on this knob, in their modulators' colours (the one being mapped shows its dragged amount).
-    struct Ring {
-        NVGcolor color;
-        float amount;
-    };
-    std::vector<Ring> rings;
-    bool mappedHere = false;
-    forEachModulator(song, [&](const Modulator& mod, const ModulatorPlace&) {
-        for (const Modulation& r : mod.routes)
-            if (r.kind == Modulation::Kind::Param && r.target == ref) {
-                float amount = r.amount;
-                if (amountPreview && amountPreview->first == ref && mod.id.value == ctx.mappingModulator) {
-                    amount = amountPreview->second;
-                    mappedHere = true;
-                }
-                rings.push_back({deviceActions::colorOf(mod.id), amount});
-            }
-    });
-    if (amountPreview && amountPreview->first == ref && !mappedHere)
-        rings.push_back({deviceActions::colorOf(ModulatorId(ctx.mappingModulator)), amountPreview->second});
-    // A modulated knob reads what plays now; its arc still shows where it is set.
-    if (!rings.empty() && !(knobPreview && knobPreview->first == ref))
-        shown = devices::format(*info, m->liveKnob(ref));
-
-    devices::ParamInfo::Kind kind = part.dial ? devices::ParamInfo::Kind::Number : info->kind;
-    switch (kind) {
-    case devices::ParamInfo::Kind::Choice: {
-        Rect box(cx - 27, center.y - 10, 54, 20);
-        bool hot = hovered >= 0 && &parts[size_t(hovered)] == &part;
-        draw::roundedRect(vg, box, 4, hot ? c.line0 : c.bg2);
-        draw::roundedRectStroke(vg, box, 4,
-                                lit         ? deviceActions::colorOf(ModulatorId(ctx.mappingModulator))
-                                : automated ? valueColor
-                                            : c.line0,
-                                1);
-        draw::TextStyle text{theme::fonts::ui(), 10.5f, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        std::string s = draw::ellipsize(vg, text, shown, box.size.x - 16);
-        float w = draw::textWidth(vg, text, s);
-        draw::text(vg, text, cx - (w + 9) / 2, center.y, s);
-        float ax = cx + (w + 9) / 2 - 3;
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, ax - 3, center.y - 1.5f);
-        nvgLineTo(vg, ax, center.y + 1.5f);
-        nvgLineTo(vg, ax + 3, center.y - 1.5f);
-        nvgStrokeColor(vg, c.text1);
-        nvgStrokeWidth(vg, 1.2f);
-        nvgStroke(vg);
-        shown.clear();
-        break;
-    }
-    case devices::ParamInfo::Kind::Toggle: {
-        // As it plays now, when a curve, a modulator or a lane moves it.
-        bool held = knobPreview && knobPreview->first == ref;
-        bool on = (!held && (curved || !rings.empty() || automated) ? m->liveKnob(ref) : base) >= 0.5f;
-        Rect sw(cx - 15, center.y - 8, 30, 16);
-        draw::roundedRect(vg, sw, 8, on ? valueColor : c.line1);
-        nvgBeginPath(vg);
-        nvgCircle(vg, on ? sw.getRight() - 8 : sw.pos.x + 8, center.y, 5);
-        nvgFillColor(vg, c.text0);
-        nvgFill(vg);
-        shown.clear();
-        break;
-    }
-    default: {
-        if (lit) {
-            NVGcolor color = deviceActions::colorOf(ModulatorId(ctx.mappingModulator));
-            nvgBeginPath(vg);
-            nvgCircle(vg, center.x, center.y, kKnobRadius + 6);
-            nvgFillColor(vg, nvgTransRGBAf(color, 0.12f));
-            nvgFill(vg);
-            nvgStrokeColor(vg, color);
-            nvgStrokeWidth(vg, 1.4f);
-            nvgStroke(vg);
-        }
-        arc(vg, center, kKnobRadius, 0, 1, c.line1, 2.8f);
-        arc(vg, center, kKnobRadius, info->bipolar() || part.centred ? 0.5f : 0.f, base, valueColor, 2.8f);
-        for (size_t k = 0; k < rings.size() && k < 4; k++)
-            arc(vg, center, kKnobRadius + 3.4f + float(k) * 2.4f, base, std::clamp(base + rings[k].amount, 0.f, 1.f),
-                rings[k].color, 1.8f);
-        // Where it is right now, when something moves it.
-        bool held = knobPreview && knobPreview->first == ref;
-        if (!rings.empty() || held) {
-            float live = held ? base : m->liveKnob(ref);
-            float a = angleOf(live);
-            nvgBeginPath(vg);
-            nvgCircle(vg, center.x + kKnobRadius * std::cos(a), center.y + kKnobRadius * std::sin(a), 2.4f);
-            nvgFillColor(vg, c.text0);
-            nvgFill(vg);
-        }
-        break;
-    }
-    }
-    if (automated) {
-        // The "A" badge: this knob has an automation lane.
-        Rect badge(part.rect.getRight() - 13, top, 11, 11);
-        draw::roundedRect(vg, badge, 2, valueColor);
-        draw::TextStyle a{theme::fonts::uiStrong(), 9, c.onTile, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        draw::text(vg, a, badge.getCenter().x, badge.getCenter().y + 0.5f, "A");
-        value.color = valueColor;
-    }
-    if (curved) {
-        // A dotted ring: a curve moves this setting.
-        for (int k = 0; k < 24; k += 2) {
-            float a0 = float(k) / 24 * 2 * kPi;
-            nvgBeginPath(vg);
-            nvgArc(vg, center.x, center.y, kKnobRadius + 4, a0, a0 + kPi / 24, NVG_CW);
-            nvgStrokeColor(vg, valueColor);
-            nvgStrokeWidth(vg, 1.2f);
-            nvgStroke(vg);
-        }
-        label.color = valueColor;
-    }
-    std::string name = draw::ellipsize(vg, label, info->name, kCell - 4);
-    draw::text(vg, label, cx, top + 46, name);
-    if (curved || ref.kind == ParamRef::Kind::Playhead) {
-        // The label opens its curve: underlined when it has one, faintly when it could.
-        float w = draw::textWidth(vg, label, name);
-        nvgBeginPath(vg);
-        nvgRect(vg, cx - w / 2, top + 52, w, 1);
-        nvgFillColor(vg, curved ? valueColor : nvgTransRGBAf(c.text2, 0.4f));
-        nvgFill(vg);
-    }
-    if (!shown.empty())
-        draw::text(vg, value, cx, top + 58, shown);
-    nvgRestore(vg);
 }
 
 void DeviceStrip::drawForeground(const DrawArgs& args) {
@@ -1623,47 +2161,74 @@ void DeviceStrip::drawForeground(const DrawArgs& args) {
         return;
     nvgSave(vg);
     nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
+    // The tags sit on the pictures, which the tile layer drew under this.
+    for (size_t i = 0; i < parts.size(); i++)
+        if (parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch)
+            drawTag(vg, parts[i], int(i) == hovered);
     if (dropIndex >= 0) {
         // Where the dragged card lands: before card `dropIndex`, or after the last.
-        float x = -1;
+        float x = -1, y = kTop;
         int seen = 0;
         for (const Part& p : parts)
-            if (p.kind == Kind::Card) {
-                if (seen == dropIndex)
-                    x = p.rect.pos.x - kConnector / 2;
+            if (p.kind == Kind::Card && p.device < kBranchBase) {
+                if (seen == dropIndex) {
+                    x = p.rect.pos.x - mx::kDeviceLink / 2;
+                    y = p.rect.pos.y;
+                }
                 seen++;
             } else if (p.kind == Kind::AddTile && x < 0) {
-                x = p.rect.pos.x - kConnector / 2;
+                x = p.rect.pos.x - mx::kDeviceLink / 2;
+                y = p.rect.pos.y - mx::kDeviceCardTop;
             }
         nvgBeginPath(vg);
-        nvgRect(vg, x - 1, kPad, 2, box.size.y - 2 * kPad);
+        nvgRect(vg, x - 1, y, 2, kCardHeight);
         nvgFillColor(vg, c.accent);
         nvgFill(vg);
     }
-    // A modulated knob names its modulations on hover.
-    if (hovered >= 0 && size_t(hovered) < parts.size() && parts[size_t(hovered)].kind == Kind::Knob && !hasGesture()) {
+    // A modulated tag names its modulations on hover.
+    if (hovered >= 0 && size_t(hovered) < parts.size() &&
+        (parts[size_t(hovered)].kind == Kind::Tag || parts[size_t(hovered)].kind == Kind::TagBadge) && !hasGesture()) {
         const Part& p = parts[size_t(hovered)];
-        ParamRef ref = knobRef(p);
+        ParamRef ref = tagRefs[size_t(p.tag)].ref;
+        const TagRef& t = tagRefs[size_t(p.tag)];
         std::string text;
-        forEachModulator(ctx.module()->song(), [&](const Modulator& mod, const ModulatorPlace&) {
-            for (const Modulation& r : mod.routes)
-                if (r.kind == Modulation::Kind::Param && r.target == ref) {
-                    char amount[16];
-                    snprintf(amount, sizeof(amount), " %+.0f%%", double(r.amount) * 100);
-                    text += (text.empty() ? "" : "   ") + mod.name + amount;
-                }
-        });
+        // Each lane and modulation, with the values it moves the setting between.
+        const devices::ParamInfo* info = deviceActions::infoOf(ctx.module()->song(), ref);
+        auto valueText = [&](float n) {
+            if (!info || t.spec.family == Family::Channels)
+                return std::string();
+            if (t.spec.family == Family::Direction)
+                return devices::format(*info, n);
+            const tags::ValueList& list = listOf(t);
+            return list.values.empty() ? devices::format(*info, n)
+                                       : list.labels[size_t(list.nearest(devices::display(*info, n)))];
+        };
+        for (const Span& sp : spansOn(ref)) {
+            if (sp.who.empty())
+                continue;
+            text += (text.empty() ? "" : "   ") + sp.who + ": " + valueText(sp.from) + " to " + valueText(sp.to);
+        }
+        if (ctx.module()->automated(ref))
+            text += std::string(text.empty() ? "" : "   ") + "(click the A to show the lane)";
         if (!text.empty()) {
             draw::TextStyle style{theme::fonts::ui(), 10, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
             float w = draw::textWidth(vg, style, text) + 12;
             float x = std::clamp(p.rect.getCenter().x - w / 2, chainLeft + 2, box.size.x - w - 2);
-            Rect pill(x, p.rect.pos.y - 14, w, 16);
+            Rect pill(x, p.rect.getBottom() + 4, w, 16);
             draw::roundedRect(vg, pill, 4, c.bg2);
             draw::roundedRectStroke(vg, pill, 4, c.line1, 1);
             draw::text(vg, style, x + 6, pill.getCenter().y, text);
         }
     }
     nvgRestore(vg);
+    // The bottom edge's grip: it resizes the strip.
+    bool edgeHot = (hovered >= 0 && parts[size_t(hovered)].kind == Kind::ResizeEdge) || hasGesture() && dropIndex < 0 &&
+                                                                                          !knobPreview && !amountPreview &&
+                                                                                          !directionPreview &&
+                                                                                          localMouse().y > box.size.y - 12;
+    if (resizable())
+        draw::roundedRect(vg, Rect(box.size.x / 2 - 18, box.size.y - 4.5f, 36, 3), 1.5f,
+                          edgeHot ? c.text1 : theme::deviceColors().tagEdge);
     // Under the strip when the pane has room there; otherwise over the top of the cards.
     float bannerY = roomBelow >= 28 ? box.size.y + 4 : 2;
     drawMappingBanner(vg, ctx, chainLeft, bannerY, 20, box.size.x - chainLeft - 8);
@@ -1685,7 +2250,7 @@ bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, flo
                            NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle text{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     std::string title = "Mapping " + mod->name;
-    std::string hint = "drag a lit knob up or down to set how far it moves it  ·  Esc to finish";
+    std::string hint = "drag a lit tag up or down to set how far it moves it  ·  Esc to finish";
     float w = std::min(maxWidth, 26 + draw::textWidth(vg, strong, title) + 10 + draw::textWidth(vg, text, hint) + 10);
     Rect pill(x, y, w, height);
     draw::roundedRect(vg, pill, 4, c.bg1);
