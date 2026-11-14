@@ -25,7 +25,8 @@ far as its cards need, and it always leaves the notes some room.
 **A short pane.** When the pane is too short for one row of cards and the notes together (the editor in the module
 panel, for example), the devices take the whole pane. **Devices** then sits beside **Notes** (and **Mixer**) at the
 left of the pane's header: click it to see the devices, and click **Notes**, or **Devices** again, to go back to the
-notes.
+notes. Picking **Draw a curve** on a tag, or clicking a Curve modulator, switches to the notes by itself, since the
+curve is drawn in the notes' lower pane; the pane's maximize button gives it more room.
 
 ## Adding devices
 

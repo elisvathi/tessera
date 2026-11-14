@@ -331,6 +331,9 @@ void openDirectionMenu(EditorContext& ctx, PlayheadId id) {
 }
 
 void showCurve(EditorContext& ctx, ModulatorId id) {
+    // The curve is drawn under the notes: with the devices in their place, show the notes.
+    if (ctx.devicesFillPane)
+        setStripOpen(ctx, false);
     ctx.state().curveModulator = id.value;
     ctx.state().curveTarget = ParamRef();
     ctx.state().curveOpenedOn = ctx.state().selectedTrack;
@@ -948,6 +951,9 @@ void showLane(EditorContext& ctx, LaneOwner owner, AutomationId lane) {
         ctx.state().selectedTrack = track;
     ctx.state().selectedClip = owner.clip;
     ctx.state().lowerLane = lane.value;
+    // A clip's lane is drawn under the notes: with the devices in their place, show the notes.
+    if (ctx.devicesFillPane)
+        setStripOpen(ctx, false);
 }
 
 } // namespace tessera::deviceActions

@@ -77,6 +77,9 @@ class EditorContext {
     bool showHelp = false; // the "?" overlay: every shortcut, generated from the shortcut table
     // The device strip (docs/DEVICES.md §1.1): IDs, so nothing points into the song across frames.
     uint64_t mappingModulator = 0; // ModulatorId being mapped onto knobs; 0 = not mapping
+    /// The open device strip fills the notes pane (a short pane: devices in place of the notes). Set by the pane
+    /// each frame; a curve opening then switches to the notes, where the curve is drawn.
+    bool devicesFillPane = false;
     bool clipsOpenNarrow = false;  // a narrow song pane shows the clips although the timeline plays
     double toastUntil = 0;
     static constexpr double kToastSeconds = 4;

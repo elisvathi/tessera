@@ -608,6 +608,9 @@ float DeviceStrip::wantedHeight() {
             rows--;
         return heightFor(rows);
     }
+    // A short pane has the Devices tab beside Notes: the closed bar would only take the notes' room.
+    if (paneRoom < kOpenHeight + kMinNotes)
+        return 0;
     return t->devices.empty() && t->modulators.empty() ? 0 : kClosedHeight;
 }
 

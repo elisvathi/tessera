@@ -97,14 +97,17 @@ bool DetailPane::handleAction(Action action) {
 
 void DetailPane::layout() {
     // The strip never runs past the pane: a module's drawing isn't clipped, it would cover the rack below.
-    float stripHeight = ctx.module() ? strip->wantedHeight() : 0;
     float room = std::max(0.f, box.size.y - theme::metrics::kPaneHeader);
     strip->paneRoom = room;
+    float stripHeight = ctx.module() ? strip->wantedHeight() : 0;
     shortPane = room < DeviceStrip::kOpenHeight + DeviceStrip::kMinNotes;
     // Open with too little room left for the notes, the devices take the whole pane: the Devices button then
     // switches between devices and notes.
-    if (ctx.module() && deviceActions::stripOpen(ctx) && room - stripHeight < DeviceStrip::kMinNotes)
+    ctx.devicesFillPane = false;
+    if (ctx.module() && deviceActions::stripOpen(ctx) && room - stripHeight < DeviceStrip::kMinNotes) {
         stripHeight = room;
+        ctx.devicesFillPane = !showsMixer();
+    }
     if (stripHeight > room)
         stripHeight = room >= DeviceStrip::kMinOpenHeight ? room : std::min(DeviceStrip::kClosedHeight, room);
     strip->roomBelow = room - stripHeight;
