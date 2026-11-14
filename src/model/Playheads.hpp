@@ -49,7 +49,9 @@ enum Playhead {
     kOrderStep, // the size of those steps
     kOnJump,    // Retrigger: a jump cuts the note playing and plays again the notes it lands inside; or Let ring
     kOn,        // whether it plays: the dot on its chip; a curve or a lane can switch it in time
-    kTimeOffset // plays its notes earlier or later by a note value (offsetNames()), its path and all
+    kTimeOffset, // plays its notes earlier or later by a note value (offsetNames()), its path and all
+    kSpeedCurve, // how its speed rises and falls over each Speed over: Straight or a ready shape (curveNames())
+    kSpeedOver   // how long one speed curve lasts, in song time (speedOverNames())
 };
 /// The Playheads device's own knobs.
 enum Device { kRestart, kRestartBars, kSameNote };
@@ -79,6 +81,12 @@ struct Motion {
     Bend bend = Bend::Straight;
     double bendAmount = 0;   // 0..1
     double bendCycle = 0;    // the playhead's own ticks (elapsed times rate); 0 = no bend. One repeat group.
+    /// The speed curve: over each `speedCycle` elapsed ticks (song time, from the clip start or the last restart)
+    /// the playhead speeds up and slows down along `speed`, and is back where a steady playhead would be at the
+    /// cycle's end. A drawn path ignores it, like the other movement settings.
+    Bend speed = Bend::Straight;
+    double speedAmount = 0;  // 0..1
+    double speedCycle = 0;   // elapsed ticks; 0 = steady
     double restartEvery = 0; // elapsed ticks; 0 = only when the clip starts
     /// How much later than the clip's time the playhead moves, in elapsed ticks (negative: earlier). Everything it
     /// does happens that much later: where it is, its sweeps, when they reach a place, its restarts.
@@ -258,6 +266,9 @@ double orderStepTicks(int index, TimeSig ts);
 /// The Offset choices, from a bar early through "0" to a bar late, and each one in song ticks (negative: earlier).
 const std::vector<std::string>& offsetNames();
 double offsetTicks(int index, TimeSig ts);
+/// How long one speed curve lasts (the Speed over choices), short to long, and each in song ticks.
+const std::vector<std::string>& speedOverNames();
+double speedOverTicks(int index, TimeSig ts);
 /// Which of `count` steps is read `k`-th in `order` (pass `pass` of a shuffle). Every step is read once per pass.
 int orderedStep(Order order, int k, int count, int64_t pass, uint32_t seed);
 double pathCycleTicks(int index, TimeSig ts);

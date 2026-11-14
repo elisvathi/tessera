@@ -28,11 +28,11 @@ std::string found(const ValueList& list, const std::string& query) {
 } // namespace
 
 TEST_SUITE("device tags") {
-    TEST_CASE("every device has one to three pictures, each setting on one of them") {
+    TEST_CASE("every device has one to three pictures, the Playheads card four") {
         for (int t = 0; t < kDeviceTypeCount; t++) {
             const auto& tiles = tilesOf(DeviceType(t));
             CHECK(tiles.size() >= 1);
-            CHECK(tiles.size() <= 3);
+            CHECK(tiles.size() <= (DeviceType(t) == DeviceType::Playheads ? 4u : 3u));
         }
     }
 
@@ -66,6 +66,10 @@ TEST_SUITE("device tags") {
         CHECK(found(lengths, "1 bar") == "1 bar");
         CHECK(found(lengths, "2bars") == "2 bars");
         CHECK(!match(lengths, "1/7")->exact);
+
+        ValueList over = valueList(DeviceType::Playheads, specOf(DeviceType::Playheads, playheads::knob::kSpeedOver));
+        CHECK(found(over, "1/2") == "1/2");
+        CHECK(found(over, "2bars") == "2 bars");
 
         ValueList rate = valueList(DeviceType::Playheads, specOf(DeviceType::Playheads, playheads::knob::kRate));
         CHECK(found(rate, "1.5") == "3/2x");
@@ -137,12 +141,16 @@ TEST_SUITE("device tags") {
         Values ph;
         int plus8 = playheads::choiceIndex(playheads::offsetNames(), "+1/8");
         ph.v[size_t(playheads::knob::kTimeOffset)] = float(plus8);
-        CHECK(caption(DeviceType::Playheads, 1, ph) == "A canon, 1/8 behind");
+        CHECK(caption(DeviceType::Playheads, 2, ph) == "A canon, 1/8 behind");
         ph.v[size_t(playheads::knob::kRate)] = float(playheads::choiceIndex(playheads::rateNames(), "2x"));
         CHECK(caption(DeviceType::Playheads, 0, ph) == "2 passes a bar");
         ph.v[size_t(playheads::knob::kRepeatSize)] = float(playheads::choiceIndex(playheads::repeatNames(), "1/8"));
         ph.v[size_t(playheads::knob::kRepeatTimes)] = 4;
-        CHECK(caption(DeviceType::Playheads, 2, ph) == "Fills 1/2, then moves on");
+        CHECK(caption(DeviceType::Playheads, 3, ph) == "Fills 1/2, then moves on");
+        CHECK(caption(DeviceType::Playheads, 1, ph) == "Steady speed");
+        ph.v[size_t(playheads::knob::kSpeedCurve)] = float(playheads::choiceIndex(playheads::curveNames(), "Ease in"));
+        ph.v[size_t(playheads::knob::kSpeedOver)] = float(playheads::choiceIndex(playheads::speedOverNames(), "1/2"));
+        CHECK(caption(DeviceType::Playheads, 1, ph) == "Starts slow, catches up each 1/2");
 
         Values filter;
         filter.v[size_t(chain::knob::kEvery)] = 1;
@@ -155,6 +163,9 @@ TEST_SUITE("device tags") {
         CHECK(dimmed(DeviceType::Playheads, playheads::knob::kRepeatTimes, v));
         v.v[size_t(playheads::knob::kRepeatSize)] = 3;
         CHECK(!dimmed(DeviceType::Playheads, playheads::knob::kRepeatTimes, v));
+        CHECK(dimmed(DeviceType::Playheads, playheads::knob::kSpeedOver, v));
+        v.v[size_t(playheads::knob::kSpeedCurve)] = 2;
+        CHECK(!dimmed(DeviceType::Playheads, playheads::knob::kSpeedOver, v));
         Values len; // Mode Scale
         CHECK(!hidden(DeviceType::NoteLength, chain::knob::kScaleBy, len));
         CHECK(hidden(DeviceType::NoteLength, chain::knob::kLength, len));

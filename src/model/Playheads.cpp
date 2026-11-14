@@ -13,32 +13,41 @@ constexpr double kPi = 3.14159265358979323846;
 
 double floorMod(double x, double m) { return x - std::floor(x / m) * m; }
 
-/// The elapsed time inside a bend cycle, bent: the cycle's ends stay where they are.
-double bent(const Motion& m, double elapsed) {
-    if (m.bendCycle <= 0 || m.bendAmount <= 0 || m.bend == Bend::Straight)
-        return elapsed;
-    double k = std::floor(elapsed / m.bendCycle);
-    double f = elapsed / m.bendCycle - k;
-    return (k + warp(m.bend, m.bendAmount, f)) * m.bendCycle;
+/// Time `t` bent by `shape` inside cycles of `cycle` ticks: each cycle's ends stay where they are.
+double warpTime(Bend shape, double amount, double cycle, double t) {
+    if (cycle <= 0 || amount <= 0 || shape == Bend::Straight)
+        return t;
+    double k = std::floor(t / cycle);
+    double f = t / cycle - k;
+    return (k + warp(shape, amount, f)) * cycle;
 }
 
-/// The elapsed time a bent time comes from. The shapes always rise, so halving finds it.
-double unbent(const Motion& m, double b) {
-    if (m.bendCycle <= 0 || m.bendAmount <= 0 || m.bend == Bend::Straight)
+/// The time a bent time comes from: warpTime's inverse. The shapes always rise, so halving finds it.
+double unwarpTime(Bend shape, double amount, double cycle, double b) {
+    if (cycle <= 0 || amount <= 0 || shape == Bend::Straight)
         return b;
-    double cycles = b / m.bendCycle;
+    double cycles = b / cycle;
     double nearest = std::round(cycles);
     if (std::abs(cycles - nearest) < 1e-12)
-        return nearest * m.bendCycle; // on a cycle's edge, where rounding would land a hair inside the cycle before
+        return nearest * cycle; // on a cycle's edge, where rounding would land a hair inside the cycle before
     double k = std::floor(cycles);
-    double g = cycles - k;
-    double lo = 0, hi = 1;
-    for (int i = 0; i < 48; i++) {
-        double mid = (lo + hi) / 2;
-        (warp(m.bend, m.bendAmount, mid) < g ? lo : hi) = mid;
-    }
-    return (k + (lo + hi) / 2) * m.bendCycle;
+    return (k + unwarp(shape, amount, cycles - k)) * cycle;
 }
+
+/// The playhead's own time inside a repeat group, bent by the Curve.
+double bent(const Motion& m, double own) { return warpTime(m.bend, m.bendAmount, m.bendCycle, own); }
+/// The playhead's own time a Curve-bent time comes from.
+double unbent(const Motion& m, double b) { return unwarpTime(m.bend, m.bendAmount, m.bendCycle, b); }
+
+/// Elapsed time bent by the speed curve: how far a steady playhead would have got by now.
+double sped(const Motion& m, double elapsed) { return warpTime(m.speed, m.speedAmount, m.speedCycle, elapsed); }
+/// The elapsed time a speed-bent time comes from.
+double unsped(const Motion& m, double s) { return unwarpTime(m.speed, m.speedAmount, m.speedCycle, s); }
+
+/// The travel after `elapsed` ticks (from the last restart): rate, speed curve and Curve applied.
+double travelAt(const Motion& m, double elapsed) { return bent(m, m.rate * sped(m, elapsed)); }
+/// The elapsed time (from the last restart) at which the travel reaches `travel`: travelAt's inverse.
+double elapsedAt(const Motion& m, double travel) { return unsped(m, unbent(m, travel) / m.rate); }
 
 bool repeats(const Motion& m) { return m.repeatSize > 0 && m.repeatTimes > 1; }
 
@@ -251,6 +260,8 @@ const Length kFixedLengths[] = {{"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/1
                                 {"1/8 T", 1.0 / 12}, {"1/16 D", 3.0 / 32}, {"1/8", 1.0 / 8},     {"1/4 T", 1.0 / 6},
                                 {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"1/4 D", 3.0 / 8},   {"1/2", 1.0 / 2},
                                 {"1 bar", 1, true},  {"2 bars", 2, true}};
+const Length kSpeedOvers[] = {{"1/8", 1.0 / 8},    {"1/4", 1.0 / 4},    {"1/2", 1.0 / 2},    {"1 bar", 1, true},
+                              {"2 bars", 2, true}, {"4 bars", 4, true}, {"8 bars", 8, true}};
 
 // How far Offset moves a playhead, one way: the common note values with their triplets and dotted ones, and every
 // 1/16 up to a bar, so a canon can sit at any step. offsetNames() mirrors it around "0".
@@ -314,6 +325,12 @@ const std::vector<std::string>& orderStepNames() {
     return names;
 }
 double orderStepTicks(int index, TimeSig ts) { return ticksAt(kOrderSteps, index, ts); }
+
+const std::vector<std::string>& speedOverNames() {
+    static const std::vector<std::string> names = namesOf(kSpeedOvers);
+    return names;
+}
+double speedOverTicks(int index, TimeSig ts) { return ticksAt(kSpeedOvers, index, ts); }
 
 const std::vector<std::string>& offsetNames() {
     static const std::vector<std::string> names = [] {
@@ -458,7 +475,7 @@ double positionAt(const Motion& m, double elapsed) {
     if (m.direction == Direction::Freeze)
         return m.regionStart + floorMod(m.start, m.regionLength);
     double local = m.restartEvery > 0 ? floorMod(elapsed, m.restartEvery) : elapsed;
-    double x = unwrapped(m, contentAt(m, bent(m, m.rate * std::max(0.0, local))));
+    double x = unwrapped(m, contentAt(m, travelAt(m, std::max(0.0, local))));
     double wrap = std::floor(x / m.regionLength);
     double pos = positionOf(m, wrap, x - wrap * m.regionLength);
     return pos + orderShift(m, pos, wrap);
@@ -478,8 +495,8 @@ int sweepsUnmarked(const Motion& m, double a, double b, Sweep* out, int max) {
             e = pieceEnd;
             continue;
         }
-        double da = bent(m, m.rate * (e - base));
-        double db = bent(m, m.rate * (pieceEnd - base));
+        double da = travelAt(m, e - base);
+        double db = travelAt(m, pieceEnd - base);
         count += sweepTravel(m, da, db, base, out + count, max - count);
         e = pieceEnd;
     }
@@ -556,7 +573,7 @@ double timeAt(const Motion& m, const Sweep& s, double pos) {
         return s.restartBase + (lo + hi) / 2 / m.rate;
     }
     double travel = s.travelFrom + std::abs(pos - s.from);
-    return s.restartBase + unbent(m, travel) / m.rate;
+    return s.restartBase + elapsedAt(m, travel);
 }
 
 NoteShape noteShapeFrom(const float* knobs) {
@@ -657,6 +674,12 @@ Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart
         m.bendAmount = strength;
         m.bendCycle = m.repeatSize * m.repeatTimes;
     }
+    auto [speed, speedStrength] = curveShape(index(knob::kSpeedCurve));
+    if (speed != Bend::Straight) {
+        m.speed = speed;
+        m.speedAmount = speedStrength;
+        m.speedCycle = speedOverTicks(index(knob::kSpeedOver), ts);
+    }
     m.pathCycle = pathCycleTicks(index(knob::kPathCycle), ts);
     m.order = Order(index(knob::kOrder));
     m.orderStep = orderStepTicks(index(knob::kOrderStep), ts);
@@ -676,11 +699,12 @@ double noteLength(const float* knobs, const Motion& m, double written, TimeSig t
     switch (LengthMode(std::lround(devices::display(mode, knobs[knob::kLength])))) {
     case LengthMode::FollowsPlayhead: {
         double rate = std::max(m.rate, 1e-3);
-        bool bentTime = m.bendCycle > 0 && m.bendAmount > 0 && m.bend != Bend::Straight;
-        if (!bentTime || m.drawn() || !std::isfinite(travel))
+        bool bentTime = (m.bendCycle > 0 && m.bendAmount > 0 && m.bend != Bend::Straight) ||
+                        (m.speedCycle > 0 && m.speedAmount > 0 && m.speed != Bend::Straight);
+        if (!bentTime || m.drawn() || !std::isfinite(travel) || m.rate < 1e-3)
             return std::min(longest, written / rate);
         // Travel and the clip move together inside a piece; a jump out of the note ends it anyway (Retrigger).
-        return std::min(longest, (unbent(m, travel + written) - unbent(m, travel)) / rate);
+        return std::min(longest, elapsedAt(m, travel + written) - elapsedAt(m, travel));
     }
     case LengthMode::Fixed: {
         const devices::ParamInfo& fixed = devices::playheadInfo().params[knob::kFixedLength];

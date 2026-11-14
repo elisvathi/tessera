@@ -175,16 +175,19 @@ off). Alt-click the dot to solo it, or press
 there, and the notes its own devices still had to play (an Echo's repeats) don't come. Right-click a chip to rename it,
 pick its **Channel** (see [A sound for each playhead](#a-sound-for-each-playhead); the chip shows it), turn it **On**
 or off, solo it, duplicate or delete it, or **Switch it on and off in time…** with a curve. Under the chips, the shown
-playhead's settings on three pictures: how it moves (Direction and Rate), where it starts (Offset), and what it plays
-again (Piece × Times, and the Curve that spaces the repeats):
+playhead's settings on four pictures: how it moves (Direction and Rate), how its speed rises and falls (Speed curve
+over a length), where it starts (Offset), and what it plays again (Piece × Times, and the Curve that spaces the
+repeats):
 
-![A Playheads card: Forward at 1×, Offset 0, and Piece 1/16 × 4 with Curve Ease in, its four hits bunching up toward the end](images/playhead-repeat.png)
+![A Playheads card: Forward at 1×, Speed curve Ease in over 1/2, Offset 0, and Piece 1/16 × 4 with Curve Ease in, its four hits bunching up toward the end](images/playhead-repeat.png)
 
 | Setting | What it does |
 |---|---|
 | **On** | Whether it plays: the switch after the chips, or the dot on its chip. Right-click the chip for a curve on it, so the playhead can come in and drop out as the song plays (see **Curves** below). |
 | **Rate** | Speed against the song, from 1/32x to 32x: halves and doubles, thirds (1/3x, 2/3x, 4/3x, 3x…), dotted speeds (3/8x, 3/4x, 3/2x) and fives (4/5x, 5/4x). |
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size (1/32 to 2 bars, triplets too). |
+| **Speed curve** | Makes the playhead speed up and slow down as it goes, then catch up: over each **Over** length it follows the curve, and at the end of that length it is back where a steady playhead would be (see [Bending the speed](#bending-the-speed)). **Straight** keeps a steady speed. |
+| **Over** | How long one speed curve lasts, in the song's time: 1/8, 1/4, 1/2, 1 bar, 2, 4 or 8 bars. Faint while the Speed curve is Straight. |
 | **Offset** | Plays this playhead's notes later (+) or earlier (−) than it reads them, by a note value: 1/64 up to a bar either way, with triplet (T) and dotted (D) values, and every 1/16 between (+5/16, +7/16…). Its line over the notes trails or leads by as much, so it crosses each note when you hear it. Two playheads on the same segment, one at **+1/4**, make a round. Double-click it to set it back to **0**. At the very start of a clip, a late playhead waits for its offset, and an early one skips the notes that would have come before the clip started. When the clip loops, notes carry over the loop as usual. A clip's end is a hard stop: a late note that would sound after the clip ends doesn't play, and an early playhead doesn't play notes from past the end. That holds for a timeline clip, and for a launched clip that doesn't loop. When a curve or a lane moves Offset later while the clip plays, the playhead waits until the new time catches up. It never plays the same notes twice. Moved earlier, it skips ahead. |
 | **Piece** | The size of the piece it plays again: Off, or 1/64 up to 4 bars, with triplet (T) and dotted (D) sizes between. With **Times**, it plays each piece that many times, then moves on one piece: Piece 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
 | **Times** | How many times each piece plays, 2 to 16. |
@@ -219,7 +222,7 @@ on them play but aren't drawn there.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a setting's tag and pick **Draw a
 curve** in its panel: a curve for it opens in the piano roll's lower pane. On this card that is Direction, Rate,
-Offset, Piece, Times and Curve (On, and the rarer settings, from a chip's right-click menu, and the segment, from its
+Speed curve, Over, Offset, Piece, Times and Curve (On, and the rarer settings, from a chip's right-click menu, and the segment, from its
 right-click menu): a curve on On can bring the
 playhead in for bars 5 to 8 only, one on Direction can turn it round in bar 2, one on Piece can start repeating halfway
 through. On has two rows: the curve on its top row leaves it on, a step down to the row below turns it off. (The step
@@ -294,9 +297,27 @@ writes the clips as written. Modulators on playhead settings go into the file wh
 curves and LFOs, Steps, Random, Ramp and Macro. A free-running curve or LFO, an Envelope or a Note modulator plays live
 only.
 
+### Bending the speed
+
+The second picture on the Playheads card bends the playhead's speed, the way a player pushes and pulls the time. Pick a
+**Speed curve** and how long it lasts with **Over**: with **Ease in** over **1/2**, the playhead starts each half bar
+slowly and speeds up to catch up, so the notes in each half bar come late at first and crowd in at the end. **Ease out**
+rushes ahead first and then waits; **Ease in-out** is slow at both ends and fast between; **Swing** lingers, then
+hurries; **Stairs** surges four times. Whatever the shape, at the end of each **Over** length the playhead is exactly
+where a steady one would be, so it stays in step with the song and with the other playheads.
+
+The picture shows eight notes as the playhead meets them in one length, with dots under them where a steady playhead
+would meet them, and the curve its place follows. The caption says what it does: "Starts slow, catches up each 1/2".
+
+**Over** counts in the song's time, not the playhead's: at 2× a playhead still bends over half a bar when Over is
+1/2. The lengths start again where the clip starts (and at every **Restart**). With **Length → Follows playhead**,
+a note lasts while the playhead is on it, so notes it crosses slowly last longer. A Speed curve works together with
+Rate, Direction, the Piece repeats and their Curve, and the step orders. A drawn path (Path › Drawn) ignores it, as it
+ignores the other movement settings.
+
 ### Spacing the repeats
 
-The third picture on the Playheads card shows where the repeats of one group land: Piece 1/16, Times 4 is four hits in
+The fourth picture on the Playheads card shows where the repeats of one group land: Piece 1/16, Times 4 is four hits in
 a beat.
 **Curve** keeps the same hits in the same time, but spaces them differently. Eight repeats over eight seconds come one
 a second when the Curve is **Straight**; with **Ease in** they start far apart and bunch up at the end, like a

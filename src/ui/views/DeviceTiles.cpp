@@ -297,6 +297,32 @@ void drawMoves(const Pen& p, const tags::Values& v, float w) {
     p.marker(px);
 }
 
+void drawSpeed(const Pen& p, const tags::Values& v, float w) {
+    // Eight notes as written (dots where a steady playhead meets them), the notes where this one meets them, and the
+    // curve its place follows over one cycle; both ends of the cycle stay put.
+    auto [bend, strength] = playheads::curveShape(v.i(ph::kSpeedCurve));
+    constexpr int kNotes = 8;
+    float span = w - 32;
+    p.base(w);
+    p.tick(12, kYB - 40, 12, kYB);
+    p.tick(w - 12, kYB - 40, w - 12, kYB);
+    for (int k = 0; k < kNotes; k++) {
+        double g = double(k) / kNotes;
+        float hx = float(playheads::unwarp(bend, strength, g));
+        p.box(16 + std::clamp(hx, 0.f, 1.f) * span, kYB - 18, 6, 14, Style::Note, 1 - float(k) * 0.05f, 2);
+        nvgBeginPath(p.vg);
+        nvgCircle(p.vg, 19 + float(g) * span, kYB + 8, 1.6f);
+        nvgFillColor(p.vg, p.c.guide);
+        nvgFill(p.vg);
+    }
+    std::vector<Vec> curve;
+    for (int q = 0; q <= 32; q++) {
+        double t = double(q) / 32;
+        curve.push_back(Vec(16 + float(t) * (span + 6), kYB - 24 - float(playheads::warp(bend, strength, t)) * 14));
+    }
+    p.dots(curve);
+}
+
 void drawStart(const Pen& p, const tags::Values& v, float w) {
     float o = float(std::clamp(sixteenths(DeviceType::Playheads, v, ph::kTimeOffset), -7.5, 7.5));
     float x0 = w / 2, x1 = x0 + o * (w - 40) / 16;
@@ -681,7 +707,10 @@ void drawTile(NVGcontext* vg, DeviceType type, int tile, const tags::Values& v, 
     Pen p{vg, tint, c};
     switch (type) {
     case DeviceType::Playheads:
-        tile == 0 ? drawMoves(p, v, width) : tile == 1 ? drawStart(p, v, width) : drawRepeat(p, v, width);
+        tile == 0   ? drawMoves(p, v, width)
+        : tile == 1 ? drawSpeed(p, v, width)
+        : tile == 2 ? drawStart(p, v, width)
+                    : drawRepeat(p, v, width);
         break;
     case DeviceType::Transpose:
         drawTranspose(p, v, width);

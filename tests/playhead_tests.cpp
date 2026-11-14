@@ -154,6 +154,32 @@ TEST_CASE("bend moves notes inside its cycle but keeps the cycle's ends") {
     }
 }
 
+TEST_CASE("a speed curve bends the playhead's speed and keeps it in step at each cycle's end") {
+    Motion m = oneBar();
+    m.speed = Bend::EaseIn;
+    m.speedAmount = 1; // f^4
+    m.speedCycle = 2 * kBeat;
+    std::vector<Hit> hits = play(m, fourBeats(), 8 * kBeat);
+    REQUIRE(hits.size() == 8);
+    CHECK(hits[0] == Hit{0, 60});
+    // Slow at first: the playhead reaches beat 2, halfway through the cycle, when f^4 = 1/2.
+    CHECK(hits[1].time == doctest::Approx(2 * kBeat * std::pow(0.5, 0.25)));
+    CHECK(hits[1].pitch == 62);
+    CHECK(hits[2] == Hit{1920, 64});
+    CHECK(hits[4] == Hit{3840, 60});
+    CHECK(positionAt(m, 2 * kBeat) == doctest::Approx(2 * kBeat));
+    CHECK(positionAt(m, kBeat) == doctest::Approx(2 * kBeat / 16));
+
+    // Its cycle is song time: at 2x a half-bar cycle still lasts half a bar, so every half bar starts the clip over.
+    m.rate = 2;
+    hits = play(m, fourBeats(), 8 * kBeat);
+    for (const Hit& h : hits)
+        if (std::fmod(h.time, 2 * kBeat) < 1e-6)
+            CHECK(h.pitch == 60);
+    CHECK(hits.size() == 16);
+    CHECK(hits[1].time > kBeat / 2);
+}
+
 TEST_CASE("the position for drawing follows the same path") {
     Motion m = oneBar();
     CHECK(positionAt(m, 960) == doctest::Approx(960));
@@ -512,6 +538,38 @@ TEST_CASE("a new playhead reads as 1x forward from the clip's start") {
     CHECK(m.rate == 1);
     CHECK(m.regionLength == 3840);
     CHECK(m.repeatSize == 0);
+}
+
+TEST_CASE("a note following a playhead on a speed curve lasts while the playhead is on it") {
+    Motion m = oneBar();
+    m.speed = Bend::EaseIn;
+    m.speedAmount = 1;
+    m.speedCycle = 4 * kBeat;
+    float knobs[kMaxPlayheadParams] = {};
+    const devices::TypeInfo& info = devices::playheadInfo();
+    knobs[knob::kLength] = devices::normalize(info.params[knob::kLength], 1); // Follows playhead
+    // The first beat is crossed slowly (f^4 reaches 1/4 at f = 0.707), so its note holds longer than a beat.
+    double first = noteLength(knobs, m, kBeat, TimeSig(), 0);
+    CHECK(first == doctest::Approx(4 * kBeat * std::pow(0.25, 0.25)));
+    double last = noteLength(knobs, m, kBeat, TimeSig(), 3 * kBeat);
+    CHECK(last < kBeat);
+}
+
+TEST_CASE("Speed curve and Speed over set the speed curve; Straight leaves the playhead steady") {
+    const devices::TypeInfo& info = devices::playheadInfo();
+    Playhead p = devices::makePlayhead(PlayheadId(1), 0);
+    playheads::Motion steady = playheads::motionFrom(p.params.data(), nullptr, 0, 3840, TimeSig());
+    CHECK(steady.speedCycle == 0);
+    p.params[knob::kSpeedCurve] =
+        devices::normalize(info.params[knob::kSpeedCurve], float(choiceIndex(curveNames(), "Ease out")));
+    p.params[knob::kSpeedOver] =
+        devices::normalize(info.params[knob::kSpeedOver], float(choiceIndex(speedOverNames(), "1/2")));
+    playheads::Motion m = playheads::motionFrom(p.params.data(), nullptr, 0, 3840, TimeSig());
+    CHECK(m.speed == Bend::EaseOut);
+    CHECK(m.speedCycle == 2 * kBeat);
+    CHECK(m.speedAmount > 0);
+    CHECK(speedOverNames().front() == "1/8");
+    CHECK(speedOverTicks(choiceIndex(speedOverNames(), "8 bars"), TimeSig()) == 32 * kBeat);
 }
 
 // ---- MIDI export -------------------------------------------------------------------------------------------------

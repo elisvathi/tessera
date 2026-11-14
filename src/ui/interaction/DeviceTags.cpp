@@ -36,6 +36,7 @@ std::vector<TileSpec> buildTiles(DeviceType type) {
     switch (type) {
     case DeviceType::Playheads:
         return {{196, {{ph::kDirection, F::Direction}, {ph::kRate, F::Rate}}},
+                {200, {{ph::kSpeedCurve, F::Curve}, {ph::kSpeedOver, F::Length, "Over"}}},
                 {170, {{ph::kTimeOffset, F::Length}}},
                 {196, {{ph::kRepeatSize, F::Length}, {ph::kRepeatTimes, F::Number, "×"}, {ph::kCurve, F::Curve}}}};
     case DeviceType::Transpose:
@@ -370,6 +371,8 @@ double sixteenthsOf(DeviceType type, int param, float value) {
             return playheads::orderStepTicks(index, ts) / kSixteenth;
         if (param == ph::kFixedLength)
             return playheads::fixedLengthTicks(index, ts) / kSixteenth;
+        if (param == ph::kSpeedOver)
+            return playheads::speedOverTicks(index, ts) / kSixteenth;
         return 0;
     }
     return double(devices::rateTicks(index, ts)) / kSixteenth;
@@ -492,7 +495,8 @@ ValueText splitLabel(const std::string& label) {
 
 bool dimmed(DeviceType type, int param, const Values& v) {
     if (type == DeviceType::Playheads)
-        return (param == ph::kRepeatTimes || param == ph::kCurve) && v.i(ph::kRepeatSize) == 0;
+        return ((param == ph::kRepeatTimes || param == ph::kCurve) && v.i(ph::kRepeatSize) == 0) ||
+               (param == ph::kSpeedOver && v.i(ph::kSpeedCurve) == 0);
     if (type == DeviceType::Scale)
         return (param == dk::kRoot || param == dk::kScale) && v.i(dk::kKeyFrom) != int(chain::KeyFrom::Fixed);
     return false;
@@ -646,6 +650,27 @@ std::string caption(DeviceType type, int tile, const Values& v) {
             return s;
         }
         if (tile == 1) {
+            if (v.i(ph::kSpeedCurve) == 0)
+                return "Steady speed";
+            const std::string& over = choiceName(type, ph::kSpeedOver, v.i(ph::kSpeedOver));
+            std::string each = over == "1 bar" ? "each bar" : over.find("bar") != std::string::npos ? "every " + over
+                                                                                                     : "each " + over;
+            switch (playheads::curveShape(v.i(ph::kSpeedCurve)).first) {
+            case playheads::Bend::EaseIn:
+                return "Starts slow, catches up " + each;
+            case playheads::Bend::EaseOut:
+                return "Rushes ahead, then waits, " + each;
+            case playheads::Bend::EaseInOut:
+                return "Slow at the ends, fast between";
+            case playheads::Bend::Swing:
+                return "Lingers, then hurries, " + each;
+            case playheads::Bend::Stairs:
+                return "Surges four times " + each;
+            default:
+                return "Steady speed";
+            }
+        }
+        if (tile == 2) {
             const std::string& o = choiceName(type, ph::kTimeOffset, v.i(ph::kTimeOffset));
             if (o == "0" || o.empty())
                 return "Lands with the others";

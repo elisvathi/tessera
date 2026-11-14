@@ -2556,3 +2556,20 @@ equal value boxes were turned down. Where the page and the earlier design disagr
   under 0.5 ms of UI time a frame, a picture redraw under 0.3 ms. Measured in the hidden Rack with 11 devices: about
   0.05 ms layout and 0.1 ms drawing a frame, no redraws while playing or scrolling, about 0.16 ms per redraw.
 - Still open: clip-level devices (a separate task).
+
+## 155. A playhead's Speed curve bends its speed over a length, and it stays in step (14 Nov)
+
+- **What.** Two playhead settings, appended to the list: **Speed curve** (the same ready shapes as the repeat Curve,
+  Straight first) and **Over** (1/8, 1/4, 1/2, 1, 2, 4, 8 bars; default 1 bar). Over each Over length the playhead's
+  place follows the shape, then it is back where a steady playhead would be. Straight is off: one control turns it on,
+  so Over is only faint while the curve is Straight, with no Off in its list.
+- **Song time, not the playhead's.** Over counts song ticks from the clip start (and each Restart), so "over 1/2" is
+  half a bar of the song at any Rate, and the playhead meets the bar line at the end of every length. (The repeat
+  Curve counts the playhead's own time, because it spans one repeat group.) Motion bends elapsed time first
+  (`sped`), then the rate, then the repeat Curve (`bent`); `timeAt` and Follows-playhead note lengths undo both.
+- **On the card.** A fourth picture after Move, built like the Repeat picture: eight notes where this playhead meets
+  them over one length, dots where a steady one would, the dotted curve. Tags: the shape (curve panel) and "Over 1/2"
+  (length panel). Captions name the feel: "Starts slow, catches up each 1/2".
+- **Not for drawn paths.** A drawn path ignores it, like the other movement settings, so the time map keeps showing
+  where the playhead really is.
+- Old songs read the new settings at their defaults (Straight), so nothing changes for them; no schema bump.

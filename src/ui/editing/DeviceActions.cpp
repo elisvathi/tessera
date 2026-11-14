@@ -777,7 +777,9 @@ struct CurveMenuItem : rack::ui::MenuItem {
 void openCurveMenu(EditorContext& ctx, const ParamRef& ref, const devices::ParamInfo& info, int current) {
     EditorContext* c = &ctx;
     rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Curve: how the repeats are spaced"));
+    menu->addChild(rack::createMenuLabel(ref.param == playheads::knob::kSpeedCurve
+                                             ? "Speed curve: how the speed rises and falls"
+                                             : "Curve: how the repeats are spaced"));
     const std::vector<std::string>& names = playheads::curveNames();
     for (int i = 0; i < int(names.size()); i++) {
         if (i > 0 && playheads::curveShape(i).first != playheads::curveShape(i - 1).first)
@@ -804,7 +806,8 @@ void openChoiceMenu(EditorContext& ctx, const ParamRef& ref) {
         return;
     EditorContext* c = &ctx;
     int current = int(devices::display(*p, *value));
-    if (ref.kind == ParamRef::Kind::Playhead && ref.param == playheads::knob::kCurve) {
+    if (ref.kind == ParamRef::Kind::Playhead &&
+        (ref.param == playheads::knob::kCurve || ref.param == playheads::knob::kSpeedCurve)) {
         openCurveMenu(ctx, ref, *p, current);
         return;
     }

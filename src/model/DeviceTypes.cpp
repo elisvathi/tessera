@@ -213,7 +213,9 @@ TypeInfo buildPlayhead() {
              choice("Order step", orderStepNames(), choiceIndex(orderStepNames(), "1/8")),
              choice("On a jump", {"Retrigger", "Let ring"}, 0),
              toggle("On", true),
-             choice("Offset", playheads::offsetNames(), choiceIndex(playheads::offsetNames(), "0"))}};
+             choice("Offset", playheads::offsetNames(), choiceIndex(playheads::offsetNames(), "0")),
+             choice("Speed curve", curveNames(), 0),
+             choice("Speed over", speedOverNames(), choiceIndex(speedOverNames(), "1 bar"))}};
 }
 
 const std::vector<TypeInfo>& deviceTable() {
