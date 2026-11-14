@@ -14,6 +14,9 @@ is a card in the track's colour, with one to three small pictures that show what
 
 ![The device strip: an LFO, an Arpeggiator and an Echo on the Chords track](images/device-strip.png)
 
+Where the notes come in, at the chain's left, a small card names the clip on show and which devices it plays
+through: the track's or its own (see [A clip's own devices](#a-clips-own-devices)).
+
 When the strip is closed, a track with devices shows a thin bar naming its chain ("Arpeggiator → Echo"). Click it to
 open the strip. A track without devices keeps the strip closed.
 
@@ -155,6 +158,57 @@ You can also type a set: "1-4, 10", "any" or "all".
   modulator's colour. A white dot shows where the setting is right now.
 - The tag and its picture show the value as it plays now. Hover the tag to read each range in words, such as
   "Semitones: −5 st to +7 st".
+
+## A clip's own devices
+
+Devices belong to the track, and every clip on it plays through them. Any note clip can play through its own devices
+instead: a faster arpeggio for the chorus only, a break without the echo, or a Playheads setup that belongs to one
+clip. A clip with its own devices plays only through them; the track's are skipped for it. Nothing mixes.
+
+![Chorus chords plays through its own devices: the switch at the left says Own, the cards wear the clip's colour](images/clip-own-devices.png)
+
+**Switching.** The card where the notes come in reads "Notes from **Chorus chords**, play through **Track | Own**".
+Click **Own**: the first time, the clip gets a copy of the track's devices, with the track's modulators that move
+them, so it sounds the same until you change something. Its devices then wear the clip's colour, and the line under
+the switch says "Chorus chords skips the track's devices." Click **Track** to play through the track's devices again.
+The clip keeps its own, so you can switch back and forth while it plays to compare. Both are undoable.
+
+**The other chain.** The chain that isn't shown is folded into a dashed block at the end of the strip, listing its
+devices:
+
+- While the clip plays through its own, the block is the track's devices, "Skipped for Chorus chords". Click **Edit
+  them** to change the track's devices from here (the line under the switch says the clip doesn't play through them),
+  and click the block again to go back.
+- While it plays through the track's but keeps its own, the block is "Chorus chords's own, kept, off for now". Click
+  **Play through them** to switch.
+
+On the track's devices, the line under the switch names the clips that skip them ("Fill and Break skip these"), so a
+change that doesn't reach a clip is never a mystery.
+
+**The mark.** A clip with its own devices wears a small mark of three linked squares on its launcher slot and on its
+timeline tiles: filled while it plays through them, hollow while it keeps them but plays the track's. The notes header
+adds "own devices" to the clip's name.
+
+![The mark on the Chorus chords slot and its timeline tile](images/clip-mark.png)
+
+**From a menu.** Right-click a clip in a slot or on the timeline, or open the clip chip in the notes header:
+**Devices** › **Play through the track's devices**, **Play through its own devices**, **Delete its own devices**, and
+for one clip **Use its devices for the whole track** (the track's devices become a copy of the clip's, its modulators
+join the track's, and the clip switches to the track's). On the timeline this works on every selected clip at once.
+
+**What goes with it.**
+
+- A clip's own chain has its own modulators: the list on the left shows the clip's ("LFO 1 · clip") instead of the
+  track's. A curve drawn on one of its settings, such as its Playheads' Rate, is a curve of the clip.
+- Its settings are automated in the clip (**Automate in this clip**), so the automation travels with the clip too.
+- Copying, duplicating or moving the clip, to another slot, scene or track, takes its devices along (as copies). A
+  clip that plays through the track's devices takes those of the track it lands on.
+- Live keys always go through the track's devices, whichever clip plays.
+- Switching between clips cuts what the old clip's own chain still held (Echo repeats, held arpeggio notes), as a
+  launch does. On the timeline, each clip plays through its own choice; where stacked clips overlap, the first one
+  that covers a moment decides for all of them.
+- MIDI export with **Devices: Applied** plays each clip through the chain it uses.
+- Audio clips have no devices of their own: devices work on notes.
 
 ## Playheads
 

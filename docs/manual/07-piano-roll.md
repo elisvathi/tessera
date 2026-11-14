@@ -9,8 +9,9 @@ keyboard on the left. It shows the clip of the selected track: the clip you clic
 
 From left to right:
 
-- **The clip chip** ("Lead · Hook · 4 bars ▾"): the track, the clip and its length. Its menu renames the clip, turns
-  its loop on or off, sets its length, and switches tracks. See [Clips and scenes](05-clips-and-scenes.md#clip-length-and-loop).
+- **The clip chip** ("Lead · Hook · 4 bars ▾"): the track, the clip and its length, and "own devices" when the clip
+  plays through devices of its own. Its menu renames the clip, turns its loop on or off, chooses its **Devices**, sets
+  its length, and switches tracks. See [Clips and scenes](05-clips-and-scenes.md#clip-length-and-loop).
 - **Devices**: opens the note effects of this track (F3). In a short pane it is a tab beside **Notes** instead. See
   [Devices](13-devices.md).
 - How many notes are selected.

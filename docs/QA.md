@@ -795,3 +795,21 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Open a patch saved by 2.0.9 with a loop on an audio track: it sounds the same (loop at 50%). One whose Clips were
       off: Clips come back at 0 dB and the loop opens at 100%.
 - [ ] The mixer under 200 px tall: loop strips show a Mix knob with its percentage.
+
+## A clip's own devices, 14 Nov (docs/DECISIONS.md §157)
+
+- [ ] A track with an Arpeggiator and an Echo, two clips. Show one, click **Own** on the card at the strip's left: the
+      cards turn the clip's colour, sound the same, and the slot and timeline tiles show the filled mark. Change its
+      Arpeggiator: only that clip changes. Undo goes back step by step.
+- [ ] Click **Track** while it plays: the next notes go through the track's devices; the mark goes hollow. **Own**
+      again: its own settings are still there.
+- [ ] On the clip's own chain, click **Edit them** on the dashed block: the track's devices show, the line under the
+      switch says the clip doesn't play through them. Click the block again: back to the clip's.
+- [ ] Launch the two clips in turn: each plays through its own choice; no note hangs when switching or stopping.
+- [ ] Timeline: the clip with its own devices plays through them where its tiles are, the other through the track's.
+- [ ] Play a key on the armed track while the clip with its own devices plays: the key goes through the track's chain.
+- [ ] Draw a curve on the clip's own Arpeggiator Gate: the curve is listed as the clip's ("clip"). Copy the clip to
+      another track: its devices and curve come along and still play.
+- [ ] A clip's menu › **Devices** › **Use its devices for the whole track**: the track's devices become the clip's; the
+      clip switches to the track's. **Delete its own devices**: the mark goes.
+- [ ] Save, reload: everything as it was. MIDI export with Devices: Applied plays each clip through its chain.

@@ -110,6 +110,7 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Time signature | **4/4 ▾** in the transport bar |
 | The key | The key chip in the notes header |
 | Count-in | The ▾ next to the record button |
+| Devices for one clip only | **Own** on the card at the left of the device strip, or a clip's menu › **Devices** |
 | Ghost notes | **View ▾** in the notes header |
 | Flats instead of sharps | **View ▾ → Name notes with flats** |
 | Colour scheme | **Roll ▾ → Colour scheme** |

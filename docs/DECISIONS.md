@@ -2589,3 +2589,36 @@ equal value boxes were turned down. Where the page and the earlier design disagr
   speed).
 - **Schema 11.** Saved choices keep their length by name (`unifyLengths`, the same as schema 8), lanes and curves on
   them too. Playhead choices of songs before 8 are already found by name in today's lists, so only 8–10 remap them.
+
+## 157. A clip can play through its own devices instead of its track's (14 Nov)
+
+- **The rule (the user's).** A clip with its own chain plays only through it; the track's chain is skipped for that
+  clip. Nothing mixes. Devices stay track-level by default. Proposal page with stories and mockup:
+  https://claude.ai/artifact/1WHadjkGyB39zR8r8d9SfG
+- **Model.** `Clip` has `devices`, `modulators`, `hasOwnChain` and `playsOwnChain` (schema 12; older songs have none).
+  A chain belongs to a `ChainOwner` (a track or a clip); every lookup by device, playhead or modulator ID searches clip
+  chains too (`ownerOf`, `trackUsing`), and the device commands take an owner. `ModLevel::Clip` modulators reach only
+  their clip's chain; a track's modulators reach the own chains of its clips.
+- **Switching never deletes.** The first **Own** copies the track's devices (new IDs) with the track modulators that
+  move them, and points the clip's notes that move with a Motion device at the copy, so it sounds the same until
+  changed (the user: "starts with track always"). **Track** keeps the clip's chain for later. Deleting it, and making
+  it the track's (`useOwnChainForTrack`), are separate menu items.
+- **Engine.** The snapshot builds a chain per track and per clip that plays its own; each track has a second runtime
+  for the playing clip's own chain, from a fixed pool (2 per track, nothing allocated). A clip's notes go through its
+  own chain; live keys and notes from a listened track go through the track's (the user's pick). Switching clips cuts
+  what the old own chain held, as a launch already did. On the timeline, overlapping stacked clips share one own
+  chain at a time: the first that covers a moment decides (a second concurrent chain per track would be a larger
+  change). Measured: a clip's own chain costs what the same devices on the track cost.
+- **Automation.** A clip's own devices are automated from the clip's lanes and modulators ("Automate in the arranger"
+  is off for them), so everything travels with the clip. Copying a clip renews its chain's IDs and points its lanes,
+  routes and notes at the copies.
+- **Voices.** A track's voice blocks cover every chain it plays: the track's, then each clip's own (a clip's own
+  Playheads adds its channels).
+- **Export.** MIDI export splits a track into parts by chain (the track with the clips that use it, one per clip with
+  its own) and renders each through its chain.
+- **Editor.** A source card at the chain's start ("Notes from Fill, play through Track | Own") with a sentence under it;
+  the chain not shown folds into a dashed block at the end that opens it or switches to it; a clip's own devices
+  wear its colour on a wash of it. The mark (three linked squares, filled = plays its own, hollow = kept) on slots,
+  timeline tiles and the closed bar; "own devices" in the clip chip; clip menus get **Devices ▸**.
+- **Not done yet:** the "Now playing … through its own devices" line in the pane header and an inspector row from the
+  proposal; audio clips have no chains.

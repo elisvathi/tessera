@@ -82,6 +82,7 @@ Right-click a clip in a slot:
 | **Edit this scene's clips together** | Shows the other clips of the scene dimmed in the piano roll, so you can write parts that fit. See [The piano roll](07-piano-roll.md#editing-several-clips-together). |
 | **Rename** | A new name for the clip. Every place that uses the clip shows it. |
 | **Colour** | **Track colour** (the default: it follows the track) or one of 16 colours, for the slot and every copy of the clip on the timeline. Handy to tell takes apart, such as record, overdub and play clips. Notes keep the track's colour. |
+| **Devices** | Whether the clip plays through the track's devices or its own, and deleting its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A slot with its own devices shows their mark: three linked squares. |
 | **Place in arrangement at playhead** | Puts a linked copy on the timeline at the playhead. |
 | **Duplicate**, **Delete** | As above. |
 | **Export as MIDI…** | Saves this clip as a MIDI file. |
