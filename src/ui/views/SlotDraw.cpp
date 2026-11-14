@@ -205,7 +205,10 @@ void drawPlayheadPaths(NVGcontext* vg, const Song& song, const Track& track, con
     nvgIntersectScissor(vg, area.pos.x, area.pos.y, area.size.x, area.size.y);
     const std::vector<DrumLane>* lanes = track.type == TrackType::Drum ? &track.drumLanes : nullptr;
     std::pair<Tick, Tick> segment = playheadSpan(clip, lanes);
-    bool bands = area.size.y / float(count) >= m::kPlayheadBand;
+    // One band per playhead, however short the clip: thin bands while each keeps kPlayheadThinBand, and below that
+    // every playhead's blocks share the clip, laid over each other. Lines between bands only where there is room.
+    bool bands = area.size.y / float(count) >= m::kPlayheadThinBand;
+    bool roomy = area.size.y / float(count) >= m::kPlayheadBand;
     float bandHeight = bands ? area.size.y / float(count) : area.size.y;
     int samples = std::max(2, int(std::ceil((x1 - x0) / m::kPlayheadPathStep)));
     double de = (e1 - e0) / double(samples);
@@ -217,45 +220,17 @@ void drawPlayheadPaths(NVGcontext* vg, const Song& song, const Track& track, con
             motion.path = &p.path;
         if (motion.regionLength <= 0)
             continue;
-        float top = area.pos.y + (bands ? float(k) * bandHeight : 0) + 1, h = std::max(1.f, bandHeight - 2);
-        if (bands && k > 0) {
+        float gap = roomy ? 1 : 0;
+        float top = area.pos.y + (bands ? float(k) * bandHeight : 0) + gap, h = std::max(1.f, bandHeight - 2 * gap);
+        if (roomy && k > 0) {
             nvgBeginPath(vg);
             nvgRect(vg, area.pos.x, top - 1, area.size.x, 1);
             nvgFillColor(vg, line);
             nvgFill(vg);
         }
-        if (bands) {
-            NVGcolor bandColor = theme::playheadColor(p.color);
-            bandColor.a = alpha * (playheads::heardAsSet(device.playheads, p) ? 1.f : 0.3f);
-            drawPlayheadBand(vg, clip, motion, bandColor, Rect(area.pos.x, top, area.size.x, h), x0, x1, samples, e0,
-                             de);
-            continue;
-        }
-        // How far the playhead can move between two samples (0..1 of its segment): more is a jump, left undrawn.
-        double reach = 3 * std::abs(motion.rate) * de / motion.regionLength + 0.02;
-        nvgBeginPath(vg);
-        double last = NAN;
-        for (int i = 0; i <= samples; i++) {
-            double e = e0 + double(i) * de;
-            double pos = playheads::positionAt(motion, e);
-            if (!std::isfinite(pos)) {
-                last = NAN;
-                continue;
-            }
-            double f = std::clamp((pos - motion.regionStart) / motion.regionLength, 0.0, 1.0);
-            float x = x0 + (x1 - x0) * float(i) / float(samples), y = top + h - float(f) * h;
-            if (!std::isfinite(last) || std::abs(f - last) > reach)
-                nvgMoveTo(vg, x, y);
-            else
-                nvgLineTo(vg, x, y);
-            last = f;
-        }
-        NVGcolor color = theme::playheadColor(p.color);
-        color.a = alpha * (playheads::heardAsSet(device.playheads, p) ? 1.f : 0.3f);
-        nvgStrokeColor(vg, color);
-        nvgStrokeWidth(vg, m::kPlayheadPathWidth);
-        nvgLineJoin(vg, NVG_ROUND);
-        nvgStroke(vg);
+        NVGcolor bandColor = theme::playheadColor(p.color);
+        bandColor.a = alpha * (playheads::heardAsSet(device.playheads, p) ? 1.f : 0.3f) * (bands ? 1.f : 0.7f);
+        drawPlayheadBand(vg, clip, motion, bandColor, Rect(area.pos.x, top, area.size.x, h), x0, x1, samples, e0, de);
     }
     nvgRestore(vg);
 }

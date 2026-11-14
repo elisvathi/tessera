@@ -272,12 +272,12 @@ Right-click the segment to move it or resize it as the song plays (**Move it in 
 time with a curve…**), to automate or modulate its start or length, or to make it **Follow the clip's loop** again.
 
 **A clip played by playheads looks different.** Its written notes aren't what plays, so on the timeline and in its
-launcher slot it doesn't show them. It shows fine diagonal lines instead, and where each playhead goes: one band per
-playhead, with its path in its colour rising from its segment's start (bottom) to its end (top). A forward playhead
-draws a ramp each time round, a backward one falls, ping-pong zigzags, a faster one is steeper and repeats show as short
-steps back. An off playhead's path is faint. One small stripe per playhead sits at the right end (hollow when it is
-off), and the piano roll's title adds "read by 3 playheads". The paths follow the settings as you set them; curves
-on them play but aren't drawn there.
+launcher slot it doesn't show them. It shows one band per playhead instead, in the playhead's colour, with a block
+wherever that playhead is over a note: you see how many playheads there are and the rhythm each plays. A short clip
+(the timeline zoomed out, or a launcher slot) keeps the bands as thin as it must, and when even that doesn't fit, the
+playheads' blocks share the clip. An off playhead's band is faint. Launcher slots also get fine diagonal lines under
+the bands. One small stripe per playhead sits at the right end (hollow when it is off), and the piano roll's title adds
+"read by 3 playheads". The bands follow the settings as you set them; curves on them play but aren't drawn there.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a setting's tag and pick **Draw a
 curve** in its panel: a curve for it opens in the piano roll's lower pane. On this card that is Direction, Rate,

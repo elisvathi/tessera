@@ -150,13 +150,14 @@ constexpr float kMarkerRow = 14;
 constexpr float kLoopStrip = 12;
 constexpr float kPlayheadMarkWidth = 12; // a clip tile's stripe per playhead, when playheads play it
 constexpr float kPlayheadMarkHeight = 3;
-// A timeline clip its playheads play draws their paths instead of its notes: fine diagonal lines this far apart under
-// one band per playhead (at least kPlayheadBand tall, else the paths share the clip), each path sampled every
-// kPlayheadPathStep pixels and drawn kPlayheadPathWidth wide.
+// A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
+// note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
+// down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip. Launcher slots also get
+// fine diagonal lines this far apart under the bands.
 constexpr float kPlayheadHatch = 6;
 constexpr float kPlayheadBand = 7;
+constexpr float kPlayheadThinBand = 3;
 constexpr float kPlayheadPathStep = 2;
-constexpr float kPlayheadPathWidth = 1.4f;
 constexpr float kSegmentGrip = 6; // the solid grips at the ends of the selected playhead's segment
 constexpr float kLevelLineMinHeight = 40; // shorter rows have no room for the second line
 constexpr float kSegmentRow = 16; // the piano roll ruler's row of playhead segments, when the track has playheads

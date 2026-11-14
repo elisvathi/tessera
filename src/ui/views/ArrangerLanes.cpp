@@ -1251,7 +1251,7 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         // Read by playheads: where they go, not the notes as written. Each timeline clip starts its playheads from
         // where it begins the clip, slower when stretched (as the engine reads it).
         const Device* readers = clip->audio ? nullptr : activePlayheads(track, clip);
-        if (readers && body.size.y >= 6) {
+        if (readers && body.size.y >= 2) {
             double t0 = std::max(double(a.position), time().xToTick(std::max(0.f, body.pos.x)));
             double t1 = std::min(double(instanceEnd(a)), time().xToTick(std::min(box.size.x, body.getRight())));
             double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
