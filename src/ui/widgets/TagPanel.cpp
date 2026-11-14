@@ -39,7 +39,7 @@ float widthOf(const TagPanelSpec& s) {
     case Family::Length:
         return 540;
     case Family::Rate:
-        return 520;
+        return 620;
     case Family::Curve:
         return 420;
     case Family::Direction:

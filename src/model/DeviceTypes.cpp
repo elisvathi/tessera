@@ -1,6 +1,7 @@
 #include "DeviceTypes.hpp"
 
 #include "Chord.hpp"
+#include "Lengths.hpp"
 #include "Playheads.hpp"
 #include "Scale.hpp"
 
@@ -29,12 +30,11 @@ ParamInfo choice(const char* name, std::vector<std::string> choices, int def) {
 ParamInfo toggle(const char* name, bool def) { return {name, K::Toggle, 0, 1, def ? 1.f : 0.f, "", {}}; }
 ParamInfo mask(const char* name) { return {name, K::Mask, 0, 65535, 0, "", {}}; }
 
-const std::vector<std::string> kRateNames = {"8 bars", "4 bars", "2 bars", "1 bar", "1/2",   "1/4",
-                                             "1/8",    "1/16",   "1/32",   "1/64",  "1/2 T", "1/4 T",
-                                             "1/8 T",  "1/16 T", "1/4 D",  "1/8 D", "1/16 D"};
-constexpr int kRateQuarter = 5, kRateEighth = 6, kRateSixteenth = 7, kRateBar = 3;
-
-std::vector<std::string> rates() { return kRateNames; }
+/// Note devices' lengths and rates, and modulators' synced rates, from the one scale (Lengths.hpp), short to long.
+std::vector<std::string> rates() { return lengths::names(lengths::noteValues()); }
+std::vector<std::string> slowRates() { return lengths::names(lengths::slowValues()); }
+/// The place of a length in rates() or slowRates() (the same up to 8 bars).
+int rateAt(const char* name) { return playheads::choiceIndex(rates(), name); }
 
 std::vector<std::string> noteNames() { return {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}; }
 
@@ -67,7 +67,7 @@ std::vector<TypeInfo> buildDevices() {
     t[size_t(DeviceType::NoteLength)] = {
         "Note Length",
         {choice("Mode", {"Scale", "Fixed", "Legato"}, 0), exponential("Scale", 5, 400, 100, "%"),
-         choice("Length", rates(), kRateSixteenth), number("Overlap", 0, 100, 0, "% of 1/16")}};
+         choice("Length", rates(), rateAt("1/16")), number("Overlap", 0, 100, 0, "% of 1/16")}};
     t[size_t(DeviceType::Chord)] = {"Chord",
                                     {choice("Chord", chordNames(), 0), toggle("In key", true),
                                      integer("Inversion", -3, 3, 0), choice("Voicing", {"Close", "Open", "Drop 2"}, 0),
@@ -78,14 +78,14 @@ std::vector<TypeInfo> buildDevices() {
                 {"Up", "Down", "Up-down", "Up-down full", "Down-up", "Down-up full", "Converge", "Diverge", "As played",
                  "Random", "Walk", "Shuffled", "Pattern", "Chord"},
                 0),
-         choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
+         choice("Rate", rates(), rateAt("1/16")), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
          number("Swing", 0, 100, 0, "%"), choice("Velocity", {"As played", "Fixed", "Accent"}, 0),
          toggle("Hold", false)}};
-    t[size_t(DeviceType::NoteRepeat)] = {"Note Repeat",
-                                         {choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 100, 50, "%"),
-                                          number("Decay", 0, 100, 0, "%")}};
+    t[size_t(DeviceType::NoteRepeat)] = {
+        "Note Repeat",
+        {choice("Rate", rates(), rateAt("1/16")), number("Gate", 5, 100, 50, "%"), number("Decay", 0, 100, 0, "%")}};
     t[size_t(DeviceType::Echo)] = {"Echo",
-                                   {choice("Time", rates(), kRateEighth), integer("Repeats", 1, 16, 3),
+                                   {choice("Time", rates(), rateAt("1/8")), integer("Repeats", 1, 16, 3),
                                     number("Decay", 0, 100, 30, "%"), integer("Pitch", -12, 12, 0, "st"),
                                     number("Gate", 5, 100, 50, "%")}};
     t[size_t(DeviceType::Random)] = {
@@ -141,19 +141,20 @@ std::vector<TypeInfo> buildModulators() {
     t[size_t(ModulatorType::Lfo)] = {
         "LFO",
         {choice("Shape", {"Sine", "Triangle", "Saw up", "Saw down", "Square", "Sample & hold", "Smooth random"}, 0),
-         toggle("Sync", true), exponential("Rate", 0.01f, 50, 1, "Hz"), choice("Synced rate", rates(), kRateBar),
-         number("Phase", 0, 360, 0, "°"), toggle("Bipolar", true),
+         toggle("Sync", true), exponential("Rate", 0.01f, 50, 1, "Hz"),
+         choice("Synced rate", slowRates(), rateAt("1 bar")), number("Phase", 0, 360, 0, "°"), toggle("Bipolar", true),
          choice("Restart", {"Free", "Each bar", "Each note"}, 0)}};
     t[size_t(ModulatorType::Envelope)] = {
         "Envelope",
         {exponential("Attack", 1, 10000, 5, "ms"), exponential("Decay", 1, 10000, 200, "ms"),
          number("Sustain", 0, 100, 60, "%"), exponential("Release", 1, 10000, 300, "ms")}};
     t[size_t(ModulatorType::Steps)] = {"Steps",
-                                       {integer("Steps", 1, kMaxSteps, 8), choice("Rate", rates(), kRateSixteenth),
+                                       {integer("Steps", 1, kMaxSteps, 8), choice("Rate", slowRates(), rateAt("1/16")),
                                         number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false),
                                         toggle("Per pass", false)}};
     t[size_t(ModulatorType::Random)] = {
-        "Random", {choice("Rate", rates(), kRateQuarter), number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false)}};
+        "Random",
+        {choice("Rate", slowRates(), rateAt("1/4")), number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false)}};
     t[size_t(ModulatorType::Ramp)] = {"Ramp",
                                       {integer("Length", 1, 64, 8, "bars"), choice("Direction", {"Rise", "Fall"}, 0),
                                        choice("Then", {"Hold", "Loop"}, 0), number("Curve", -100, 100, 0, "%"),
@@ -380,17 +381,24 @@ Modulator makeModulator(ModulatorType type, ModulatorId id) {
     return m;
 }
 
-const std::vector<std::string>& rateNames() { return kRateNames; }
+const std::vector<std::string>& rateNames() {
+    static const std::vector<std::string> names = rates();
+    return names;
+}
 
 Tick rateTicks(int index, TimeSig ts) {
-    static const double kQuarters[] = {0,      0,       0,       0,       2,       1,   0.5,  0.25, 0.125,
-                                       0.0625, 4.0 / 3, 2.0 / 3, 1.0 / 3, 1.0 / 6, 1.5, 0.75, 0.375};
-    index = std::clamp(index, 0, int(kRateNames.size()) - 1);
-    if (index <= kRateBar) {
-        static const int kBars[] = {8, 4, 2, 1};
-        return ticksPerBar(ts) * kBars[index];
-    }
-    return std::max<Tick>(1, Tick(std::llround(kQuarters[index] * double(kPpq))));
+    return std::max<Tick>(1, Tick(std::llround(lengths::ticksAt(lengths::noteValues(), index, ts))));
+}
+
+const std::vector<std::string>& slowRateNames() {
+    static const std::vector<std::string> names = slowRates();
+    return names;
+}
+
+int rateIndex(const std::string& name) { return playheads::choiceIndex(slowRateNames(), name); }
+
+Tick slowRateTicks(int index, TimeSig ts) {
+    return std::max<Tick>(1, Tick(std::llround(lengths::ticksAt(lengths::slowValues(), index, ts))));
 }
 
 } // namespace tessera::devices

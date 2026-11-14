@@ -56,7 +56,7 @@ float lfo(uint64_t id, const float* knobs, State& state, const Clock& clock) {
     Shape shape = Shape(int(shown(kType, knobs, knob::kShape)));
     Restart restart = Restart(int(shown(kType, knobs, knob::kRestart)));
     double phase = cycles(shown(kType, knobs, knob::kSync) > 0.5f,
-                          double(devices::rateTicks(int(shown(kType, knobs, knob::kSyncedRate)), clock.timeSig)),
+                          double(devices::slowRateTicks(int(shown(kType, knobs, knob::kSyncedRate)), clock.timeSig)),
                           double(shown(kType, knobs, knob::kRate)), restart, state, clock);
     phase += double(shown(kType, knobs, knob::kPhase)) / 360;
     double cycle = std::floor(phase);
@@ -218,7 +218,7 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
     case ModulatorType::Steps: {
         // Drawn values, one per step of the chosen rate, on the song's grid.
         int count = std::max(1, int(shown(type, knobs, knob::kStepCount)));
-        double rate = double(devices::rateTicks(int(shown(type, knobs, knob::kStepRate)), clock.timeSig));
+        double rate = double(devices::slowRateTicks(int(shown(type, knobs, knob::kStepRate)), clock.timeSig));
         double position = clock.songTick / rate;
         if (perPass(type, knobs)) // one step per pass of a note, else per bar
             position =
@@ -234,7 +234,7 @@ float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state
         break;
     }
     case ModulatorType::Random: {
-        double rate = double(devices::rateTicks(int(shown(type, knobs, knob::kRandomRate)), clock.timeSig));
+        double rate = double(devices::slowRateTicks(int(shown(type, knobs, knob::kRandomRate)), clock.timeSig));
         double position = clock.songTick / rate;
         int64_t step = int64_t(std::floor(position));
         float a = (randomAt(clock.seed, id, step) + 1) / 2, b = (randomAt(clock.seed, id, step + 1) + 1) / 2;

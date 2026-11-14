@@ -1,6 +1,7 @@
 #include "Playheads.hpp"
 
 #include "DeviceTypes.hpp"
+#include "Lengths.hpp"
 
 #include <cmath>
 #include <limits>
@@ -241,27 +242,39 @@ double ticksAt(const Length (&list)[N], int index, TimeSig ts) {
 }
 
 // Each list runs from short to long, so a curve on the setting moves through it in order. Saved songs keep their
-// choices by name when a list grows (Serialize: songs before schema 8). T is a triplet (2/3 of the note), D dotted.
-const Length kRepeats[] = {{"Off", 0},          {"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/16 T", 1.0 / 24},
-                           {"1/16", 1.0 / 16},  {"1/8 T", 1.0 / 12}, {"1/16 D", 3.0 / 32}, {"1/8", 1.0 / 8},
-                           {"1/4 T", 1.0 / 6},  {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"1/2 T", 1.0 / 3},
-                           {"1/4 D", 3.0 / 8},  {"1/2", 1.0 / 2},    {"1/2 D", 3.0 / 4},   {"1 bar", 1, true},
-                           {"2 bars", 2, true}, {"4 bars", 4, true}};
+// choices by name when a list grows (Serialize: songs before schema 8 and 11). T is a triplet (2/3 of the note), D
+// dotted. The lengths come from the one scale (Lengths.hpp), except the drawn path's cycles (whole bars, odd ones too)
+// and Offset (every 1/16).
+/// Piece: Off, then 1/64 to 8 bars.
+const std::vector<lengths::Length>& repeats() {
+    static const std::vector<lengths::Length> list = [] {
+        std::vector<lengths::Length> l = lengths::range("1/64", "8 bars");
+        l.insert(l.begin(), {"Off", 0, false});
+        return l;
+    }();
+    return list;
+}
+/// Order step: 1/32 to 4 bars.
+const std::vector<lengths::Length>& orderSteps() {
+    static const std::vector<lengths::Length> list = lengths::range("1/32", "4 bars");
+    return list;
+}
+/// Fixed length: 1/64 to 4 bars (a note never lasts longer than 4 bars anyway).
+const std::vector<lengths::Length>& fixedLengths() {
+    static const std::vector<lengths::Length> list = lengths::range("1/64", "4 bars");
+    return list;
+}
+/// Speed over: 1/16 to 16 bars.
+const std::vector<lengths::Length>& speedOvers() {
+    static const std::vector<lengths::Length> list = lengths::range("1/16", "16 bars");
+    return list;
+}
 const Length kCycles[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},    {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},
                           {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}};
 const Length kPathCycles[] = {{"1/4", 1.0 / 4},      {"1/2", 1.0 / 2},      {"1 bar", 1, true},
                               {"2 bars", 2, true},   {"3 bars", 3, true},   {"4 bars", 4, true},
                               {"6 bars", 6, true},   {"8 bars", 8, true},   {"12 bars", 12, true},
                               {"16 bars", 16, true}, {"32 bars", 32, true}, {"64 bars", 64, true}};
-const Length kOrderSteps[] = {{"1/32", 1.0 / 32}, {"1/16 T", 1.0 / 24}, {"1/16", 1.0 / 16}, {"1/8 T", 1.0 / 12},
-                              {"1/8", 1.0 / 8},   {"1/4 T", 1.0 / 6},   {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},
-                              {"1 bar", 1, true}, {"2 bars", 2, true}};
-const Length kFixedLengths[] = {{"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/16 T", 1.0 / 24}, {"1/16", 1.0 / 16},
-                                {"1/8 T", 1.0 / 12}, {"1/16 D", 3.0 / 32}, {"1/8", 1.0 / 8},     {"1/4 T", 1.0 / 6},
-                                {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"1/4 D", 3.0 / 8},   {"1/2", 1.0 / 2},
-                                {"1 bar", 1, true},  {"2 bars", 2, true}};
-const Length kSpeedOvers[] = {{"1/8", 1.0 / 8},    {"1/4", 1.0 / 4},    {"1/2", 1.0 / 2},    {"1 bar", 1, true},
-                              {"2 bars", 2, true}, {"4 bars", 4, true}, {"8 bars", 8, true}};
 
 // How far Offset moves a playhead, one way: the common note values with their triplets and dotted ones, and every
 // 1/16 up to a bar, so a canon can sit at any step. offsetNames() mirrors it around "0".
@@ -276,12 +289,15 @@ struct Rate {
     const char* name;
     double value;
 };
-// Slow to fast: halves and doubles, thirds (triplet speeds), dotted (3/8x, 3/4x, 3/2x) and fives (4/5x, 5/4x).
-const Rate kRates[] = {
-    {"1/32x", 1.0 / 32}, {"1/16x", 1.0 / 16}, {"1/12x", 1.0 / 12}, {"1/8x", 1.0 / 8}, {"1/6x", 1.0 / 6}, {"1/4x", 0.25},
-    {"1/3x", 1.0 / 3},   {"3/8x", 3.0 / 8},   {"1/2x", 0.5},       {"2/3x", 2.0 / 3}, {"3/4x", 0.75},    {"4/5x", 0.8},
-    {"1x", 1},           {"5/4x", 1.25},      {"4/3x", 4.0 / 3},   {"3/2x", 1.5},     {"2x", 2},         {"3x", 3},
-    {"4x", 4},           {"6x", 6},           {"8x", 8},           {"12x", 12},       {"16x", 16},       {"32x", 32}};
+// Slow to fast, each speed with its opposite: halves and doubles, thirds (triplet speeds), dotted (3/8x and 8/3x, 3/4x
+// and 4/3x, 2/3x and 3/2x) and fives (4/5x, 5/4x).
+const Rate kRates[] = {{"1/32x", 1.0 / 32}, {"1/24x", 1.0 / 24}, {"1/16x", 1.0 / 16}, {"1/12x", 1.0 / 12},
+                       {"1/8x", 1.0 / 8},   {"1/6x", 1.0 / 6},   {"1/4x", 0.25},      {"1/3x", 1.0 / 3},
+                       {"3/8x", 3.0 / 8},   {"1/2x", 0.5},       {"2/3x", 2.0 / 3},   {"3/4x", 0.75},
+                       {"4/5x", 0.8},       {"1x", 1},           {"5/4x", 1.25},      {"4/3x", 4.0 / 3},
+                       {"3/2x", 1.5},       {"2x", 2},           {"8/3x", 8.0 / 3},   {"3x", 3},
+                       {"4x", 4},           {"6x", 6},           {"8x", 8},           {"12x", 12},
+                       {"16x", 16},         {"24x", 24},         {"32x", 32}};
 
 } // namespace
 
@@ -303,10 +319,10 @@ int choiceIndex(const std::vector<std::string>& names, const std::string& name, 
 double playheadRate(int index) { return kRates[size_t(std::clamp(index, 0, int(std::size(kRates)) - 1))].value; }
 
 const std::vector<std::string>& repeatNames() {
-    static const std::vector<std::string> names = namesOf(kRepeats);
+    static const std::vector<std::string> names = lengths::names(repeats());
     return names;
 }
-double repeatTicks(int index, TimeSig ts) { return ticksAt(kRepeats, index, ts); }
+double repeatTicks(int index, TimeSig ts) { return lengths::ticksAt(repeats(), index, ts); }
 
 const std::vector<std::string>& cycleNames() {
     static const std::vector<std::string> names = namesOf(kCycles);
@@ -315,22 +331,22 @@ const std::vector<std::string>& cycleNames() {
 double cycleTicks(int index, TimeSig ts) { return ticksAt(kCycles, index, ts); }
 
 const std::vector<std::string>& fixedLengthNames() {
-    static const std::vector<std::string> names = namesOf(kFixedLengths);
+    static const std::vector<std::string> names = lengths::names(fixedLengths());
     return names;
 }
-double fixedLengthTicks(int index, TimeSig ts) { return ticksAt(kFixedLengths, index, ts); }
+double fixedLengthTicks(int index, TimeSig ts) { return lengths::ticksAt(fixedLengths(), index, ts); }
 
 const std::vector<std::string>& orderStepNames() {
-    static const std::vector<std::string> names = namesOf(kOrderSteps);
+    static const std::vector<std::string> names = lengths::names(orderSteps());
     return names;
 }
-double orderStepTicks(int index, TimeSig ts) { return ticksAt(kOrderSteps, index, ts); }
+double orderStepTicks(int index, TimeSig ts) { return lengths::ticksAt(orderSteps(), index, ts); }
 
 const std::vector<std::string>& speedOverNames() {
-    static const std::vector<std::string> names = namesOf(kSpeedOvers);
+    static const std::vector<std::string> names = lengths::names(speedOvers());
     return names;
 }
-double speedOverTicks(int index, TimeSig ts) { return ticksAt(kSpeedOvers, index, ts); }
+double speedOverTicks(int index, TimeSig ts) { return lengths::ticksAt(speedOvers(), index, ts); }
 
 const std::vector<std::string>& offsetNames() {
     static const std::vector<std::string> names = [] {

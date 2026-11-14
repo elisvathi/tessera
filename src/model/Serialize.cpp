@@ -1266,6 +1266,7 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     // gave the playheads' choices more rates and lengths (songFromJson keeps each saved choice by name; a song
     // without playheads has nothing to keep). Version 9 gave the Arpeggiator more patterns (kept by name the same way).
     // Version 10 made the Note Filter's Channel a set of channels (songFromJson turns the one channel into a set).
+    // Version 11 gave every length and synced rate the one scale, short to long (kept by name, like version 8).
     if (fromVersion == 6) {
         // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
         // notes for the written length by default, so at half speed a note stopped halfway while the playhead was
@@ -1461,6 +1462,70 @@ void growArpPatterns(Song& s) {
                 for (Device& b : p.branch)
                     add(b);
         }
+    growChoices(s, settings);
+}
+
+/// Before schema 11 each list of lengths had its own stretch and order: note devices' and modulators' rates ran 8 bars
+/// down to 1/64, then the triplets and dotted values; the playheads' lists missed some. Every one now takes its stretch
+/// of the one scale, short to long (Lengths.hpp), and each saved choice keeps its length by name.
+void unifyLengths(Song& s, bool playheadsToo) {
+    static const std::vector<std::string> oldRates = {"8 bars", "4 bars", "2 bars", "1 bar", "1/2",   "1/4",
+                                                      "1/8",    "1/16",   "1/32",   "1/64",  "1/2 T", "1/4 T",
+                                                      "1/8 T",  "1/16 T", "1/4 D",  "1/8 D", "1/16 D"};
+    namespace ck = chain::knob;
+    namespace mk = mods::knob;
+    namespace pk = playheads::knob;
+    auto rate = [](int knob) { return GrownChoice{knob, oldRates, devices::rateNames()}; };
+    auto slowRate = [](int knob) { return GrownChoice{knob, oldRates, devices::slowRateNames()}; };
+    static const std::vector<GrownChoice> noteLength = {rate(ck::kLength)}, arp = {rate(ck::kRate)},
+                                          noteRepeat = {rate(ck::kRepeatRate)}, echo = {rate(ck::kTime)},
+                                          lfo = {slowRate(mk::kSyncedRate)}, steps = {slowRate(mk::kStepRate)},
+                                          random = {slowRate(mk::kRandomRate)};
+    static const std::vector<GrownChoice> playhead = {
+        {pk::kRate,
+         {"1/32x", "1/16x", "1/12x", "1/8x", "1/6x", "1/4x", "1/3x", "3/8x", "1/2x", "2/3x", "3/4x", "4/5x",
+          "1x",    "5/4x",  "4/3x",  "3/2x", "2x",   "3x",   "4x",   "6x",   "8x",   "12x",  "16x",  "32x"},
+         playheads::rateNames()},
+        {pk::kRepeatSize,
+         {"Off", "1/64", "1/32", "1/16 T", "1/16", "1/8 T", "1/16 D", "1/8", "1/4 T", "1/8 D", "1/4", "1/2 T", "1/4 D",
+          "1/2", "1/2 D", "1 bar", "2 bars", "4 bars"},
+         playheads::repeatNames()},
+        {pk::kOrderStep,
+         {"1/32", "1/16 T", "1/16", "1/8 T", "1/8", "1/4 T", "1/4", "1/2", "1 bar", "2 bars"},
+         playheads::orderStepNames()},
+        {pk::kFixedLength,
+         {"1/64", "1/32", "1/16 T", "1/16", "1/8 T", "1/16 D", "1/8", "1/4 T", "1/8 D", "1/4", "1/4 D", "1/2", "1 bar",
+          "2 bars"},
+         playheads::fixedLengthNames()},
+        {pk::kSpeedOver, {"1/8", "1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars"}, playheads::speedOverNames()}};
+    std::vector<GrownSettings> settings;
+    auto device = [&](Device& d) {
+        const std::vector<GrownChoice>* grown = d.type == DeviceType::NoteLength    ? &noteLength
+                                                : d.type == DeviceType::Arpeggiator ? &arp
+                                                : d.type == DeviceType::NoteRepeat  ? &noteRepeat
+                                                : d.type == DeviceType::Echo        ? &echo
+                                                                                    : nullptr;
+        if (grown)
+            settings.push_back({ParamRef::Kind::Device, d.id.value, &d.params, grown});
+    };
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices) {
+            device(d);
+            for (Playhead& p : d.playheads) {
+                if (playheadsToo)
+                    settings.push_back({ParamRef::Kind::Playhead, p.id.value, &p.params, &playhead});
+                for (Device& b : p.branch)
+                    device(b);
+            }
+        }
+    forEachModulator(s, [&](Modulator& m, const ModulatorPlace&) {
+        const std::vector<GrownChoice>* grown = m.type == ModulatorType::Lfo      ? &lfo
+                                                : m.type == ModulatorType::Steps  ? &steps
+                                                : m.type == ModulatorType::Random ? &random
+                                                                                  : nullptr;
+        if (grown)
+            settings.push_back({ParamRef::Kind::Modulator, m.id.value, &m.params, grown});
+    });
     growChoices(s, settings);
 }
 
@@ -1737,6 +1802,9 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
         growArpPatterns(s);
     if (schemaVersion < 10)
         channelsToSets(s);
+    // Songs before 8 already found their playhead choices by name in today's lists.
+    if (schemaVersion < 11)
+        unifyLengths(s, schemaVersion >= 8);
     normalize(s);
     return s;
 }

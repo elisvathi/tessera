@@ -120,7 +120,7 @@ Right-click a lane's name for its menu.
 | **Note** | The MIDI note this lane plays. A lane plays the clip's notes of this pitch. |
 | **Output** | Which Drum Out output (1 to 16) the lane uses. Outputs 1 to 8 have their own jacks; 9 to 16 are on the poly jacks only. Lanes on the same output share it. |
 | **Steps** | The lane's own loop length, in steps. "Clip" follows the clip's loop. See [Polymeter](#polymeter). |
-| **Rate** | How long a step is for this lane: 1/4 to 1/32, triplets too. |
+| **Rate** | How long a step is for this lane: 1/64 to 1/2, triplets and dotted too. |
 | **Choke group** | 1 to 8, or none. When a lane in a group plays, it cuts the other lanes of the same group. In the kits, closed and open hats share group 1, so a closed hat cuts a ringing open hat. |
 | **Output length** | **Trigger** (1 ms, the default), a gate of a fixed length in milliseconds, or **Note length**: the gate is high for exactly as long as the hit's note, so notes of different lengths sound different. A letter before the output number in the lane header shows the mode: **T** trigger, **G** gate, **N** note length. |
 

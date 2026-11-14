@@ -136,11 +136,13 @@ TEST_CASE("knob values read as the user expects") {
     CHECK(devices::display(*lfoRate, 0) == doctest::Approx(0.01));
     CHECK(devices::display(*lfoRate, 1) == doctest::Approx(50));
 
-    CHECK(devices::rateTicks(3, TimeSig{4, 4}) == 4 * kPpq);
-    CHECK(devices::rateTicks(3, TimeSig{3, 4}) == 3 * kPpq);
-    CHECK(devices::rateTicks(7, TimeSig{}) == kPpq / 4);
-    CHECK(devices::rateTicks(12, TimeSig{}) == kPpq / 3);
-    CHECK(devices::rateTicks(15, TimeSig{}) == kPpq * 3 / 4);
+    CHECK(devices::rateTicks(devices::rateIndex("1 bar"), TimeSig{4, 4}) == 4 * kPpq);
+    CHECK(devices::rateTicks(devices::rateIndex("1 bar"), TimeSig{3, 4}) == 3 * kPpq);
+    CHECK(devices::rateTicks(devices::rateIndex("1/16"), TimeSig{}) == kPpq / 4);
+    CHECK(devices::rateTicks(devices::rateIndex("1/8 T"), TimeSig{}) == kPpq / 3);
+    CHECK(devices::rateTicks(devices::rateIndex("1/8 D"), TimeSig{}) == kPpq * 3 / 4);
+    CHECK(devices::rateTicks(devices::rateIndex("1/32 T"), TimeSig{}) == kPpq / 12);
+    CHECK(devices::slowRateTicks(devices::rateIndex("32 bars"), TimeSig{}) == 32 * 4 * kPpq);
     CHECK(devices::paramInfo(DeviceType::Transpose, 99) == nullptr);
 }
 

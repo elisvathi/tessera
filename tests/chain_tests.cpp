@@ -221,7 +221,7 @@ TEST_CASE("Note Length scales, fixes or joins note lengths") {
     CHECK(rig.out.notes[0].end == doctest::Approx(240));
 
     rig.set(0, chain::knob::kMode, float(chain::LengthMode::Fixed));
-    rig.set(0, chain::knob::kLength, 5); // 1/4
+    rig.set(0, chain::knob::kLength, float(devices::rateIndex("1/4")));
     rig.push(rig.note(10, 100, 60));
     rig.run(11);
     CHECK(rig.out.notes.back().end == doctest::Approx(10 + kPpq));
@@ -333,7 +333,9 @@ TEST_CASE("a full chain drops new notes but never loses an end") {
 
 TEST_CASE("a synced LFO follows the song position") {
     using namespace mods;
-    std::vector<float> k = knobsOf(ModulatorType::Lfo, {{knob::kSync, 1}, {knob::kSyncedRate, 3}, {knob::kBipolar, 1}});
+    std::vector<float> k =
+        knobsOf(ModulatorType::Lfo,
+                {{knob::kSync, 1}, {knob::kSyncedRate, float(devices::rateIndex("1 bar"))}, {knob::kBipolar, 1}});
     State state;
     Clock clock;
     auto at = [&](double tick) {
@@ -352,13 +354,14 @@ TEST_CASE("a synced LFO follows the song position") {
     CHECK(at(3 * bar / 4) == doctest::Approx(0));
     CHECK(at(0) == doctest::Approx(0.5));
 
-    k = knobsOf(ModulatorType::Lfo, {{knob::kSync, 1}, {knob::kSyncedRate, 3}, {knob::kPhase, 90}});
+    k = knobsOf(ModulatorType::Lfo,
+                {{knob::kSync, 1}, {knob::kSyncedRate, float(devices::rateIndex("1 bar"))}, {knob::kPhase, 90}});
     CHECK(at(0) == doctest::Approx(1));
 
     SUBCASE("restart each bar") {
         k = knobsOf(ModulatorType::Lfo, {{knob::kShape, float(Shape::SawUp)},
                                          {knob::kSync, 1},
-                                         {knob::kSyncedRate, 2}, // 2 bars
+                                         {knob::kSyncedRate, float(devices::rateIndex("2 bars"))},
                                          {knob::kRestart, float(Restart::EachBar)}});
         CHECK(at(bar * 1.25) == doctest::Approx(at(bar * 0.25)));
         CHECK(at(bar * 0.25) == doctest::Approx(-0.75));
@@ -366,7 +369,7 @@ TEST_CASE("a synced LFO follows the song position") {
     SUBCASE("restart each note") {
         k = knobsOf(ModulatorType::Lfo, {{knob::kShape, float(Shape::SawUp)},
                                          {knob::kSync, 1},
-                                         {knob::kSyncedRate, 3},
+                                         {knob::kSyncedRate, float(devices::rateIndex("1 bar"))},
                                          {knob::kRestart, float(Restart::EachNote)}});
         trigger(state, 100, 50, NoteValues(), clock);
         CHECK(at(100) == doctest::Approx(-1));
@@ -387,8 +390,9 @@ TEST_CASE("a free LFO runs in hertz, and its random shapes repeat by seed") {
     CHECK(outs[3] == doctest::Approx(-1));
     CHECK(outs[4] == doctest::Approx(0).scale(1));
 
-    std::vector<float> sh = knobsOf(
-        ModulatorType::Lfo, {{knob::kShape, float(Shape::SampleHold)}, {knob::kSync, 1}, {knob::kSyncedRate, 7}});
+    std::vector<float> sh = knobsOf(ModulatorType::Lfo, {{knob::kShape, float(Shape::SampleHold)},
+                                                         {knob::kSync, 1},
+                                                         {knob::kSyncedRate, float(devices::rateIndex("1/16"))}});
     auto cycles = [&](uint32_t seed) {
         State st;
         Clock c;
@@ -541,7 +545,8 @@ TEST_CASE("engine: notes go through the chain on the same samples") {
 TEST_CASE("engine: Note Length ends notes on exact samples") {
     Song song = songWith({{0, 480, 60}});
     addDevice(song, DeviceType::NoteLength,
-              {{chain::knob::kMode, float(chain::LengthMode::Fixed)}, {chain::knob::kLength, 7}}); // 1/16
+              {{chain::knob::kMode, float(chain::LengthMode::Fixed)},
+               {chain::knob::kLength, float(devices::rateIndex("1/16"))}});
     Harness h(song);
     h.runTo(240 * kSamplesPerTick - 1);
     CHECK(h.gate());
@@ -593,7 +598,8 @@ TEST_CASE("engine: an LFO on a knob moves the notes") {
     Song song = songWith({{0, 100, 60}, {960, 100, 60}, {1920, 100, 60}, {2880, 100, 60}}, 4 * kPpq, 1);
     Device& t = addDevice(song, DeviceType::Transpose);
     Modulator lfo = devices::makeModulator(ModulatorType::Lfo, song.newId<ModulatorId>());
-    lfo.params = knobsOf(ModulatorType::Lfo, {{mods::knob::kSync, 1}, {mods::knob::kSyncedRate, 3}});
+    lfo.params = knobsOf(ModulatorType::Lfo,
+                         {{mods::knob::kSync, 1}, {mods::knob::kSyncedRate, float(devices::rateIndex("1 bar"))}});
     Modulation route;
     route.target = {ParamRef::Kind::Device, t.id.value, chain::knob::kSemitones};
     route.amount = 0.25f; // 12 of the knob's 48 semitones
@@ -673,7 +679,8 @@ TEST_CASE("engine: live notes go through the chain, also while stopped") {
 
     SUBCASE("a fixed length ends a held key on time, transport stopped") {
         addDevice(h.song, DeviceType::NoteLength,
-                  {{chain::knob::kMode, float(chain::LengthMode::Fixed)}, {chain::knob::kLength, 7}});
+                  {{chain::knob::kMode, float(chain::LengthMode::Fixed)},
+                   {chain::knob::kLength, float(devices::rateIndex("1/16"))}});
         h.republish();
         h.runTo(h.sample + 100); // past the last note's retrigger gap
         h.engine.liveNote({LiveSource::Midi, 0, 60, 0.9f, true});
@@ -781,7 +788,8 @@ TEST_CASE("Chord turns each note into a chord") {
 
 TEST_CASE("the arpeggiator steps through held notes on the grid") {
     Rig rig;
-    rig.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kGate, 50}}); // 1/16 = 240 ticks
+    rig.add(DeviceType::Arpeggiator,
+            {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kGate, 50}}); // 1/16 = 240 ticks
     for (int p : {67, 60, 64})
         rig.push(rig.note(0, 960, p));
     rig.runTicks(-1, 1200);
@@ -795,7 +803,7 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
     SUBCASE("patterns and octaves") {
         auto run = [](float pattern, int octaves) {
             Rig r;
-            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7},
+            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
                                             {chain::knob::kPattern, pattern},
                                             {chain::knob::kArpOctaves, float(octaves)}});
             for (int p : {60, 64, 67})
@@ -847,7 +855,8 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
     SUBCASE("a new chord starts the pattern again; one voice moving inside it doesn't") {
         auto run = [](bool hold, const std::vector<std::tuple<double, double, int>>& notes) {
             Rig r;
-            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kHold, hold ? 1.f : 0.f}});
+            r.add(DeviceType::Arpeggiator,
+                  {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kHold, hold ? 1.f : 0.f}});
             for (auto [start, length, pitch] : notes)
                 r.push(r.note(start, length, pitch));
             r.runTicks(-1, 1900);
@@ -863,7 +872,8 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
     }
     SUBCASE("off-grid notes wait for the next step; hold keeps playing after release") {
         Rig r;
-        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kHold, 1}});
+        r.add(DeviceType::Arpeggiator,
+              {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kHold, 1}});
         r.push(r.note(100, 50, 60));
         r.runTicks(99, 1000);
         REQUIRE(!r.out.notes.empty());
@@ -874,9 +884,10 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
 
 TEST_CASE("Echo repeats notes, fading") {
     Rig rig;
-    rig.add(
-        DeviceType::Echo,
-        {{chain::knob::kTime, 6}, {chain::knob::kRepeats, 3}, {chain::knob::kDecay, 50}, {chain::knob::kEchoPitch, 2}});
+    rig.add(DeviceType::Echo, {{chain::knob::kTime, float(devices::rateIndex("1/8"))},
+                               {chain::knob::kRepeats, 3},
+                               {chain::knob::kDecay, 50},
+                               {chain::knob::kEchoPitch, 2}});
     rig.push(rig.note(0, 100, 60, 0.8f));
     rig.runTicks(-1, 2000);
     REQUIRE(rig.out.notes.size() == 4);
@@ -1003,7 +1014,8 @@ TEST_CASE("Steps, Random, Ramp, Envelope and Note modulators") {
     State state;
     double bar = double(ticksPerBar(TimeSig{}));
     SUBCASE("steps on the grid") {
-        std::vector<float> k = knobsOf(ModulatorType::Steps, {{knob::kStepCount, 4}, {knob::kStepRate, 5}}); // 1/4
+        std::vector<float> k =
+            knobsOf(ModulatorType::Steps, {{knob::kStepCount, 4}, {knob::kStepRate, float(devices::rateIndex("1/4"))}});
         float steps[] = {0.1f, 0.9f, 0.3f, 0.7f};
         std::vector<float> got;
         for (int i = 0; i < 6; i++) {
@@ -1013,7 +1025,7 @@ TEST_CASE("Steps, Random, Ramp, Envelope and Note modulators") {
         CHECK(got == std::vector<float>{0.1f, 0.9f, 0.3f, 0.7f, 0.1f, 0.9f});
     }
     SUBCASE("random by seed") {
-        std::vector<float> k = knobsOf(ModulatorType::Random, {{knob::kRandomRate, 5}});
+        std::vector<float> k = knobsOf(ModulatorType::Random, {{knob::kRandomRate, float(devices::rateIndex("1/4"))}});
         clock.songTick = 10;
         float a = evaluate(ModulatorType::Random, 1, k.data(), state, clock);
         CHECK(a == evaluate(ModulatorType::Random, 1, k.data(), state, clock));
@@ -1070,7 +1082,8 @@ TEST_CASE("engine: a Chord device sounds the whole chord") {
 
 TEST_CASE("engine: an arpeggiator plays steps on the song's grid") {
     Song song = songWith({{0, 960, 60}, {0, 960, 64}, {0, 960, 67}}, 4 * kPpq, 2);
-    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kGate, 50}});
+    addDevice(song, DeviceType::Arpeggiator,
+              {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kGate, 50}});
     Harness h(song);
     std::vector<std::pair<int64_t, int>> starts;
     std::array<bool, 2> was{};
@@ -1092,7 +1105,8 @@ TEST_CASE("engine: an arpeggiator's held notes let go of their curves when the s
     Song song = songWith({{0, 960, 60}, {0, 960, 64}}, 4 * kPpq, 2);
     for (Note& n : song.clips.begin()->second.notes)
         n.pressureExpr = {{0, 0.2f, 0}, {1, 0.9f, 0}};
-    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kGate, 50}});
+    addDevice(song, DeviceType::Arpeggiator,
+              {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kGate, 50}});
     Harness h(song);
     h.runTo(100 * kSamplesPerTick);
     // An edit while the arpeggiator holds the notes; the old snapshot is freed, as the module does.

@@ -62,9 +62,15 @@ Modulator makeModulator(ModulatorType type, ModulatorId id);
 /// The `index`-th playhead of a device (from 0): named "Playhead 1"…, on channel 1…, every setting at its default.
 Playhead makePlayhead(PlayheadId id, int index);
 
-/// Rates and lengths offered by synced knobs, from 8 bars down to 1/64, with triplets and dotted values.
+/// The lengths and rates note devices offer (Note Length, Arpeggiator, Note Repeat, Echo): 1/64 to 8 bars with the
+/// triplets and dotted values, short to long (Lengths.hpp).
 const std::vector<std::string>& rateNames();
 /// The length of rate choice `index` in ticks (bars follow the time signature).
 Tick rateTicks(int index, TimeSig ts);
+/// The synced rates modulators offer (LFO, Steps, Random): the same, on to 32 bars.
+const std::vector<std::string>& slowRateNames();
+Tick slowRateTicks(int index, TimeSig ts);
+/// The choice of length `name` ("1/16", "1/8 T", "2 bars") in either list: they agree up to 8 bars.
+int rateIndex(const std::string& name);
 
 } // namespace tessera::devices

@@ -568,7 +568,7 @@ TEST_CASE("Speed curve and Speed over set the speed curve; Straight leaves the p
     CHECK(m.speed == Bend::EaseOut);
     CHECK(m.speedCycle == 2 * kBeat);
     CHECK(m.speedAmount > 0);
-    CHECK(speedOverNames().front() == "1/8");
+    CHECK(speedOverNames().front() == "1/16");
     CHECK(speedOverTicks(choiceIndex(speedOverNames(), "8 bars"), TimeSig()) == 32 * kBeat);
 }
 
@@ -576,6 +576,62 @@ TEST_CASE("Speed curve and Speed over set the speed curve; Straight leaves the p
 
 #include "../src/model/Modulators.hpp"
 #include "../src/model/Render.hpp"
+
+TEST_CASE("a song saved before the one length scale keeps every length, rate, lane and playhead choice") {
+    // Schema 10 saved note devices' and modulators' rates as 0..1 of 17 choices, 8 bars first (1/16 was 7, 1/8 T 12,
+    // 2 bars 2), a playhead's Rate of 24 (3x was 17), Piece of 18 (1/2 D was 14), Order step of 10 (1 bar was 8) and
+    // Fixed length of 14 (1/4 D was 10).
+    Song song = songWithTrack();
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Playheads, -1, idsOf(song)));
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Echo, -1, idsOf(song)));
+    applyUndoable(song, addDevice(song, song.tracks[0].id, DeviceType::Arpeggiator, -1, idsOf(song)));
+    Device& echo = song.tracks[0].devices[1];
+    Device& arp = song.tracks[0].devices[2];
+    REQUIRE(echo.type == DeviceType::Echo);
+    REQUIRE(arp.type == DeviceType::Arpeggiator);
+    echo.params[chain::knob::kTime] = 12.f / 16;
+    arp.params[chain::knob::kRate] = 7.f / 16;
+    Playhead& p = firstDevice(song).playheads[0];
+    p.params[knob::kRate] = 17.f / 23;
+    p.params[knob::kRepeatSize] = 14.f / 17;
+    p.params[knob::kOrderStep] = 8.f / 9;
+    p.params[knob::kFixedLength] = 10.f / 13;
+    Modulator lfo = devices::makeModulator(ModulatorType::Lfo, ModulatorId(song.nextId++));
+    lfo.params[mods::knob::kSyncedRate] = 2.f / 16;
+    song.tracks[0].modulators.push_back(lfo);
+    // A lane on Echo's Time: 1/4, then 1/64.
+    ParamRef time{ParamRef::Kind::Device, echo.id.value, uint16_t(chain::knob::kTime)};
+    AutomationEnvelope lane = makeKnobLane(AutomationId(song.nextId++), time, "Time", 5.f / 16, true, 0);
+    lane.points = {{0, 5.f / 16, CurveType::Hold, 0}, {960, 9.f / 16, CurveType::Hold, 0}};
+    song.tracks[0].automation.push_back(lane);
+
+    json::Ref j(songToJson(song));
+    Song loaded = songFromJson(j.get(), 10);
+    auto shownOn = [](const devices::ParamInfo& info, float v) { return devices::format(info, v); };
+    const devices::TypeInfo& ph = devices::playheadInfo();
+    const Playhead& q = loaded.tracks[0].devices[0].playheads[0];
+    CHECK(shownOn(ph.params[knob::kRate], q.params[knob::kRate]) == "3x");
+    CHECK(shownOn(ph.params[knob::kRepeatSize], q.params[knob::kRepeatSize]) == "1/2 D");
+    CHECK(shownOn(ph.params[knob::kOrderStep], q.params[knob::kOrderStep]) == "1 bar");
+    CHECK(shownOn(ph.params[knob::kFixedLength], q.params[knob::kFixedLength]) == "1/4 D");
+    const devices::ParamInfo& timeInfo = devices::deviceInfo(DeviceType::Echo).params[chain::knob::kTime];
+    CHECK(shownOn(timeInfo, loaded.tracks[0].devices[1].params[chain::knob::kTime]) == "1/8 T");
+    CHECK(shownOn(devices::deviceInfo(DeviceType::Arpeggiator).params[chain::knob::kRate],
+                  loaded.tracks[0].devices[2].params[chain::knob::kRate]) == "1/16");
+    CHECK(shownOn(devices::modulatorInfo(ModulatorType::Lfo).params[mods::knob::kSyncedRate],
+                  loaded.tracks[0].modulators.back().params[mods::knob::kSyncedRate]) == "2 bars");
+    const AutomationEnvelope& l = loaded.tracks[0].automation.back();
+    CHECK(shownOn(timeInfo, l.points[0].value) == "1/4");
+    CHECK(shownOn(timeInfo, l.points[1].value) == "1/64");
+    // Every list now runs short to long.
+    for (const auto* names : {&devices::rateNames(), &devices::slowRateNames(), &orderStepNames(),
+                              &fixedLengthNames(), &speedOverNames()})
+        for (size_t k = 1; k < names->size(); k++)
+            CHECK(devices::slowRateTicks(devices::rateIndex((*names)[k]), TimeSig()) >
+                  devices::slowRateTicks(devices::rateIndex((*names)[k - 1]), TimeSig()));
+    json::Ref again(songToJson(loaded));
+    CHECK(songFromJson(again.get(), Song::kSchemaVersion) == loaded);
+}
 
 TEST_CASE("MIDI export with devices applied plays what the playheads read") {
     Song song = songWithTrack();

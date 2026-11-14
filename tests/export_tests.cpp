@@ -573,7 +573,8 @@ TEST_CASE("export: an arpeggiator's steps become notes, and echoes stop at the e
     Clip& c =
         addClip(song, kBar, {makeNote(song, 0, kBar, 60), makeNote(song, 0, kBar, 64), makeNote(song, 0, kBar, 67)});
     place(song, lead, c.id, 0, kBar);
-    addDeviceOn(song, lead, DeviceType::Arpeggiator, {{chain::knob::kRate, 6}, {chain::knob::kGate, 50}}); // 1/8
+    addDeviceOn(song, lead, DeviceType::Arpeggiator,
+                {{chain::knob::kRate, float(devices::rateIndex("1/8"))}, {chain::knob::kGate, 50}});
     std::vector<NoteSeen> notes = notesOf(roundTrip(renderSong(song, Options(), Context())).tracks[1]);
     REQUIRE(notes.size() == 8);
     std::vector<int> pitches;
@@ -589,7 +590,9 @@ TEST_CASE("export: an arpeggiator's steps become notes, and echoes stop at the e
     Clip& one = addClip(echo, kBar, {makeNote(echo, 3 * kBeat, kBeat / 4, 60)});
     place(echo, t, one.id, 0, kBar);
     addDeviceOn(echo, t, DeviceType::Echo,
-                {{chain::knob::kTime, 5}, {chain::knob::kRepeats, 8}, {chain::knob::kDecay, 10}});
+                {{chain::knob::kTime, float(devices::rateIndex("1/4"))},
+                 {chain::knob::kRepeats, 8},
+                 {chain::knob::kDecay, 10}});
     // The song ends at the bar: repeats after it aren't written.
     std::vector<NoteSeen> echoes = notesOf(roundTrip(renderSong(echo, Options(), Context())).tracks[1]);
     REQUIRE(echoes.size() == 1);

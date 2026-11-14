@@ -2573,3 +2573,19 @@ equal value boxes were turned down. Where the page and the earlier design disagr
 - **Not for drawn paths.** A drawn path ignores it, like the other movement settings, so the time map keeps showing
   where the playhead really is.
 - Old songs read the new settings at their defaults (Straight), so nothing changes for them; no schema bump.
+
+## 156. One scale of lengths for every speed and length setting (14 Nov)
+
+- **What.** `src/model/Lengths.hpp` holds one scale: straight 1/64 to 64 bars, triplet (T) and dotted (D) 1/32 to 1/2,
+  short to long, with one name per length ("1/8 T", "2 bars"). Every setting that picks a length or a synced rate takes
+  a stretch of it: note devices' Length, Rate and Time 1/64–8 bars; LFO, Steps and Random synced rates 1/64–32 bars;
+  a playhead's Piece Off + 1/64–8 bars, Order step 1/32–4 bars, Fixed length 1/64–4 bars (a note never lasts longer),
+  Speed over 1/16–16 bars; a drum lane's step 1/64–1/2 (it was 1/4–1/32 with "1/8 triplet" names).
+- **Short to long everywhere.** Device rates used to be stored 8 bars first, then triplets and dotted, so a curve on
+  Echo's Time jumped about. Now a curve or a drag moves through every list in order.
+- **A playhead's Rate** gets each speed's opposite: 1/24x and 24x, 8/3x beside 3/8x.
+- **Left as they were:** a drawn path's cycle (whole bars, odd ones like 3 and 6 make sense there), Offset (every 1/16
+  for canons), the CLOCK jack's divisions (pulses, PPQN), and the grids for snapping and quantizing (a grid, not a
+  speed).
+- **Schema 11.** Saved choices keep their length by name (`unifyLengths`, the same as schema 8), lanes and curves on
+  them too. Playhead choices of songs before 8 are already found by name in today's lists, so only 8–10 remap them.

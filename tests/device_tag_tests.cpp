@@ -38,7 +38,7 @@ TEST_SUITE("device tags") {
 
     TEST_CASE("a device's lengths drag from short to long, and read typeset") {
         ValueList rates = valueList(DeviceType::Echo, specOf(DeviceType::Echo, chain::knob::kTime));
-        REQUIRE(rates.size() == 17);
+        REQUIRE(rates.size() == 20);
         CHECK(rates.labels.front() == "1/64");
         CHECK(rates.labels.back() == "8 bars");
         for (int k = 1; k < rates.size(); k++)

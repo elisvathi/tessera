@@ -111,7 +111,10 @@ an arpeggio plays on C E G, the notes of a chord on C, "A fifth up", "A canon, 1
 
 The settings sit on the pictures as **tags**, pill-shaped labels with the value; the first tag on each picture is
 tinted. A short word comes before the value only where the number alone would be unclear ("Gate 50%", "× 3").
-Lengths read as fractions, with a small **T** for triplet and **D** for dotted. A setting that does nothing right now is
+Lengths read as fractions, with a small **T** for triplet and **D** for dotted. Every length setting uses the same
+lengths, short to long: the straight ones from 1/64 to whole bars, and the triplet and dotted ones from 1/32 to 1/2.
+Each setting offers the stretch that makes sense for it: note devices (Note Length, Arpeggiator, Note Repeat, Echo) go
+from 1/64 to 8 bars, the LFO, Steps and Random modulators on to 32 bars. A setting that does nothing right now is
 faint (Times and Curve while Piece is Off); one that doesn't apply is left out (Note Length shows only the setting its
 Mode uses).
 
@@ -184,15 +187,15 @@ repeats):
 | Setting | What it does |
 |---|---|
 | **On** | Whether it plays: the switch after the chips, or the dot on its chip. Right-click the chip for a curve on it, so the playhead can come in and drop out as the song plays (see **Curves** below). |
-| **Rate** | Speed against the song, from 1/32x to 32x: halves and doubles, thirds (1/3x, 2/3x, 4/3x, 3x…), dotted speeds (3/8x, 3/4x, 3/2x) and fives (4/5x, 5/4x). |
-| **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size (1/32 to 2 bars, triplets too). |
+| **Rate** | Speed against the song, from 1/32x to 32x, each speed with its opposite: halves and doubles, thirds (1/3x, 2/3x, 4/3x, 3x…), 1/24x and 24x, dotted speeds (3/8x and 8/3x, 3/4x, 3/2x) and fives (4/5x, 5/4x). |
+| **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size (1/32 to 4 bars, triplets and dotted too). |
 | **Speed curve** | Makes the playhead speed up and slow down as it goes, then catch up: over each **Over** length it follows the curve, and at the end of that length it is back where a steady playhead would be (see [Bending the speed](#bending-the-speed)). **Straight** keeps a steady speed. |
-| **Over** | How long one speed curve lasts, in the song's time: 1/8, 1/4, 1/2, 1 bar, 2, 4 or 8 bars. Faint while the Speed curve is Straight. |
+| **Over** | How long one speed curve lasts, in the song's time: 1/16 to 16 bars, triplets and dotted too. Faint while the Speed curve is Straight. |
 | **Offset** | Plays this playhead's notes later (+) or earlier (−) than it reads them, by a note value: 1/64 up to a bar either way, with triplet (T) and dotted (D) values, and every 1/16 between (+5/16, +7/16…). Its line over the notes trails or leads by as much, so it crosses each note when you hear it. Two playheads on the same segment, one at **+1/4**, make a round. Double-click it to set it back to **0**. At the very start of a clip, a late playhead waits for its offset, and an early one skips the notes that would have come before the clip started. When the clip loops, notes carry over the loop as usual. A clip's end is a hard stop: a late note that would sound after the clip ends doesn't play, and an early playhead doesn't play notes from past the end. That holds for a timeline clip, and for a launched clip that doesn't loop. When a curve or a lane moves Offset later while the clip plays, the playhead waits until the new time catches up. It never plays the same notes twice. Moved earlier, it skips ahead. |
-| **Piece** | The size of the piece it plays again: Off, or 1/64 up to 4 bars, with triplet (T) and dotted (D) sizes between. With **Times**, it plays each piece that many times, then moves on one piece: Piece 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
+| **Piece** | The size of the piece it plays again: Off, or 1/64 up to 8 bars, with triplet (T) and dotted (D) sizes between. With **Times**, it plays each piece that many times, then moves on one piece: Piece 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
 | **Times** | How many times each piece plays, 2 to 16. |
 | **Curve** | How the repeats are spaced in time (see [Spacing the repeats](#spacing-the-repeats)). **Straight** spaces them evenly. |
-| **Rarer settings** | Right-click a playhead's chip: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed, 1/64 to 2 bars), Path (from the settings, or drawn in the time map), and rename, channel, on, solo, duplicate, delete. Each of these settings' lists ends with **Draw a curve for it** and **Automate or modulate…**, so the rarer settings can move in time too. |
+| **Rarer settings** | Right-click a playhead's chip: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed, 1/64 to 4 bars, triplets and dotted too), Path (from the settings, or drawn in the time map), and rename, channel, on, solo, duplicate, delete. Each of these settings' lists ends with **Draw a curve for it** and **Automate or modulate…**, so the rarer settings can move in time too. |
 
 Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
 playhead's own chain, like any other note change. Songs made when a playhead had its own Octave, Steps and Velocity

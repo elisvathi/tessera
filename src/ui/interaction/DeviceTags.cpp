@@ -408,10 +408,6 @@ ValueList valueList(DeviceType type, const TagSpec& spec) {
     if (info->kind == K::Choice) {
         std::vector<int> order(info->choices.size());
         std::iota(order.begin(), order.end(), 0);
-        // A device's lengths are stored long first, then triplets and dotted ones; dragging goes short to long.
-        if (spec.family == F::Length && type != DeviceType::Playheads)
-            std::stable_sort(order.begin(), order.end(),
-                             [](int a, int b) { return devices::rateTicks(a, {}) < devices::rateTicks(b, {}); });
         for (int k : order) {
             list.values.push_back(float(k));
             list.labels.push_back(replaced(info->choices[size_t(k)], "-", kMinus));
