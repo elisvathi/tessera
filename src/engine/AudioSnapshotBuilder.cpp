@@ -232,6 +232,9 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
             tp.audible = down;
             tp.sending = down || up;
         }
+        // Only its sends carry a track that doesn't go on to the Master: it isn't heard dry.
+        tp.toMaster = t.toMaster;
+        tp.audible = tp.audible && t.toMaster;
         for (const ClipSlot& s : t.slots)
             tp.slots.push_back(s.clip ? clipIndex(*s.clip, -1, false) : -1);
         for (const ArrangerClip& a : t.arrangement) {

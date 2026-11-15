@@ -1,4 +1,5 @@
 #include "TrackActions.hpp"
+#include "SendActions.hpp"
 
 #include "../Theme.hpp"
 #include "../widgets/MenuTextField.hpp"
@@ -635,6 +636,11 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     if (ids.size() == 1) {
         TrackId id = clicked;
         audioActions::appendOutputItems(menu, *c, id);
+        // Sends here too, not only in the mixer: what it sends, and Send to ▸ (DECISIONS §164).
+        if (m->soundIndex(id) >= 0 || track->type == TrackType::Audio)
+            menu->addChild(
+                rack::createSubmenuItem("Sends", track->sends.empty() ? "" : std::to_string(track->sends.size()),
+                                        [c, id](rack::ui::Menu* sub) { sendActions::appendTrackSends(sub, *c, id); }));
         if (m->soundIndex(id) >= 0)
             menu->addChild(rack::createMenuItem("Bounce audio to a new track…", shortcutLabel(Action::Bounce),
                                                 [c, id] { bounceActions::openAudioDialog(*c, id); }));

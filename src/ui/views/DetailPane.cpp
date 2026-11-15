@@ -135,7 +135,7 @@ NoteTarget* DetailPane::noteTarget() { return roll; }
 
 bool DetailPane::handleAction(Action action) {
     if (showsMixer())
-        return false;
+        return mixer->handleAction(action);
     if (stripFocus && strip->handleAction(action))
         return true;
     return roll->handleAction(action);

@@ -140,19 +140,6 @@ struct EditorState {
     std::set<uint64_t> foldedGroups;                  // by GroupId value
     std::set<uint64_t> openAutomation;                // tracks showing their automation lanes, by TrackId value
     static constexpr double kDefaultTrackHeight = 48; // for tracks never resized
-    // Show sends (§7.6): the mixer's faders show the sends to this track. Not saved. The faders glide from what
-    // they showed before (`sendsFrom`: the previous target, or none for volumes) since `sendsSince`.
-    TrackId showSends;
-    TrackId sendsFrom;
-    double sendsSince = -1;
-    /// Enters Show sends for `track`, or leaves it with an invalid ID.
-    void setShowSends(TrackId track, double now) {
-        if (track == showSends)
-            return;
-        sendsFrom = showSends;
-        showSends = track;
-        sendsSince = now;
-    }
     /// How tall a track's row is: what it was dragged to, else the default.
     double trackHeight(TrackId id) const {
         auto it = trackHeights.find(id.value);

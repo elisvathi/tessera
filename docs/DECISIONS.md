@@ -2802,3 +2802,24 @@ single modulator list of §36 and the modulator popover.
   message. It works into another Roll in the same patch. No dragging to copy for now.
 - **Built in stages**, each committed on its own: the sections and settings beside them; the dice; copy and paste;
   the Pattern editor.
+
+## 164. Sends easier to find, no Show sends mode, a track that only sends, a mixer that zooms (15 Nov)
+
+The user searched ten minutes for sends (only in the mixer), found the Show sends band ("Faders show sends to Reverb ·
+Esc to go back") extremely confusing, wanted a track that feeds an effect without reaching the Master, and a mixer that
+scrolls and zooms like the piano roll.
+
+- **Sends in the track menu**: right-click a track header ▸ **Sends**: where the track goes after its fader, its sends
+  (level, then each send's menu), and **Send to ▸** (effect returns first). The mixer's SENDS rows and the inspector
+  keep theirs.
+- **Show sends is gone** (supersedes §97's mode): faders always mean volume. With a SENDS row per send there is no
+  need to flip every fader. "← 2" (or the strip name menu ▸ Sends to this track) lists who sends there, each with its
+  level and menu. A new send starts at -12 dB, so it is heard at once, instead of -inf with the faders flipped.
+- **Only its sends**: a track's `toMaster` (saved only when off). Off, its sound after the fader goes nowhere but its
+  sends, so it feeds a reverb without being heard dry. Its meter still shows its level after the fader; mute and solo
+  work as before. Chosen from the strip's "→ Master" label (then "sends only") or the track menu's Sends.
+- **Mixer zoom**: Ctrl+wheel widens or narrows the strips around the mouse, = and - step, F and Shift+F fit them,
+  Home / End and Page keys scroll. Fine wheel steps on a fader or send move from Ctrl to Alt, so Ctrl+wheel means zoom
+  everywhere, as in the piano roll.
+- **Not done yet**: modulators moving volume, pan and send levels (they are automatable with lanes already), and a
+  lane for the to-Master switch.

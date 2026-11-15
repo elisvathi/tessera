@@ -570,6 +570,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                     v = Voice{};
             }
         }
+        float meterL = NAN, meterR = NAN; // what its meter shows, when that isn't what it adds to the master
         if (i < count) {
             const AudioTrackPlay& tp = snapshot->tracks[i];
             run.clipsGain += run.clipsStep;
@@ -626,6 +627,10 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             }
             sl = postL * run.heardGain;
             sr = postR * run.heardGain;
+            if (!tp.toMaster) {
+                meterL = postL;
+                meterR = postR;
+            }
         } else {
             run.gainL += run.stepL;
             run.gainR += run.stepR;
@@ -649,8 +654,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         }
         run.stemL = sl;
         run.stemR = sr;
-        run.peakL = std::max(run.peakL, std::abs(sl));
-        run.peakR = std::max(run.peakR, std::abs(sr));
+        run.peakL = std::max(run.peakL, std::abs(std::isnan(meterL) ? sl : meterL));
+        run.peakR = std::max(run.peakR, std::abs(std::isnan(meterR) ? sr : meterR));
         if (blockPos == 0 && i < count && canRest(engine, snapshot->tracks[i], run, wantedNow, playing, song)) {
             // Resting skips the ramps, so its gains go straight to where this block ends.
             float rest = float(kBlock - 1);

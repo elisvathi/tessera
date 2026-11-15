@@ -982,6 +982,12 @@ TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, 
     CHECK(out[1].l == doctest::Approx(2.f).epsilon(1e-3));
     CHECK(left == doctest::Approx(0.3f).epsilon(1e-3));
     song.tracks[1].solo = false;
+    // Only its sends: Bass still feeds the reverb but isn't heard dry (DECISIONS §164).
+    song.tracks[0].toMaster = false;
+    play();
+    CHECK(out[1].l == doctest::Approx(2.f).epsilon(1e-3));
+    CHECK(left == doctest::Approx(0.3f).epsilon(1e-3));
+    song.tracks[0].toMaster = true;
     // A Send lane moves the send: -6 dB before the fader.
     AutomationEnvelope lane;
     lane.id = song.newId<AutomationId>();

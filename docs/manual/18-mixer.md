@@ -19,7 +19,10 @@ appears once something in the song makes sound.
   Master plays but nothing is patched into MAIN.
 - **When the strips don't fit**, the tracks scroll sideways while the Master stays at the right; a thin bar along the
   bottom shows which part is in view. Scroll as in the other panes: **Shift+wheel**, a sideways swipe on a trackpad,
-  the wheel anywhere but on a fader or a send, **middle-drag**, or hold **Space** and drag.
+  the wheel anywhere but on a fader or a send, **middle-drag**, or hold **Space** and drag. **Home** and **End** go to
+  the first and last strip, **Page Up** and **Page Down** a screen at a time.
+- **Zoom**, as in the piano roll: **Ctrl+wheel** widens or narrows every strip, keeping the one under the mouse in
+  place; **=** and **-** zoom a step; **F** (or **Shift+F**) fits every strip in view.
 
 ## What belongs to what
 
@@ -53,7 +56,9 @@ comes back on a Track Out's or Drum Out's IN. From top to bottom:
 4. **Pan**: drag it to move the sound left or right. Double-click centres it.
 5. **M** and **S**: mute and solo, the same switches as in the track rows.
 6. **The fader and the meter**. The fader sets the volume; the meter beside it shows the level as it plays.
-7. **The volume** in dB, and **→ Master**: where the track goes.
+7. **The volume** in dB, and **→ Master**: where the track goes after its fader. Click it to choose **To the Master**
+   (or to its group) or **Only its sends**: then the track feeds what it sends to, a reverb say, and isn't heard dry.
+   The label then reads **sends only**, and the meter still shows the track's level.
 
 The **Master** strip sits at the right. It sets the level of everything together on its way to MAIN. Its light near
 the top shows the loudest moment so far (like **max -4.1**); it turns red and says **over +2.3** when the sound went
@@ -99,7 +104,7 @@ carries the track's sound, and what comes back takes its place.
   you hear. It is shaped differently from the faders so it never reads as a volume. At **100%**, where it starts, you
   hear only what comes back. At **50%** you hear the dry sound and the effect both in full. Under 50% the effect fades out,
   down to none at **0%**.
-- The Mix bar works like a fader: drag it (Shift for fine), double-click for 100%, scroll for 5% steps (Ctrl:
+- The Mix bar works like a fader: drag it (Shift for fine), double-click for 100%, scroll for 5% steps (Alt:
   1%), right-click to type a value. **M** turns the effect off: the sound passes by it untouched.
 - **A chain**: put two or more Track Outs on one track, each with its own effect. The sound goes through them in
   order, left to right in the mixer. Drag a loop strip's name sideways to move it in the chain, or right-click the
@@ -136,21 +141,19 @@ its Track Out **OUT** into a reverb module and the reverb's output back into its
 [effect loop](#effects-on-a-track) at 100% Mix). Its chip then says **1 fx**, and the reverb's **Mix** strip sits
 beside it, as on any track with an effect. Then send other tracks to it.
 
-- **Add a send**: click **+ Send** on a strip and pick a track. **Tracks with an effect** come first, each with the
+- **Sends are also in the track menu**: right-click a track header ▸ **Sends**. It lists the track's sends, each with
+  its level and its own menu, then **Send to ▸**, and at the top where the track goes after its fader (**To the
+  Master** or **Only its sends**). The inspector lists them under **SENDS** as well.
+- **Add a send**: click **+ Send** on a strip (or **Send to ▸** in the track menu) and pick a track. **Tracks with an effect** come first, each with the
   effect's name on the right (**Reverb · Plateau**), then **Other tracks**. Tracks that would feed back into this one
-  are listed but can't be picked ("Would feed back into Bass"). The send starts at -inf and the faders switch to show
-  sends to that track, so you can turn it up.
+  are listed but can't be picked ("Would feed back into Bass"). The send starts at -12 dB, so you hear it at once.
 - **The SENDS rows**: each send has a row on the sending strip, with the receiving track's full name in its colour
   over a thin level bar (the small tick is 0 dB), and **pre** when it goes before the fader. Drag the row sideways;
-  double-click for -inf; scroll for 0.5 dB steps. Right-click it to type a level, put it **before** or **after the
+  double-click for -inf; scroll for 0.5 dB steps (Alt: finer). Right-click it to type a level, put it **before** or **after the
   fader**, or **remove** it. Hover it for its level. In a pane too short for the rows, each send is a coloured dot
   instead, brighter the louder: drag it up or down, and hover it for the name and level.
-- **← 2** under a strip's name means two tracks send to it. Click it (or right-click the name: **Show sends to this
-  track**) to see every send to that track on the faders: a band says "Faders show sends to Reverb", the fader caps
-  turn hollow in Reverb's colour, and the readouts say **send -15.5 dB**. Drag a fader to set that track's send
-  (dragging up from -inf adds one); **pre** beside a fader switches the send before or after the fader. Everything
-  whose fader isn't a send there is dimmed: the receiving track itself, tracks that can't send there, groups, input
-  and lane strips, and the Master. **Esc**, the band's **×**, or folding the mixer goes back.
+- **← 2** under a strip's name means two tracks send to it. Click it (or right-click the name ▸ **Sends to this
+  track**) for a list of them, each with its send level and the send's menu.
 - What a track is sent joins its sound before its chain. With a reverb loop at 100% Mix you hear only the reverb;
   with no effect patched yet, you hear what it is sent as it is.
 - A track that receives sends has a thin **OUT meter** beside its fader: what goes into its chain. It is dim while
@@ -161,7 +164,6 @@ beside it, as on any track with an effect. Then send other tracks to it.
   you hear the reverb, still fed by the tracks that send to it, but not their dry sound.
 - Sends you make in the rack with cables (a mult into the reverb) also work, but they don't follow the fader, mute
   or solo.
-- In Show sends, each strip's meter shows what it sends to that track.
 - **Automate a send**: right-click its row ▸ **Automate in the timeline**. A **Send to Reverb** lane opens under the
   track; draw it like a Volume lane. While it plays, the row follows it and its bar has an outline in the lane's
   colour. Arm
@@ -195,7 +197,8 @@ on the Drum Out carries the lanes at these levels and pans.
 - **Shift+drag** or **Ctrl+drag** moves it finely.
 - It catches at **0 dB** as you pass; hold **Alt** to move through freely.
 - **Double-click** sets 0 dB.
-- **Scroll** over it to move 0.5 dB at a time (Ctrl: 0.1 dB). Shift+wheel scrolls the mixer sideways instead.
+- **Scroll** over it to move 0.5 dB at a time (Alt: 0.1 dB). Shift+wheel scrolls the mixer sideways, Ctrl+wheel
+  zooms it.
 - **Right-click** it, or double-click its value, to type a level.
 - Select several audio tracks and drag one of their faders: all of them move by the same amount. A track at −inf
   stays there.

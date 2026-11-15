@@ -982,6 +982,8 @@ json_t* trackToJson(const Track& t) {
         set(j, "clips", sourceLevelToJson(t.clips));
     if (t.latencySamples != 0)
         setInt(j, "latency", t.latencySamples);
+    if (!t.toMaster)
+        setBool(j, "toMaster", false);
     if (!t.sends.empty()) {
         json_t* sends = json_array();
         for (const Send& send : t.sends) {
@@ -1038,6 +1040,7 @@ Track trackFromJson(const json_t* j) {
         }
     t.clips = sourceLevelFromJson(get(j, "clips"));
     t.latencySamples = int(getInt(j, "latency", 0));
+    t.toMaster = getBool(j, "toMaster", true);
     forEach(get(j, "sends"), [&](const json_t* sj) {
         Send send;
         send.to = readId<TrackId>(get(sj, "to"));

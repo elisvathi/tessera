@@ -18,6 +18,14 @@ void appendAddSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from);
 
 /// One send's items: show the sends to its track, before or after the fader, type a level, -inf, automate, remove.
 void appendSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from, TrackId to);
+/// Where a track's sound goes after its fader: To the Master (or its group), or Only its sends (DECISIONS §164).
+void appendDestinationItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track);
+/// A track's sends, each with its level and its menu, then Send to ▸: the track menu's Sends (DECISIONS §164).
+void appendTrackSends(rack::ui::Menu* menu, EditorContext& ctx, TrackId from);
+/// Who sends to track `to`, each with its level and the send's menu: a click on a strip's "← 3".
+void appendReceivedItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId to);
+/// Where a new send starts: loud enough to hear at once.
+constexpr float kNewSendDb = -12;
 
 } // namespace sendActions
 } // namespace tessera

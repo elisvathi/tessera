@@ -69,13 +69,12 @@ void appendAddSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from) 
             return;
         }
         TrackId to = t.id;
-        auto* item = new ColorMenuItem(t.name, t.color, false, [c, m, from, to] {
-            if (CommandPtr add = addSend(m->song(), from, to))
+        std::string toName = t.name;
+        auto* item = new ColorMenuItem(t.name, t.color, false, [c, m, from, to, toName] {
+            // A new send starts where you hear it; its row (mixer, inspector, track menu) sets it from there.
+            if (CommandPtr add = addSend(m->song(), from, to, kNewSendDb))
                 m->perform(std::move(add));
-            // The next move is turning it up: the faders show the sends to that track.
-            c->state().setShowSends(to, EditorContext::now());
-            if (c->module() && c->module()->makesSound())
-                c->state().mixerOpen = true;
+            c->toast("Sending to " + toName + " at " + audioDraw::dbText(kNewSendDb));
         });
         item->rightText = effectName(*m, t.id);
         menu->addChild(item);
@@ -96,6 +95,67 @@ void appendAddSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from) 
         menu->addChild(rack::createMenuLabel("No other track to send to"));
 }
 
+void appendDestinationItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track) {
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(track) : nullptr;
+    if (!t)
+        return;
+    const TrackGroup* g = groupOf(m->song(), track);
+    std::string where = g && m->groupIndex(g->id) >= 0 ? g->name : std::string("the Master");
+    auto set = [m, track](bool on) {
+        return [m, track, on] {
+            if (CommandPtr c = setTrackField(m->song(), track, &Track::toMaster, on,
+                                             on ? "Send to the Master again" : "Only its sends"))
+                m->perform(std::move(c));
+        };
+    };
+    menu->addChild(rack::createCheckMenuItem("To " + where, "", [t] { return t->toMaster; }, set(true)));
+    menu->addChild(rack::createCheckMenuItem(
+        "Only its sends", t->sends.empty() ? "no sends yet" : "", [t] { return !t->toMaster; }, set(false)));
+}
+
+void appendTrackSends(rack::ui::Menu* menu, EditorContext& ctx, TrackId from) {
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(from) : nullptr;
+    if (!t)
+        return;
+    EditorContext* c = &ctx;
+    // Where its sound goes after the fader: on to the Master, or only to what it sends to.
+    appendDestinationItems(menu, ctx, from);
+    menu->addChild(new rack::ui::MenuSeparator);
+    for (const Send& s : t->sends) {
+        const Track* to = m->song().findTrack(s.to);
+        if (!to)
+            continue;
+        TrackId target = s.to;
+        menu->addChild(rack::createSubmenuItem(
+            to->name, audioDraw::dbText(s.db) + (s.preFader ? " · pre" : ""),
+            [c, from, target](rack::ui::Menu* sub) { appendSendItems(sub, *c, from, target); }));
+    }
+    if (!t->sends.empty())
+        menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(
+        rack::createSubmenuItem("Send to", "", [c, from](rack::ui::Menu* sub) { appendAddSendItems(sub, *c, from); }));
+}
+
+void appendReceivedItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId to) {
+    TesseraModule* m = ctx.module();
+    const Track* target = m ? m->song().findTrack(to) : nullptr;
+    if (!target)
+        return;
+    EditorContext* c = &ctx;
+    menu->addChild(rack::createMenuLabel("Sends to " + target->name));
+    for (TrackId from : sendersTo(m->song(), to)) {
+        const Track* t = m->song().findTrack(from);
+        const Send* s = findSend(m->song(), from, to);
+        if (!t || !s)
+            continue;
+        menu->addChild(
+            rack::createSubmenuItem(t->name, audioDraw::dbText(s->db) + (s->preFader ? " · pre" : ""),
+                                    [c, from, to](rack::ui::Menu* sub) { appendSendItems(sub, *c, from, to); }));
+    }
+}
+
 void appendSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from, TrackId to) {
     TesseraModule* m = ctx.module();
     const Send* send = m ? findSend(m->song(), from, to) : nullptr;
@@ -105,10 +165,6 @@ void appendSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from, Tra
     Send now = *send;
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuLabel("Send to " + target->name));
-    menu->addChild(rack::createMenuItem("Show sends to " + target->name, "", [c, to] {
-        c->state().setShowSends(to, EditorContext::now());
-        c->state().mixerOpen = true;
-    }));
     menu->addChild(rack::createMenuItem("Automate in the timeline", "", [c, from, to] { automate(*c, from, to); }));
     menu->addChild(rack::createCheckMenuItem(
         "Before the fader", "", [pre = now.preFader] { return pre; },

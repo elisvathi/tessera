@@ -442,8 +442,6 @@ void EditorHost::runAction(Action action) {
         // (the overlay closes).
         if (ctx.dragging)
             ctx.dragging->cancelGesture();
-        else if (ctx.state().showSends.valid())
-            ctx.state().setShowSends(TrackId(), EditorContext::now());
         else if (state.curveFocusNote.valid()) {
             state.curveFocusNote = NoteId();
             state.curveFocusClip = ClipId();

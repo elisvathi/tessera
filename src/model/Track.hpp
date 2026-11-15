@@ -115,6 +115,9 @@ struct Track {
     // Extra delay this track's sound is known to have (a slow effect, a long cable path), in samples: recordings
     // and bounces of it are moved earlier by this much (§8.6).
     int latencySamples = 0;
+    /// Whether its sound goes on to the Master (or its group) after its fader. Off, only its sends carry it: a track
+    /// that feeds an effect and is not heard dry (docs/DECISIONS.md §164).
+    bool toMaster = true;
 
     bool operator==(const Track& o) const {
         return id == o.id && name == o.name && color == o.color && type == o.type && polyphony == o.polyphony &&
@@ -124,7 +127,7 @@ struct Track {
                transpose == o.transpose && drumLanes == o.drumLanes && slots == o.slots &&
                arrangement == o.arrangement && automation == o.automation && devices == o.devices &&
                modulators == o.modulators && channel == o.channel && drumInputs == o.drumInputs && clips == o.clips &&
-               sends == o.sends && latencySamples == o.latencySamples;
+               sends == o.sends && latencySamples == o.latencySamples && toMaster == o.toMaster;
     }
 };
 

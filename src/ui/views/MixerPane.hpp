@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../interaction/InteractiveView.hpp"
+#include "../interaction/Shortcuts.hpp"
 #include "../widgets/HoverTooltip.hpp"
 
 #include <array>
@@ -67,10 +68,10 @@ class MixerPane : public InteractiveView {
         rack::math::Rect
             fold; // the arrow left of the name that folds the strips under it (inputs, lanes, a group's tracks)
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
-        // Sends (§7.6): "← N" when it receives some, a row (or, when short, a dot) per send it has, the "+ Send"
-        // that adds one, the OUT meter of a track that receives sends, and "pre" above its fader while Show sends
-        // shows its send.
-        rack::math::Rect receives, addSend, outMeter, pre;
+        // Sends (§7.6, DECISIONS §164): "← N" when it receives some (a click lists them), a row (or, when short, a
+        // dot) per send it has, the "+ Send" that adds one, and the OUT meter of a track that receives sends.
+        rack::math::Rect receives, addSend, outMeter;
+        rack::math::Rect destination; // "→ Master" under the level: a click picks the Master or only its sends
         std::vector<rack::math::Rect> sendKnobs;
         int playerIndex = -1; // its index among the player's tracks
     };
@@ -89,8 +90,7 @@ class MixerPane : public InteractiveView {
         Receives,
         SendKnob,
         AddSend,
-        Pre,
-        BandClose,
+        Destination,
         Fold
     };
     struct Hit {
@@ -124,8 +124,6 @@ class MixerPane : public InteractiveView {
     /// Where the strip's fader cap sits (0..1): its volume, or in Show sends its send, gliding over 120 ms between
     /// the two.
     float capPos(const Strip& s) const;
-    /// Whether Show sends is on (for a track that still has a strip).
-    bool showingSends() const { return ctx.state().showSends.valid(); }
     /// A lane strip's level and pan: plays at once while a drag holds it, and commits one undo step.
     void holdLane(const Strip& s, Channel c);
     void setLane(const Strip& s, Channel c, const std::string& name);
@@ -184,7 +182,6 @@ class MixerPane : public InteractiveView {
     std::map<uint64_t, std::pair<float, float>> held; // drags in progress: volume dB, pan
     std::map<std::pair<uint64_t, int>, Channel> heldLanes; // lane strip drags in progress
     std::map<std::pair<uint64_t, uint64_t>, float> heldSends; // send drags in progress: from, to → dB
-    rack::math::Rect band, bandClose; // Show sends' band across the top of the strips
     struct Peak {
         float level = 0;
         double at = 0;
@@ -193,6 +190,7 @@ class MixerPane : public InteractiveView {
     size_t missingTold = 0; // how many missing files the last toast was about
     bool sendDots = false;  // sends show as dots: the pane is too short for their rows
     float scrollX = 0;      // how far the tracks are scrolled to the left, in px
+    float zoom = 1;         // how wide the strips are, 1 = their usual width
     float contentWidth = 0; // the tracks' strips from the first to the last, unscrolled
     float scrollRight = 0;  // where the scrolling strips end: the pinned master strips start there
     /// The drum lane INs of `t` that have a cable, each with a strip of its own.
@@ -208,6 +206,11 @@ class MixerPane : public InteractiveView {
   public:
     /// Scrolls the tracks sideways by `px` (positive shows more on the right), kept inside the strips.
     void scrollBy(float px);
+    /// Widens or narrows every strip by `factor`, keeping what is at `x` in place.
+    void zoomAt(float x, float factor);
+    /// The view keys, as in the piano roll: = and - zoom, F fits every strip, Home and End, Page Up and Down. True
+    /// when handled.
+    bool handleAction(Action action);
 };
 
 } // namespace tessera

@@ -99,6 +99,7 @@ adding tracks last.
 | **Recording ▸** | **Armed for recording**, **Record from**, **MIDI channel** and **Monitor while armed**. See [Recording](11-recording.md); for audio tracks, [Audio](17-audio.md#recording-audio). It says **Armed** on the right while the track is armed. |
 | **Show automation lanes / Add automation lane** | See [Automation](12-automation.md). |
 | **Show Track Out in the rack / Add a Track Out for this track** | See above. |
+| **Sends** | Tracks that make sound: where the track goes after its fader (**To the Master** or **Only its sends**), its sends with their levels, and **Send to ▸**. See [The mixer](18-mixer.md#sending-to-other-tracks). |
 | **Bounce audio to a new track…** | Records what the track sounds like onto a new audio track. Shown when the track makes sound. See [Audio](17-audio.md). |
 | **Bounce notes to a new track…** | Note and drum tracks. Makes a new track from the notes, at once. See below. |
 | **Import audio file…** | Audio tracks. Puts a file on this track. See [Audio](17-audio.md). |
