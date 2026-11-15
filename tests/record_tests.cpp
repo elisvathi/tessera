@@ -4,6 +4,7 @@
 #include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
+#include "../src/model/Transforms.hpp"
 
 #include <cmath>
 
@@ -1303,6 +1304,34 @@ TEST_CASE("arranger merge: a new clip starts on the bar, so the take quantizes t
     CHECK(c->notes[0].start == kPpq); // on beat 2, as the song counts it
     CHECK(c->notes[1].start == 2 * kPpq);
     CHECK(arr[0].position + arr[0].length >= 2 * kPpq + 100); // still runs to the end of the last note
+}
+
+TEST_CASE("arranger merge: quantizing the new clip afterwards (Q) puts the notes on the song's beats (issue #15)") {
+    FakeHost host(recordSong());
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host); // no input quantize: the take keeps the played timing
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, kPpq + 15, kPpq + 15)); // a little late on beat 2
+    rec.handle(note(t, 60, false, kPpq + 100, kPpq + 100));
+    rec.handle(note(t, 62, true, 2 * kPpq - 10, 2 * kPpq - 10)); // a little early on beat 3
+    rec.handle(note(t, 62, false, 2 * kPpq + 100, 2 * kPpq + 100));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 3 * kPpq, 3 * kPpq));
+    const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
+    REQUIRE(arr.size() == 1);
+    const Clip* c = host.song_.findClip(arr[0].clip);
+    REQUIRE(c);
+    REQUIRE(c->notes.size() == 2);
+    edits::IdSet all;
+    for (const Note& n : c->notes)
+        all.insert(n.id);
+    transforms::QuantizeOptions o;
+    o.grid = kPpq / 4;
+    edits::NoteList q = transforms::quantize(c->notes, all, o);
+    REQUIRE(q.size() == 2);
+    // Where they play on the timeline: the clip's place plus the note's place in it.
+    CHECK(arr[0].position + q[0].start == kPpq);
+    CHECK(arr[0].position + q[1].start == 2 * kPpq);
 }
 
 TEST_CASE("arranger merge: a new clip starts on the bar but never covers a clip ending earlier in that bar") {
