@@ -42,11 +42,13 @@ NVGcolor laneColor(const Song& song, const FoundLane& lane);
 
 /// The searchable list of devices; the pick goes in at `index` of the track's chain (-1 = the end).
 void openDeviceBrowser(EditorContext& ctx, ChainOwner owner, int index);
-/// The searchable list of modulators, with chips for where the new one lives (song, this track, a device).
-/// `device` lights that device's chip first.
 /// The device list, adding the picked device to a playhead's branch at `index` (-1 = the end).
 void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index);
-void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device = DeviceId());
+/// The searchable list of modulators, with chips for where the new one lives (song, this track, a device).
+/// `device` lights that device's chip first. With a valid `target` (a knob's "Modulate with › A new modulator…"),
+/// only the places that can reach it are offered, and the new modulator moves it at +50% in the same undo step.
+void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device = DeviceId(),
+                          const ParamRef& target = ParamRef());
 
 void openDeviceMenu(EditorContext& ctx, DeviceId device);
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);

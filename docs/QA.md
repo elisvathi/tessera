@@ -826,3 +826,6 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Play with an LFO on the Arpeggiator's Gate: the Gate tag and its picture move smoothly, and the tags beside it
       hold still. Stop: the picture settles on the last value.
 - [ ] Switch tracks and clips, scroll the strip sideways and resize it: nothing is left over from before.
+- [ ] A tag › **Modulate, automate…** › **Modulate with** › **A new modulator…** › LFO: the LFO is made and moves the
+      tag at +50% (a dot on the tag, the depth bar under it). One undo removes both. The browser's chips name each
+      device ("Arpeggiator", not an empty chip) and offer only places that can reach the tag.

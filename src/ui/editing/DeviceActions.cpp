@@ -219,9 +219,12 @@ void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index) {
     openSearchList(items, options);
 }
 
-void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device) {
+void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device, const ParamRef& target) {
     TesseraModule* m = moduleOf(ctx);
     const Song* song = m ? &m->song() : nullptr;
+    // A knob's own chain: the clip's or the track's it belongs to, whichever is on show.
+    if (song && target.valid() && ownerOf(*song, target).valid())
+        owner = ownerOf(*song, target);
     const Clip* clip = song && owner.isClip() ? song->findClip(owner.clip) : nullptr;
     TrackId trackId = clip ? trackUsing(*song, clip->id) : owner.track;
     const Track* t = song ? song->findTrack(trackId) : nullptr;
@@ -244,13 +247,34 @@ void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device)
     options.scope = 1;
     for (const Device& d : *chain) {
         places.push_back({ModLevel::Device, t->id, d.id, owner.clip});
-        options.scopes.push_back(d.name);
+        options.scopes.push_back(d.name.empty() ? devices::deviceInfo(d.type).name : d.name);
         if (d.id == device)
             options.scope = int(places.size()) - 1;
     }
     options.footer = "the chip: where it lives and what it reaches";
+    if (target.valid()) {
+        // Only where a modulator could reach the knob. The chip lit stays lit if it can; otherwise the first.
+        Modulation route;
+        route.target = target;
+        int lit = options.scope, scope = 0, kept = 0;
+        for (size_t i = 0; i < places.size(); i++) {
+            if (!reachable(*song, places[i], ModulatorId(), route))
+                continue;
+            if (int(i) == lit)
+                scope = kept;
+            places[size_t(kept)] = places[i];
+            options.scopes[size_t(kept)] = options.scopes[i];
+            kept++;
+        }
+        if (kept == 0)
+            return;
+        places.resize(size_t(kept));
+        options.scopes.resize(size_t(kept));
+        options.scope = scope;
+        options.footer = "moves " + paramName(*song, target) + " at +50%";
+    }
     EditorContext* c = &ctx;
-    std::function<void(ModulatorType, int)> pick = [c, places](ModulatorType type, int scope) {
+    std::function<void(ModulatorType, int)> pick = [c, places, target](ModulatorType type, int scope) {
         TesseraModule* mod = c->module();
         if (!mod || scope < 0 || scope >= int(places.size()))
             return;
@@ -258,6 +282,18 @@ void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device)
         CommandPtr command = addModulator(mod->song(), places[size_t(scope)], type, mod->ids(), &added);
         if (!command)
             return;
+        if (target.valid()) {
+            // Made and connected as one undo step, each part on the song the part before left.
+            Song work = mod->song();
+            command->apply(work);
+            Modulation route;
+            route.target = target;
+            route.amount = 0.5f;
+            auto all = std::make_unique<CompoundCommand>("Modulate " + paramName(work, target));
+            all->add(std::move(command));
+            all->add(addRoute(work, added, route));
+            command = std::move(all);
+        }
         mod->perform(std::move(command));
         setStripOpen(*c, true);
         // A Curve opens in the lower pane only; the others open their settings.
@@ -701,7 +737,8 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
                 mod->perform(addRoute(mod->song(), id, route));
             }));
         sub->addChild(new rack::ui::MenuSeparator);
-        sub->addChild(rack::createMenuItem("A new modulator…", "", [c] { openModulatorBrowser(*c, shownChain(*c)); }));
+        sub->addChild(rack::createMenuItem("A new modulator…", "+50%",
+                                           [c, ref] { openModulatorBrowser(*c, shownChain(*c), DeviceId(), ref); }));
     }));
     if (!on.empty()) {
         menu->addChild(rack::createSubmenuItem("Remove modulation", "", [c, on](rack::ui::Menu* sub) {

@@ -144,7 +144,9 @@ Click or right-click a tag to open its panel: the setting's name, a box to type 
 - **Back to …** sets the default.
 - **Draw a curve** opens a curve for the setting in the lower pane (see [Curves](#playheads) below), and
   **Modulate, automate…** has **Modulate with ▸**, **Remove modulation ▸**, **Automate in the arranger** and
-  **Automate in this clip**.
+  **Automate in this clip**. **Modulate with ▸** lists the modulators that can reach the setting; pick one and it
+  moves the setting by +50%. **A new modulator…** at its end makes a new one that moves the setting by +50%. Its
+  chips only offer places a modulator there can reach the setting from. One undo removes both.
 
 The Note Filter's **Channels** panel has **Any** and the 16 channels to switch on and off; each click keeps the change.
 You can also type a set: "1-4, 10", "any" or "all".
