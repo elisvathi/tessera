@@ -40,7 +40,7 @@ Rack is not a DAW host, so a few things need deliberate handling:
 | **Ctrl/Cmd + drag** | Duplicate the dragged items |
 | **Ctrl/Cmd + click** | Toggle item in selection |
 | **Shift + click** | Add to selection (range-extend where order is meaningful, e.g. tracks) |
-| **Alt + drag on a note body** | Its velocity. On a clip body: slip the content inside the clip (the title strip's up/down drag scales a note clip's velocity, or sets an audio clip's gain) |
+| **Alt + drag on a note body** | Its velocity. On a clip body: slip the content inside the clip (a clip's velocity, or an audio clip's gain, is its level line just under the title strip; DECISIONS §159) |
 | **Double-click** | Open / edit (note → inspector focus, clip → detail editor, empty space → create) |
 | **Right-click** | Context menu. In the Draw tool, right-click (and right-drag) deletes. A setting switches this to "always context menu" |
 | **Esc during a drag** | Cancel the gesture and revert to the pre-drag state |
@@ -361,7 +361,8 @@ instead of pitch rows (DESIGN.md §9). Differences:
 | **Alt + drag body** (slip) | Slide the content inside the clip without moving the clip (adjusts offset) |
 | Double-click | Open in the detail editor; double-click again maximizes the detail editor |
 | Pencil drag in empty space | Create an empty clip of that length |
-| Click in the clip's top header strip and drag down | Fade-like "velocity scale" handle for the instance (instances can scale velocity non-destructively) |
+| Drag the clip's header strip | Moves the clip, as its body does (DECISIONS §159) |
+| Drag the level line just under the header strip | The instance's velocity scale (an audio clip's gain); double-click resets it (DECISIONS §159) |
 
 - `Ctrl/Cmd+D`: duplicate selection after itself. `Ctrl/Cmd+E`: split at the playhead or mouse. `Ctrl/Cmd+J`: consolidate (glue) the selected clips on a track into one clip. `Ctrl/Cmd+U`: make unique.
 - Magnetic snap: in addition to the grid, clip edges snap to other clips' edges, markers, the loop edges and the playhead when within 8 px (Alt bypasses).

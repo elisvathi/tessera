@@ -89,8 +89,7 @@ Audio clips move, copy, trim, loop and split with the same gestures as note clip
 
 | Gesture | What it does |
 |---|---|
-| Drag the title bar up or down | The clip's gain. The waveform grows and shrinks while you drag. Every selected audio clip changes by the same amount. Snaps to 0 dB; Alt skips the snap. |
-| The level line | A clip whose gain isn't 0 dB shows it as a line across its body, shaded above (0 dB sits at three quarters of the height, as on a fader). Drag the line to change the gain; **double-click** it to go back to 0 dB. |
+| Drag the level line up or down | The clip's gain. Hover the clip: a faint line just under its title is 0 dB (three quarters of the height, as on a fader). The waveform grows and shrinks while you drag. Every selected audio clip changes by the same amount. Snaps to 0 dB; Alt skips the snap. A clip whose gain isn't 0 dB always shows its line, shaded above; **double-click** it to go back to 0 dB. |
 | Drag a top corner of the clip body | The fade in (left) or fade out (right). The fade shades the waveform. |
 | Drag the dot in the middle of a fade up or down | Bends the fade's curve: up rises fast then levels off, down starts slowly. It catches at straight; Alt skips that. |
 | Alt+drag the right edge | The clip tempo (see above). |

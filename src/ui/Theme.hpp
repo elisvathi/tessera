@@ -161,10 +161,10 @@ constexpr float kMarkerRow = 14;
 constexpr float kLoopStrip = 12;
 constexpr float kPlayheadMarkWidth = 12; // a clip tile's stripe per playhead, when playheads play it
 constexpr float kPlayheadMarkHeight = 3;
-// A timeline tile whose velocity (or an audio clip's gain) isn't at its default draws its level as a line across its
-// body, from this tall; the mouse catches it this far above or below.
+// A timeline tile's level (velocity, or an audio clip's gain) is a line across its body, from this tall: drawn when off
+// its default, faint on hover at the default (just under the title). The mouse catches it this far above or below.
 constexpr float kLevelLineMinBody = 10;
-constexpr float kLevelLineHit = 4;
+constexpr float kLevelLineHit = 3;
 constexpr float kOwnMarkWidth = 16; // the device-card mark of a clip with its own devices
 constexpr float kOwnMarkHeight = 12;
 constexpr float kOwnMarkDot = 3.5f;     // its small form, on a slot too narrow for the card and the name

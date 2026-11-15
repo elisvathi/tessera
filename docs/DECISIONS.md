@@ -2664,4 +2664,10 @@ equal value boxes were turned down. Where the page and the earlier design disagr
   fader curve below 0 dB and reaches the top at +24 dB. No line at the default. Hovering it makes it bold with a
   pill ("Velocity 70% · double-click for 100%"); dragging it is the title bar's up/down; a **double-click** resets
   the selection (velocity 100%, audio gain 0 dB). Launcher slots have no velocity scale, so no line there.
+- **The title bar only moves (the user: "dragging clips should be extremely easy").** Its drag used to choose by
+  the first pixels: up/down set velocity (an audio clip's gain), sideways moved; so a clip couldn't be dragged by its
+  title to another track, and a slightly vertical start changed velocity instead. Now the title bar moves like the
+  body, and velocity and gain live only on the level line, which is there at the default too: just under the title
+  (three quarters of the body), drawn faint on the hovered tile, bold with "Velocity 100% · drag to change" under the
+  mouse. Its grab zone is ±3 px; a double-click there resets a changed level and otherwise opens the clip as before.
 

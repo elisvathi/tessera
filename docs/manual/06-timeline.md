@@ -52,8 +52,8 @@ Hover a clip's edges and body. The mouse cursor shows what a drag will do.
 | **Left edge** | Trims the start. The notes stay where they are in time. |
 | **Alt + body** | Slips the notes inside the tile, without moving the tile. |
 | **Alt + right edge** | Time-stretches the tile. The readout shows the factor (×2, ×0.5…). |
-| **Title bar, up or down** | Changes the tile's velocity (shown as a percentage). Dragging sideways moves the clip. |
-| **Level line, up or down** | A tile whose velocity isn't 100% shows it as a line across its body, shaded above: at three quarters of the height for 100%, at the top for 200%. Drag the line to change it. **Double-click** it to go back to 100%. Hover it to read the value. |
+| **Title bar** | Moves the clip, like its body: along the track or to another track. |
+| **Level line, up or down** | The tile's velocity. Hover a tile: a faint line just under its title is its velocity at 100%. Drag it down for softer, up for louder (up to 200% at the top); Shift for fine steps. A tile whose velocity isn't 100% always shows its line, shaded above, and the percentage in its title. **Double-click** the line to go back to 100%. |
 
 With the keys: **Shift+Alt+Left / Right** makes the selection shorter or longer by one grid step. **Up / Down**
 transposes the selected tiles. Transpose, velocity and stretch change only that tile, not the clip. On a track with

@@ -124,8 +124,9 @@ class ArrangerLanes : public TimelineView {
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
     void click(rack::math::Vec pos, int button, Modifiers mods) override;
     void doubleClick(rack::math::Vec pos, Modifiers mods) override;
-    /// The hovered tile's level line, bold, with its value and how to reset it.
-    void drawLevelHover(NVGcontext* vg, const arrange::Placed& p, float x0, float x1, float top, float h);
+    /// The hovered tile's level line: faint, or with the mouse on it (`onLine`) bold with its value and what a drag
+    /// or a double-click does.
+    void drawLevelHover(NVGcontext* vg, const arrange::Placed& p, float x0, float x1, float top, float h, bool onLine);
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void onLeave(const LeaveEvent& e) override;
     void onPathDrop(const PathDropEvent& e) override;

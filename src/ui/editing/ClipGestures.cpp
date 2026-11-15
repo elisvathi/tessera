@@ -651,50 +651,6 @@ class VelocityGesture : public SelectionGesture {
     float delta = 0;
 };
 
-/// The header strip: the first few pixels of movement decide between velocity (up/down) and moving.
-class HeaderGesture : public DragGesture {
-  public:
-    HeaderGesture(ArrangerLanes& lanes, Vec press, ArrangementId grabbed)
-        : lanes(lanes), press(press), grabbed(grabbed) {}
-
-    void update(Vec pos, Modifiers mods) override {
-        if (!inner) {
-            Vec d = pos.minus(press);
-            if (std::hypot(d.x, d.y) < AxisLock::kDecidePx)
-                return;
-            bool audio = false;
-            if (const arrange::Placed* p = arrange::find(lanes.committed(), grabbed))
-                if (const Clip* c = lanes.context().module()->song().findClip(p->clip.clip))
-                    audio = c->isAudio();
-            if (std::fabs(d.y) > std::fabs(d.x) && audio)
-                inner = std::make_unique<GainGesture>(lanes, press, grabbed);
-            else if (std::fabs(d.y) > std::fabs(d.x))
-                inner = std::make_unique<VelocityGesture>(lanes, press, grabbed);
-            else
-                inner = std::make_unique<MoveGesture>(lanes, press, grabbed, mods.ctrl && mods.alt);
-        }
-        inner->update(pos, mods);
-    }
-    void commit() override {
-        if (inner)
-            inner->commit();
-    }
-    void cancel() override {
-        if (inner)
-            inner->cancel();
-    }
-    std::string readout() const override { return inner ? inner->readout() : ""; }
-    CursorShape cursor() const override { return inner ? inner->cursor() : CursorShape::ResizeV; }
-    bool autoScrollX() const override { return inner && inner->autoScrollX(); }
-    bool autoScrollY() const override { return inner && inner->autoScrollY(); }
-
-  private:
-    ArrangerLanes& lanes;
-    Vec press;
-    ArrangementId grabbed;
-    std::unique_ptr<DragGesture> inner;
-};
-
 // ---- Tools --------------------------------------------------------------------------------------------------
 
 class DrawGesture : public ClipGesture {
@@ -866,9 +822,6 @@ std::unique_ptr<DragGesture> resizeEnd(ArrangerLanes& lanes, Vec press, Arrangem
 }
 std::unique_ptr<DragGesture> trimStart(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
     return std::make_unique<EdgeGesture>(lanes, press, grabbed, EdgeGesture::Kind::Start);
-}
-std::unique_ptr<DragGesture> header(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
-    return std::make_unique<HeaderGesture>(lanes, press, grabbed);
 }
 std::unique_ptr<DragGesture> level(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
     bool audio = false;
