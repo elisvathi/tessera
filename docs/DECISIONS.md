@@ -2761,3 +2761,44 @@ folds with a clear parent for each fold.
   sends reach it, so muting the dry tracks to hear an effect return doesn't leave the bounce empty; the solo keeps
   them out of MAIN. "Whole track" and "Until silent" count the feeders' clips.
 - **Not built:** "Add output modules" in Roll's menu (not discussed yet).
+
+## 163. Modulators in three places, Macros you drag, one dice for randomness, an editable arp Pattern, copy and paste in the strip (15 Nov)
+
+Agreed with the user on the canvas https://claude.ai/artifact/PQ8zCxou1mn6AjKJSccqFC (D1-D7). It replaces the
+single modulator list of §36 and the modulator popover.
+
+- **One modulator section, three places.** Left to right in the strip: **SONG** (the same on every track), a slim
+  upright **TRACK | CLIP** switch (rotated words, the side that plays filled in the track's colour, an arrow into the
+  next section; "Own" is now called CLIP), the **TRACK · name** or **CLIP · name** section, then the cards. Each card
+  has its own **DEVICE** section on its left edge. Every section looks the same: a header with a fold arrow, the
+  level and **+**; rows with a colour dot, name and live graph; folded, a 30 px rail with a dot per modulator and an
+  upright fader per Macro. Where you press + decides the level: the browser's "where it lives" chips go.
+- **Nothing gets narrower.** Opening a section, or a modulator's settings, adds room and pushes what follows to the
+  right; the strip scrolls sideways as it does for many cards. A card's own controls keep their size.
+- **Settings beside the section, not a popover.** A click on a row opens its settings (values, a picture, MOVES, Map
+  to knobs, CV out) just right of its section, with a stripe in its colour; a second click or ◂ closes it. One per
+  section. A device's modulator opens inside its card, between the section and the card's contents. A Curve still
+  draws in the lower pane.
+- **A Macro is a fader.** Its row is the control: drag sideways, wheel, double-click resets, Shift (drag) or Ctrl
+  (wheel) for fine; armed and playing, a drag records into its lane. Right-click: type a value, learn a MIDI control,
+  map, automate, rename, delete. Folded, it is an upright fader in the rail.
+- **One dice for randomness**: Random and Humanize devices, the arpeggiator's Random, Walk, Shuffled and Pattern, the
+  Random modulator, an LFO's random shapes, and per clip the notes' chance (on the Chance lane label and the
+  inspector's CLIP section). No menu: a dice button and a two-part switch **[17 | New]**. The dice rolls another
+  number and keeps it; **17** is the same every time (double-click to type a number); **New** rolls on every play and
+  every loop pass (the user's "seed −1"). New devices start on **New**. A bake, bounce or export of something on New
+  rolls fresh; its message offers **Keep it**, which sets the switch to that roll. The song-wide seed goes.
+- **The arpeggiator's Pattern is editable.** Picking Pattern turns the card's picture into a step grid: rows all / 4 /
+  3 / 2 / 1 (held notes, low to high; a row past the held count plays from the bottom an octave up), an octave row
+  (0, +1, −1) and a length row (1-16). The dice writes a new line; once edited by hand the switch reads **Yours**.
+  A tie step comes later.
+- **Select, copy and paste in the strip.** A click selects a card, a modulator row, or a whole section (its header,
+  without lighting each row): accent outline and a light tint, no check boxes. Ctrl+click adds or removes, Shift+click
+  takes the run, as with tracks and clips; empty space or Esc clears. Copy and paste by right-click or Ctrl+C / Ctrl+V
+  (Ctrl+D duplicates, Delete deletes); the menu names what it copies and pastes. Devices may be selected with track or
+  clip modulators, so a modulator travels with what it moves; song modulators never mix. A paste goes into the chain
+  the switch shows, after the right-clicked card or at the end; modulators into that track's or clip's section; a
+  card's own modulators go with it; moves between copied things are kept, others out of reach are dropped with a
+  message. It works into another Roll in the same patch. No dragging to copy for now.
+- **Built in stages**, each committed on its own: the sections and settings beside them; the dice; copy and paste;
+  the Pattern editor.
