@@ -281,10 +281,12 @@ int Ruler::markerAt(const std::vector<Marker>& markers, float x) {
     return -1;
 }
 
-double Ruler::overviewTickAt(float x) { return double(x) / box.size.x * source.contentEnd(); }
+double Ruler::overviewEnd() { return std::max(source.contentEnd(), viewport.time.right()); }
+
+double Ruler::overviewTickAt(float x) { return double(x) / box.size.x * overviewEnd(); }
 
 rack::math::Rect Ruler::overviewWindow() {
-    double end = source.contentEnd();
+    double end = overviewEnd();
     float x0 = float(viewport.time.left() / end) * box.size.x;
     float x1 = float(viewport.time.right() / end) * box.size.x;
     if (x1 - x0 < kMinOverviewWindow) {
@@ -640,7 +642,7 @@ void Ruler::drawOverview(NVGcontext* vg) {
     const theme::Palette& c = theme::colors();
     float top = timeBottom();
     float h = strips().overview;
-    double end = source.contentEnd();
+    double end = overviewEnd();
     nvgBeginPath(vg);
     nvgRect(vg, 0, top, box.size.x, h);
     nvgFillColor(vg, c.bg0);
