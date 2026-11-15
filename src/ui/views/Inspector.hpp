@@ -57,9 +57,11 @@ class Inspector : public InteractiveView {
     float section(NVGcontext* vg, float y, const char* title);
     float row(NVGcontext* vg, float y, const std::string& label, const std::string& value);
     /// A track setting you can change: the value is a chip with a caret, and a click opens its menu.
-    enum class Setting { Voices, Input, Recording, Audio, Send, AddSend, Output };
+    enum class Setting { Voices, Input, Recording, Audio, Send, AddSend, Output, DiceRoll, DiceFixed, DiceNew };
     float settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value, Setting which,
                      uint64_t target = 0);
+    /// A clip's dice for its notes' chance (docs/DECISIONS.md §163): the dice and the [17 | New] switch.
+    float diceRow(NVGcontext* vg, float y, const Clip& clip);
     /// Opens the menu for a setting row of the selected track (`target`: the track a Send row sends to).
     void openSetting(Setting which, uint64_t target = 0);
     /// The selected track's sends, each with its level and place, then + Send to…, and who sends to it (§7.6).

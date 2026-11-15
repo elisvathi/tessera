@@ -95,14 +95,14 @@ void swingEvent(NoteEvent& e, float swing, Tick step, Tick limit) {
     e.end = std::max(e.start + 1, std::min(end, limit));
 }
 
-void attachExtras(NoteEvent& e, const Note& note, std::vector<NoteExtras>& extras, uint64_t clip, Tick loopStart,
+void attachExtras(NoteEvent& e, const Note& note, std::vector<NoteExtras>& extras, const Clip& clip, Tick loopStart,
                   Tick length, bool looping, double stretch = 1) {
     if (!hasExtras(note) || extras.size() >= kNoExtras)
         return;
     double spread = operators::spreadTicks(note);
     Tick shift = Tick(std::llround(operators::microTicks(note) - spread));
     e.extras = uint16_t(extras.size());
-    extras.push_back({note, clip, spread, stretch});
+    extras.push_back({note, clip.id.value, spread, stretch, clip.variation});
     if (shift == 0)
         return;
     Tick duration = e.end - e.start;
@@ -208,7 +208,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
                     note.start < region.start + region.length) {
                     loop.notes.push_back(noteEvent(note, track, region.start + region.length));
                     swingEvent(loop.notes.back(), swing, swingStep, region.start + region.length);
-                    attachExtras(loop.notes.back(), note, out.extras, clip.id.value, region.start, region.length, true);
+                    attachExtras(loop.notes.back(), note, out.extras, clip, region.start, region.length, true);
                 }
             sortEvents(loop.notes);
             loop.notesByEnd = playheads::orderByEnd(loop.notes);
@@ -235,7 +235,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
             continue;
         out.notes.push_back(noteEvent(note, track, readEnd));
         swingEvent(out.notes.back(), swing, swingStep, readEnd);
-        attachExtras(out.notes.back(), note, out.extras, clip.id.value, out.loopStart, out.loopLength(), out.looping);
+        attachExtras(out.notes.back(), note, out.extras, clip, out.loopStart, out.loopLength(), out.looping);
     }
     // With lanes of their own length the clip loops their whole cycle, so every pass plays the same; its other notes
     // keep repeating its own loop inside it.
@@ -435,7 +435,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
             e.key = key;
             e.channel = n.source ? n.source->channel : 1;
             swingEvent(e, songSwingFor(song, track), song.swingStep, instanceEnd(a));
-            attachExtras(e, *n.source, tp->arrangementExtras, clip->id.value, 0, 0, false,
+            attachExtras(e, *n.source, tp->arrangementExtras, *clip, 0, 0, false,
                          std::clamp(double(a.stretch), double(kMinStretch), double(kMaxStretch)));
             tp->arrangement.push_back(e);
         }
@@ -508,6 +508,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                         bp.on = b.on && d.on;
                         bp.affectDrums = b.affectDrumLanes;
                         bp.id = b.id.value;
+                        bp.variation = b.variation;
                         bp.knobs = addOwner(ParamRef::Kind::Device, b.id.value, b.params);
                         bp.lane = uint8_t(k + 1);
                         chain.devices.push_back(bp);
@@ -523,6 +524,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
             dp.on = d.on;
             dp.affectDrums = d.affectDrumLanes;
             dp.id = d.id.value;
+            dp.variation = d.variation;
             dp.knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
             chain.devices.push_back(dp);
             chain.active |= d.on;
@@ -558,6 +560,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         mp.type = m.type;
         mp.id = m.id.value;
         mp.slot = slot;
+        mp.variation = m.variation;
         mp.knobs = addOwner(ParamRef::Kind::Modulator, m.id.value, m.params);
         mp.track = place.level == ModLevel::Song ? -1 : song.trackIndex(place.track);
         mp.stepCount = int(std::min<size_t>(m.steps.size(), kMaxSteps));

@@ -311,7 +311,7 @@ void Chain::velocity(const Message& m, const DeviceSlot& d, const Context& c, Ou
     v = lo + v * (hi - lo);
     float spread = shown(d, knob::kRandom) / 100;
     if (spread > 0) {
-        double r = operators::random(c.seed, d.id, n.pass, noteKey(n), kVelocitySalt);
+        double r = operators::random(variationSeed(d.variation, c.roll, d.id), d.id, n.pass, noteKey(n), kVelocitySalt);
         v += float(r * 2 - 1) * spread;
     }
     n.velocity = std::clamp(v, 0.f, 1.f);
@@ -584,7 +584,7 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
     // The patterns that choose for themselves choose the same way for the same held notes, so a loop sounds the
     // same every pass: what plays is what was heard last time.
     auto heldSeed = [&] {
-        uint64_t seed = c.seed ^ (d.id * 0x9E3779B97F4A7C15ull) ^ uint64_t(octaves);
+        uint64_t seed = variationSeed(d.variation, c.roll, d.id) ^ (d.id * 0x9E3779B97F4A7C15ull) ^ uint64_t(octaves);
         for (int i = 0; i < count; i++)
             seed = seed * 1099511628211ull ^ uint64_t(at(i).second + 1);
         return seed;
@@ -665,7 +665,8 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         break;
     }
     case ArpPattern::Random: {
-        double r = operators::random(c.seed, d.id, int64_t(s.steps), uint64_t(std::llround(t)), 0xA4B9u);
+        double r = operators::random(variationSeed(d.variation, c.roll, d.id), d.id, int64_t(s.steps),
+                                     uint64_t(std::llround(t)), 0xA4B9u);
         auto [h, p] = at(std::min(count - 1, int(r * count)));
         play(h, p);
         break;
@@ -768,7 +769,9 @@ void Chain::random(const Message& m, const DeviceSlot& d, const Context& c, Outp
         return;
     }
     ChainNote n = m.note;
-    auto roll = [&](uint32_t salt) { return operators::random(c.seed, d.id, n.pass, noteKey(n), salt); };
+    auto roll = [&](uint32_t salt) {
+        return operators::random(variationSeed(d.variation, c.roll, d.id), d.id, n.pass, noteKey(n), salt);
+    };
     if (roll(0xD509u) * 100 < shown(d, knob::kDrop))
         return; // dropped this pass; its end, if one follows, finds no note downstream
     int steps = int(shown(d, knob::kRandomPitch));
@@ -788,7 +791,9 @@ void Chain::humanize(const Message& m, const DeviceSlot& d, const Context& c, Ou
         return;
     }
     ChainNote n = m.note;
-    auto roll = [&](uint32_t salt) { return operators::random(c.seed, d.id, n.pass, noteKey(n), salt); };
+    auto roll = [&](uint32_t salt) {
+        return operators::random(variationSeed(d.variation, c.roll, d.id), d.id, n.pass, noteKey(n), salt);
+    };
     float spread = shown(d, knob::kHumanizeVelocity) / 100;
     if (spread > 0)
         n.velocity = std::clamp(n.velocity + float(roll(0x7E10u) * 2 - 1) * spread, 0.f, 1.f);

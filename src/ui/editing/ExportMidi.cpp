@@ -1,9 +1,11 @@
 #include "ExportMidi.hpp"
 
 #include "../../model/DawProject.hpp"
+#include "../../model/DeviceCommands.hpp"
 #include "../../model/Render.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../widgets/SettingsPanel.hpp"
+#include "DeviceActions.hpp"
 
 #include <osdialog.h>
 
@@ -134,6 +136,14 @@ std::string pickPath(const std::string& name, const char* filter = "MIDI file:mi
     return path;
 }
 
+/// The IDs of `tracks`, for Keep it.
+std::vector<TrackId> idsOf(const std::vector<const Track*>& tracks) {
+    std::vector<TrackId> ids;
+    for (const Track* t : tracks)
+        ids.push_back(t->id);
+    return ids;
+}
+
 std::string stem(const std::string& path) {
     std::string ext = rack::system::getExtension(path);
     return path.substr(0, path.size() - ext.size());
@@ -190,7 +200,10 @@ void openSong(EditorContext& ctx) {
         Choices choices = form->read(Choices{o}, values);
         Options options = choices.options;
         c->state().exportOptions = options;
-        const Song& s = mod->song();
+        // What is on "New every play" rolls fresh for this export; the message offers to keep it.
+        uint32_t roll = deviceActions::freshRoll();
+        Song rolled = songRolled(mod->song(), roll);
+        const Song& s = rolled;
         if (options.range == RangeMode::Selection) {
             options.from = c->state().range.from;
             options.to = c->state().range.to;
@@ -217,13 +230,17 @@ void openSong(EditorContext& ctx) {
                 std::string one = stem(path) + " - " + fileSafe(t->name) + ".mid";
                 ok &= smf::writeFile(renderSong(s, options, context, {t->id}), one);
             }
-            c->toast(ok ? "Exported " + std::to_string(tracks.size()) + " files next to " + name
-                        : "Couldn't write every file to " + rack::system::getDirectory(path));
+            deviceActions::offerKeepRoll(*c,
+                                         ok ? "Exported " + std::to_string(tracks.size()) + " files next to " + name
+                                            : "Couldn't write every file to " + rack::system::getDirectory(path),
+                                         roll, idsOf(tracks));
         } else {
             ok = smf::writeFile(renderSong(s, options, context, chosen), path);
-            c->toast(ok ? "Exported " + std::to_string(tracks.size()) + " track" + (tracks.size() == 1 ? "" : "s") +
-                              " to " + name
-                        : "Couldn't write " + path);
+            deviceActions::offerKeepRoll(*c,
+                                         ok ? "Exported " + std::to_string(tracks.size()) + " track" +
+                                                  (tracks.size() == 1 ? "" : "s") + " to " + name
+                                            : "Couldn't write " + path,
+                                         roll, idsOf(tracks));
         }
     };
     SettingsPanel::open("Export MIDI", form->rows, "Export…", std::move(callbacks));
@@ -256,7 +273,10 @@ void openClips(EditorContext& ctx, std::vector<std::pair<TrackId, ClipId>> clips
             return;
         Choices choices = form->read(Choices{o}, values);
         c->state().exportOptions = choices.options;
-        const Song& s = mod->song();
+        // What is on "New every play" rolls fresh for this export; the message offers to keep it.
+        uint32_t roll = deviceActions::freshRoll();
+        Song rolled = songRolled(mod->song(), roll);
+        const Song& s = rolled;
         auto clipName = [&](ClipId id) {
             const Clip* clip = s.findClip(id);
             return clip && !clip->name.empty() ? clip->name : std::string("Clip");
@@ -265,6 +285,9 @@ void openClips(EditorContext& ctx, std::vector<std::pair<TrackId, ClipId>> clips
         if (path.empty())
             return;
         Context context = contextOf(mod);
+        std::vector<TrackId> clipTracks;
+        for (const auto& one : clips)
+            clipTracks.push_back(one.first);
         // Each clip's track is named after the clip, so a multi-clip file reads clearly in a DAW.
         auto render = [&](const std::pair<TrackId, ClipId>& one) {
             smf::File f = renderClip(s, choices.options, context, one.first, one.second);
@@ -281,14 +304,18 @@ void openClips(EditorContext& ctx, std::vector<std::pair<TrackId, ClipId>> clips
                 f.tracks.insert(f.tracks.end(), g.tracks.begin() + 1, g.tracks.end());
             }
             ok = smf::writeFile(f, path);
-            c->toast(ok ? "Exported " + std::to_string(clips.size()) + " clip" + (clips.size() == 1 ? "" : "s") +
-                              " to " + name
-                        : "Couldn't write " + path);
+            deviceActions::offerKeepRoll(*c,
+                                         ok ? "Exported " + std::to_string(clips.size()) + " clip" +
+                                                  (clips.size() == 1 ? "" : "s") + " to " + name
+                                            : "Couldn't write " + path,
+                                         roll, clipTracks);
         } else {
             for (const auto& one : clips)
                 ok &= smf::writeFile(render(one), stem(path) + " - " + fileSafe(clipName(one.second)) + ".mid");
-            c->toast(ok ? "Exported " + std::to_string(clips.size()) + " files next to " + name
-                        : "Couldn't write every file to " + rack::system::getDirectory(path));
+            deviceActions::offerKeepRoll(*c,
+                                         ok ? "Exported " + std::to_string(clips.size()) + " files next to " + name
+                                            : "Couldn't write every file to " + rack::system::getDirectory(path),
+                                         roll, clipTracks);
         }
     };
     std::string title = clips.size() == 1 ? "Export clip as MIDI" : "Export " + std::to_string(clips.size()) + " clips";
@@ -346,18 +373,24 @@ void openDawProject(EditorContext& ctx) {
             std::fclose(in);
             audio.push_back({paths[s.id.value], std::move(data)});
         }
-        std::string bytes =
-            dawproject::build(mod->song(), options, contextOf(mod), mod->model->plugin->version, audio);
+        uint32_t roll = deviceActions::freshRoll();
+        std::string bytes = dawproject::build(songRolled(mod->song(), roll), options, contextOf(mod),
+                                              mod->model->plugin->version, audio);
         FILE* f = std::fopen(path.c_str(), "wb");
         bool ok = f && std::fwrite(bytes.data(), 1, bytes.size(), f) == bytes.size();
         if (f)
             ok &= std::fclose(f) == 0;
         size_t tracks = 0;
-        for (const Track& t : mod->song().tracks)
+        std::vector<TrackId> all;
+        for (const Track& t : mod->song().tracks) {
             tracks += !t.mute || options.includeMuted;
-        c->toast(ok ? "Exported " + std::to_string(tracks) + " track" + (tracks == 1 ? "" : "s") + " to " +
-                          rack::system::getFilename(path)
-                    : "Couldn't write " + path);
+            all.push_back(t.id);
+        }
+        deviceActions::offerKeepRoll(*c,
+                                     ok ? "Exported " + std::to_string(tracks) + " track" + (tracks == 1 ? "" : "s") +
+                                              " to " + rack::system::getFilename(path)
+                                        : "Couldn't write " + path,
+                                     roll, all);
     };
     SettingsPanel::open("Export DAWproject", form->rows, "Export…", std::move(callbacks));
 }

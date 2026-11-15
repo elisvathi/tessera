@@ -298,6 +298,7 @@ TEST_CASE("export: rendered operators follow the engine's passes and seed") {
     rec.ops.recurrenceMask = 0b01;
     Clip& c = addClip(song, kBeat, {n, r, rec});
     c.loopMode = LoopMode::Loop;
+    c.variation = 42; // its chance dice, on Same every time
     place(song, lead, c.id, 0, 16 * kBeat);
 
     Options o;

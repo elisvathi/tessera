@@ -62,8 +62,15 @@ it.
 | **Only when…** | The note plays only on a condition: **First pass**, **Not first**, **After played** (the note before it played), **After silent** (the note before it didn't play), **Fill**, **Not fill**. Fill follows the panel's **FILL** button, the **FILL** input, or the **F1** key. |
 | **Every … passes** | The note plays only on some passes of a cycle. A row of 16 bars shows the passes: click a bar to play or skip that pass, click a grey bar to make the cycle longer, right-click to end the cycle there. For example, a cycle of 4 with pass 4 on plays the note only every fourth loop. |
 
-Random choices are repeatable: a loop plays the same way each time you play the song, and the same way in a MIDI
-export.
+**The dice.** Each clip decides its chance, velocity spread and timing spread with a dice of its own, in the
+inspector's CLIP section, on the **Chance** row: a dice button and a two-part switch.
+
+- **New** (where a new clip starts): the choices are made again on every play and every pass of the song loop.
+- **17**, or any number from 1 to 999: the same choices every time, so a loop you like stays. Click the number half to
+  switch to it; the dice rolls another number and keeps it.
+
+A bake or export of a clip on **New** makes fresh choices; its message offers **Keep it**, which sets the clip's
+switch to the number it used, so you hear what you baked.
 
 ### Badges
 

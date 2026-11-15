@@ -110,6 +110,14 @@ time.
 - **Power dot** (top left): bypass the device. The dot turns hollow, the pictures fade, and the notes pass through
   unchanged.
 - **⋯ menu**: rename, duplicate, delete, reset its settings, affect drum lanes, add a modulator to this device.
+- **The dice**, on devices that play by chance (Random, Humanize, Velocity with Random above 0%, and the Arpeggiator
+  on Random, Walk, Shuffled or Pattern): a dice button and a two-part switch, **[17 | New]**.
+  - **New** (where a new device starts): new choices on every play and every pass of the song loop.
+  - **17**, or any number from 1 to 999: the same choices every time. Click the number half to switch to it,
+    double-click it to type one. The dice rolls another number and keeps it; each roll is one undo step.
+  - A bake, bounce or export of something on **New** rolls fresh; its message offers **Keep it**, which sets the
+    switches to the numbers it used, so you hear what you baked. The Random modulator and an LFO with a random
+    shape have the same dice at the top of their settings.
 - **Drag the card's header** to move it in the chain. A line shows where it will land. **Ctrl+drag** copies it.
 - Click a card, then **Delete** removes it and **Ctrl+D** duplicates it.
 

@@ -171,9 +171,15 @@ class Engine {
     void setSnapshot(const Snapshot* snapshot);
 
     void play() {
+        // Every play rolls again for what is set to "New every play" (docs/DECISIONS.md §163).
+        if (!playing)
+            roll++;
         playing = true;
         wakeAll();
     }
+    /// The roll devices, modulators and clips on "New every play" play on now: it changes on every play and every
+    /// pass of the song loop.
+    uint32_t currentRoll() const { return roll; }
     void stop();
     /// Back to the loop start when looping, otherwise to the song start. Clips restart from their beginning.
     void reset();
@@ -740,6 +746,7 @@ class Engine {
     Tick clockDivision = kPpq / 4;
 
     bool playing = false;
+    uint32_t roll = 1; // see currentRoll()
     bool resetPending = false;
     double songTick = 0;
     double windowStart = 0; // song tick where the current sample's window begins

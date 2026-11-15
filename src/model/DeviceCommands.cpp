@@ -466,6 +466,124 @@ CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name) 
     });
 }
 
+CommandPtr setDeviceVariation(const Song& song, DeviceId id, int32_t variation) {
+    variation = clampVariation(variation);
+    return chainEdit(song, variation < 0 ? "New every play" : "Variation " + std::to_string(variation),
+                     [&](Song& work) {
+                         Device* d = findDevice(work, id);
+                         if (!d || d->variation == variation)
+                             return false;
+                         d->variation = variation;
+                         return true;
+                     });
+}
+
+CommandPtr setModulatorVariation(const Song& song, ModulatorId id, int32_t variation) {
+    variation = clampVariation(variation);
+    return chainEdit(song, variation < 0 ? "New every play" : "Variation " + std::to_string(variation),
+                     [&](Song& work) {
+                         Modulator* m = findModulator(work, id);
+                         if (!m || m->variation == variation)
+                             return false;
+                         m->variation = variation;
+                         return true;
+                     });
+}
+
+namespace {
+
+/// Fixes a "New every play" switch to what roll `roll` plays it on. True when it changed.
+bool fix(int32_t& variation, uint32_t roll, uint64_t id) {
+    if (variation >= 1)
+        return false;
+    variation = int32_t(rolledVariation(roll, id));
+    return true;
+}
+
+/// Fixes the switches of a chain's devices (their playheads' own devices too) and their modulators.
+bool fixChain(std::vector<Device>& devices, uint32_t roll) {
+    bool any = false;
+    for (Device& d : devices) {
+        any |= fix(d.variation, roll, d.id.value);
+        for (Modulator& m : d.modulators)
+            any |= fix(m.variation, roll, m.id.value);
+        for (Playhead& p : d.playheads)
+            any |= fixChain(p.branch, roll);
+    }
+    return any;
+}
+
+/// Fixes a clip's chance and its own chain.
+bool fixClip(Clip& c, uint32_t roll) {
+    bool any = fix(c.variation, roll, c.id.value);
+    any |= fixChain(c.devices, roll);
+    for (Modulator& m : c.modulators)
+        any |= fix(m.variation, roll, m.id.value);
+    return any;
+}
+
+} // namespace
+
+Song songRolled(const Song& song, uint32_t roll) {
+    Song out = song;
+    for (Modulator& m : out.modulators)
+        fix(m.variation, roll, m.id.value);
+    for (Track& t : out.tracks) {
+        fixChain(t.devices, roll);
+        for (Modulator& m : t.modulators)
+            fix(m.variation, roll, m.id.value);
+    }
+    for (auto& [id, c] : out.clips)
+        fixClip(c, roll);
+    return out;
+}
+
+CommandPtr keepRoll(const Song& song, TrackId track, uint32_t roll) {
+    const Track* t = song.findTrack(track);
+    if (!t)
+        return nullptr;
+    std::vector<ClipId> clips;
+    for (const ClipSlot& slot : t->slots)
+        if (slot.clip)
+            clips.push_back(*slot.clip);
+    for (const ArrangerClip& a : t->arrangement)
+        clips.push_back(a.clip);
+    auto all = std::make_unique<CompoundCommand>("Keep this variation");
+    Song work = song;
+    if (CommandPtr chains = chainEdit(work, "Keep this variation", [&](Song& w) {
+            bool any = false;
+            for (Modulator& m : w.modulators)
+                any |= fix(m.variation, roll, m.id.value);
+            Track* wt = w.findTrack(track);
+            any |= fixChain(wt->devices, roll);
+            for (Modulator& m : wt->modulators)
+                any |= fix(m.variation, roll, m.id.value);
+            for (ClipId id : clips)
+                if (Clip* c = w.findClip(id)) {
+                    any |= fixChain(c->devices, roll);
+                    for (Modulator& m : c->modulators)
+                        any |= fix(m.variation, roll, m.id.value);
+                }
+            return any;
+        })) {
+        chains->apply(work);
+        all->add(std::move(chains));
+    }
+    std::sort(clips.begin(), clips.end());
+    clips.erase(std::unique(clips.begin(), clips.end()), clips.end());
+    for (ClipId id : clips) {
+        const Clip* c = work.findClip(id);
+        if (!c || c->variation >= 1)
+            continue;
+        if (CommandPtr chance = setClipField(work, id, &Clip::variation, int32_t(rolledVariation(roll, id.value)),
+                                             "Keep this variation")) {
+            chance->apply(work);
+            all->add(std::move(chance));
+        }
+    }
+    return all->empty() ? nullptr : std::move(all);
+}
+
 CommandPtr setNotesMotion(const Song& song, ClipId clip, const std::vector<NoteId>& notes, DeviceId motion) {
     const Clip* c = song.findClip(clip);
     const Device* d = motion.valid() ? findDevice(song, motion) : nullptr;

@@ -759,12 +759,20 @@ void curveFromBefore(Modulator& m) {
         r.amount = &r == &*first ? 1.f : std::clamp(r.amount / amount, -1.f, 1.f);
 }
 
+/// A dice switch as saved: the number, or -1 for new every play. Songs from before the switch played every random
+/// thing on the song's one fixed number, 1, which is what a missing value reads as, so they sound as they did.
+int32_t variationFromJson(const json_t* j) {
+    int64_t v = getInt(j, "variation", 1);
+    return clampVariation(int32_t(std::clamp<int64_t>(v, -kMaxVariation, kMaxVariation)));
+}
+
 json_t* modulatorToJson(const Modulator& m) {
     json_t* j = json_object();
     set(j, "id", idJson(m.id));
     setString(j, "type", enumName(m.type, kModulatorTypes));
     setString(j, "name", m.name);
     set(j, "params", floatsToJson(m.params));
+    setInt(j, "variation", m.variation);
     if (!m.steps.empty())
         set(j, "steps", floatsToJson(m.steps));
     if (m.type == ModulatorType::Curve) {
@@ -788,6 +796,7 @@ Modulator modulatorFromJson(const json_t* j) {
     m.type = enumFromName(get(j, "type"), kModulatorTypes, m.type);
     m.name = getString(j, "name", m.name);
     m.params = floatsFromJson(get(j, "params"));
+    m.variation = variationFromJson(j);
     m.steps = floatsFromJson(get(j, "steps"));
     m.length = getInt(j, "length", 0);
     m.points = drawnPointsFromJson(get(j, "points"));
@@ -884,6 +893,7 @@ json_t* deviceToJson(const Device& d) {
     if (d.affectDrumLanes)
         setBool(j, "drumLanes", true);
     set(j, "params", floatsToJson(d.params));
+    setInt(j, "variation", d.variation);
     if (!d.modulators.empty())
         set(j, "modulators", modulatorListToJson(d.modulators));
     if (!d.playheads.empty()) {
@@ -905,6 +915,7 @@ Device deviceFromJson(const json_t* j) {
     d.on = getBool(j, "on", d.on);
     d.affectDrumLanes = getBool(j, "drumLanes", d.affectDrumLanes);
     d.params = floatsFromJson(get(j, "params"));
+    d.variation = variationFromJson(j);
     d.modulators = modulatorListFromJson(get(j, "modulators"));
     forEach(get(j, "playheads"), [&](const json_t* pj) { d.playheads.push_back(playheadFromJson(pj)); });
     d.color = saturate<uint8_t>(getInt(j, "color", 0));
@@ -1051,6 +1062,7 @@ json_t* clipToJson(const Clip& c) {
     setInt(j, "length", c.length);
     set(j, "loop", json_pack("[II]", static_cast<json_int_t>(c.loopStart), static_cast<json_int_t>(c.loopEnd)));
     setString(j, "loopMode", enumName(c.loopMode, kLoopModes));
+    setInt(j, "variation", c.variation);
     json_t* notes = json_array();
     for (const Note& n : c.notes)
         json_array_append_new(notes, noteToJson(n));
@@ -1086,6 +1098,7 @@ Clip clipFromJson(const json_t* j) {
     c.loopStart = intAt(loop, 0, c.loopStart);
     c.loopEnd = intAt(loop, 1, c.length);
     c.loopMode = enumFromName(get(j, "loopMode"), kLoopModes, c.loopMode);
+    c.variation = variationFromJson(j);
     forEach(get(j, "notes"), [&](const json_t* nj) {
         Note n;
         if (noteFromJson(nj, n))

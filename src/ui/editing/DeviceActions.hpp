@@ -54,6 +54,15 @@ void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device 
 /// it lives, so the list has no chips (docs/DECISIONS.md §163).
 void openModulatorBrowserAt(EditorContext& ctx, ModulatorPlace place);
 
+/// A field to type a dice number (1 to 999) for device `device`, or modulator `modulator` when it is set; it keeps the
+/// switch on Same every time with that number.
+void openVariationTyping(EditorContext& ctx, DeviceId device, ModulatorId modulator, int32_t now);
+/// A fresh roll for a bake or an export: what is on "New every play" plays on new numbers.
+uint32_t freshRoll();
+/// The message after a bake or export on roll `roll`: with Keep it when anything on `tracks` (or a song modulator)
+/// was on "New every play", which fixes those switches to what was baked.
+void offerKeepRoll(EditorContext& ctx, std::string text, uint32_t roll, const std::vector<TrackId>& tracks);
+
 void openDeviceMenu(EditorContext& ctx, DeviceId device);
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
 /// "Drift per pass" on a motion knob: a Steps modulator on its track, set to Per pass and mapped four steps up the

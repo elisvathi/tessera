@@ -294,6 +294,8 @@ clips on the timeline) ▸ **Bounce audio to a new track…**, or press **Ctrl+B
 - **The tracks that feed it play into it, even when muted**: the tracks whose sends reach it (bounce a reverb return
   with its dry tracks muted, and you get the reverb) and the track its **Input** listens to. They stay out of MAIN
   while it runs. **Until silent** counts their clips too, so a track with no clips of its own still has a length.
+- Devices and clips on **New** (their dice) roll once for the bounce; the message after it offers **Keep it**, which
+  fixes their switches to what was recorded.
 - The result is a new audio track under the original, "Bass (bounce)", in one undo step.
 
 ## Exporting audio

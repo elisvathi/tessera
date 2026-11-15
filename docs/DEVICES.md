@@ -74,7 +74,7 @@ Velocity · 3 modulators"; clicking it opens the strip. The in-panel editor star
 - **Modulators** are one list at the left of the strip, whatever their level. Each row: colour, name, where it
   lives ("song", "track", or its device's name), a live mini graph, and the ↗ map arrow. "+ Add" asks for the
   level (the whole song, this track, or one of its devices) and the type. Clicking a row (or a device's dot)
-  opens the modulator's **popover** over the notes: its settings, the Steps editor for Steps, and its "Moves"
+  opens the modulator's settings in a column beside its section (DECISIONS §163; it used to be a **popover** over the notes): its settings, the Steps editor for Steps, and its "Moves"
   list (target, amount, ×), with "Map to knobs" and "CV out ▾" (an AUTO output, or a Rack knob by learn).
   Right-click a row: rename, remove.
 - **Mapping:** click a modulator's ↗; the pane header shows "Mapping LFO 1 · drag a lit knob up

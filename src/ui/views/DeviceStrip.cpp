@@ -39,6 +39,33 @@ constexpr float kNarrowStrip = 700;
 constexpr uint64_t kSongSection = 1, kTrackSection = 2;
 /// A device section's key: its device's ID, marked so it never meets the song's or the track's.
 uint64_t deviceSection(DeviceId id) { return id.value | (uint64_t(1) << 62); }
+constexpr float kDiceRoll = 20, kDiceFixed = 30, kDiceNew = 34; // the dice and its two-part switch
+
+/// A device's setting `k` as its choice or number, in the setting's own units.
+float valueOf(const Device& d, int k) {
+    const devices::ParamInfo* info = devices::paramInfo(d.type, k);
+    return info && size_t(k) < d.params.size() ? devices::display(*info, d.params[size_t(k)]) : 0;
+}
+
+/// Whether a device plays by chance now, so its header shows the dice (docs/DECISIONS.md §163).
+bool rollsDice(const Device& d) {
+    using namespace chain;
+    switch (d.type) {
+    case DeviceType::Random:
+    case DeviceType::Humanize:
+        return true;
+    case DeviceType::Velocity:
+        return valueOf(d, knob::kRandom) > 0;
+    case DeviceType::Arpeggiator: {
+        ArpPattern p = ArpPattern(int(std::lround(valueOf(d, knob::kPattern))));
+        return p == ArpPattern::Random || p == ArpPattern::Walk || p == ArpPattern::Shuffled ||
+               p == ArpPattern::Pattern;
+    }
+    default:
+        return false;
+    }
+}
+
 /// Whether a modulator is a Macro: its row is a fader.
 bool isMacro(const Modulator& m) { return m.type == ModulatorType::Macro; }
 ParamRef macroRef(const Modulator& m) { return {ParamRef::Kind::Modulator, m.id.value, 0}; }
@@ -1162,7 +1189,8 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
             hx += kChipHeight + 6 + 8;
         }
     }
-    float rightNeed = 18 + 8;
+    bool dice = rollsDice(d);
+    float rightNeed = 18 + 8 + (dice ? kDiceRoll + kDiceFixed + kDiceNew + 10 : 0);
     if (d.type == DeviceType::Motion)
         rightNeed += kMotionJoin + kMotionLeave + kMotionCount + 16;
     if (index >= kBranchBase)
@@ -1181,10 +1209,20 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
 
     Rect menu(card.getRight() - mx::kDeviceCardPad - 18, mid - 9, 18, 18);
     parts.push_back({Kind::Menu, menu, index, -1, d.id.value});
+    float headerRight = menu.pos.x - 6;
+    if (dice) {
+        float r = headerRight;
+        parts.push_back({Kind::DiceNew, Rect(r - kDiceNew, mid - 10, kDiceNew, 20), index, -1, d.id.value});
+        r -= kDiceNew;
+        parts.push_back({Kind::DiceFixed, Rect(r - kDiceFixed, mid - 10, kDiceFixed, 20), index, -1, d.id.value});
+        r -= kDiceFixed + 4;
+        parts.push_back({Kind::DiceRoll, Rect(r - kDiceRoll, mid - 10, kDiceRoll, 20), index, -1, d.id.value});
+        headerRight = r - kDiceRoll - 6;
+    }
     if (d.type == DeviceType::Motion) {
         // Which notes move: "+ Selected" adds the piano roll's selection, "− Selected" takes it out again, "6 notes"
         // selects them there.
-        float right = menu.pos.x - 6;
+        float right = headerRight;
         Rect leave(right - kMotionLeave, mid - 9, kMotionLeave, 18);
         Rect join(leave.pos.x - 4 - kMotionJoin, mid - 9, kMotionJoin, 18);
         Rect count(join.pos.x - 4 - kMotionCount, mid - 9, kMotionCount, 18);
@@ -1586,6 +1624,20 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     case Kind::AddModulator:
         deviceActions::openModulatorBrowserAt(ctx, sectionPlace(*hit));
         break;
+    case Kind::DiceRoll:
+    case Kind::DiceFixed:
+    case Kind::DiceNew: {
+        const Device* d = findDevice(m->song(), DeviceId(hit->id));
+        if (!d)
+            break;
+        int32_t number = variationNumber(d->variation);
+        int32_t next = hit->kind == Kind::DiceNew     ? -number
+                       : hit->kind == Kind::DiceFixed ? number
+                                                      : int32_t(1 + (rack::random::u32() % uint32_t(kMaxVariation)));
+        if (next != d->variation)
+            m->perform(setDeviceVariation(m->song(), d->id, next));
+        break;
+    }
     case Kind::ModFold: {
         EditorState& st = ctx.state();
         ModLevel level = ModLevel(hit->param);
@@ -1763,6 +1815,11 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
 
 void DeviceStrip::doubleClick(Vec pos, Modifiers mods) {
     const Part* hit = partAt(pos);
+    if (hit && hit->kind == Kind::DiceFixed && ctx.module()) {
+        if (const Device* d = findDevice(ctx.module()->song(), DeviceId(hit->id)))
+            deviceActions::openVariationTyping(ctx, d->id, ModulatorId(), d->variation);
+        return;
+    }
     if (hit && hit->kind == Kind::ModulatorRow && ctx.module()) {
         const Modulator* mod = findModulator(ctx.module()->song(), ModulatorId(hit->id));
         if (mod && isMacro(*mod)) {
@@ -2186,6 +2243,9 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
                 nx += 13;
             }
             float room = r.getRight() - mx::kDeviceCardPad - 26 - nx;
+            for (const Part& q : parts)
+                if (q.device == index && q.kind == Kind::DiceRoll)
+                    room = std::min(room, q.rect.pos.x - 8 - nx);
             if (d.type == DeviceType::Motion)
                 room -= kMotionJoin + kMotionLeave + kMotionCount + 16;
             draw::text(vg, name, nx, mid, draw::ellipsize(vg, name, nameOf(d), std::max(30.f, room)));
@@ -2220,6 +2280,15 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
         }
         case Kind::PlayheadChip:
             drawPlayheadChip(vg, d, p, hot);
+            break;
+        case Kind::DiceRoll:
+        case Kind::DiceFixed:
+        case Kind::DiceNew:
+            draw::dice(vg, p.rect,
+                       p.kind == Kind::DiceRoll    ? draw::DicePart::Roll
+                       : p.kind == Kind::DiceFixed ? draw::DicePart::Fixed
+                                                   : draw::DicePart::New,
+                       d.variation, hot, tint);
             break;
         case Kind::AddPlayhead: {
             draw::roundedRect(vg, p.rect, kChipHeight / 2, hot ? c.bg2 : nvgRGBAf(0, 0, 0, 0));

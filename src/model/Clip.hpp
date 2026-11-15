@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Variation.hpp"
+
 #include "AudioSource.hpp"
 #include "Automation.hpp"
 #include "Device.hpp"
@@ -57,6 +59,7 @@ struct Clip {
     bool playsOwnChain = false;
     std::vector<Device> devices;
     std::vector<Modulator> modulators;
+    int32_t variation = kNewEachPlay; // its notes' chance: the number it plays on, or new every play
 
     bool isAudio() const { return audio.has_value(); }
     /// Whether its notes go through its own chain now, not its track's.
@@ -79,11 +82,10 @@ struct Clip {
 
     bool operator==(const Clip& o) const {
         return id == o.id && name == o.name && color == o.color && ownColor == o.ownColor && length == o.length &&
-               loopStart == o.loopStart &&
-               loopEnd == o.loopEnd && loopMode == o.loopMode && notes == o.notes && automation == o.automation &&
-               scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize && audio == o.audio &&
-               hasOwnChain == o.hasOwnChain && playsOwnChain == o.playsOwnChain && devices == o.devices &&
-               modulators == o.modulators;
+               loopStart == o.loopStart && loopEnd == o.loopEnd && loopMode == o.loopMode && notes == o.notes &&
+               automation == o.automation && scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize &&
+               audio == o.audio && hasOwnChain == o.hasOwnChain && playsOwnChain == o.playsOwnChain &&
+               devices == o.devices && modulators == o.modulators && variation == o.variation;
     }
 };
 

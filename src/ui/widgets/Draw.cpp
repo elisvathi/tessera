@@ -1,5 +1,7 @@
 #include "Draw.hpp"
 
+#include "../Theme.hpp"
+
 namespace tessera::draw {
 
 namespace {
@@ -69,6 +71,40 @@ void roundedRectStroke(NVGcontext* vg, rack::math::Rect r, float radius, NVGcolo
     nvgStrokeColor(vg, stroke);
     nvgStrokeWidth(vg, width);
     nvgStroke(vg);
+}
+
+void dice(NVGcontext* vg, rack::math::Rect r, DicePart part, int32_t variation, bool hot, NVGcolor tint) {
+    const theme::Palette& c = theme::colors();
+    if (part == DicePart::Roll) {
+        roundedRect(vg, r, 5, hot ? c.line1 : c.bg2);
+        roundedRectStroke(vg, r, 5, c.line1, 1);
+        rack::math::Vec m = r.getCenter();
+        roundedRectStroke(vg, rack::math::Rect(m.x - 5.5f, m.y - 5.5f, 11, 11), 2.5f, c.text0, 1.2f);
+        nvgBeginPath(vg);
+        for (float k : {-2.6f, 0.f, 2.6f})
+            nvgCircle(vg, m.x + k, m.y + k, 1);
+        nvgFillColor(vg, c.text0);
+        nvgFill(vg);
+        return;
+    }
+    bool fixedHalf = part == DicePart::Fixed;
+    bool on = fixedHalf == (variation >= 1);
+    NVGcolor lit = fixedHalf ? tint : c.accent;
+    // Each half rounded on its outer side only, so the two read as one switch.
+    nvgBeginPath(vg);
+    if (fixedHalf)
+        nvgRoundedRectVarying(vg, r.pos.x, r.pos.y, r.size.x, r.size.y, 5, 0, 0, 5);
+    else
+        nvgRoundedRectVarying(vg, r.pos.x, r.pos.y, r.size.x, r.size.y, 0, 5, 5, 0);
+    nvgFillColor(vg, on ? nvgTransRGBAf(lit, 0.28f) : hot ? c.bg2 : nvgRGBAf(0, 0, 0, 0));
+    nvgFill(vg);
+    nvgStrokeColor(vg, c.line1);
+    nvgStrokeWidth(vg, 1);
+    nvgStroke(vg);
+    TextStyle style{fixedHalf ? theme::fonts::mono() : theme::fonts::ui(), fixedHalf ? 10.5f : 11.f,
+                    on ? c.text0 : c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    int32_t number = variation < 0 ? -variation : variation;
+    text(vg, style, r.getCenter().x, r.getCenter().y, fixedHalf ? std::to_string(number) : std::string("New"));
 }
 
 } // namespace tessera::draw

@@ -1089,6 +1089,8 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         // back to the loop start. A track asleep through it (its wake time rounds a hair late, as play and song
         // ticks drift apart over a long session) would skip the notes at the loop start for a whole pass.
         bool wrapped = spanCount == 2;
+        if (wrapped)
+            roll++; // a new pass of the song loop rolls again for what is on "New every play"
         if (wrapped && playTick > windowPlay + (spans[0][1] - spans[0][0])) {
             // The loop starts over: notes still sounding on the arrangement stop (notes started inside the loop
             // already end at its end; this catches the rest). When the wrap falls exactly on this sample's end, they
@@ -1508,7 +1510,7 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                 at.songTick = songTick + (from - playTick);
                 at.sinceClip = sinceClipStart(track, state, at.songTick, from);
                 at.timeSig = ts;
-                at.seed = snapshot->seed;
+                at.seed = variationSeed(mp.variation, roll, mp.id);
                 mods::Drawn drawn = mp.drawn();
                 float applied = st.applied;
                 float v = mods::evaluate(mp.type, mp.id, mk, st, at, nullptr, 0, &drawn);
@@ -1732,7 +1734,7 @@ void Engine::fireList(const TrackPlayback& track, TrackState& state, const std::
 void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, const NoteEvent& n, const NoteExtras& ex,
                                 double onPlay, double endPlay, int64_t pass, uint8_t lane) {
     operators::PassContext ctx;
-    ctx.seed = snapshot->seed;
+    ctx.seed = variationSeed(ex.variation, roll, ex.clip);
     ctx.clip = ex.clip;
     ctx.pass = pass;
     ctx.fill = fill;
@@ -2050,7 +2052,7 @@ void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runti
     int count = std::min<int>(int(devices.size()), kMaxDevices);
     for (int k = 0; k < count; k++) {
         const DevicePlayback& d = devices[size_t(k)];
-        slots[size_t(k)] = {d.type, d.on, d.affectDrums, d.id, &knobValues[size_t(d.knobs)], d.lane};
+        slots[size_t(k)] = {d.type, d.on, d.affectDrums, d.id, &knobValues[size_t(d.knobs)], d.lane, d.variation};
     }
     chain::Context context;
     context.devices = slots.data();
@@ -2059,7 +2061,7 @@ void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runti
     context.songKey = &snapshot->key;
     context.clipKeys = &track.keys;
     context.timeSig = snapshot->timeSig;
-    context.seed = snapshot->seed;
+    context.roll = roll;
     // Chain time is the engine clock; while playing it maps onto the song, so arpeggiators step on its grid.
     context.songOffset = playing ? songTick - freeTick : 0;
     context.passUser = this;
@@ -2211,11 +2213,11 @@ void Engine::advanceModulation() {
     clock.songTick = songTick;
     clock.seconds = double(kControlBlock) / sampleRate;
     clock.timeSig = s.timeSig;
-    clock.seed = s.seed;
     clock.ticksPerSecond = bpm * kPpq / 60.0;
     for (const ModulatorPlayback& m : s.modulators) {
         if (m.type == ModulatorType::Curve) // read above, for this block
             continue;
+        clock.seed = variationSeed(m.variation, roll, m.id);
         mods::State& st = (*modStates)[size_t(m.slot)];
         if (st.owner != m.id) {
             st = mods::State();

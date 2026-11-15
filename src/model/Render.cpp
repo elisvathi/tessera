@@ -100,7 +100,6 @@ void knobsAt(const Song& song, const Track& track, ParamRef::Kind kind, uint64_t
     mods::Clock clock;
     clock.songTick = songTick;
     clock.timeSig = song.timeSig;
-    clock.seed = song.seed;
     auto add = [&](const std::vector<Modulator>& list) {
         for (const Modulator& m : list) {
             const float* k = m.params.data();
@@ -113,6 +112,7 @@ void knobsAt(const Song& song, const Track& track, ParamRef::Kind kind, uint64_t
                 continue;
             mods::State state;
             mods::Drawn drawn = mods::drawnOf(m);
+            clock.seed = variationSeed(m.variation, 0, m.id.value); // New: songRolled() fixed it for a bake
             float v = mods::evaluate(m.type, m.id.value, k, state, clock, m.steps.data(), int(m.steps.size()), &drawn);
             for (const Modulation& r : m.routes)
                 if (r.kind == Modulation::Kind::Param && r.target.kind == kind && r.target.owner == owner &&
@@ -268,7 +268,8 @@ std::vector<Played> applyOperators(const Song& song, const Track& track, const O
             previousPlayed = true;
         }
         operators::PassContext ctx;
-        ctx.seed = song.seed;
+        const Clip* source = song.findClip(item.clip);
+        ctx.seed = variationSeed(source ? source->variation : 1, 0, item.clip.value);
         ctx.clip = item.clip.value;
         ctx.pass = n.pass;
         ctx.previousPlayed = previousPlayed;
@@ -841,7 +842,7 @@ float addedAt(const Song& song, const std::vector<AutoRoute>& routes, Tick tick)
         mods::Clock clock;
         clock.songTick = double(tick);
         clock.timeSig = song.timeSig;
-        clock.seed = song.seed;
+        clock.seed = variationSeed(r.modulator->variation, 0, r.modulator->id.value);
         if (const ArrangerClip* under = r.owner ? instanceAt(*r.owner, tick) : nullptr; under && !under->muted)
             clock.sinceClip = double(tick - under->position);
         mods::State state;

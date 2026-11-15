@@ -104,7 +104,10 @@ class DeviceStrip : public InteractiveView {
             ChainStub,   // the chain not shown, folded at the end: a click opens it or switches to it
             ModSection,  // a modulator section (song, track or clip, a device's): only drawn, its parts take clicks
             ModFold,     // a section's fold arrow: open it, or fold it to a rail
-            Settings     // the room for the open modulator's settings, right of its section
+            Settings,    // the room for the open modulator's settings, right of its section
+            DiceRoll,    // a random device's dice: rolls another number and keeps it
+            DiceFixed,   // its switch's number: the same every time (double-click to type one)
+            DiceNew      // its switch's New: new every play and loop pass
         };
         Kind kind;
         rack::math::Rect rect;

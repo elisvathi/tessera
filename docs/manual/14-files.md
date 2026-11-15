@@ -63,6 +63,8 @@ Export your music as a Standard MIDI File, to open it in any music program.
 - **The song** (or the tracks selected in the headers): **Roll ▾ → Export MIDI…** or **Ctrl+Shift+E**.
 - **One clip, or the selected clips**: right-click a clip in the clips panel or on the timeline and choose **Export as
   MIDI…**. You choose one file per clip, or one file with a track per clip.
+- Devices, modulators and clips on **New** (see the dice in [Devices](13-devices.md#using-a-device-card)) make fresh
+  choices for each export; the message offers **Keep it** to fix them to what the file holds.
 
 ![The Export MIDI dialog](images/export-dialog.png)
 

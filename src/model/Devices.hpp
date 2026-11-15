@@ -88,6 +88,7 @@ struct DeviceSlot {
     uint64_t id = 0;
     const float* knobs = nullptr;
     uint8_t lane = 0; // a playhead's branch device (1..16): only that playhead's notes go through it; 0 = all notes
+    int32_t variation = 1; // its dice: a fixed number, or kNewEachPlay to play on this run's roll
 };
 
 struct Context {
@@ -97,7 +98,8 @@ struct Context {
     const Scale* songKey = nullptr;
     const std::vector<Scale>* clipKeys = nullptr;
     TimeSig timeSig;
-    uint32_t seed = 1;
+    /// This run's roll: what devices on "New every play" play on. It changes on every play and loop pass.
+    uint32_t roll = 0;
     /// Song ticks = chain ticks + songOffset, so arpeggiators step on the song's grid (0 while stopped: they step
     /// on their own clock then).
     double songOffset = 0;

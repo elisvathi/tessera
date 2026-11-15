@@ -2,10 +2,12 @@
 
 #include "../../model/AudioEdits.hpp"
 #include "../../model/BounceNotes.hpp"
+#include "../../model/DeviceCommands.hpp"
 #include "../../model/DeviceLookup.hpp"
 #include "../../model/Sends.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../EditorContext.hpp"
+#include "DeviceActions.hpp"
 
 #include <memory>
 
@@ -272,7 +274,9 @@ static void openNotesDialog(EditorContext& ctx, TrackId track, ClipId clip, int 
             what.only = selected;
         NoteBounceMade made;
         double tempo = module->tempo() > 0 ? module->tempo() : 120;
-        CommandPtr command = bounceNotes(module->song(), what, tempo, module->ids(), &made);
+        // What is on "New every play" rolls fresh for this bake; the message offers to keep it.
+        uint32_t roll = deviceActions::freshRoll();
+        CommandPtr command = bounceNotes(songRolled(module->song(), roll), what, tempo, module->ids(), &made);
         if (!command) {
             c->toast("Nothing to bounce: there are no notes there");
             return;
@@ -280,7 +284,10 @@ static void openNotesDialog(EditorContext& ctx, TrackId track, ClipId clip, int 
         module->perform(std::move(command));
         c->state().selectedTrack = made.track;
         c->state().selectedTracks = {made.track};
-        c->toast("Bounced to a new track: " + name);
+        std::vector<TrackId> fed;
+        for (const Track* t : withFeeders(module->song(), track, false))
+            fed.push_back(t->id);
+        deviceActions::offerKeepRoll(*c, "Bounced to a new track: " + name, roll, fed);
     }));
 }
 

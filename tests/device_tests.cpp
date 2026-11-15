@@ -636,3 +636,53 @@ TEST_CASE("swing picks the grid the notes need, and a track's swing comes from i
     CHECK(feel.step == kPpq / 2);
     CHECK(feel.amount == doctest::Approx(0.32f)); // its own 58%, not the song's
 }
+
+TEST_CASE("the dice: a rolled song fixes New, Keep it stores the same numbers, saving keeps the switch") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    DeviceId arp;
+    std::unique_ptr<Command> add =
+        addDevice(song, ChainOwner(track), DeviceType::Random, -1, [&] { return song.nextId++; }, &arp);
+    REQUIRE(add);
+    add->apply(song);
+    const Device* d = findDevice(song, arp);
+    REQUIRE(d);
+    CHECK(d->variation < 0); // a new device starts on New
+
+    uint32_t roll = 12345;
+    Song rolled = songRolled(song, roll);
+    const Device* fixed = findDevice(rolled, arp);
+    CHECK(fixed->variation == int32_t(rolledVariation(roll, arp.value)));
+    CHECK(fixed->variation >= 1);
+    CHECK(fixed->variation <= kMaxVariation);
+    // A rolled number plays exactly what New played on that roll.
+    CHECK(variationSeed(fixed->variation, 0, arp.value) == variationSeed(d->variation, roll, arp.value));
+
+    CommandPtr keep = keepRoll(song, track, roll);
+    REQUIRE(keep);
+    keep->apply(song);
+    CHECK(findDevice(song, arp)->variation == fixed->variation);
+    CHECK_FALSE(keepRoll(song, track, roll)); // nothing left on New on the device
+    keep->revert(song);
+    CHECK(findDevice(song, arp)->variation < 0);
+
+    // New remembers its number: switching to it and back keeps 17.
+    CommandPtr seventeen = setDeviceVariation(song, arp, 17);
+    seventeen->apply(song);
+    CommandPtr fresh = setDeviceVariation(song, arp, -17);
+    fresh->apply(song);
+    CHECK(variationNumber(findDevice(song, arp)->variation) == 17);
+    CHECK(findDevice(song, arp)->variation < 0);
+
+    json_t* j = songToJson(song);
+    Song back = songFromJson(j, Song::kSchemaVersion);
+    CHECK(findDevice(back, arp)->variation == -17);
+    json_decref(j);
+    // Songs from before the dice play every random thing on the number 1, as they did.
+    json_t* old = songToJson(song);
+    json_t* tracks = json_object_get(old, "tracks");
+    json_t* devs = json_object_get(json_array_get(tracks, 0), "devices");
+    json_object_del(json_array_get(devs, json_array_size(devs) - 1), "variation");
+    CHECK(findDevice(songFromJson(old, Song::kSchemaVersion), arp)->variation == 1);
+    json_decref(old);
+}

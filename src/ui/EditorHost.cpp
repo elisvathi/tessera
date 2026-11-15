@@ -187,7 +187,13 @@ void EditorHost::showNotices() {
         ctx.toast(m->fileMessage);
         m->fileMessage.clear();
     } else if (!m->exportResult.empty()) {
-        ctx.toast(m->exportResult);
+        if (m->bounceRoll) {
+            std::vector<TrackId> fed = {m->bounceTrack};
+            deviceActions::offerKeepRoll(ctx, m->exportResult, m->bounceRoll, fed);
+            m->bounceRoll = 0;
+        } else {
+            ctx.toast(m->exportResult);
+        }
         m->exportResult.clear();
     }
     // A new second source plays at once, mixed with the first (§7.8).

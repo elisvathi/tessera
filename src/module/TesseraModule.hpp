@@ -380,6 +380,10 @@ class TesseraModule : public rack::engine::Module {
     void cancelCapture();
     /// True while a bounce records.
     bool bouncing() const { return bounce.has_value(); }
+    /// After a bounce finished: the roll it played on and the track it bounced, so the message can offer Keep it.
+    /// The editor clears the roll once it has offered it.
+    uint32_t bounceRoll = 0;
+    TrackId bounceTrack;
     /// Ends a bounce early, keeping what was played so far.
     void stopBounce() { requestTransport(kRequestStop); }
     /// What runs now, for the progress line: "Bouncing Bass · bar 3 of 8". Empty when nothing does.

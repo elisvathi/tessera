@@ -80,6 +80,17 @@ CommandPtr setDeviceOn(const Song& song, DeviceId id, bool on);
 CommandPtr setDeviceDrumLanes(const Song& song, DeviceId id, bool affect);
 CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name);
 
+/// A device's or modulator's dice switch (docs/DECISIONS.md §163): a number 1..kMaxVariation, or kNewEachPlay.
+CommandPtr setDeviceVariation(const Song& song, DeviceId id, int32_t variation);
+CommandPtr setModulatorVariation(const Song& song, ModulatorId id, int32_t variation);
+/// The song as one run with roll `roll` plays it: everything on "New every play" fixed to that run's number. A bake or
+/// export renders this, so what it writes can be kept.
+Song songRolled(const Song& song, uint32_t roll);
+/// Keep it, after a bake on roll `roll`: what played on "New every play" on track `track` (its devices, its clips'
+/// own chains and chance, their modulators) and the song's modulators take that run's numbers. One undo step; null
+/// when nothing there was on New.
+CommandPtr keepRoll(const Song& song, TrackId track, uint32_t roll);
+
 /// Sets a device knob or modulator setting (normalized 0..1). One command per drag.
 CommandPtr setParam(const Song& song, const ParamRef& ref, float value);
 

@@ -157,6 +157,27 @@ std::vector<float> stepsOf(const Modulator& m, int* count) {
 
 } // namespace
 
+namespace {
+
+/// Whether a part sits in the header, which never scrolls.
+bool inHeader(ModulatorPopover::Part::Kind k) {
+    using K = ModulatorPopover::Part::Kind;
+    return k == K::Close || k == K::DiceRoll || k == K::DiceFixed || k == K::DiceNew;
+}
+
+/// Whether a modulator plays by chance, so its header shows the dice: Random, and an LFO with a random shape.
+bool rollsDice(const Modulator& m) {
+    if (m.type == ModulatorType::Random)
+        return true;
+    if (m.type != ModulatorType::Lfo || m.params.empty())
+        return false;
+    const devices::ParamInfo* info = devices::paramInfo(m.type, mods::knob::kShape);
+    auto shape = mods::Shape(int(std::lround(info ? devices::display(*info, m.params[0]) : 0)));
+    return shape == mods::Shape::SampleHold || shape == mods::Shape::SmoothRandom;
+}
+
+} // namespace
+
 const Modulator* ModulatorPopover::modulator(ModulatorPlace* place) {
     TesseraModule* m = ctx.module();
     return m && ctx.state().openModulator ? findModulator(m->song(), ModulatorId(ctx.state().openModulator), place)
@@ -177,6 +198,13 @@ void ModulatorPopover::layoutParts() {
         return;
     float w = kWidth;
     parts.push_back({Kind::Close, Rect(w - 26, 5, 18, 18)});
+    // A random modulator has the dice in its header, as random devices do (docs/DECISIONS.md §163).
+    if (rollsDice(*mod)) {
+        float r = w - 32;
+        parts.push_back({Kind::DiceNew, Rect(r - 34, 4, 34, 20)});
+        parts.push_back({Kind::DiceFixed, Rect(r - 64, 4, 30, 20)});
+        parts.push_back({Kind::DiceRoll, Rect(r - 88, 4, 20, 20)});
+    }
     float y = kHeader + 2;
     int n = int(devices::modulatorInfo(mod->type).params.size());
     // Two columns, so the popover stays short enough to sit over the notes.
@@ -214,7 +242,7 @@ void ModulatorPopover::layoutParts() {
     // Below the header everything scrolls together.
     scroll = std::clamp(scroll, 0.f, std::max(0.f, height - box.size.y));
     for (Part& p : parts)
-        if (p.kind != Kind::Close)
+        if (!inHeader(p.kind))
             p.rect.pos.y -= scroll;
     movesTitleY -= scroll;
 }
@@ -226,7 +254,7 @@ void ModulatorPopover::wheel(Vec pos, Vec delta, Modifiers mods) {
 const ModulatorPopover::Part* ModulatorPopover::partAt(Vec pos) const {
     for (const Part& p : parts) {
         // Content scrolled under the header can't be clicked.
-        if (p.kind != Kind::Close && pos.y < kHeader)
+        if (!inHeader(p.kind) && pos.y < kHeader)
             continue;
         if (p.rect.contains(pos))
             return &p;
@@ -289,6 +317,17 @@ void ModulatorPopover::click(Vec pos, int button, Modifiers mods) {
     case Kind::Close:
         ctx.state().openModulator = 0;
         break;
+    case Kind::DiceRoll:
+    case Kind::DiceFixed:
+    case Kind::DiceNew: {
+        int32_t number = variationNumber(mod->variation);
+        int32_t next = hit->kind == Kind::DiceNew     ? -number
+                       : hit->kind == Kind::DiceFixed ? number
+                                                      : int32_t(1 + (rack::random::u32() % uint32_t(kMaxVariation)));
+        if (next != mod->variation)
+            m->perform(setModulatorVariation(m->song(), mod->id, next));
+        break;
+    }
     case Kind::Setting: {
         // Only toggles get here: they flip on a click.
         ParamRef ref = settingRef(hit->index);
@@ -314,6 +353,10 @@ void ModulatorPopover::click(Vec pos, int button, Modifiers mods) {
 void ModulatorPopover::doubleClick(Vec pos, Modifiers mods) {
     const Part* hit = partAt(pos);
     const Modulator* mod = modulator();
+    if (hit && mod && hit->kind == Kind::DiceFixed) {
+        deviceActions::openVariationTyping(ctx, DeviceId(), mod->id, mod->variation);
+        return;
+    }
     if (!hit || !mod || hit->kind != Kind::Setting)
         return;
     if (const devices::ParamInfo* info = devices::paramInfo(mod->type, hit->index))
@@ -370,9 +413,9 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
     std::string reach = place.level == ModLevel::Song    ? "reaches every track"
                         : place.level == ModLevel::Track ? "reaches this track"
                                                          : "on " + deviceActions::whereName(song, place);
-    draw::text(
-        vg, sub, x, hy,
-        draw::ellipsize(vg, sub, std::string(devices::modulatorInfo(mod->type).name) + " · " + reach, kWidth - x - 30));
+    draw::text(vg, sub, x, hy,
+               draw::ellipsize(vg, sub, std::string(devices::modulatorInfo(mod->type).name) + " · " + reach,
+                               kWidth - x - (rollsDice(*mod) ? 122 : 30)));
 
     draw::TextStyle label{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle value{theme::fonts::mono(), 10.5f, c.text0, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
@@ -384,7 +427,7 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
         const Part& p = parts[i];
         bool hot = int(i) == hovered;
         Vec mid = p.rect.getCenter();
-        if (p.kind == Kind::Close)
+        if (inHeader(p.kind))
             continue; // in the header, which never scrolls
         switch (p.kind) {
         case Kind::Close:
@@ -514,6 +557,14 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
     }
     for (size_t i = 0; i < parts.size(); i++) {
         const Part& p = parts[i];
+        if (p.kind == Kind::DiceRoll || p.kind == Kind::DiceFixed || p.kind == Kind::DiceNew) {
+            draw::dice(vg, p.rect,
+                       p.kind == Kind::DiceRoll    ? draw::DicePart::Roll
+                       : p.kind == Kind::DiceFixed ? draw::DicePart::Fixed
+                                                   : draw::DicePart::New,
+                       mod->variation, int(i) == hovered, color);
+            continue;
+        }
         if (p.kind != Kind::Close)
             continue;
         Vec mid = p.rect.getCenter();

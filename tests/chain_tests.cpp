@@ -51,7 +51,9 @@ struct Rig {
     chain::Chain chain;
     Collect out;
     bool drum = false;
-    uint32_t seed = 1;
+    uint32_t seed = 1;  // every device's dice number
+    bool fresh = false; // every device on New instead, playing on `roll`
+    uint32_t roll = 0;
 
     void add(DeviceType type, std::initializer_list<std::pair<int, float>> values = {}) {
         knobs.push_back(knobsOf(type, values));
@@ -69,7 +71,9 @@ struct Rig {
         c.drum = drum;
         c.songKey = &songKey;
         c.clipKeys = &clipKeys;
-        c.seed = seed;
+        for (chain::DeviceSlot& s : slots)
+            s.variation = fresh ? kNewEachPlay : int32_t(seed); // each device's dice
+        c.roll = roll;
         return c;
     }
     ChainNote note(double start, double length, int pitch, float velocity = 0.8f) {
@@ -209,6 +213,23 @@ TEST_CASE("Velocity curves, scales into a range and randomizes repeatably") {
         seedMatters |= through(0.5f, 0, pass) != one;
     }
     CHECK(seedMatters);
+
+    SUBCASE("on New it plays on the run's roll, which a fixed number ignores") {
+        rig.seed = 1;
+        rig.roll = 1;
+        float fixedOne = through(0.5f, 0, 3);
+        rig.roll = 2;
+        CHECK(through(0.5f, 0, 3) == fixedOne);
+        rig.fresh = true;
+        bool rolls = false;
+        for (int pass = 0; pass < 8; pass++) {
+            rig.roll = 1;
+            float one = through(0.5f, 0, pass);
+            rig.roll = 2;
+            rolls |= through(0.5f, 0, pass) != one;
+        }
+        CHECK(rolls);
+    }
 }
 
 TEST_CASE("Note Length scales, fixes or joins note lengths") {
@@ -697,9 +718,10 @@ TEST_CASE("engine: live notes go through the chain, also while stopped") {
     }
 }
 
-TEST_CASE("engine: device randomness repeats with the same seed") {
+TEST_CASE("engine: device randomness repeats with the same number on its dice") {
     Song song = songWith({{0, 100, 60}, {240, 100, 60}, {480, 100, 60}, {720, 100, 60}}, kPpq, 1);
     addDevice(song, DeviceType::Velocity, {{chain::knob::kRandom, 50}});
+    song.tracks[0].devices.back().variation = 17;
     auto velocities = [](const Song& s) {
         Harness h(s);
         std::vector<float> v;
@@ -717,7 +739,7 @@ TEST_CASE("engine: device randomness repeats with the same seed") {
     CHECK(a == velocities(song));
     // The second pass of the clip differs from the first.
     CHECK(std::vector<float>(a.begin(), a.begin() + 4) != std::vector<float>(a.begin() + 4, a.end()));
-    song.seed = 99;
+    song.tracks[0].devices.back().variation = 99;
     CHECK(a != velocities(song));
 }
 

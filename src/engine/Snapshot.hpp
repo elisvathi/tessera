@@ -42,6 +42,7 @@ struct NoteExtras {
     uint64_t clip = 0; // ClipId value, for the randomness
     double early = 0;
     double stretch = 1; // played ticks per written tick (a timeline clip's stretch): curves span the written note
+    int32_t variation = 1; // its clip's dice, for the randomness
 };
 
 /// A drum lane that loops on its own length inside a looping clip (polymeter). Its notes are not in the clip's
@@ -234,6 +235,7 @@ struct DevicePlayback {
     uint64_t id = 0;
     int knobs = 0;
     uint8_t lane = 0; // in a playhead's branch: that playhead's place (1..16); 0 = the track's chain
+    int32_t variation = 1; // its dice
 };
 
 /// One modulation onto a knob or an AUTO channel: a modulator (by slot) and how far it moves its target.
@@ -294,6 +296,7 @@ struct ModulatorPlayback {
     int slot = 0;   // stable for the modulator's lifetime, so its phase carries over between snapshots
     int knobs = 0;  // its settings in the knob table
     int track = -1; // display index of its track; -1 for song modulators
+    int32_t variation = 1; // its dice
     std::array<float, kMaxSteps> steps{};
     int stepCount = 0;
     Tick length = 0;                       // Curve: how long its drawing is

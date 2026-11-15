@@ -22,7 +22,18 @@ class ModulatorPopover : public InteractiveView {
     float wantedHeight();
 
     struct Part {
-        enum class Kind { Close, Setting, StepBars, RouteAmount, RouteRemove, Map, CvOut };
+        enum class Kind {
+            Close,
+            Setting,
+            StepBars,
+            RouteAmount,
+            RouteRemove,
+            Map,
+            CvOut,
+            DiceRoll,
+            DiceFixed,
+            DiceNew
+        };
         Kind kind;
         rack::math::Rect rect;
         int index = 0; // the setting or the route

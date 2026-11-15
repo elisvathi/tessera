@@ -92,7 +92,8 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             for (const Device& b : d.playheads[k].branch) {
                 own(ParamRef::Kind::Device, b.id.value, b.params);
                 slots.push_back({b.type, b.on && d.on, b.affectDrumLanes, b.id.value,
-                                 knobs[{int(ParamRef::Kind::Device), b.id.value}].value.data(), uint8_t(k + 1)});
+                                 knobs[{int(ParamRef::Kind::Device), b.id.value}].value.data(), uint8_t(k + 1),
+                                 b.variation});
             }
     // Motion devices before an active Playheads device moved the notes the playheads read: not in the chain.
     const Device* reader = activePlayheads(track);
@@ -103,7 +104,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
         if (d.type == DeviceType::Motion && beforeReader)
             continue;
         slots.push_back({d.type, d.on, d.affectDrumLanes, d.id.value,
-                         knobs[{int(ParamRef::Kind::Device), d.id.value}].value.data()});
+                         knobs[{int(ParamRef::Kind::Device), d.id.value}].value.data(), 0, d.variation});
     }
 
     // Motion devices' knobs take "Per pass" modulators per note, at its pass (passKnob), not as time runs.
@@ -129,7 +130,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
     context.songKey = &songKey;
     context.clipKeys = &keys;
     context.timeSig = song.timeSig;
-    context.seed = song.seed;
+    context.roll = 0;       // anything on New was fixed by songRolled() for a bake; else it plays on roll 0
     context.songOffset = 0; // the chain runs in song ticks here
     context.passUser = &passKnobs;
     context.passKnob = [](const void* user, const chain::DeviceSlot& d, int k, int64_t pass) {
@@ -151,7 +152,6 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
 
     mods::Clock clock;
     clock.timeSig = song.timeSig;
-    clock.seed = song.seed;
     clock.ticksPerSecond = std::max(1.0, tempo) * double(kPpq) / 60;
     clock.seconds = kBlock / clock.ticksPerSecond;
 
@@ -174,6 +174,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
                 continue;
             clock.sinceClip = r.followsNotes ? sinceClipAt(blockEnd) : NAN;
             mods::Drawn drawn = mods::drawnOf(m);
+            clock.seed = variationSeed(m.variation, 0, m.id.value);
             r.state.out = mods::evaluate(m.type, m.id.value, m.params.data(), r.state, clock, nullptr, 0, &drawn);
         }
         // Knobs: base plus modulation, from the modulators' outputs of the block before (as the engine does).
@@ -238,6 +239,7 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
             if (m.type == ModulatorType::Curve)
                 continue;
             clock.sinceClip = r.followsNotes ? sinceClip : NAN;
+            clock.seed = variationSeed(m.variation, 0, m.id.value);
             mods::Drawn drawn = mods::drawnOf(m);
             mods::evaluate(m.type, m.id.value, knobs[{int(ParamRef::Kind::Modulator), m.id.value}].value.data(),
                            r.state, clock, m.steps.data(), int(m.steps.size()), &drawn);

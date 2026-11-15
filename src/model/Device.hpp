@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Variation.hpp"
+
 #include "Automation.hpp"
 #include "ParamRef.hpp"
 #include "Types.hpp"
@@ -76,11 +78,12 @@ struct Modulator {
     Tick length = 0;
     std::vector<AutoPoint> points;
     Tick segmentStart = 0, segmentEnd = 0;
+    int32_t variation = kNewEachPlay; // its dice (Random, and an LFO's random shapes)
 
     bool operator==(const Modulator& o) const {
         return id == o.id && type == o.type && name == o.name && params == o.params && steps == o.steps &&
                routes == o.routes && length == o.length && points == o.points && segmentStart == o.segmentStart &&
-               segmentEnd == o.segmentEnd;
+               segmentEnd == o.segmentEnd && variation == o.variation;
     }
 };
 
@@ -116,10 +119,12 @@ struct Device {
     std::vector<Modulator> modulators; // device level
     std::vector<Playhead> playheads;   // Playheads devices only
     uint8_t color = 0;                 // Motion devices: index into the playhead colours, marking their notes
+    int32_t variation = kNewEachPlay;  // its dice: the number its randomness plays on, or new every play
 
     bool operator==(const Device& o) const {
         return id == o.id && type == o.type && name == o.name && on == o.on && affectDrumLanes == o.affectDrumLanes &&
-               params == o.params && modulators == o.modulators && playheads == o.playheads && color == o.color;
+               params == o.params && modulators == o.modulators && playheads == o.playheads && color == o.color &&
+               variation == o.variation;
     }
 };
 

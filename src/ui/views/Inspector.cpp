@@ -561,8 +561,45 @@ float Inspector::settingRow(NVGcontext* vg, float y, const std::string& label, c
     return y + kRowHeight;
 }
 
+float Inspector::diceRow(NVGcontext* vg, float y, const Clip& clip) {
+    const theme::Palette& c = theme::colors();
+    draw::TextStyle l{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, l, kPad, y + kRowHeight / 2, "Chance");
+    float right = box.size.x - kPad;
+    struct Piece {
+        Setting which;
+        draw::DicePart part;
+        float width;
+    };
+    float x = right - 34 - 30 - 4 - 20;
+    for (Piece p :
+         {Piece{Setting::DiceRoll, draw::DicePart::Roll, 20}, Piece{Setting::DiceFixed, draw::DicePart::Fixed, 30},
+          Piece{Setting::DiceNew, draw::DicePart::New, 34}}) {
+        Rect r(x, y + 2, p.width, kRowHeight - 4);
+        bool hot = hoveredSetting == int(settingRows.size());
+        draw::dice(vg, r, p.part, clip.variation, hot, theme::track(clip.color));
+        settingRows.push_back({r, p.which, clip.id.value});
+        x += p.width + (p.which == Setting::DiceRoll ? 4 : 0);
+    }
+    return y + kRowHeight;
+}
+
 void Inspector::openSetting(Setting which, uint64_t target) {
     TesseraModule* m = ctx.module();
+    if (m && (which == Setting::DiceRoll || which == Setting::DiceFixed || which == Setting::DiceNew)) {
+        const Clip* clip = m->song().findClip(ClipId(target));
+        if (!clip)
+            return;
+        int32_t number = variationNumber(clip->variation);
+        int32_t next = which == Setting::DiceNew     ? -number
+                       : which == Setting::DiceFixed ? number
+                                                     : int32_t(1 + (rack::random::u32() % uint32_t(kMaxVariation)));
+        if (CommandPtr command =
+                setClipField(m->song(), clip->id, &Clip::variation, next,
+                             next < 0 ? "Chance: new every play" : "Chance: variation " + std::to_string(next)))
+            m->perform(std::move(command));
+        return;
+    }
     const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;
     if (!t)
         return;
@@ -1060,6 +1097,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
         y = row(vg, y, "Key",
                 clip->scaleOverride ? keyActions::keyLabel(song, *clip->scaleOverride)
                                     : "Song (" + keyActions::keyLabel(song, song.scale) + ")");
+    y = diceRow(vg, y, *clip);
 
     // The selected arranger instance of this clip: what it changes on top of the clip.
     const ArrangerClip* instance = nullptr;

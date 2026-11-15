@@ -1,5 +1,6 @@
 #include "DeviceActions.hpp"
 
+#include "../../model/DeviceCommands.hpp"
 #include "../../model/Modulators.hpp"
 #include "../../model/Playheads.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -303,6 +304,56 @@ void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device,
             c->state().openModulator = added.value;
     };
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
+}
+
+uint32_t freshRoll() { return rack::random::u32() | 1u; }
+
+void openVariationTyping(EditorContext& ctx, DeviceId device, ModulatorId modulator, int32_t now) {
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Variation (1 to " + std::to_string(kMaxVariation) + ")"));
+    EditorContext* c = &ctx;
+    menu->addChild(
+        new MenuTextField(std::to_string(variationNumber(now)), [c, device, modulator](const std::string& text) {
+            TesseraModule* m = c->module();
+            int value = std::atoi(text.c_str());
+            if (!m || value < 1)
+                return;
+            value = std::min(value, int(kMaxVariation));
+            CommandPtr command = modulator.valid() ? setModulatorVariation(m->song(), modulator, value)
+                                                   : setDeviceVariation(m->song(), device, value);
+            if (command)
+                m->perform(std::move(command));
+        }));
+}
+
+namespace {
+
+/// Keep it for every track in `tracks`, as one undo step; null when nothing there was on New.
+CommandPtr keepRolls(const Song& song, uint32_t roll, const std::vector<TrackId>& tracks) {
+    auto all = std::make_unique<CompoundCommand>("Keep this variation");
+    Song work = song;
+    for (TrackId t : tracks)
+        if (CommandPtr keep = keepRoll(work, t, roll)) {
+            keep->apply(work);
+            all->add(std::move(keep));
+        }
+    return all->empty() ? nullptr : std::move(all);
+}
+
+} // namespace
+
+void offerKeepRoll(EditorContext& ctx, std::string text, uint32_t roll, const std::vector<TrackId>& tracks) {
+    TesseraModule* m = moduleOf(ctx);
+    if (!m || !keepRolls(m->song(), roll, tracks)) {
+        ctx.toast(std::move(text));
+        return;
+    }
+    EditorContext* c = &ctx;
+    ctx.toast(std::move(text), "Keep it", [c, roll, tracks] {
+        if (TesseraModule* mod = c->module())
+            if (CommandPtr keep = keepRolls(mod->song(), roll, tracks))
+                mod->perform(std::move(keep));
+    });
 }
 
 void openModulatorBrowserAt(EditorContext& ctx, ModulatorPlace place) {

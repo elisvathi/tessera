@@ -881,6 +881,9 @@ void TesseraModule::bounceStep() {
     else if (!made.tracks.empty())
         editorState.selectedTrack = made.tracks[0];
     exportResult = "Bounced to a new track: " + name;
+    // What played on "New every play" rolled once for the whole bounce: the message offers to keep it.
+    bounceRoll = engine.currentRoll();
+    bounceTrack = done.track;
 }
 
 void TesseraModule::importTakes(const std::vector<Take>& takes) {
