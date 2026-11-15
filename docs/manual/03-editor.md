@@ -193,5 +193,5 @@ In **View ▾** in the notes header, **Name notes with flats** writes Db instead
 
 ## Editor size
 
-Right-click the panel and pick **Editor size** to make the full editor larger or smaller: **Auto** follows Rack's own
+In the full editor, click the **Roll ▾** menu at the top left and pick **Editor size** to make the editor larger or smaller: **Auto** follows Rack's own
 zoom, or choose 75% to 200%.
