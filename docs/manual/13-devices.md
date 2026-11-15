@@ -10,14 +10,19 @@ switch a device off at any time.
 
 Click **Devices** at the left of the lower pane's header, between **Notes** and **Mixer** (or press **F3**), to open
 the strip above the notes. **Devices** stays lit while the strip is open, and **Notes** too, since the notes still show
-under it. Audio tracks have no note devices, so there **Devices** is greyed. It shows the selected
+under it. Audio tracks have no note devices, so there **Devices** is greyed.
+
+From left to right the strip shows the **SONG** modulators, the **TRACK | CLIP** switch, the **TRACK** (or **CLIP**)
+modulators, then the devices, each with its own **DEVICE** modulators on its left edge. See
+[Modulators](#modulators). It shows the selected
 track's devices from left to right, in the order the notes flow through them: **in** → devices → **out**. Each device
 is a card in the track's colour, with one to three small pictures that show what it does to the notes.
 
 ![The device strip: an LFO, an Arpeggiator and an Echo on the Chords track](images/device-strip.png)
 
-Where the notes come in, at the chain's left, a small card names the clip on show and which devices it plays
-through: the track's or its own (see [A clip's own devices](#a-clips-own-devices)).
+The upright **TRACK | CLIP** switch says which devices the clip on show plays through: the track's or its own (see
+[A clip's own devices](#a-clips-own-devices)). The side that plays is filled, and a small arrow points into the
+modulators that go with it.
 
 When the strip is closed, a track with devices shows a thin bar naming its chain ("Arpeggiator → Echo"). Click it to
 open the strip. A track without devices keeps the strip closed.
@@ -169,25 +174,22 @@ Devices belong to the track, and every clip on it plays through them. Any note c
 instead: a faster arpeggio for the chorus only, a break without the echo, or a Playheads setup that belongs to one
 clip. A clip with its own devices plays only through them; the track's are skipped for it. Nothing mixes.
 
-![Chorus chords plays through its own devices: the switch at the left says Own, the cards wear the clip's colour](images/clip-own-devices.png)
+![Chorus chords plays through its own devices: the switch at the left says CLIP, the cards wear the clip's colour](images/clip-own-devices.png)
 
-**Switching.** The card where the notes come in reads "Notes from **Chorus chords**, play through **Track | Own**".
-Click **Own**: the first time, the clip gets a copy of the track's devices, with the track's modulators that move
-them, so it sounds the same until you change something. Its devices then wear the clip's colour, and the line under
-the switch says "Chorus chords skips the track's devices." Click **Track** to play through the track's devices again.
-The clip keeps its own, so you can switch back and forth while it plays to compare. Both are undoable.
+**Switching.** The upright **TRACK | CLIP** switch at the strip's left says which devices the clip on show plays
+through. Click **CLIP**: the first time, the clip gets a copy of the track's devices, with the track's modulators that
+move them, so it sounds the same until you change something. Its devices then wear the clip's colour, and the section
+after the switch becomes **CLIP · Chorus chords**. Hover either half to be told what it does ("Chorus chords skips the
+track's devices"). Click **TRACK** to play through the track's devices again. The clip keeps its own, so you can
+switch back and forth while it plays to compare. Both are undoable.
 
 **The other chain.** The chain that isn't shown is folded into a dashed block at the end of the strip, listing its
 devices:
 
 - While the clip plays through its own, the block is the track's devices, "Skipped for Chorus chords". Click **Edit
-  them** to change the track's devices from here (the line under the switch says the clip doesn't play through them),
-  and click the block again to go back.
+  them** to change the track's devices from here, and click the block again to go back.
 - While it plays through the track's but keeps its own, the block is "Chorus chords's own, kept, off for now". Click
   **Play through them** to switch.
-
-On the track's devices, the line under the switch names the clips that skip them ("Fill and Break skip these"), so a
-change that doesn't reach a clip is never a mystery.
 
 **The mark.** A timeline tile of a clip with its own devices shows a tiny device card, with two tags on it, in its
 title bar. It is light while the clip plays through them, and dark with a light outline while the clip keeps them but
@@ -204,8 +206,8 @@ join the track's, and the clip switches to the track's). On the timeline this wo
 
 **What goes with it.**
 
-- A clip's own chain has its own modulators: the list on the left shows the clip's ("LFO 1 · clip") instead of the
-  track's. A curve drawn on one of its settings, such as its Playheads' Rate, is a curve of the clip.
+- A clip's own chain has its own modulators: the section after the switch is the clip's (**CLIP · Chorus chords**)
+  instead of the track's. A curve drawn on one of its settings, such as its Playheads' Rate, is a curve of the clip.
 - Its settings are automated in the clip (**Automate in this clip**), so the automation travels with the clip too.
 - Copying, duplicating or moving the clip, to another slot, scene or track, takes its devices along (as copies). A
   clip that plays through the track's devices takes those of the track it lands on.
@@ -485,12 +487,20 @@ plays the motion.
 
 ## Modulators
 
-The **MODULATORS** list on the left of the strip holds the modulators. Click **+ Add** to make one. A chip row at the
-top chooses where it lives:
+Modulators live in three places, and each place has the same kind of **section**:
 
-- **Whole song**: one modulator for every track, for example one LFO that sweeps several tracks together.
-- **The track**: it can move any setting of this track's devices.
-- **A device**: it can move only that device's settings.
+- **SONG**, at the strip's left: for every track, for example one LFO that sweeps several tracks together. The same
+  list shows whichever track is selected.
+- **TRACK · Chords**, after the TRACK | CLIP switch: it can move any setting of this track's devices. While the clip
+  plays through its own devices, this section is **CLIP · Verse chords** and holds the clip's modulators.
+- **DEVICE**, on each card's left edge: it can move only that device's settings, and goes with the device when you
+  move or duplicate it.
+
+Click a section's **+** to add a modulator there: where you click decides what it can reach. Each section has a fold
+arrow at its top left. Folded, a section is a thin strip with a dot per modulator and a small upright fader per Macro.
+A card's DEVICE section starts folded until the device has modulators. Opening a section makes room for it: the
+cards move right and the strip scrolls, but a device never gets narrower. In a narrow strip the SONG and TRACK sections
+start folded.
 
 ![The modulator browser](images/modulator-browser.png)
 
@@ -506,24 +516,30 @@ top chooses where it lives:
 | **Curve** | A shape you draw, of any length; the part its segment marks plays and repeats. | None: Length and the segment sit over the drawing. |
 
 **Curve** opens its drawing in the piano roll's lower pane: click its row (click it again to put the notes back), or
-pick it in the lower pane's menu under **Curves**. A Curve has no popover: what it moves, **Map to more knobs** and
+pick it in the lower pane's menu under **Curves**. A Curve has no settings column: what it moves, **Map to more knobs** and
 **CV out…** are under **Moves ▾** in the pane's top row, and in its row's right-click menu. It plays the part of the drawing its segment marks, from when its track's clip starts, round and round
 (a song modulator counts from the song's start). The pane works as described under [Curves](#playheads) above. For a
 wave that runs at its own speed in Hz, use an **LFO**. The dashed line means "no change": above it moves the setting
 up, below it down. Up and down are the values of the first setting it moves, which it turns all the way (its row in
 **Moves** says **as drawn**, with no amount); other settings it moves follow by their own amounts.
 
-Each row in the list shows the modulator's colour, its name, where it lives, a small live graph, and a **↗** arrow.
-Click a row to open its settings (a Curve opens its drawing instead, see above):
+Each row shows the modulator's colour, its name, a small live graph, and a **↗** arrow. Click a row to open its
+settings in a column right of its section (a Curve opens its drawing instead, see above); click it again, or the
+column's ◂, to close it. A DEVICE modulator's settings open inside its card. The strip makes room for the column, so it
+never covers the notes:
 
 ![An LFO's settings](images/modulator-popover.png)
 
-The **MOVES** list in the popover shows every setting the modulator moves, with its amount and a **×** to remove it.
-Right-click a row in the list to rename or remove the modulator.
+The **MOVES** list in the column shows every setting the modulator moves, with its amount and a **×** to remove it.
+Right-click a row to rename or remove the modulator.
+
+**A Macro's row is a fader.** Drag it sideways to set it (Shift for fine steps), scroll over it for 1% steps (Ctrl:
+finer), double-click to set it back. Click it without dragging to open its settings. In a folded section, drag its
+small upright fader up or down. While the track is armed and recording, a drag records into the Macro's lane.
 
 ### Connecting a modulator to settings
 
-1. Click the modulator's **↗** (or **Map to knobs** in its popover; for a Curve, **Moves ▾** › **Map to more knobs**).
+1. Click the modulator's **↗** (or **Map to knobs** in its settings column; for a Curve, **Moves ▾** › **Map to more knobs**).
 2. The tags it can reach light up in its colour; the others fade. A message says "Mapping LFO · drag a lit tag up or
    down".
 3. **Drag a lit tag** up for a positive amount, down for a negative one. The bar under the tag shows how far it will
@@ -537,7 +553,7 @@ Filter's Channels are only ever picked by hand: modulators, lanes and curves can
 
 ### Sending a modulator out as CV
 
-In the popover, **CV out ▾** sends the modulator out of Roll (for a Curve: **Moves ▾** › **CV out…**, or right-click
+In the settings column, **CV out ▾** sends the modulator out of Roll (for a Curve: **Moves ▾** › **CV out…**, or right-click
 its row):
 
 - To an **AUTO output** of a track: the value is added to that AUTO channel on its Track Out, Drum Out and Auto Out.

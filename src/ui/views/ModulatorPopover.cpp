@@ -347,13 +347,14 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
     const Song& song = ctx.module()->song();
     NVGcolor color = deviceActions::colorOf(mod->id);
     Rect panel(Vec(), box.size);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, clipLeft, 0, std::max(0.f, box.size.x - clipLeft - clipRight), box.size.y);
+    // A column beside its section: a stripe in the modulator's colour on its left edge.
+    draw::roundedRect(vg, panel, 6, c.bg2);
     nvgBeginPath(vg);
-    nvgRect(vg, -10, -6, box.size.x + 20, box.size.y + 22);
-    nvgFillPaint(
-        vg, nvgBoxGradient(vg, 0, 4, box.size.x, box.size.y, 7, 14, nvgRGBAf(0, 0, 0, 0.55f), nvgRGBAf(0, 0, 0, 0)));
+    nvgRect(vg, 0, 0, 2, box.size.y);
+    nvgFillColor(vg, color);
     nvgFill(vg);
-    draw::roundedRect(vg, panel, 7, c.bg1);
-    draw::roundedRectStroke(vg, panel, 7, c.line1, 1);
 
     // Header: colour, name, what it is and what it reaches.
     float hy = kHeader / 2 + 2;
@@ -508,7 +509,7 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
     if (scroll < height - box.size.y - 1) {
         nvgBeginPath(vg);
         nvgRect(vg, 1, box.size.y - 18, box.size.x - 2, 17);
-        nvgFillPaint(vg, nvgLinearGradient(vg, 0, box.size.y - 18, 0, box.size.y - 1, nvgTransRGBAf(c.bg1, 0), c.bg1));
+        nvgFillPaint(vg, nvgLinearGradient(vg, 0, box.size.y - 18, 0, box.size.y - 1, nvgTransRGBAf(c.bg2, 0), c.bg2));
         nvgFill(vg);
     }
     for (size_t i = 0; i < parts.size(); i++) {
@@ -518,15 +519,16 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
         Vec mid = p.rect.getCenter();
         if (int(i) == hovered)
             draw::roundedRect(vg, p.rect, 3, c.line0);
+        // ◂: folds the column back into the section.
         nvgBeginPath(vg);
-        nvgMoveTo(vg, mid.x - 4, mid.y - 4);
-        nvgLineTo(vg, mid.x + 4, mid.y + 4);
-        nvgMoveTo(vg, mid.x + 4, mid.y - 4);
-        nvgLineTo(vg, mid.x - 4, mid.y + 4);
-        nvgStrokeColor(vg, c.text1);
-        nvgStrokeWidth(vg, 1.3f);
-        nvgStroke(vg);
+        nvgMoveTo(vg, mid.x + 2, mid.y - 4);
+        nvgLineTo(vg, mid.x - 3, mid.y);
+        nvgLineTo(vg, mid.x + 2, mid.y + 4);
+        nvgClosePath(vg);
+        nvgFillColor(vg, c.text1);
+        nvgFill(vg);
     }
+    nvgRestore(vg);
 }
 
 } // namespace tessera

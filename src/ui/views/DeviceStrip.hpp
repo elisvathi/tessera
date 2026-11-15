@@ -18,11 +18,12 @@ namespace tessera {
 class TileLayer;
 class CachedLayer;
 
-/// The selected track's devices, in a strip of fixed height above its notes (docs/DEVICES.md §1.1): the modulator
-/// list on the left, then the device cards left to right in the order notes flow. Each card shows what its device
-/// does as one to three small pictures, with its settings as tags on them that you drag, scroll, or click for a
-/// panel. A playhead's own devices sit in a frame in its colour after the Playheads card. Closed, a thin bar names
-/// the chain.
+/// The selected track's devices, in a strip of fixed height above its notes (docs/DEVICES.md §1.1): on the left the
+/// song's modulator section, the TRACK | CLIP switch and the track's (or clip's) section, then the device cards left to
+/// right in the order notes flow, each with its own modulator section on its left edge (docs/DECISIONS.md §163). Each
+/// card shows what its device does as one to three small pictures, with its settings as tags on them that you drag,
+/// scroll, or click for a panel. A playhead's own devices sit in a frame in its colour after the Playheads card.
+/// Closed, a thin bar names the chain.
 class DeviceStrip : public InteractiveView {
   public:
     explicit DeviceStrip(EditorContext& ctx);
@@ -41,7 +42,6 @@ class DeviceStrip : public InteractiveView {
     /// Card indices from here on are devices in the shown playhead's branch (index - kBranchBase).
     static constexpr int kBranchBase = 1000;
     static constexpr float kClosedHeight = 24;
-    static constexpr float kListRight = 222; // the right edge of the modulator list
     /// Below this nothing useful fits: an open strip then shows as a bar that says so.
     static constexpr float kMinOpenHeight = 60;
     /// Room under the strip inside the pane, set by the pane: the mapping message floats there when it fits.
@@ -56,8 +56,10 @@ class DeviceStrip : public InteractiveView {
     float paneRoom = 0;
     /// Delete and Duplicate act on the selected card; the arrow keys step the tag last touched. True when handled.
     bool handleAction(Action action);
-    /// The bottom of the modulator list, where a modulator's popover opens (view coordinates).
-    rack::math::Vec popoverAnchor() const { return rack::math::Vec(8, box.size.y - 4); }
+    /// Where the open modulator's settings sit, right of its section (view coordinates), or nothing.
+    std::optional<rack::math::Rect> settingsRect() const;
+    /// Where the scrolling chain starts: what lies left of it stays put.
+    float chainStart() const { return chainLeft; }
 
     /// Which setting a tag stands for: a device knob or a playhead setting, the device type whose pictures it sits on,
     /// and its spec (family, prefix, step). A playhead's Direction tag stands for its direction and step order.
@@ -99,7 +101,10 @@ class DeviceStrip : public InteractiveView {
             SourceCard,  // where the shown clip's notes enter: which chain they go through (only drawn)
             SourceTrack, // its "Track" half: the clip plays through the track's devices
             SourceOwn,   // its "Own" half: the clip plays through its own (the first time a copy of the track's)
-            ChainStub    // the chain not shown, folded at the end: a click opens it or switches to it
+            ChainStub,   // the chain not shown, folded at the end: a click opens it or switches to it
+            ModSection,  // a modulator section (song, track or clip, a device's): only drawn, its parts take clicks
+            ModFold,     // a section's fold arrow: open it, or fold it to a rail
+            Settings     // the room for the open modulator's settings, right of its section
         };
         Kind kind;
         rack::math::Rect rect;
@@ -110,6 +115,8 @@ class DeviceStrip : public InteractiveView {
         int tile = -1;   // Tile: which picture of its card
         bool first = false;  // Tag: the first on its picture, drawn tinted
         bool dim = false;    // Tag: does nothing now (Times while Piece is Off)
+        bool fixed = false;  // in the part left of the chain, which never scrolls
+        uint64_t section = 0; // modulator parts: the section they belong to (sectionKey)
     };
 
     // What running gestures show before they are committed.
@@ -201,18 +208,32 @@ class DeviceStrip : public InteractiveView {
     /// Whether a tag part shows a setting a modulator or a lane moves, so its value changes while playing.
     bool isLive(const Part& p) const;
     std::vector<bool> tagLive; // per tag in `tagRefs`, from stripKeys()
-    void drawModulators(NVGcontext* vg);
+    /// One modulator section to lay out: where its modulators live, which they are, and what its header says.
+    struct SectionSpec {
+        ModulatorPlace place;
+        std::vector<const Modulator*> mods;
+        std::string label;
+        std::string railLabel;
+        uint64_t key = 0;
+    };
+    /// Lays out a section at `x` from `top`, `height` tall: open, its header (fold arrow, label, +) over a row per
+    /// modulator; folded, a rail with a dot per modulator and a small upright fader per Macro. Returns its width.
+    float layoutSection(const SectionSpec& spec, float x, float top, float height, float width, bool open, bool fixed,
+                        int device);
+    /// Where a section's new modulators go: its level, and for a device section the device.
+    ModulatorPlace sectionPlace(const Part& p);
+    /// The sections in the part that stays put (`fixed`), or the cards' sections, over what is drawn under them.
+    void drawSections(NVGcontext* vg, bool fixed);
+    /// The upright TRACK | CLIP switch: which devices the shown clip plays through.
+    void drawSwitch(NVGcontext* vg);
     void drawCard(NVGcontext* vg, const Part& card);
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     /// Shows the tooltip for the part under the mouse: a playhead chip's dot or name.
     void updateTip();
     void drawTag(NVGcontext* vg, const Part& part, bool hot);
-    /// The source card with its Track / Own switch, and the folded block of the chain not shown.
-    void drawSource(NVGcontext* vg, const Part& part, bool hot);
+    /// The folded block of the chain not shown.
     void drawStub(NVGcontext* vg, const Part& part, bool hot);
     void sampleScopes();
-    /// How far the modulator list can scroll: 0 while every row fits.
-    float modScrollMax();
     /// The tint of the card with index `index`: the accent, a Motion's colour, or a playhead's.
     NVGcolor tintOf(const Device& d, int index);
 
@@ -246,7 +267,8 @@ class DeviceStrip : public InteractiveView {
     HoverTooltip tip{""};
     std::string tipText; // what the tooltip says now; empty when none shows
     float scrollX = 0, contentWidth = 0;
-    float modScroll = 0;
+    std::map<uint64_t, float> sectionScroll; // per section key: how far its rows are scrolled
+    std::vector<std::string> sectionLabels;  // this frame's section labels, which ModSection parts point into
     float chainLeft = 0; // where the scrolling chain starts (the modulator list stays put)
     // Each modulator's last outputs (0..1 for drawing), for its row's little graph.
     std::map<uint64_t, std::array<float, 40>> scopes;

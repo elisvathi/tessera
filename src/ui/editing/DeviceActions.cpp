@@ -305,6 +305,40 @@ void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device,
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
 }
 
+void openModulatorBrowserAt(EditorContext& ctx, ModulatorPlace place) {
+    TesseraModule* m = moduleOf(ctx);
+    if (!m)
+        return;
+    SearchListOptions options;
+    options.placeholder = "Search modulators: lfo, envelope, build…";
+    options.footer =
+        "adds to " + (place.level == ModLevel::Song ? std::string("the song") : whereName(m->song(), place));
+    EditorContext* c = &ctx;
+    std::function<void(ModulatorType, int)> pick = [c, place](ModulatorType type, int) {
+        TesseraModule* mod = c->module();
+        if (!mod)
+            return;
+        ModulatorId added;
+        CommandPtr command = addModulator(mod->song(), place, type, mod->ids(), &added);
+        if (!command)
+            return;
+        mod->perform(std::move(command));
+        setStripOpen(*c, true);
+        // The section it went into opens, so the new row shows.
+        if (place.level == ModLevel::Song)
+            c->state().songModsOpen = true;
+        else if (place.level == ModLevel::Device)
+            c->state().deviceModsOpen[place.device.value] = true;
+        else
+            c->state().trackModsOpen = true;
+        if (type == ModulatorType::Curve)
+            showCurve(*c, added);
+        else
+            c->state().openModulator = added.value;
+    };
+    openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
+}
+
 const Device* playheadsDevice(EditorContext& ctx) {
     for (const Device& d : shownDevices(ctx))
         if (d.type == DeviceType::Playheads)

@@ -164,7 +164,12 @@ struct EditorState {
         return it == laneHeights.end() ? kDefaultTrackHeight * 1.2 : it->second;
     }
     // The device strip, session only: IDs, so nothing points into the song across frames.
-    uint64_t openModulator = 0;    // ModulatorId whose settings popover is open
+    uint64_t openModulator = 0; // ModulatorId whose settings are open beside its section
+    // The strip's modulator sections (docs/DECISIONS.md §163): open, or folded to a rail. A device's section starts
+    // open when it has modulators; `deviceModsOpen` holds the ones set by hand.
+    bool songModsOpen = true, trackModsOpen = true;
+    bool songModsOpenNarrow = false, trackModsOpenNarrow = false; // the same in a narrow strip, which starts folded
+    std::map<uint64_t, bool> deviceModsOpen;
     uint64_t selectedDevice = 0;   // DeviceId of the selected card (Delete removes it)
     uint64_t stripOpenedFor = 0;   // TrackId whose empty device strip was opened by hand
     uint64_t selectedPlayhead = 0; // PlayheadId shown on the Playheads card, the ruler and the lower pane

@@ -163,18 +163,24 @@ void DetailPane::layout() {
     roll->topInset = stripHeight;
     strip->visible = stripHeight > 0;
     strip->box = rack::math::Rect(0, theme::metrics::kPaneHeader, box.size.x, stripHeight);
-    // The popover hangs from the modulator list. In a short pane (the in-panel editor) it moves up to fit, beside
-    // the list so the list stays clickable, and scrolls when even the whole pane is too short.
-    float want = devices && deviceActions::stripOpen(ctx) && stripHeight >= DeviceStrip::kMinOpenHeight
-                     ? popover->wantedHeight()
-                     : 0;
-    float top = theme::metrics::kPaneHeader + 2;
-    float height = std::min(want, box.size.y - top - 2);
-    float below = theme::metrics::kPaneHeader + stripHeight - 6;
-    float y = std::max(top, std::min(below, box.size.y - height - 2));
-    float x = y < below ? DeviceStrip::kListRight + 6 : 8;
-    popover->visible = height > 40;
-    popover->box = rack::math::Rect(x, y, ModulatorPopover::kWidth, height);
+    // The open modulator's settings sit right of its section, inside the strip (docs/DECISIONS.md §163): the strip
+    // made room for them. Settings on a card that scrolled under the part left of the chain are cut there.
+    std::optional<rack::math::Rect> settings;
+    if (devices && deviceActions::stripOpen(ctx) && stripHeight >= DeviceStrip::kMinOpenHeight &&
+        popover->wantedHeight() > 0)
+        settings = strip->settingsRect();
+    popover->visible = false;
+    if (settings) {
+        rack::math::Rect r = *settings;
+        r.pos = r.pos.plus(strip->box.pos);
+        r.size.y = std::min(r.size.y, strip->box.getBottom() - r.pos.y);
+        float cut = strip->box.pos.x + strip->chainStart();
+        bool inChain = settings->pos.x >= strip->chainStart() - 1;
+        popover->clipLeft = inChain ? std::max(0.f, cut - r.pos.x) : 0;
+        popover->clipRight = std::max(0.f, r.getRight() - strip->box.getRight());
+        popover->visible = r.size.y > 40 && popover->clipLeft < r.size.x - 20 && r.pos.x < strip->box.getRight() - 20;
+        popover->box = r;
+    }
     // The header starts with the switch: Notes, Devices, and Mixer once something makes sound. In a narrow pane
     // it folds into one button that names what shows.
     bool sound = mixer && mixer->hasSound();

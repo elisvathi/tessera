@@ -25,12 +25,25 @@ namespace mx = theme::metrics;
 
 namespace {
 
-constexpr float kPad = 8;  // around the modulator list
+constexpr float kPad = 8;                  // around the part left of the chain
+constexpr float kSectionWidth = 178;       // an open song or track section
+constexpr float kDeviceSectionWidth = 150; // an open section on a card
+constexpr float kRail = 30;                // a folded section
+constexpr float kSwitchWidth = 30;         // the TRACK | CLIP switch
+constexpr float kSectionHeader = 22;
+constexpr float kSectionRow = 26;
+constexpr float kSettingsWidth = 270; // ModulatorPopover::kWidth
+constexpr float kLeftGap = 6;
+// Narrower than this, the song and track sections show as rails, unless one holds the open settings.
+constexpr float kNarrowStrip = 700;
+constexpr uint64_t kSongSection = 1, kTrackSection = 2;
+/// A device section's key: its device's ID, marked so it never meets the song's or the track's.
+uint64_t deviceSection(DeviceId id) { return id.value | (uint64_t(1) << 62); }
+/// Whether a modulator is a Macro: its row is a fader.
+bool isMacro(const Modulator& m) { return m.type == ModulatorType::Macro; }
+ParamRef macroRef(const Modulator& m) { return {ParamRef::Kind::Modulator, m.id.value, 0}; }
 constexpr float kTop = DeviceStrip::kTop; // the cards' top: room above for a playhead frame
 constexpr float kEdge = 8;                 // the strip's bottom edge that resizes it
-constexpr float kModWidth = 214;
-constexpr float kModHeader = 24;
-constexpr float kRow = 22;
 constexpr float kCardHeight = mx::kDeviceCardTop + mx::kDeviceCardHeader + mx::kDeviceTile + mx::kDeviceCardPad;
 static_assert(kCardHeight == DeviceStrip::kCardHeight, "the strip's rows follow the card's height");
 constexpr float kHeaderMid = mx::kDeviceCardTop + mx::kDeviceCardHeader / 2; // the header's middle, from the top
@@ -42,7 +55,6 @@ constexpr float kMotionJoin = 64;  // a Motion card's "+ Selected"
 constexpr float kMotionLeave = 64; // its "− Selected"
 constexpr float kMotionCount = 52; // and its "6 notes"
 constexpr float kTagPad = 8;
-constexpr float kSourceWidth = 150; // the source card at the chain's start
 constexpr float kStubWidth = 160;   // the folded chain at its end
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
@@ -234,6 +246,52 @@ class AmountDrag : public DragGesture {
     Vec press;
     int index = -1;
     float start = 0, amount = 0;
+};
+
+/// Dragging a Macro: its row sideways in an open section, its small fader up and down on a rail. It plays as it
+/// moves and commits one undo step; armed and recording, the Macro's lane takes the move instead.
+class MacroDrag : public DragGesture {
+  public:
+    MacroDrag(DeviceStrip& strip, EditorContext& ctx, ParamRef ref, std::string name, float start, float travel,
+              bool upright, Vec press)
+        : strip(strip), ctx(ctx), ref(ref), name(std::move(name)), start(start), value(start), travel(travel),
+          upright(upright), press(press) {}
+    void update(Vec pos, Modifiers mods) override {
+        float moved = upright ? press.y - pos.y : pos.x - press.x;
+        value = std::clamp(start + moved / std::max(10.f, travel) * (mods.shift ? 0.2f : 1.f), 0.f, 1.f);
+        strip.knobPreview = std::make_pair(ref, value);
+        if (TesseraModule* m = ctx.module())
+            m->holdKnob(ref, value);
+    }
+    void commit() override {
+        TesseraModule* m = ctx.module();
+        if (const AutomationEnvelope* lane = m ? m->recordingKnobLane(ref) : nullptr) {
+            strip.knobPreview.reset();
+            if (lane->recordMode == AutoRecordMode::Touch)
+                m->releaseKnob();
+            return;
+        }
+        finish();
+        if (value != start)
+            deviceActions::setKnob(ctx, ref, value);
+    }
+    void cancel() override { finish(); }
+    std::string readout() const override { return name + "  " + std::to_string(int(std::lround(value * 100))) + "%"; }
+    CursorShape cursor() const override { return upright ? CursorShape::ResizeV : CursorShape::ResizeH; }
+
+  private:
+    void finish() {
+        strip.knobPreview.reset();
+        if (TesseraModule* m = ctx.module())
+            m->releaseKnob();
+    }
+    DeviceStrip& strip;
+    EditorContext& ctx;
+    ParamRef ref;
+    std::string name;
+    float start, value, travel;
+    bool upright;
+    Vec press;
 };
 
 /// Dragging a card by its header: reorder, or with Ctrl a copy at the drop place.
@@ -670,41 +728,81 @@ void DeviceStrip::layoutParts() {
         return;
     }
     const Song& song = ctx.module()->song();
-    Rect block(kPad, kPad, kModWidth, h - 2 * kPad);
-    parts.push_back({Kind::AddModulator, Rect(block.getRight() - 50, block.pos.y + 3, 46, 18)});
-    float y = block.pos.y + kModHeader + 3 - modScroll;
-    for (const Row& r : modulatorRows(song, *t, deviceActions::shownChain(ctx))) {
-        Rect row(block.pos.x + 3, y, block.size.x - 6, kRow);
-        if (row.pos.y >= block.pos.y + kModHeader && row.getBottom() <= block.getBottom()) {
-            parts.push_back({Kind::ModulatorMap, Rect(row.getRight() - 21, y + 1, 20, 20), -1, -1, r.id.value});
-            parts.push_back({Kind::ModulatorRow, row, -1, -1, r.id.value});
-        }
-        y += kRow + 1;
+    EditorState& st = ctx.state();
+    sectionLabels.clear();
+    ModulatorPlace openPlace;
+    const Modulator* openMod =
+        st.openModulator ? findModulator(song, ModulatorId(st.openModulator), &openPlace) : nullptr;
+    if (openMod && openMod->type == ModulatorType::Curve)
+        openMod = nullptr; // a Curve draws in the lower pane instead
+    bool narrow = box.size.x < kNarrowStrip;
+    ChainOwner owner = deviceActions::shownChain(ctx);
+    const Clip* clip = deviceActions::shownNoteClip(ctx);
+    const Clip* ownClip = owner.isClip() ? song.findClip(owner.clip) : nullptr;
+    float lx = kPad, ltop = kPad, lh = h - 2 * kPad;
+    auto settingsAfter = [&](ModLevel level) {
+        if (!openMod || openPlace.level != level)
+            return;
+        parts.push_back({Kind::Settings, Rect(lx, ltop, kSettingsWidth, lh), -1, -1, openMod->id.value});
+        parts.back().fixed = true;
+        lx += kSettingsWidth + kLeftGap;
+    };
+    // The song's section: the same on every track.
+    SectionSpec songSpec;
+    songSpec.place = {ModLevel::Song, TrackId(), DeviceId(), ClipId()};
+    for (const Modulator& m : song.modulators)
+        songSpec.mods.push_back(&m);
+    songSpec.label = "SONG";
+    songSpec.railLabel = "SONG";
+    songSpec.key = kSongSection;
+    bool songHolds = openMod && openPlace.level == ModLevel::Song;
+    bool songOpen = (narrow ? st.songModsOpenNarrow : st.songModsOpen) || songHolds;
+    lx += layoutSection(songSpec, lx, ltop, lh, kSectionWidth, songOpen, true, -1) + kLeftGap;
+    settingsAfter(ModLevel::Song);
+    // Which devices the shown clip plays through: an upright switch, TRACK over CLIP.
+    if (clip) {
+        Rect sw(lx, ltop, kSwitchWidth, lh);
+        float half = (sw.size.y - 6) / 2;
+        parts.push_back({Kind::SourceTrack, Rect(sw.pos.x, sw.pos.y, sw.size.x, half + 3), -1, -1, clip->id.value});
+        parts.back().fixed = true;
+        parts.push_back(
+            {Kind::SourceOwn, Rect(sw.pos.x, sw.pos.y + half + 3, sw.size.x, half + 3), -1, -1, clip->id.value});
+        parts.back().fixed = true;
+        lx += kSwitchWidth + kLeftGap + 4; // the arrow into the section sits in the gap
     }
+    // The track's section, or the clip's while it plays its own devices.
+    SectionSpec trackSpec;
+    if (ownClip) {
+        trackSpec.place = {ModLevel::Clip, t->id, DeviceId(), ownClip->id};
+        for (const Modulator& m : ownClip->modulators)
+            trackSpec.mods.push_back(&m);
+        trackSpec.label = "CLIP · " + (ownClip->name.empty() ? std::string("This clip") : ownClip->name);
+        trackSpec.railLabel = "CLIP";
+    } else {
+        trackSpec.place = {ModLevel::Track, t->id, DeviceId(), ClipId()};
+        for (const Modulator& m : t->modulators)
+            trackSpec.mods.push_back(&m);
+        trackSpec.label = "TRACK · " + t->name;
+        trackSpec.railLabel = "TRACK";
+    }
+    trackSpec.key = kTrackSection;
+    ModLevel trackLevel = trackSpec.place.level;
+    bool trackHolds = openMod && openPlace.level == trackLevel;
+    bool trackOpen = (narrow ? st.trackModsOpenNarrow : st.trackModsOpen) || trackHolds;
+    lx += layoutSection(trackSpec, lx, ltop, lh, kSectionWidth, trackOpen, true, -1) + kLeftGap;
+    settingsAfter(trackLevel);
 
     // The bottom edge resizes the strip when the cards need more than one row; first, so it wins over what it
     // overlaps.
     if (resizable())
         parts.push_back({Kind::ResizeEdge, Rect(0, h - kEdge, box.size.x, kEdge)});
 
-    chainLeft = block.getRight() + 4;
+    chainLeft = lx - 2;
     float x = chainLeft - scrollX;
     float top = kTop;
     // Each card with what follows it (a playhead's frame, the link) is one unit: rows break between units.
     std::vector<std::pair<size_t, size_t>> units;
     size_t unitStart = parts.size();
-    // Where the shown clip's notes come in: the switch between the track's chain and its own. Then "in", with the +
-    // that adds a device first.
-    const Clip* clip = deviceActions::shownNoteClip(ctx);
-    if (clip) {
-        Rect card(x, top + mx::kDeviceCardTop, kSourceWidth, kCardHeight - mx::kDeviceCardTop);
-        parts.push_back({Kind::SourceCard, card, -1, -1, clip->id.value});
-        float half = (card.size.x - 20) / 2;
-        Rect seg(card.pos.x + 10, card.pos.y + 58, half, 28);
-        parts.push_back({Kind::SourceTrack, seg, -1, -1, clip->id.value});
-        parts.push_back({Kind::SourceOwn, Rect(seg.getRight(), seg.pos.y, half, seg.size.y), -1, -1, clip->id.value});
-        x += kSourceWidth;
-    }
     const std::vector<Device>& devices = chain();
     parts.push_back({Kind::Insert, Rect(x, top, mx::kDeviceIo, kCardHeight), 0});
     x += mx::kDeviceIo;
@@ -941,10 +1039,106 @@ float DeviceStrip::layoutTiles(const Device& d, int index, float x, float top, P
     return tx - mx::kDeviceTileGap;
 }
 
+float DeviceStrip::layoutSection(const SectionSpec& spec, float x, float top, float height, float width, bool open,
+                                 bool fixed, int device) {
+    auto push = [&](Part p) {
+        p.fixed = fixed;
+        p.section = spec.key;
+        p.device = device;
+        parts.push_back(p);
+    };
+    float w = open ? width : kRail;
+    Part section{Kind::ModSection, Rect(x, top, w, height), device, int(spec.place.level), spec.place.device.value};
+    section.tag = int(sectionLabels.size());
+    sectionLabels.push_back(open ? spec.label : spec.railLabel);
+    push(section);
+    push({Kind::ModFold, Rect(x + 4, top + 3, 16, 16), device, int(spec.place.level), spec.place.device.value});
+    if (open) {
+        push({Kind::AddModulator, Rect(x + w - 22, top + 3, 18, 16), device, int(spec.place.level),
+              spec.place.device.value});
+        float rowsTop = top + kSectionHeader + 2, room = top + height - 3 - rowsTop;
+        float most = std::max(0.f, float(spec.mods.size()) * kSectionRow - room);
+        float& scroll = sectionScroll[spec.key];
+        scroll = std::clamp(scroll, 0.f, most);
+        float y = rowsTop - scroll;
+        for (const Modulator* m : spec.mods) {
+            Rect row(x + 4, y, w - 8, kSectionRow - 3);
+            if (row.pos.y >= rowsTop - 0.5f && row.getBottom() <= top + height - 2) {
+                push({Kind::ModulatorMap, Rect(row.getRight() - 20, row.pos.y + 2, 19, row.size.y - 4), device, 0,
+                      m->id.value});
+                push({Kind::ModulatorRow, row, device, 0, m->id.value});
+            }
+            y += kSectionRow;
+        }
+        return w;
+    }
+    // Folded: a dot per modulator, an upright fader per Macro, and + at the bottom.
+    float y = top + 24;
+    float bottom = top + height - 24;
+    for (const Modulator* m : spec.mods) {
+        float tall = isMacro(*m) ? 30 : 14;
+        if (y + tall > bottom)
+            break;
+        push({Kind::ModulatorRow, Rect(x + 8, y, 14, tall), device, 1, m->id.value});
+        y += tall + 6;
+    }
+    push({Kind::AddModulator, Rect(x + 6, top + height - 21, 18, 16), device, int(spec.place.level),
+          spec.place.device.value});
+    return w;
+}
+
+ModulatorPlace DeviceStrip::sectionPlace(const Part& p) {
+    ModLevel level = ModLevel(p.param);
+    const Track* t = track();
+    ChainOwner owner = deviceActions::shownChain(ctx);
+    TrackId tid = t ? t->id : TrackId();
+    switch (level) {
+    case ModLevel::Song:
+        return {ModLevel::Song, TrackId(), DeviceId(), ClipId()};
+    case ModLevel::Device:
+        return {ModLevel::Device, tid, DeviceId(p.id), owner.clip};
+    case ModLevel::Clip:
+        return {ModLevel::Clip, tid, DeviceId(), owner.clip};
+    case ModLevel::Track:
+    default:
+        return {ModLevel::Track, tid, DeviceId(), ClipId()};
+    }
+}
+
+std::optional<Rect> DeviceStrip::settingsRect() const {
+    for (const Part& p : parts)
+        if (p.kind == Kind::Settings)
+            return p.rect;
+    return std::nullopt;
+}
+
 float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NVGcolor tint) {
     NVGcontext* vg = APP->window->vg;
     const theme::Palette& c = theme::colors();
     float mid = top + kHeaderMid;
+    // The card's own modulators on its left edge, then the open one's settings, then what the device shows: opening
+    // either makes the card wider, never its controls narrower.
+    float cardLeft = x;
+    {
+        SectionSpec spec;
+        spec.place = {ModLevel::Device, TrackId(), d.id, ClipId()};
+        for (const Modulator& m : d.modulators)
+            spec.mods.push_back(&m);
+        spec.label = "DEVICE";
+        spec.railLabel = "DEVICE";
+        spec.key = deviceSection(d.id);
+        auto it = ctx.state().deviceModsOpen.find(d.id.value);
+        bool open = it != ctx.state().deviceModsOpen.end() ? it->second : !d.modulators.empty();
+        x += layoutSection(spec, x, top, kCardHeight, kDeviceSectionWidth, open, false, index);
+        ModulatorPlace place;
+        const Modulator* om = ctx.state().openModulator
+                                  ? findModulator(ctx.module()->song(), ModulatorId(ctx.state().openModulator), &place)
+                                  : nullptr;
+        if (om && om->type != ModulatorType::Curve && place.level == ModLevel::Device && place.device == d.id) {
+            parts.push_back({Kind::Settings, Rect(x, top, kSettingsWidth, kCardHeight), index, -1, om->id.value});
+            x += kSettingsWidth;
+        }
+    }
     draw::TextStyle nameStyle{theme::fonts::uiStrong(), 13, c.text0};
     float nameW = vg ? draw::textWidth(vg, nameStyle, nameOf(d)) : 80;
     float left = x + mx::kDeviceCardPad;
@@ -968,7 +1162,7 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
             hx += kChipHeight + 6 + 8;
         }
     }
-    float rightNeed = 18 + float(d.modulators.size()) * 11 + 8;
+    float rightNeed = 18 + 8;
     if (d.type == DeviceType::Motion)
         rightNeed += kMotionJoin + kMotionLeave + kMotionCount + 16;
     if (index >= kBranchBase)
@@ -982,17 +1176,15 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
     if (d.type != DeviceType::Playheads || shown)
         tilesRight = layoutTiles(d, index, left, top, kind, owner, values, tint, headerWidth - 2 * mx::kDeviceCardPad);
     float width = std::max(headerWidth, tilesRight + mx::kDeviceCardPad - x);
-    Rect card(x, top, width, kCardHeight);
+    Rect content(x, top, width, kCardHeight);
+    Rect card(cardLeft, top, content.getRight() - cardLeft, kCardHeight);
 
     Rect menu(card.getRight() - mx::kDeviceCardPad - 18, mid - 9, 18, 18);
     parts.push_back({Kind::Menu, menu, index, -1, d.id.value});
-    for (size_t k = 0; k < d.modulators.size(); k++)
-        parts.push_back({Kind::Dot, Rect(menu.pos.x - 12 - float(k) * 11, mid - 5, 10, 10), index, int(k),
-                         d.modulators[k].id.value});
     if (d.type == DeviceType::Motion) {
         // Which notes move: "+ Selected" adds the piano roll's selection, "− Selected" takes it out again, "6 notes"
         // selects them there.
-        float right = menu.pos.x - 6 - float(d.modulators.size()) * 11;
+        float right = menu.pos.x - 6;
         Rect leave(right - kMotionLeave, mid - 9, kMotionLeave, 18);
         Rect join(leave.pos.x - 4 - kMotionJoin, mid - 9, kMotionJoin, 18);
         Rect count(join.pos.x - 4 - kMotionCount, mid - 9, kMotionCount, 18);
@@ -1000,8 +1192,9 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
         parts.push_back({Kind::MotionJoin, join, index, -1, d.id.value});
         parts.push_back({Kind::MotionNotes, count, index, -1, d.id.value});
     }
-    parts.push_back({Kind::CardHeader, Rect(card.pos.x, top, card.size.x, mx::kDeviceCardTop + mx::kDeviceCardHeader),
-                     index, -1, d.id.value});
+    parts.push_back({Kind::CardHeader,
+                     Rect(content.pos.x, top, content.size.x, mx::kDeviceCardTop + mx::kDeviceCardHeader), index, -1,
+                     d.id.value});
     parts.push_back({Kind::Card, card, index, -1, d.id.value});
     return card.getRight();
 }
@@ -1050,10 +1243,9 @@ const Playhead* DeviceStrip::shownPlayhead(const Device& d) const {
 
 const DeviceStrip::Part* DeviceStrip::partAt(Vec pos) const {
     for (const Part& p : parts) {
-        if (p.kind == Kind::Frame || p.kind == Kind::SourceCard)
-            continue; // only drawn: the parts on it take the clicks
-        bool inChain = p.kind != Kind::AddModulator && p.kind != Kind::ModulatorRow && p.kind != Kind::ModulatorMap &&
-                       p.kind != Kind::ClosedBar && p.kind != Kind::ResizeEdge;
+        if (p.kind == Kind::Frame || p.kind == Kind::SourceCard || p.kind == Kind::Settings)
+            continue; // only drawn (the settings are their own view over it): the parts on it take the clicks
+        bool inChain = !p.fixed && p.kind != Kind::ClosedBar && p.kind != Kind::ResizeEdge;
         if (inChain && pos.x < chainLeft)
             continue; // the modulator list covers what scrolled under it
         if (p.kind == Kind::Insert) {
@@ -1063,9 +1255,14 @@ const DeviceStrip::Part* DeviceStrip::partAt(Vec pos) const {
                 return &p;
             continue;
         }
+        if (p.kind == Kind::ModSection)
+            continue; // under its own parts: tried last
         if (p.rect.contains(pos))
             return &p;
     }
+    for (const Part& p : parts)
+        if (p.kind == Kind::ModSection && p.rect.contains(pos) && (p.fixed || pos.x >= chainLeft))
+            return &p;
     return nullptr;
 }
 
@@ -1079,15 +1276,6 @@ bool DeviceStrip::reachableNow(const ParamRef& ref) {
     if (!findModulator(m->song(), ModulatorId(ctx.mappingModulator), &place))
         return false;
     return reachable(m->song(), place, ModulatorId(ctx.mappingModulator), route);
-}
-
-float DeviceStrip::modScrollMax() {
-    const Track* t = track();
-    if (!t)
-        return 0;
-    float rows = float(modulatorRows(ctx.module()->song(), *t, deviceActions::shownChain(ctx)).size());
-    float room = box.size.y - 2 * kPad - kModHeader - 6;
-    return std::max(0.f, rows * (kRow + 1) - room);
 }
 
 void DeviceStrip::sampleScopes() {
@@ -1113,7 +1301,7 @@ void DeviceStrip::step() {
         if (t && t->id != shownTrack) {
             shownTrack = t->id;
             scrollX = 0;
-            modScroll = 0;
+            sectionScroll.clear();
             focusedTag.reset();
         }
         const Clip* clip = deviceActions::shownNoteClip(ctx);
@@ -1134,8 +1322,6 @@ void DeviceStrip::step() {
         float most = std::max(0.f, contentWidth - (box.size.x - chainLeft));
         scrollX = std::clamp(scrollX, 0.f, most);
         scrollY = std::clamp(scrollY, 0.f, std::max(0.f, contentHeight - box.size.y));
-        // Never scrolled past the end: removing modulators (or a wheel turn while the list fits) can't empty it.
-        modScroll = std::clamp(modScroll, 0.f, modScrollMax());
         layoutParts();
         sampleScopes();
         if (focusedTag && !findParam(ctx.module()->song(), focusedTag->ref))
@@ -1319,6 +1505,17 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
     }
     case Kind::ResizeEdge:
         return std::make_unique<StripResize>(*this, ctx);
+    case Kind::ModulatorRow: {
+        const Modulator* mod = findModulator(m->song(), ModulatorId(p.id));
+        if (!mod || !isMacro(*mod) || ctx.mappingModulator)
+            return nullptr;
+        bool upright = p.param == 1;
+        uint64_t id = p.id;
+        return std::make_unique<ClickOrDrag>(
+            std::make_unique<MacroDrag>(*this, ctx, macroRef(*mod), mod->name, shownValue(macroRef(*mod)),
+                                        upright ? p.rect.size.y * 3 : p.rect.size.x, upright, pos),
+            pos, [c, id] { c->state().openModulator = c->state().openModulator == id ? 0 : id; });
+    }
     case Kind::CardHeader: {
         if (p.device >= kBranchBase)
             return nullptr; // branch devices stay in their branch: a click selects them
@@ -1387,8 +1584,35 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             deviceActions::setStripOpen(ctx, true);
         break;
     case Kind::AddModulator:
-        deviceActions::openModulatorBrowser(ctx, deviceActions::shownChain(ctx));
+        deviceActions::openModulatorBrowserAt(ctx, sectionPlace(*hit));
         break;
+    case Kind::ModFold: {
+        EditorState& st = ctx.state();
+        ModLevel level = ModLevel(hit->param);
+        bool narrow = box.size.x < kNarrowStrip;
+        // Folding the section that holds the open settings closes them, so it really folds.
+        bool open = false;
+        for (const Part& q : parts)
+            if (q.kind == Kind::ModSection && q.section == hit->section)
+                open = q.rect.size.x > kRail + 1;
+        if (open && ctx.state().openModulator) {
+            ModulatorPlace place;
+            if (findModulator(m->song(), ModulatorId(ctx.state().openModulator), &place) &&
+                (place.level == level || (level == ModLevel::Track && place.level == ModLevel::Clip)) &&
+                (level != ModLevel::Device || place.device.value == hit->id))
+                st.openModulator = 0;
+        }
+        if (level == ModLevel::Song)
+            (narrow ? st.songModsOpenNarrow : st.songModsOpen) = !open;
+        else if (level == ModLevel::Device) {
+            const Device* d = findDevice(m->song(), DeviceId(hit->id));
+            auto it = st.deviceModsOpen.find(hit->id);
+            bool open = it != st.deviceModsOpen.end() ? it->second : (d && !d->modulators.empty());
+            st.deviceModsOpen[hit->id] = !open;
+        } else
+            (narrow ? st.trackModsOpenNarrow : st.trackModsOpen) = !open;
+        break;
+    }
     case Kind::SourceTrack:
         ctx.trackChainOpened = false;
         m->perform(playTrackChain(m->song(), ClipId(hit->id)));
@@ -1539,6 +1763,16 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
 
 void DeviceStrip::doubleClick(Vec pos, Modifiers mods) {
     const Part* hit = partAt(pos);
+    if (hit && hit->kind == Kind::ModulatorRow && ctx.module()) {
+        const Modulator* mod = findModulator(ctx.module()->song(), ModulatorId(hit->id));
+        if (mod && isMacro(*mod)) {
+            const devices::ParamInfo* info = devices::paramInfo(mod->type, 0);
+            deviceActions::setKnob(ctx, macroRef(*mod), info ? devices::normalize(*info, info->def) : 0.f);
+            // The first click opened its settings; a double-click only resets.
+            ctx.state().openModulator = 0;
+            return;
+        }
+    }
     if (!hit || (hit->kind != Kind::Tag && hit->kind != Kind::Switch) || ctx.mappingModulator)
         return;
     resetTag(tagRefs[size_t(hit->tag)]);
@@ -1553,12 +1787,23 @@ void DeviceStrip::resetTag(const TagRef& t) {
 }
 
 void DeviceStrip::wheel(Vec pos, Vec delta, Modifiers mods) {
-    if (pos.x < chainLeft) {
-        modScroll = std::clamp(modScroll - delta.y * 0.5f, 0.f, modScrollMax());
+    const Part* hit = partAt(pos);
+    // Over a Macro, the wheel turns it (1%, Ctrl finer); elsewhere in a section it scrolls the section's rows.
+    if (hit && hit->section && std::fabs(delta.y) > std::fabs(delta.x)) {
+        TesseraModule* m = ctx.module();
+        const Modulator* mod =
+            m && hit->kind == Kind::ModulatorRow ? findModulator(m->song(), ModulatorId(hit->id)) : nullptr;
+        if (mod && isMacro(*mod)) {
+            float step = (mods.ctrl ? 0.002f : 0.01f) * (delta.y > 0 ? 1.f : -1.f);
+            deviceActions::setKnob(ctx, macroRef(*mod), std::clamp(shownValue(macroRef(*mod)) + step, 0.f, 1.f));
+            return;
+        }
+        sectionScroll[hit->section] -= delta.y * 0.5f;
         return;
     }
+    if (pos.x < chainLeft)
+        return;
     // A vertical turn over a tag steps it once; anything else scrolls the chain.
-    const Part* hit = partAt(pos);
     if (hit && hit->kind == Kind::Tag && !ctx.mappingModulator && std::fabs(delta.y) > std::fabs(delta.x)) {
         TagRef t = tagRefs[size_t(hit->tag)];
         if (t.spec.family != Family::Channels) {
@@ -1595,7 +1840,15 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
     case Kind::Card:
     case Kind::Tile:
     case Kind::SourceCard:
+    case Kind::ModSection:
+    case Kind::Settings:
         return CursorShape::Arrow;
+    case Kind::ModulatorRow: {
+        const Modulator* mod = ctx.module() ? findModulator(ctx.module()->song(), ModulatorId(hit->id)) : nullptr;
+        if (mod && isMacro(*mod) && !ctx.mappingModulator)
+            return hit->param == 1 ? CursorShape::ResizeV : CursorShape::ResizeH;
+        return CursorShape::Hand;
+    }
     default:
         return CursorShape::Hand;
     }
@@ -1624,7 +1877,8 @@ void DeviceStrip::drawView(const DrawArgs& args) {
     }
     nvgSave(vg);
     nvgIntersectScissor(vg, 0, 0, box.size.x, box.size.y);
-    drawModulators(vg);
+    drawSections(vg, true);
+    drawSwitch(vg);
     nvgRestore(vg);
 }
 
@@ -1669,7 +1923,9 @@ std::pair<uint64_t, uint64_t> DeviceStrip::stripKeys() {
     bool onTag = hot == Kind::Tag || hot == Kind::Switch || hot == Kind::TagBadge;
     bool onChain = !onTag && hot != Kind::ClosedBar && hot != Kind::Tile && hot != Kind::Card &&
                    hot != Kind::CardHeader && hot != Kind::Frame && hot != Kind::ResizeEdge &&
-                   hot != Kind::AddModulator && hot != Kind::ModulatorRow && hot != Kind::ModulatorMap;
+                   hot != Kind::AddModulator && hot != Kind::ModulatorRow && hot != Kind::ModulatorMap &&
+                   hot != Kind::ModSection && hot != Kind::ModFold && hot != Kind::Settings &&
+                   hot != Kind::SourceTrack && hot != Kind::SourceOwn;
     uint64_t tagHover = onTag ? hashMix(h, double(hovered)) : hashMix(h, hasGesture() && hovered >= 0 ? -2 : -1);
     return {hashMix(h, onChain ? double(hovered) : -1), tagHover};
 }
@@ -1799,9 +2055,6 @@ void DeviceStrip::paintChain(NVGcontext* vg) {
             draw::text(vg, plus, mid.x, mid.y, "+");
             break;
         }
-        case Kind::SourceCard:
-            drawSource(vg, p, hot);
-            break;
         case Kind::ChainStub:
             drawStub(vg, p, hot);
             break;
@@ -1950,9 +2203,6 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
             // A device in a playhead's own chain shows that playhead's dot left of its menu.
             if (index >= kBranchBase) {
                 float left = p.rect.pos.x;
-                for (const Part& q : parts)
-                    if (q.device == index && q.kind == Kind::Dot)
-                        left = std::min(left, q.rect.pos.x);
                 nvgBeginPath(vg);
                 nvgCircle(vg, left - 7, mid, 3.5f);
                 nvgFillColor(vg, tint);
@@ -2001,12 +2251,31 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
     }
     if (d.type == DeviceType::Playheads && d.playheads.empty()) {
         draw::TextStyle hint{theme::fonts::ui(), 11, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        draw::text(vg, hint, r.pos.x + mx::kDeviceCardPad, r.pos.y + 90, "Add a playhead with + to read the clip");
+        float hx = r.pos.x + mx::kDeviceCardPad;
+        for (const Part& q : parts)
+            if (q.device == index && q.kind == Kind::Power)
+                hx = q.rect.pos.x;
+        draw::text(vg, hint, hx, r.pos.y + 90, "Add a playhead with + to read the clip");
     }
 }
 
 void DeviceStrip::updateTip() {
     std::string want;
+    if (hovered >= 0 && size_t(hovered) < parts.size() && ctx.module() && !hasGesture() &&
+        (parts[size_t(hovered)].kind == Kind::SourceTrack || parts[size_t(hovered)].kind == Kind::SourceOwn)) {
+        const Part& p = parts[size_t(hovered)];
+        if (const Clip* clip = ctx.module()->song().findClip(ClipId(p.id))) {
+            std::string name = clip->name.empty() ? std::string("This clip") : clip->name;
+            bool own = clip->usesOwnChain();
+            if (p.kind == Kind::SourceTrack)
+                want = own ? name + " skips the track's devices. Click to play it through them again"
+                           : name + " plays through the track's devices, like every clip on the track";
+            else
+                want = own                 ? name + " plays through its own devices: the track's are skipped for it"
+                       : clip->hasOwnChain ? "Click: " + name + " plays through its own devices again"
+                                           : "Click: " + name + " gets its own devices, a copy of the track's";
+        }
+    }
     if (hovered >= 0 && size_t(hovered) < parts.size() && parts[size_t(hovered)].kind == Kind::PlayheadChip &&
         ctx.module() && !hasGesture()) {
         const Part& p = parts[size_t(hovered)];
@@ -2269,65 +2538,6 @@ void wrapText(NVGcontext* vg, const draw::TextStyle& style, float x, float y, fl
 
 } // namespace
 
-void DeviceStrip::drawSource(NVGcontext* vg, const Part& part, bool hot) {
-    const theme::Palette& c = theme::colors();
-    const theme::DeviceColors& dc = theme::deviceColors();
-    const Song& song = ctx.module()->song();
-    const Track* t = track();
-    const Clip* clip = song.findClip(ClipId(part.id));
-    if (!t || !clip)
-        return;
-    Rect r = part.rect;
-    draw::roundedRect(vg, r, 12, dc.card);
-    draw::roundedRectStroke(vg, r, 12, dc.cardEdge, 1);
-    NVGcolor clipColor = clipTint(), trackColor = theme::track(t->color);
-    float x = r.pos.x + 10, w = r.size.x - 20;
-    draw::TextStyle small{theme::fonts::ui(), 10.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    draw::text(vg, small, x, r.pos.y + 14, "Notes from");
-    draw::roundedRect(vg, Rect(x, r.pos.y + 27, 10, 10), 3, clipColor);
-    draw::TextStyle name{theme::fonts::uiStrong(), 12.5f, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    draw::text(vg, name, x + 16, r.pos.y + 32, draw::ellipsize(vg, name, clipName(*clip), w - 16));
-    draw::text(vg, small, x, r.pos.y + 48, "play through");
-    // The switch: Track | Own, the side that plays lit in its chain's colour.
-    bool own = clip->usesOwnChain();
-    Rect seg;
-    for (const Part& q : parts)
-        if (q.kind == Kind::SourceTrack && q.id == part.id)
-            seg = Rect(q.rect.pos, Vec(q.rect.size.x * 2, q.rect.size.y));
-    draw::roundedRect(vg, seg.grow(Vec(2, 2)), 9, dc.screen);
-    for (int side = 0; side < 2; side++) {
-        Rect half(seg.pos.x + float(side) * seg.size.x / 2, seg.pos.y, seg.size.x / 2, seg.size.y);
-        bool lit = (side == 1) == own;
-        bool over = hovered >= 0 && parts[size_t(hovered)].kind == (side ? Kind::SourceOwn : Kind::SourceTrack) &&
-                    parts[size_t(hovered)].id == part.id;
-        NVGcolor tint = side ? clipColor : trackColor;
-        if (lit) {
-            draw::roundedRect(vg, half, 7, nvgLerpRGBA(dc.card, tint, 0.26f));
-            draw::roundedRectStroke(vg, half, 7, nvgTransRGBAf(tint, 0.75f), 1);
-        } else if (over) {
-            draw::roundedRect(vg, half, 7, dc.tagHover);
-        }
-        draw::TextStyle label{theme::fonts::uiStrong(), 12, lit || over ? c.text0 : c.text1,
-                              NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        draw::text(vg, label, half.getCenter().x, half.getCenter().y, side ? "Own" : "Track");
-    }
-    // What that means now, in a sentence.
-    std::string say;
-    std::vector<std::string> others = skippers(song, *t, clip->id);
-    if (own && !ctx.trackChainOpened)
-        say = clipName(*clip) + " skips the track's devices." + (chain().empty() ? " It plays dry." : "");
-    else if (own)
-        say = "Editing the track's devices. " + clipName(*clip) + " doesn't play through them.";
-    else if (!others.empty())
-        say = namesOf(others) + (others.size() == 1 ? " skips" : " skip") +
-              " these: " + (others.size() == 1 ? "it plays" : "they play") + " through their own.";
-    else
-        say = clip->hasOwnChain ? "Its own devices are kept, off for now." : "Same as every clip on " + t->name + ".";
-    draw::TextStyle note{theme::fonts::ui(), 10.5f, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    wrapText(vg, note, x, seg.getBottom() + 14, w, 13, say, 3);
-    (void)hot;
-}
-
 void DeviceStrip::drawStub(NVGcontext* vg, const Part& part, bool hot) {
     const theme::Palette& c = theme::colors();
     const Song& song = ctx.module()->song();
@@ -2439,94 +2649,245 @@ void DeviceStrip::drawClosed(NVGcontext* vg) {
     }
 }
 
-void DeviceStrip::drawModulators(NVGcontext* vg) {
+void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
     const theme::Palette& c = theme::colors();
+    const theme::DeviceColors& dc = theme::deviceColors();
     const Song& song = ctx.module()->song();
-    const Track* t = track();
-    Rect block(kPad, kPad, kModWidth, box.size.y - 2 * kPad);
-    draw::roundedRect(vg, block, 6, c.bg1);
-    draw::roundedRectStroke(vg, block, 6, c.line0, 1);
     draw::TextStyle head{theme::fonts::uiStrong(), 9.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE,
                          theme::metrics::kPanelLabelSpacing};
-    draw::text(vg, head, block.pos.x + 9, block.pos.y + kModHeader / 2, "MODULATORS");
-    nvgBeginPath(vg);
-    nvgRect(vg, block.pos.x, block.pos.y + kModHeader, block.size.x, 1);
-    nvgFillColor(vg, c.line0);
-    nvgFill(vg);
-
     draw::TextStyle name{theme::fonts::ui(), theme::metrics::kTextUi, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    draw::TextStyle where{theme::fonts::ui(), 9.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    draw::TextStyle button{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-    for (size_t i = 0; i < parts.size(); i++) {
-        const Part& p = parts[i];
-        bool hot = int(i) == hovered;
-        if (p.kind == Kind::AddModulator) {
-            if (hot)
-                draw::roundedRect(vg, p.rect, 3, c.line0);
-            draw::text(vg, button, p.rect.getCenter().x, p.rect.getCenter().y, "+ Add");
-            continue;
-        }
-        if (p.kind != Kind::ModulatorRow)
-            continue;
-        ModulatorPlace place;
-        const Modulator* mod = findModulator(song, ModulatorId(p.id), &place);
-        if (!mod)
-            continue;
-        bool open = ctx.state().openModulator == p.id || deviceActions::curveShown(ctx, mod->id),
-             mapping = ctx.mappingModulator == p.id;
-        bool mapHot =
-            hovered >= 0 && parts[size_t(hovered)].kind == Kind::ModulatorMap && parts[size_t(hovered)].id == p.id;
-        if (open || mapping || hot || mapHot)
-            draw::roundedRect(vg, p.rect, 4, open || mapping ? c.bg2 : nvgTransRGBAf(c.bg2, 0.6f));
-        NVGcolor color = deviceActions::colorOf(mod->id);
-        float mid = p.rect.getCenter().y;
+    draw::TextStyle value{theme::fonts::mono(), 10.5f, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+    draw::TextStyle hint{theme::fonts::ui(), 10.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
+    auto arrow = [&](Vec m, bool left, NVGcolor color) {
         nvgBeginPath(vg);
-        nvgCircle(vg, p.rect.pos.x + 9, mid, 4);
+        if (left) {
+            nvgMoveTo(vg, m.x + 2, m.y - 3.5f);
+            nvgLineTo(vg, m.x - 2.5f, m.y);
+            nvgLineTo(vg, m.x + 2, m.y + 3.5f);
+        } else {
+            nvgMoveTo(vg, m.x - 2, m.y - 3.5f);
+            nvgLineTo(vg, m.x + 2.5f, m.y);
+            nvgLineTo(vg, m.x - 2, m.y + 3.5f);
+        }
+        nvgClosePath(vg);
         nvgFillColor(vg, color);
         nvgFill(vg);
-        float x = p.rect.pos.x + 19;
-        std::string w = deviceActions::whereName(song, place);
-        float right = p.rect.getRight() - 24 - 34;
-        float nameW = std::min(draw::textWidth(vg, name, mod->name), right - x - 20);
-        draw::text(vg, name, x, mid, draw::ellipsize(vg, name, mod->name, nameW + 1));
-        draw::text(vg, where, x + nameW + 6, mid, draw::ellipsize(vg, where, w, right - (x + nameW + 6)));
-        // The last moments of its output, as a little graph.
-        auto it = scopes.find(mod->id.value);
-        if (it != scopes.end()) {
-            Rect g(p.rect.getRight() - 24 - 32, mid - 6, 30, 12);
-            nvgBeginPath(vg);
-            for (int k = 0; k < 40; k++) {
-                float v = it->second[size_t((scopeHead + 1 + k) % 40)];
-                float px = g.pos.x + g.size.x * float(k) / 39.f, py = g.getBottom() - v * g.size.y;
-                k == 0 ? nvgMoveTo(vg, px, py) : nvgLineTo(vg, px, py);
+    };
+    std::map<uint64_t, bool> sectionOpen;
+    for (const Part& p : parts)
+        if (p.kind == Kind::ModSection && p.fixed == fixed)
+            sectionOpen[p.section] = p.rect.size.x > kRail + 1;
+    for (size_t i = 0; i < parts.size(); i++) {
+        const Part& p = parts[i];
+        if (p.fixed != fixed || !p.section)
+            continue;
+        bool hot = int(i) == hovered;
+        bool open = sectionOpen[p.section];
+        switch (p.kind) {
+        case Kind::ModSection: {
+            if (fixed) {
+                draw::roundedRect(vg, p.rect, 6, c.bg1);
+                draw::roundedRectStroke(vg, p.rect, 6, c.line0, 1);
+            } else {
+                // On a card: a slightly deeper panel along its left edge, with a line between it and the device.
+                Rect r = p.rect;
+                draw::roundedRect(vg, r, mx::kDeviceCardRadius, nvgLerpRGBA(dc.card, c.bg0, 0.35f));
+                nvgBeginPath(vg);
+                nvgRect(vg, r.getRight() - 1, r.pos.y + 1, 1, r.size.y - 2);
+                nvgFillColor(vg, dc.cardEdge);
+                nvgFill(vg);
             }
-            nvgStrokeColor(vg, color);
-            nvgStrokeWidth(vg, 1.3f);
-            nvgStroke(vg);
+            const std::string& label =
+                p.tag >= 0 && size_t(p.tag) < sectionLabels.size() ? sectionLabels[size_t(p.tag)] : std::string();
+            if (open) {
+                draw::text(vg, head, p.rect.pos.x + 22, p.rect.pos.y + 11,
+                           draw::ellipsize(vg, head, label, p.rect.size.x - 22 - 26));
+                bool any = false;
+                for (const Part& q : parts)
+                    any |= q.kind == Kind::ModulatorRow && q.section == p.section;
+                if (!any && p.rect.size.y > 60)
+                    draw::textBox(vg, hint, p.rect.pos.x + 9, p.rect.pos.y + kSectionHeader + 6, p.rect.size.x - 18,
+                                  ModLevel(p.param) == ModLevel::Device
+                                      ? "Modulators that move only this device. + to add."
+                                      : "LFOs, envelopes, ramps and Macros that turn settings for you. + to add.");
+            } else {
+                // Folded: its name up the rail.
+                nvgSave(vg);
+                nvgTranslate(vg, p.rect.getCenter().x, p.rect.pos.y + 24);
+                nvgRotate(vg, float(-M_PI / 2));
+                draw::TextStyle up = head;
+                up.align = NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE;
+                float room = p.rect.size.y - 48;
+                bool rowsShown = false;
+                for (const Part& q : parts)
+                    rowsShown |= q.kind == Kind::ModulatorRow && q.section == p.section;
+                if (!rowsShown)
+                    draw::text(vg, up, 0, 0, draw::ellipsize(vg, up, label, room));
+                nvgRestore(vg);
+            }
+            break;
         }
-        // The map arrow.
-        Rect a(p.rect.getRight() - 21, p.rect.pos.y + 1, 20, 20);
-        if (mapping)
-            draw::roundedRect(vg, a, 4, nvgTransRGBAf(color, 0.25f));
-        else if (mapHot)
-            draw::roundedRect(vg, a, 4, c.line0);
-        Vec ac = a.getCenter();
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, ac.x - 3.5f, ac.y + 3.5f);
-        nvgLineTo(vg, ac.x + 3.5f, ac.y - 3.5f);
-        nvgMoveTo(vg, ac.x - 1, ac.y - 3.5f);
-        nvgLineTo(vg, ac.x + 3.5f, ac.y - 3.5f);
-        nvgLineTo(vg, ac.x + 3.5f, ac.y + 1);
-        nvgStrokeColor(vg, mapping ? color : c.text1);
-        nvgStrokeWidth(vg, 1.4f);
-        nvgLineCap(vg, NVG_ROUND);
-        nvgStroke(vg);
+        case Kind::ModFold:
+            if (hot)
+                draw::roundedRect(vg, p.rect, 3, c.line0);
+            arrow(p.rect.getCenter(), open, c.text1);
+            break;
+        case Kind::AddModulator: {
+            if (hot)
+                draw::roundedRect(vg, p.rect, 3, c.line0);
+            draw::TextStyle plus{theme::fonts::ui(), 14, hot ? c.text0 : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            draw::text(vg, plus, p.rect.getCenter().x, p.rect.getCenter().y, "+");
+            break;
+        }
+        case Kind::ModulatorRow: {
+            const Modulator* mod = findModulator(song, ModulatorId(p.id));
+            if (!mod)
+                break;
+            NVGcolor color = deviceActions::colorOf(mod->id);
+            bool isOpen = ctx.state().openModulator == p.id || deviceActions::curveShown(ctx, mod->id);
+            bool mapping = ctx.mappingModulator == p.id;
+            float level = isMacro(*mod) ? shownValue(macroRef(*mod)) : 0;
+            if (p.param == 1) {
+                // On a rail: an upright fader for a Macro, else a dot.
+                if (isMacro(*mod)) {
+                    draw::roundedRect(vg, p.rect, 3, c.bg2);
+                    float fh = p.rect.size.y * level;
+                    draw::roundedRect(vg, Rect(p.rect.pos.x, p.rect.getBottom() - fh, p.rect.size.x, fh), 3,
+                                      nvgTransRGBAf(color, 0.6f));
+                    if (isOpen || hot)
+                        draw::roundedRectStroke(vg, p.rect, 3, isOpen ? color : c.line1, 1);
+                } else {
+                    Vec m = p.rect.getCenter();
+                    if (isOpen || hot || mapping) {
+                        nvgBeginPath(vg);
+                        nvgCircle(vg, m.x, m.y, 7);
+                        nvgFillColor(vg, isOpen || mapping ? c.bg2 : nvgTransRGBAf(c.bg2, 0.6f));
+                        nvgFill(vg);
+                    }
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, m.x, m.y, 4);
+                    nvgFillColor(vg, color);
+                    nvgFill(vg);
+                }
+                break;
+            }
+            bool mapHot =
+                hovered >= 0 && parts[size_t(hovered)].kind == Kind::ModulatorMap && parts[size_t(hovered)].id == p.id;
+            float right = p.rect.getRight() - 22;
+            if (isMacro(*mod)) {
+                // The row is the fader: filled to its value.
+                Rect bar(p.rect.pos.x, p.rect.pos.y, right - p.rect.pos.x, p.rect.size.y);
+                draw::roundedRect(vg, bar, 4, c.bg2);
+                draw::roundedRect(vg, Rect(bar.pos.x, bar.pos.y, bar.size.x * level, bar.size.y), 4,
+                                  nvgTransRGBAf(color, 0.35f));
+                if (isOpen || hot)
+                    draw::roundedRectStroke(vg, bar, 4, isOpen ? color : c.line1, 1);
+            } else if (isOpen || mapping || hot || mapHot) {
+                draw::roundedRect(vg, p.rect, 4, isOpen || mapping ? c.bg2 : nvgTransRGBAf(c.bg2, 0.6f));
+            }
+            float mid = p.rect.getCenter().y;
+            nvgBeginPath(vg);
+            nvgCircle(vg, p.rect.pos.x + 9, mid, 4);
+            nvgFillColor(vg, color);
+            nvgFill(vg);
+            float x = p.rect.pos.x + 19;
+            if (isMacro(*mod)) {
+                std::string v = std::to_string(int(std::lround(level * 100))) + "%";
+                draw::text(vg, value, right - 5, mid, v);
+                draw::text(vg, name, x, mid,
+                           draw::ellipsize(vg, name, mod->name, right - 5 - draw::textWidth(vg, value, v) - 6 - x));
+            } else {
+                float graph = p.rect.size.x > 120 ? 30 : 0;
+                draw::text(vg, name, x, mid, draw::ellipsize(vg, name, mod->name, right - graph - 6 - x));
+                auto it = scopes.find(mod->id.value);
+                if (graph > 0 && it != scopes.end()) {
+                    Rect g(right - graph - 2, mid - 6, graph, 12);
+                    nvgBeginPath(vg);
+                    for (int k = 0; k < 40; k++) {
+                        float v = it->second[size_t((scopeHead + 1 + k) % 40)];
+                        float px = g.pos.x + g.size.x * float(k) / 39.f, py = g.getBottom() - v * g.size.y;
+                        k == 0 ? nvgMoveTo(vg, px, py) : nvgLineTo(vg, px, py);
+                    }
+                    nvgStrokeColor(vg, color);
+                    nvgStrokeWidth(vg, 1.3f);
+                    nvgStroke(vg);
+                }
+            }
+            // The map arrow.
+            Rect a(p.rect.getRight() - 20, p.rect.pos.y + 2, 19, p.rect.size.y - 4);
+            if (mapping)
+                draw::roundedRect(vg, a, 4, nvgTransRGBAf(color, 0.25f));
+            else if (mapHot)
+                draw::roundedRect(vg, a, 4, c.line0);
+            Vec ac = a.getCenter();
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, ac.x - 3.5f, ac.y + 3.5f);
+            nvgLineTo(vg, ac.x + 3.5f, ac.y - 3.5f);
+            nvgMoveTo(vg, ac.x - 1, ac.y - 3.5f);
+            nvgLineTo(vg, ac.x + 3.5f, ac.y - 3.5f);
+            nvgLineTo(vg, ac.x + 3.5f, ac.y + 1);
+            nvgStrokeColor(vg, mapping ? color : c.text1);
+            nvgStrokeWidth(vg, 1.4f);
+            nvgLineCap(vg, NVG_ROUND);
+            nvgStroke(vg);
+            break;
+        }
+        default:
+            break;
+        }
     }
-    if (modulatorRows(song, *t, deviceActions::shownChain(ctx)).empty()) {
-        draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextUi, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
-        draw::textBox(vg, hint, block.pos.x + 10, block.pos.y + kModHeader + 10, block.size.x - 20,
-                      "LFOs, envelopes and ramps that turn settings for you. + Add to start.");
+}
+
+void DeviceStrip::drawSwitch(NVGcontext* vg) {
+    const Part* trackHalf = nullptr;
+    const Part* ownHalf = nullptr;
+    for (const Part& p : parts) {
+        if (p.kind == Kind::SourceTrack)
+            trackHalf = &p;
+        if (p.kind == Kind::SourceOwn)
+            ownHalf = &p;
     }
+    if (!trackHalf || !ownHalf)
+        return;
+    const theme::Palette& c = theme::colors();
+    const Clip* clip = ctx.module()->song().findClip(ClipId(trackHalf->id));
+    const Track* t = track();
+    if (!clip || !t)
+        return;
+    bool own = clip->usesOwnChain();
+    Rect pill(trackHalf->rect.pos.x, trackHalf->rect.pos.y, trackHalf->rect.size.x,
+              ownHalf->rect.getBottom() - trackHalf->rect.pos.y);
+    float radius = pill.size.x / 2;
+    draw::roundedRect(vg, pill, radius, theme::recessed(c, c.bg0, 0.7f));
+    draw::roundedRectStroke(vg, pill, radius, c.line0, 1);
+    NVGcolor trackColor = theme::track(t->color);
+    for (const Part* half : {trackHalf, ownHalf}) {
+        bool on = (half == ownHalf) == own;
+        bool hot = hovered >= 0 && &parts[size_t(hovered)] == half;
+        Rect r = half->rect.shrink(Vec(3, 3));
+        if (on)
+            draw::roundedRect(vg, r, r.size.x / 2, half == ownHalf ? clipTint() : trackColor);
+        else if (hot)
+            draw::roundedRect(vg, r, r.size.x / 2, c.bg2);
+        draw::TextStyle word{theme::fonts::uiStrong(), 10, on ? c.bg0 : c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE,
+                             1.5f};
+        nvgSave(vg);
+        nvgTranslate(vg, r.getCenter().x, r.getCenter().y);
+        nvgRotate(vg, float(-M_PI / 2));
+        draw::text(vg, word, 0, 0, half == ownHalf ? "CLIP" : "TRACK");
+        nvgRestore(vg);
+    }
+    // An arrow from the side that plays into the section it picks.
+    const Part* on = own ? ownHalf : trackHalf;
+    float ax = pill.getRight() + 3, ay = on->rect.getCenter().y;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, ax, ay - 4);
+    nvgLineTo(vg, ax + 4, ay);
+    nvgLineTo(vg, ax, ay + 4);
+    nvgStrokeColor(vg, own ? clipTint() : trackColor);
+    nvgStrokeWidth(vg, 1.5f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgStroke(vg);
 }
 
 void DeviceStrip::drawForeground(const DrawArgs& args) {
@@ -2536,6 +2897,8 @@ void DeviceStrip::drawForeground(const DrawArgs& args) {
         return;
     nvgSave(vg);
     nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
+    // The cards' own modulator sections: drawn every frame, for their live graphs and Macro levels.
+    drawSections(vg, false);
     for (size_t i = 0; i < parts.size(); i++)
         if ((parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch) && isLive(parts[i]))
             drawTag(vg, parts[i], int(i) == hovered);

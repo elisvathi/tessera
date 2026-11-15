@@ -8,14 +8,16 @@
 
 namespace tessera {
 
-/// A modulator's settings, opened from its row in the device strip (docs/DEVICES.md §1.1). It floats over the notes
-/// so the strip keeps its height: the modulator's settings (and the Steps editor for Steps), then "Moves": what it
-/// turns and how far, with Map to knobs and CV out.
+/// A modulator's settings, opened from its row in the device strip: a column right of the row's section, in room the
+/// strip makes for it (docs/DECISIONS.md §163). The modulator's settings (and the Steps editor for Steps), then
+/// "Moves": what it turns and how far, with Map to knobs and CV out. It scrolls when the strip is shorter.
 class ModulatorPopover : public InteractiveView {
   public:
     explicit ModulatorPopover(EditorContext& ctx) : InteractiveView(ctx) {}
 
     static constexpr float kWidth = 270;
+    /// How much of its left and right edge to hide: the parts of the strip it sits in that scrolled out of sight.
+    float clipLeft = 0, clipRight = 0;
     /// The height its content needs (0 when nothing is open).
     float wantedHeight();
 

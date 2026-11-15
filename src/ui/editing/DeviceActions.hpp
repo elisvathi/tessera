@@ -50,6 +50,10 @@ void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index);
 void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device = DeviceId(),
                           const ParamRef& target = ParamRef());
 
+/// The searchable list of modulators, adding the picked one at `place`: the section whose + was pressed decides where
+/// it lives, so the list has no chips (docs/DECISIONS.md §163).
+void openModulatorBrowserAt(EditorContext& ctx, ModulatorPlace place);
+
 void openDeviceMenu(EditorContext& ctx, DeviceId device);
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
 /// "Drift per pass" on a motion knob: a Steps modulator on its track, set to Per pass and mapped four steps up the
