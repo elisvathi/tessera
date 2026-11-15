@@ -18,6 +18,23 @@ namespace tessera {
 
 namespace {
 
+/// The Roll menu's size choice for the full editor: Auto follows Rack's zoom, the rest are fixed sizes.
+void appendEditorSizeItem(rack::ui::Menu* menu, TesseraModule* m) {
+    static const float kEditorScales[] = {0, 0.75f, 1, 1.25f, 1.5f, 1.75f, 2};
+    std::vector<std::string> labels;
+    for (float s : kEditorScales)
+        labels.push_back(s == 0 ? "Auto" : std::to_string(int(s * 100)) + "%");
+    menu->addChild(rack::createIndexSubmenuItem(
+        "Editor size", labels,
+        [m] {
+            for (size_t i = 0; i < std::size(kEditorScales); i++)
+                if (kEditorScales[i] == m->editor().uiScale)
+                    return i;
+            return size_t(0);
+        },
+        [m](size_t i) { m->editor().uiScale = kEditorScales[i]; }));
+}
+
 constexpr float kButton = 28;
 constexpr float kGap = 4;
 constexpr float kGroupGap = 14;
@@ -219,7 +236,7 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
     // The instance menu: file actions and the colour scheme.
     auto instance = options(Icon::None, "Roll",
                             "Open and save projects, export MIDI and DAWproject files, "
-                            "choose the colour scheme",
+                            "choose the colour scheme and the editor size",
                             [c] {
                                 TesseraModule* m = c->module();
                                 if (!m)
@@ -230,6 +247,7 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
                                 menu->addChild(new rack::ui::MenuSeparator);
                                 menu->addChild(rack::createSubmenuItem(
                                     "Colour scheme", "", [](rack::ui::Menu* sub) { theme::appendSchemeMenu(sub); }));
+                                appendEditorSizeItem(menu, m);
                             });
     instance.caret = true;
     nameButton = button(instance, nameWidth);

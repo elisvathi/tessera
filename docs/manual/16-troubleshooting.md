@@ -90,7 +90,7 @@ corner button, or open the **Full editor**.
 
 ## The editor is too small or too big
 
-Right-click the Roll panel and pick **Editor size**.
+Open the full editor, click the **Roll ▾** menu at the top left and pick **Editor size**.
 
 ## Several Rolls: which one does an output module follow?
 

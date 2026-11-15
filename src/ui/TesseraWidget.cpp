@@ -32,7 +32,6 @@ constexpr float kControlRow = 57;
 constexpr float kSceneRow = 72;
 const Vec kEditorButton(77, kControlRow);
 const Vec kEditorButtonSize(15, 7);
-const float kEditorScales[] = {0, 0.75f, 1, 1.25f, 1.5f, 1.75f, 2};
 const int kPanelSizes[] = {EditorState::kPanelMinHp, 48, 80, 120};
 
 // The editor area to the right of the controls (px, panel space).
@@ -283,18 +282,6 @@ struct TesseraWidget : rack::app::ModuleWidget {
             [this, m](size_t i) { resizeTesseraPanel(this, kPanelSizes[i], m->editor().panelHp, true); }));
         menu->addChild(
             rack::createSubmenuItem("Colour scheme", "", [](rack::ui::Menu* sub) { theme::appendSchemeMenu(sub); }));
-        std::vector<std::string> scales;
-        for (float s : kEditorScales)
-            scales.push_back(s == 0 ? "Auto" : std::to_string(int(s * 100)) + "%");
-        menu->addChild(rack::createIndexSubmenuItem(
-            "Editor size", scales,
-            [m] {
-                for (size_t i = 0; i < std::size(kEditorScales); i++)
-                    if (kEditorScales[i] == m->editor().uiScale)
-                        return i;
-                return size_t(0);
-            },
-            [m](size_t i) { m->editor().uiScale = kEditorScales[i]; }));
 
         menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createMenuLabel("Instance name"));
