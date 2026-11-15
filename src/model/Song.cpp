@@ -616,12 +616,10 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
         a.position = std::max<Tick>(0, a.position);
         a.length = std::max<Tick>(1, a.length);
         a.offset = std::max<Tick>(0, a.offset);
-        a.velocityScale = std::max(0.f, a.velocityScale);
         a.stretch = a.stretch > 0 ? std::clamp(a.stretch, kMinStretch, kMaxStretch) : 1.f;
         if (audioTrack) {
             // Pitch, gain and speed of audio live on the clip; audio tracks never stack.
             a.transpose = 0;
-            a.velocityScale = 1;
             a.stretch = 1;
             a.layer = 0;
             normalizeFade(a.fadeIn, a.length);

@@ -489,11 +489,10 @@ class Engine {
     /// A clip read by the track's playheads instead of its own playhead (docs/design/PLAYHEADS.md): `a` and `b`
     /// are clip ticks since the clip started, `from` the play tick `a` falls on, and each clip tick lasts
     /// `stretch` play ticks. A playhead reads only between `first` and `last` (clip ticks): where the clip
-    /// begins and ends, so an Offset never reads past either. A timeline clip's `transpose` and `velocityScale`
-    /// apply to each written note before the playhead shapes it.
+    /// begins and ends, so an Offset never reads past either. A timeline clip's `transpose` applies to each
+    /// written note before the playhead shapes it.
     void playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
-                       double from, double stretch = 1, double first = 0, double last = INFINITY, int transpose = 0,
-                       float velocityScale = 1);
+                       double from, double stretch = 1, double first = 0, double last = INFINITY, int transpose = 0);
     /// The timeline clips under song ticks [from, to), read by the track's playheads.
     void playInstancesByPlayheads(const TrackPlayback& track, TrackState& state, double from, double to,
                                   double playAtFrom);

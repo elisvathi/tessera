@@ -316,9 +316,6 @@ Layout transpose(const Layout& layout, const IdSet& ids, int semitones) {
                    [&](ArrangerClip& a) { a.transpose = int8_t(std::clamp(a.transpose + semitones, -48, 48)); });
 }
 
-Layout setVelocityScale(const Layout& layout, const IdSet& ids, float scale) {
-    return forEach(layout, ids, [&](ArrangerClip& a) { a.velocityScale = std::clamp(scale, 0.f, 2.f); });
-}
 
 /// Whether instance `a` plays an audio clip.
 static bool isAudioInstance(const ArrangerClip& a, const ClipPool& clips) {

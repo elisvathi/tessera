@@ -70,7 +70,6 @@ Layout split(const Layout& layout, const IdSet& ids, Tick at, const ClipPool& cl
              IdSet* rightParts = nullptr);
 Layout setMuted(const Layout& layout, const IdSet& ids, bool muted);
 Layout transpose(const Layout& layout, const IdSet& ids, int semitones);
-Layout setVelocityScale(const Layout& layout, const IdSet& ids, float scale);
 
 /// The overlap rule: an instance in `changed` wins over the others on its track. Ones it covers are removed,
 /// ones it overlaps are trimmed, and one it sits inside is split around it. Audio instances follow settleAudio().

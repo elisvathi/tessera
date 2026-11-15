@@ -116,7 +116,7 @@ def make_song():
     def place(c, bar, bars):
         """A timeline instance of clip `c` from `bar`, `bars` long (loops fill the rest)."""
         return {"id": ids.take(), "clip": c["id"], "pos": bar * BAR, "len": bars * BAR, "offset": 0, "muted": False,
-                "transpose": 0, "velScale": 1.0, "stretch": 1.0}
+                "transpose": 0, "stretch": 1.0}
 
     def track(name, kind, slots, arrangement, automation=()):
         """A track with its launcher slots (8 scenes) and timeline clips."""
@@ -349,14 +349,14 @@ def audio_patch(out, crossfade=False, takes=False, loops=False):
                 "loopMode": "loop", "notes": [], "automation": [],
                 "audio": {"source": source["id"], "start": 0, "follow": "stretch", "sound": "drums", "tempo": 112.0}}
         place = {"id": ids.take(), "clip": loop["id"], "pos": 4 * BAR, "len": 16 * BAR, "offset": 0, "muted": False,
-                 "transpose": 0, "velScale": 1.0, "stretch": 1.0, "fadeIn": [BEAT // 2, 0.0]}
+                 "transpose": 0, "stretch": 1.0, "fadeIn": [BEAT // 2, 0.0]}
         places = [place]
         if crossfade:
             back = dict(loop, id=ids.take(), name="Drum loop reversed", color=2,
                         audio=dict(loop["audio"], reverse=True))
             place = dict(place, len=4 * BAR, fadeIn=[2 * BEAT, 0.6])
             second = {"id": ids.take(), "clip": back["id"], "pos": 7 * BAR, "len": 4 * BAR, "offset": 0,
-                      "muted": False, "transpose": 0, "velScale": 1.0, "stretch": 1.0}
+                      "muted": False, "transpose": 0, "stretch": 1.0}
             places = [place, second]
             song["clips"].append(back)
         song["tracks"].append({"id": TRACK_IDS["Loop"], "name": "Loop", "color": COLORS["Loop"], "type": "audio",

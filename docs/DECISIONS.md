@@ -2671,3 +2671,13 @@ equal value boxes were turned down. Where the page and the earlier design disagr
   (three quarters of the body), drawn faint on the hovered tile, bold with "Velocity 100% · drag to change" under the
   mouse. Its grab zone is ±3 px; a double-click there resets a changed level and otherwise opens the clip as before.
 
+## 160. Note clips have no velocity scale (15 Nov)
+
+- **The user: "remove velocity completely from midi clips, it messes with clip drag a lot."** A timeline tile's
+  velocity scale is gone: `ArrangerClip::velocityScale`, its saving ("velScale" in older songs is ignored on load, so
+  such tiles now play their notes' own velocities), its Velocity menu and inspector row, the percentage in the title,
+  its level line, and the engine and export paths that applied it (§159's playhead part keeps the transpose only).
+  Glue no longer bakes it. Velocity is changed on the notes (the piano roll) or with a Velocity device.
+- **Audio clips keep the level line** for their gain (§159): faint under the title on hover, drag it, double-click to
+  0 dB. A note tile's title bar and body only move it.
+

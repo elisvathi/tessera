@@ -53,19 +53,19 @@ Hover a clip's edges and body. The mouse cursor shows what a drag will do.
 | **Alt + body** | Slips the notes inside the tile, without moving the tile. |
 | **Alt + right edge** | Time-stretches the tile. The readout shows the factor (×2, ×0.5…). |
 | **Title bar** | Moves the clip, like its body: along the track or to another track. |
-| **Level line, up or down** | The tile's velocity. Hover a tile: a faint line just under its title is its velocity at 100%. Drag it down for softer, up for louder (up to 200% at the top); Shift for fine steps. A tile whose velocity isn't 100% always shows its line, shaded above, and the percentage in its title. **Double-click** the line to go back to 100%. |
+| **Level line** (audio clips) | The clip's gain: see [Audio](17-audio.md). Note clips have no level line; change their notes' velocity in the piano roll, or with a **Velocity** device. |
 
 With the keys: **Shift+Alt+Left / Right** makes the selection shorter or longer by one grid step. **Up / Down**
-transposes the selected tiles. Transpose, velocity and stretch change only that tile, not the clip. On a track with
-[playheads](13-devices.md#playheads), a tile's velocity and transpose change the notes the playheads read from it,
-in playback and in MIDI export.
+transposes the selected tiles. Transpose and stretch change only that tile, not the clip. On a track with
+[playheads](13-devices.md#playheads), a tile's transpose changes the notes the playheads read from it, in playback
+and in MIDI export.
 
 ## Cutting and joining
 
 - **Ctrl+E** splits the selected clips at the mouse (or at the playhead when the mouse is elsewhere).
 - The **Slice** tool (C) cuts a clip where you click. A line shows where the cut will go.
-- **Ctrl+J** (**Glue**) joins the selected clips into one new clip, with loops, stretch, transpose and velocity
-  baked in.
+- **Ctrl+J** (**Glue**) joins the selected clips into one new clip, with loops, stretch and transpose baked
+  in.
 - **Delete** removes the selected clips. **Ctrl+C**, **Ctrl+X** and **Ctrl+V** copy, cut and paste (at the
   playhead).
 
@@ -86,14 +86,14 @@ Right-click a clip on the timeline:
 | **Bounce audio to a new track…**, **Bounce notes to a new track…** | See [Audio](17-audio.md) and [Tracks](04-tracks.md#bounce-notes-to-a-new-track). |
 | **Split here**, **Glue**, **Make unique** | As above. |
 | **Mute** | Silences this tile. Muted tiles are drawn dim. |
-| **Transpose**, **Velocity** | Per tile. The clip itself doesn't change. |
+| **Transpose** | Per tile. The clip itself doesn't change. |
 | **Reset stretch** | Undoes a time-stretch. |
 | **Length** | ×2, ×½ or a percentage, for the clip itself and every place it is used. |
 | **Clip loops** | Turns the clip's loop on or off. |
 | **Save as Tessera clip file…** | Saves the clip to reuse elsewhere. |
 
 When a timeline clip is selected, the inspector shows an **INSTANCE** section with its start, length, offset,
-transpose, velocity, stretch and mute.
+transpose, stretch and mute.
 
 ## Seeing a timeline clip in the piano roll
 

@@ -143,13 +143,12 @@ TEST_CASE("offset, stretch, transpose and velocity scale shape what an instance 
     ArrangerClip slow = instance(song, c.id, 0, 2 * kBeat);
     slow.stretch = 2;
     slow.transpose = 12;
-    slow.velocityScale = 0.5f;
     notes = render(c, slow);
     REQUIRE(notes.size() == 2);
     CHECK(notes[0].end == 480);
     CHECK(notes[1].start == kBeat);
     CHECK(notes[0].pitch == 72);
-    CHECK(notes[0].velocity == doctest::Approx(0.4f));
+    CHECK(notes[0].velocity == doctest::Approx(0.8f));
 }
 
 TEST_CASE("a non-looping clip plays once, then the instance is silent") {

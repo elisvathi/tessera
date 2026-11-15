@@ -189,20 +189,19 @@ TEST_CASE("export: the arrangement as tracks with tempo, names and channels") {
     CHECK(drum[0].channel == 9); // MIDI channel 10
 }
 
-TEST_CASE("export: instance transpose, velocity scale and loop repeats are what plays") {
+TEST_CASE("export: instance transpose and loop repeats are what plays") {
     Song song;
     TrackId lead = addTrack(song);
     Clip& c = addClip(song, kBeat, {makeNote(song, 0, kBeat / 2, 60, 0.8f)});
     c.loopMode = LoopMode::Loop;
     ArrangerClip& a = place(song, lead, c.id, 0, 4 * kBeat);
     a.transpose = 12;
-    a.velocityScale = 0.5f;
     auto notes = notesOf(roundTrip(renderSong(song, Options(), Context())).tracks[1]);
     REQUIRE(notes.size() == 4);
     for (size_t i = 0; i < 4; i++) {
         CHECK(notes[i].on == Tick(i) * kBeat);
         CHECK(notes[i].pitch == 72);
-        CHECK(notes[i].velocity == smf::velocity7(0.4f));
+        CHECK(notes[i].velocity == smf::velocity7(0.8f));
     }
 }
 

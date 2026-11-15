@@ -26,8 +26,8 @@ std::unique_ptr<DragGesture> resizeEnd(ArrangerLanes& lanes, rack::math::Vec pre
                                        bool stretch);
 /// Drag the left edge: trims the start; the content stays where it is on the timeline.
 std::unique_ptr<DragGesture> trimStart(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed);
-/// Drag a tile's level line up or down: the selection's velocity (Shift: fine), or for an audio clip its gain.
-std::unique_ptr<DragGesture> level(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed);
+/// Drag an audio clip's level line up or down: the gain of every selected audio clip (Shift: fine).
+std::unique_ptr<DragGesture> gain(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed);
 /// Drags an audio clip's fade in or fade out handle: the fade's length.
 std::unique_ptr<DragGesture> fade(ArrangerLanes& lanes, rack::math::Vec press, ArrangementId grabbed, bool in);
 /// Drags the dot in the middle of an audio fade up or down: bends its curve.

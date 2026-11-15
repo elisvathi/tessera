@@ -123,10 +123,9 @@ struct InstanceLanes {
     Tick spanStart = 0, spanEnd = 0; // the loop (looping) or the whole clip
     std::shared_ptr<const ClipPlayback> clip;
     int row = 0; // its stacking row: where stacked clips share a lane, the lower row plays it
-    // The timeline clip's own transpose (0 on a drum track) and velocity scale: playheads read the shared clip, so
-    // they apply these to each note they play from it.
+    // The timeline clip's own transpose (0 on a drum track): playheads read the shared clip, so they apply it to each
+    // note they play from it.
     int transpose = 0;
-    float velocityScale = 1;
 
     /// Clip time at song tick `tick`, or NaN where the instance plays nothing.
     double clipTime(double tick) const;

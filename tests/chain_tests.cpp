@@ -1500,7 +1500,7 @@ TEST_CASE("engine: playheads read the clip each from its own segment") {
     }
 }
 
-TEST_CASE("engine: playheads play each timeline clip at its own velocity and transpose, as MIDI export does") {
+TEST_CASE("engine: playheads play each timeline clip at its own transpose, as MIDI export does") {
     Song song = songWith({{0, 240, 60, 0.8f}}, 4 * kPpq, kAutoVoices);
     ClipId clip = song.clips.begin()->first;
     for (int k = 0; k < 2; k++) {
@@ -1509,10 +1509,8 @@ TEST_CASE("engine: playheads play each timeline clip at its own velocity and tra
         a.clip = clip;
         a.position = Tick(k) * 4 * kPpq;
         a.length = 4 * kPpq;
-        if (k == 1) {
+        if (k == 1)
             a.transpose = 5;
-            a.velocityScale = 0.5f;
-        }
         song.tracks[0].arrangement.push_back(a);
     }
     Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
@@ -1534,7 +1532,6 @@ TEST_CASE("engine: playheads play each timeline clip at its own velocity and tra
             sounding = v;
     REQUIRE(sounding >= 0);
     CHECK(h.pitch(sounding) == 65);
-    CHECK(h.frame().vel[sounding] == doctest::Approx(4));
 
     render::Options o;
     std::vector<std::pair<int, float>> exported;
@@ -1544,7 +1541,6 @@ TEST_CASE("engine: playheads play each timeline clip at its own velocity and tra
     CHECK(exported[0].first == 60);
     CHECK(exported[0].second == doctest::Approx(0.8f));
     CHECK(exported[1].first == 65);
-    CHECK(exported[1].second == doctest::Approx(0.4f));
 }
 
 TEST_CASE("engine: a Curve speeds up a playhead's repeats, as MIDI export does") {

@@ -524,8 +524,8 @@ void EditorHost::drawHelp(NVGcontext* vg, rack::math::Vec bounds) {
         {"One axis, or fine values", "Shift + drag"},
         {"Duplicate what you drag", "Ctrl/Cmd + drag"},
         {"Add to / toggle in the selection", "Shift / Ctrl/Cmd + click"},
-        {"Velocity of a note or clip", "Alt + drag its body"},
-        {"Tile velocity or gain back to default", "Double-click its level line"},
+        {"Velocity of a note", "Alt + drag it"},
+        {"Audio clip gain back to 0 dB", "Double-click its level line"},
         {"Open, or create", "Double-click"},
         {"Cancel a drag", "Esc"},
     };

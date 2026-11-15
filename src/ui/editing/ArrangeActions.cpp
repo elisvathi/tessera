@@ -322,30 +322,18 @@ void transpose(ArrangerLanes& lanes, int semitones) {
                  [semitones](const Layout& l, const IdSet& ids) { return arrange::transpose(l, ids, semitones); });
 }
 
-void setVelocityScale(ArrangerLanes& lanes, float scale) {
-    editSelected(lanes, "Scale clip velocity",
-                 [scale](const Layout& l, const IdSet& ids) { return arrange::setVelocityScale(l, ids, scale); });
-}
-
 void resetLevel(ArrangerLanes& lanes) {
     TesseraModule* m = moduleOf(lanes);
     if (!m)
         return;
     std::vector<ClipId> audio;
-    bool scaled = false;
     for (const arrange::Placed& p : lanes.committed()) {
         if (!lanes.selection().count(p.clip.id))
             continue;
         const Clip* c = m->song().findClip(p.clip.clip);
-        if (c && c->audio) {
-            if (c->audio->gainDb != 0 && std::find(audio.begin(), audio.end(), c->id) == audio.end())
-                audio.push_back(c->id);
-        } else if (p.clip.velocityScale != 1) {
-            scaled = true;
-        }
+        if (c && c->audio && c->audio->gainDb != 0 && std::find(audio.begin(), audio.end(), c->id) == audio.end())
+            audio.push_back(c->id);
     }
-    if (scaled)
-        setVelocityScale(lanes, 1);
     if (audio.empty())
         return;
     auto all = std::make_unique<CompoundCommand>("Reset clip gain");
@@ -620,12 +608,6 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
                         return out;
                     });
                 }));
-            }));
-        menu->addChild(rack::createSubmenuItem(
-            "Velocity", std::to_string(int(std::lround(placed->clip.velocityScale * 100))) + "%", [l](rack::ui::Menu* sub) {
-                for (int pct : {50, 75, 100, 125, 150})
-                    sub->addChild(rack::createMenuItem(std::to_string(pct) + "%", "",
-                                                       [l, pct] { setVelocityScale(*l, float(pct) / 100.f); }));
             }));
         menu->addChild(rack::createMenuItem("Reset stretch", "", [l] { resetStretch(*l); }, placed->clip.stretch == 1.f));
     }

@@ -151,7 +151,6 @@ class RandomSong {
             a.offset = range(0, 2) * kPpq;
             a.muted = coin();
             a.transpose = int8_t(range(-12, 12));
-            a.velocityScale = unit() * 2;
             a.stretch = 0.5f + unit();
             t.arrangement.push_back(a);
         }

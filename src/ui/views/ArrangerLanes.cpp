@@ -48,22 +48,16 @@ float headerHeight(float rowHeight) {
 }
 
 /// Two linked rings: this clip plays in more than one place.
-/// Whether a tile's level is off its default (velocity 100%, audio gain 0 dB): then its line is always drawn.
-bool levelChanged(const ArrangerClip& a, const Clip& clip, float gainDb) {
-    return clip.audio ? std::fabs(gainDb) >= 0.05f : std::fabs(a.velocityScale - 1.f) >= 0.005f;
-}
+/// Whether an audio clip's gain is off 0 dB: then its level line is always drawn.
+bool levelChanged(float gainDb) { return std::fabs(gainDb) >= 0.05f; }
 
-/// Where a tile's level line sits across its body, 0 (bottom) to 1 (top): its velocity scale (100% at three quarters,
-/// just under the title, 200% at the top), or for an audio clip its gain (0 dB at three quarters as on a fader,
-/// kMaxClipGainDb at the top).
-float levelOf(const ArrangerClip& a, const Clip& clip, float gainDb) {
+/// Where an audio clip's level line sits across its body, 0 (bottom) to 1 (top): 0 dB at three quarters (just under
+/// the title) as on a fader, kMaxClipGainDb at the top.
+float levelOf(float gainDb) {
     constexpr float k = kZeroDbFaderPos;
-    if (clip.audio) {
-        if (gainDb > 0)
-            return k + (1 - k) * std::min(gainDb, kMaxClipGainDb) / kMaxClipGainDb;
-        return k * std::pow(dbToGain(gainDb), 0.25f);
-    }
-    return a.velocityScale <= 1 ? k * a.velocityScale : k + (1 - k) * std::min(1.f, a.velocityScale - 1);
+    if (gainDb > 0)
+        return k + (1 - k) * std::min(gainDb, kMaxClipGainDb) / kMaxClipGainDb;
+    return k * std::pow(dbToGain(gainDb), 0.25f);
 }
 
 /// The level line's y in a body from `top` to `bottom`, kept off its edges.
@@ -341,8 +335,8 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
             float bodyBottom = top + h - 1;
             // The level line is there at the default too (shown on hover): a drag on it sets the level.
             std::optional<float> level;
-            if (clip && bodyBottom - bodyTop >= theme::metrics::kLevelLineMinBody)
-                level = levelOf(p.clip, *clip, clip->audio ? clip->audio->gainDb : 0);
+            if (clip && clip->audio && bodyBottom - bodyTop >= theme::metrics::kLevelLineMinBody)
+                level = levelOf(clip->audio->gainDb);
             if (pos.x >= x1 - inner)
                 hit.part = Part::RightEdge;
             else if (pos.x <= x0 + inner)
@@ -709,7 +703,7 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
         inner = clipGestures::trimStart(*this, pos, id);
         break;
     case Part::Level:
-        inner = clipGestures::level(*this, pos, id);
+        inner = clipGestures::gain(*this, pos, id);
         break;
     default:
         inner = mods.alt && !mods.ctrl ? clipGestures::slip(*this, pos, id)
@@ -798,7 +792,7 @@ void ArrangerLanes::doubleClick(Vec pos, Modifiers mods) {
     if (hit.id.valid() && hit.part == Part::Level)
         if (const arrange::Placed* p = arrange::find(shown(), hit.id))
             if (const Clip* clip = m->song().findClip(p->clip.clip);
-                clip && levelChanged(p->clip, *clip, clip->audio ? clip->audio->gainDb : 0)) {
+                clip && clip->audio && levelChanged(clip->audio->gainDb)) {
                 if (!selection().count(hit.id))
                     selection() = {hit.id};
                 arrangeActions::resetLevel(*this);
@@ -1343,8 +1337,8 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
 
         // Its level when changed from the default: a line across the body, which a double-click puts back.
         if (body.size.y >= theme::metrics::kLevelLineMinBody)
-            if (levelChanged(a, *clip, gainDb)) {
-                float y = levelY(levelOf(a, *clip, gainDb), body.pos.y, body.getBottom());
+            if (clip->audio && levelChanged(gainDb)) {
+                float y = levelY(levelOf(gainDb), body.pos.y, body.getBottom());
                 // Shaded above the line, so it reads as a level and not as one more note.
                 nvgBeginPath(vg);
                 nvgRect(vg, body.pos.x, body.pos.y, body.size.x, y - body.pos.y);
@@ -1381,8 +1375,6 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         }
         if (a.transpose != 0)
             extras += (a.transpose > 0 ? " +" : " ") + std::to_string(a.transpose);
-        if (std::fabs(a.velocityScale - 1.f) > 0.005f)
-            extras += " " + std::to_string(int(std::lround(a.velocityScale * 100))) + "%";
         if (std::fabs(a.stretch - 1.f) > 0.001f) {
             char text[16];
             snprintf(text, sizeof(text), " ×%.2g", double(a.stretch));
@@ -1658,12 +1650,12 @@ void ArrangerLanes::drawLevelHover(NVGcontext* vg, const arrange::Placed& p, flo
                                    bool onLine) {
     const Clip* clip = ctx.module()->song().findClip(p.clip.clip);
     float bodyTop = top + 1 + headerHeight(h), bodyBottom = top + h - 1;
-    if (!clip || bodyBottom - bodyTop < theme::metrics::kLevelLineMinBody ||
+    if (!clip || !clip->audio || bodyBottom - bodyTop < theme::metrics::kLevelLineMinBody ||
         (ctx.state().tool != Tool::Pointer && ctx.state().tool != Tool::Draw))
         return;
-    float gainDb = clip->audio ? clip->audio->gainDb : 0;
+    float gainDb = clip->audio->gainDb;
     const theme::Palette& c = theme::colors();
-    float y = levelY(levelOf(p.clip, *clip, gainDb), bodyTop, bodyBottom);
+    float y = levelY(levelOf(gainDb), bodyTop, bodyBottom);
     nvgBeginPath(vg);
     nvgMoveTo(vg, x0, y);
     nvgLineTo(vg, x1, y);
@@ -1673,11 +1665,8 @@ void ArrangerLanes::drawLevelHover(NVGcontext* vg, const arrange::Placed& p, flo
     nvgStroke(vg);
     if (!onLine)
         return;
-    bool changed = levelChanged(p.clip, *clip, gainDb);
-    std::string text = clip->audio ? "Gain " + audioDraw::dbText(gainDb) +
-                                         (changed ? " \u00b7 double-click for 0 dB" : " \u00b7 drag to change")
-                                   : "Velocity " + std::to_string(int(std::lround(p.clip.velocityScale * 100))) +
-                                         (changed ? "% \u00b7 double-click for 100%" : "% \u00b7 drag to change");
+    std::string text = "Gain " + audioDraw::dbText(gainDb) +
+                       (levelChanged(gainDb) ? " \u00b7 double-click for 0 dB" : " \u00b7 drag to change");
     draw::TextStyle style{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     float w = draw::textWidth(vg, style, text) + 10;
     float lx = std::clamp(localMouse().x - w / 2, std::max(0.f, x0), std::max(0.f, box.size.x - w));

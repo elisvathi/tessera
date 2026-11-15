@@ -23,7 +23,6 @@ using rack::math::Vec;
 
 namespace {
 
-constexpr double kVelocityPerPx = 1.0 / 150;
 constexpr double kFineFactor = 0.1;
 
 std::string beatsText(double ticks, TimeSig ts) {
@@ -619,38 +618,6 @@ class CrossfadeGesture : public ClipGesture {
     Tick start = 0, length = 0;
 };
 
-// ---- Velocity scale -----------------------------------------------------------------------------------------
-
-class VelocityGesture : public SelectionGesture {
-  public:
-    using SelectionGesture::SelectionGesture;
-
-    void update(Vec pos, Modifiers mods) override {
-        double dy = pos.y - pressPos().y;
-        delta = float(-dy * kVelocityPerPx * (mods.shift ? kFineFactor : 1));
-        Layout after = before;
-        for (arrange::Placed& p : after)
-            if (ids.count(p.clip.id))
-                p.clip.velocityScale = std::clamp(p.clip.velocityScale + delta, 0.f, 2.f);
-        preview(std::move(after));
-    }
-    void commit() override {
-        if (delta == 0) {
-            lanes.clearPreview();
-            return;
-        }
-        lanes.commit("Scale velocity", before, result, ids);
-    }
-    std::string readout() const override {
-        float v = std::clamp(anchor.velocityScale + delta, 0.f, 2.f);
-        return "Velocity " + std::to_string(int(std::lround(v * 100))) + "%";
-    }
-    CursorShape cursor() const override { return CursorShape::ResizeV; }
-
-  private:
-    float delta = 0;
-};
-
 // ---- Tools --------------------------------------------------------------------------------------------------
 
 class DrawGesture : public ClipGesture {
@@ -823,14 +790,8 @@ std::unique_ptr<DragGesture> resizeEnd(ArrangerLanes& lanes, Vec press, Arrangem
 std::unique_ptr<DragGesture> trimStart(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
     return std::make_unique<EdgeGesture>(lanes, press, grabbed, EdgeGesture::Kind::Start);
 }
-std::unique_ptr<DragGesture> level(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
-    bool audio = false;
-    if (const arrange::Placed* p = arrange::find(lanes.committed(), grabbed))
-        if (const Clip* c = lanes.context().module()->song().findClip(p->clip.clip))
-            audio = c->isAudio();
-    if (audio)
-        return std::make_unique<GainGesture>(lanes, press, grabbed);
-    return std::make_unique<VelocityGesture>(lanes, press, grabbed);
+std::unique_ptr<DragGesture> gain(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
+    return std::make_unique<GainGesture>(lanes, press, grabbed);
 }
 std::unique_ptr<DragGesture> draw(ArrangerLanes& lanes, Vec press) {
     return std::make_unique<DrawGesture>(lanes, press);

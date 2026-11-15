@@ -1387,7 +1387,7 @@ void Engine::playInstancesByPlayheads(const TrackPlayback& track, TrackState& st
         double eb = begin + (b - double(inst.position)) / inst.stretch;
         double endsAt = begin + (double(inst.end) - double(inst.position)) / inst.stretch;
         playPlayheads(track, state, *inst.clip, ea, eb, playAtFrom + (a - from), inst.stretch, begin, endsAt,
-                      inst.transpose, inst.velocityScale);
+                      inst.transpose);
     }
 }
 
@@ -1470,7 +1470,7 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
 }
 
 void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
-                           double from, double stretch, double first, double last, int transpose, float velocityScale) {
+                           double from, double stretch, double first, double last, int transpose) {
     const ChainPlayback& chain = *state.readInfo();
     TimeSig ts = snapshot->timeSig;
     const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
@@ -1596,7 +1596,6 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         double onPlay = std::max(from, from + (t - a) * stretch);
                         NoteEvent n = e;
                         n.pitch = int8_t(std::clamp(int(n.pitch) + transpose, 0, 127));
-                        n.velocity = std::clamp(n.velocity * velocityScale, 0.f, 1.f);
                         if (p.channel > 0)
                             n.channel = p.channel;
                         const Scale& key =

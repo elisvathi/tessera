@@ -10,7 +10,7 @@ The inspector is the panel on the right of the editor. Press **I** to show or hi
 - **NOTES**: the selected notes (or **NOTE** for one).
 - **TRACK**: the selected track's name, **Voices**, **Input**, **Recording** and **Output**.
 - **CLIP**: the clip's name, length, loop and key.
-- **INSTANCE**: a selected timeline clip's start, length, offset, transpose, velocity, stretch and mute.
+- **INSTANCE**: a selected timeline clip's start, length, offset, transpose, stretch and mute.
 
 ![The inspector with five notes selected and the velocity chart open](images/inspector-notes.png)
 

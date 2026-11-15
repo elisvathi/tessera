@@ -1073,7 +1073,6 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
         y = row(vg, y, "Length", bars(instance->length, song.timeSig));
         y = row(vg, y, "Offset", bars(instance->offset, song.timeSig));
         y = row(vg, y, "Transpose", (instance->transpose > 0 ? "+" : "") + std::to_string(instance->transpose));
-        y = row(vg, y, "Velocity", std::to_string(int(std::lround(instance->velocityScale * 100))) + "%");
         char stretch[16];
         snprintf(stretch, sizeof(stretch), "×%.3g", double(instance->stretch));
         y = row(vg, y, "Stretch", stretch);

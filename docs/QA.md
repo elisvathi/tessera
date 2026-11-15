@@ -832,9 +832,9 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 
 ## Tile velocity and transpose with playheads, the level line, 15 Nov (docs/DECISIONS.md §159)
 
-- [ ] A track with playheads, one clip on the timeline twice. Drag the second tile's level line down to 50% and press Up
-      five times: it plays softer and a fourth higher than the first; MIDI export with devices applied matches.
-- [ ] A tile at 67% shows a line across its body, shaded above; at 120% near its top; at 100% none. Hover the line:
-      bold, with "Velocity 67% · double-click for 100%". Drag it: the velocity changes. Double-click it: 100%, the
-      line goes. An audio clip at −6 dB: a line; double-click: 0 dB.
+- [ ] A track with playheads, one clip on the timeline twice. Select the second tile and press Up five times: it plays
+      a fourth higher than the first; MIDI export with devices applied matches.
+- [ ] Note tiles have no level line: their title bar and body only move them (and Alt slips). An audio clip: hover it,
+      a faint line under its title; drag the line down to −6 dB: the line stays, shaded above. Hover it: "Gain −6.0 dB
+      · double-click for 0 dB". Double-click: 0 dB, the line goes. Its title bar still only moves it.
 

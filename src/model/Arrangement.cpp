@@ -60,7 +60,7 @@ TimedNote timed(const ArrangerClip& a, const Note& n, double on, double off, int
     tn.start = a.position + roundTick(on);
     tn.end = std::max(tn.start + 1, a.position + roundTick(off));
     tn.pitch = int8_t(std::clamp(int(n.pitch) + int(a.transpose) + transpose, 0, 127));
-    tn.velocity = std::clamp(n.velocity * a.velocityScale, 0.f, 1.f);
+    tn.velocity = n.velocity;
     tn.releaseVelocity = n.releaseVelocity;
     tn.source = &n;
     return tn;
