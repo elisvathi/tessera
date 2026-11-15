@@ -799,11 +799,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 ## A clip's own devices, 14 Nov (docs/DECISIONS.md §157)
 
 - [ ] A track with an Arpeggiator and an Echo, two clips. Show one, click **Own** on the card at the strip's left: the
-      cards turn the clip's colour, sound the same, and the slot shows a light dot, the timeline tiles a light **Own**
-      pill. Change its
+      cards turn the clip's colour, sound the same, and the slot shows a light dot, the timeline tiles a light device
+      card. Change its
       Arpeggiator: only that clip changes. Undo goes back step by step.
 - [ ] Click **Track** while it plays: the next notes go through the track's devices; the dot becomes a ring and the
-      pill dark with an outline. Both read on a light clip colour (yellow) and a dark one. **Own**
+      card dark with an outline. Both read on a light clip colour (yellow) and a dark one. **Own**
       again: its own settings are still there.
 - [ ] On the clip's own chain, click **Edit them** on the dashed block: the track's devices show, the line under the
       switch says the clip doesn't play through them. Click the block again: back to the clip's.
@@ -816,7 +816,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       clip switches to the track's. **Delete its own devices**: the mark goes.
 - [ ] Save, reload: everything as it was. MIDI export with Devices: Applied plays each clip through its chain.
 
-## The Own mark and the cached device strip, 15 Nov (docs/DECISIONS.md §158)
+## The own-devices mark and the cached device strip, 15 Nov (docs/DECISIONS.md §158)
 
 - [ ] A playhead clip in a launcher slot: its bands, no diagonal lines under them. A clip with its own Playheads: the
       slot's stripes count its own playheads, and its Own dot sits left of them.

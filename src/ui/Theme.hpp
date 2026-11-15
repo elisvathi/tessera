@@ -165,11 +165,10 @@ constexpr float kPlayheadMarkHeight = 3;
 // body, from this tall; the mouse catches it this far above or below.
 constexpr float kLevelLineMinBody = 10;
 constexpr float kLevelLineHit = 4;
-constexpr float kOwnMarkWidth = 24; // the "Own" pill of a clip with its own devices
+constexpr float kOwnMarkWidth = 16; // the device-card mark of a clip with its own devices
 constexpr float kOwnMarkHeight = 12;
-constexpr float kOwnMarkText = 8.5f;
-constexpr float kOwnMarkDot = 3.5f;     // its small form, on a slot too narrow for the pill and the name
-constexpr float kOwnMarkPillRoom = 100; // the slot body from which the pill fits beside the name
+constexpr float kOwnMarkDot = 3.5f;     // its small form, on a slot too narrow for the card and the name
+constexpr float kOwnMarkCardRoom = 100; // the slot body from which the card fits beside the name
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
 // down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip.

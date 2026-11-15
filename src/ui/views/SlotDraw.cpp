@@ -283,7 +283,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     namespace m = theme::metrics;
     float stripes = activePlayheads(*track, clip) ? m::kPlayheadMarkWidth + 4 : 0;
     float markRoom =
-        clip->hasOwnChain && body.size.x - stripes >= m::kOwnMarkPillRoom ? m::kOwnMarkWidth + 4 + stripes : 0;
+        clip->hasOwnChain && body.size.x - stripes >= m::kOwnMarkCardRoom ? m::kOwnMarkWidth + 4 + stripes : 0;
     if (markRoom > 0)
         tiles::drawOwnMark(vg, body.getRight() - markRoom, body.getCenter().y, clip->usesOwnChain());
     else if (clip->hasOwnChain)

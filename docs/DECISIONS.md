@@ -2619,18 +2619,19 @@ equal value boxes were turned down. Where the page and the earlier design disagr
   its own) and renders each through its chain.
 - **Editor.** A source card at the chain's start ("Notes from Fill, play through Track | Own") with a sentence under it;
   the chain not shown folds into a dashed block at the end that opens it or switches to it; a clip's own devices
-  wear its colour on a wash of it. The mark (an "Own" pill, light = plays its own, dark = kept; on slots a dot, see
-  §158) on slots, timeline tiles and the closed bar; "own devices" in the clip chip; clip menus get **Devices ▸**.
+  wear its colour on a wash of it. The mark (a tiny device card, light = plays its own, outlined = kept; on slots a dot,
+  see §158) on slots, timeline tiles and the closed bar; "own devices" in the clip chip; clip menus get **Devices ▸**.
 - **Not done yet:** the "Now playing … through its own devices" line in the pane header and an inspector row from the
   proposal; audio clips have no chains.
 
 ## 158. The "Own" mark, no hatch on slots, and a cached device strip (15 Nov)
 
 - **The mark of a clip with its own devices** was three linked squares in the tile's text colour. The user found it
-  black on light clips and unclear. It is now a small "Own" pill, the same word as the strip's switch: light with dark
-  ink while the clip plays through its own devices, dark with a light outline while it keeps them off. Its colours
+  black on light clips and unclear. It became a small "Own" pill; the user didn't like the word on the mark (the
+  switch keeps it), so it is now a tiny device card with two tags, like the strip's cards: light with dark ink while
+  the clip plays through its own devices, dark with a light outline while it keeps them off. Its colours
   are fixed (`theme::ownMarkColors`), not the tile's text colour, so it reads on any clip colour. A launcher slot is
-  too narrow for the pill and its name (the name shrank to "…"), so a slot under 100 px shows the mark as a dot in its
+  too narrow for the mark and its name (the name shrank to "…"), so a slot under 100 px shows the mark as a dot in its
   top-right corner, left of any playhead stripes. The source card's switch no longer repeats the mark beside "Own".
   Options page: https://claude.ai/artifact/C4i9xeBX1YLRiEm3bxgNxW
 - **No diagonal lines under a playhead clip's bands in launcher slots** (the user agreed). The bands alone say a

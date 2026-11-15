@@ -21,10 +21,11 @@ void drawTile(NVGcontext* vg, DeviceType type, int tile, const tags::Values& v, 
 float drawValue(NVGcontext* vg, float x, float cy, const std::string& label, float size, NVGcolor color,
                 bool draw = true);
 
-/// The mark of a clip with its own devices (docs/DECISIONS.md §157): a small "Own" pill, kOwnMarkWidth wide from `x`
-/// on the line `cy`. Lit: it plays through them; unlit: it keeps them but plays the track's for now.
+/// The mark of a clip with its own devices (docs/DECISIONS.md §157): a tiny device card with two tags on it,
+/// kOwnMarkWidth wide from `x` on the line `cy`. Lit: it plays through them; unlit (outlined): it keeps them but plays
+/// the track's for now.
 void drawOwnMark(NVGcontext* vg, float x, float cy, bool lit);
-/// The same mark's small form, a dot of radius kOwnMarkDot centred on `c`, for a slot too narrow for the pill.
+/// The same mark's small form, a dot of radius kOwnMarkDot centred on `c`, for a slot too narrow for the card.
 void drawOwnDot(NVGcontext* vg, rack::math::Vec c, bool lit);
 
 /// A small drawing of a playhead direction (0..3) or step order (4..7) for the Direction panel, in `r`.

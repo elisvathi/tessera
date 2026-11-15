@@ -80,7 +80,7 @@ Right-click a clip on the timeline:
 | **Open in piano roll** | Shows the clip's notes below (same as double-click). |
 | **Rename**, **Duplicate**, **Delete** | As usual. |
 | **Colour** | **Track colour** or one of 16 colours, for every selected clip (and the clip's other copies and its slot). |
-| **Devices** | For every selected clip: play through the track's devices or its own, or delete its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A tile with its own devices shows a small **Own** mark in its title bar. |
+| **Devices** | For every selected clip: play through the track's devices or its own, or delete its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A tile with its own devices shows a small device-card mark in its title bar. |
 | **Move up a row**, **Move down a row** | For overlapping clips: swaps the clip with the one in the row above or below. |
 | **Export as MIDI…** | Saves the clip (or the selected clips) as a MIDI file. |
 | **Bounce audio to a new track…**, **Bounce notes to a new track…** | See [Audio](17-audio.md) and [Tracks](04-tracks.md#bounce-notes-to-a-new-track). |
