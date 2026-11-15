@@ -93,7 +93,8 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
                 own(ParamRef::Kind::Device, b.id.value, b.params);
                 slots.push_back({b.type, b.on && d.on, b.affectDrumLanes, b.id.value,
                                  knobs[{int(ParamRef::Kind::Device), b.id.value}].value.data(), uint8_t(k + 1),
-                                 b.variation});
+                                 b.variation, b.line.data(),
+                                 uint8_t(std::min<size_t>(b.line.size(), chain::kMaxLineSteps))});
             }
     // Motion devices before an active Playheads device moved the notes the playheads read: not in the chain.
     const Device* reader = activePlayheads(track);
@@ -104,7 +105,8 @@ std::vector<Note> run(const Song& song, const Track& track, const std::vector<No
         if (d.type == DeviceType::Motion && beforeReader)
             continue;
         slots.push_back({d.type, d.on, d.affectDrumLanes, d.id.value,
-                         knobs[{int(ParamRef::Kind::Device), d.id.value}].value.data(), 0, d.variation});
+                         knobs[{int(ParamRef::Kind::Device), d.id.value}].value.data(), 0, d.variation, d.line.data(),
+                         uint8_t(std::min<size_t>(d.line.size(), chain::kMaxLineSteps))});
     }
 
     // Motion devices' knobs take "Per pass" modulators per note, at its pass (passKnob), not as time runs.

@@ -509,6 +509,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                         bp.affectDrums = b.affectDrumLanes;
                         bp.id = b.id.value;
                         bp.variation = b.variation;
+                        bp.line = b.line;
                         bp.knobs = addOwner(ParamRef::Kind::Device, b.id.value, b.params);
                         bp.lane = uint8_t(k + 1);
                         chain.devices.push_back(bp);
@@ -525,6 +526,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
             dp.affectDrums = d.affectDrumLanes;
             dp.id = d.id.value;
             dp.variation = d.variation;
+            dp.line = d.line;
             dp.knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
             chain.devices.push_back(dp);
             chain.active |= d.on;

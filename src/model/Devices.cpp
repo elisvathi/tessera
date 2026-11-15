@@ -471,6 +471,23 @@ uint64_t mixed(uint64_t seed) {
 /// A number in [0, 1) for step `k` of the line `seed` picks: the same every time.
 double chance(uint64_t seed, uint64_t k) { return double(mixed(seed ^ mixed(k)) >> 11) * 0x1.0p-53; }
 
+} // namespace
+
+uint8_t generatedLineStep(uint64_t seed, int k) {
+    double r = chance(seed ^ 0x51A7E0F1ull, uint64_t(k));
+    int row = r < 0.4 ? 1 : 2 + std::min(2, int((r - 0.4) / 0.2));
+    return lineStep(row, 0);
+}
+
+std::vector<uint8_t> generatedLine(uint64_t seed, int length) {
+    std::vector<uint8_t> line;
+    for (int k = 0; k < std::clamp(length, 1, kMaxLineSteps); k++)
+        line.push_back(generatedLineStep(seed, k));
+    return line;
+}
+
+namespace {
+
 /// The `k`-th note (0..count-1) a Shuffled arpeggio plays: a fixed shuffle of the notes, one for each `seed`.
 int shuffledIndex(int k, int count, uint64_t seed) {
     std::array<uint8_t, 64> order;
@@ -637,7 +654,25 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         break;
     }
     case ArpPattern::Pattern: {
-        // Any note on each of its 16 steps, the lowest one twice as likely as each of the others.
+        if (d.lineLength > 0) {
+            // Its own line: the step's row (a held note from the lowest, all of them, or a rest) and octave. A row
+            // past the notes held plays from the lowest again, an octave up. On New a fresh line plays instead.
+            int k = int(into % uint64_t(d.lineLength));
+            uint8_t v = d.variation >= 1 ? d.line[k] : generatedLineStep(variationSeed(d.variation, c.roll, d.id), k);
+            int row = lineRow(v), shift = 12 * lineOctave(v);
+            if (row == kAllRow) {
+                for (int i = 0; i < count; i++) {
+                    auto [h, p] = at(i);
+                    play(h, p + shift);
+                }
+            } else if (row >= 1) {
+                int n = row - 1;
+                auto [h, p] = at(n % count);
+                play(h, p + 12 * (n / count) + shift);
+            }
+            break;
+        }
+        // Made from the held notes: any note on each of its 16 steps, the lowest one twice as likely as each other.
         int pick = int(chance(heldSeed(), into % kPatternSteps) * double(count + 1));
         auto [h, p] = at(pick >= count ? 0 : pick);
         play(h, p);

@@ -120,11 +120,15 @@ struct Device {
     std::vector<Playhead> playheads;   // Playheads devices only
     uint8_t color = 0;                 // Motion devices: index into the playhead colours, marking their notes
     int32_t variation = kNewEachPlay;  // its dice: the number its randomness plays on, or new every play
+    /// An Arpeggiator's own Pattern line (docs/DECISIONS.md §163), one entry per step (1 to 16): the low three bits
+    /// the row (0 rest, 1 to 4 a held note from the lowest, 5 all of them), bits 4 and 5 the octave + 1. Empty: the
+    /// line is made from the held notes, as before it could be edited.
+    std::vector<uint8_t> line;
 
     bool operator==(const Device& o) const {
         return id == o.id && type == o.type && name == o.name && on == o.on && affectDrumLanes == o.affectDrumLanes &&
                params == o.params && modulators == o.modulators && playheads == o.playheads && color == o.color &&
-               variation == o.variation;
+               variation == o.variation && line == o.line;
     }
 };
 

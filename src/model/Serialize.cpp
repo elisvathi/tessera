@@ -894,6 +894,12 @@ json_t* deviceToJson(const Device& d) {
         setBool(j, "drumLanes", true);
     set(j, "params", floatsToJson(d.params));
     setInt(j, "variation", d.variation);
+    if (!d.line.empty()) {
+        json_t* line = json_array();
+        for (uint8_t step : d.line)
+            json_array_append_new(line, json_integer(step));
+        set(j, "line", line);
+    }
     if (!d.modulators.empty())
         set(j, "modulators", modulatorListToJson(d.modulators));
     if (!d.playheads.empty()) {
@@ -916,6 +922,10 @@ Device deviceFromJson(const json_t* j) {
     d.affectDrumLanes = getBool(j, "drumLanes", d.affectDrumLanes);
     d.params = floatsFromJson(get(j, "params"));
     d.variation = variationFromJson(j);
+    forEach(get(j, "line"), [&](const json_t* step) {
+        if (d.line.size() < 16)
+            d.line.push_back(uint8_t(std::clamp<json_int_t>(json_integer_value(step), 0, 0x3F)));
+    });
     d.modulators = modulatorListFromJson(get(j, "modulators"));
     forEach(get(j, "playheads"), [&](const json_t* pj) { d.playheads.push_back(playheadFromJson(pj)); });
     d.color = saturate<uint8_t>(getInt(j, "color", 0));

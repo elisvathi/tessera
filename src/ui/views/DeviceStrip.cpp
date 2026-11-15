@@ -39,7 +39,7 @@ constexpr float kNarrowStrip = 700;
 constexpr uint64_t kSongSection = 1, kTrackSection = 2;
 /// A device section's key: its device's ID, marked so it never meets the song's or the track's.
 uint64_t deviceSection(DeviceId id) { return id.value | (uint64_t(1) << 62); }
-constexpr float kDiceRoll = 20, kDiceFixed = 30, kDiceNew = 34; // the dice and its two-part switch
+constexpr float kDiceRoll = 20, kDiceFixed = 36, kDiceNew = 34; // the dice and its two-part switch
 
 /// A device's setting `k` as its choice or number, in the setting's own units.
 float valueOf(const Device& d, int k) {
@@ -1067,6 +1067,13 @@ float DeviceStrip::layoutTiles(const Device& d, int index, float x, float top, P
             parts.push_back(part);
             px += p.width + gap;
         }
+        // An Arpeggiator on Pattern: its first picture holds the line's grid under the tags.
+        if (ti == 0 && d.type == DeviceType::Arpeggiator &&
+            chain::ArpPattern(int(std::lround(valueOf(d, chain::knob::kPattern)))) == chain::ArpPattern::Pattern) {
+            float gy = ty + mx::kDeviceTagInset + mx::kDeviceTag + 5;
+            parts.push_back(
+                {Kind::PatternGrid, Rect(tx + 8, gy, w - 16, ty + mx::kDeviceTile - 6 - gy), index, -1, d.id.value});
+        }
         Part tilePart{Kind::Tile, tile, index, -1, d.id.value};
         tilePart.tile = int(ti);
         parts.push_back(tilePart);
@@ -1660,6 +1667,26 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             pick(Kind::ModulatorRow, hit->id, hit->section);
             deviceActions::openModulatorMenu(ctx, ModulatorId(hit->id), top(pasteIndexAfter(-1)));
             return;
+        case Kind::PatternGrid: {
+            TesseraModule* mm = ctx.module();
+            const Device* d = mm ? findDevice(mm->song(), DeviceId(hit->id)) : nullptr;
+            if (!d)
+                return;
+            rack::ui::Menu* menu = rack::createMenu();
+            menu->addChild(rack::createMenuLabel("Pattern"));
+            DeviceId id = d->id;
+            int32_t variation = d->variation;
+            EditorContext* c = &ctx;
+            menu->addChild(rack::createMenuItem(
+                "Made from the held notes again", "",
+                [c, id, variation] {
+                    if (TesseraModule* x = c->module())
+                        if (CommandPtr set = setArpLine(x->song(), id, {}, variation, "Line from the held notes"))
+                            x->perform(std::move(set));
+                },
+                d->line.empty()));
+            return;
+        }
         case Kind::ModSection:
         case Kind::ModFold: {
             pick(Kind::ModSection, 0, hit->section);
@@ -1720,12 +1747,21 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     case Kind::AddModulator:
         deviceActions::openModulatorBrowserAt(ctx, sectionPlace(*hit));
         break;
+    case Kind::PatternGrid:
+        editPatternGrid(*hit, pos);
+        break;
     case Kind::DiceRoll:
     case Kind::DiceFixed:
     case Kind::DiceNew: {
         const Device* d = findDevice(m->song(), DeviceId(hit->id));
         if (!d)
             break;
+        // An Arpeggiator with its own line: the dice writes a new line, which is then its own ("Yours").
+        if (hit->kind == Kind::DiceRoll && !d->line.empty()) {
+            m->perform(setArpLine(m->song(), d->id, chain::generatedLine(rack::random::u64(), int(d->line.size())),
+                                  variationNumber(d->variation), "New line"));
+            break;
+        }
         int32_t number = variationNumber(d->variation);
         int32_t next = hit->kind == Kind::DiceNew     ? -number
                        : hit->kind == Kind::DiceFixed ? number
@@ -2398,7 +2434,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
                        p.kind == Kind::DiceRoll    ? draw::DicePart::Roll
                        : p.kind == Kind::DiceFixed ? draw::DicePart::Fixed
                                                    : draw::DicePart::New,
-                       d.variation, hot, tint);
+                       d.variation, hot, tint, d.line.empty() ? nullptr : "Yours");
             break;
         case Kind::AddPlayhead: {
             draw::roundedRect(vg, p.rect, kChipHeight / 2, hot ? c.bg2 : nvgRGBAf(0, 0, 0, 0));
@@ -3080,6 +3116,135 @@ void DeviceStrip::drawSwitch(NVGcontext* vg) {
     nvgStroke(vg);
 }
 
+// ---- The Pattern grid ------------------------------------------------------------------------------------------
+
+namespace {
+
+/// Where the Pattern grid's cells are: five rows (all, 4, 3, 2, 1), then the octave row and the length row, each
+/// 16 steps wide after the row names.
+struct PatternGeometry {
+    Rect area;
+    float label = 18, cellW = 0, rowH = 0, octY = 0, lenY = 0;
+    explicit PatternGeometry(Rect a) : area(a) {
+        cellW = (area.size.x - label) / float(chain::kMaxLineSteps);
+        rowH = std::max(4.f, (area.size.y - 8 - 4 - 7) / 5);
+        octY = area.pos.y + 5 * rowH + 3;
+        lenY = octY + 8 + 2;
+    }
+    /// The cell of step `col` in row `r` (0 = all, 4 = row 1).
+    Rect cell(int r, int col) const {
+        return Rect(area.pos.x + label + float(col) * cellW + 0.5f, area.pos.y + float(r) * rowH + 0.5f, cellW - 1,
+                    rowH - 1);
+    }
+    int columnAt(float x) const {
+        return std::clamp(int((x - area.pos.x - label) / cellW), 0, chain::kMaxLineSteps - 1);
+    }
+};
+
+/// A grid row's line value: row 0 is "all", rows 1 to 4 are held notes 4 down to 1.
+int rowValue(int r) { return r == 0 ? chain::kAllRow : 5 - r; }
+
+} // namespace
+
+void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
+    const Device* d = cardDevice(grid.device);
+    if (!d)
+        return;
+    const theme::Palette& c = theme::colors();
+    const theme::DeviceColors& dc = theme::deviceColors();
+    NVGcolor tint = tintOf(*d, grid.device);
+    PatternGeometry g(grid.rect);
+    // Over the picture the tile drew: the grid takes its place.
+    draw::roundedRect(vg, grid.rect.grow(Vec(4, 3)), 4, dc.screen);
+    draw::TextStyle label{theme::fonts::ui(), 8.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    static const char* const kRows[] = {"all", "4", "3", "2", "1"};
+    bool own = !d->line.empty();
+    bool fresh = d->variation < 0 && own;
+    int length = own ? int(d->line.size()) : chain::kMaxLineSteps;
+    for (int r = 0; r < 5; r++) {
+        draw::text(vg, label, g.area.pos.x, g.cell(r, 0).getCenter().y, kRows[r]);
+        for (int col = 0; col < chain::kMaxLineSteps; col++) {
+            Rect cell = g.cell(r, col);
+            bool in = col < length;
+            bool on = own && in && chain::lineRow(d->line[size_t(col)]) == rowValue(r);
+            bool chord = own && in && r > 0 && chain::lineRow(d->line[size_t(col)]) == chain::kAllRow;
+            NVGcolor fill = on      ? nvgTransRGBAf(tint, fresh ? 0.45f : 1.f)
+                            : chord ? nvgTransRGBAf(tint, 0.3f)
+                                    : nvgTransRGBAf(c.text2, col % 4 == 0 ? 0.22f : 0.13f);
+            if (!in)
+                fill = nvgTransRGBAf(fill, 0.35f);
+            draw::roundedRect(vg, cell, 1.5f, fill);
+        }
+    }
+    draw::text(vg, label, g.area.pos.x, g.octY + 4, "oct");
+    draw::TextStyle oct{theme::fonts::mono(), 7.5f, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    for (int col = 0; col < chain::kMaxLineSteps; col++) {
+        Rect cell(g.area.pos.x + g.label + float(col) * g.cellW + 0.5f, g.octY, g.cellW - 1, 8);
+        int o = own && col < length ? chain::lineOctave(d->line[size_t(col)]) : 0;
+        draw::roundedRect(vg, cell, 1.5f, nvgTransRGBAf(c.text2, col < length ? 0.12f : 0.05f));
+        if (o != 0) {
+            oct.color = tint;
+            draw::text(vg, oct, cell.getCenter().x, cell.getCenter().y, o > 0 ? "+" : "\xE2\x88\x92");
+        }
+    }
+    // The length row: lit up to the line's last step; a click sets where it ends.
+    for (int col = 0; col < chain::kMaxLineSteps; col++) {
+        Rect cell(g.area.pos.x + g.label + float(col) * g.cellW + 0.5f, g.lenY, g.cellW - 1, 3);
+        draw::roundedRect(vg, cell, 1, col < length ? nvgTransRGBAf(c.accent, 0.8f) : nvgTransRGBAf(c.text2, 0.15f));
+    }
+    if (!own) {
+        draw::TextStyle hint{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        Vec m = Vec(g.area.pos.x + g.label + (g.area.size.x - g.label) / 2, g.area.pos.y + 2.5f * g.rowH);
+        std::string text = "Made from the held notes · click a step to write your own";
+        float w = draw::textWidth(vg, hint, text) + 12;
+        draw::roundedRect(vg, Rect(m.x - w / 2, m.y - 8, w, 16), 4, nvgTransRGBAf(dc.screen, 0.9f));
+        draw::text(vg, hint, m.x, m.y, text);
+    }
+}
+
+void DeviceStrip::editPatternGrid(const Part& grid, Vec pos) {
+    TesseraModule* m = ctx.module();
+    const Device* d = m ? findDevice(m->song(), DeviceId(grid.id)) : nullptr;
+    if (!d)
+        return;
+    PatternGeometry g(grid.rect);
+    int col = g.columnAt(pos.x);
+    std::vector<uint8_t> line = d->line;
+    // The first edit starts from a line the dice writes, so the grid is never empty.
+    if (line.empty())
+        line = chain::generatedLine(uint64_t(variationNumber(d->variation)) * 0x9E3779B97F4A7C15ull + d->id.value,
+                                    chain::kMaxLineSteps);
+    auto grow = [&](int to) {
+        uint64_t seed = rack::random::u64();
+        while (int(line.size()) < to)
+            line.push_back(chain::generatedLineStep(seed, int(line.size())));
+    };
+    std::string name;
+    if (pos.y >= g.lenY - 1) {
+        // The length row: the line ends at this step.
+        if (col + 1 < int(line.size()))
+            line.resize(size_t(col + 1));
+        else
+            grow(col + 1);
+        name = "Pattern length " + std::to_string(line.size());
+    } else if (pos.y >= g.octY - 1) {
+        grow(col + 1);
+        uint8_t& v = line[size_t(col)];
+        int o = chain::lineOctave(v);
+        v = chain::lineStep(chain::lineRow(v), o == 0 ? 1 : o == 1 ? -1 : 0);
+        name = "Pattern octave";
+    } else {
+        int r = std::clamp(int((pos.y - g.area.pos.y) / g.rowH), 0, 4);
+        grow(col + 1);
+        uint8_t& v = line[size_t(col)];
+        int value = rowValue(r);
+        v = chain::lineStep(chain::lineRow(v) == value ? 0 : value, chain::lineOctave(v));
+        name = "Pattern step";
+    }
+    if (CommandPtr set = setArpLine(m->song(), d->id, line, variationNumber(d->variation), name))
+        m->perform(std::move(set));
+}
+
 // ---- Selecting, copying and pasting ---------------------------------------------------------------------------
 
 void DeviceStrip::selectInStrip(Part::Kind kind, uint64_t id, uint64_t section, Modifiers mods) {
@@ -3324,6 +3489,9 @@ void DeviceStrip::drawForeground(const DrawArgs& args) {
     nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
     // The cards' own modulator sections: drawn every frame, for their live graphs and Macro levels.
     drawSections(vg, false);
+    for (const Part& p : parts)
+        if (p.kind == Kind::PatternGrid)
+            drawPatternGrid(vg, p);
     for (size_t i = 0; i < parts.size(); i++)
         if ((parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch) && isLive(parts[i]))
             drawTag(vg, parts[i], int(i) == hovered);

@@ -2791,7 +2791,9 @@ single modulator list of §36 and the modulator popover.
 - **The arpeggiator's Pattern is editable.** Picking Pattern turns the card's picture into a step grid: rows all / 4 /
   3 / 2 / 1 (held notes, low to high; a row past the held count plays from the bottom an octave up), an octave row
   (0, +1, −1) and a length row (1-16). The dice writes a new line; once edited by hand the switch reads **Yours**.
-  A tie step comes later.
+  A tie step comes later. As built: until a step is edited the line stays the one made from the held notes (Pattern
+  shipped in v2.0.7, so songs keep their sound); the first edit fills the grid from the dice; New with an own line
+  plays a fresh dice line each play; right-click the grid to go back to the held-notes line.
 - **Select, copy and paste in the strip.** A click selects a card, a modulator row, or a whole section (its header,
   without lighting each row): accent outline and a light tint, no check boxes. Ctrl+click adds or removes, Shift+click
   takes the run, as with tracks and clips; empty space or Esc clears. Copy and paste by right-click or Ctrl+C / Ctrl+V

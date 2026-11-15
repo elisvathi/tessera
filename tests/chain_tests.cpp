@@ -874,6 +874,20 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         std::vector<int> wide = run(float(chain::ArpPattern::Shuffled), 4);
         CHECK(std::set<int>(wide.begin(), wide.end()).size() == 8); // no repeats inside a round of 12
     }
+    SUBCASE("Pattern with its own line: rows, a chord step, a rest, an octave, and a row past the held notes") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+        std::vector<uint8_t> line = {chain::lineStep(1, 0), chain::lineStep(3, 0), chain::lineStep(chain::kAllRow, 0),
+                                     chain::lineStep(0, 0), chain::lineStep(2, 1), chain::lineStep(4, 0)};
+        r.slots[0].line = line.data();
+        r.slots[0].lineLength = uint8_t(line.size());
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 6, p));
+        r.runTicks(-1, 240 * 6 - 1);
+        // C, G, the chord, a rest, E an octave up, and row 4 of three notes: C an octave up.
+        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 67, 60, 64, 67, 76, 72});
+    }
     SUBCASE("a new chord starts the pattern again; one voice moving inside it doesn't") {
         auto run = [](bool hold, const std::vector<std::tuple<double, double, int>>& notes) {
             Rig r;

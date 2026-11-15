@@ -107,7 +107,8 @@ class DeviceStrip : public InteractiveView {
             Settings,    // the room for the open modulator's settings, right of its section
             DiceRoll,    // a random device's dice: rolls another number and keeps it
             DiceFixed,   // its switch's number: the same every time (double-click to type one)
-            DiceNew      // its switch's New: new every play and loop pass
+            DiceNew,     // its switch's New: new every play and loop pass
+            PatternGrid  // an Arpeggiator's own Pattern line, on its first picture: rows, octaves, length
         };
         Kind kind;
         rack::math::Rect rect;
@@ -251,6 +252,9 @@ class DeviceStrip : public InteractiveView {
     void deleteSelection();
     /// Where pasted devices go after card `cardIndex` (-1: after the last selected card, else at the end).
     int pasteIndexAfter(int cardIndex);
+    /// An edit to the Pattern grid at `pos`: a step's row, its octave, or the line's length (DECISIONS §163).
+    void editPatternGrid(const Part& grid, rack::math::Vec pos);
+    void drawPatternGrid(NVGcontext* vg, const Part& grid);
     /// Copy and Paste for a right-click menu, and with `full` Duplicate and Delete too (a card's or a modulator's
     /// own menu has those already); pasted devices land at `pasteIndex`.
     void appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full = true);

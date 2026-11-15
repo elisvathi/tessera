@@ -534,6 +534,21 @@ CommandPtr setDeviceVariation(const Song& song, DeviceId id, int32_t variation) 
                      });
 }
 
+CommandPtr setArpLine(const Song& song, DeviceId id, std::vector<uint8_t> line, int32_t variation,
+                      const std::string& name) {
+    if (line.size() > 16)
+        line.resize(16);
+    variation = clampVariation(variation);
+    return chainEdit(song, name, [&](Song& work) {
+        Device* d = findDevice(work, id);
+        if (!d || d->type != DeviceType::Arpeggiator || (d->line == line && d->variation == variation))
+            return false;
+        d->line = line;
+        d->variation = variation;
+        return true;
+    });
+}
+
 CommandPtr setModulatorVariation(const Song& song, ModulatorId id, int32_t variation) {
     variation = clampVariation(variation);
     return chainEdit(song, variation < 0 ? "New every play" : "Variation " + std::to_string(variation),

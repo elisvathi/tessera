@@ -88,8 +88,20 @@ highest. **Octaves** adds the notes again an octave up, and the pattern runs ove
 | **Random** | Any note on each step; the same note can come twice. | for example E E C G… |
 | **Walk** | Starts on the lowest note and wanders: half the time on to the next note, a quarter of the time the same note again, a quarter back one (round the ends). The same notes always walk the same path. | for example C E E C E G G E… |
 | **Shuffled** | Each note once per round, in a mixed order. The same notes always mix the same way, so a loop sounds the same every pass. | for example G C E, G C E… |
-| **Pattern** | A 16-step line made from the held notes, the lowest note twice as often as each of the others. Change the notes for a new line; the same notes always make the same line. | for example C G C E C C G E… |
+| **Pattern** | A line of up to 16 steps you can write yourself (see below). Until you do, it is made from the held notes, the lowest note twice as often as each of the others. | for example C G C E C C G E… |
 | **Chord** | All the notes together on every step. | C+E+G… |
+
+**Writing a Pattern line.** With **Pattern** picked, the card's first picture becomes a grid of 16 steps. Its rows are
+the held notes from the lowest (**1**) to the fourth (**4**), and **all** for the whole chord on that step.
+
+- Click a cell: that note plays on that step. Click it again for a rest. The first click fills the grid with a line
+  from the dice, so it is never empty; your click changes it from there.
+- The **oct** row moves a step an octave up (+) or down (−): click to go through 0, +, −.
+- The thin row at the bottom sets the length: click the step the line ends on (1 to 16).
+- A row past the notes held plays from the lowest again, an octave up, so a line keeps its shape on any chord.
+- Once you have edited it, the dice switch reads **Yours**. The dice writes a fresh line (one undo step); **New**
+  plays a fresh line on every play and loop pass, and **Yours** goes back to yours.
+- Right-click the grid ▸ **Made from the held notes again** to go back to the line made from the held notes.
 
 When you change to a new chord, the pattern starts again from its beginning, also with **Hold** on or when the chords
 follow each other without a gap. If only one note of the chord changes (an inner voice moving), the pattern carries

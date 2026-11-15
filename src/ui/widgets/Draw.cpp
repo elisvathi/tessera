@@ -73,7 +73,8 @@ void roundedRectStroke(NVGcontext* vg, rack::math::Rect r, float radius, NVGcolo
     nvgStroke(vg);
 }
 
-void dice(NVGcontext* vg, rack::math::Rect r, DicePart part, int32_t variation, bool hot, NVGcolor tint) {
+void dice(NVGcontext* vg, rack::math::Rect r, DicePart part, int32_t variation, bool hot, NVGcolor tint,
+          const char* fixedLabel) {
     const theme::Palette& c = theme::colors();
     if (part == DicePart::Roll) {
         roundedRect(vg, r, 5, hot ? c.line1 : c.bg2);
@@ -104,7 +105,10 @@ void dice(NVGcontext* vg, rack::math::Rect r, DicePart part, int32_t variation, 
     TextStyle style{fixedHalf ? theme::fonts::mono() : theme::fonts::ui(), fixedHalf ? 10.5f : 11.f,
                     on ? c.text0 : c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     int32_t number = variation < 0 ? -variation : variation;
-    text(vg, style, r.getCenter().x, r.getCenter().y, fixedHalf ? std::to_string(number) : std::string("New"));
+    if (fixedHalf && fixedLabel)
+        style.font = theme::fonts::ui();
+    text(vg, style, r.getCenter().x, r.getCenter().y,
+         fixedHalf ? (fixedLabel ? std::string(fixedLabel) : std::to_string(number)) : std::string("New"));
 }
 
 } // namespace tessera::draw

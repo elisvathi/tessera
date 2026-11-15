@@ -89,7 +89,20 @@ struct DeviceSlot {
     const float* knobs = nullptr;
     uint8_t lane = 0; // a playhead's branch device (1..16): only that playhead's notes go through it; 0 = all notes
     int32_t variation = 1; // its dice: a fixed number, or kNewEachPlay to play on this run's roll
+    const uint8_t* line = nullptr; // an Arpeggiator's own Pattern line (Device::line), and how many steps it has
+    uint8_t lineLength = 0;
 };
+
+constexpr int kMaxLineSteps = 16;
+/// A Pattern line step's parts: the row (0 rest, 1 to 4 a held note, kAllRow all of them) and the octave (-1 to 1).
+constexpr int kAllRow = 5;
+inline int lineRow(uint8_t step) { return step & 7; }
+inline int lineOctave(uint8_t step) { return int((step >> 4) & 3) - 1; }
+inline uint8_t lineStep(int row, int octave) { return uint8_t((row & 7) | ((octave + 1) & 3) << 4); }
+/// Step `k` of a line the dice writes from `seed`: one held note each step, the lowest twice as often as each other.
+uint8_t generatedLineStep(uint64_t seed, int k);
+/// A whole line of `length` steps the dice writes from `seed`.
+std::vector<uint8_t> generatedLine(uint64_t seed, int length);
 
 struct Context {
     const DeviceSlot* devices = nullptr;

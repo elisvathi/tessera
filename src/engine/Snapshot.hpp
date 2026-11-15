@@ -236,6 +236,7 @@ struct DevicePlayback {
     int knobs = 0;
     uint8_t lane = 0; // in a playhead's branch: that playhead's place (1..16); 0 = the track's chain
     int32_t variation = 1; // its dice
+    std::vector<uint8_t> line; // an Arpeggiator's own Pattern line
 };
 
 /// One modulation onto a knob or an AUTO channel: a modulator (by slot) and how far it moves its target.

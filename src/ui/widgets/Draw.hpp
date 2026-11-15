@@ -53,6 +53,8 @@ void sampleSpan(float x0, float x1, float left, float right, float step, Plot&& 
 enum class DicePart { Roll, Fixed, New };
 /// Draws one part of a dice control for a switch holding `variation` (negative: New): the dice, or a half of the
 /// switch, lit when in use, the number half in `tint`.
-void dice(NVGcontext* vg, rack::math::Rect r, DicePart part, int32_t variation, bool hot, NVGcolor tint);
+/// `fixedLabel`, when set, replaces the number ("Yours" for a line edited by hand).
+void dice(NVGcontext* vg, rack::math::Rect r, DicePart part, int32_t variation, bool hot, NVGcolor tint,
+          const char* fixedLabel = nullptr);
 
 } // namespace tessera::draw

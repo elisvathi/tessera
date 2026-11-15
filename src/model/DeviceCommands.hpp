@@ -90,6 +90,10 @@ CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name);
 /// A device's or modulator's dice switch (docs/DECISIONS.md §163): a number 1..kMaxVariation, or kNewEachPlay.
 CommandPtr setDeviceVariation(const Song& song, DeviceId id, int32_t variation);
 CommandPtr setModulatorVariation(const Song& song, ModulatorId id, int32_t variation);
+/// An Arpeggiator's own Pattern line and its dice together, as one undo step (an empty line: made from the held
+/// notes again).
+CommandPtr setArpLine(const Song& song, DeviceId id, std::vector<uint8_t> line, int32_t variation,
+                      const std::string& name);
 /// The song as one run with roll `roll` plays it: everything on "New every play" fixed to that run's number. A bake or
 /// export renders this, so what it writes can be kept.
 Song songRolled(const Song& song, uint32_t roll);

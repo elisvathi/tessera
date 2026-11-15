@@ -729,3 +729,29 @@ TEST_CASE("pasting strip items: new IDs, moves between copies kept, moves out of
     paste->revert(song);
     CHECK(song.findTrack(to)->devices.empty());
 }
+
+TEST_CASE("an arpeggiator's own Pattern line saves with the song, and the dice writes lines") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    DeviceId arp;
+    CommandPtr add =
+        addDevice(song, ChainOwner(track), DeviceType::Arpeggiator, -1, [&] { return song.nextId++; }, &arp);
+    add->apply(song);
+    std::vector<uint8_t> line = chain::generatedLine(42, 12);
+    REQUIRE(line.size() == 12);
+    CHECK(line == chain::generatedLine(42, 12)); // the same seed, the same line
+    CHECK(line != chain::generatedLine(43, 12));
+    for (uint8_t step : line)
+        CHECK((chain::lineRow(step) >= 1 && chain::lineRow(step) <= 4));
+    line[3] = chain::lineStep(chain::kAllRow, -1);
+    CommandPtr set = setArpLine(song, arp, line, 5, "Edit the line");
+    REQUIRE(set);
+    set->apply(song);
+    json_t* j = songToJson(song);
+    Song back = songFromJson(j, Song::kSchemaVersion);
+    json_decref(j);
+    CHECK(findDevice(back, arp)->line == line);
+    CHECK(findDevice(back, arp)->variation == 5);
+    set->revert(song);
+    CHECK(findDevice(song, arp)->line.empty());
+}

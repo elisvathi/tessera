@@ -2052,7 +2052,15 @@ void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runti
     int count = std::min<int>(int(devices.size()), kMaxDevices);
     for (int k = 0; k < count; k++) {
         const DevicePlayback& d = devices[size_t(k)];
-        slots[size_t(k)] = {d.type, d.on, d.affectDrums, d.id, &knobValues[size_t(d.knobs)], d.lane, d.variation};
+        slots[size_t(k)] = {d.type,
+                            d.on,
+                            d.affectDrums,
+                            d.id,
+                            &knobValues[size_t(d.knobs)],
+                            d.lane,
+                            d.variation,
+                            d.line.data(),
+                            uint8_t(std::min<size_t>(d.line.size(), chain::kMaxLineSteps))};
     }
     chain::Context context;
     context.devices = slots.data();
