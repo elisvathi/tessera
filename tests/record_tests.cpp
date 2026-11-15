@@ -1274,9 +1274,63 @@ TEST_CASE("arranger merge: notes land in the clip at the time it plays; past the
     const auto& arr = host.song_.tracks[0].arrangement;
     REQUIRE(arr.size() == 2);
     const ArrangerClip& made = arr[0].clip == id ? arr[1] : arr[0];
-    CHECK(made.position == 3 * kBar + 10); // from its own first note, not from where recording began
+    // From the bar line before its first note (issue #15), here where the old instance ends.
+    CHECK(made.position == 3 * kBar);
     REQUIRE(host.song_.findClip(made.clip)->notes.size() == 1);
     CHECK(host.song_.findClip(made.clip)->notes[0].pitch == 62);
+    CHECK(host.song_.findClip(made.clip)->notes[0].start == 10);
+}
+
+TEST_CASE("arranger merge: a new clip starts on the bar, so the take quantizes to the song's grid (issue #15)") {
+    FakeHost host(recordSong());
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    rec.settings.quantize = kPpq / 4;
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    // The first note is played a little late on beat 2 of bar 1, the second a little early on beat 3.
+    rec.handle(note(t, 60, true, kPpq + 15, kPpq + 15));
+    rec.handle(note(t, 60, false, kPpq + 100, kPpq + 100));
+    rec.handle(note(t, 62, true, 2 * kPpq - 10, 2 * kPpq - 10));
+    rec.handle(note(t, 62, false, 2 * kPpq + 100, 2 * kPpq + 100));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 3 * kPpq, 3 * kPpq));
+    const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
+    REQUIRE(arr.size() == 1);
+    CHECK(arr[0].position == 0);
+    const Clip* c = host.song_.findClip(arr[0].clip);
+    REQUIRE(c);
+    REQUIRE(c->notes.size() == 2);
+    CHECK(c->notes[0].start == kPpq); // on beat 2, as the song counts it
+    CHECK(c->notes[1].start == 2 * kPpq);
+    CHECK(arr[0].position + arr[0].length >= 2 * kPpq + 100); // still runs to the end of the last note
+}
+
+TEST_CASE("arranger merge: a new clip starts on the bar but never covers a clip ending earlier in that bar") {
+    Song song = recordSong();
+    Clip old;
+    old.id = song.newId<ClipId>();
+    old.length = old.loopEnd = kBar / 2;
+    song.clips[old.id] = old;
+    ArrangerClip inst;
+    inst.id = song.newId<ArrangementId>();
+    inst.clip = old.id;
+    inst.position = kBar;
+    inst.length = kBar / 2; // ends half way through bar 2
+    song.tracks[0].arrangement.push_back(inst);
+    FakeHost host(song);
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, kBar));
+    rec.handle(note(t, 60, true, kBar - 200, 2 * kBar - 200)); // late in bar 2, after the old clip
+    rec.handle(note(t, 60, false, kBar - 100, 2 * kBar - 100));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, 2 * kBar));
+    const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
+    REQUIRE(arr.size() == 2);
+    const ArrangerClip& made = arr[0].clip == old.id ? arr[1] : arr[0];
+    CHECK(made.position == kBar + kBar / 2);
+    REQUIRE(host.song_.findClip(made.clip)->notes.size() == 1);
+    CHECK(host.song_.findClip(made.clip)->notes[0].start == kBar / 2 - 200);
 }
 
 TEST_CASE("arranger merge: a second loop pass goes into the clip the first pass made") {

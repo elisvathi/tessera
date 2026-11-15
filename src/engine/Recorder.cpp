@@ -319,8 +319,11 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
                     first = std::min(first, double(p.t));
                     last = std::max(last, double(p.t + 1));
                 }
-            // Exactly what was recorded, not rounded out to bars: Replace must not cut notes nobody played over.
+            // Stack and Replace: exactly what was recorded, not rounded out to bars, so Replace doesn't cut notes
+            // nobody played over. Merge's clip only fills a gap, so it can start on the bar (issue #15).
             Tick from = std::max<Tick>(0, Tick(std::floor(first)));
+            if (rest && track)
+                from = mergeClipStart(*track, first, song.timeSig);
             Tick to = std::max(from + 1, Tick(std::ceil(last)));
             out->add(recordToArrangement(song, s.track, from, to, take, mode, nextId, &clip, &ids));
         }

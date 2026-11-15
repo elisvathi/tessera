@@ -1222,7 +1222,10 @@ Refines §78.
 
 - **Stack and Replace make a clip from exactly punch-in to punch-out** (each loop pass its own stretch), no longer
   rounded out to whole bars. Rounding made Replace cut notes in the same bars that nobody played over.
-- Merge's new clip for notes where no clip plays runs from the first of them to the end of the last.
+- Merge's new clip for notes where no clip plays runs from the bar line before the first of them to the end of the
+  last, but never over a clip that ends earlier in that bar (15 Nov, issue #15). Starting on the first note put
+  the clip's grid off the song's, so quantizing moved every note off the beat. It only fills a gap, so starting
+  earlier cuts nothing.
 - Launcher clips still round to whole bars, since they loop.
 - **While a Replace take records, the armed track's timeline clips are silent** (notes and clip lanes; track lanes
   still play), since the take replaces them (`Engine::replacing`). Merge and Stack keep playing them.

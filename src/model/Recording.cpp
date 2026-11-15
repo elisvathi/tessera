@@ -557,6 +557,17 @@ CommandPtr recordIntoClip(const Song& song, ClipId clipId, const Take& take, con
     return out;
 }
 
+Tick mergeClipStart(const Track& track, double first, TimeSig ts) {
+    Tick bar = ticksPerBar(ts);
+    Tick start = std::max<Tick>(0, Tick(std::floor(first / double(bar))) * bar);
+    for (const ArrangerClip& a : track.arrangement) {
+        Tick end = instanceEnd(a);
+        if (end > start && double(end) <= first)
+            start = end;
+    }
+    return start;
+}
+
 CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const Take& take,
                                ArrangerRecordMode mode, const NextId& nextId, ClipId* clipId, edits::IdSet* noteIds) {
     const Track* t = song.findTrack(track);

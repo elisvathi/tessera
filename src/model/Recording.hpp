@@ -140,6 +140,11 @@ CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length,
 CommandPtr recordIntoClip(const Song& song, ClipId clip, const Take& take, const NextId& nextId,
                           edits::IdSet* noteIds = nullptr);
 
+/// Where Merge's new clip for notes outside every clip starts (timeline ticks): on the bar line before `first`, so
+/// the clip's grid is the song's and quantizing keeps the notes on the song's beats; but never before the end of a
+/// clip that stops between that bar line and `first`, so the new clip doesn't cover it.
+Tick mergeClipStart(const Track& track, double first, TimeSig ts);
+
 /// A new clip on the timeline over [from, to) holding the take (timeline ticks). With Stack it stacks over the
 /// clips already there, which stay as they were; with Replace they are trimmed or split around it.
 CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const Take& take,
