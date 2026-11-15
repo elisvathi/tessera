@@ -76,6 +76,13 @@ CommandPtr duplicateDevice(const Song& song, DeviceId id, const NextId& nextId);
 /// A copy at `index` of a chain (positions counted in the chain as it is; -1 = the end), as Ctrl+drag makes. New
 /// IDs; routes inside the copy point at the copy, and any that end up out of reach go.
 CommandPtr copyDevice(const Song& song, DeviceId id, ChainOwner to, int index, const NextId& nextId);
+/// Pastes copied strip items (docs/DECISIONS.md §163) into chain `to`, devices from `index` on (-1 = the end):
+/// `modulators` go into that chain's own section (the track's, or the clip's), `songModulators` into the song's. All
+/// get new IDs; moves between pasted things follow the copies; moves now out of reach go, counted in `dropped`.
+/// What doesn't fit (kMaxDevices, a second Playheads, full sections) is left out. Null when nothing was pasted.
+CommandPtr pasteChainItems(const Song& song, ChainOwner to, int index, std::vector<Device> devices,
+                           std::vector<Modulator> modulators, std::vector<Modulator> songModulators,
+                           const NextId& nextId, int* dropped = nullptr);
 CommandPtr setDeviceOn(const Song& song, DeviceId id, bool on);
 CommandPtr setDeviceDrumLanes(const Song& song, DeviceId id, bool affect);
 CommandPtr renameDevice(const Song& song, DeviceId id, const std::string& name);

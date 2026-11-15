@@ -66,6 +66,17 @@ bool rollsDice(const Device& d) {
     }
 }
 
+/// What Copy holds: shared by every Roll in the patch, so a copy pastes into another Roll too.
+struct StripClipboard {
+    std::vector<Device> devices;
+    std::vector<Modulator> modulators, songModulators;
+    std::string label;
+};
+StripClipboard& stripClipboard() {
+    static StripClipboard clipboard;
+    return clipboard;
+}
+
 /// Whether a modulator is a Macro: its row is a fader.
 bool isMacro(const Modulator& m) { return m.type == ModulatorType::Macro; }
 ParamRef macroRef(const Modulator& m) { return {ParamRef::Kind::Modulator, m.id.value, 0}; }
@@ -1357,6 +1368,18 @@ void DeviceStrip::step() {
             ctx.state().selectedDevice = 0;
         if (ctx.mappingModulator && !findModulator(ctx.module()->song(), ModulatorId(ctx.mappingModulator)))
             ctx.mappingModulator = 0;
+        // What was selected and is gone (deleted, undone, another track shown) leaves the selection.
+        {
+            EditorState& st = ctx.state();
+            const Song& song = ctx.module()->song();
+            auto gone = [&](std::vector<uint64_t>& list, auto missing) {
+                list.erase(std::remove_if(list.begin(), list.end(), missing), list.end());
+            };
+            gone(st.stripDevices, [&](uint64_t id) {
+                return !std::any_of(devices.begin(), devices.end(), [&](const Device& d) { return d.id.value == id; });
+            });
+            gone(st.stripModulators, [&](uint64_t id) { return !findModulator(song, ModulatorId(id)); });
+        }
         float most = std::max(0.f, contentWidth - (box.size.x - chainLeft));
         scrollX = std::clamp(scrollX, 0.f, most);
         scrollY = std::clamp(scrollY, 0.f, std::max(0.f, contentHeight - box.size.y));
@@ -1395,16 +1418,27 @@ bool DeviceStrip::handleAction(Action action) {
             return true;
         }
     }
-    if (!ctx.state().selectedDevice)
-        return false;
-    DeviceId id(ctx.state().selectedDevice);
     switch (action) {
+    case Action::Copy:
+        copySelection();
+        return ctx.state().stripSelected();
+    case Action::Paste:
+    case Action::PasteAtMouse: {
+        const StripClipboard& cb = stripClipboard();
+        if (cb.label.empty())
+            return false;
+        pasteItems({cb.devices, cb.modulators, cb.songModulators, cb.label}, pasteIndexAfter(-1));
+        return true;
+    }
     case Action::Delete:
-        m->perform(removeDevice(m->song(), id));
-        ctx.state().selectedDevice = 0;
+        if (!ctx.state().stripSelected())
+            return false;
+        deleteSelection();
         return true;
     case Action::Duplicate:
-        m->perform(duplicateDevice(m->song(), id, m->ids()));
+        if (!ctx.state().stripSelected())
+            return false;
+        pasteItems(gatherSelection(), pasteIndexAfter(-1));
         return true;
     default:
         return false;
@@ -1548,11 +1582,18 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
         if (!mod || !isMacro(*mod) || ctx.mappingModulator)
             return nullptr;
         bool upright = p.param == 1;
-        uint64_t id = p.id;
+        uint64_t id = p.id, section = p.section;
+        std::weak_ptr<DeviceStrip*> weak = self;
         return std::make_unique<ClickOrDrag>(
             std::make_unique<MacroDrag>(*this, ctx, macroRef(*mod), mod->name, shownValue(macroRef(*mod)),
                                         upright ? p.rect.size.y * 3 : p.rect.size.x, upright, pos),
-            pos, [c, id] { c->state().openModulator = c->state().openModulator == id ? 0 : id; });
+            pos, [c, id, section, weak] {
+                Modifiers now = Modifiers::fromGlfw(APP->window->getMods());
+                if (auto s = weak.lock())
+                    (*s)->selectInStrip(Kind::ModulatorRow, id, section, now);
+                if (!now.ctrl && !now.shift)
+                    c->state().openModulator = c->state().openModulator == id ? 0 : id;
+            });
     }
     case Kind::CardHeader: {
         if (p.device >= kBranchBase)
@@ -1562,8 +1603,12 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
             if (q.kind == Kind::Card && q.device < kBranchBase)
                 cards.push_back(q.rect);
         DeviceId device(p.id);
-        return std::make_unique<ClickOrDrag>(std::make_unique<CardDrag>(*this, ctx, device, cards), pos,
-                                             [c, device] { c->state().selectedDevice = device.value; });
+        std::weak_ptr<DeviceStrip*> weak = self;
+        return std::make_unique<ClickOrDrag>(
+            std::make_unique<CardDrag>(*this, ctx, device, cards), pos, [weak, device] {
+                if (auto s = weak.lock())
+                    (*s)->selectInStrip(Kind::Card, device.value, 0, Modifiers::fromGlfw(APP->window->getMods()));
+            });
     }
     default:
         return nullptr;
@@ -1579,8 +1624,56 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     if (!hit || (hit->kind != Kind::Tag && hit->kind != Kind::Switch))
         focusedTag.reset();
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        if (!hit)
+        std::weak_ptr<DeviceStrip*> weak = self;
+        auto top = [weak](int pasteIndex) {
+            return [weak, pasteIndex](rack::ui::Menu* menu) {
+                if (auto s = weak.lock())
+                    (*s)->appendEditItems(menu, pasteIndex, false);
+            };
+        };
+        if (!hit) {
+            // Empty strip: paste at the end of the chain.
+            if (!stripClipboard().label.empty()) {
+                rack::ui::Menu* menu = rack::createMenu();
+                appendEditItems(menu, -1);
+            }
             return;
+        }
+        // A right-click on something not selected selects it alone first, so the menu acts on what it names.
+        auto pick = [&](Kind kind, uint64_t id, uint64_t section) {
+            Part probe{kind, Rect(), -1, -1, id};
+            probe.section = section;
+            if (!partSelected(probe))
+                selectInStrip(kind, id, section, Modifiers());
+        };
+        switch (hit->kind) {
+        case Kind::Card:
+        case Kind::CardHeader:
+        case Kind::Power:
+        case Kind::Menu:
+        case Kind::Tile:
+            pick(Kind::Card, hit->id, 0);
+            deviceActions::openDeviceMenu(ctx, DeviceId(hit->id), top(pasteIndexAfter(hit->device)));
+            return;
+        case Kind::ModulatorRow:
+        case Kind::ModulatorMap:
+            pick(Kind::ModulatorRow, hit->id, hit->section);
+            deviceActions::openModulatorMenu(ctx, ModulatorId(hit->id), top(pasteIndexAfter(-1)));
+            return;
+        case Kind::ModSection:
+        case Kind::ModFold: {
+            pick(Kind::ModSection, 0, hit->section);
+            rack::ui::Menu* menu = rack::createMenu();
+            for (const Part& p : parts)
+                if (p.kind == Kind::ModSection && p.section == hit->section && p.tag >= 0 &&
+                    size_t(p.tag) < sectionLabels.size())
+                    menu->addChild(rack::createMenuLabel(sectionLabels[size_t(p.tag)]));
+            appendEditItems(menu, pasteIndexAfter(-1));
+            return;
+        }
+        default:
+            break;
+        }
         switch (hit->kind) {
         case Kind::Tag:
         case Kind::Switch:
@@ -1610,9 +1703,12 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return;
     if (!hit) {
-        // Empty space ends mapping and drops the card selection.
+        // Empty space ends mapping and drops the selection.
         ctx.mappingModulator = 0;
         ctx.state().selectedDevice = 0;
+        ctx.state().stripDevices.clear();
+        ctx.state().stripModulators.clear();
+        ctx.state().stripSections.clear();
         return;
     }
     switch (hit->kind) {
@@ -1688,6 +1784,9 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     case Kind::ModulatorRow:
     case Kind::Dot: {
         ctx.mappingModulator = 0;
+        selectInStrip(Kind::ModulatorRow, hit->id, hit->section, mods);
+        if (mods.ctrl || mods.shift)
+            break; // adding to the selection leaves the settings as they are
         // A Curve is edited in the lower pane, under the notes it moves, with what it moves in the pane's header: it
         // opens no popover (Trello: the dialog and the pane opened together). A second click puts the notes back.
         const Modulator* mod = findModulator(m->song(), ModulatorId(hit->id));
@@ -1749,8 +1848,11 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
     case Kind::CardHeader:
     case Kind::Tile:
     case Kind::Card:
-        ctx.state().selectedDevice = hit->id;
+        selectInStrip(Kind::Card, hit->id, 0, mods);
         ctx.mappingModulator = 0;
+        break;
+    case Kind::ModSection:
+        selectInStrip(Kind::ModSection, 0, hit->section, mods);
         break;
     case Kind::AddTile:
         deviceActions::openDeviceBrowser(ctx, deviceActions::shownChain(ctx), -1);
@@ -1949,6 +2051,12 @@ std::pair<uint64_t, uint64_t> DeviceStrip::stripKeys() {
                      double(hasGesture()), double(tagPanelOpen()), double(ctx.mappingModulator),
                      double(ctx.state().selectedDevice), double(ctx.trackChainOpened), double(shownClip.value)})
         h = hashMix(h, v);
+    for (const std::vector<uint64_t>* list :
+         {&ctx.state().stripDevices, &ctx.state().stripModulators, &ctx.state().stripSections}) {
+        h = hashMix(h, double(list->size()));
+        for (uint64_t x : *list)
+            h = hashMix(h, double(x));
+    }
     h = hashMix(h, focusedTag ? 1 + double(focusedTag->spec.family) : 0);
     if (focusedTag)
         h = mixRef(h, focusedTag->ref);
@@ -2184,7 +2292,7 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
     const theme::DeviceColors& dc = theme::deviceColors();
     Rect r = cardPart.rect;
     float radius = mx::kDeviceCardRadius;
-    bool selected = ctx.state().selectedDevice == d.id.value;
+    bool selected = partSelected(cardPart);
     NVGcolor tint = tintOf(d, index);
     // A soft shadow that falls below it, barely past its sides, then the card.
     nvgBeginPath(vg);
@@ -2202,6 +2310,8 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
             border = deviceActions::colorOf(ModulatorId(ctx.mappingModulator));
     }
     draw::roundedRectStroke(vg, r, radius, border, selected ? 1.5f : 1);
+    if (selected)
+        draw::roundedRect(vg, r, radius, nvgTransRGBAf(c.select, 0.06f));
 
     float mid = r.pos.y + kHeaderMid;
     for (size_t i = 0; i < parts.size(); i++) {
@@ -2754,9 +2864,10 @@ void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
         bool open = sectionOpen[p.section];
         switch (p.kind) {
         case Kind::ModSection: {
+            bool picked = partSelected(p);
             if (fixed) {
-                draw::roundedRect(vg, p.rect, 6, c.bg1);
-                draw::roundedRectStroke(vg, p.rect, 6, c.line0, 1);
+                draw::roundedRect(vg, p.rect, 6, picked ? nvgLerpRGBA(c.bg1, c.select, 0.08f) : c.bg1);
+                draw::roundedRectStroke(vg, p.rect, 6, picked ? c.select : c.line0, picked ? 1.5f : 1);
             } else {
                 // On a card: a slightly deeper panel along its left edge, with a line between it and the device.
                 Rect r = p.rect;
@@ -2765,6 +2876,10 @@ void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
                 nvgRect(vg, r.getRight() - 1, r.pos.y + 1, 1, r.size.y - 2);
                 nvgFillColor(vg, dc.cardEdge);
                 nvgFill(vg);
+                if (picked) {
+                    draw::roundedRect(vg, r, mx::kDeviceCardRadius, nvgTransRGBAf(c.select, 0.08f));
+                    draw::roundedRectStroke(vg, r.shrink(Vec(0.75f, 0.75f)), mx::kDeviceCardRadius, c.select, 1.5f);
+                }
             }
             const std::string& label =
                 p.tag >= 0 && size_t(p.tag) < sectionLabels.size() ? sectionLabels[size_t(p.tag)] : std::string();
@@ -2815,6 +2930,12 @@ void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
             NVGcolor color = deviceActions::colorOf(mod->id);
             bool isOpen = ctx.state().openModulator == p.id || deviceActions::curveShown(ctx, mod->id);
             bool mapping = ctx.mappingModulator == p.id;
+            if (partSelected(p)) {
+                // Selected: a light tint and the accent outline, under what the row draws.
+                Rect sel = p.param == 1 ? p.rect.grow(Vec(3, 3)) : p.rect;
+                draw::roundedRect(vg, sel, 4, nvgTransRGBAf(c.select, 0.16f));
+                draw::roundedRectStroke(vg, sel, 4, c.select, 1.2f);
+            }
             float level = isMacro(*mod) ? shownValue(macroRef(*mod)) : 0;
             if (p.param == 1) {
                 // On a rail: an upright fader for a Macro, else a dot.
@@ -2957,6 +3078,241 @@ void DeviceStrip::drawSwitch(NVGcontext* vg) {
     nvgStrokeWidth(vg, 1.5f);
     nvgLineCap(vg, NVG_ROUND);
     nvgStroke(vg);
+}
+
+// ---- Selecting, copying and pasting ---------------------------------------------------------------------------
+
+void DeviceStrip::selectInStrip(Part::Kind kind, uint64_t id, uint64_t section, Modifiers mods) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const Song& song = m->song();
+    EditorState& st = ctx.state();
+    auto isSongMod = [&](uint64_t modId) {
+        ModulatorPlace place;
+        return findModulator(song, ModulatorId(modId), &place) && place.level == ModLevel::Song;
+    };
+    bool songItem = kind == Kind::ModSection ? section == kSongSection : kind == Kind::ModulatorRow && isSongMod(id);
+    bool hadSong = std::count(st.stripSections.begin(), st.stripSections.end(), kSongSection) > 0 ||
+                   std::any_of(st.stripModulators.begin(), st.stripModulators.end(), isSongMod);
+    bool hadOther =
+        !st.stripDevices.empty() ||
+        std::any_of(st.stripModulators.begin(), st.stripModulators.end(), [&](uint64_t x) { return !isSongMod(x); }) ||
+        std::any_of(st.stripSections.begin(), st.stripSections.end(), [](uint64_t x) { return x != kSongSection; });
+    auto clear = [&] {
+        st.stripDevices.clear();
+        st.stripModulators.clear();
+        st.stripSections.clear();
+    };
+    std::vector<uint64_t>& list = kind == Kind::Card           ? st.stripDevices
+                                  : kind == Kind::ModulatorRow ? st.stripModulators
+                                                               : st.stripSections;
+    uint64_t key = kind == Kind::ModSection ? section : id;
+    if (!mods.ctrl && !mods.shift) {
+        clear();
+        list.push_back(key);
+    } else {
+        if ((songItem && hadOther) || (!songItem && hadSong))
+            clear();
+        // Shift: the run from the last one picked, in the order they show (cards in the chain, rows in a section).
+        std::vector<uint64_t> order;
+        for (const Part& p : parts)
+            if ((kind == Kind::Card && p.kind == Kind::Card) ||
+                (kind == Kind::ModulatorRow && p.kind == Kind::ModulatorRow && p.section == section))
+                order.push_back(p.id);
+        auto last = list.empty() ? order.end() : std::find(order.begin(), order.end(), list.back());
+        auto here = std::find(order.begin(), order.end(), key);
+        if (mods.shift && last != order.end() && here != order.end()) {
+            auto [a, b] = std::minmax(last, here);
+            for (auto it = a; it <= b; ++it)
+                if (std::find(list.begin(), list.end(), *it) == list.end())
+                    list.push_back(*it);
+        } else if (auto at = std::find(list.begin(), list.end(), key); at != list.end()) {
+            list.erase(at);
+        } else {
+            list.push_back(key);
+        }
+    }
+    // A whole section holds its rows: picking it drops its rows; picking a row in it leaves the section.
+    if (kind == Kind::ModSection)
+        for (const Part& p : parts)
+            if (p.kind == Kind::ModulatorRow && p.section == section)
+                st.stripModulators.erase(std::remove(st.stripModulators.begin(), st.stripModulators.end(), p.id),
+                                         st.stripModulators.end());
+    if (kind == Kind::ModulatorRow)
+        st.stripSections.erase(std::remove(st.stripSections.begin(), st.stripSections.end(), section),
+                               st.stripSections.end());
+    st.selectedDevice = st.stripDevices.empty() ? 0 : st.stripDevices.back();
+}
+
+bool DeviceStrip::partSelected(const Part& p) const {
+    const EditorState& st = ctx.state();
+    auto has = [](const std::vector<uint64_t>& v, uint64_t x) { return std::find(v.begin(), v.end(), x) != v.end(); };
+    if (p.kind == Kind::Card)
+        return has(st.stripDevices, p.id);
+    if (p.kind == Kind::ModulatorRow)
+        return has(st.stripModulators, p.id);
+    if (p.kind == Kind::ModSection)
+        return has(st.stripSections, p.section);
+    return false;
+}
+
+DeviceStrip::Copied DeviceStrip::gatherSelection() {
+    Copied out;
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return out;
+    const Song& song = m->song();
+    const EditorState& st = ctx.state();
+    std::vector<std::string> names;
+    for (uint64_t id : st.stripDevices)
+        if (const Device* d = findDevice(song, DeviceId(id))) {
+            out.devices.push_back(*d);
+            names.push_back(nameOf(*d));
+        }
+    auto selectedDevice = [&](DeviceId id) {
+        return std::find(st.stripDevices.begin(), st.stripDevices.end(), id.value) != st.stripDevices.end();
+    };
+    for (uint64_t id : st.stripModulators) {
+        ModulatorPlace place;
+        const Modulator* mod = findModulator(song, ModulatorId(id), &place);
+        if (!mod || (place.level == ModLevel::Device && selectedDevice(place.device)))
+            continue; // a card's own modulators travel with it
+        (place.level == ModLevel::Song ? out.songModulators : out.modulators).push_back(*mod);
+        names.push_back(mod->name);
+    }
+    for (uint64_t key : st.stripSections) {
+        const Part* section = nullptr;
+        for (const Part& p : parts)
+            if (p.kind == Kind::ModSection && p.section == key)
+                section = &p;
+        if (!section)
+            continue;
+        ModLevel level = ModLevel(section->param);
+        std::vector<const Modulator*> mods;
+        std::string what;
+        if (level == ModLevel::Song) {
+            for (const Modulator& x : song.modulators)
+                out.songModulators.push_back(x);
+            names.push_back("the song's " + std::to_string(song.modulators.size()) + " modulators");
+            continue;
+        }
+        if (level == ModLevel::Device) {
+            const Device* d = findDevice(song, DeviceId(section->id));
+            if (!d || selectedDevice(d->id))
+                continue;
+            for (const Modulator& x : d->modulators)
+                out.modulators.push_back(x);
+            names.push_back(nameOf(*d) + "'s " + std::to_string(d->modulators.size()) + " modulators");
+            continue;
+        }
+        const std::vector<Modulator>& shown = deviceActions::shownModulators(ctx);
+        for (const Modulator& x : shown)
+            out.modulators.push_back(x);
+        names.push_back(std::string(level == ModLevel::Clip ? "the clip's " : "the track's ") +
+                        std::to_string(shown.size()) + " modulators");
+    }
+    for (size_t i = 0; i < names.size(); i++)
+        out.label += (i ? " + " : "") + names[i];
+    return out;
+}
+
+void DeviceStrip::copySelection() {
+    Copied items = gatherSelection();
+    if (items.empty())
+        return;
+    StripClipboard& cb = stripClipboard();
+    cb.devices = items.devices;
+    cb.modulators = items.modulators;
+    cb.songModulators = items.songModulators;
+    cb.label = items.label;
+    ctx.toast("Copied " + items.label);
+}
+
+void DeviceStrip::pasteItems(const Copied& items, int index) {
+    TesseraModule* m = ctx.module();
+    if (!m || items.empty())
+        return;
+    int dropped = 0;
+    CommandPtr command = pasteChainItems(m->song(), deviceActions::shownChain(ctx), index, items.devices,
+                                         items.modulators, items.songModulators, m->ids(), &dropped);
+    if (!command) {
+        ctx.toast("Nothing to paste here: the chain or its modulator sections are full");
+        return;
+    }
+    m->perform(std::move(command));
+    ctx.toast("Pasted " + items.label +
+              (dropped > 0 ? " · " + std::to_string(dropped) + (dropped == 1 ? " move" : " moves") +
+                                 " left behind: out of reach here"
+                           : ""));
+}
+
+void DeviceStrip::deleteSelection() {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    Copied items = gatherSelection();
+    auto all = std::make_unique<CompoundCommand>("Delete " + items.label);
+    Song work = m->song();
+    auto add = [&](CommandPtr c) {
+        if (!c)
+            return;
+        c->apply(work);
+        all->add(std::move(c));
+    };
+    for (const Device& d : items.devices)
+        add(removeDevice(work, d.id));
+    for (const std::vector<Modulator>* list : {&items.modulators, &items.songModulators})
+        for (const Modulator& mod : *list)
+            if (findModulator(work, mod.id))
+                add(removeModulator(work, mod.id));
+    if (all->empty())
+        return;
+    m->perform(std::move(all));
+    EditorState& st = ctx.state();
+    st.stripDevices.clear();
+    st.stripModulators.clear();
+    st.stripSections.clear();
+    st.selectedDevice = 0;
+}
+
+int DeviceStrip::pasteIndexAfter(int cardIndex) {
+    if (cardIndex >= 0 && cardIndex < kBranchBase)
+        return cardIndex + 1;
+    int after = -1;
+    const std::vector<Device>& devices = chain();
+    for (size_t i = 0; i < devices.size(); i++)
+        if (std::count(ctx.state().stripDevices.begin(), ctx.state().stripDevices.end(), devices[i].id.value))
+            after = int(i) + 1;
+    return after;
+}
+
+void DeviceStrip::appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full) {
+    std::weak_ptr<DeviceStrip*> weak = self;
+    Copied items = gatherSelection();
+    if (!items.empty())
+        menu->addChild(rack::createMenuItem("Copy " + items.label, shortcutLabel(Action::Copy), [weak] {
+            if (auto s = weak.lock())
+                (*s)->copySelection();
+        }));
+    const StripClipboard& cb = stripClipboard();
+    if (!cb.label.empty())
+        menu->addChild(rack::createMenuItem("Paste " + cb.label, shortcutLabel(Action::Paste), [weak, pasteIndex] {
+            if (auto s = weak.lock()) {
+                const StripClipboard& now = stripClipboard();
+                (*s)->pasteItems({now.devices, now.modulators, now.songModulators, now.label}, pasteIndex);
+            }
+        }));
+    if (!items.empty() && full) {
+        menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate), [weak, items] {
+            if (auto s = weak.lock())
+                (*s)->pasteItems(items, (*s)->pasteIndexAfter(-1));
+        }));
+        menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [weak] {
+            if (auto s = weak.lock())
+                (*s)->deleteSelection();
+        }));
+    }
 }
 
 void DeviceStrip::drawForeground(const DrawArgs& args) {

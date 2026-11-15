@@ -170,6 +170,10 @@ struct EditorState {
     bool songModsOpen = true, trackModsOpen = true;
     bool songModsOpenNarrow = false, trackModsOpenNarrow = false; // the same in a narrow strip, which starts folded
     std::map<uint64_t, bool> deviceModsOpen;
+    // What is selected in the strip, to copy, paste, duplicate or delete (docs/DECISIONS.md §163): cards (DeviceIds),
+    // modulator rows (ModulatorIds) and whole sections (the strip's section keys).
+    std::vector<uint64_t> stripDevices, stripModulators, stripSections;
+    bool stripSelected() const { return !stripDevices.empty() || !stripModulators.empty() || !stripSections.empty(); }
     uint64_t selectedDevice = 0;   // DeviceId of the selected card (Delete removes it)
     uint64_t stripOpenedFor = 0;   // TrackId whose empty device strip was opened by hand
     uint64_t selectedPlayhead = 0; // PlayheadId shown on the Playheads card, the ruler and the lower pane

@@ -600,7 +600,7 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
         "Delete", "", [run, id] { run([&](const Song& s, TesseraModule*) { return removePlayhead(s, id); }); }));
 }
 
-void openDeviceMenu(EditorContext& ctx, DeviceId id) {
+void openDeviceMenu(EditorContext& ctx, DeviceId id, std::function<void(rack::ui::Menu*)> top) {
     TesseraModule* m = moduleOf(ctx);
     TrackId trackId;
     const Device* d = m ? findDevice(m->song(), id, &trackId) : nullptr;
@@ -615,6 +615,10 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id) {
         if (TesseraModule* mod = c->module())
             mod->perform(renameDevice(mod->song(), id, name));
     }));
+    if (top) {
+        top(menu);
+        menu->addChild(new rack::ui::MenuSeparator);
+    }
     if (d->type == DeviceType::Playheads) {
         // The settings every playhead shares, set once.
         const devices::TypeInfo& info = devices::deviceInfo(DeviceType::Playheads);
@@ -874,7 +878,7 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
     }
 }
 
-void openModulatorMenu(EditorContext& ctx, ModulatorId id) {
+void openModulatorMenu(EditorContext& ctx, ModulatorId id, std::function<void(rack::ui::Menu*)> top) {
     TesseraModule* m = moduleOf(ctx);
     const Modulator* mod = m ? findModulator(m->song(), id) : nullptr;
     if (!mod)
@@ -886,6 +890,10 @@ void openModulatorMenu(EditorContext& ctx, ModulatorId id) {
         if (TesseraModule* m2 = c->module())
             m2->perform(renameModulator(m2->song(), id, name));
     }));
+    if (top) {
+        top(menu);
+        menu->addChild(new rack::ui::MenuSeparator);
+    }
     if (mod->type == ModulatorType::Curve) {
         menu->addChild(rack::createMenuItem("Show its curve", "", [c, id] { showCurve(*c, id); }));
         menu->addChild(rack::createMenuItem("CV out…", "", [c, id] { openCvOutMenu(*c, id); }));

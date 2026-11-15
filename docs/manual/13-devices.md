@@ -119,7 +119,24 @@ time.
     switches to the numbers it used, so you hear what you baked. The Random modulator and an LFO with a random
     shape have the same dice at the top of their settings.
 - **Drag the card's header** to move it in the chain. A line shows where it will land. **Ctrl+drag** copies it.
-- Click a card, then **Delete** removes it and **Ctrl+D** duplicates it.
+
+### Selecting, copying and pasting
+
+Click a card to select it: it gets an outline and a light tint. Click a modulator row to select that modulator, or a
+section's header (or an empty part of it) to select the whole section without lighting each row. **Ctrl+click** adds
+or removes one, **Shift+click** takes everything between, the same as with tracks and clips. Click empty strip space,
+or press **Esc**, to clear the selection.
+
+- **Ctrl+C** copies what is selected, **Ctrl+V** pastes it, **Ctrl+D** duplicates it and **Delete** removes it. The
+  right-click menu has **Copy** and **Paste** too, naming what they copy and paste ("Copy Arpeggiator + Env 1").
+- A paste goes into the chain the TRACK | CLIP switch shows, after the card you right-clicked (or the last selected
+  one), else at the end. Modulators go into that track's (or clip's) section. A card's own DEVICE modulators always
+  go with it.
+- Cards and track (or clip) modulators can be copied together, so an envelope keeps moving the arpeggiator it moves.
+  Song modulators are copied on their own and paste as new song modulators.
+- What a copied modulator moves among the copied cards follows the copies. Settings it moved that aren't in reach
+  where you paste are left out, and the message says how many.
+- A copy also pastes into another Roll in the same patch.
 
 ### Pictures and tags
 

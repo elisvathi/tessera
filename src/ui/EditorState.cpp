@@ -272,6 +272,9 @@ void EditorState::forgetSong() {
     songModsOpen = trackModsOpen = true;
     songModsOpenNarrow = trackModsOpenNarrow = false;
     deviceModsOpen.clear();
+    stripDevices.clear();
+    stripModulators.clear();
+    stripSections.clear();
     selectedTrack = TrackId();
     selectedClip = ClipId();
     selectedTracks.clear();

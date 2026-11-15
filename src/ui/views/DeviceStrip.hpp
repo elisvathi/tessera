@@ -229,6 +229,31 @@ class DeviceStrip : public InteractiveView {
     void drawSections(NVGcontext* vg, bool fixed);
     /// The upright TRACK | CLIP switch: which devices the shown clip plays through.
     void drawSwitch(NVGcontext* vg);
+
+    // ---- Selecting, copying and pasting (docs/DECISIONS.md §163) ----
+    /// What a click on a card (Card), a modulator row (ModulatorRow) or a whole section (ModSection, its key in
+    /// `section`) does to the selection: alone, Ctrl adds or removes one, Shift takes the run from the last one, as
+    /// with tracks and clips. Song modulators never share a selection with the rest.
+    void selectInStrip(Part::Kind kind, uint64_t id, uint64_t section, Modifiers mods);
+    /// Whether a part is selected: its card, its row, or its whole section.
+    bool partSelected(const Part& p) const;
+    /// The selection as copies, with a label that names it ("Arpeggiator + Env 1").
+    struct Copied {
+        std::vector<Device> devices;
+        std::vector<Modulator> modulators, songModulators;
+        std::string label;
+        bool empty() const { return devices.empty() && modulators.empty() && songModulators.empty(); }
+    };
+    Copied gatherSelection();
+    void copySelection();
+    /// Pastes `items` into the shown chain, its devices from `index` on (-1 = the end), as one undo step.
+    void pasteItems(const Copied& items, int index);
+    void deleteSelection();
+    /// Where pasted devices go after card `cardIndex` (-1: after the last selected card, else at the end).
+    int pasteIndexAfter(int cardIndex);
+    /// Copy and Paste for a right-click menu, and with `full` Duplicate and Delete too (a card's or a modulator's
+    /// own menu has those already); pasted devices land at `pasteIndex`.
+    void appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full = true);
     void drawCard(NVGcontext* vg, const Part& card);
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     /// Shows the tooltip for the part under the mouse: a playhead chip's dot or name.

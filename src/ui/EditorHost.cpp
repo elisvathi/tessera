@@ -450,6 +450,11 @@ void EditorHost::runAction(Action action) {
         } else if (ctx.mappingModulator || ctx.state().openModulator) {
             ctx.mappingModulator = 0;
             ctx.state().openModulator = 0;
+        } else if (state.stripSelected()) {
+            state.stripDevices.clear();
+            state.stripModulators.clear();
+            state.stripSections.clear();
+            state.selectedDevice = 0;
         } else if (state.stepInput || state.keyboardPlay) {
             state.stepInput = false;
             state.keyboardPlay = false;

@@ -5,6 +5,7 @@
 #include "../../model/DeviceTypes.hpp"
 #include "../EditorContext.hpp"
 
+#include <functional>
 #include <string>
 
 /// The device strip's menus and edits (docs/DEVICES.md §1.1), shared by the strip and the modulator popover.
@@ -63,12 +64,13 @@ uint32_t freshRoll();
 /// was on "New every play", which fixes those switches to what was baked.
 void offerKeepRoll(EditorContext& ctx, std::string text, uint32_t roll, const std::vector<TrackId>& tracks);
 
-void openDeviceMenu(EditorContext& ctx, DeviceId device);
+/// A device's menu; `top`, when set, adds items first (the strip's Copy, Paste, Duplicate and Delete).
+void openDeviceMenu(EditorContext& ctx, DeviceId device, std::function<void(rack::ui::Menu*)> top = nullptr);
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
 /// "Drift per pass" on a motion knob: a Steps modulator on its track, set to Per pass and mapped four steps up the
 /// knob, either rising then falling back (`bounce`) or rising then starting again. One undo step.
 void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce);
-void openModulatorMenu(EditorContext& ctx, ModulatorId id);
+void openModulatorMenu(EditorContext& ctx, ModulatorId id, std::function<void(rack::ui::Menu*)> top = nullptr);
 /// A new Motion device on the selected track (before its Playheads) with `notes` of `clip` joining it, as one undo
 /// step; the strip opens on it.
 void newMotion(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes);

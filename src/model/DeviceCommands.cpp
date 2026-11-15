@@ -432,6 +432,62 @@ CommandPtr copyDevice(const Song& song, DeviceId id, ChainOwner to, int index, c
     });
 }
 
+CommandPtr pasteChainItems(const Song& song, ChainOwner to, int index, std::vector<Device> devices,
+                           std::vector<Modulator> modulators, std::vector<Modulator> songModulators,
+                           const NextId& nextId, int* dropped) {
+    const std::vector<Device>* target = devicesOf(song, to);
+    if (!target || (to.isClip() && song.findClip(to.clip)->isAudio()))
+        return nullptr;
+    // The devices and their section's modulators renew together, so moves from one to the other follow the copies.
+    ChainRemap remap, songRemap;
+    renewIds(devices, modulators, nextId, remap);
+    retargetRoutes(devices, modulators, remap);
+    std::vector<Device> none;
+    renewIds(none, songModulators, nextId, songRemap);
+    retargetRoutes(none, songModulators, songRemap);
+    auto countRoutes = [&](const Song& s) {
+        int n = 0;
+        forEachModulator(s, [&](const Modulator& m, const ModulatorPlace&) { n += int(m.routes.size()); });
+        return n;
+    };
+    int before = countRoutes(song);
+    bool any = false;
+    CommandPtr command = chainEdit(song, "Paste", [&](Song& work) {
+        std::vector<Device>& chain = *devicesOf(work, to);
+        int at = index < 0 ? int(chain.size()) : std::min(index, int(chain.size()));
+        for (Device& d : devices) {
+            int adds = 1;
+            for (const Playhead& p : d.playheads)
+                adds += int(p.branch.size());
+            if (deviceCount(chain) + adds > kMaxDevices || (d.type == DeviceType::Playheads && hasPlayheads(chain)))
+                continue;
+            insertDevice(chain, at++, std::move(d));
+            any = true;
+        }
+        std::vector<Modulator>* section = nullptr;
+        if (to.isClip())
+            section = &work.findClip(to.clip)->modulators;
+        else if (Track* t = work.findTrack(to.track))
+            section = &t->modulators;
+        for (Modulator& m : modulators)
+            if (section && int(section->size()) < kMaxTrackModulators) {
+                section->push_back(std::move(m));
+                any = true;
+            }
+        for (Modulator& m : songModulators)
+            if (int(work.modulators.size()) < kMaxSongModulators) {
+                work.modulators.push_back(std::move(m));
+                any = true;
+            }
+        int pasted = countRoutes(work) - before;
+        int pruned = pruneRoutes(work);
+        if (dropped)
+            *dropped = std::min(pruned, std::max(0, pasted));
+        return any;
+    });
+    return command;
+}
+
 CommandPtr setDeviceOn(const Song& song, DeviceId id, bool on) {
     return chainEdit(song, (on ? "Turn on " : "Bypass ") + deviceName(song, id), [&](Song& work) {
         Device* d = findDevice(work, id);

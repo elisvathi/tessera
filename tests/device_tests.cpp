@@ -686,3 +686,46 @@ TEST_CASE("the dice: a rolled song fixes New, Keep it stores the same numbers, s
     CHECK(findDevice(songFromJson(old, Song::kSchemaVersion), arp)->variation == 1);
     json_decref(old);
 }
+
+TEST_CASE("pasting strip items: new IDs, moves between copies kept, moves out of reach dropped") {
+    Song song = makeDefaultSong();
+    TrackId from = song.tracks[0].id, to = song.tracks[1].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId arp, echo;
+    CommandPtr c1 = addDevice(song, ChainOwner(from), DeviceType::Arpeggiator, -1, next, &arp);
+    c1->apply(song);
+    CommandPtr c2 = addDevice(song, ChainOwner(from), DeviceType::Echo, -1, next, &echo);
+    c2->apply(song);
+    ModulatorId env;
+    CommandPtr c3 =
+        addModulator(song, {ModLevel::Track, from, DeviceId(), ClipId()}, ModulatorType::Envelope, next, &env);
+    c3->apply(song);
+    // The envelope moves the arpeggiator's gate and the echo's decay.
+    for (auto [dev, knob] : {std::pair<DeviceId, int>{arp, chain::knob::kGate}, {echo, chain::knob::kDecay}}) {
+        Modulation r;
+        r.target = {ParamRef::Kind::Device, dev.value, uint16_t(knob)};
+        r.amount = 0.5f;
+        CommandPtr add = addRoute(song, env, r);
+        add->apply(song);
+    }
+    // Copy the arpeggiator with the envelope (the echo stays behind), paste on the other track.
+    std::vector<Device> devices = {*findDevice(song, arp)};
+    std::vector<Modulator> mods = {*findModulator(song, env)};
+    int dropped = -1;
+    CommandPtr paste = pasteChainItems(song, ChainOwner(to), -1, devices, mods, {}, next, &dropped);
+    REQUIRE(paste);
+    paste->apply(song);
+    const Track& t = *song.findTrack(to);
+    REQUIRE(t.devices.size() == 1);
+    REQUIRE(t.modulators.size() == 1);
+    CHECK(t.devices[0].id != arp);
+    CHECK(t.modulators[0].id != env);
+    // The move onto the copied arpeggiator follows the copy; the one onto the echo left behind is out of reach.
+    REQUIRE(t.modulators[0].routes.size() == 1);
+    CHECK(t.modulators[0].routes[0].target.owner == t.devices[0].id.value);
+    CHECK(dropped == 1);
+    // The originals are untouched.
+    CHECK(findModulator(song, env)->routes.size() == 2);
+    paste->revert(song);
+    CHECK(song.findTrack(to)->devices.empty());
+}
