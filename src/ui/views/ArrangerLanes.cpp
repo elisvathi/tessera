@@ -1302,7 +1302,8 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         }
 
         if (body.size.y >= 8)
-            slotDraw::drawPlayheadMark(vg, track, Vec(r.getRight() - 4, body.pos.y + 3), body.size.y - 6);
+            slotDraw::drawPlayheadMark(vg, activePlayheads(track, clip), Vec(r.getRight() - 4, body.pos.y + 3),
+                                       body.size.y - 6);
 
         // Name, then what makes this instance different from its clip, then the link badge.
         std::string extras;
@@ -1342,8 +1343,8 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         }
         // Its own devices: filled while it plays through them, hollow while it keeps them off.
         if (clip->hasOwnChain && r.size.x > 50) {
-            right -= 18;
-            tiles::drawChainMark(vg, right, cy, c.onTile, clip->usesOwnChain());
+            right -= theme::metrics::kOwnMarkWidth;
+            tiles::drawOwnMark(vg, right, cy, clip->usesOwnChain());
             right -= 4;
         }
         if (!extras.empty() && r.size.x > 60) {

@@ -2,8 +2,8 @@
 
 The timeline lays your song out from left to right, bar by bar. Each track is a row. Each clip on it is a tile with
 a coloured title bar and a small picture of its notes. Set **Plays** to **Timeline** to hear it. On a track with
-[playheads](13-devices.md#playheads), a tile shows where each playhead goes instead of the notes, over fine diagonal
-lines: its notes as written aren't what plays.
+[playheads](13-devices.md#playheads), a tile shows where each playhead goes instead of the notes, one band per
+playhead: its notes as written aren't what plays.
 
 ![The timeline: three sections, an automation lane under Chords](images/timeline.png)
 
@@ -77,7 +77,7 @@ Right-click a clip on the timeline:
 | **Open in piano roll** | Shows the clip's notes below (same as double-click). |
 | **Rename**, **Duplicate**, **Delete** | As usual. |
 | **Colour** | **Track colour** or one of 16 colours, for every selected clip (and the clip's other copies and its slot). |
-| **Devices** | For every selected clip: play through the track's devices or its own, or delete its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A tile with its own devices shows their mark: three linked squares. |
+| **Devices** | For every selected clip: play through the track's devices or its own, or delete its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A tile with its own devices shows a small **Own** mark in its title bar. |
 | **Move up a row**, **Move down a row** | For overlapping clips: swaps the clip with the one in the row above or below. |
 | **Export as MIDI…** | Saves the clip (or the selected clips) as a MIDI file. |
 | **Bounce audio to a new track…**, **Bounce notes to a new track…** | See [Audio](17-audio.md) and [Tracks](04-tracks.md#bounce-notes-to-a-new-track). |

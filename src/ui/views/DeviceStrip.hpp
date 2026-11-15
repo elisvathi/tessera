@@ -15,6 +15,7 @@
 namespace tessera {
 
 class TileLayer;
+class CachedLayer;
 
 /// The selected track's devices, in a strip of fixed height above its notes (docs/DEVICES.md §1.1): the modulator
 /// list on the left, then the device cards left to right in the order notes flow. Each card shows what its device
@@ -189,6 +190,17 @@ class DeviceStrip : public InteractiveView {
     bool reachableNow(const ParamRef& ref);
 
     void drawClosed(NVGcontext* vg);
+    /// The chain under the pictures (frames, links, cards, the source card) and the still tags over them: each
+    /// painted into its own cached layer, which repaints only when its key from stripKeys() changes. Live tags are
+    /// drawn over them every frame instead.
+    void paintChain(NVGcontext* vg);
+    void paintTags(NVGcontext* vg);
+    /// The keys of the chain and tag layers: everything they draw from (the song, the layout, focus, previews, and
+    /// what is hovered in each). Also marks which tags are live.
+    std::pair<uint64_t, uint64_t> stripKeys();
+    /// Whether a tag part shows a setting a modulator or a lane moves, so its value changes while playing.
+    bool isLive(const Part& p) const;
+    std::vector<bool> tagLive; // per tag in `tagRefs`, from stripKeys()
     void drawModulators(NVGcontext* vg);
     void drawCard(NVGcontext* vg, const Part& card);
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
@@ -238,6 +250,8 @@ class DeviceStrip : public InteractiveView {
     TrackId shownTrack;
     ClipId shownClip; // another clip shown goes back to its own chain (EditorContext::trackChainOpened)
     TileLayer* tileLayer = nullptr;
+    CachedLayer* chainLayer = nullptr;
+    CachedLayer* tagLayer = nullptr;
     std::map<uint64_t, float> widestTag;           // per setting: its tag at its widest label
     std::map<uint64_t, tags::ValueList> lists;     // per setting: what its tag steps through
     std::optional<TagRef> panelTag;                // the tag whose panel is open

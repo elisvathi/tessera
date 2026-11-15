@@ -2554,7 +2554,8 @@ equal value boxes were turned down. Where the page and the earlier design disagr
 - **Performance.** Each picture is drawn once into its own framebuffer and redrawn only when what it shows changes
   (values are snapped to the tags' steps, so a modulated setting redraws per step, not per frame). Budget: the strip
   under 0.5 ms of UI time a frame, a picture redraw under 0.3 ms. Measured in the hidden Rack with 11 devices: about
-  0.05 ms layout and 0.1 ms drawing a frame, no redraws while playing or scrolling, about 0.16 ms per redraw.
+  0.05 ms layout and 0.1 ms drawing a frame, no redraws while playing or scrolling, about 0.16 ms per redraw. (These
+  figures were wrong: measured again on 15 Nov the strip took about 1 ms a frame. See §158.)
 - Still open: clip-level devices (a separate task).
 
 ## 155. A playhead's Speed curve bends its speed over a length, and it stays in step (14 Nov)
@@ -2618,7 +2619,33 @@ equal value boxes were turned down. Where the page and the earlier design disagr
   its own) and renders each through its chain.
 - **Editor.** A source card at the chain's start ("Notes from Fill, play through Track | Own") with a sentence under it;
   the chain not shown folds into a dashed block at the end that opens it or switches to it; a clip's own devices
-  wear its colour on a wash of it. The mark (three linked squares, filled = plays its own, hollow = kept) on slots,
-  timeline tiles and the closed bar; "own devices" in the clip chip; clip menus get **Devices ▸**.
+  wear its colour on a wash of it. The mark (an "Own" pill, light = plays its own, dark = kept; on slots a dot, see
+  §158) on slots, timeline tiles and the closed bar; "own devices" in the clip chip; clip menus get **Devices ▸**.
 - **Not done yet:** the "Now playing … through its own devices" line in the pane header and an inspector row from the
   proposal; audio clips have no chains.
+
+## 158. The "Own" mark, no hatch on slots, and a cached device strip (15 Nov)
+
+- **The mark of a clip with its own devices** was three linked squares in the tile's text colour. The user found it
+  black on light clips and unclear. It is now a small "Own" pill, the same word as the strip's switch: light with dark
+  ink while the clip plays through its own devices, dark with a light outline while it keeps them off. Its colours
+  are fixed (`theme::ownMarkColors`), not the tile's text colour, so it reads on any clip colour. A launcher slot is
+  too narrow for the pill and its name (the name shrank to "…"), so a slot under 100 px shows the mark as a dot in its
+  top-right corner, left of any playhead stripes. The source card's switch no longer repeats the mark beside "Own".
+  Options page: https://claude.ai/artifact/C4i9xeBX1YLRiEm3bxgNxW
+- **No diagonal lines under a playhead clip's bands in launcher slots** (the user agreed). The bands alone say a
+  clip is played by playheads, as on the timeline. The stripe mark on a slot now counts the playheads of the chain
+  the clip plays through (its own or the track's).
+- **The device strip caches its drawing.** It drew every card and tag again on every frame: about 1 ms a frame
+  (0.35 ms layout, 0.35 ms drawing, 0.5 ms tags), against a 0.5 ms budget. Now:
+  - the chain under the pictures (frames, links, cards, the source card) and the tags over them are each painted into
+    one framebuffer, repainted only when their key changes: the song revision, the layout's parts, focus, previews,
+    mapping, and what is hovered (a tag's hover repaints only the tags, a button's only the chain);
+  - a tag that a modulator or a lane moves is drawn live over the layer, and keeps its widest width so it and its
+    neighbours hold still while it plays (they used to shift by a pixel as its label changed);
+  - a picture that changes again within 30 frames (a value a modulator moves) is drawn straight to the screen instead
+    of repainting its framebuffer every frame, and goes back to its framebuffer once it holds still.
+  - Measured in the hidden Rack (software drawing, devices.vcv, an LFO on the Arpeggiator's Gate): stopped, about
+    0.15 ms layout and 0.03–0.05 ms drawing a frame; playing, 0.2 ms layout and 0.19 ms drawing (was 0.88 ms, and
+    1.16 ms with only the layers cached); the mouse sweeping across the tags, 0.45 ms drawing. Layout still runs
+    every frame.

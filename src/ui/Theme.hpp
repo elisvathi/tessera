@@ -128,6 +128,17 @@ inline NVGcolor takeColor(int take) { return modulatorColor(uint64_t(take + 2));
 /// A playhead's colour, by its colour index (docs/design/PLAYHEADS.md §3.2): its chip, its line over the notes.
 NVGcolor playheadColor(int index);
 
+/// The "Own" mark of a clip with its own devices: light on a dark backing in every scheme, so it reads on any clip
+/// colour. Lit: a light pill with dark ink; unlit: a dark pill ringed in light.
+struct OwnMarkColors {
+    NVGcolor lit;
+    NVGcolor litInk;
+    NVGcolor unlit;
+    NVGcolor unlitInk;
+    NVGcolor edge;
+};
+const OwnMarkColors& ownMarkColors();
+
 namespace fonts {
 std::shared_ptr<rack::window::Font> ui();
 std::shared_ptr<rack::window::Font> uiStrong();
@@ -150,11 +161,14 @@ constexpr float kMarkerRow = 14;
 constexpr float kLoopStrip = 12;
 constexpr float kPlayheadMarkWidth = 12; // a clip tile's stripe per playhead, when playheads play it
 constexpr float kPlayheadMarkHeight = 3;
+constexpr float kOwnMarkWidth = 24; // the "Own" pill of a clip with its own devices
+constexpr float kOwnMarkHeight = 12;
+constexpr float kOwnMarkText = 8.5f;
+constexpr float kOwnMarkDot = 3.5f;     // its small form, on a slot too narrow for the pill and the name
+constexpr float kOwnMarkPillRoom = 100; // the slot body from which the pill fits beside the name
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
-// down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip. Launcher slots also get
-// fine diagonal lines this far apart under the bands.
-constexpr float kPlayheadHatch = 6;
+// down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip.
 constexpr float kPlayheadBand = 7;
 constexpr float kPlayheadThinBand = 3;
 constexpr float kPlayheadPathStep = 2;

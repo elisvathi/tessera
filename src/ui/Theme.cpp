@@ -266,6 +266,12 @@ NVGcolor recessed(const Palette& p, NVGcolor base, float strength) {
 
 const Palette& panelColors() { return paletteOf(chosen); }
 
+const OwnMarkColors& ownMarkColors() {
+    static const OwnMarkColors m{nvgRGBAf(1, 1, 1, 0.92f), nvgRGB(0x25, 0x28, 0x2D), nvgRGBAf(0, 0, 0, 0.32f),
+                                 nvgRGBAf(1, 1, 1, 0.9f), nvgRGBAf(1, 1, 1, 0.7f)};
+    return m;
+}
+
 const DeviceColors& deviceColors() {
     static DeviceColors d;
     static uint64_t made = ~uint64_t(0);

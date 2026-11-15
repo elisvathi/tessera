@@ -113,8 +113,7 @@ void drawNotePreview(NVGcontext* vg, const Clip& clip, const std::vector<DrumLan
     nvgFill(vg);
 }
 
-void drawPlayheadMark(NVGcontext* vg, const Track& track, Vec topRight, float maxHeight) {
-    const Device* device = activePlayheads(track);
+void drawPlayheadMark(NVGcontext* vg, const Device* device, Vec topRight, float maxHeight) {
     if (!device)
         return;
     const float w = theme::metrics::kPlayheadMarkWidth, h = theme::metrics::kPlayheadMarkHeight, gap = 2;
@@ -129,24 +128,6 @@ void drawPlayheadMark(NVGcontext* vg, const Track& track, Vec topRight, float ma
         else
             draw::roundedRect(vg, stripe, 1, color);
     }
-}
-
-void drawHatch(NVGcontext* vg, Rect r, float right, NVGcolor color) {
-    namespace m = theme::metrics;
-    nvgSave(vg);
-    nvgIntersectScissor(vg, r.pos.x, r.pos.y, r.size.x, r.size.y);
-    nvgBeginPath(vg);
-    // From the clip's own left edge, so the lines move with it; only those in view.
-    float origin = r.pos.x - r.size.y;
-    float first = origin + std::max(0.f, std::floor((-r.size.y - origin) / m::kPlayheadHatch)) * m::kPlayheadHatch;
-    for (float x = first; x < std::min(right, r.getRight()); x += m::kPlayheadHatch) {
-        nvgMoveTo(vg, x, r.getBottom());
-        nvgLineTo(vg, x + r.size.y, r.pos.y);
-    }
-    nvgStrokeColor(vg, color);
-    nvgStrokeWidth(vg, 1);
-    nvgStroke(vg);
-    nvgRestore(vg);
 }
 
 /// The note under clip position `pos`, as its index in `notes` (sorted by start); -1 when there is none.
@@ -297,9 +278,18 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.onTile,
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     // A clip with its own devices wears their mark at the right end: filled while it plays through them.
-    float markRoom = clip->hasOwnChain && body.size.x > 40 ? 22 : 0;
+    // Left of the playhead stripes, when there are any; on a narrow slot its small form, in the corner, so the name
+    // keeps its room.
+    namespace m = theme::metrics;
+    float stripes = activePlayheads(*track, clip) ? m::kPlayheadMarkWidth + 4 : 0;
+    float markRoom =
+        clip->hasOwnChain && body.size.x - stripes >= m::kOwnMarkPillRoom ? m::kOwnMarkWidth + 4 + stripes : 0;
     if (markRoom > 0)
-        tiles::drawChainMark(vg, body.getRight() - 21, body.getCenter().y, c.onTile, clip->usesOwnChain());
+        tiles::drawOwnMark(vg, body.getRight() - markRoom, body.getCenter().y, clip->usesOwnChain());
+    else if (clip->hasOwnChain)
+        tiles::drawOwnDot(vg,
+                          Vec(body.getRight() - stripes - m::kOwnMarkDot - 2.5f, body.pos.y + m::kOwnMarkDot + 2.5f),
+                          clip->usesOwnChain());
     std::string label =
         draw::ellipsize(vg, name, clip->name.empty() ? "Clip" : clip->name, body.size.x - kTextPad - markRoom);
     draw::text(vg, name, body.pos.x + 3, body.getCenter().y, label);
@@ -334,9 +324,9 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                                           theme::metrics::kStatusBar),
                                      state, c.text0);
     } else if (readers) {
-        drawHatch(vg, body, body.getRight(), nvgTransRGBAf(c.onTile, 0.12f));
-        // Clear of the playhead mark at the right.
-        preview.size.x -= theme::metrics::kPlayheadMarkWidth + 4;
+        // Clear of the playhead mark at the right (the own mark's room already is).
+        if (markRoom == 0)
+            preview.size.x -= stripes;
         if (preview.size.x >= kMinPreviewWidth)
             drawPlayheadPaths(vg, song, *track, *readers, *clip, preview, preview.pos.x, preview.getRight(), 0,
                               double(clipSpan(*clip, lanes).length()), nvgTransRGBAf(c.onTile, 0.2f), 1);
@@ -344,7 +334,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
         drawNotePreview(vg, *clip, lanes, preview, nvgTransRGBAf(c.onTile, kPreviewAlpha));
     }
     nvgRestore(vg);
-    drawPlayheadMark(vg, *track, Vec(body.getRight() - 4, body.pos.y + 4), body.size.y - 8);
+    drawPlayheadMark(vg, activePlayheads(*track, clip), Vec(body.getRight() - 4, body.pos.y + 4), body.size.y - 8);
 
     // The launch button: a darker square with the triangle, a ring while playing.
     draw::roundedRect(vg, launch, theme::metrics::kRadiusItem, nvgTransRGBAf(c.onTile, hotLaunch ? 0.55f : 0.4f));

@@ -185,11 +185,12 @@ devices:
 On the track's devices, the line under the switch names the clips that skip them ("Fill and Break skip these"), so a
 change that doesn't reach a clip is never a mystery.
 
-**The mark.** A clip with its own devices wears a small mark of three linked squares on its launcher slot and on its
-timeline tiles: filled while it plays through them, hollow while it keeps them but plays the track's. The notes header
-adds "own devices" to the clip's name.
+**The mark.** A timeline tile of a clip with its own devices shows a small **Own** mark in its title bar. It is light
+while the clip plays through them, and dark with a light outline while the clip keeps them but plays the track's. A
+launcher slot is narrower, so it shows the same mark as a small dot in its top-right corner: light, or a light ring.
+The notes header adds "own devices" to the clip's name.
 
-![The mark on the Chorus chords slot and its timeline tile](images/clip-mark.png)
+![The mark on slots and timeline tiles: Chorus chords plays its own devices (light), Verse chords keeps its own off (outlined)](images/clip-mark.png)
 
 **From a menu.** Right-click a clip in a slot or on the timeline, or open the clip chip in the notes header:
 **Devices** › **Play through the track's devices**, **Play through its own devices**, **Delete its own devices**, and
@@ -275,9 +276,9 @@ time with a curve…**), to automate or modulate its start or length, or to make
 launcher slot it doesn't show them. It shows one band per playhead instead, in the playhead's colour, with a block
 wherever that playhead is over a note: you see how many playheads there are and the rhythm each plays. A short clip
 (the timeline zoomed out, or a launcher slot) keeps the bands as thin as it must, and when even that doesn't fit, the
-playheads' blocks share the clip. An off playhead's band is faint. Launcher slots also get fine diagonal lines under
-the bands. One small stripe per playhead sits at the right end (hollow when it is off), and the piano roll's title adds
-"read by 3 playheads". The bands follow the settings as you set them; curves on them play but aren't drawn there.
+playheads' blocks share the clip. An off playhead's band is faint. One small stripe per playhead sits at the right
+end (hollow when it is off), and the piano roll's title adds "read by 3 playheads". The bands follow the settings as
+you set them; curves on them play but aren't drawn there.
 
 **Curves.** Any setting can move by itself, on this card or any device card. Click a setting's tag and pick **Draw a
 curve** in its panel: a curve for it opens in the piano roll's lower pane. On this card that is Direction, Rate,

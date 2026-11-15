@@ -307,7 +307,9 @@ class StripResize : public DragGesture {
 // ---- Cached pictures ------------------------------------------------------------------------------------------
 
 /// The pictures of the cards on show, each drawn once into its own framebuffer and redrawn only when what it shows
-/// changes (a value, the tint, the scheme). Clipped to the chain, so pictures scrolled under the modulator list hide.
+/// changes (a value, the tint, the scheme). A picture that keeps changing (a value a modulator moves, while playing)
+/// is drawn straight to the screen instead, which costs less than repainting its framebuffer every frame, until it
+/// has held still a while. Clipped to the chain, so pictures scrolled under the modulator list hide.
 class TileLayer : public rack::widget::Widget {
   public:
     float clipLeft = 0;
@@ -332,7 +334,12 @@ class TileLayer : public rack::widget::Widget {
         }
         t->used = true;
         t->alpha = alpha;
+        if (t->busy > 0)
+            t->busy--;
         if (t->hash != hash || t->width != width) {
+            // Changed again soon after the last change: it is moving.
+            t->busy = t->hash != ~uint64_t(0) && t->stillFor < kBusyFrames ? kBusyFrames : 0;
+            t->stillFor = 0;
             t->hash = hash;
             t->type = type;
             t->tile = tile;
@@ -340,6 +347,8 @@ class TileLayer : public rack::widget::Widget {
             t->tint = tint;
             t->width = width;
             t->caption = caption();
+        } else {
+            t->stillFor = std::min(t->stillFor + 1, kBusyFrames);
         }
         t->layer->box.pos = pos;
         t->layer->setSize(Vec(width, mx::kDeviceTile));
@@ -365,7 +374,13 @@ class TileLayer : public rack::widget::Widget {
         for (auto& [key, t] : tiles) {
             nvgSave(args.vg);
             nvgGlobalAlpha(args.vg, t->alpha);
-            drawChild(t->layer, args);
+            if (t->busy > 0) {
+                nvgTranslate(args.vg, t->layer->box.pos.x, t->layer->box.pos.y);
+                nvgIntersectScissor(args.vg, 0, 0, t->width, mx::kDeviceTile);
+                tiles::drawTile(args.vg, t->type, t->tile, t->values, t->width, t->tint, t->caption);
+            } else {
+                drawChild(t->layer, args);
+            }
             nvgRestore(args.vg);
         }
         nvgRestore(args.vg);
@@ -382,13 +397,21 @@ class TileLayer : public rack::widget::Widget {
         std::string caption;
         uint64_t hash = ~uint64_t(0);
         bool used = false;
+        int busy = 0;     // frames left to draw it straight to the screen
+        int stillFor = 0; // frames since it last changed, up to kBusyFrames
     };
+    static constexpr int kBusyFrames = 30;
     std::map<uint64_t, std::unique_ptr<Tile>> tiles;
 };
 
 DeviceStrip::DeviceStrip(EditorContext& ctx) : InteractiveView(ctx) {
+    // Under the pictures, the pictures, then the tags on them.
+    chainLayer = new CachedLayer([this](NVGcontext* vg, Vec) { paintChain(vg); });
+    addChild(chainLayer);
     tileLayer = new TileLayer;
     addChild(tileLayer);
+    tagLayer = new CachedLayer([this](NVGcontext* vg, Vec) { paintTags(vg); });
+    addChild(tagLayer);
     self = std::make_shared<DeviceStrip*>(this);
 }
 
@@ -873,6 +896,14 @@ float DeviceStrip::layoutTiles(const Device& d, int index, float x, float top, P
             TagRef t{{kind, owner, uint16_t(s.param)}, d.type, s, tint};
             const devices::ParamInfo* info = infoOf(t.ref, d.type);
             float width = vg ? tagWidth(vg, s, tagLabel(*this, t, values), info ? info->name : "") : 60;
+            // A tag that a modulator or a lane moves keeps its widest width, so it and the tags beside it hold still
+            // while it plays (and the strip's cached layers stay as they are).
+            if (s.family != Family::Channels &&
+                (modulationsOn(ctx.module()->song(), t.ref) > 0 || ctx.module()->automated(t.ref))) {
+                auto widest = widestTag.find((uint64_t(d.type) << 32) | (uint64_t(kind) << 24) | uint64_t(s.param));
+                if (widest != widestTag.end())
+                    width = widest->second;
+            }
             placed.push_back({t, width, k == 0, tags::dimmed(d.type, s.param, values)});
         }
         float total = 0;
@@ -1116,6 +1147,17 @@ void DeviceStrip::step() {
     }
     tileLayer->clipLeft = chainLeft;
     tileLayer->endFrame();
+    bool open = ctx.module() && track() && deviceActions::stripOpen(ctx) && !squeezed();
+    chainLayer->visible = tagLayer->visible = open;
+    if (open) {
+        auto [chainKey, tagKey] = stripKeys();
+        for (CachedLayer* layer : {chainLayer, tagLayer}) {
+            layer->box.pos = Vec();
+            layer->setSize(box.size);
+        }
+        chainLayer->setKey(chainKey);
+        tagLayer->setKey(tagKey);
+    }
     InteractiveView::step();
 }
 
@@ -1594,7 +1636,57 @@ void DeviceStrip::drawView(const DrawArgs& args) {
     nvgIntersectScissor(vg, 0, 0, box.size.x, box.size.y);
     drawModulators(vg);
     nvgRestore(vg);
+}
 
+std::pair<uint64_t, uint64_t> DeviceStrip::stripKeys() {
+    TesseraModule* m = ctx.module();
+    auto mixRef = [](uint64_t h, const ParamRef& r) {
+        return hashMix(hashMix(hashMix(h, double(r.kind)), double(r.owner)), double(r.param));
+    };
+    uint64_t h = hashMix(0, double(m->songRevision()));
+    for (double v : {double(box.size.x), double(box.size.y), double(scrollX), double(scrollY), double(chainLeft),
+                     double(hasGesture()), double(tagPanelOpen()), double(ctx.mappingModulator),
+                     double(ctx.state().selectedDevice), double(ctx.trackChainOpened), double(shownClip.value)})
+        h = hashMix(h, v);
+    h = hashMix(h, focusedTag ? 1 + double(focusedTag->spec.family) : 0);
+    if (focusedTag)
+        h = mixRef(h, focusedTag->ref);
+    h = hashMix(h, panelTag ? 1 + double(panelTag->spec.family) : 0);
+    if (panelTag)
+        h = mixRef(h, panelTag->ref);
+    if (knobPreview)
+        h = hashMix(mixRef(h, knobPreview->first), double(knobPreview->second));
+    if (amountPreview)
+        h = hashMix(mixRef(h, amountPreview->first), double(amountPreview->second));
+    if (directionPreview)
+        h = hashMix(hashMix(h, double(directionPreview->first)), double(directionPreview->second));
+    if (channelPreview)
+        h = hashMix(hashMix(h, double(channelPreview->first)), double(channelPreview->second));
+    for (const Part& p : parts) {
+        for (double v : {double(p.kind), double(p.rect.pos.x), double(p.rect.pos.y), double(p.rect.size.x),
+                         double(p.rect.size.y), double(p.device), double(p.param), double(p.id), double(p.tag),
+                         double(p.tile), double(p.first), double(p.dim)})
+            h = hashMix(h, v);
+    }
+    // A tag that a modulator or a lane moves changes as it plays: it is drawn live, every frame, over the layer.
+    tagLive.assign(tagRefs.size(), false);
+    for (size_t i = 0; i < tagRefs.size(); i++) {
+        const TagRef& t = tagRefs[i];
+        tagLive[i] = t.spec.family != Family::Channels && (modulationsOn(m->song(), t.ref) > 0 || m->automated(t.ref));
+    }
+    // Each layer repaints only for hovering what it lights up: the tags theirs, the chain its buttons and links.
+    Kind hot = hovered >= 0 && size_t(hovered) < parts.size() ? parts[size_t(hovered)].kind : Kind::ClosedBar;
+    bool onTag = hot == Kind::Tag || hot == Kind::Switch || hot == Kind::TagBadge;
+    bool onChain = !onTag && hot != Kind::ClosedBar && hot != Kind::Tile && hot != Kind::Card &&
+                   hot != Kind::CardHeader && hot != Kind::Frame && hot != Kind::ResizeEdge &&
+                   hot != Kind::AddModulator && hot != Kind::ModulatorRow && hot != Kind::ModulatorMap;
+    uint64_t tagHover = onTag ? hashMix(h, double(hovered)) : hashMix(h, hasGesture() && hovered >= 0 ? -2 : -1);
+    return {hashMix(h, onChain ? double(hovered) : -1), tagHover};
+}
+
+void DeviceStrip::paintChain(NVGcontext* vg) {
+    const theme::Palette& c = theme::colors();
+    const theme::DeviceColors& dc = theme::deviceColors();
     nvgSave(vg);
     nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
     // A clip's own chain sits on a wash of its colour, so it never reads as the track's.
@@ -1767,6 +1859,19 @@ void DeviceStrip::drawView(const DrawArgs& args) {
         }
     }
     nvgRestore(vg);
+}
+
+void DeviceStrip::paintTags(NVGcontext* vg) {
+    nvgSave(vg);
+    nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
+    for (size_t i = 0; i < parts.size(); i++)
+        if ((parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch) && !isLive(parts[i]))
+            drawTag(vg, parts[i], int(i) == hovered);
+    nvgRestore(vg);
+}
+
+bool DeviceStrip::isLive(const Part& p) const {
+    return p.tag >= 0 && size_t(p.tag) < tagLive.size() && tagLive[size_t(p.tag)];
 }
 
 void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
@@ -2202,12 +2307,7 @@ void DeviceStrip::drawSource(NVGcontext* vg, const Part& part, bool hot) {
         }
         draw::TextStyle label{theme::fonts::uiStrong(), 12, lit || over ? c.text0 : c.text1,
                               NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        float cx = half.getCenter().x;
-        if (side == 1 && clip->hasOwnChain) {
-            tiles::drawChainMark(vg, cx - 22, half.getCenter().y, lit ? clipColor : c.text2, lit);
-            cx += 10;
-        }
-        draw::text(vg, label, cx, half.getCenter().y, side ? "Own" : "Track");
+        draw::text(vg, label, half.getCenter().x, half.getCenter().y, side ? "Own" : "Track");
     }
     // What that means now, in a sentence.
     std::string say;
@@ -2312,8 +2412,8 @@ void DeviceStrip::drawClosed(NVGcontext* vg) {
     x += draw::textWidth(vg, dim, "Devices") + 10;
     const std::vector<Device>& devices = chain();
     if (deviceActions::shownChain(ctx).isClip()) {
-        tiles::drawChainMark(vg, x, mid, clipTint(), true);
-        x += 24;
+        tiles::drawOwnMark(vg, x, mid, true);
+        x += theme::metrics::kOwnMarkWidth + 8;
     }
     for (size_t i = 0; i < devices.size(); i++) {
         if (i > 0) {
@@ -2434,9 +2534,8 @@ void DeviceStrip::drawForeground(const DrawArgs& args) {
         return;
     nvgSave(vg);
     nvgIntersectScissor(vg, chainLeft, 0, box.size.x - chainLeft, box.size.y);
-    // The tags sit on the pictures, which the tile layer drew under this.
     for (size_t i = 0; i < parts.size(); i++)
-        if (parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch)
+        if ((parts[i].kind == Kind::Tag || parts[i].kind == Kind::Switch) && isLive(parts[i]))
             drawTag(vg, parts[i], int(i) == hovered);
     if (dropIndex >= 0) {
         // Where the dragged card lands: before card `dropIndex`, or after the last.

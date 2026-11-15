@@ -834,26 +834,28 @@ void drawDirectionIcon(NVGcontext* vg, Rect r, int value, NVGcolor color) {
     nvgStroke(vg);
 }
 
-void drawChainMark(NVGcontext* vg, float x, float cy, NVGcolor color, bool filled) {
+void drawOwnMark(NVGcontext* vg, float x, float cy, bool lit) {
+    namespace m = theme::metrics;
+    const theme::OwnMarkColors& o = theme::ownMarkColors();
+    Rect pill(x, cy - m::kOwnMarkHeight / 2, m::kOwnMarkWidth, m::kOwnMarkHeight);
+    float r = m::kOwnMarkHeight / 2;
+    draw::roundedRect(vg, pill, r, lit ? o.lit : o.unlit);
+    if (!lit)
+        draw::roundedRectStroke(vg, pill.shrink(Vec(0.5f, 0.5f)), r - 0.5f, o.edge, 1);
+    draw::TextStyle word{theme::fonts::uiStrong(), m::kOwnMarkText, lit ? o.litInk : o.unlitInk,
+                         NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, word, pill.getCenter().x, cy + 0.5f, "Own");
+}
+
+void drawOwnDot(NVGcontext* vg, Vec c, bool lit) {
+    const theme::OwnMarkColors& o = theme::ownMarkColors();
     nvgBeginPath(vg);
-    nvgMoveTo(vg, x + 5, cy);
-    nvgLineTo(vg, x + 7, cy);
-    nvgMoveTo(vg, x + 11.5f, cy);
-    nvgLineTo(vg, x + 13.5f, cy);
-    nvgStrokeColor(vg, color);
-    nvgStrokeWidth(vg, 1.3f);
+    nvgCircle(vg, c.x, c.y, theme::metrics::kOwnMarkDot);
+    nvgFillColor(vg, lit ? o.lit : o.unlit);
+    nvgFill(vg);
+    nvgStrokeColor(vg, lit ? o.litInk : o.edge);
+    nvgStrokeWidth(vg, 1);
     nvgStroke(vg);
-    for (float dx : {0.6f, 7.1f, 13.6f}) {
-        nvgBeginPath(vg);
-        nvgRoundedRect(vg, x + dx, cy - 2.9f, 4.3f, 5.8f, 1.2f);
-        if (filled) {
-            nvgFillColor(vg, color);
-            nvgFill(vg);
-        }
-        nvgStrokeColor(vg, color);
-        nvgStrokeWidth(vg, 1.2f);
-        nvgStroke(vg);
-    }
 }
 
 } // namespace tessera::tiles
