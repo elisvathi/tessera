@@ -58,52 +58,6 @@ constexpr float kLaneHeightPanel = 44;
 constexpr float kCurveLaneHeightOverlay = 220; // header, ruler and about fifteen rows
 constexpr float kCurveLaneHeightPanel = 120;
 
-/// The snap grid's choices, for the Snap chip's menu or the narrow header's "⋯".
-void appendSnapItems(rack::ui::Menu* menu, EditorContext* c) {
-    auto set = [c](std::function<void(SnapSetting&)> change) {
-        return [c, change] {
-            if (c->module())
-                change(c->state().snap);
-        };
-    };
-    auto snap = [c]() -> const SnapSetting& { return c->state().snap; };
-    menu->addChild(rack::createCheckMenuItem(
-        "Off", shortcutLabel(Action::SnapToggle), [snap] { return !snap().enabled; },
-        set([](SnapSetting& s) { s.enabled = !s.enabled; })));
-    menu->addChild(rack::createCheckMenuItem(
-        "Adaptive", "", [snap] { return snap().enabled && snap().adaptive; }, set([](SnapSetting& s) {
-            s.enabled = true;
-            s.adaptive = true;
-        })));
-    for (int d = 0; d <= int(GridDivision::SixtyFourth); d++) {
-        GridDivision division = GridDivision(d);
-        menu->addChild(rack::createCheckMenuItem(
-            divisionLabel(division, GridFeel::Straight), "",
-            [snap, division] { return snap().enabled && !snap().adaptive && snap().division == division; },
-            set([division](SnapSetting& s) {
-                s.enabled = true;
-                s.adaptive = false;
-                s.division = division;
-            })));
-    }
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createCheckMenuItem(
-        "Triplet", shortcutLabel(Action::GridTriplet), [snap] { return snap().feel == GridFeel::Triplet; },
-        set([](SnapSetting& s) { s.feel = s.feel == GridFeel::Triplet ? GridFeel::Straight : GridFeel::Triplet; })));
-    menu->addChild(rack::createCheckMenuItem(
-        "Dotted", "", [snap] { return snap().feel == GridFeel::Dotted; },
-        set([](SnapSetting& s) { s.feel = s.feel == GridFeel::Dotted ? GridFeel::Straight : GridFeel::Dotted; })));
-    menu->addChild(rack::createCheckMenuItem(
-        "Snap to other notes", "", [snap] { return snap().events; },
-        set([](SnapSetting& s) { s.events = !s.events; })));
-}
-
-void openSnapMenu(EditorContext* c) {
-    rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel("Snap"));
-    appendSnapItems(menu, c);
-}
-
 } // namespace
 
 bool isBlackKey(int pitch) {
@@ -282,8 +236,6 @@ PianoRollView::PianoRollView(EditorContext& ctx) : EditorPane(ctx, Pane::Detail)
 
     clipChip = makeClipChip(ctx, [this] { return source.track; }, [this] { return source.clip; });
     addChild(clipChip);
-    devicesToggle = makeDevicesToggle(ctx);
-    addChild(devicesToggle);
 
     tools = makeToolSwitch(
         ctx, {Tool::Paint, Tool::Erase, Tool::Slice, Tool::Mute, Tool::Velocity},
@@ -416,21 +368,20 @@ bool PianoRollView::layoutToolbar(float header) {
               (rack::widget::Widget*)viewButton, (rack::widget::Widget*)notesButton, (rack::widget::Widget*)kitButton,
               (rack::widget::Widget*)keyButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,
               (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select,
-              (rack::widget::Widget*)drumSwitch.first, (rack::widget::Widget*)drumSwitch.second,
-              (rack::widget::Widget*)devicesToggle})
+              (rack::widget::Widget*)drumSwitch.first, (rack::widget::Widget*)drumSwitch.second})
             w->visible = false;
         toolbarLeft = audioHeader->layout(clipChip->box.getRight() + 8, right, y, kToolButton);
-        return false;
+        return audioHeader->narrow();
     }
     audioHeader->hide();
-    // Back from the audio editor, everything it hid comes back, Devices too.
+    // Back from the audio editor, everything it hid comes back.
     for (rack::widget::Widget* w :
          {(rack::widget::Widget*)hearButton, (rack::widget::Widget*)snapButton, (rack::widget::Widget*)tools.more,
-          (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select, (rack::widget::Widget*)devicesToggle})
+          (rack::widget::Widget*)tools.draw, (rack::widget::Widget*)tools.select})
         w->visible = true;
     const Track* t = track();
     bool drum = t && t->type == TrackType::Drum;
-    float limit = devicesToggle->box.getRight() + 6;
+    float limit = clipChip->box.getRight() + 6;
     float caret = toolSwitchCaretWidth(tools, kToolButton);
 
     // Words when there is room, short forms when not (design review, 13 Oct): first Notes and View merge into "⋯",
@@ -542,21 +493,17 @@ void PianoRollView::layout() {
         if (TesseraModule* m = ctx.module(); m && m->heardTakeClip().valid())
             m->setHeardTake(ClipId(), -1);
     }
-    // The clip chip first, sized to its words, then Devices; the toolbar fills from the right. A narrow header
-    // shortens the chip to the track's name, so snap and key keep their room.
+    // The clip chip first, sized to its words, after the pane's switch; the toolbar fills from the right. A narrow
+    // header shortens the chip to the track's name, so snap and key keep their room.
     auto placeChip = [this](bool shortText) {
         placeClipChip(ctx, clipChip, source.clip, shortText, box.size.x - headerLeft);
         clipChip->box.pos.x += headerLeft;
-        devicesToggle->box = rack::math::Rect(clipChip->box.getRight() + 4, 3, devicesInTabs ? 0 : kDevicesToggleWidth,
-                                              kPaneHeader - 6);
     };
     placeChip(false);
     if (layoutToolbar(kPaneHeader)) {
         placeChip(true);
         layoutToolbar(kPaneHeader);
     }
-    if (devicesInTabs)
-        devicesToggle->visible = false;
 }
 
 bool PianoRollView::audioMode() {
@@ -599,7 +546,6 @@ void PianoRollView::step() {
         const Track* t = track();
         source.clip = t ? clipActions::shownClip(ctx, *t) : ClipId();
         source.track = t ? t->id : TrackId();
-        updateDevicesToggle(ctx, devicesToggle);
         const Clip* shown = clip();
         const AutomationEnvelope* lowerLane =
             shown ? findLane(song, LaneOwner::ofClip(shown->id), AutomationId(ctx.state().lowerLane)) : nullptr;
@@ -741,7 +687,7 @@ void PianoRollView::drawHeader(NVGcontext* vg) {
     size_t selected = selectedIds().size();
     if (selected > 0)
         text += (text.empty() ? "" : "  ·  ") + countNotes(selected) + " selected";
-    float x = devicesToggle->box.getRight() + 8;
+    float x = clipChip->box.getRight() + 8;
     draw::TextStyle status{theme::fonts::ui(), theme::metrics::kTextUi, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     if (!text.empty() && toolbarLeft - x - 8 >= 40)
         draw::text(vg, status, x, h / 2, draw::ellipsize(vg, status, text, toolbarLeft - x - 8));

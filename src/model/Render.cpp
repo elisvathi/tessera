@@ -629,20 +629,53 @@ std::vector<Played> throughChain(const Song& song, const Track& t, const std::ve
 
 /// What a track plays: its clips as written, or with devices applied what each of its chains plays (a clip with its
 /// own chain through that chain), in time order.
-std::vector<Played> trackPlayed(const Song& song, const Track& t, const Options& o, double until, double tempo) {
+std::vector<Played> trackPlayed(const Song& song, const Track& t, const Options& o, double until, double tempo,
+                                int depth = 0);
+
+/// The notes a track's Input brings it from the track it listens to: that track's notes after its devices, or its
+/// clips before them. Muted or not, as live. Empty without an Input from a track, or past a few listeners in a row.
+std::vector<Played> inputNotes(const Song& song, const Track& t, const Options& o, double until, double tempo,
+                               int depth) {
+    constexpr int kMaxListenDepth = 4;
+    if (!o.followInput || depth >= kMaxListenDepth ||
+        (t.listen != ListenSource::TrackAfter && t.listen != ListenSource::TrackBefore))
+        return {};
+    const Track* from = song.findTrack(t.listenTrack);
+    if (!from || from->id == t.id || from->type == TrackType::Audio)
+        return {};
+    if (t.listen == ListenSource::TrackAfter)
+        return trackPlayed(song, *from, o, until, tempo, depth + 1);
+    Options before = o;
+    before.devices = DeviceMode::Bypassed;
+    std::vector<Scale> keys;
+    return sourceNotes(song, *from, before, keys);
+}
+
+std::vector<Played> trackPlayed(const Song& song, const Track& t, const Options& o, double until, double tempo,
+                                int depth) {
     if (o.devices != DeviceMode::Applied) {
         std::vector<Scale> keys;
         return sourceNotes(song, t, o, keys);
     }
     std::vector<Track> parts = chainParts(song, t);
     std::vector<Played> out;
-    for (const Track& part : parts) {
+    for (size_t i = 0; i < parts.size(); i++) {
+        const Track& part = parts[i];
         std::vector<Scale> keys;
         std::vector<Played> source = sourceNotes(song, part, o, keys);
+        // What the Input brings goes through the track's own devices, never a clip's (as live).
+        if (i == 0) {
+            std::vector<Played> fed = inputNotes(song, t, o, until, tempo, depth);
+            if (!fed.empty()) {
+                source.insert(source.end(), fed.begin(), fed.end());
+                std::stable_sort(source.begin(), source.end(),
+                                 [](const Played& a, const Played& b) { return a.start < b.start; });
+            }
+        }
         std::vector<Played> played = throughChain(song, part, source, until, tempo, keys);
         out.insert(out.end(), played.begin(), played.end());
     }
-    if (parts.size() > 1)
+    if (parts.size() > 1 || o.followInput)
         std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
     return out;
 }

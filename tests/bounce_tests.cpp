@@ -424,3 +424,45 @@ TEST_CASE("note repeat plays a whole chord again at its rate for as long as it l
     CHECK(low == 4);
     CHECK(high == 4);
 }
+
+TEST_CASE("a notes bounce of a track that plays another track's notes has them, muted source or not") {
+    BounceSong f;
+    TrackId listener = f.song.tracks[1].id;
+    Track& l = *f.song.findTrack(listener);
+    l.listen = ListenSource::TrackAfter;
+    l.listenTrack = f.track;
+    f.song.findTrack(f.track)->mute = true;
+    NoteBounce what;
+    what.track = listener;
+    what.from = 0;
+    what.to = 4 * kPpq;
+    NoteBounceMade made;
+    CommandPtr command = bounceNotes(f.song, what, 120, f.next(), &made);
+    REQUIRE(command);
+    command->apply(f.song);
+    CHECK(f.song.findClip(made.clip)->notes.size() == 4);
+
+    SUBCASE("before the source's devices too") {
+        BounceSong g;
+        Track& before = g.song.tracks[1];
+        before.listen = ListenSource::TrackBefore;
+        before.listenTrack = g.track;
+        what.track = before.id;
+        CommandPtr again = bounceNotes(g.song, what, 120, g.next(), &made);
+        REQUIRE(again);
+        again->apply(g.song);
+        CHECK(g.song.findClip(made.clip)->notes.size() == 4);
+    }
+}
+
+TEST_CASE("as written, a listening track's bounce has only its own clips") {
+    BounceSong f;
+    Track& l = f.song.tracks[1];
+    l.listen = ListenSource::TrackAfter;
+    l.listenTrack = f.track;
+    NoteBounce what;
+    what.track = l.id;
+    what.to = 4 * kPpq;
+    what.afterDevices = false;
+    CHECK_FALSE(bounceNotes(f.song, what, 120, f.next(), nullptr));
+}

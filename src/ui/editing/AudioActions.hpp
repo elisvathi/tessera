@@ -35,6 +35,13 @@ bool audioModuleInPatch();
 /// Changes nothing when those inputs are in use or there is no Audio module. Returns what happened, for a toast.
 std::string connectMainToAudio(TesseraModule* module);
 
+/// For a patch with no Audio module: adds Rack's Audio module beside Tessera and cables MAIN L and R to its inputs 1
+/// and 2, as one Rack undo step. Returns what happened, for a toast.
+std::string addAudioModuleForMain(TesseraModule* module);
+
+/// The MAIN helper the patch needs now: connect to the Audio module there, or add one first. Adds it to `menu`.
+void appendConnectMainItem(rack::ui::Menu* menu, EditorContext& ctx);
+
 /// Add a Track Out for this track (§8.2): places a new output module beside Tessera, in the first free space to
 /// its right, bound to `track` (a Drum Out for a drum track, a Track Out for any other track or the master). One
 /// Rack undo step; the new module's screen flashes. Returns what happened, for a toast.

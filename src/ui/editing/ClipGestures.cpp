@@ -382,7 +382,7 @@ class ClipTempoGesture : public SelectionGesture {
     }
     std::string readout() const override {
         if (off)
-            return "This clip plays at its own speed: set Follow tempo to change it";
+            return "This clip plays at its own speed: set Follow to change it";
         char text[48];
         snprintf(text, sizeof text, "%.4g \u2192 %.4g BPM", startTempo, tempo > 0 ? tempo : startTempo);
         return text;

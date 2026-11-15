@@ -55,18 +55,19 @@ Every audio clip shows its tempo after its name, like **92 ▾**. Right after a 
 timeline say more, like **92 BPM · 2 bars · Stretch ▾**, until you click elsewhere. A clip's menu (right-click it)
 has **Clip settings ▸**, which sums them up on the right (**92 BPM · Stretch**) and holds:
 
-- **Clip tempo**: the guess, double, half, or a tempo you type. This is the one place a clip's speed is set.
-- **Follow tempo**: how the clip meets the song tempo.
+- **Tempo**: the guess, double, half, or a tempo you type. This is the one place a clip's speed is set.
+- **Follow**: how the clip meets the song tempo.
   - **Stretch**: the clip follows the song tempo and keeps its pitch. The default for loops.
   - **Repitch**: the clip follows the song tempo like tape: faster is higher.
   - **Off**: the clip plays at its own speed and pitch, whatever the song does. The default for one-shots. The clip
     shows **own speed** instead of a tempo.
-- **Sound type**: what the clip holds, so stretching treats it right: **Drums** keeps attacks sharp, **Melody** is
+- **Sound**: what the clip holds, so stretching treats it right: **Drums** keeps attacks sharp, **Melody** is
   smooth for one instrument, **Voice** keeps a voice's character, **Full mix** balances for finished music.
 - **Pitch** (Stretch clips only): moves the pitch in semitones without changing the speed. Pick a step, or type one
   such as **-3** or **2.5** (two and a half semitones).
 
-**Warp** and **Gain back to 0 dB** sit in the same submenu. Beside it, the menu has **Reverse** (the clip plays back
+**Quantize** (warp markers, see [Warp markers](#warp-markers-putting-hits-on-the-beat)) and **Gain back to 0 dB** sit
+in the same submenu. The header, the inspector and this menu use the same words. Beside it, the menu has **Reverse** (the clip plays back
 to front; its title shows ◀. A clip you have split keeps its cuts: each part plays its own audio backwards, where it
 is), **Process ▸** with **Normalise** (sets the clip's gain so its loudest sample reaches full scale), **Render to new
 file**, **Split at transients** and **Make triggers from audio** (see [Hits](#hits-transients-splitting-triggers)),
@@ -91,7 +92,7 @@ Audio clips move, copy, trim, loop and split with the same gestures as note clip
 
 | Gesture | What it does |
 |---|---|
-| Drag the level line up or down | The clip's gain. Hover the clip: a faint line just under its title is 0 dB (three quarters of the height, as on a fader). The waveform grows and shrinks while you drag. Every selected audio clip changes by the same amount. Snaps to 0 dB; Alt skips the snap. A clip whose gain isn't 0 dB always shows its line, shaded above; **double-click** it to go back to 0 dB. |
+| Drag the level line up or down | The clip's gain. Hover the clip: a faint line just under its title is 0 dB (three quarters of the height, as on a fader). A selected clip always shows its line, with a small tab at its right end that reads the gain ("0 dB"); drag the tab too. The waveform grows and shrinks while you drag. Every selected audio clip changes by the same amount. Snaps to 0 dB; Alt skips the snap. A clip whose gain isn't 0 dB always shows its line, shaded above; **double-click** it to go back to 0 dB. |
 | Drag a top corner of the clip body | The fade in (left) or fade out (right). The fade shades the waveform. |
 | Drag the dot in the middle of a fade up or down | Bends the fade's curve: up rises fast then levels off, down starts slowly. It catches at straight; Alt skips that. |
 | Alt+drag the right edge | The clip tempo (see above). |
@@ -147,8 +148,12 @@ clip's name and menu on the left, the maximize button on the right.
 - **Across the pane runs the clip's own time.** The ruler on top shows its beats and bars, and beat 1 has a **1** flag
   where the clip starts. The rest of the file shows dim before and after the clip, so you can see what a trim would
   bring back.
-- **The header holds the clip's settings:** tempo, Stretch, sound type, pitch, gain, reverse (◀), **Warp**, **Takes**, how
-  many copies, and the **Select** and **Slice** tools. In a narrow pane they fold into one **Clip** menu.
+- **The header holds the clip's settings**, in words: **Tempo 112 BPM**, **Follow Stretch**, **Sound Drums**,
+  **Pitch 0 st**, **Gain 0 dB**, **Reverse** (lit while on), **Quantize**, **Takes**, and **∞ 3 linked copies** with
+  **Make unique**. Then the same tools as the notes header: **Select**, **Slice** and **▾** (with **Mute** and
+  **Erase**), and **Snap**, which sets what splits, part edges and warp markers stick to. As the pane narrows, the
+  settings drop their names ("112 BPM", "Stretch"), then fold into one **Clip settings ▾** menu, then Snap moves
+  into that menu.
 - **The clip's menu** (the ▾ beside its name) has the same audio items as its right-click menu on the timeline:
   **Reverse**, **Clip settings ▸**, **Process ▸** and **Replace file…**, after **Rename** and **Loop**.
 - **The ruler sets the clip tempo.** Drag any beat line, low in the ruler, other than beat 1: the beats stretch from beat 1 so that the
@@ -195,8 +200,8 @@ plays the same file, so it takes no extra space.
 
 ## The inspector
 
-With an audio clip selected, the inspector shows its **Gain**, **Follow tempo**, **Sound type**, **Clip tempo**,
-**Pitch** (Stretch clips) and **Reverse** (click one to change it), its length and loop, and its file: name, length, sample rate, mono or stereo. With a
+With an audio clip selected, the inspector shows its **Tempo**, **Follow**, **Sound**, **Pitch** (Stretch clips),
+**Gain** and **Reverse** (click one to change it), its length and loop, and its file: name, length, sample rate, mono or stereo. With a
 timeline copy selected, it shows that copy's fade in and fade out too; where the copy crossfades with a neighbour,
 that side says **Crossfade** and with which clip.
 
@@ -211,7 +216,7 @@ For the track, it shows its **Volume**, **Pan** and **Output** (MAIN).
 | Amber **!** | The stretched version couldn't be made. The clip menu has **Try again**. | The quick version. |
 | **Missing file**, stripes | The file isn't in the patch any more. The clip menu has **Find in a folder…**. | Silence. |
 | **6→2** | The file had six channels, mixed down to stereo. | The stereo mix. |
-| **own speed** | Follow tempo is Off. | The clip at its own speed. |
+| **own speed** | Follow is Off. | The clip at its own speed. |
 
 When a patch loads with files missing, a message says how many, with **Find…** (see
 [Finding missing audio](#finding-missing-audio)).
@@ -286,6 +291,9 @@ clips on the timeline) ▸ **Bounce audio to a new track…**, or press **Ctrl+B
   the new track appears at once, with a red box growing on it. **Stop** ends it early and keeps what was played so
   far. To throw it away, press **Ctrl+Z** afterwards. While it runs, only this track plays, with **Selected clips** only those clips, and the loop is
   off; it comes back afterwards. Your solo and mute buttons are left alone.
+- **The tracks that feed it play into it, even when muted**: the tracks whose sends reach it (bounce a reverb return
+  with its dry tracks muted, and you get the reverb) and the track its **Input** listens to. They stay out of MAIN
+  while it runs. **Until silent** counts their clips too, so a track with no clips of its own still has a length.
 - The result is a new audio track under the original, "Bass (bounce)", in one undo step.
 
 ## Exporting audio
@@ -322,7 +330,7 @@ audio between markers stretches (keeping its pitch) so each pinned hit lands whe
 
 - In the audio editor, a short line under each hit shows how far it is from the grid: dim when close, amber when more
   than 15 ms off. **Q** (the same key as for notes) moves every hit toward the grid with warp markers, and works on selected
-  audio clips on the timeline too. **Shift+Q** or the header's **Warp** menu sets the **Grid**, the **Strength** (75% moves
+  audio clips on the timeline too. **Shift+Q** or the header's **Quantize** menu sets the **Grid**, the **Strength** (75% moves
   each hit three quarters of the way) and **Hits louder than**, so ghost notes stay put.
 - **Double-click a hit** on the waveform: a marker pins it to the nearest 1/16 note (hold **Alt** to pin it where it is).
   The first marker also pins the part's start, so only that hit moves. Markers show as a line through the hit with a handle

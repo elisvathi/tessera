@@ -127,6 +127,8 @@ class ArrangerLanes : public TimelineView {
     /// The hovered audio clip's level line: faint, or with the mouse on it (`onLine`) bold with its gain and what a
     /// drag or a double-click does.
     void drawLevelHover(NVGcontext* vg, const arrange::Placed& p, float x0, float x1, float top, float h, bool onLine);
+    /// Selected audio clips show their level line and a small tab with the gain, so it is found without hovering.
+    void drawSelectedLevels(NVGcontext* vg);
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void onLeave(const LeaveEvent& e) override;
     void onPathDrop(const PathDropEvent& e) override;

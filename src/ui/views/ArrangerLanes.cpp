@@ -65,6 +65,12 @@ float levelY(float level, float top, float bottom) {
     return std::round(bottom - 2 - level * (bottom - top - 4)) + 0.5f;
 }
 
+constexpr float kGainTabInset = 12; // the gain tab keeps clear of the clip's resize edge
+constexpr float kGainTabHit = 40;   // how far left of its right end a press still lands on the tab
+
+/// The gain tab's centre y beside a level line at `y`: above it, or below when the line runs along the body's top.
+float gainTabY(float y, float bodyTop) { return y - 7 - 6 >= bodyTop ? y - 7 : y + 7; }
+
 void drawLinkBadge(NVGcontext* vg, float x, float cy, NVGcolor color) {
     nvgStrokeColor(vg, color);
     nvgStrokeWidth(vg, 1.2f);
@@ -337,7 +343,14 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
             std::optional<float> level;
             if (clip && clip->audio && bodyBottom - bodyTop >= theme::metrics::kLevelLineMinBody)
                 level = levelOf(clip->audio->gainDb);
-            if (pos.x >= x1 - inner)
+            // A selected clip's gain tab, at the right end of its level line, drags the level too.
+            float tabRight = std::min(x1, box.size.x) - kGainTabInset;
+            bool onTab = level && selection().count(p.clip.id) && pos.x <= tabRight &&
+                         pos.x >= tabRight - kGainTabHit && tabRight - std::max(x0, 0.f) >= kGainTabHit + 24 &&
+                         std::fabs(pos.y - gainTabY(levelY(*level, bodyTop, bodyBottom), bodyTop)) <= 6;
+            if (onTab)
+                hit.part = Part::Level;
+            else if (pos.x >= x1 - inner)
                 hit.part = Part::RightEdge;
             else if (pos.x <= x0 + inner)
                 hit.part = Part::LeftEdge;
@@ -1678,6 +1691,51 @@ void ArrangerLanes::drawLevelHover(NVGcontext* vg, const arrange::Placed& p, flo
     draw::text(vg, style, lx + 5, ly, text);
 }
 
+void ArrangerLanes::drawSelectedLevels(NVGcontext* vg) {
+    if (ctx.state().tool != Tool::Pointer && ctx.state().tool != Tool::Draw)
+        return;
+    const Song& song = ctx.module()->song();
+    const theme::Palette& c = theme::colors();
+    draw::TextStyle style{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    for (auto id : selection()) {
+        const arrange::Placed* p = arrange::find(shown(), id);
+        const Clip* clip = p ? song.findClip(p->clip.clip) : nullptr;
+        int row = p ? rowOf(p->track) : -1;
+        if (!clip || !clip->audio || row < 0)
+            continue;
+        float x0 = float(time().tickToX(double(p->clip.position)));
+        float x1 = float(time().tickToX(double(instanceEnd(p->clip))));
+        if (x1 < 0 || x0 > box.size.x)
+            continue;
+        auto [top, h] = instanceSpan(row, *p);
+        float bodyTop = top + 1 + headerHeight(h), bodyBottom = top + h - 1;
+        if (bodyBottom - bodyTop < theme::metrics::kLevelLineMinBody)
+            continue;
+        float gainDb = clip->audio->gainDb;
+        float y = levelY(levelOf(gainDb), bodyTop, bodyBottom);
+        // A changed level already draws its line with the clip.
+        if (!levelChanged(gainDb)) {
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x0, y);
+            nvgLineTo(vg, x1, y);
+            nvgStrokeColor(vg, nvgTransRGBAf(c.text0, 0.45f));
+            nvgStrokeWidth(vg, 1);
+            nvgStroke(vg);
+        }
+        // A small tab at the visible right end reads the gain, when the clip is wide enough to hold it.
+        std::string text = levelChanged(gainDb) ? audioDraw::dbText(gainDb) : "0 dB";
+        float w = draw::textWidth(vg, style, text) + 8;
+        float right = std::min(x1, box.size.x) - kGainTabInset;
+        if (right - std::max(x0, 0.f) < w + 24)
+            continue;
+        float ty = gainTabY(y, bodyTop);
+        Rect tab(right - w, ty - 6, w, 12);
+        draw::roundedRect(vg, tab, 3, c.bg2);
+        draw::roundedRectStroke(vg, tab, 3, c.line1, 1);
+        draw::text(vg, style, tab.getCenter().x, ty, text);
+    }
+}
+
 void ArrangerLanes::drawForeground(const DrawArgs& args) {
     TesseraModule* m = ctx.module();
     if (!m)
@@ -1696,6 +1754,8 @@ void ArrangerLanes::drawForeground(const DrawArgs& args) {
         nvgFillColor(vg, nvgTransRGBAf(c.accent, 0.04f));
         nvgFill(vg);
     }
+
+    drawSelectedLevels(vg);
 
     // Hover: a light outline on the clip a click would grab.
     if (hover.id.valid() && !ctx.dragging) {

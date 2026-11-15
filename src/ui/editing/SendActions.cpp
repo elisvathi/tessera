@@ -2,11 +2,13 @@
 
 #include "../../model/AutomationEdits.hpp"
 #include "../../model/Sends.hpp"
+#include "../../module/OutputModuleBase.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../EditorContext.hpp"
 #include "../views/AudioClipDraw.hpp"
 #include "../widgets/ColorMenuItem.hpp"
 #include "../widgets/MenuTextField.hpp"
+#include "Sources.hpp"
 
 namespace tessera::sendActions {
 
@@ -34,6 +36,15 @@ void automate(EditorContext& ctx, TrackId from, TrackId to) {
     m->perform(addLane(m->song(), LaneOwner::ofTrack(from), lane));
 }
 
+/// The effect a track's effect loop is patched into ("Plateau"), or empty when it has none: tracks with one are
+/// the returns a send usually goes to.
+std::string effectName(const TesseraModule& m, TrackId track) {
+    for (OutputModuleBase* o : m.sourceModules(track))
+        if (o->isLoop())
+            return sources::chainLabel(o, "Effect");
+    return "";
+}
+
 } // namespace
 
 void appendAddSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from) {
@@ -43,28 +54,45 @@ void appendAddSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from) 
     const Song& song = m->song();
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuLabel("Send to"));
-    menu->addChild(rack::createMenuLabel("Sends made here follow the fader and mute; cables in the rack don't"));
-    int offered = 0;
+    // Tracks with an effect patched on them first, named by the effect: those are the returns people look for.
+    std::vector<const Track*> returns, others;
     for (const Track& t : song.tracks) {
         if (t.id == from || findSend(song, from, t.id))
             continue;
+        (effectName(*m, t.id).empty() ? others : returns).push_back(&t);
+    }
+    int offered = 0;
+    auto offer = [&](const Track& t) {
         std::string why = whyNoSend(song, from, t.id);
         if (!why.empty()) {
             menu->addChild(rack::createMenuLabel(t.name + ": " + why));
-            continue;
+            return;
         }
         TrackId to = t.id;
-        menu->addChild(new ColorMenuItem(t.name, t.color, false, [c, m, from, to] {
+        auto* item = new ColorMenuItem(t.name, t.color, false, [c, m, from, to] {
             if (CommandPtr add = addSend(m->song(), from, to))
                 m->perform(std::move(add));
             // The next move is turning it up: the faders show the sends to that track.
             c->state().setShowSends(to, EditorContext::now());
             if (c->module() && c->module()->makesSound())
                 c->state().mixerOpen = true;
-        }));
+        });
+        item->rightText = effectName(*m, t.id);
+        menu->addChild(item);
         offered++;
+    };
+    if (!returns.empty()) {
+        menu->addChild(rack::createMenuLabel("Tracks with an effect"));
+        for (const Track* t : returns)
+            offer(*t);
+        if (!others.empty()) {
+            menu->addChild(new rack::ui::MenuSeparator);
+            menu->addChild(rack::createMenuLabel("Other tracks"));
+        }
     }
-    if (offered == 0)
+    for (const Track* t : others)
+        offer(*t);
+    if (offered == 0 && returns.empty() && others.empty())
         menu->addChild(rack::createMenuLabel("No other track to send to"));
 }
 

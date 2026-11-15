@@ -136,6 +136,7 @@ struct EditorState {
     std::map<uint64_t, double> trackHeights;          // by TrackId value
     std::map<uint64_t, double> laneHeights;           // by AutomationId value
     std::set<uint64_t> foldedInputs;                  // tracks whose input strips are folded in the mixer, session only
+    std::set<uint64_t> foldedMixerGroups; // groups whose tracks' strips are folded in the mixer, session only
     std::set<uint64_t> foldedGroups;                  // by GroupId value
     std::set<uint64_t> openAutomation;                // tracks showing their automation lanes, by TrackId value
     static constexpr double kDefaultTrackHeight = 48; // for tracks never resized

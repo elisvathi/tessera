@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../interaction/InteractiveView.hpp"
+#include "../widgets/HoverTooltip.hpp"
 
 #include <array>
 #include <map>
@@ -61,16 +62,36 @@ class MixerPane : public InteractiveView {
         std::string label;        // an input strip's name, or a drum lane strip's lane name
         int lane = -1; // a drum track's lane IN (Drum Out output 0..7): a narrow strip after its track's
         GroupId group; // a group's strip, after its last track's (§3.5)
+        bool pinned = false; // the master and its inputs: they stay at the right while the tracks scroll
+        int familyEnd = -1;  // a parent strip's last folded strip (an index in the strips), framed with it
+        rack::math::Rect
+            fold; // the arrow left of the name that folds the strips under it (inputs, lanes, a group's tracks)
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
-        // Sends (§7.6): "← N" when it receives some, a knob per send it has, the "+" that adds one, the OUT meter
-        // of a track that receives sends, and "pre" above its fader while Show sends shows its send.
+        // Sends (§7.6): "← N" when it receives some, a row (or, when short, a dot) per send it has, the "+ Send"
+        // that adds one, the OUT meter of a track that receives sends, and "pre" above its fader while Show sends
+        // shows its send.
         rack::math::Rect receives, addSend, outMeter, pre;
         std::vector<rack::math::Rect> sendKnobs;
         int playerIndex = -1; // its index among the player's tracks
     };
     enum class Part {
-        None, Tab, Name, Chip, Pan, Mute, Solo, Fader, Readout, ClipLight, Connect,
-        Receives, SendKnob, AddSend, Pre, BandClose
+        None,
+        Tab,
+        Name,
+        Chip,
+        Pan,
+        Mute,
+        Solo,
+        Fader,
+        Readout,
+        ClipLight,
+        Connect,
+        Receives,
+        SendKnob,
+        AddSend,
+        Pre,
+        BandClose,
+        Fold
     };
     struct Hit {
         Part part = Part::None;
@@ -170,6 +191,23 @@ class MixerPane : public InteractiveView {
     };
     std::map<uint64_t, Peak> peaks;
     size_t missingTold = 0; // how many missing files the last toast was about
+    bool sendDots = false;  // sends show as dots: the pane is too short for their rows
+    float scrollX = 0;      // how far the tracks are scrolled to the left, in px
+    float contentWidth = 0; // the tracks' strips from the first to the last, unscrolled
+    float scrollRight = 0;  // where the scrolling strips end: the pinned master strips start there
+    /// The drum lane INs of `t` that have a cable, each with a strip of its own.
+    std::vector<int> patchedLanes(const Track& t) const;
+    HoverTooltip tip{""};
+    std::string tipText; // what the tooltip says now; empty when none shows
+    /// The frames that hold a parent strip and what it folds (`pinned`: the master's, else the tracks'), drawn behind
+    /// the strips in the parent's colour.
+    void drawFamilies(NVGcontext* vg, bool pinned);
+    /// Shows the tooltip for the send or "+ Send" under the mouse.
+    void updateTip();
+
+  public:
+    /// Scrolls the tracks sideways by `px` (positive shows more on the right), kept inside the strips.
+    void scrollBy(float px);
 };
 
 } // namespace tessera

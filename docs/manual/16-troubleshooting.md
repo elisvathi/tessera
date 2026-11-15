@@ -128,7 +128,7 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | A curve, a modulation or a lane on a device setting | Click its tag: **Draw a curve** and **Modulate, automate…** in its panel |
 | How far a lane or modulator moves a setting | The thin bar under its tag; hover the tag for the values |
 | A playhead's rarer settings (Notes, Invert, Length, Path…) | Right-click its chip on the Playheads card |
-| Devices in the small editor | The **Devices** tab beside **Notes** at the left of the notes header |
+| Devices in the small editor | **Devices** in the **Notes · Devices · Mixer** switch at the left of the lower pane's header, as in the full editor |
 | A playhead's segment moving as the song plays | Right-click the segment on the piano roll's ruler |
 | What a Curve moves, its CV out | **Moves ▾** in the curve pane's top row |
 | Every shortcut | Press **?** in the editor |

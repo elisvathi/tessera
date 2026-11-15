@@ -42,11 +42,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// Room the in-panel editor's "Full editor" button takes at the header's right end while this pane is on top.
     float headerReserve = 0;
-    /// Room kept free at the left end of the header, for the pane's Notes | Mixer switch.
+    /// Room kept free at the left end of the header, for the pane's Notes · Devices · Mixer switch.
     float headerLeft = 0;
-    /// The pane shows Devices as a tab beside Notes and Mixer (a short pane, where devices take the notes' place):
-    /// the header's own Devices button hides.
-    bool devicesInTabs = false;
 
     bool handleAction(Action action) override;
     /// Remembers whether a press at `pos` landed in the curve pane, so Delete acts on its points and not on the notes.
@@ -215,7 +212,6 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ToolButton* maximizeButton;
     AudioEditor* audioEditor;
     std::shared_ptr<AudioHeader> audioHeader;
-    ToolButton* devicesToggle;
     float toolbarLeft = 0;
 
     StepInput stepper;

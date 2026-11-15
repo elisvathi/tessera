@@ -5,6 +5,7 @@
 #include "../interaction/DeviceTags.hpp"
 #include "../interaction/InteractiveView.hpp"
 #include "../interaction/Shortcuts.hpp"
+#include "../widgets/HoverTooltip.hpp"
 
 #include <array>
 #include <map>
@@ -89,7 +90,6 @@ class DeviceStrip : public InteractiveView {
             Switch,       // an on/off setting on a picture
             PlayheadChip, // one playhead of a Playheads device: click to show its settings
             AddPlayhead,
-            PlayheadOn,  // the shown playhead's On switch, next to the chips
             Frame,       // the shown playhead's own devices, in its colour; only drawn
             FramePlus,   // the round + at the frame's end
             Slot,        // the empty frame: a dashed slot that adds the playhead's first own device
@@ -204,6 +204,8 @@ class DeviceStrip : public InteractiveView {
     void drawModulators(NVGcontext* vg);
     void drawCard(NVGcontext* vg, const Part& card);
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
+    /// Shows the tooltip for the part under the mouse: a playhead chip's dot or name.
+    void updateTip();
     void drawTag(NVGcontext* vg, const Part& part, bool hot);
     /// The source card with its Track / Own switch, and the folded block of the chain not shown.
     void drawSource(NVGcontext* vg, const Part& part, bool hot);
@@ -241,6 +243,8 @@ class DeviceStrip : public InteractiveView {
 
   private:
     int hovered = -1;
+    HoverTooltip tip{""};
+    std::string tipText; // what the tooltip says now; empty when none shows
     float scrollX = 0, contentWidth = 0;
     float modScroll = 0;
     float chainLeft = 0; // where the scrolling chain starts (the modulator list stays put)

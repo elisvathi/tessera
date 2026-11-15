@@ -31,6 +31,15 @@ struct ToolSwitch {
 ToolSwitch makeToolSwitch(EditorContext& ctx, const std::vector<Tool>& menuTools,
                           std::function<void(rack::ui::Menu*)> extras, std::function<Icon()> extraIcon = nullptr,
                           std::function<Tool(Tool)> acting = nullptr, std::function<bool()> deleteSelection = nullptr);
+/// The same switch with other tools as its two buttons: the audio editor shows Select and Slice.
+ToolSwitch makeToolSwitchOf(EditorContext& ctx, const std::vector<Tool>& buttons, const std::vector<Tool>& menuTools,
+                            std::function<void(rack::ui::Menu*)> extras, std::function<Icon()> extraIcon = nullptr,
+                            std::function<Tool(Tool)> acting = nullptr,
+                            std::function<bool()> deleteSelection = nullptr);
+/// The snap grid's choices, for a Snap button's menu or a narrow header's overflow menu.
+void appendSnapItems(rack::ui::Menu* menu, EditorContext* c);
+/// Opens the Snap menu under the mouse.
+void openSnapMenu(EditorContext* c);
 /// The caret's width now: wider while it shows a tool's icon.
 float toolSwitchCaretWidth(const ToolSwitch& s, float size);
 
@@ -53,14 +62,9 @@ constexpr float kDrumSwitchWidth = 104;
 /// Places the pair in `r` (Lanes on the left).
 void placeDrumViewSwitch(std::pair<ToolButton*, ToolButton*> buttons, rack::math::Rect r);
 
-/// "Devices 3": opens and closes the device strip above the notes (F3). Lit while open. Both note editors show it
-/// right after the track arrows. updateDevicesToggle() keeps the count current.
 /// Play, stop, record and loop, as the full editor's transport bar and the in-panel editor's corner show them.
 /// The caller sizes them.
 std::vector<ToolButton*> makeTransportButtons(EditorContext& ctx);
-ToolButton* makeDevicesToggle(EditorContext& ctx);
-void updateDevicesToggle(EditorContext& ctx, ToolButton* button);
-constexpr float kDevicesToggleWidth = 68;
 
 /// The clip chip both note editors start their header with: "Bass  ·  Clip 1  ·  2 bars" in the track's colour.
 /// A click opens the clip's menu (rename, loop, length, save, export). `track` and `clip` say what it shows now.

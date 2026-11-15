@@ -883,18 +883,18 @@ void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
     int uses = song.clipUses(clip->id);
     y = row(vg, y, "Name", clip->name.empty() ? "Untitled" : clip->name);
     if (uses > 1)
-        y = row(vg, y, "Settings", "all " + std::to_string(uses) + " copies");
+        y = row(vg, y, "Linked", std::to_string(uses) + " copies");
     static const char* const kFollow[] = {"Stretch", "Repitch", "Off (own speed)"};
     static const char* const kSound[] = {"Drums", "Melody", "Voice", "Full mix"};
     char tempo[32];
     snprintf(tempo, sizeof tempo, "%.4g BPM", a.sourceTempo);
-    y = settingRow(vg, y, "Gain", audioDraw::dbText(a.gainDb), Setting::Audio);
-    y = settingRow(vg, y, "Follow tempo", kFollow[int(a.follow)], Setting::Audio);
-    y = settingRow(vg, y, "Sound type", kSound[int(a.sound)], Setting::Audio);
-    y = settingRow(vg, y, "Clip tempo", tempo, Setting::Audio);
+    y = settingRow(vg, y, "Tempo", tempo, Setting::Audio);
+    y = settingRow(vg, y, "Follow", kFollow[int(a.follow)], Setting::Audio);
+    y = settingRow(vg, y, "Sound", kSound[int(a.sound)], Setting::Audio);
     // Only a Stretch clip keeps its own pitch: Repitch and Off clips change pitch with their speed.
     if (a.follow == TempoFollow::Stretch)
         y = settingRow(vg, y, "Pitch", audioDraw::pitchText(a), Setting::Audio);
+    y = settingRow(vg, y, "Gain", audioDraw::dbText(a.gainDb), Setting::Audio);
     y = settingRow(vg, y, "Reverse", regions::playsBackwards(a) ? "On" : "Off", Setting::Audio);
     y = row(vg, y, "Length", bars(clip->length, song.timeSig));
     y = row(vg, y, "Loop", clip->loopMode == LoopMode::Loop ? "On" : "Off");

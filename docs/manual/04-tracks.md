@@ -120,7 +120,10 @@ new track…**. It takes no time and nothing has to play. **Ctrl+B** opens this 
 - **Notes**: **As it plays** has the devices and playheads applied. **As written** is the clip's own notes.
 - **Playheads**: all of them, each on its own channel on the one new track, or just one.
 
-**As it plays** gives you what recording the track's pitch, gate and velocity would give. Curves and lanes that turn a
+**As it plays** gives you what recording the track's pitch, gate and velocity would give. A track whose **Input** plays
+another track's notes has those in its bounce too, through its own devices, even when that track is muted (see
+[A track that plays another track](#a-track-that-plays-another-track-input)); **Whole track** then runs over that
+track's clips as well. **As written** stays the track's own clips. Curves and lanes that turn a
 device, a Motion device or a playhead setting are in the notes, at the moment each note plays.
 
 The rest of the track's signals come along too. Each note keeps its own bend, timbre and pressure curves. AUTO jacks come

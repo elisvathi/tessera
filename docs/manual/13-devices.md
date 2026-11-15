@@ -8,7 +8,9 @@ switch a device off at any time.
 
 ## The device strip
 
-Click **Devices** in the notes header (or press **F3**) to open the strip above the notes. It shows the selected
+Click **Devices** at the left of the lower pane's header, between **Notes** and **Mixer** (or press **F3**), to open
+the strip above the notes. **Devices** stays lit while the strip is open, and **Notes** too, since the notes still show
+under it. Audio tracks have no note devices, so there **Devices** is greyed. It shows the selected
 track's devices from left to right, in the order the notes flow through them: **in** → devices → **out**. Each device
 is a card in the track's colour, with one to three small pictures that show what it does to the notes.
 
@@ -26,9 +28,9 @@ fewer. The cards then wrap from one row to the next, and the mouse wheel scrolls
 far as its cards need, and it always leaves the notes some room.
 
 **A short pane.** When the pane is too short for one row of cards and the notes together (the editor in the module
-panel, for example), the devices take the whole pane. **Devices** then sits beside **Notes** (and **Mixer**) at the
-left of the pane's header: click it to see the devices, and click **Notes**, or **Devices** again, to go back to the
-notes. Picking **Draw a curve** on a tag, or clicking a Curve modulator, switches to the notes by itself, since the
+panel, for example), the devices take the whole pane. **Devices** then switches: click it to see the devices, and click **Notes**, or
+**Devices** again, to go back to the notes. In a narrow pane the three fold into one button that names what shows
+("Notes ▾"): click it to pick another. Picking **Draw a curve** on a tag, or clicking a Curve modulator, switches to the notes by itself, since the
 curve is drawn in the notes' lower pane; the pane's maximize button gives it more room.
 
 ## Adding devices
@@ -231,9 +233,9 @@ reads light up in its colour, and so do their keys on the piano at the left. The
 with playheads, it doesn't say what plays.
 
 **The card.** The chips beside its name are the playheads: click one to show it (the card takes its colour), **+** adds
-one (up to 16). The switch after the chips turns the shown playhead off and on without losing its settings, and so
-does the dot at a chip's left end: it is hollow while the playhead is off (also while a curve or a lane has turned it
-off). Alt-click the dot to solo it, or press
+one (up to 16). The dot at a chip's left end turns that playhead off and on without losing its settings: it is
+hollow while the playhead is off (also while a curve or a lane has turned it off). Hover the dot or the name to be
+told which does what. Alt-click the dot to solo it, or press
 **Shift+M** to turn the shown playhead off and on. A playhead you turn off stops at once: the note it was playing ends
 there, and the notes its own devices still had to play (an Echo's repeats) don't come. Right-click a chip to rename it,
 pick its **Channel** (see [A sound for each playhead](#a-sound-for-each-playhead); the chip shows it), turn it **On**
@@ -246,7 +248,7 @@ repeats):
 
 | Setting | What it does |
 |---|---|
-| **On** | Whether it plays: the switch after the chips, or the dot on its chip. Right-click the chip for a curve on it, so the playhead can come in and drop out as the song plays (see **Curves** below). |
+| **On** | Whether it plays: the dot on its chip. Right-click the chip for a curve on it, so the playhead can come in and drop out as the song plays (see **Curves** below). |
 | **Rate** | Speed against the song, from 1/32x to 32x, each speed with its opposite: halves and doubles, thirds (1/3x, 2/3x, 4/3x, 3x…), 1/24x and 24x, dotted speeds (3/8x and 8/3x, 3/4x, 3/2x) and fives (4/5x, 5/4x). |
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size (1/32 to 4 bars, triplets and dotted too). |
 | **Speed curve** | Makes the playhead speed up and slow down as it goes, then catch up: over each **Over** length it follows the curve, and at the end of that length it is back where a steady playhead would be (see [Bending the speed](#bending-the-speed)). **Straight** keeps a steady speed. |

@@ -45,6 +45,11 @@ class DetailPane : public EditorPane {
     void onButton(const ButtonEvent& e) override;
 
   private:
+    /// Opens or closes the device strip, leaving the mixer for the notes.
+    void toggleDevices();
+    /// Whether the selected track is an audio track: it has no note devices.
+    bool audioTrack() const;
+
     PianoRollView* roll;
     DeviceStrip* strip;
     ModulatorPopover* popover;
@@ -53,7 +58,8 @@ class DetailPane : public EditorPane {
     ToolButton* notesTab = nullptr;
     ToolButton* mixerTab = nullptr;
     ToolButton* devicesTab = nullptr;
-    /// Too short for devices and notes together: Devices is a tab beside Notes and Mixer, and takes the whole pane.
+    ToolButton* foldedTab = nullptr; // the switch as one button, in a narrow pane
+    /// Too short for devices and notes together: Devices takes the whole pane instead of sitting above the notes.
     bool shortPane = false;
     float rightReserve = 0;
 };

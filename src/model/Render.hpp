@@ -36,6 +36,9 @@ struct Options {
     DeviceMode devices = DeviceMode::Applied;
     bool includeMuted = false;
     bool noteChannels = false; // each note on its own channel instead of its track's (not with MPE)
+    // With devices applied, a track whose Input is another track's notes plays those too, through its own devices, as
+    // it does live; the track it listens to feeds it even when muted. For a bounce, not for exports (it isn't saved).
+    bool followInput = false;
     Tick from = 0, to = 0;     // RangeMode::Selection
     Tick ccStep = kPpq / 16;   // how often curves are sampled (1/64)
     int bendRange = 48;        // MPE pitch bend range in semitones

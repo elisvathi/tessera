@@ -3,6 +3,7 @@
 #include "../../model/AudioEdits.hpp"
 #include "../../model/BounceNotes.hpp"
 #include "../../model/DeviceLookup.hpp"
+#include "../../model/Sends.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../EditorContext.hpp"
 
@@ -66,12 +67,39 @@ std::pair<Tick, Tick> selectedClips(EditorContext& ctx, const Track& t) {
     return any ? std::make_pair(from, to) : std::make_pair(Tick(0), Tick(0));
 }
 
-/// Where the track's last clip on the timeline ends.
-Tick lastEnd(const Track& t) {
-    Tick end = 0;
-    for (const ArrangerClip& a : t.arrangement)
-        end = std::max(end, a.position + a.length);
-    return end;
+/// The track and every track that feeds it: the one its Input listens to and, with `sends`, the ones whose sends
+/// reach it, and theirs in turn. A track with no clips of its own (an effect return, a track playing another's
+/// notes) still has something to bounce.
+std::vector<const Track*> withFeeders(const Song& song, TrackId track, bool sends) {
+    std::vector<const Track*> out;
+    std::vector<TrackId> todo{track};
+    while (!todo.empty()) {
+        TrackId id = todo.back();
+        todo.pop_back();
+        const Track* t = song.findTrack(id);
+        if (!t || std::find(out.begin(), out.end(), t) != out.end())
+            continue;
+        out.push_back(t);
+        if (t->listen == ListenSource::TrackAfter || t->listen == ListenSource::TrackBefore)
+            todo.push_back(t->listenTrack);
+        if (sends)
+            for (TrackId from : sendersTo(song, id))
+                todo.push_back(from);
+    }
+    return out;
+}
+
+/// From the first clip to the end of the last one, over the track and its feeders; {0, 0} without clips.
+std::pair<Tick, Tick> wholeSpan(const Song& song, TrackId track, bool sends) {
+    bool any = false;
+    Tick from = 0, to = 0;
+    for (const Track* t : withFeeders(song, track, sends))
+        for (const ArrangerClip& a : t->arrangement) {
+            from = any ? std::min(from, a.position) : a.position;
+            to = any ? std::max(to, a.position + a.length) : a.position + a.length;
+            any = true;
+        }
+    return {from, to};
 }
 
 } // namespace
@@ -92,7 +120,10 @@ void openAudioDialog(EditorContext& ctx, TrackId track) {
     bool hasClips = clips.second > clips.first;
     bool hasArea = !range.empty() && range.covers(track);
     Tick silentFrom = hasClips ? clips.first : hasArea ? range.from : Tick(std::max(0.0, m->playheadTicks()));
-    Tick silentTo = std::max(hasClips ? clips.second : hasArea ? range.to : lastEnd(*t), silentFrom + 1);
+    Tick silentTo = std::max(hasClips  ? clips.second
+                             : hasArea ? range.to
+                                       : wholeSpan(song, track, true).second,
+                             silentFrom + 1);
     auto choice = std::make_shared<Choice>();
     choice->length = hasClips ? Choice::Length::Clips : hasArea ? Choice::Length::Area : Choice::Length::UntilSilent;
 
@@ -179,10 +210,7 @@ static void openNotesDialog(EditorContext& ctx, TrackId track, ClipId clip, int 
     const ArrangerRange& range = ctx.state().range;
     bool hasClips = clips.second > clips.first;
     bool hasArea = !range.empty() && range.covers(track);
-    Tick first = t->arrangement.empty() ? 0 : lastEnd(*t);
-    for (const ArrangerClip& a : t->arrangement)
-        first = std::min(first, a.position);
-    std::pair<Tick, Tick> whole{first, lastEnd(*t)};
+    std::pair<Tick, Tick> whole = wholeSpan(m->song(), track, false);
     std::pair<Tick, Tick> area{range.from, range.to};
     auto choice = std::make_shared<Choice>();
     choice->length = hasClips ? Choice::Length::Clips : hasArea ? Choice::Length::Area : Choice::Length::UntilSilent;

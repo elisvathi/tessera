@@ -73,6 +73,7 @@ CommandPtr bounceNotes(const Song& song, const NoteBounce& what, double tempo, c
     options.timing = what.afterDevices ? render::Timing::Played : render::Timing::Written;
     options.operators = what.afterDevices ? render::OperatorMode::Rendered : render::OperatorMode::Written;
     options.devices = what.afterDevices ? render::DeviceMode::Applied : render::DeviceMode::Bypassed;
+    options.followInput = true;
     render::Context context{tempo, ""};
 
     std::vector<render::ExportNote> played;

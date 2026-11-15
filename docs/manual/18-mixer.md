@@ -7,16 +7,29 @@ play. It appears as soon as the song has an audio track.
 
 ## Opening it
 
-The mixer shares the lower pane with the notes (or the audio editor), and in a short pane with the devices too. Its
-header starts with **Notes | Mixer** (**Audio | Mixer** when an audio track is selected): click **Mixer** to show the mixer there, the other name to go
-back, or press **F4** to switch. Clicking any clip also goes back to it. The switch appears once
-something in the song makes sound.
+The mixer shares the lower pane with the notes (or the audio editor) and the devices. The pane's header starts with
+**Notes · Devices · Mixer** (**Audio** instead of **Notes** when an audio track is selected): click **Mixer** to show
+the mixer there, **Notes** to go back, or press **F4** to switch. Clicking any clip also goes back to it. **Mixer**
+appears once something in the song makes sound.
 
 - It is the same pane: the line between the panes resizes it, its **maximize** button in the top-right corner
   fills the editor with it and restores the panes, and **Tab**, **Shift+Tab** and the focus ring work as for the
   notes.
-- The header shows a small live meter for each track that makes sound, the Master's peak level, and **MAIN not
-  patched** in amber when the Master plays but nothing is patched into MAIN.
+- The header shows a small live meter for each track that makes sound, and **MAIN not patched** in amber when the
+  Master plays but nothing is patched into MAIN.
+- **When the strips don't fit**, the tracks scroll sideways while the Master stays at the right; a thin bar along the
+  bottom shows which part is in view. Scroll as in the other panes: **Shift+wheel**, a sideways swipe on a trackpad,
+  the wheel anywhere but on a fader or a send, **middle-drag**, or hold **Space** and drag.
+
+## What belongs to what
+
+Some strips belong to another one: a track's input strips and drum lanes, a group's tracks, the Master's inputs. The
+rule is the same everywhere: **the parent comes first, and what it holds opens to its right.** A frame in the
+parent's colour holds them together: filled behind a track and its input or lane strips, an outline round a group and
+its tracks.
+
+The small arrow left of a parent's name folds what it holds, and unfolds it again: pointing down while open, right
+while folded. A folded group shows only its own strip.
 
 ## A strip
 
@@ -29,26 +42,28 @@ comes back on a Track Out's or Drum Out's IN. From top to bottom:
 2. **The source**: where the sound comes from. **Clips** for an audio track's clips; **IN · Track Out** or
    **IN · Drum Out** for a note track whose voice comes back on that module's IN; **2 sources** when the track has
    more than one; **1 in · 1 fx** when it has an effect, or **1 fx** when an effect is all it has (a track that
-   other tracks send to). With input strips, the small arrow at the chip's left folds them (see
-   [Several sources on one track](#several-sources-on-one-track) and [Effects on a track](#effects-on-a-track)); a
-   click on the words opens the sources list. In amber: **Missing file** when
+   other tracks send to). A click opens the sources list (see
+   [Several sources on one track](#several-sources-on-one-track) and [Effects on a track](#effects-on-a-track)). In amber: **Missing file** when
    a clip's file is gone, **Bypassed** when a module that brings the sound is bypassed. With one source, click it for a menu:
    **Show Track Out in the rack** scrolls the rack to the module and makes its screen flash; **Add another Track Out**
    (or **Add a Track Out for this track** when it has none) places a new Track Out (a Drum Out for a drum track) bound
    to it, right of Roll.
-3. **Pan**: drag it to move the sound left or right. Double-click centres it.
-4. **M** and **S**: mute and solo, the same switches as in the track rows.
-5. **The fader and the meter**. The fader sets the volume; the meter beside it shows the level as it plays.
-6. **The volume** in dB, and **→ Master**: where the track goes.
+3. **Sends**: under **SENDS**, a row for each send with the receiving track's name over a thin level bar, then
+   **+ Send**. See [Sending to other tracks](#sending-to-other-tracks).
+4. **Pan**: drag it to move the sound left or right. Double-click centres it.
+5. **M** and **S**: mute and solo, the same switches as in the track rows.
+6. **The fader and the meter**. The fader sets the volume; the meter beside it shows the level as it plays.
+7. **The volume** in dB, and **→ Master**: where the track goes.
 
 The **Master** strip sits at the right. It sets the level of everything together on its way to MAIN. Its light near
 the top shows the loudest moment so far (like **max -4.1**); it turns red and says **over +2.3** when the sound went
-over full scale. Click it to clear it. Under its fader it says how much memory the song's audio uses. When MAIN has
-no cable, its chip says **MAIN not patched**: click it for **Connect MAIN to the Audio module** (when the patch has
-one). With an effect on the Master, its input strips sit left of it: **Tracks** (all the tracks together) and the
-effect. The arrow at the left of the chip folds them. Right-click **Master** for **Connect MAIN to the Audio module**,
-**Automate its volume in the timeline**, and the master's Track Out items (a Track Out on the master puts an effect
-on everything).
+over full scale. Click it to clear it. Under its fader it says **→ MAIN**. (How much memory the song's audio uses is in
+**File ▸ Audio files…**.) When MAIN has no cable, its chip says **MAIN not patched**, and a button under its fader
+offers the fix: click either for **Connect MAIN to the Audio module**, or, when the patch has no Audio module, **Add an
+Audio module and connect MAIN** (one undo step; pick your sound card on the new module). With an effect on the
+Master, its input strips sit right of it: **Tracks** (all the tracks together) and the effect. Right-click **Master**
+for the same MAIN item, **Automate its volume in the timeline**, and the master's Track Out items (a Track Out on the
+master puts an effect on everything).
 
 ## Several sources on one track
 
@@ -59,7 +74,7 @@ one** to switch the others off.
 
 With two or more sources, each gets its own narrow strip next to the track's strip: **Clips** on an audio track, and
 **IN** (or **IN 1**, **IN 2**) for each Track Out. Each has a fader, pan, **M**, **S** and a meter. The track's own strip is
-the master amount for all of them. The arrow on the track's source label folds the strips away.
+the master amount for all of them. The arrow left of the track's name folds the strips away.
 
 - **M** silences that input, without pulling a cable. Everything after it in the track's chain hears it go too: to
   keep an effect and drop the dry sound, set the effect's **Mix** to 100% instead.
@@ -80,10 +95,11 @@ carries the track's sound, and what comes back takes its place.
 ![A delay on the Loop track at 30% Mix, and a filter on the Master at 100%](images/mixer-effect-loops.png)
 
 - **The Mix**: the loop gets a narrow strip next to the track's, named after the module patched into its OUT
-  (**Delay**). Its fader is the **Mix**, how much of the effect you hear. At **100%**, where it starts, you hear only
-  what comes back. At **50%** you hear the dry sound and the effect both in full. Under 50% the effect fades out,
+  (**Delay**). Its **Mix** is a bar that fills from **dry** at the bottom to **wet** at the top: how much of the effect
+  you hear. It is shaped differently from the faders so it never reads as a volume. At **100%**, where it starts, you
+  hear only what comes back. At **50%** you hear the dry sound and the effect both in full. Under 50% the effect fades out,
   down to none at **0%**.
-- The Mix fader works like the others: drag it (Shift for fine), double-click for 100%, scroll for 5% steps (Shift:
+- The Mix bar works like a fader: drag it (Shift for fine), double-click for 100%, scroll for 5% steps (Ctrl:
   1%), right-click to type a value. **M** turns the effect off: the sound passes by it untouched.
 - **A chain**: put two or more Track Outs on one track, each with its own effect. The sound goes through them in
   order, left to right in the mixer. Drag a loop strip's name sideways to move it in the chain, or right-click the
@@ -120,18 +136,21 @@ its Track Out **OUT** into a reverb module and the reverb's output back into its
 [effect loop](#effects-on-a-track) at 100% Mix). Its chip then says **1 fx**, and the reverb's **Mix** strip sits
 beside it, as on any track with an effect. Then send other tracks to it.
 
-- **Add a send**: click the dim **+** under a strip's name and pick a track. Tracks that would feed back into this
-  one are listed but can't be picked ("Would feed back into Bass"). The send starts at -inf and the faders switch
-  to show sends to that track, so you can turn it up.
-- **Send knobs**: each send has a small knob on the sending strip, labelled with two letters of the receiving
-  track in its colour, and **pre** when it goes before the fader. Drag it up or down; double-click for -inf;
-  scroll for 0.5 dB steps. Right-click it to type a level, put it **before** or **after the fader**, or **remove**
-  it.
+- **Add a send**: click **+ Send** on a strip and pick a track. **Tracks with an effect** come first, each with the
+  effect's name on the right (**Reverb · Plateau**), then **Other tracks**. Tracks that would feed back into this one
+  are listed but can't be picked ("Would feed back into Bass"). The send starts at -inf and the faders switch to show
+  sends to that track, so you can turn it up.
+- **The SENDS rows**: each send has a row on the sending strip, with the receiving track's full name in its colour
+  over a thin level bar (the small tick is 0 dB), and **pre** when it goes before the fader. Drag the row sideways;
+  double-click for -inf; scroll for 0.5 dB steps. Right-click it to type a level, put it **before** or **after the
+  fader**, or **remove** it. Hover it for its level. In a pane too short for the rows, each send is a coloured dot
+  instead, brighter the louder: drag it up or down, and hover it for the name and level.
 - **← 2** under a strip's name means two tracks send to it. Click it (or right-click the name: **Show sends to this
   track**) to see every send to that track on the faders: a band says "Faders show sends to Reverb", the fader caps
   turn hollow in Reverb's colour, and the readouts say **send -15.5 dB**. Drag a fader to set that track's send
-  (dragging up from -inf adds one); **pre** beside a fader switches the send before or after the fader. Tracks that
-  can't send there, and the Master, are dimmed. **Esc**, the band's **×**, or folding the mixer goes back.
+  (dragging up from -inf adds one); **pre** beside a fader switches the send before or after the fader. Everything
+  whose fader isn't a send there is dimmed: the receiving track itself, tracks that can't send there, groups, input
+  and lane strips, and the Master. **Esc**, the band's **×**, or folding the mixer goes back.
 - What a track is sent joins its sound before its chain. With a reverb loop at 100% Mix you hear only the reverb;
   with no effect patched yet, you hear what it is sent as it is.
 - A track that receives sends has a thin **OUT meter** beside its fader: what goes into its chain. It is dim while
@@ -143,18 +162,19 @@ beside it, as on any track with an effect. Then send other tracks to it.
 - Sends you make in the rack with cables (a mult into the reverb) also work, but they don't follow the fader, mute
   or solo.
 - In Show sends, each strip's meter shows what it sends to that track.
-- **Automate a send**: right-click its knob ▸ **Automate in the timeline**. A **Send to Reverb** lane opens under the
-  track; draw it like a Volume lane. While it plays, the knob follows it and has a ring in the lane's colour. Arm
+- **Automate a send**: right-click its row ▸ **Automate in the timeline**. A **Send to Reverb** lane opens under the
+  track; draw it like a Volume lane. While it plays, the row follows it and its bar has an outline in the lane's
+  colour. Arm
   the track and record to write a knob move into it.
 - **The inspector** lists the selected track's sends under **SENDS**: each with its level and whether it is before
-  or after the fader (click for the same menu as the knob), then **Send to +**, and **Gets sends from** with the
+  or after the fader (click for the same menu as the row), then **Send to +**, and **Gets sends from** with the
   tracks that send to it.
 - Deleting a track removes the sends to it, in the same undo step.
 
 ## Group strips
 
-A group of tracks (select them and press **Ctrl+G**) gets a strip of its own in the mixer, right after its last
-track: the sum of its tracks that make sound passes through it on the way to the Master. Its tracks say **→ Group
+A group of tracks (select them and press **Ctrl+G**) gets a strip of its own in the mixer, right before its tracks
+(see [What belongs to what](#what-belongs-to-what)): the sum of its tracks that make sound passes through it on the way to the Master. Its tracks say **→ Group
 name** under their faders. The group strip has a pan knob, **M** (mute the whole group), a fader with a meter, and its
 level. Drag, double-click and right-click work as on a track's fader. Stems in an export are each track on its own,
 before the group strip.
@@ -175,7 +195,7 @@ on the Drum Out carries the lanes at these levels and pans.
 - **Shift+drag** or **Ctrl+drag** moves it finely.
 - It catches at **0 dB** as you pass; hold **Alt** to move through freely.
 - **Double-click** sets 0 dB.
-- **Scroll** over it to move 0.5 dB at a time (Shift: 0.1 dB).
+- **Scroll** over it to move 0.5 dB at a time (Ctrl: 0.1 dB). Shift+wheel scrolls the mixer sideways instead.
 - **Right-click** it, or double-click its value, to type a level.
 - Select several audio tracks and drag one of their faders: all of them move by the same amount. A track at −inf
   stays there.

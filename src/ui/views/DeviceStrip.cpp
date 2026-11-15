@@ -38,7 +38,6 @@ constexpr float kAddWidth = 112;
 constexpr float kAmountPx = 100; // dragging this far sets a modulation to its full amount
 constexpr float kChipHeight = 20;
 constexpr float kChipDot = 18;     // the on/off dot at a chip's left end
-constexpr float kSwitchW = 30;     // the shown playhead's On switch
 constexpr float kMotionJoin = 64;  // a Motion card's "+ Selected"
 constexpr float kMotionLeave = 64; // its "− Selected"
 constexpr float kMotionCount = 52; // and its "6 notes"
@@ -953,7 +952,7 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
     float hx = left + 18 + 8 + nameW + 8;
     const Playhead* shown = d.type == DeviceType::Playheads ? shownPlayhead(d) : nullptr;
     if (d.type == DeviceType::Playheads) {
-        // The playheads, as chips after the card's name, then the shown one's On switch.
+        // The playheads, as chips after the card's name. A chip's dot turns it on or off; its name shows it.
         draw::TextStyle chipStyle{theme::fonts::uiStrong(), 11.5f, c.text0};
         for (size_t k = 0; k < d.playheads.size(); k++) {
             const Playhead& p = d.playheads[k];
@@ -967,10 +966,6 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
             parts.push_back({Kind::AddPlayhead, Rect(hx, mid - kChipHeight / 2, kChipHeight + 6, kChipHeight), index, -1,
                              d.id.value});
             hx += kChipHeight + 6 + 8;
-        }
-        if (shown) {
-            parts.push_back({Kind::PlayheadOn, Rect(hx, mid - 8.5f, kSwitchW, 17), index, -1, shown->id.value});
-            hx += kSwitchW + 8;
         }
     }
     float rightNeed = 18 + float(d.modulators.size()) * 11 + 8;
@@ -1110,6 +1105,7 @@ void DeviceStrip::step() {
     // The pointer left the strip: nothing is hovered any more (the hover note under a tag goes too).
     if (!hasGesture() && !Rect(Vec(), box.size).contains(localMouse()))
         hovered = -1;
+    updateTip();
     tileLayer->box = Rect(Vec(), box.size);
     tileLayer->beginFrame();
     if (ctx.module()) {
@@ -1371,9 +1367,6 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             ctx.state().selectedPlayhead = hit->id;
             deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
             break;
-        case Kind::PlayheadOn:
-            deviceActions::openPlayheadMenu(ctx, PlayheadId(hit->id));
-            break;
         default:
             break;
         }
@@ -1491,9 +1484,6 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         // The dot at the chip's left end turns it off or on; with Alt it solos it.
         if (pos.x < hit->rect.pos.x + kChipDot)
             deviceActions::togglePlayheadOn(ctx, mods.alt);
-        break;
-    case Kind::PlayheadOn:
-        deviceActions::togglePlayheadOn(ctx, mods.alt);
         break;
     case Kind::MotionNotes: {
         // Its notes in the shown clip, selected.
@@ -1988,18 +1978,6 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
             draw::text(vg, plus, p.rect.getCenter().x, p.rect.getCenter().y, "+");
             break;
         }
-        case Kind::PlayheadOn: {
-            const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id));
-            if (!ph)
-                break;
-            bool on = deviceActions::playheadPlaysNow(ctx, *ph);
-            draw::roundedRect(vg, p.rect, p.rect.size.y / 2, on ? tint : c.line2);
-            nvgBeginPath(vg);
-            nvgCircle(vg, on ? p.rect.getRight() - 8.5f : p.rect.pos.x + 8.5f, p.rect.getCenter().y, 6.5f);
-            nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.96f));
-            nvgFill(vg);
-            break;
-        }
         case Kind::MotionNotes:
         case Kind::MotionJoin:
         case Kind::MotionLeave: {
@@ -2025,6 +2003,30 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
         draw::TextStyle hint{theme::fonts::ui(), 11, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         draw::text(vg, hint, r.pos.x + mx::kDeviceCardPad, r.pos.y + 90, "Add a playhead with + to read the clip");
     }
+}
+
+void DeviceStrip::updateTip() {
+    std::string want;
+    if (hovered >= 0 && size_t(hovered) < parts.size() && parts[size_t(hovered)].kind == Kind::PlayheadChip &&
+        ctx.module() && !hasGesture()) {
+        const Part& p = parts[size_t(hovered)];
+        if (const Playhead* ph = findPlayhead(ctx.module()->song(), PlayheadId(p.id))) {
+            bool on = playheads::isOn(*ph);
+            if (localMouse().x < p.rect.pos.x + kChipDot)
+                want = ph->name + (on ? ": on. Click to turn it off" : ": off. Click to turn it on") + " (" +
+                       shortcutLabel(Action::MutePlayhead) + " for the shown one). Alt+click solos it";
+            else
+                want = ph->name + ": click to show its settings below. Right-click for more";
+        }
+    }
+    if (want != tipText) {
+        tipText = want;
+        tip.leave();
+        tip.setText(want);
+        if (!want.empty())
+            tip.enter();
+    }
+    tip.step();
 }
 
 void DeviceStrip::drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot) {

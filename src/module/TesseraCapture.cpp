@@ -1,5 +1,7 @@
 #include "TesseraModule.hpp"
 
+#include "../model/Sends.hpp"
+
 #include "CommandAction.hpp"
 #include "../engine/Snapshot.hpp"
 #include "../engine/AudioSnapshotBuilder.hpp"
@@ -670,7 +672,25 @@ void TesseraModule::cancelCapture() {
 
 Song TesseraModule::songAsBounceHears(const BounceJob& job) const {
     Song heard = songData;
+    // The tracks that feed the bounced one play into it even when muted (they stay out of MAIN, as the solo keeps
+    // them): the track its Input listens to, and the tracks whose sends reach it. Muting a source to hear only the
+    // effect or the listening track mustn't leave the bounce empty.
+    std::vector<TrackId> feeders;
+    for (std::vector<TrackId> todo{job.track}; !todo.empty();) {
+        TrackId id = todo.back();
+        todo.pop_back();
+        const Track* t = songData.findTrack(id);
+        if (!t || std::find(feeders.begin(), feeders.end(), id) != feeders.end())
+            continue;
+        feeders.push_back(id);
+        if (t->listen == ListenSource::TrackAfter || t->listen == ListenSource::TrackBefore)
+            todo.push_back(t->listenTrack);
+        for (TrackId from : sendersTo(songData, id))
+            todo.push_back(from);
+    }
     for (Track& t : heard.tracks) {
+        if (t.id != job.track && std::find(feeders.begin(), feeders.end(), t.id) != feeders.end())
+            t.mute = false;
         t.solo = t.id == job.track;
         if (t.id != job.track || job.only.empty())
             continue;

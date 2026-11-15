@@ -262,6 +262,7 @@ void EditorState::forgetSong() {
     laneHeights.clear();
     foldedGroups.clear();
     foldedInputs.clear();
+    foldedMixerGroups.clear();
     openAutomation.clear();
     lowerLane = 0;
     curveModulator = 0;

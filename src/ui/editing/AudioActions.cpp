@@ -276,17 +276,17 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
         const AudioContent& a = *cl->audio;
         char tempo[48];
         snprintf(tempo, sizeof tempo, "%.4g BPM", a.sourceTempo);
-        sub->addChild(rack::createSubmenuItem("Clip tempo", tempo,
+        sub->addChild(rack::createSubmenuItem("Tempo", tempo,
                                               [c, clipId](rack::ui::Menu* s2) { appendTempoItems(s2, *c, clipId); }));
-        sub->addChild(rack::createSubmenuItem("Follow tempo", kFollowNames[std::clamp(int(a.follow), 0, 2)],
+        sub->addChild(rack::createSubmenuItem("Follow", kFollowNames[std::clamp(int(a.follow), 0, 2)],
                                               [c, clipId](rack::ui::Menu* s2) { appendFollowItems(s2, *c, clipId); }));
-        sub->addChild(rack::createSubmenuItem("Sound type", kSoundShort[std::clamp(int(a.sound), 0, 3)],
+        sub->addChild(rack::createSubmenuItem("Sound", kSoundShort[std::clamp(int(a.sound), 0, 3)],
                                               [c, clipId](rack::ui::Menu* s2) { appendSoundItems(s2, *c, clipId); }));
         if (a.follow == TempoFollow::Stretch)
             sub->addChild(rack::createSubmenuItem("Pitch", audioDraw::pitchText(a), [c, clipId](rack::ui::Menu* s2) {
                 appendPitchItems(s2, *c, clipId);
             }));
-        sub->addChild(rack::createSubmenuItem("Warp", a.warps.empty() ? "" : std::to_string(a.warps.size()),
+        sub->addChild(rack::createSubmenuItem("Quantize", a.warps.empty() ? "" : std::to_string(a.warps.size()),
                                               [c, clipId](rack::ui::Menu* s2) { appendWarpItems(s2, *c, clipId); }));
         if (a.gainDb != 0)
             sub->addChild(rack::createMenuItem("Gain back to 0 dB", audioDraw::dbText(a.gainDb), [c, clipId] {
@@ -655,6 +655,12 @@ void openAudioFiles(EditorContext& ctx) {
     char sum[64];
     snprintf(sum, sizeof sum, "%zu files · %.1f MB in the patch", song.audioSources.size(), double(total) / (1 << 20));
     menu->addChild(rack::createMenuLabel(sum));
+    if (AudioStore* store = m->audioStore()) {
+        char mem[64];
+        snprintf(mem, sizeof mem, "%.0f MB of memory while the patch is open",
+                 double(store->memoryBytes()) / (1 << 20));
+        menu->addChild(rack::createMenuLabel(mem));
+    }
     menu->addChild(rack::createMenuItem("Remove unused audio", "", [c] { removeUnused(*c); },
                                         unusedSources(song).empty()));
 }
@@ -673,6 +679,44 @@ std::string connectMainToAudio(TesseraModule* module) {
     addCable(module, TesseraModule::MAIN_R_OUTPUT, audio, 1, undo);
     APP->history->push(undo);
     return "MAIN is connected to the Audio module";
+}
+
+std::string addAudioModuleForMain(TesseraModule* module) {
+    if (!module || !APP->scene || !APP->scene->rack)
+        return "";
+    if (findAudioModule())
+        return connectMainToAudio(module);
+    rack::app::ModuleWidget* tessera = APP->scene->rack->getModule(module->id);
+    rack::plugin::Model* model = rack::plugin::getModel("Core", "AudioInterface2");
+    if (!tessera || !model)
+        return "Rack's Audio module wasn't found";
+    rack::engine::Module* added = model->createModule();
+    APP->engine->addModule(added);
+    rack::app::ModuleWidget* widget = model->createModuleWidget(added);
+    APP->scene->rack->addModule(widget);
+    APP->scene->rack->setModulePosNearest(widget, tessera->box.pos.plus(rack::math::Vec(tessera->box.size.x, 0)));
+    auto* undo = new rack::history::ComplexAction;
+    undo->name = "add Audio for MAIN";
+    auto* add = new rack::history::ModuleAdd;
+    add->setModule(widget);
+    undo->push(add);
+    addCable(module, TesseraModule::MAIN_L_OUTPUT, added, 0, undo);
+    addCable(module, TesseraModule::MAIN_R_OUTPUT, added, 1, undo);
+    APP->history->push(undo);
+    return "Added an Audio module beside Roll, with MAIN connected: pick your sound card on it";
+}
+
+void appendConnectMainItem(rack::ui::Menu* menu, EditorContext& ctx) {
+    EditorContext* c = &ctx;
+    TesseraModule* m = ctx.module();
+    if (!m || m->mainPatched())
+        return;
+    if (audioModuleInPatch())
+        menu->addChild(
+            rack::createMenuItem("Connect MAIN to the Audio module", "", [c, m] { c->toast(connectMainToAudio(m)); }));
+    else
+        menu->addChild(rack::createMenuItem("Add an Audio module and connect MAIN", "",
+                                            [c, m] { c->toast(addAudioModuleForMain(m)); }));
 }
 
 std::string addOutputFor(TesseraModule* module, TrackId track) {

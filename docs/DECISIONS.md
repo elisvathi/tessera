@@ -2690,7 +2690,7 @@ decide and implement". Built from it:
 - **A mixer strip's name opens its track's header menu**, with a "Mixer" part on top (Show sends to this track,
   Latency). A group strip's name opens the group menu; the Master's name has Connect MAIN, Automate its volume and
   the master's Track Out items. The mixer has no inline name field, so Rename there opens a small field menu.
-- **Only the source chip's arrow folds input strips**; its words open the sources list. The Master's "MAIN not
+- **Only the source chip's arrow folds input strips** (replaced by the name arrow, §162); its words open the sources list. The Master's "MAIN not
   patched" chip was also the fold switch, so clicking a warning hid strips; now it opens Connect MAIN.
 - **A send return gets its Mix strip.** A track whose only Track Out is an effect loop showed "IN · Track Out" and no
   Mix strip (the list of inputs only appeared from two inputs). Any effect loop now gives input strips; the chip says
@@ -2721,3 +2721,43 @@ decide and implement". Built from it:
 - **Not built, left for a talk with the user:** placeholders for note tracks in the mixer (§99 says no mixer without
   sound), a different shape for the Mix control, a SENDS block with full names, Devices in the left switch in both
   windows, one On control on the Playheads card, the audio header's words and tools, the gain line on selected clips.
+
+## 162. The second UX batch: agreed mockups, a mixer that scrolls and folds, bounces that follow their feeders (15 Nov)
+
+The user agreed M4, M5, M6, M8, M11 and M12 of the 15 Nov review, asked that every new control fit narrow and short
+panes, turned down note-track placeholders in the mixer (§99 stands), and then asked for a mixer that scrolls and
+folds with a clear parent for each fold.
+
+- **One lower-pane switch, Notes · Devices · Mixer**, in both windows (M11). The Devices pill after the clip chip is
+  gone. In a tall pane Devices opens the strip above the notes (both lit); in a short pane it switches. A narrow pane
+  folds the switch into one button that names what shows. Audio tracks grey Devices and never show the strip.
+- **The audio header speaks words and has the notes header's tools** (M4): Tempo, Follow, Sound, Pitch, Gain,
+  Reverse, Quantize (was Warp), Takes, "∞ 3 linked copies". Select · Slice · ▾ (Mute, Erase) and Snap. It narrows in
+  steps: values alone, then one Clip settings menu, then Snap moves into that menu. The inspector and the clip menu
+  use the same words ("Linked 3 copies" in the inspector).
+- **A selected audio clip always shows its gain line** with a tab at its right end that reads the gain and drags it
+  (M5); the tab hides on clips too narrow for it.
+- **An effect's Mix is a dry-to-wet bar**, not a fader (M6). The Master says "→ MAIN" where it showed memory use, which
+  moved to File ▸ Audio files; the header drops its peak text. With no Audio module in the patch, "Add an Audio module
+  and connect MAIN" places one and cables MAIN in one undo step (mixer, Master menu, Roll's module menu).
+- **Sends are named rows** (M8): SENDS, then the receiving track's full name over a level bar, dragged sideways; dots
+  when the pane is too short; "+ Send" with the "cables don't" sentence in its tooltip. The Send to list puts tracks
+  with an effect loop first, named by the effect (inside §97: no new track kind). Show sends dims every strip whose
+  fader isn't a send there: the receiver, groups, input and lane strips, the Master.
+- **The Playheads card has one On control per playhead: the chip's dot** (M12). The switch after the chips is gone;
+  the dot and the name have tooltips.
+- **The mixer scrolls sideways** when the strips don't fit, with the Master and its inputs pinned at the right: Shift+
+  wheel, a trackpad swipe, a plain wheel off the levels, middle-drag, Space+drag; a thin bar shows the view. Fine wheel
+  steps on a level move from Shift to Ctrl, so Shift+wheel scrolls everywhere as in the other panes.
+- **A parent comes first and what it holds opens to its right**, everywhere: a group's strip now comes before its
+  tracks (was after the last, §3.5), the Master's inputs sit right of the Master (were left), a track's inputs and
+  lanes after it as before. A frame in the parent's colour holds each family: filled for a track's strips, an
+  outline for a group. One fold arrow, left of the parent's name, folds lanes and inputs together, or a group's tracks
+  (session only, like the input folds). The source chip's arrow is gone: one control per concept (supersedes §161's
+  chip arrow).
+- **Bounces follow what feeds the track.** A notes bounce "as it plays" includes the notes its Input takes from
+  another track, through its own devices, muted source or not, as live (render::Options::followInput, bounces only;
+  exports are unchanged). An audio bounce unmutes the tracks that feed it, its Input's source and the tracks whose
+  sends reach it, so muting the dry tracks to hear an effect return doesn't leave the bounce empty; the solo keeps
+  them out of MAIN. "Whole track" and "Until silent" count the feeders' clips.
+- **Not built:** "Add output modules" in Roll's menu (not discussed yet).

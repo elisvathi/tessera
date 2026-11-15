@@ -6,6 +6,7 @@
 #include "../editing/DeviceActions.hpp"
 #include "../editing/RecordActions.hpp"
 #include "../interaction/Shortcuts.hpp"
+#include "../interaction/Snap.hpp"
 #include "Draw.hpp"
 
 namespace tessera {
@@ -64,8 +65,15 @@ const char* toolName(Tool tool) {
 ToolSwitch makeToolSwitch(EditorContext& ctx, const std::vector<Tool>& menuTools,
                           std::function<void(rack::ui::Menu*)> extras, std::function<Icon()> extraIcon,
                           std::function<Tool(Tool)> acting, std::function<bool()> deleteSelection) {
+    return makeToolSwitchOf(ctx, {Tool::Pointer, Tool::Draw}, menuTools, std::move(extras), std::move(extraIcon),
+                            std::move(acting), std::move(deleteSelection));
+}
+
+ToolSwitch makeToolSwitchOf(EditorContext& ctx, const std::vector<Tool>& buttons, const std::vector<Tool>& menuTools,
+                            std::function<void(rack::ui::Menu*)> extras, std::function<Icon()> extraIcon,
+                            std::function<Tool(Tool)> acting, std::function<bool()> deleteSelection) {
     EditorContext* c = &ctx;
-    std::vector<ToolButton*> pair = makeToolButtons(ctx, {Tool::Pointer, Tool::Draw}, 18, nullptr, acting);
+    std::vector<ToolButton*> pair = makeToolButtons(ctx, buttons, 18, nullptr, acting);
     auto picked = [c, menuTools, extraIcon, acting] {
         if (extraIcon) {
             Icon icon = extraIcon();
@@ -101,6 +109,52 @@ ToolSwitch makeToolSwitch(EditorContext& ctx, const std::vector<Tool>& menuTools
             extras(menu);
     };
     return {pair[0], pair[1], new ToolButton(o)};
+}
+
+/// The snap grid's choices, for the Snap chip's menu or the narrow header's "⋯".
+void appendSnapItems(rack::ui::Menu* menu, EditorContext* c) {
+    auto set = [c](std::function<void(SnapSetting&)> change) {
+        return [c, change] {
+            if (c->module())
+                change(c->state().snap);
+        };
+    };
+    auto snap = [c]() -> const SnapSetting& { return c->state().snap; };
+    menu->addChild(rack::createCheckMenuItem(
+        "Off", shortcutLabel(Action::SnapToggle), [snap] { return !snap().enabled; },
+        set([](SnapSetting& s) { s.enabled = !s.enabled; })));
+    menu->addChild(rack::createCheckMenuItem(
+        "Adaptive", "", [snap] { return snap().enabled && snap().adaptive; }, set([](SnapSetting& s) {
+            s.enabled = true;
+            s.adaptive = true;
+        })));
+    for (int d = 0; d <= int(GridDivision::SixtyFourth); d++) {
+        GridDivision division = GridDivision(d);
+        menu->addChild(rack::createCheckMenuItem(
+            divisionLabel(division, GridFeel::Straight), "",
+            [snap, division] { return snap().enabled && !snap().adaptive && snap().division == division; },
+            set([division](SnapSetting& s) {
+                s.enabled = true;
+                s.adaptive = false;
+                s.division = division;
+            })));
+    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createCheckMenuItem(
+        "Triplet", shortcutLabel(Action::GridTriplet), [snap] { return snap().feel == GridFeel::Triplet; },
+        set([](SnapSetting& s) { s.feel = s.feel == GridFeel::Triplet ? GridFeel::Straight : GridFeel::Triplet; })));
+    menu->addChild(rack::createCheckMenuItem(
+        "Dotted", "", [snap] { return snap().feel == GridFeel::Dotted; },
+        set([](SnapSetting& s) { s.feel = s.feel == GridFeel::Dotted ? GridFeel::Straight : GridFeel::Dotted; })));
+    menu->addChild(rack::createCheckMenuItem(
+        "Snap to other notes", "", [snap] { return snap().events; },
+        set([](SnapSetting& s) { s.events = !s.events; })));
+}
+
+void openSnapMenu(EditorContext* c) {
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel("Snap"));
+    appendSnapItems(menu, c);
 }
 
 float toolSwitchCaretWidth(const ToolSwitch& s, float size) { return s.more->isShowingIcon() ? size + 8 : 13; }
@@ -261,24 +315,6 @@ void placeClipChip(EditorContext& ctx, ToolButton* chip, ClipId clip, bool short
     float room = std::max(60.f, paneWidth * 0.4f);
     float header = theme::metrics::kPaneHeader;
     chip->box = rack::math::Rect(6, 3, std::min({width, kMaxWidth, room}), header - 6);
-}
-
-ToolButton* makeDevicesToggle(EditorContext& ctx) {
-    EditorContext* c = &ctx;
-    ToolButton::Options o;
-    o.text = "Devices";
-    o.tooltip = withShortcut("The track's devices: above its notes, or in their place when the pane is short", Action::ToggleDevices);
-    o.action = [c] { deviceActions::setStripOpen(*c, !deviceActions::stripOpen(*c)); };
-    o.active = [c] { return c->module() && deviceActions::stripOpen(*c); };
-    o.filled = true;
-    return new ToolButton(o);
-}
-
-void updateDevicesToggle(EditorContext& ctx, ToolButton* button) {
-    TesseraModule* m = ctx.module();
-    const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;
-    size_t n = t ? t->devices.size() : 0;
-    button->setText(n > 0 ? "Devices " + std::to_string(n) : "Devices");
 }
 
 namespace {

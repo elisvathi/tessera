@@ -367,12 +367,16 @@ struct TesseraWidget : rack::app::ModuleWidget {
 
         menu->addChild(new rack::ui::MenuSeparator);
         menu->addChild(rack::createMenuItem("Open editor", "", [this] { openEditor(); }));
-        if (hasAudio(m->song()) && !m->mainPatched() && audioActions::audioModuleInPatch())
-            menu->addChild(rack::createMenuItem("Connect MAIN to Audio module", "", [m] {
-                std::string text = audioActions::connectMainToAudio(m);
-                if (EditorContext* c = EditorWindow::contextFor(m->id))
-                    c->toast(text);
-            }));
+        if (hasAudio(m->song()) && !m->mainPatched()) {
+            bool audio = audioActions::audioModuleInPatch();
+            menu->addChild(rack::createMenuItem(
+                audio ? "Connect MAIN to the Audio module" : "Add an Audio module and connect MAIN", "", [m, audio] {
+                    std::string text =
+                        audio ? audioActions::connectMainToAudio(m) : audioActions::addAudioModuleForMain(m);
+                    if (EditorContext* c = EditorWindow::contextFor(m->id))
+                        c->toast(text);
+                }));
+        }
         int64_t id = m->id;
         menu->addChild(rack::createSubmenuItem("File", "", [this, m, id](rack::ui::Menu* sub) {
             projectFile::appendFileMenu(
