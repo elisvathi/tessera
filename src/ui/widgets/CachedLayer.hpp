@@ -4,6 +4,8 @@
 
 #include <rack.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -14,8 +16,15 @@ namespace tessera {
 /// static layers such as grids are cached and redrawn only on zoom, scroll or edit).
 ///
 /// The owner sets `key` every frame to a hash of everything the drawing depends on.
+///
+/// While its size keeps changing (a pane being dragged), or when the framebuffer would be huge (zoomed far in on
+/// a high-density screen), it draws straight to the screen instead. Otherwise each frame of a drag allocates a new
+/// framebuffer, tens of megabytes on a Retina screen, and some graphics drivers are slow to give that memory back.
 class CachedLayer : public rack::widget::FramebufferWidget {
   public:
+    static constexpr double kSettleSeconds = 0.25; // a size held this long is cached again
+    static constexpr float kMaxCachedPx = 8192;    // the longest side, in screen pixels, that is still cached
+
     explicit CachedLayer(std::function<void(NVGcontext*, rack::math::Vec size)> paint) {
         painter = new Painter(std::move(paint));
         addChild(painter);
@@ -32,8 +41,22 @@ class CachedLayer : public rack::widget::FramebufferWidget {
         if (!box.size.equals(size)) {
             box.size = size;
             painter->box.size = size;
+            resizedAt = APP->window->getFrameTime();
             setDirty();
         }
+    }
+
+    /// Picks between the cached picture and drawing directly, then draws.
+    void draw(const DrawArgs& args) override {
+        float xform[6];
+        nvgCurrentTransform(args.vg, xform); // includes Rack's zoom and the screen's pixel ratio
+        float longest = std::max(box.size.x * std::fabs(xform[0]), box.size.y * std::fabs(xform[3]));
+        bool resizing = APP->window->getFrameTime() - resizedAt < kSettleSeconds;
+        bool direct = resizing || longest > kMaxCachedPx;
+        if (bypassed && !direct)
+            setDirty(); // the old picture was made before the size settled
+        bypassed = direct;
+        FramebufferWidget::draw(args);
     }
 
   private:
@@ -44,6 +67,7 @@ class CachedLayer : public rack::widget::FramebufferWidget {
     };
     Painter* painter;
     uint64_t key = ~uint64_t(0);
+    double resizedAt = -INFINITY;
 };
 
 /// Folds values into a cache key.
