@@ -829,3 +829,12 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] A tag › **Modulate, automate…** › **Modulate with** › **A new modulator…** › LFO: the LFO is made and moves the
       tag at +50% (a dot on the tag, the depth bar under it). One undo removes both. The browser's chips name each
       device ("Arpeggiator", not an empty chip) and offer only places that can reach the tag.
+
+## Tile velocity and transpose with playheads, the level line, 15 Nov (docs/DECISIONS.md §159)
+
+- [ ] A track with playheads, one clip on the timeline twice. Drag the second tile's title bar down to 50% and press Up
+      five times: it plays softer and a fourth higher than the first; MIDI export with devices applied matches.
+- [ ] A tile at 67% shows a line across its body, shaded above; at 120% near its top; at 100% none. Hover the line:
+      bold, with "Velocity 67% · double-click for 100%". Drag it: the velocity changes. Double-click it: 100%, the
+      line goes. An audio clip at −6 dB: a line; double-click: 0 dB.
+

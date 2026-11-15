@@ -1500,6 +1500,53 @@ TEST_CASE("engine: playheads read the clip each from its own segment") {
     }
 }
 
+TEST_CASE("engine: playheads play each timeline clip at its own velocity and transpose, as MIDI export does") {
+    Song song = songWith({{0, 240, 60, 0.8f}}, 4 * kPpq, kAutoVoices);
+    ClipId clip = song.clips.begin()->first;
+    for (int k = 0; k < 2; k++) {
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip;
+        a.position = Tick(k) * 4 * kPpq;
+        a.length = 4 * kPpq;
+        if (k == 1) {
+            a.transpose = 5;
+            a.velocityScale = 0.5f;
+        }
+        song.tracks[0].arrangement.push_back(a);
+    }
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads = {devices::makePlayhead(song.newId<PlayheadId>(), 0)};
+    song.tracks[0].devices.push_back(d);
+
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    h.runTo(10 * kSamplesPerTick);
+    REQUIRE(h.gate());
+    CHECK(h.pitch() == 60);
+    CHECK(h.frame().vel[0] == doctest::Approx(8));
+    h.runTo((4 * kPpq + 10) * kSamplesPerTick);
+    int sounding = -1;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding = v;
+    REQUIRE(sounding >= 0);
+    CHECK(h.pitch(sounding) == 65);
+    CHECK(h.frame().vel[sounding] == doctest::Approx(4));
+
+    render::Options o;
+    std::vector<std::pair<int, float>> exported;
+    for (const render::ExportNote& n : render::trackNotes(song, song.tracks[0].id, o, {}))
+        exported.push_back({n.pitch, n.velocity});
+    REQUIRE(exported.size() == 2);
+    CHECK(exported[0].first == 60);
+    CHECK(exported[0].second == doctest::Approx(0.8f));
+    CHECK(exported[1].first == 65);
+    CHECK(exported[1].second == doctest::Approx(0.4f));
+}
+
 TEST_CASE("engine: a Curve speeds up a playhead's repeats, as MIDI export does") {
     // A note held over the bar, Repeat 1/16, Times 4, Curve Ease in (t cubed): the second hit of the beat comes at the
     // cube root of 1/4 of it, and the first note stops there (Retrigger).

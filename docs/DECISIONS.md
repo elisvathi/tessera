@@ -2649,3 +2649,18 @@ equal value boxes were turned down. Where the page and the earlier design disagr
     0.15 ms layout and 0.03–0.05 ms drawing a frame; playing, 0.2 ms layout and 0.19 ms drawing (was 0.88 ms, and
     1.16 ms with only the layers cached); the mouse sweeping across the tags, 0.45 ms drawing. Layout still runs
     every frame.
+
+## 159. Playheads play a tile's velocity and transpose; a level line on changed tiles (15 Nov)
+
+- **The bug.** On a track with playheads, timeline tiles are read from the shared clip
+  (`Engine::playInstancesByPlayheads`), so a tile's velocity scale and transpose were ignored in playback; MIDI
+  export applied the transpose but not the velocity. Now each `InstanceLanes` carries its tile's `transpose` (0 on a
+  drum track, as export does) and `velocityScale`, and `playPlayheads` applies them to each written note before the
+  playhead shapes it (the shaping's pitch range moves with the transpose), as export does. Nothing allocates.
+- **The level line (the user's ask).** A tile whose velocity isn't 100% (or an audio clip whose gain isn't 0 dB)
+  draws its level as a line across its body, shaded above so it doesn't read as a note. The default sits at three
+  quarters of the height, as 0 dB does on a fader: velocity 0–100% below it, 100–200% above; gain follows the
+  fader curve below 0 dB and reaches the top at +24 dB. No line at the default. Hovering it makes it bold with a
+  pill ("Velocity 70% · double-click for 100%"); dragging it is the title bar's up/down; a **double-click** resets
+  the selection (velocity 100%, audio gain 0 dB). Launcher slots have no velocity scale, so no line there.
+

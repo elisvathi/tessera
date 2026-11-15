@@ -327,6 +327,33 @@ void setVelocityScale(ArrangerLanes& lanes, float scale) {
                  [scale](const Layout& l, const IdSet& ids) { return arrange::setVelocityScale(l, ids, scale); });
 }
 
+void resetLevel(ArrangerLanes& lanes) {
+    TesseraModule* m = moduleOf(lanes);
+    if (!m)
+        return;
+    std::vector<ClipId> audio;
+    bool scaled = false;
+    for (const arrange::Placed& p : lanes.committed()) {
+        if (!lanes.selection().count(p.clip.id))
+            continue;
+        const Clip* c = m->song().findClip(p.clip.clip);
+        if (c && c->audio) {
+            if (c->audio->gainDb != 0 && std::find(audio.begin(), audio.end(), c->id) == audio.end())
+                audio.push_back(c->id);
+        } else if (p.clip.velocityScale != 1) {
+            scaled = true;
+        }
+    }
+    if (scaled)
+        setVelocityScale(lanes, 1);
+    if (audio.empty())
+        return;
+    auto all = std::make_unique<CompoundCommand>("Reset clip gain");
+    for (ClipId id : audio)
+        all->add(editAudio(m->song(), id, [](AudioContent& a) { a.gainDb = 0; }, "Reset clip gain"));
+    m->perform(std::move(all));
+}
+
 void resetStretch(ArrangerLanes& lanes) {
     editSelected(lanes, "Reset stretch", [](const Layout& l, const IdSet& ids) {
         Layout out = l;

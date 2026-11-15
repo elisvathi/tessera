@@ -48,8 +48,9 @@ class ArrangerLanes : public TimelineView {
         FadeOut,
         FadeInCurve, // the dot in the middle of an audio fade: bends its curve
         FadeOutCurve,
-        Crossfade,     // the handle on top of two overlapping audio clips: their crossfade's length
-        CrossfadeCurve // the dot in the middle of the crossfade's X
+        Crossfade,      // the handle on top of two overlapping audio clips: their crossfade's length
+        CrossfadeCurve, // the dot in the middle of the crossfade's X
+        Level           // the line across a tile whose velocity (or audio gain) isn't at its default
     };
     struct Hit {
         int row = -1;
@@ -123,6 +124,8 @@ class ArrangerLanes : public TimelineView {
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
     void click(rack::math::Vec pos, int button, Modifiers mods) override;
     void doubleClick(rack::math::Vec pos, Modifiers mods) override;
+    /// The hovered tile's level line, bold, with its value and how to reset it.
+    void drawLevelHover(NVGcontext* vg, const arrange::Placed& p, float x0, float x1, float top, float h);
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void onLeave(const LeaveEvent& e) override;
     void onPathDrop(const PathDropEvent& e) override;

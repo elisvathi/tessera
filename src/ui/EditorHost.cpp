@@ -525,6 +525,7 @@ void EditorHost::drawHelp(NVGcontext* vg, rack::math::Vec bounds) {
         {"Duplicate what you drag", "Ctrl/Cmd + drag"},
         {"Add to / toggle in the selection", "Shift / Ctrl/Cmd + click"},
         {"Velocity of a note or clip", "Alt + drag its body"},
+        {"Tile velocity or gain back to default", "Double-click its level line"},
         {"Open, or create", "Double-click"},
         {"Cancel a drag", "Esc"},
     };

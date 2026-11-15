@@ -530,7 +530,9 @@ std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device
                                 TimedNote note{start,
                                                std::max(start + 1, Tick(std::llround(at + len))),
                                                int8_t(pitch),
-                                               std::clamp(n.source->velocity + shape.velocity + hit.velocity, 0.f, 1.f),
+                                               std::clamp(std::min(1.f, n.source->velocity * a.velocityScale) +
+                                                              shape.velocity + hit.velocity,
+                                                          0.f, 1.f),
                                                n.source->releaseVelocity,
                                                n.source,
                                                pass};

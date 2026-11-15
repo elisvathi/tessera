@@ -404,6 +404,8 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         inst.spanEnd = span.end;
         inst.clip = playback;
         inst.row = stack.row.count(a.id) ? stack.row.at(a.id) : 0;
+        inst.transpose = track.type == TrackType::Drum ? 0 : a.transpose;
+        inst.velocityScale = std::max(0.f, a.velocityScale);
         if (playback->loopLength() > 0)
             tp->instances.push_back(inst);
         if (clip->usesOwnChain())

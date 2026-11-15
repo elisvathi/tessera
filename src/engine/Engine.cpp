@@ -1386,7 +1386,8 @@ void Engine::playInstancesByPlayheads(const TrackPlayback& track, TrackState& st
         double ea = begin + (a - double(inst.position)) / inst.stretch;
         double eb = begin + (b - double(inst.position)) / inst.stretch;
         double endsAt = begin + (double(inst.end) - double(inst.position)) / inst.stretch;
-        playPlayheads(track, state, *inst.clip, ea, eb, playAtFrom + (a - from), inst.stretch, begin, endsAt);
+        playPlayheads(track, state, *inst.clip, ea, eb, playAtFrom + (a - from), inst.stretch, begin, endsAt,
+                      inst.transpose, inst.velocityScale);
     }
 }
 
@@ -1469,7 +1470,7 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
 }
 
 void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
-                           double from, double stretch, double first, double last) {
+                           double from, double stretch, double first, double last, int transpose, float velocityScale) {
     const ChainPlayback& chain = *state.readInfo();
     TimeSig ts = snapshot->timeSig;
     const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
@@ -1594,6 +1595,8 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                         double t = segA + (playheads::timeAt(m, sweep, pos) - ownA) / rate + shift;
                         double onPlay = std::max(from, from + (t - a) * stretch);
                         NoteEvent n = e;
+                        n.pitch = int8_t(std::clamp(int(n.pitch) + transpose, 0, 127));
+                        n.velocity = std::clamp(n.velocity * velocityScale, 0.f, 1.f);
                         if (p.channel > 0)
                             n.channel = p.channel;
                         const Scale& key =
@@ -1604,7 +1607,9 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                                     moved->inKey ? key.stepBy(n.pitch, moved->steps) : n.pitch + moved->steps, 0, 127));
                             n.velocity = std::clamp(n.velocity + moved->velocity, 0.f, 1.f);
                         }
-                        n.pitch = int8_t(playheads::shapedPitch(clock.shape, n.pitch, clip.lowest, clip.highest, key));
+                        n.pitch = int8_t(playheads::shapedPitch(
+                            clock.shape, n.pitch, std::clamp(int(clip.lowest) + transpose, 0, 127),
+                            std::clamp(int(clip.highest) + transpose, 0, 127), key));
                         n.velocity = std::clamp(n.velocity + clock.shape.velocity, 0.f, 1.f);
                         if (once) {
                             for (int k = 0; k < startedCount; k++)

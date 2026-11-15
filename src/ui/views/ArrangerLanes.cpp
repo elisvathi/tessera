@@ -48,6 +48,28 @@ float headerHeight(float rowHeight) {
 }
 
 /// Two linked rings: this clip plays in more than one place.
+/// Where a tile's level line sits across its body, 0 (bottom) to 1 (top): its velocity scale (100% at three quarters,
+/// 200% at the top), or for an audio clip its gain (0 dB at three quarters as on a fader, kMaxClipGainDb at the top).
+/// Nothing at the default level, which draws no line.
+std::optional<float> levelOf(const ArrangerClip& a, const Clip& clip, float gainDb) {
+    constexpr float k = kZeroDbFaderPos;
+    if (clip.audio) {
+        if (std::fabs(gainDb) < 0.05f)
+            return std::nullopt;
+        if (gainDb > 0)
+            return k + (1 - k) * std::min(gainDb, kMaxClipGainDb) / kMaxClipGainDb;
+        return k * std::pow(dbToGain(gainDb), 0.25f);
+    }
+    if (std::fabs(a.velocityScale - 1.f) < 0.005f)
+        return std::nullopt;
+    return a.velocityScale <= 1 ? k * a.velocityScale : k + (1 - k) * std::min(1.f, a.velocityScale - 1);
+}
+
+/// The level line's y in a body from `top` to `bottom`, kept off its edges.
+float levelY(float level, float top, float bottom) {
+    return std::round(bottom - 2 - level * (bottom - top - 4)) + 0.5f;
+}
+
 void drawLinkBadge(NVGcontext* vg, float x, float cy, NVGcolor color) {
     nvgStrokeColor(vg, color);
     nvgStrokeWidth(vg, 1.2f);
@@ -315,10 +337,16 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
                     return hit;
                 }
             }
+            float bodyBottom = top + h - 1;
+            std::optional<float> level = clip && bodyBottom - bodyTop >= theme::metrics::kLevelLineMinBody
+                                             ? levelOf(p.clip, *clip, clip->audio ? clip->audio->gainDb : 0)
+                                             : std::nullopt;
             if (pos.x >= x1 - inner)
                 hit.part = Part::RightEdge;
             else if (pos.x <= x0 + inner)
                 hit.part = Part::LeftEdge;
+            else if (level && std::fabs(pos.y - levelY(*level, bodyTop, bodyBottom)) <= theme::metrics::kLevelLineHit)
+                hit.part = Part::Level;
             else if (h >= kMinHeightForStrip && pos.y < top + 1 + kHeaderStrip)
                 hit.part = Part::Header;
             else
@@ -681,6 +709,9 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
     case Part::Header:
         inner = clipGestures::header(*this, pos, id);
         break;
+    case Part::Level:
+        inner = clipGestures::level(*this, pos, id);
+        break;
     default:
         inner = mods.alt && !mods.ctrl ? clipGestures::slip(*this, pos, id)
                                        : clipGestures::move(*this, pos, id, mods.ctrl && mods.alt);
@@ -764,6 +795,12 @@ void ArrangerLanes::doubleClick(Vec pos, Modifiers mods) {
     if (row >= 0 && owner.rows[size_t(row)].isLane())
         return;
     Hit hit = hitTest(pos);
+    if (hit.id.valid() && hit.part == Part::Level) {
+        if (!selection().count(hit.id))
+            selection() = {hit.id};
+        arrangeActions::resetLevel(*this);
+        return;
+    }
     if (hit.id.valid()) {
         arrangeActions::openInEditor(*this, hit.id);
         return;
@@ -818,6 +855,7 @@ CursorShape ArrangerLanes::hoverCursor(Vec pos, Modifiers mods) {
     case Part::FadeInCurve:
     case Part::FadeOutCurve:
     case Part::CrossfadeCurve:
+    case Part::Level:
         return CursorShape::ResizeV;
     case Part::Header:
         return mods.alt ? CursorShape::Move : CursorShape::ResizeV;
@@ -1301,6 +1339,23 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             nvgFill(vg);
         }
 
+        // Its level when changed from the default: a line across the body, which a double-click puts back.
+        if (body.size.y >= theme::metrics::kLevelLineMinBody)
+            if (std::optional<float> level = levelOf(a, *clip, gainDb)) {
+                float y = levelY(*level, body.pos.y, body.getBottom());
+                // Shaded above the line, so it reads as a level and not as one more note.
+                nvgBeginPath(vg);
+                nvgRect(vg, body.pos.x, body.pos.y, body.size.x, y - body.pos.y);
+                nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.3f * alpha));
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, body.pos.x, y);
+                nvgLineTo(vg, body.getRight(), y);
+                nvgStrokeColor(vg, nvgTransRGBAf(c.text0, alpha));
+                nvgStrokeWidth(vg, 1.5f);
+                nvgStroke(vg);
+            }
+
         if (body.size.y >= 8)
             slotDraw::drawPlayheadMark(vg, activePlayheads(track, clip), Vec(r.getRight() - 4, body.pos.y + 3),
                                        body.size.y - 6);
@@ -1597,6 +1652,37 @@ void ArrangerLanes::drawTakes(NVGcontext* vg, double now) {
     }
 }
 
+void ArrangerLanes::drawLevelHover(NVGcontext* vg, const arrange::Placed& p, float x0, float x1, float top, float h) {
+    const Clip* clip = ctx.module()->song().findClip(p.clip.clip);
+    if (!clip)
+        return;
+    float gainDb = clip->audio ? clip->audio->gainDb : 0;
+    std::optional<float> level = levelOf(p.clip, *clip, gainDb);
+    if (!level)
+        return;
+    const theme::Palette& c = theme::colors();
+    float bodyTop = top + 1 + headerHeight(h), bodyBottom = top + h - 1;
+    float y = levelY(*level, bodyTop, bodyBottom);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x0, y);
+    nvgLineTo(vg, x1, y);
+    nvgStrokeColor(vg, c.text0);
+    nvgStrokeWidth(vg, 2.5f);
+    nvgStroke(vg);
+    std::string text = clip->audio ? "Gain " + audioDraw::dbText(gainDb) + " \u00b7 double-click for 0 dB"
+                                   : "Velocity " + std::to_string(int(std::lround(p.clip.velocityScale * 100))) +
+                                         "% \u00b7 double-click for 100%";
+    draw::TextStyle style{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    float w = draw::textWidth(vg, style, text) + 10;
+    float lx = std::clamp(localMouse().x - w / 2, std::max(0.f, x0), std::max(0.f, box.size.x - w));
+    // Above the line, or below it when it runs along the top of the body.
+    float ly = y - 9 - 7 >= bodyTop ? y - 9 : y + 9;
+    Rect pill(lx, ly - 7, w, 14);
+    draw::roundedRect(vg, pill, 3, c.bg2);
+    draw::roundedRectStroke(vg, pill, 3, c.line1, 1);
+    draw::text(vg, style, lx + 5, ly, text);
+}
+
 void ArrangerLanes::drawForeground(const DrawArgs& args) {
     TesseraModule* m = ctx.module();
     if (!m)
@@ -1626,6 +1712,8 @@ void ArrangerLanes::drawForeground(const DrawArgs& args) {
                 auto [top, h] = instanceSpan(row, *p);
                 draw::roundedRectStroke(vg, Rect(x0, top + 1, x1 - x0, h - 2), theme::metrics::kRadiusItem,
                                         nvgTransRGBAf(c.text0, 0.35f), 1);
+                if (hover.part == Part::Level)
+                    drawLevelHover(vg, *p, x0, x1, top, h);
                 // The Slice tool shows where a click would cut, snapped as the click is (Trello, 13 Oct).
                 if (ctx.state().tool == Tool::Slice) {
                     bool free = Modifiers::fromGlfw(APP->window->getMods()).alt;

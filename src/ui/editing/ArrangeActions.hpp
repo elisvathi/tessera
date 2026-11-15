@@ -27,6 +27,9 @@ void makeUniqueSelected(ArrangerLanes& lanes);
 void setMuted(ArrangerLanes& lanes, bool muted);
 void transpose(ArrangerLanes& lanes, int semitones);
 void setVelocityScale(ArrangerLanes& lanes, float scale);
+/// Puts the selected tiles back at 100% velocity and their audio clips at 0 dB gain: what a double-click on a
+/// tile's level line does.
+void resetLevel(ArrangerLanes& lanes);
 void resetStretch(ArrangerLanes& lanes);
 /// Moves the selection by `ticks` (keyboard nudge).
 void nudge(ArrangerLanes& lanes, Tick ticks);

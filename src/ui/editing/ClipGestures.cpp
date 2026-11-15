@@ -870,6 +870,15 @@ std::unique_ptr<DragGesture> trimStart(ArrangerLanes& lanes, Vec press, Arrangem
 std::unique_ptr<DragGesture> header(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
     return std::make_unique<HeaderGesture>(lanes, press, grabbed);
 }
+std::unique_ptr<DragGesture> level(ArrangerLanes& lanes, Vec press, ArrangementId grabbed) {
+    bool audio = false;
+    if (const arrange::Placed* p = arrange::find(lanes.committed(), grabbed))
+        if (const Clip* c = lanes.context().module()->song().findClip(p->clip.clip))
+            audio = c->isAudio();
+    if (audio)
+        return std::make_unique<GainGesture>(lanes, press, grabbed);
+    return std::make_unique<VelocityGesture>(lanes, press, grabbed);
+}
 std::unique_ptr<DragGesture> draw(ArrangerLanes& lanes, Vec press) {
     return std::make_unique<DrawGesture>(lanes, press);
 }
