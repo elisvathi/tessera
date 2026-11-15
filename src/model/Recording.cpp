@@ -557,33 +557,38 @@ CommandPtr recordIntoClip(const Song& song, ClipId clipId, const Take& take, con
     return out;
 }
 
-Tick mergeClipStart(const Track& track, double first, TimeSig ts) {
+MergeClipPlace mergeClipPlace(const Track& track, double first, TimeSig ts) {
     Tick bar = ticksPerBar(ts);
-    Tick start = std::max<Tick>(0, Tick(std::floor(first / double(bar))) * bar);
+    MergeClipPlace place;
+    place.origin = std::max<Tick>(0, Tick(std::floor(first / double(bar))) * bar);
+    place.start = place.origin;
     for (const ArrangerClip& a : track.arrangement) {
         Tick end = instanceEnd(a);
-        if (end > start && double(end) <= first)
-            start = end;
+        if (end > place.start && double(end) <= first)
+            place.start = end;
     }
-    return start;
+    return place;
 }
 
 CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const Take& take,
-                               ArrangerRecordMode mode, const NextId& nextId, ClipId* clipId, edits::IdSet* noteIds) {
+                               ArrangerRecordMode mode, const NextId& nextId, ClipId* clipId, edits::IdSet* noteIds,
+                               Tick origin) {
     const Track* t = song.findTrack(track);
-    if (!t || to <= from || from < 0)
+    if (origin < 0)
+        origin = from;
+    if (!t || to <= from || from < 0 || origin > from)
         return nullptr;
     Clip clip;
     clip.id = ClipId(nextId());
     clip.name = newClipName(song);
     clip.color = t->color;
-    clip.length = to - from;
+    clip.length = to - origin;
     clip.loopEnd = clip.length;
 
     for (const TakeNote& tn : take.notes) {
         if (tn.start < from || tn.start >= to)
             continue;
-        clip.notes.push_back(toNote(tn, tn.start - from, nextId));
+        clip.notes.push_back(toNote(tn, tn.start - origin, nextId));
         if (noteIds)
             noteIds->insert(clip.notes.back().id);
     }
@@ -591,7 +596,7 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
     std::vector<TakeLane> lanes = take.lanes;
     for (TakeLane& l : lanes)
         for (AutoPoint& p : l.points)
-            p.t -= from;
+            p.t -= origin;
     mergeTakeLanes(song, *t, clip.automation, lanes, 0, 0, nextId);
     if (clipId)
         *clipId = clip.id;
@@ -600,7 +605,8 @@ CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick 
     placed.clip.id = ArrangementId(nextId());
     placed.clip.clip = clip.id;
     placed.clip.position = from;
-    placed.clip.length = clip.length;
+    placed.clip.length = to - from;
+    placed.clip.offset = from - origin;
     arrange::Layout before = arrange::layoutOf(song);
     arrange::Layout after = before;
     after.push_back(placed);

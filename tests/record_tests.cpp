@@ -1334,17 +1334,17 @@ TEST_CASE("arranger merge: quantizing the new clip afterwards (Q) puts the notes
     CHECK(arr[0].position + q[1].start == 2 * kPpq);
 }
 
-TEST_CASE("arranger merge: a new clip starts on the bar but never covers a clip ending earlier in that bar") {
+TEST_CASE("arranger merge: after a clip ending mid-bar, the new clip starts there but its grid stays on the bar") {
     Song song = recordSong();
     Clip old;
     old.id = song.newId<ClipId>();
-    old.length = old.loopEnd = kBar / 2;
+    old.length = old.loopEnd = kBar / 2 + 100;
     song.clips[old.id] = old;
     ArrangerClip inst;
     inst.id = song.newId<ArrangementId>();
     inst.clip = old.id;
     inst.position = kBar;
-    inst.length = kBar / 2; // ends half way through bar 2
+    inst.length = kBar / 2 + 100; // ends in the middle of bar 2, off the 1/16 grid
     song.tracks[0].arrangement.push_back(inst);
     FakeHost host(song);
     host.mode = PlayMode::Arranger;
@@ -1357,9 +1357,18 @@ TEST_CASE("arranger merge: a new clip starts on the bar but never covers a clip 
     const std::vector<ArrangerClip>& arr = host.song_.tracks[0].arrangement;
     REQUIRE(arr.size() == 2);
     const ArrangerClip& made = arr[0].clip == old.id ? arr[1] : arr[0];
-    CHECK(made.position == kBar + kBar / 2);
-    REQUIRE(host.song_.findClip(made.clip)->notes.size() == 1);
-    CHECK(host.song_.findClip(made.clip)->notes[0].start == kBar / 2 - 200);
+    CHECK(made.position == kBar + kBar / 2 + 100); // where the old clip ends, so it doesn't cover it
+    CHECK(made.offset == kBar / 2 + 100);    // the clip itself starts on the bar line before
+    CHECK(made.position + made.length == 2 * kBar - 100);
+    const Clip* c = host.song_.findClip(made.clip);
+    REQUIRE(c);
+    REQUIRE(c->notes.size() == 1);
+    CHECK(made.position - made.offset + c->notes[0].start == 2 * kBar - 200); // still plays where it was played
+    // Q counts from the clip's start, which is on the bar, so the note lands on the song's grid.
+    transforms::QuantizeOptions o;
+    o.grid = kPpq / 4;
+    edits::NoteList q = transforms::quantize(c->notes, {c->notes[0].id}, o);
+    CHECK((made.position - made.offset + q[0].start) % (kPpq / 4) == 0);
 }
 
 TEST_CASE("arranger merge: a second loop pass goes into the clip the first pass made") {
