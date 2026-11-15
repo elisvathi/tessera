@@ -472,7 +472,10 @@ void openInEditor(ArrangerLanes& lanes, ArrangementId id) {
     const arrange::Placed* p = arrange::find(lanes.committed(), id);
     if (!p)
         return;
-    bool alreadyOpen = ctx.state().selectedClip == p->clip.clip && ctx.state().focus == Pane::Detail;
+    bool alreadyOpen =
+        ctx.state().selectedClip == p->clip.clip && ctx.state().focus == Pane::Detail && !ctx.state().mixerOpen;
+    // Opening a clip shows its editor, also when the lower pane was showing the mixer.
+    ctx.state().mixerOpen = false;
     lanes.selection() = {id};
     clipActions::select(ctx, p->track, p->clip.clip);
     ctx.state().focus = Pane::Detail;
@@ -495,13 +498,12 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     int uses = song.clipUses(clipId);
     std::string title = n > 1 ? arrange::countClips(n) : (clip->name.empty() ? "Clip" : clip->name);
     if (n == 1 && uses > 1)
-        title += "  (linked, " + std::to_string(uses) + " uses)";
+        title += "  (" + std::to_string(uses) + " linked copies)";
     menu->addChild(rack::createMenuLabel(title));
 
     bool audio = clip->isAudio();
-    if (!audio)
-        menu->addChild(
-            rack::createMenuItem("Open in piano roll", "double-click", [l, clicked] { openInEditor(*l, clicked); }));
+    menu->addChild(rack::createMenuItem(audio ? "Open in the audio editor" : "Open in piano roll", "double-click",
+                                        [l, clicked] { openInEditor(*l, clicked); }));
     if (n > 1 && !audio) {
         std::vector<ClipId> together;
         for (const arrange::Placed& p : lanes.committed())
@@ -561,10 +563,6 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
                         }));
                 sub->addChild(rack::createMenuLabel("The audio editor mixes takes (Alt+T)"));
             }));
-    }
-    if (audio) {
-        menu->addChild(rack::createMenuItem("Split at transients", "", [l, clicked] { splitAtTransients(*l, clicked); }));
-        menu->addChild(rack::createMenuItem("Make triggers from audio", "", [l, clicked] { makeTriggers(*l, clicked); }));
     }
     const Track* ownerTrack = c->module() ? c->module()->song().findTrack(placed->track) : nullptr;
     TrackId owner = placed->track;
@@ -626,7 +624,7 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
         clipActions::appendDevicesMenu(menu, *c, clips);
     }
     menu->addChild(rack::createBoolMenuItem(
-        "Clip loops", "",
+        "Loop", "",
         [c, clipId] {
             const Clip* cl = c->module()->song().findClip(clipId);
             return cl && cl->loopMode == LoopMode::Loop;
@@ -640,7 +638,12 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
         menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "",
                                             [c, clipId] { clipActions::exportClip(*c, clipId); }));
     if (audio)
-        audioActions::appendAudioClipMenu(menu, lanes.context(), clipId);
+        audioActions::appendAudioClipMenu(menu, lanes.context(), clipId, [l, clicked](rack::ui::Menu* sub) {
+            sub->addChild(
+                rack::createMenuItem("Split at transients", "", [l, clicked] { splitAtTransients(*l, clicked); }));
+            sub->addChild(
+                rack::createMenuItem("Make triggers from audio", "", [l, clicked] { makeTriggers(*l, clicked); }));
+        });
 }
 
 void appendLaneMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, TrackId track, Tick at) {

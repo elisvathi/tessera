@@ -4,6 +4,7 @@
 
 #include <rack.hpp>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -48,9 +49,15 @@ std::string outputName(const OutputModuleBase* output);
 /// The output modules that play `track` of `module` now, in the order they were added.
 std::vector<OutputModuleBase*> outputsFor(const TesseraModule* module, TrackId track);
 
-/// The audio part of a clip's menu: Follow tempo, Sound type, the clip tempo (its guess, ×2, ÷2, typed),
-/// gain back to 0 dB, and Try again for a render that failed (§6.2).
-void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+/// The output items of a track's (or the master's) menus: "Show Track Out in the rack" for each module that plays
+/// it, then "Add a Track Out for this track", or "Add another Track Out" once it has one (a Drum Out on a drum track).
+void appendOutputItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track);
+
+/// The audio part of a clip's menu: Reverse, Clip settings ▸ (tempo, follow, sound type, pitch, warp, gain back to
+/// 0 dB), Process ▸ (Normalise, Render to new file, then `moreProcess`'s items), Replace file…, and Find or Try again
+/// when the file is missing or a render failed (§6.2).
+void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip,
+                         std::function<void(rack::ui::Menu*)> moreProcess = nullptr);
 
 /// File ▸ Import audio… (Ctrl/Cmd+Shift+O): picks a file and imports it like a drop on empty space, on new tracks
 /// at the playhead's bar or in their first slots, following what plays.

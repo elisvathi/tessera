@@ -79,11 +79,11 @@ Right-click a clip in a slot:
 | Item | What it does |
 |---|---|
 | **Launch** | Same as its ▶. |
-| **Edit this scene's clips together** | Shows the other clips of the scene dimmed in the piano roll, so you can write parts that fit. See [The piano roll](07-piano-roll.md#editing-several-clips-together). |
+| **Edit this scene's clips together** | On a note clip: shows the other clips of the scene dimmed in the piano roll, so you can write parts that fit. See [The piano roll](07-piano-roll.md#editing-several-clips-together). |
 | **Rename** | A new name for the clip. Every place that uses the clip shows it. |
 | **Colour** | **Track colour** (the default: it follows the track) or one of 16 colours, for the slot and every copy of the clip on the timeline. Handy to tell takes apart, such as record, overdub and play clips. Notes keep the track's colour. |
 | **Devices** | Whether the clip plays through the track's devices or its own, and deleting its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A slot with its own devices shows a small dot in its top-right corner (a wide slot shows a small device card instead). |
-| **Place in arrangement at playhead** | Puts a linked copy on the timeline at the playhead. |
+| **Place on the timeline at the playhead** | Puts a linked copy on the timeline at the playhead. |
 | **Duplicate**, **Delete** | As above. |
 | **Export as MIDI…** | Saves this clip as a MIDI file. |
 | **Loop** | On: the clip repeats. Off: it plays once and stops. |
@@ -93,9 +93,10 @@ Right-click a clip in a slot:
 
 On a note clip, **Bounce notes to a new track…** makes a new clip from what it plays, on a new track in the same scene.
 
-Right-click an **empty slot** for: **Create clip** and **Import MIDI file…** (note and drum tracks), **Import audio
-file…** (audio tracks), **Load a Tessera clip file…**, **Stop track** and **Stop button**. An empty slot normally has a stop button (the small square): launching its scene stops
-that track. Turn **Stop button** off and the slot is blank: its scene leaves that track playing whatever it plays, and
+Right-click an **empty slot** for: **Create clip**, **Import MIDI file…** and **Load a Tessera clip file…** (note
+and drum tracks), **Import audio file…** (audio tracks), **Stop the track now** and **Has a stop button**. An empty
+slot normally has a stop button (the small square): launching its scene stops that track. Turn **Has a stop button**
+off and the slot is blank: its scene leaves that track playing whatever it plays, and
 clicking the slot does nothing. Use it for a part that should keep going while other scenes change.
 
 ### Clip length and loop

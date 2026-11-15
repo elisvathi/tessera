@@ -56,7 +56,7 @@ Click **EDITOR** on the Roll panel. The editor fills the Rack window.
 A new Roll has four tracks: three instrument tracks and one drum track. It has no clips yet. The top half shows
 the song (tracks, clips and the timeline). The bottom half shows the notes of the selected track.
 
-Press **Esc** or click **×** (top right) to close the editor. Your song stays as it is.
+Press **Esc** twice or click **×** (top right) to close the editor. Your song stays as it is.
 
 ## Step 5: make a clip and draw notes
 

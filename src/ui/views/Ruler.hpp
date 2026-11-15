@@ -116,6 +116,11 @@ class Ruler : public InteractiveView {
     float markersBottom() { return segmentsBottom() + (source.hasMarkers() ? strips().markers : 0); }
     /// With playheads, they decide what plays and the clip's loop doesn't: its bar isn't drawn or dragged.
     bool loopByPlayheads() { return !source.playheadSegments().empty(); }
+    /// The stretch between the markers around `at`: from the last marker at or before it (or the start) to the next
+    /// one after it (or the end of the content).
+    void sectionAround(Tick at, Tick& start, Tick& end);
+    /// A right-click on the ruler away from a marker: play from here, add a marker, the loop and this section.
+    void openRulerMenu(rack::math::Vec pos);
     float loopBottom() { return markersBottom() + loopRow(source, strips()); }
     /// The loop strip's height: none with playheads, unless it holds a timeline clip's end.
     static float loopRow(TimelineSource& source, const Strips& s);

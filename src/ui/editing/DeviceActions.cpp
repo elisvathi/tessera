@@ -523,8 +523,10 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id) {
         return;
     EditorContext* c = &ctx;
     rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel(d->name));
-    menu->addChild(new MenuTextField(d->name, [c, id](const std::string& name) {
+    // A device that was never renamed shows its type's name on its card; the menu shows the same.
+    std::string shown = d->name.empty() ? devices::deviceInfo(d->type).name : d->name;
+    menu->addChild(rack::createMenuLabel(shown));
+    menu->addChild(new MenuTextField(shown, [c, id](const std::string& name) {
         if (TesseraModule* mod = c->module())
             mod->perform(renameDevice(mod->song(), id, name));
     }));
@@ -556,7 +558,7 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id) {
         if (TesseraModule* mod = c->module())
             mod->perform(duplicateDevice(mod->song(), id, mod->ids()));
     }));
-    menu->addChild(rack::createMenuItem("Reset knobs", "", [c, id] {
+    menu->addChild(rack::createMenuItem("Reset all settings", "", [c, id] {
         TesseraModule* mod = c->module();
         const Device* dev = mod ? findDevice(mod->song(), id) : nullptr;
         if (!dev)
@@ -764,7 +766,7 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
     if (!lanes.empty()) {
         LaneOwner owner = lanes.front().owner;
         AutomationId id = lanes.front().lane->id;
-        menu->addChild(rack::createMenuItem("Show its lane", owner.track.valid() ? "arranger" : "clip",
+        menu->addChild(rack::createMenuItem("Show its lane", owner.track.valid() ? "timeline" : "clip",
                                             [c, owner, id] { showLane(*c, owner, id); }));
     } else {
         TrackId trackId = trackOf(song, ref);
@@ -776,7 +778,7 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
         ChainOwner chain = ownerOf(song, ref);
         ClipId clip = chain.isClip() ? chain.clip : t ? clipActions::shownClip(ctx, *t) : ClipId();
         auto* arranger =
-            rack::createMenuItem("Automate in the arranger", chain.isClip() ? "own devices: in the clip" : "",
+            rack::createMenuItem("Automate in the timeline", chain.isClip() ? "own devices: in the clip" : "",
                                  [c, ref, trackId] { automateKnob(*c, ref, LaneOwner::ofTrack(trackId)); });
         arranger->disabled = !trackId.valid() || chain.isClip();
         menu->addChild(arranger);

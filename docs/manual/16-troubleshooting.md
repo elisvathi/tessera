@@ -79,7 +79,7 @@ While the transport plays, clips wait for the next **launch line** (by default t
 
 ## Recording over the timeline deleted or doubled my notes
 
-**Recording over arranger clips** (the ▾ next to the record button) decides: **Merge** adds to the clip that is
+**Recording over timeline clips** (the ▾ next to the record button) decides: **Merge** adds to the clip that is
 there, **Stack** puts a new clip on top and keeps the old one, **Replace** cuts the old clip where you recorded. Press
 **Ctrl+Z** to undo the take. See [Where the recording goes](11-recording.md#where-the-recording-goes).
 
@@ -119,7 +119,7 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Launch quantize | **Launch 1 bar ▾** above the track names |
 | Ripple, Stack, Automation follows clips | The ▾ next to Select and Draw in the song pane |
 | MPE input | The ▾ next to the record button |
-| Merge, Stack or Replace when recording on the timeline | The ▾ next to the record button: **Recording over arranger clips** |
+| Merge, Stack or Replace when recording on the timeline | The ▾ next to the record button: **Recording over timeline clips** |
 | Whether moved MIDI controls get a lane | The ▾ next to the record button: **MIDI controls with no lane** |
 | Recording a lane (the old lane arm) | Arm the track; the lane menu's **Records from** picks the source |
 | Automating a rack knob | **Add automation lane → Automate a knob: touch it in the rack** |

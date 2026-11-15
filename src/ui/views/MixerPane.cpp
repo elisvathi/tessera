@@ -39,6 +39,8 @@ constexpr float kZeroDbPos = kZeroDbFaderPos;
 constexpr double kPeakHoldSeconds = 1.5;
 constexpr float kWheelDb = 0.5f;
 constexpr float kFine = 0.1f;
+/// The part of a source chip, from its left, whose click folds the input strips (where the arrow is drawn).
+constexpr float kFoldArrowWidth = 13;
 
 /// A level in volts as dB of full scale (10 V).
 float voltsDb(float volts) { return gainToDb(volts / kFullScaleVolts); }
@@ -73,20 +75,23 @@ ChipText chipText(TesseraModule& m, const Track* t) {
         if (o->isBypassed())
             return {"Bypassed", true};
     std::vector<sources::Row> rows = sources::rowsOf(m, t->id);
-    if (sources::needsList(rows)) {
-        int counted = 0, inUse = 0, loops = 0;
-        for (const sources::Row& r : rows) {
-            if (r.module && r.module->isLoop()) {
-                loops++;
-                continue;
-            }
-            if (!r.countedOnce) {
-                counted++;
-                inUse += r.level.use ? 1 : 0;
-            }
+    int counted = 0, inUse = 0, loops = 0;
+    for (const sources::Row& r : rows) {
+        if (r.module && r.module->isLoop()) {
+            loops++;
+            continue;
         }
-        if (loops > 0)
-            return {std::to_string(counted) + " in \xC2\xB7 " + std::to_string(loops) + " fx"};
+        if (!r.countedOnce) {
+            counted++;
+            inUse += r.level.use ? 1 : 0;
+        }
+    }
+    // A track whose only Track Out is an effect loop (a send return) plays only what it is sent through it.
+    if (loops > 0 && counted == 0)
+        return {std::to_string(loops) + " fx"};
+    if (loops > 0)
+        return {std::to_string(counted) + " in \xC2\xB7 " + std::to_string(loops) + " fx"};
+    if (sources::needsList(rows)) {
         if (inUse == 0)
             return {"No source in use", false, true};
         return {counted == 1 ? "1 source" : std::to_string(counted) + " sources"};
@@ -95,6 +100,16 @@ ChipText chipText(TesseraModule& m, const Track* t) {
         if (r.module)
             return {"IN · " + r.name};
     return {t->type == TrackType::Audio ? "Clips" : "IN"};
+}
+
+/// A small menu with one field to type a new name in; Enter commits it. The mixer has no inline name field, so its
+/// menus' Rename opens this.
+void renameMenu(const std::string& title, const std::string& now, std::function<void(const std::string&)> commit) {
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(title));
+    auto* field = new MenuTextField(now, [commit](const std::string& text) { commit(text); });
+    menu->addChild(field);
+    APP->event->setSelectedWidget(field);
 }
 
 /// The menu for typing a level: "Type a value", then Reset.
@@ -140,7 +155,9 @@ void joinUndoSteps(size_t from, const std::string& name) {
 }
 
 /// What a narrow strip is called in readouts and undo steps.
-std::string laneName(const MixerPane::Strip& s) { return s.isInput() ? s.label : "Lane " + std::to_string(s.lane + 1); }
+std::string laneName(const MixerPane::Strip& s) {
+    return !s.label.empty() ? s.label : "Lane " + std::to_string(s.lane + 1);
+}
 
 class FaderGesture : public DragGesture {
   public:
@@ -761,7 +778,7 @@ void MixerPane::layout() {
             from += laneWidth + 1;
         };
         if (master)
-            add(nullptr, "Mix");
+            add(nullptr, "Tracks");
         else if (t && t->type == TrackType::Audio)
             add(nullptr, "Clips");
         bool drum = t && t->type == TrackType::Drum;
@@ -817,6 +834,11 @@ void MixerPane::layout() {
                 Strip lane;
                 lane.track = t.id;
                 lane.lane = k;
+                for (const DrumLane& l : t.drumLanes)
+                    if (l.outputIndex == k) {
+                        lane.label = l.name;
+                        break;
+                    }
                 lane.playerIndex = -1;
                 partsOf(lane, x - kGap + 1, laneWidth);
                 lane.mute = lane.solo = lane.chip = Rect();
@@ -999,7 +1021,8 @@ void MixerPane::openTyping(const Strip& s) {
     if (s.loop) {
         int64_t module = s.inputModule;
         rack::ui::Menu* menu = rack::createMenu();
-        menu->addChild(rack::createMenuLabel(s.label + " mix (%): 100 is only the effect, 50 both in full"));
+        menu->addChild(rack::createMenuLabel(s.label + " mix (%)"));
+        menu->addChild(rack::createMenuLabel("100: only the effect · 50: dry and effect in full"));
         char text[16];
         snprintf(text, sizeof text, "%.0f", double(sources::mixOf(module) * 100));
         auto* field = new MenuTextField(text, [module](const std::string& typed) {
@@ -1057,9 +1080,11 @@ bool MixerPane::hasInputStrips(TrackId track) const {
     if (!t)
         return false;
     std::vector<OutputModuleBase*> inputs = m->sourceModules(track);
-    // A drum track's lanes have strips of their own; only an effect loop on its kit adds one.
-    if (t->type == TrackType::Drum)
-        return std::any_of(inputs.begin(), inputs.end(), [](OutputModuleBase* o) { return o->isLoop(); });
+    // An effect loop always gets its strip, for its Mix, even as the track's only input (a send return). A drum
+    // track's lanes have strips of their own, so only a loop on its kit adds one.
+    bool loop = std::any_of(inputs.begin(), inputs.end(), [](OutputModuleBase* o) { return o->isLoop(); });
+    if (loop || t->type == TrackType::Drum)
+        return loop;
     return inputs.size() + (t->type == TrackType::Audio ? 1 : 0) >= 2;
 }
 
@@ -1083,35 +1108,34 @@ void MixerPane::openChipMenu(const Strip& s) {
         return;
     const Song& song = m->song();
     TrackId track = s.master ? song.master.id : s.track;
-    if (sources::needsList(sources::rowsOf(*m, track))) {
+    bool list = sources::needsList(sources::rowsOf(*m, track));
+    bool mainMissing = s.master && !m->mainPatched();
+    EditorContext* c = &ctx;
+    if (list && !mainMissing) {
         sources::openList(ctx, track);
         return;
     }
     const Track* t = song.findTrack(track);
     if (!t && !s.master)
         return;
-    EditorContext* c = &ctx;
     rack::ui::Menu* menu = rack::createMenu();
-    menu->addChild(rack::createMenuLabel(t ? t->name : "Master"));
-    bool drum = t && t->type == TrackType::Drum;
-    std::string add =
-        std::string(drum ? "Add a Drum Out" : "Add a Track Out") + (t ? " for this track" : " for the master");
-    menu->addChild(rack::createMenuItem(add, "", [c, m, track] { c->toast(audioActions::addOutputFor(m, track)); }));
-    std::vector<OutputModuleBase*> outputs = audioActions::outputsFor(m, track);
-    for (size_t i = 0; i < outputs.size(); i++) {
-        std::string name = audioActions::outputName(outputs[i]);
-        if (outputs.size() > 1)
-            name += " " + std::to_string(i + 1);
-        if (outputs[i]->isBypassed())
-            menu->addChild(rack::createMenuLabel(name + " is bypassed: nothing comes back on its IN"));
-        int64_t id = outputs[i]->id;
-        // Look the module up again on click: the menu can outlive it.
-        menu->addChild(rack::createMenuItem("Show " + name + " in the rack", "", [m, track, id] {
-            for (OutputModuleBase* o : audioActions::outputsFor(m, track))
-                if (o->id == id)
-                    audioActions::showInRack(o);
-        }));
+    if (mainMissing) {
+        menu->addChild(rack::createMenuLabel("MAIN not patched: the mix goes nowhere"));
+        if (audioActions::audioModuleInPatch())
+            menu->addChild(rack::createMenuItem("Connect MAIN to the Audio module", "",
+                                                [c, m] { c->toast(audioActions::connectMainToAudio(m)); }));
+        else
+            menu->addChild(rack::createMenuLabel("Add an Audio module, then patch Roll's MAIN L and R into it"));
+        if (list) {
+            menu->addChild(new rack::ui::MenuSeparator);
+            menu->addChild(
+                rack::createMenuItem("The master's sources…", "", [c, track] { sources::openList(*c, track); }));
+            return;
+        }
+        menu->addChild(new rack::ui::MenuSeparator);
     }
+    menu->addChild(rack::createMenuLabel(t ? t->name : "Master"));
+    audioActions::appendOutputItems(menu, ctx, track);
 }
 
 void MixerPane::openAddSend(TrackId from) { sendActions::appendAddSendItems(rack::createMenu(), ctx, from); }
@@ -1128,7 +1152,9 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
     const Strip* s = h.strip >= 0 ? &strips[size_t(h.strip)] : nullptr;
     if (s && h.part == Part::Chip && s->lane < 0) {
         TrackId owner = s->master ? m->song().master.id : s->track;
-        if (!s->group.valid() && hasInputStrips(owner)) {
+        // Only the arrow at the chip's left folds the input strips; the words open the chip's menu, so a warning
+        // ("MAIN not patched") is never also a fold switch.
+        if (!s->group.valid() && hasInputStrips(owner) && pos.x < s->chip.pos.x + kFoldArrowWidth) {
             std::set<uint64_t>& folded = ctx.state().foldedInputs;
             if (!folded.erase(owner.value))
                 folded.insert(owner.value);
@@ -1205,11 +1231,42 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
             }));
         return;
     }
-    if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && !s->master && s->lane < 0 &&
-        !s->group.valid()) {
+    // A strip's name opens the same menu as its track header (or group header), with the mixer's own items on top;
+    // the Master's name has the master's items. One thing, one menu, wherever it is clicked.
+    if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && s->group.valid()) {
+        GroupId group = s->group;
+        const TrackGroup* g = m->song().findGroup(group);
+        std::string name = g ? g->name : "";
+        EditorContext* c = &ctx;
+        trackActions::appendGroupMenu(rack::createMenu(), ctx, group, [c, group, name] {
+            renameMenu("Rename group", name,
+                       [c, group](const std::string& text) { trackActions::renameGroup(*c, group, text); });
+        });
+        return;
+    }
+    if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && s->master) {
+        EditorContext* c = &ctx;
+        TrackId master = m->song().master.id;
+        rack::ui::Menu* menu = rack::createMenu();
+        menu->addChild(rack::createMenuLabel("Master"));
+        if (!m->mainPatched() && audioActions::audioModuleInPatch())
+            menu->addChild(rack::createMenuItem("Connect MAIN to the Audio module", "",
+                                                [c, m] { c->toast(audioActions::connectMainToAudio(m)); }));
+        menu->addChild(rack::createMenuItem("Automate its volume in the timeline", "",
+                                            [c, master] { trackActions::automateMix(*c, master, false); }));
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createMenuLabel("An effect on everything: a Track Out on the master"));
+        audioActions::appendOutputItems(menu, ctx, master);
+        return;
+    }
+    if (s && h.part == Part::Name && button == GLFW_MOUSE_BUTTON_RIGHT && s->lane < 0) {
         TrackId track = s->track;
         EditorContext* c = &ctx;
+        const std::vector<TrackId>& selected = ctx.state().selectedTracks;
+        if (std::find(selected.begin(), selected.end(), track) == selected.end())
+            trackActions::click(ctx, track, false, false);
         rack::ui::Menu* menu = rack::createMenu();
+        menu->addChild(rack::createMenuLabel("Mixer"));
         menu->addChild(rack::createMenuItem("Show sends to this track", "",
                                             [c, track] { c->state().setShowSends(track, EditorContext::now()); }));
         // Extra delay this track's sound has (a slow effect): its recordings and bounces move earlier by it.
@@ -1225,6 +1282,12 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
                                                        int(std::clamp(n, 0L, 96000L)), "Set track latency"))
                         m->perform(std::move(set));
             }));
+        menu->addChild(new rack::ui::MenuSeparator);
+        std::string name = t ? t->name : "";
+        trackActions::appendTrackMenu(menu, ctx, track, [c, track, name] {
+            renameMenu("Rename track", name,
+                       [c, track](const std::string& text) { trackActions::rename(*c, track, text); });
+        });
         return;
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
@@ -1234,7 +1297,7 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
             rack::ui::Menu* menu = rack::createMenu();
             Strip lane = *s;
             float volume = shownVolume(*s);
-            menu->addChild(rack::createMenuLabel("Lane " + std::to_string(s->lane + 1) + " pan"));
+            menu->addChild(rack::createMenuLabel(laneName(lane) + " pan"));
             menu->addChild(rack::createMenuItem("Centre", "double-click", [this, lane, volume] {
                 setLane(lane, {volume, 0}, laneName(lane) + " pan centre");
             }));
@@ -1764,8 +1827,10 @@ void MixerPane::drawKnobStrip(NVGcontext* vg, const Strip& s) {
                              NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
         char percent[16];
         snprintf(percent, sizeof percent, "%.0f%%", double(position * 100));
+        // The setting, as the tall strip's readout shows it; the inner ring already shows what is sounding.
+        float setting = showsSend ? shownSend(s, target) : shownVolume(s);
         draw::text(vg, mono, s.readout.getCenter().x, s.readout.getCenter().y,
-                   s.loop ? std::string(percent) : audioDraw::dbText(db));
+                   s.loop ? std::string(percent) : audioDraw::dbText(setting));
     }
 
     auto toggle = [&](const Rect& r, const char* text, bool on, NVGcolor lit) {
@@ -1968,11 +2033,14 @@ void MixerPane::drawStrip(NVGcontext* vg, const Strip& s) {
         float peak = m->audioPlayer().masterClipPeak();
         bool over = peak > kFullScaleVolts;
         draw::roundedRect(vg, s.clipLight, theme::metrics::kRadiusControl, over ? c.record : c.bg2);
+        // "max", not "clip": in Tessera a clip is a piece of music.
         char text[24];
         if (over)
-            snprintf(text, sizeof text, "%+.1f", double(voltsDb(peak)));
+            snprintf(text, sizeof text, "over %+.1f", double(voltsDb(peak)));
+        else
+            snprintf(text, sizeof text, peak > 1e-5f ? "max %.1f" : "max -inf", double(voltsDb(peak)));
         small.color = over ? c.ink : c.text2;
-        draw::text(vg, small, s.clipLight.getCenter().x, s.clipLight.getCenter().y, over ? text : "no clip");
+        draw::text(vg, small, s.clipLight.getCenter().x, s.clipLight.getCenter().y, text);
         small.color = c.text1;
     }
     // Fader: a groove with the 0 dB mark, and the cap.

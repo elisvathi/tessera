@@ -586,22 +586,11 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     std::string what = ids.size() == 1 ? track->name : countTracks(ids.size());
     menu->addChild(rack::createMenuLabel(what));
 
+    // This track first (name, colour, copy, delete), then how it plays and records, its lanes, where its sound goes,
+    // grouping, and adding new tracks last.
     bool full = !canAdd(song, 1);
-    menu->addChild(rack::createMenuItem(
-        "Add instrument track", shortcutLabel(Action::AddInstrumentTrack), [c] { add(*c, TrackType::Instrument); },
-        full));
-    menu->addChild(rack::createMenuItem(
-        "Add drum track", shortcutLabel(Action::AddDrumTrack), [c] { add(*c, TrackType::Drum); }, full));
-    menu->addChild(rack::createMenuItem("Add audio track", "", [c] { add(*c, TrackType::Audio); }, full));
-    menu->addChild(rack::createMenuItem(
-        "Duplicate", shortcutLabel(Action::Duplicate), [c] { duplicateSelected(*c); }, !canAdd(song, ids.size())));
-    if (full)
-        menu->addChild(rack::createMenuLabel(kTracksFull));
-    menu->addChild(rack::createMenuItem(
-        "Delete", shortcutLabel(Action::Delete), [c] { deleteSelected(*c); }, ids.size() >= song.tracks.size()));
     if (ids.size() == 1)
         menu->addChild(rack::createMenuItem("Rename", "double-click", startRename));
-
     menu->addChild(rack::createSubmenuItem("Colour", "", [c, ids](rack::ui::Menu* sub) {
         const Track* t = c->module()->song().findTrack(ids.front());
         for (int i = 0; i < 16; i++) {
@@ -611,12 +600,26 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
                                   [c, ids, color] { setField(*c, ids, &Track::color, color, "Change colour"); }));
         }
     }));
+    menu->addChild(rack::createMenuItem(
+        "Duplicate", shortcutLabel(Action::Duplicate), [c] { duplicateSelected(*c); }, !canAdd(song, ids.size())));
+    menu->addChild(rack::createMenuItem(
+        "Delete", shortcutLabel(Action::Delete), [c] { deleteSelected(*c); }, ids.size() >= song.tracks.size()));
+
+    menu->addChild(new rack::ui::MenuSeparator);
     if (track->type == TrackType::Instrument) {
         menu->addChild(rack::createSubmenuItem("Voices", voicesLabel(song, *track),
                                                [c, ids](rack::ui::Menu* sub) { appendVoicesItems(sub, *c, ids); }));
     }
+    if (track->type != TrackType::Audio)
+        menu->addChild(
+            rack::createSubmenuItem("Input", inputLabel(song, *track), [c, first = ids.front()](rack::ui::Menu* sub) {
+                appendInputItems(sub, *c, first);
+            }));
+    menu->addChild(rack::createSubmenuItem("Recording", track->armed ? "Armed" : "",
+                                           [c, ids](rack::ui::Menu* sub) { appendRecordMenu(sub, *c, ids); }));
 
     TrackId first = ids.front();
+    menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createCheckMenuItem(
         "Show automation lanes", "", [c, first] { return c->state().openAutomation.count(first.value) > 0; },
         [c, first] {
@@ -627,11 +630,11 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     menu->addChild(rack::createSubmenuItem("Add automation lane", "", [c, first](rack::ui::Menu* sub) {
         appendAddLaneItems(sub, *c, first, LaneOwner::ofTrack(first));
     }));
+
+    menu->addChild(new rack::ui::MenuSeparator);
     if (ids.size() == 1) {
         TrackId id = clicked;
-        menu->addChild(rack::createMenuItem(track->type == TrackType::Drum ? "Add a Drum Out for this track"
-                                                                           : "Add a Track Out for this track",
-                                            "", [c, id] { c->toast(audioActions::addOutputFor(c->module(), id)); }));
+        audioActions::appendOutputItems(menu, *c, id);
         if (m->soundIndex(id) >= 0)
             menu->addChild(rack::createMenuItem("Bounce audio to a new track…", shortcutLabel(Action::Bounce),
                                                 [c, id] { bounceActions::openAudioDialog(*c, id); }));
@@ -639,27 +642,16 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
             menu->addChild(rack::createMenuItem("Bounce notes to a new track…", "",
                                                 [c, id] { bounceActions::openNotes(*c, id); }));
     }
-    if (track->type != TrackType::Audio)
+    if (track->type == TrackType::Audio)
         menu->addChild(
-            rack::createSubmenuItem("Input", inputLabel(song, *track), [c, first = ids.front()](rack::ui::Menu* sub) {
-                appendInputItems(sub, *c, first);
-            }));
-    const Track* importer = ctx.module()->song().findTrack(clicked);
-    if (importer && importer->type == TrackType::Audio) {
-        EditorContext* edit = &ctx;
-        menu->addChild(rack::createMenuItem("Import audio file…", "",
-                                            [edit, clicked] { audioActions::importToTrack(*edit, clicked); }));
-    }
-    EditorContext* linkContext = &ctx;
-    menu->addChild(rack::createMenuItem(
-        "Link identical clips", "",
-        [linkContext, clicked] {
-            if (TesseraModule* m = linkContext->module())
-                if (CommandPtr command = arrange::linkIdenticalClips(m->song(), clicked))
-                    m->perform(std::move(command));
-        },
-        !arrange::linkIdenticalClips(ctx.module()->song(), clicked)));
-    appendRecordMenu(menu, ctx, ids);
+            rack::createMenuItem("Import audio file…", "", [c, clicked] { audioActions::importToTrack(*c, clicked); }));
+    // Shown only when the track has copies to link: greyed out, it was noise in nearly every menu.
+    if (arrange::linkIdenticalClips(song, clicked))
+        menu->addChild(rack::createMenuItem("Link identical clips", "", [c, clicked] {
+            if (TesseraModule* mod = c->module())
+                if (CommandPtr command = arrange::linkIdenticalClips(mod->song(), clicked))
+                    mod->perform(std::move(command));
+        }));
 
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Group", shortcutLabel(Action::GroupTracks), [c] { groupSelected(*c); }));
@@ -681,6 +673,17 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
             mod->perform(ungroup(mod->song(), gid));
         }));
     }
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createSubmenuItem("Add track", full ? "full" : "", [c, full](rack::ui::Menu* sub) {
+        sub->addChild(rack::createMenuItem(
+            "Instrument track", shortcutLabel(Action::AddInstrumentTrack), [c] { add(*c, TrackType::Instrument); },
+            full));
+        sub->addChild(rack::createMenuItem(
+            "Drum track", shortcutLabel(Action::AddDrumTrack), [c] { add(*c, TrackType::Drum); }, full));
+        sub->addChild(rack::createMenuItem("Audio track", "", [c] { add(*c, TrackType::Audio); }, full));
+        if (full)
+            sub->addChild(rack::createMenuLabel(kTracksFull));
+    }));
 }
 
 void appendGroupMenu(rack::ui::Menu* menu, EditorContext& ctx, GroupId group, std::function<void()> startRename) {
@@ -701,9 +704,11 @@ void appendGroupMenu(rack::ui::Menu* menu, EditorContext& ctx, GroupId group, st
             f.insert(group.value);
     }));
     menu->addChild(rack::createSubmenuItem("Colour", "", [c, group](rack::ui::Menu* sub) {
+        const TrackGroup* g = c->module() ? c->module()->song().findGroup(group) : nullptr;
+        uint32_t now = g ? g->color : 0;
         for (int i = 0; i < 16; i++) {
             uint32_t color = kTrackColors[i];
-            sub->addChild(new ColorMenuItem("Colour " + std::to_string(i + 1), color, false, [c, group, color] {
+            sub->addChild(new ColorMenuItem("Colour " + std::to_string(i + 1), color, color == now, [c, group, color] {
                 changeGroup(*c, group, "Change group colour", [&](TrackGroup& g) { g.color = color; });
             }));
         }

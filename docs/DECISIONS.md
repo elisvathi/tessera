@@ -2681,3 +2681,43 @@ equal value boxes were turned down. Where the page and the earlier design disagr
 - **Audio clips keep the level line** for their gain (§159): faint under the title on hover, drag it, double-click to
   0 dB. A note tile's title bar and body only move it.
 
+
+## 161. Menus after the UX review: one menu per thing, one word per idea (15 Nov)
+
+The user asked for a UX review of the whole app (audio, mixer, playheads, every context menu) and then said "You
+decide and implement". Built from it:
+
+- **A mixer strip's name opens its track's header menu**, with a "Mixer" part on top (Show sends to this track,
+  Latency). A group strip's name opens the group menu; the Master's name has Connect MAIN, Automate its volume and
+  the master's Track Out items. The mixer has no inline name field, so Rename there opens a small field menu.
+- **Only the source chip's arrow folds input strips**; its words open the sources list. The Master's "MAIN not
+  patched" chip was also the fold switch, so clicking a warning hid strips; now it opens Connect MAIN.
+- **A send return gets its Mix strip.** A track whose only Track Out is an effect loop showed "IN · Track Out" and no
+  Mix strip (the list of inputs only appeared from two inputs). Any effect loop now gives input strips; the chip says
+  "1 fx".
+- **Words:** the master's first input is "Tracks" (it was "Mix", next to effects whose readout says "mix"); the clip
+  light says "max -4.1" / "over +2.3" (it said "no clip", and a clip is music here); the short mixer prints the fader
+  setting, not the meter; "arranger"/"arrangement" became "timeline" in every label and undo name; the audio editor's
+  "Cut here" / "Cut at…" became "Split", as on the timeline; "Clip loops" became "Loop"; "Reset knobs" became "Reset
+  all settings"; a drum lane's pan menu names the lane.
+- **Audio clip menus:** the clip chip menu of an audio clip had the note clip's items (Double, Halve, clip file, MIDI
+  export); it now has the audio items. The audio part of every audio clip menu (timeline, chip, inspector, narrow
+  header) is Reverse, **Clip settings ▸** (tempo, follow, sound type, pitch, warp, gain to 0 dB; the right column
+  sums it up), **Process ▸** (Normalise, Render to new file, and on the timeline Split at transients and Make triggers),
+  Replace file…. "Open in the audio editor" joined the timeline menu, and opening a clip leaves the mixer for its editor.
+- **Track header menu order:** the track itself (Rename, Colour, Duplicate, Delete), then Voices, Input, **Recording
+  ▸** (arm, record from, MIDI channel, monitor), lanes, outputs and bounces, Group, and **Add track ▸** last. "Link
+  identical clips" shows only when there is something to link. One shared helper writes the output items everywhere:
+  "Show Track Out in the rack", then "Add a Track Out for this track", or "Add another Track Out" once there is one.
+- **The inspector's Output row** names the module ("Track Out + 1 more") and opens the same items; with none it is a
+  "+ Add Track Out" button (it was amber text that did nothing).
+- **The ruler has a right-click menu** (Play from here, Add marker here, Loop, Loop this section from marker to
+  marker), and a marker's menu has Loop this section.
+- **Esc with nothing left to cancel asks first**: "Press Esc again to close the editor", and a second Esc within 1.5 s
+  closes the editor window. The review lost the editor to a reflex Esc after a menu.
+- Smaller: output modules' Track submenu shows the bound track ("5 Loop"); group colour is ticked; the device ⋯ menu
+  shows the card's name; launcher audio clips lose "Edit this scene's clips together"; audio tracks' empty slots lose
+  "Load a Tessera clip file…"; "Stop the track now" and "Has a stop button" no longer read alike.
+- **Not built, left for a talk with the user:** placeholders for note tracks in the mixer (§99 says no mixer without
+  sound), a different shape for the Mix control, a SENDS block with full names, Devices in the left switch in both
+  windows, one On control on the Playheads card, the audio header's words and tools, the gain line on selected clips.

@@ -163,8 +163,8 @@ void openSong(EditorContext& ctx) {
 
     auto form = std::make_shared<Form>();
     if (selected.size() >= 1 && selected.size() < song.tracks.size())
-        form->add(settings::choice(
-                      "Export", {"Whole arrangement", "Selected tracks (" + std::to_string(selected.size()) + ")"}, 0),
+        form->add(settings::choice("Export",
+                                   {"Whole timeline", "Selected tracks (" + std::to_string(selected.size()) + ")"}, 0),
                   [](Choices& c, double v) { c.selectedOnly = v != 0; });
     std::vector<std::string> ranges{"Whole song", "Loop"};
     if (hasRange)
@@ -197,7 +197,7 @@ void openSong(EditorContext& ctx) {
         }
         auto [from, to] = rangeOf(s, options);
         if (to <= from) {
-            c->toast("Nothing to export: the arrangement is empty. Clips export from their right-click menu.");
+            c->toast("Nothing to export: the timeline is empty. Clips export from their right-click menu.");
             return;
         }
         std::vector<TrackId> chosen = choices.selectedOnly ? selected : std::vector<TrackId>();

@@ -2,6 +2,7 @@
 
 #include "../../model/Playheads.hpp"
 #include "../../model/TrackColors.hpp"
+#include "../interaction/Shortcuts.hpp"
 #include "../widgets/ColorMenuItem.hpp"
 #include "../widgets/Draw.hpp"
 #include "../widgets/MenuTextField.hpp"
@@ -413,11 +414,69 @@ void Ruler::click(rack::math::Vec pos, int button, Modifiers mods) {
             source.openPlayheadSegmentMenu(segment.id);
         return;
     }
-    if (button != GLFW_MOUSE_BUTTON_RIGHT || zoneAt(pos.y) != Zone::Markers)
+    if (button != GLFW_MOUSE_BUTTON_RIGHT)
         return;
-    std::vector<Marker> m = source.markers();
-    if (int i = markerAt(m, pos.x); i >= 0)
-        openMarkerMenu(m[size_t(i)].id);
+    if (zoneAt(pos.y) == Zone::Markers) {
+        std::vector<Marker> m = source.markers();
+        if (int i = markerAt(m, pos.x); i >= 0) {
+            openMarkerMenu(m[size_t(i)].id);
+            return;
+        }
+    }
+    if (zoneAt(pos.y) != Zone::Overview)
+        openRulerMenu(pos);
+}
+
+void Ruler::sectionAround(Tick at, Tick& start, Tick& end) {
+    start = 0;
+    end = Tick(std::ceil(source.contentEnd()));
+    for (const Marker& mk : source.markers()) {
+        if (mk.position <= at)
+            start = std::max(start, mk.position);
+        else
+            end = std::min(end, mk.position);
+    }
+}
+
+void Ruler::openRulerMenu(rack::math::Vec pos) {
+    TimeAxis& t = viewport.time;
+    Tick at = std::max<Tick>(0, Tick(snapped(t.xToTick(pos.x), snapStep(), false)));
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(timeline::positionText(double(at), source.timeSig())));
+    if (source.canSeek())
+        menu->addChild(rack::createMenuItem("Play from here", "double-click in the time row",
+                                            [this, at] { source.seek(double(at), true); }));
+    if (source.hasMarkers() || source.canSeek())
+        menu->addChild(rack::createMenuItem("Add marker here", "double-click in the marker row", [this, at] {
+            std::vector<Marker> m = source.markers();
+            Marker marker;
+            marker.id = source.newMarkerId();
+            marker.position = at;
+            marker.name = "Marker " + std::to_string(m.size() + 1);
+            m.push_back(marker);
+            std::stable_sort(m.begin(), m.end(),
+                             [](const Marker& a, const Marker& b) { return a.position < b.position; });
+            source.setMarkers(std::move(m), "Add marker");
+        }));
+    // The loop is set by playheads or a drum clip's lanes in some views; then it is shown, not set here.
+    bool fixed = loopByPlayheads() || source.loopLocked();
+    menu->addChild(new rack::ui::MenuSeparator);
+    bool on = source.loopOn();
+    menu->addChild(rack::createCheckMenuItem(
+        "Loop", shortcutLabel(Action::ToggleLoop), [on] { return on; }, [this] { source.toggleLoop(); }, fixed));
+    if (!source.markers().empty()) {
+        Tick start = 0, end = 0;
+        sectionAround(at, start, end);
+        if (end > start)
+            menu->addChild(rack::createMenuItem(
+                "Loop this section", "from marker to marker",
+                [this, start, end, on] {
+                    source.setLoop(start, end);
+                    if (!on)
+                        source.toggleLoop();
+                },
+                fixed));
+    }
 }
 
 void Ruler::changeMarker(MarkerId id, const std::string& undoName,
@@ -466,6 +525,18 @@ void Ruler::openMarkerMenu(MarkerId id) {
                                             [setColor, color] { setColor(color); }));
         }
     }));
+    Tick start = 0, end = 0;
+    sectionAround(it->position, start, end);
+    bool on = source.loopOn();
+    if (end > start)
+        menu->addChild(rack::createMenuItem(
+            "Loop this section", "to the next marker",
+            [this, start, end, on] {
+                source.setLoop(start, end);
+                if (!on)
+                    source.toggleLoop();
+            },
+            loopByPlayheads() || source.loopLocked()));
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Delete", "", [this, id] {
         changeMarker(id, "Delete marker", [](std::vector<Marker>& m, size_t i) { m.erase(m.begin() + long(i)); });

@@ -53,7 +53,7 @@ put the song tempo back.
 
 Every audio clip shows its tempo after its name, like **92 ▾**. Right after a drop, the clips you dropped on the
 timeline say more, like **92 BPM · 2 bars · Stretch ▾**, until you click elsewhere. A clip's menu (right-click it)
-has:
+has **Clip settings ▸**, which sums them up on the right (**92 BPM · Stretch**) and holds:
 
 - **Clip tempo**: the guess, double, half, or a tempo you type. This is the one place a clip's speed is set.
 - **Follow tempo**: how the clip meets the song tempo.
@@ -66,9 +66,11 @@ has:
 - **Pitch** (Stretch clips only): moves the pitch in semitones without changing the speed. Pick a step, or type one
   such as **-3** or **2.5** (two and a half semitones).
 
-The same menu has **Reverse** (the clip plays back to front; its title shows ◀. A clip you have split keeps its
-cuts: each part plays its own audio backwards, where it is), **Normalise** (sets the clip's gain
-so its loudest sample reaches full scale) and **Replace file…** (see below).
+**Warp** and **Gain back to 0 dB** sit in the same submenu. Beside it, the menu has **Reverse** (the clip plays back
+to front; its title shows ◀. A clip you have split keeps its cuts: each part plays its own audio backwards, where it
+is), **Process ▸** with **Normalise** (sets the clip's gain so its loudest sample reaches full scale), **Render to new
+file**, **Split at transients** and **Make triggers from audio** (see [Hits](#hits-transients-splitting-triggers)),
+and **Replace file…** (see below).
 
 ![The audio part of a clip's menu](images/audio-clip-menu.png)
 
@@ -147,6 +149,8 @@ clip's name and menu on the left, the maximize button on the right.
   bring back.
 - **The header holds the clip's settings:** tempo, Stretch, sound type, pitch, gain, reverse (◀), **Warp**, **Takes**, how
   many copies, and the **Select** and **Slice** tools. In a narrow pane they fold into one **Clip** menu.
+- **The clip's menu** (the ▾ beside its name) has the same audio items as its right-click menu on the timeline:
+  **Reverse**, **Clip settings ▸**, **Process ▸** and **Replace file…**, after **Rename** and **Loop**.
 - **The ruler sets the clip tempo.** Drag any beat line, low in the ruler, other than beat 1: the beats stretch from beat 1 so that the
   beat you hold lands where you let go ("112 → 103 BPM"). Use it to line the grid up with the drum hits.
 - **Click in the ruler** to play from there: the song plays from that point of the clip's timeline copy (the selected
@@ -159,13 +163,13 @@ clip's name and menu on the left, the maximize button on the right.
 ### Cutting and shaping a clip
 
 Nothing here changes your audio file. Tessera keeps a list of which part of the file plays when, so you can undo or
-change any of it later. If you split the clip on the timeline, you get separate clips; if you cut it here, it stays
+change any of it later. If you split the clip on the timeline, you get separate clips; if you split it here, it stays
 one clip.
 
 | Do this | How |
 |---|---|
-| Cut | Press **C** for the Slice tool and click, or **Ctrl+E** with the mouse where you want the cut. The line shows where. |
-| Cut many times | Right-click a part ▸ **Cut at…**: every hit, every 1/16, every 1/8, every beat. **Shift+click** with the Slice tool opens the same menu. |
+| Split | Press **C** for the Slice tool and click, or **Ctrl+E** with the mouse where you want the split. Right-click a part ▸ **Split here** does the same. The line shows where. |
+| Split many times | Right-click a part ▸ **Split at…**: every hit, every 1/16, every 1/8, every beat. **Shift+click** with the Slice tool opens the same menu. |
 | Select | Click a part. **Shift+click** adds or removes one. **Ctrl+A** selects them all. |
 | Move a part | Drag it. It snaps to the grid; **Alt** moves it freely. |
 | Trim a part | Drag its edge. Trimming back out brings back the audio you hid. |
@@ -178,7 +182,7 @@ one clip.
 | Pick a time range | Drag along the top of the ruler. **Delete** empties it, **Shift+Delete** closes it up. |
 | Copy and paste | **Ctrl+C**, **Ctrl+X**, **Ctrl+V** (at the mouse) and **Ctrl+D**, on the range or the selected parts. Pasted parts work in this clip, or one with the same file and tempo. |
 | Keep only a stretch | Right-click ▸ **Crop to selection**. |
-| Bake it in | Clip menu ▸ **Render to new file** plays the clip's edits into a new file, which becomes a take the whole clip plays. Its gain and pitch stay settings. Undo brings the edits back, and the old file stays until **Remove unused audio**. |
+| Bake it in | Clip menu ▸ **Process ▸ Render to new file** plays the clip's edits into a new file, which becomes a take the whole clip plays. Its gain and pitch stay settings. Undo brings the edits back, and the old file stays until **Remove unused audio**. |
 
 A clip you haven't cut works as one piece: dragging its body plays another part of the file, just as long, and its edges
 start or end the clip elsewhere in the file. **Shift** moves finely, and edges catch the beat lines.
@@ -244,7 +248,7 @@ Several armed audio tracks record at once. An armed audio track never records no
 ### Takes and comping
 
 Record over an audio clip in a loop and every pass is kept. A pass that starts where the clip starts becomes its next
-**take**: take 2, take 3 and so on, whatever **Recording over arranger clips** says. The clip plays the newest take,
+**take**: take 2, take 3 and so on, whatever **Recording over timeline clips** says. The clip plays the newest take,
 and its title shows which one ("take 3"). Takes need the clip to be at the song tempo the take was recorded at.
 
 To pick the best parts of each pass (comping), select the clip and press **Alt+T** or click **Takes** at the right end
@@ -305,7 +309,7 @@ clips on the timeline) ▸ **Bounce audio to a new track…**, or press **Ctrl+B
 Tessera finds where each hit starts in a file (its **transients**) once it has loaded it. The audio editor marks them
 with small triangles under the waveform.
 
-- **Split at transients** (an audio clip's right-click menu on the timeline) cuts the clip at every hit, so each hit
+- **Split at transients** (an audio clip's right-click menu on the timeline ▸ **Process**) cuts the clip at every hit, so each hit
   is its own clip to move, mute or reorder. One undo step; the pieces stay selected.
 - **Make triggers from audio** (same menu) adds a drum track under the audio track, "Loop triggers", with a clip
   that hits its **Hits** lane wherever the audio has a hit, louder for louder hits. Patch its Drum Out into a rack

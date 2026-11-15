@@ -265,7 +265,7 @@ std::vector<Row> rowsOf(TesseraModule& m, TrackId track) {
     if (const Track* t = song.findTrack(track); t && t->type == TrackType::Audio)
         rows.push_back({nullptr, "Clips", t->clips, false});
     else if (track == song.master.id && !modules.empty())
-        rows.push_back({nullptr, "Mix", song.master.mix, false});
+        rows.push_back({nullptr, "Tracks", song.master.mix, false});
     std::map<std::string, int> total, seen;
     for (OutputModuleBase* o : modules)
         total[audioActions::outputName(o)]++;
@@ -328,9 +328,8 @@ void openList(EditorContext& ctx, TrackId track) {
     menu->addChild(new rack::ui::MenuSeparator);
     bool drum = t && t->type == TrackType::Drum;
     EditorContext* c = &ctx;
-    menu->addChild(rack::createMenuItem(
-        std::string(drum ? "Add a Drum Out" : "Add a Track Out") + (t ? " for this track" : " for the master"), "",
-        [c, m, track] { c->toast(audioActions::addOutputFor(m, track)); }));
+    menu->addChild(rack::createMenuItem(drum ? "Add another Drum Out" : "Add another Track Out", "",
+                                        [c, m, track] { c->toast(audioActions::addOutputFor(m, track)); }));
 }
 
 void appendModuleItems(rack::ui::Menu* menu, OutputModuleBase* module) {

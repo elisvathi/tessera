@@ -14,7 +14,7 @@ playhead: its notes as written aren't what plays.
 - **Double-click** an empty row for a one-bar clip.
 - Right-click an empty row for **Paste**, **Place launcher clip**, and **Import MIDI file here…** (note and drum tracks) or
   **Import audio file here…** (audio tracks).
-- In a clip's menu in the clips panel: **Place in arrangement at playhead**.
+- In a clip's menu in the clips panel: **Place on the timeline at the playhead**.
 
 A clip on the timeline points to a clip, the same way a slot does. Many tiles can point to one clip: they are
 **linked**. A linked tile shows a link badge (∞) in its title bar. Edit the notes of one and every linked tile
@@ -37,7 +37,7 @@ changes.
 - **Ctrl+Alt+drag**: a linked copy.
 - **Ctrl+D**: an independent copy right after the selection. **Paste** makes independent copies too.
 - **Ctrl+U** (**Make unique**): gives each selected tile its own copy of the clip, so you can change it alone.
-- **Link identical clips** (right-click a track): tiles on that track that play exactly the same thing become linked.
+- **Link identical clips** (right-click a track; shown when there is something to link): tiles on that track that play exactly the same thing become linked.
 - **Splitting an audio clip** gives each piece its own clip. Pieces with the same settings still glue back together.
 - **Left / Right arrows** nudge by the grid. **Shift+Left / Right** nudge by a bar.
 
@@ -77,7 +77,7 @@ Right-click a clip on the timeline:
 
 | Item | What it does |
 |---|---|
-| **Open in piano roll** | Shows the clip's notes below (same as double-click). |
+| **Open in piano roll** (**Open in the audio editor** on an audio clip) | Shows the clip below (same as double-click), also when the lower pane was showing the mixer. |
 | **Rename**, **Duplicate**, **Delete** | As usual. |
 | **Colour** | **Track colour** or one of 16 colours, for every selected clip (and the clip's other copies and its slot). |
 | **Devices** | For every selected clip: play through the track's devices or its own, or delete its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A tile with its own devices shows a small device-card mark in its title bar. |
@@ -89,7 +89,7 @@ Right-click a clip on the timeline:
 | **Transpose** | Per tile. The clip itself doesn't change. |
 | **Reset stretch** | Undoes a time-stretch. |
 | **Length** | ×2, ×½ or a percentage, for the clip itself and every place it is used. |
-| **Clip loops** | Turns the clip's loop on or off. |
+| **Loop** | Turns the clip's loop on or off. |
 | **Save as Tessera clip file…** | Saves the clip to reuse elsewhere. |
 
 When a timeline clip is selected, the inspector shows an **INSTANCE** section with its start, length, offset,

@@ -25,6 +25,7 @@ Each track has a header row on the left:
 - **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Click it
   to add a Track Out (a Drum Out for a drum track) bound to this track, in the first free space right of Roll.
   The track menu has the same command, **Add a Track Out for this track**, for any track. Both are one undo step.
+  Once the track has one, the menu offers **Show Track Out in the rack** and **Add another Track Out** instead.
 - **Arm** (the ring): arms the track for recording. It turns red while armed. See [Recording](11-recording.md).
 - **The lanes arrow** (▸): shows the track's automation lanes under it. It is dim until the track has lanes.
 - **M** mutes the track. **S** solos it.
@@ -87,25 +88,28 @@ Right-click a track header for its menu.
 
 ![The track menu, with the Input submenu open](images/track-menu.png)
 
+The menu starts with the track itself, then how it plays and records, its lanes, where its sound goes, grouping, and
+adding tracks last.
+
 | Item | What it does |
 |---|---|
-| **Add instrument track / Add drum track / Add audio track** | Adds a track after this one. |
-| **Duplicate / Delete / Rename** | As above. |
-| **Colour** | One of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
+| **Rename / Colour / Duplicate / Delete** | As above. **Colour** is one of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
 | **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and with playheads each channel gets its own voices (more for one faster than 1x). Or pick a fixed number from 1 to 16 (with playheads, for each channel: the menu then reads, for example, **4 per channel (12)**, with the total the track sends). |
+| **Input** | Note and drum tracks. What the track plays besides its clips. See below. |
+| **Recording ▸** | **Armed for recording**, **Record from**, **MIDI channel** and **Monitor while armed**. See [Recording](11-recording.md); for audio tracks, [Audio](17-audio.md#recording-audio). It says **Armed** on the right while the track is armed. |
 | **Show automation lanes / Add automation lane** | See [Automation](12-automation.md). |
+| **Show Track Out in the rack / Add a Track Out for this track** | See above. |
 | **Bounce audio to a new track…** | Records what the track sounds like onto a new audio track. Shown when the track makes sound. See [Audio](17-audio.md). |
 | **Bounce notes to a new track…** | Note and drum tracks. Makes a new track from the notes, at once. See below. |
 | **Import audio file…** | Audio tracks. Puts a file on this track. See [Audio](17-audio.md). |
-| **Link identical clips** | Timeline clips on this track that play exactly the same thing become linked. Greyed out when none match. |
-| **Input** | Note and drum tracks. What the track plays besides its clips. See below. |
-| **Armed for recording, Monitor while armed** | See [Recording](11-recording.md). |
-| **Record from** | Note and drum tracks: see [Recording](11-recording.md). Audio tracks: see [Audio](17-audio.md#recording-audio). |
-| **MIDI channel** | Note and drum tracks: see [Recording](11-recording.md). |
+| **Link identical clips** | Shown when timeline clips on this track play exactly the same thing: they become linked. |
 | **Group** | Groups the selected tracks. |
+| **Add track ▸** | **Instrument track**, **Drum track** or **Audio track**, added after this one. |
 
 Voices, Input and the recording settings are also in the inspector's **TRACK** section when no notes are selected.
-The inspector's **Output** row says which output module plays the track, or "None" with a hint.
+The inspector's **Output** row names the output module that plays the track (**Track Out**, or **Track Out + 1
+more**); click it to show the module in the rack or add another. A track with none shows **+ Add Track Out** (**+ Add
+Drum Out** on a drum track): click it to add one, bound to the track, right of Roll.
 
 ## Bounce notes to a new track
 

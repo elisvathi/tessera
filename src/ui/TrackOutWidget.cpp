@@ -124,7 +124,8 @@ struct TrackOutWidget : rack::app::ModuleWidget {
         menu->addChild(rack::createSubmenuItem("Source", m->binding().sourceName,
                                                [m](rack::ui::Menu* sub) { appendSourceMenu(sub, m, "Track Out"); }));
         menu->addChild(rack::createSubmenuItem(
-            "Track", "", [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Track Out"); }, m->source() == nullptr));
+            "Track", boundTrackLabel(m), [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Track Out"); },
+            m->source() == nullptr));
         menu->addChild(rack::createSubmenuItem("Channel", m->part() == 0 ? "All" : std::to_string(m->part()),
                                                [m](rack::ui::Menu* sub) { appendChannelMenu(sub, m); }));
         sources::appendModuleItems(menu, m);

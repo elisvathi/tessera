@@ -27,7 +27,7 @@ struct Row {
     bool countedOnce = false; // the same cable as another source: it adds nothing and has no level
 };
 
-/// The sources of `track` (or the master) now: "Clips" first on an audio track, "Mix" first on the master when it
+/// The sources of `track` (or the master) now: "Clips" first on an audio track, "Tracks" first on the master when it
 /// has other sources, then the modules in the order of the track's chain ("Track Out 1", "Track Out 2", "Drum Out").
 /// UI thread.
 std::vector<Row> rowsOf(TesseraModule& m, TrackId track);

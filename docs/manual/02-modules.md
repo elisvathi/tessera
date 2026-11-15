@@ -194,7 +194,8 @@ together, the Track Out fills its 16 with the voices that are sounding, the firs
 the poly channel it used before when it can, so each playhead tends to stay in the same place, and one that doesn't
 fit isn't sent. For every voice, use a Track Out per channel.
 
-**Right-click** for the **Source** (which Roll, by instance name), **Track** and **Channel** menus.
+**Right-click** for the **Source** (which Roll, by instance name), **Track** and **Channel** menus. Each shows its
+current choice on the right, like **Track ▸ 5 Loop**.
 
 ![The Track Out menu: Source and Track](images/track-out-menu.png)
 

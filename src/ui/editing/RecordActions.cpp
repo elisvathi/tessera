@@ -95,7 +95,7 @@ void openMenu(EditorContext& ctx) {
         }));
     static const char* const kArrangerModes[] = {"Merge", "Stack", "Replace"};
     menu->addChild(rack::createSubmenuItem(
-        "Recording over arranger clips", kArrangerModes[size_t(s.arranger)], [c](rack::ui::Menu* sub) {
+        "Recording over timeline clips", kArrangerModes[size_t(s.arranger)], [c](rack::ui::Menu* sub) {
             sub->addChild(settingItem(c, "Merge (add to the clip that is there)", &RecordSettings::arranger,
                                       ArrangerRecordMode::Merge));
             sub->addChild(settingItem(c, "Stack (a new clip on top, the old one kept)", &RecordSettings::arranger,

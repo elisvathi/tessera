@@ -15,11 +15,11 @@ Roll records them into clips.
 
 A track records only when it is **armed**.
 
-- Click the **ring** in the track header, or choose **Armed for recording** in the track menu (also in the
-  inspector's **Recording** chip). The ring turns red.
+- Click the **ring** in the track header, or choose **Recording ▸ Armed for recording** in the track menu (also in
+  the inspector's **Recording** chip). The ring turns red.
 - Arming one track disarms the others. **Ctrl+click** arms more than one.
 
-In the track menu (or the inspector's **Recording** chip):
+In the track menu's **Recording ▸** (or the inspector's **Recording** chip):
 
 - **Record from**: **Any** (CV and MIDI), **REC CV inputs**, or **MIDI**. Audio tracks have their own choices: see
   [Recording audio](17-audio.md#recording-audio).
@@ -56,7 +56,7 @@ Click the **▾** next to the record button.
 | **Metronome** | **Off**, **Count-in only**, **While recording** or **Always** (whenever the song plays), and a **Level**. A soft click, higher on the first beat of the bar, on **MAIN** only: never on a Track Out's OUT, in bounces, exports or stems. The **CLICK** output keeps its trigger either way. |
 | **Recording offset** | How late audio comes back through the sound card; audio takes are moved earlier by it. **Measure it**, type it in ms, or **None**. See [Latency and the recording offset](17-audio.md#latency-and-the-recording-offset). |
 | **New launcher clips** | **As long as played** (rounded up to whole bars when you stop), or a fixed **1, 2, 4 or 8 bars**. A fixed-length clip is finished when full; then it loops and the next passes are added to it. |
-| **Recording over arranger clips** | **Merge** (the default: the take is added to the clip that is there), **Stack** (the take is a new clip on top, and the old one stays as it was) or **Replace** (the take replaces what was there). See below. For notes only: on an audio track, a pass over a clip always becomes one of its [takes](17-audio.md#takes-and-comping). |
+| **Recording over timeline clips** | **Merge** (the default: the take is added to the clip that is there), **Stack** (the take is a new clip on top, and the old one stays as it was) or **Replace** (the take replaces what was there). See below. For notes only: on an audio track, a pass over a clip always becomes one of its [takes](17-audio.md#takes-and-comping). |
 | **Input quantize** | **Off**, or a grid from 1/4 to 1/32, with a strength from 50% to 100%. |
 | **Snap incoming notes to the key** | Keeps played notes in the song's key, both what you hear and what is recorded. |
 | **MIDI controls with no lane** | **Add a lane in the clip** (the default) or **Leave out**. See [Expression and controls](#expression-and-controls). |
@@ -72,7 +72,7 @@ It depends on what the armed track is doing when your first note arrives:
   round, that pass is added (one undo step per pass). You hear the new notes on the next pass.
 - **Plays is set to Clips, and the track plays nothing:** a new clip is made in an empty slot (the selected scene's
   slot, or the next empty one). It starts at the bar where recording started, and keeps playing when you punch out.
-- **Plays is set to Timeline:** it depends on **Recording over arranger clips**. With the song loop on, each pass is
+- **Plays is set to Timeline:** it depends on **Recording over timeline clips**. With the song loop on, each pass is
   its own undo step.
   - **Merge** (the default): what you play goes into the clip that plays at that moment, as if you had drawn it in.
     So you can record the notes first, then go back and record only the mod wheel over them. Nothing new appears

@@ -1108,7 +1108,7 @@ void AudioEditor::cutManyAt(const std::vector<Tick>& ticks) {
             r.id = newId();
     for (Tick t : ticks)
         list = regions::cut(list, a, t, f, newId);
-    store(list, "Cut audio");
+    store(list, "Split audio");
 }
 
 void AudioEditor::cutAt(Tick at) { cutManyAt({at}); }
@@ -1205,8 +1205,8 @@ void AudioEditor::partMenu(const Hit& hit, Tick at) {
         return;
     rack::ui::Menu* menu = rack::createMenu();
     menu->addChild(rack::createMenuLabel("Part of this clip"));
-    menu->addChild(rack::createMenuItem("Cut here", shortcutLabel(Action::Split), [this, at] { cutAt(at); }));
-    menu->addChild(rack::createSubmenuItem("Cut at…", "", [this, id](rack::ui::Menu* sub) {
+    menu->addChild(rack::createMenuItem("Split here", shortcutLabel(Action::Split), [this, at] { cutAt(at); }));
+    menu->addChild(rack::createSubmenuItem("Split at…", "", [this, id](rack::ui::Menu* sub) {
         sub->addChild(rack::createMenuItem("Every hit", "", [this, id] { cutAtHits(id); }));
         TesseraModule* m = ctx.module();
         Tick beat = m ? ticksPerBeat(m->song().timeSig) : kPpq;

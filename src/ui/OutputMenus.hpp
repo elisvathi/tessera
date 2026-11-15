@@ -12,6 +12,8 @@ namespace tessera {
 void appendSourceMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what);
 /// Tracks of the type the module outputs, each with its number, name and colour.
 void appendTrackMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what);
+/// The bound track as the Track submenu's right column shows it: "5 Loop", "Master", "Follows selected", or "".
+std::string boundTrackLabel(OutputModuleBase* m);
 /// All, or one channel 1..16; each channel names the playheads of the bound track that play on it.
 void appendChannelMenu(rack::ui::Menu* menu, OutputModuleBase* m);
 /// Who plays on `channel` of the module's track: its playheads' names ("Lead, Bells"), "nothing" when it has

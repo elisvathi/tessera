@@ -8,7 +8,8 @@ The editor is where you write music. This chapter shows its parts, how to move a
 - The editor covers the whole Rack window. While it is open, the rack behind it doesn't react to the mouse or keys.
   **Ctrl+S** still saves the patch.
 - Click **×** in the top-right corner to close it, or press **Esc**. Esc first cancels a drag, then clears the
-  selection; once nothing is left to cancel, it closes the editor.
+  selection; once nothing is left to cancel, it says "Press Esc again to close the editor", and a second Esc within
+  a moment closes it.
 
 There is also a smaller editor inside the panel itself. See [The editor inside the panel](#the-editor-inside-the-panel).
 
@@ -123,7 +124,10 @@ While you drag a note or clip near the edge, the view scrolls by itself.
   **Ctrl+L** sets the loop around what is selected.
 - **Markers** (Intro, Verse, Chorus above) sit in the top row. Double-click the row to add one (or press
   **Ctrl+M**), drag a marker to move it, click it to jump there. Double-click a marker to rename it. Right-click it
-  to rename it, give it a colour or delete it.
+  to rename it, give it a colour, delete it, or **Loop this section** (from it to the next marker).
+- **Right-click** the time row, the loop strip or an empty spot in the marker row for a menu with **Play from here**,
+  **Add marker here**, **Loop** on or off, and, when there are markers, **Loop this section** (from the marker before
+  the spot to the one after it).
 - The **overview bar** shows the whole song in small. Drag its window to scroll, drag the window's ends to zoom,
   click to jump, double-click to fit.
 

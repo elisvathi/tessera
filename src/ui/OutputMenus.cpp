@@ -95,6 +95,21 @@ void appendSourceMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::stri
     }
 }
 
+std::string boundTrackLabel(OutputModuleBase* m) {
+    TesseraModule* src = m->source();
+    if (!src)
+        return "";
+    if (m->binding().followSelected)
+        return "Follows selected";
+    const Song& song = src->song();
+    if (m->binding().track == song.master.id)
+        return "Master";
+    for (size_t i = 0; i < song.tracks.size(); i++)
+        if (song.tracks[i].id == m->binding().track)
+            return std::to_string(i + 1) + " " + song.tracks[i].name;
+    return "";
+}
+
 void appendTrackMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what) {
     TesseraModule* src = m->source();
     if (!src)

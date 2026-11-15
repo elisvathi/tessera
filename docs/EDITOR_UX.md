@@ -481,7 +481,7 @@ Shortcuts are active only while the editor overlay is focused. They are defined 
 | | Add marker / jump to marker 1–9 | Ctrl/Cmd+M, Ctrl/Cmd+1–9 in arranger with Alt (Alt+1–9) |
 | General | Help overlay | ? |
 | | Export MIDI (opens the export dialog, DESIGN.md §17) | Ctrl/Cmd+Shift+E |
-| | Close editor | Esc (first Esc clears selection / cancels drag, second closes) |
+| | Close editor | Esc (first Esc clears selection / cancels drag; with nothing left, Esc twice within 1.5 s closes) |
 
 Rule: when two DAWs disagree, prefer the binding that doesn't need a modifier for the most frequent action, then the most common convention among DAWs.
 

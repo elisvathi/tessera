@@ -261,4 +261,15 @@ void EditorWindow::onHoverScroll(const HoverScrollEvent& e) {
         e.consume(this);
 }
 
+void EditorWindow::escape() {
+    constexpr double kAgainSeconds = 1.5;
+    double now = EditorContext::now();
+    if (now - lastEscape < kAgainSeconds) {
+        close();
+        return;
+    }
+    lastEscape = now;
+    ctx.toast("Press Esc again to close the editor");
+}
+
 } // namespace tessera

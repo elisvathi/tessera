@@ -143,7 +143,7 @@ Click or right-click a tag to open its panel: the setting's name, a box to type 
   the panel and leaves the setting as it was.
 - **Back to …** sets the default.
 - **Draw a curve** opens a curve for the setting in the lower pane (see [Curves](#playheads) below), and
-  **Modulate, automate…** has **Modulate with ▸**, **Remove modulation ▸**, **Automate in the arranger** and
+  **Modulate, automate…** has **Modulate with ▸**, **Remove modulation ▸**, **Automate in the timeline** and
   **Automate in this clip**. **Modulate with ▸** lists the modulators that can reach the setting; pick one and it
   moves the setting by +50%. **A new modulator…** at its end makes a new one that moves the setting by +50%. Its
   chips only offer places a modulator there can reach the setting from. One undo removes both.
@@ -547,7 +547,7 @@ So one LFO can move an arpeggiator's gate and a filter in your patch together.
 
 Click or right-click a tag, pick **Modulate, automate…** in its panel, and choose:
 
-- **Automate in the arranger**: a lane under the track, in song time. Its header reads, for example, "Arpeggiator ·
+- **Automate in the timeline**: a lane under the track, in song time. Its header reads, for example, "Arpeggiator ·
   Gate".
 - **Automate in this clip**: a lane in the piano roll's lower pane, looping with the clip.
 

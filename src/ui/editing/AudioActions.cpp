@@ -241,18 +241,15 @@ void quantizeClip(EditorContext& ctx, ClipId clipId) {
         ctx.toast("The hits are already where Quantize would put them");
 }
 
-void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId) {
+void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId,
+                         std::function<void(rack::ui::Menu*)> moreProcess) {
     TesseraModule* m = ctx.module();
     const Clip* clip = m ? m->song().findClip(clipId) : nullptr;
     if (!clip || !clip->audio)
         return;
     EditorContext* c = &ctx;
     int uses = m->song().clipUses(clipId);
-    std::string all = uses > 1 ? " (all " + std::to_string(uses) + " copies)" : "";
-    auto edit = [c, clipId](const std::string& name, std::function<void(AudioContent&)> change) {
-        TesseraModule* mod = c->module();
-        mod->perform(editAudio(mod->song(), clipId, change, name));
-    };
+    std::string all = uses > 1 ? " (" + std::to_string(uses) + " linked copies)" : "";
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Audio" + all));
 
@@ -263,49 +260,73 @@ void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clipId
             TesseraModule* mod = c->module();
             mod->perform(reverseAudio(mod->song(), clipId));
         }));
-    menu->addChild(rack::createSubmenuItem("Warp", clip->audio->warps.empty() ? "" : std::to_string(clip->audio->warps.size()),
-                                           [c, clipId](rack::ui::Menu* sub) { appendWarpItems(sub, *c, clipId); }));
-    // Normalise reads the waveform, so it waits until the file is loaded.
-    float peak = 0;
-    if (AudioStore* store = m->audioStore()) {
-        std::vector<std::shared_ptr<const PeakCache>> held;
-        const Clip& shown = *clip;
-        peak = clipPeak(shown, regions::filesOf(m->song(), *shown.audio), [&](int take) -> const PeakCache* {
-            held.push_back(store->status(takeContent(*shown.audio, take).source).peaks);
-            return held.back().get();
-        });
-    }
-    menu->addChild(rack::createMenuItem(
-        "Normalise", peak > 0 ? "loudest sample to full scale" : "",
-        [c, clipId, peak] {
-            TesseraModule* mod = c->module();
-            if (CommandPtr cmd = normaliseClip(mod->song(), clipId, peak))
-                mod->perform(std::move(cmd));
-            else
-                c->toast("Already normalised");
-        },
-        !(peak > 0)));
 
-    menu->addChild(rack::createSubmenuItem("Follow tempo", "",
-                                           [c, clipId](rack::ui::Menu* sub) { appendFollowItems(sub, *c, clipId); }));
-    menu->addChild(rack::createSubmenuItem("Sound type", "",
-                                           [c, clipId](rack::ui::Menu* sub) { appendSoundItems(sub, *c, clipId); }));
-    if (clip->audio->follow == TempoFollow::Stretch)
-        menu->addChild(rack::createSubmenuItem("Pitch", audioDraw::pitchText(*clip->audio), [c, clipId](rack::ui::Menu* sub) {
-            appendPitchItems(sub, *c, clipId);
-        }));
-    char label[48];
-    snprintf(label, sizeof label, "%.4g BPM", clip->audio->sourceTempo);
-    menu->addChild(rack::createSubmenuItem("Clip tempo", label,
-                                           [c, clipId](rack::ui::Menu* sub) { appendTempoItems(sub, *c, clipId); }));
-    menu->addChild(rack::createMenuItem("Render to new file", "bakes in its cuts and fades", [c, clipId] {
-        if (TesseraModule* mod = c->module(); mod && !mod->renderClip(clipId))
-            c->toast("Wait for the last render to finish");
+    // Settings that change how the clip plays, in one submenu with the header's words; the right column sums
+    // them up ("112 BPM · Stretch").
+    static const char* const kFollowNames[] = {"Stretch", "Repitch", "Off"};
+    static const char* const kSoundShort[] = {"Drums", "Melody", "Voice", "Full mix"};
+    char summary[64];
+    snprintf(summary, sizeof summary, "%.4g BPM \xC2\xB7 %s", clip->audio->sourceTempo,
+             kFollowNames[std::clamp(int(clip->audio->follow), 0, 2)]);
+    menu->addChild(rack::createSubmenuItem("Clip settings", summary, [c, clipId](rack::ui::Menu* sub) {
+        TesseraModule* mod = c->module();
+        const Clip* cl = mod ? mod->song().findClip(clipId) : nullptr;
+        if (!cl || !cl->audio)
+            return;
+        const AudioContent& a = *cl->audio;
+        char tempo[48];
+        snprintf(tempo, sizeof tempo, "%.4g BPM", a.sourceTempo);
+        sub->addChild(rack::createSubmenuItem("Clip tempo", tempo,
+                                              [c, clipId](rack::ui::Menu* s2) { appendTempoItems(s2, *c, clipId); }));
+        sub->addChild(rack::createSubmenuItem("Follow tempo", kFollowNames[std::clamp(int(a.follow), 0, 2)],
+                                              [c, clipId](rack::ui::Menu* s2) { appendFollowItems(s2, *c, clipId); }));
+        sub->addChild(rack::createSubmenuItem("Sound type", kSoundShort[std::clamp(int(a.sound), 0, 3)],
+                                              [c, clipId](rack::ui::Menu* s2) { appendSoundItems(s2, *c, clipId); }));
+        if (a.follow == TempoFollow::Stretch)
+            sub->addChild(rack::createSubmenuItem("Pitch", audioDraw::pitchText(a), [c, clipId](rack::ui::Menu* s2) {
+                appendPitchItems(s2, *c, clipId);
+            }));
+        sub->addChild(rack::createSubmenuItem("Warp", a.warps.empty() ? "" : std::to_string(a.warps.size()),
+                                              [c, clipId](rack::ui::Menu* s2) { appendWarpItems(s2, *c, clipId); }));
+        if (a.gainDb != 0)
+            sub->addChild(rack::createMenuItem("Gain back to 0 dB", audioDraw::dbText(a.gainDb), [c, clipId] {
+                editClip(c, clipId, "Clip gain 0 dB", [](AudioContent& x) { x.gainDb = 0; });
+            }));
     }));
-    if (clip->audio->gainDb != 0)
-        menu->addChild(rack::createMenuItem("Gain back to 0 dB", audioDraw::dbText(clip->audio->gainDb), [edit] {
-            edit("Clip gain 0 dB", [](AudioContent& a) { a.gainDb = 0; });
+
+    // Tools that make something new from the clip, used now and then.
+    menu->addChild(rack::createSubmenuItem("Process", "", [c, clipId, moreProcess](rack::ui::Menu* sub) {
+        TesseraModule* mod = c->module();
+        const Clip* cl = mod ? mod->song().findClip(clipId) : nullptr;
+        if (!cl || !cl->audio)
+            return;
+        // Normalise reads the waveform, so it waits until the file is loaded.
+        float peak = 0;
+        if (AudioStore* store = mod->audioStore()) {
+            std::vector<std::shared_ptr<const PeakCache>> held;
+            peak = clipPeak(*cl, regions::filesOf(mod->song(), *cl->audio), [&](int take) -> const PeakCache* {
+                held.push_back(store->status(takeContent(*cl->audio, take).source).peaks);
+                return held.back().get();
+            });
+        }
+        sub->addChild(rack::createMenuItem(
+            "Normalise", peak > 0 ? "loudest sample to full scale" : "",
+            [c, clipId, peak] {
+                TesseraModule* x = c->module();
+                if (CommandPtr cmd = normaliseClip(x->song(), clipId, peak))
+                    x->perform(std::move(cmd));
+                else
+                    c->toast("Already normalised");
+            },
+            !(peak > 0)));
+        sub->addChild(rack::createMenuItem("Render to new file", "bakes in its cuts and fades", [c, clipId] {
+            if (TesseraModule* x = c->module(); x && !x->renderClip(clipId))
+                c->toast("Wait for the last render to finish");
         }));
+        if (moreProcess)
+            moreProcess(sub);
+    }));
+
     menu->addChild(rack::createMenuItem("Replace file…", "or Ctrl+drop a file on the clip",
                                         [c, clipId] { replaceFileDialog(*c, clipId); }));
     // A missing file: point at it, and it is copied into the patch.
@@ -713,6 +734,34 @@ std::vector<OutputModuleBase*> outputsFor(const TesseraModule* module, TrackId t
         if (o->boundTrack() == track && o->status() == BindingStatus::Bound)
             out.push_back(o);
     return out;
+}
+
+void appendOutputItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const Track* t = m->song().findTrack(track);
+    bool drum = t && t->type == TrackType::Drum;
+    std::vector<OutputModuleBase*> outputs = outputsFor(m, track);
+    for (size_t i = 0; i < outputs.size(); i++) {
+        std::string name = outputName(outputs[i]);
+        if (outputs.size() > 1)
+            name += " " + std::to_string(i + 1);
+        if (outputs[i]->isBypassed())
+            menu->addChild(rack::createMenuLabel(name + " is bypassed: nothing comes back on its IN"));
+        int64_t id = outputs[i]->id;
+        // Look the module up again on click: the menu can outlive it.
+        menu->addChild(rack::createMenuItem("Show " + name + " in the rack", "", [m, track, id] {
+            for (OutputModuleBase* o : outputsFor(m, track))
+                if (o->id == id)
+                    showInRack(o);
+        }));
+    }
+    std::string kind = drum ? "Drum Out" : "Track Out";
+    std::string add =
+        outputs.empty() ? "Add a " + kind + (t ? " for this track" : " for the master") : "Add another " + kind;
+    EditorContext* c = &ctx;
+    menu->addChild(rack::createMenuItem(add, "", [c, m, track] { c->toast(addOutputFor(m, track)); }));
 }
 
 } // namespace tessera::audioActions

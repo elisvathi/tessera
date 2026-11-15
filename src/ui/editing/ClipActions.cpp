@@ -548,8 +548,12 @@ void openChipMenu(EditorContext& ctx, TrackId track, ClipId clip) {
                 mod->perform(setClipField(mod->song(), id, &Clip::loopMode, on ? LoopMode::Loop : LoopMode::Off,
                                           on ? "Loop clip" : "Play clip once"));
         }));
-    if (!cl->isAudio())
-        appendDevicesMenu(menu, ctx, {id});
+    // An audio clip gets its audio settings here, as in the timeline; length, Double and the files below are for notes.
+    if (cl->isAudio()) {
+        audioActions::appendAudioClipMenu(menu, ctx, id);
+        return;
+    }
+    appendDevicesMenu(menu, ctx, {id});
     menu->addChild(new rack::ui::MenuSeparator);
     appendLengthItems(menu, ctx, id);
     menu->addChild(new rack::ui::MenuSeparator);
@@ -572,7 +576,7 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         if (t.type == TrackType::Instrument)
             if (const Clip* other = clipAt(m->song(), t.id, slot))
                 scene.push_back(other->id);
-    if (scene.size() > 1)
+    if (scene.size() > 1 && !clip->isAudio())
         menu->addChild(rack::createMenuItem("Edit this scene's clips together", "",
                                             [c, scene, track, id] { editTogether(*c, scene, track, id); }));
     menu->addChild(rack::createMenuItem("Rename", "", [c, id] { startRename(*c, id); }));
@@ -581,7 +585,7 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         appendScaleMenu(menu, ctx, id);
         appendDevicesMenu(menu, ctx, {id});
     }
-    menu->addChild(rack::createMenuItem("Place in arrangement at playhead", "", [c, track, id] {
+    menu->addChild(rack::createMenuItem("Place on the timeline at the playhead", "", [c, track, id] {
         TesseraModule* mod = c->module();
         Tick bar = ticksPerBar(mod->song().timeSig);
         Tick at = Tick(mod->playheadTicks() / double(bar)) * bar;
@@ -647,19 +651,21 @@ void appendEmptySlotMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track
     if (!audioTrack)
         menu->addChild(
             rack::createMenuItem("Create clip", "double-click", [c, track, slot] { create(*c, track, slot); }));
-    menu->addChild(
-        rack::createMenuItem("Load a Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
+    // Tessera clip files and MIDI files hold notes, so an audio track offers only audio files.
+    if (!audioTrack)
+        menu->addChild(
+            rack::createMenuItem("Load a Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
     if (!audioTrack)
         menu->addChild(
             rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
     if (audioTrack)
         menu->addChild(rack::createMenuItem("Import audio file…", "",
                                             [c, track, slot] { audioActions::importToSlot(*c, track, slot); }));
-    menu->addChild(rack::createMenuItem("Stop track", "", [c, track] { c->module()->stopTrack(track); }));
+    menu->addChild(rack::createMenuItem("Stop the track now", "", [c, track] { c->module()->stopTrack(track); }));
     bool stop = !t || slot < 0 || slot >= int(t->slots.size()) || t->slots[size_t(slot)].stop;
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createCheckMenuItem(
-        "Stop button", "its scene stops the track", [stop] { return stop; },
+        "Has a stop button", "its scene stops the track", [stop] { return stop; },
         [c, track, slot, stop] { c->module()->perform(std::make_unique<SetSlotStop>(track, slot, !stop)); }));
 }
 

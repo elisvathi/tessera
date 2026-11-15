@@ -566,8 +566,14 @@ void Inspector::openSetting(Setting which, uint64_t target) {
     const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;
     if (!t)
         return;
+    if (which == Setting::Output && audioActions::outputsFor(m, t->id).empty()) {
+        ctx.toast(audioActions::addOutputFor(m, t->id));
+        return;
+    }
     rack::ui::Menu* menu = rack::createMenu();
-    if (which == Setting::Send) {
+    if (which == Setting::Output) {
+        audioActions::appendOutputItems(menu, ctx, t->id);
+    } else if (which == Setting::Send) {
         sendActions::appendSendItems(menu, ctx, t->id, TrackId(target));
     } else if (which == Setting::AddSend) {
         sendActions::appendAddSendItems(menu, ctx, t->id);
@@ -1025,18 +1031,13 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
         recording = "Armed · " + recording;
     if (t->type != TrackType::Audio)
         y = settingRow(vg, y, "Recording", recording, Setting::Recording);
-    bool connected = Registry::get().hasOutputFor(m->id, t->id);
-    y = row(vg, y, "Output", connected ? "Connected" : "None");
-    if (!connected) {
-        draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextRuler, theme::colors().queue,
-                             NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        draw::text(vg, hint, kPad, y + kRowHeight / 2 - 3,
-                   draw::ellipsize(vg, hint,
-                                   t->type == TrackType::Drum ? "Add a Drum Out and pick this track"
-                                                              : "Add a Track Out and pick this track",
-                                   box.size.x - 2 * kPad));
-        y += kRowHeight - 4;
-    }
+    // The Output row names the module that plays the track; with none, it is the button that adds one.
+    std::vector<OutputModuleBase*> outputs = audioActions::outputsFor(m, t->id);
+    std::string output = t->type == TrackType::Drum ? "+ Add Drum Out" : "+ Add Track Out";
+    if (!outputs.empty())
+        output = audioActions::outputName(outputs.front()) +
+                 (outputs.size() > 1 ? " + " + std::to_string(outputs.size() - 1) + " more" : "");
+    y = settingRow(vg, y, "Output", output, Setting::Output);
     y = drawSends(vg, y, *t);
     y += kSectionGap;
 

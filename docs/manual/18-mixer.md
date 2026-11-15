@@ -23,24 +23,32 @@ something in the song makes sound.
 Each track that makes sound has a strip, in the same order as the tracks: an audio track, or any track whose sound
 comes back on a Track Out's or Drum Out's IN. From top to bottom:
 
-1. **The name**, under a bar in the track's colour. Click it to select the track.
+1. **The name**, under a bar in the track's colour. Click it to select the track. Right-click it for the same menu
+   as the track's header (rename, colour, recording, sends, Track Out…), with the mixer's own items on top: **Show
+   sends to this track** and the track's **Latency**. A group strip's name opens the group's menu.
 2. **The source**: where the sound comes from. **Clips** for an audio track's clips; **IN · Track Out** or
    **IN · Drum Out** for a note track whose voice comes back on that module's IN; **2 sources** when the track has
-   more than one, or **1 in · 1 fx** when it has an effect: then the arrow beside it folds the track's input strips
-   (see [Several sources on one track](#several-sources-on-one-track) and [Effects on a track](#effects-on-a-track)). In amber: **Missing file** when
-   a clip's file is gone, **Bypassed** when a module that brings the sound is bypassed. With one source, click it for a menu: **Add a
-   Track Out for this track** places a new Track Out (a Drum Out for a drum track) bound to it, right of Roll;
-   **Show Track Out in the rack** scrolls the rack to the module and makes its screen flash.
+   more than one; **1 in · 1 fx** when it has an effect, or **1 fx** when an effect is all it has (a track that
+   other tracks send to). With input strips, the small arrow at the chip's left folds them (see
+   [Several sources on one track](#several-sources-on-one-track) and [Effects on a track](#effects-on-a-track)); a
+   click on the words opens the sources list. In amber: **Missing file** when
+   a clip's file is gone, **Bypassed** when a module that brings the sound is bypassed. With one source, click it for a menu:
+   **Show Track Out in the rack** scrolls the rack to the module and makes its screen flash; **Add another Track Out**
+   (or **Add a Track Out for this track** when it has none) places a new Track Out (a Drum Out for a drum track) bound
+   to it, right of Roll.
 3. **Pan**: drag it to move the sound left or right. Double-click centres it.
 4. **M** and **S**: mute and solo, the same switches as in the track rows.
 5. **The fader and the meter**. The fader sets the volume; the meter beside it shows the level as it plays.
 6. **The volume** in dB, and **→ Master**: where the track goes.
 
 The **Master** strip sits at the right. It sets the level of everything together on its way to MAIN. Its light near
-the top turns red and shows the peak (like **+2.3**) when the sound went over full scale; click it to clear it.
-Under its fader it says how much memory the song's audio uses. When MAIN has no cable and the patch has an Audio
-module, it offers **Connect to Audio**. With an effect on the Master, its input strips sit left of it: **Mix** (all
-the tracks together) and the effect. The arrow on **MAIN** folds them.
+the top shows the loudest moment so far (like **max -4.1**); it turns red and says **over +2.3** when the sound went
+over full scale. Click it to clear it. Under its fader it says how much memory the song's audio uses. When MAIN has
+no cable, its chip says **MAIN not patched**: click it for **Connect MAIN to the Audio module** (when the patch has
+one). With an effect on the Master, its input strips sit left of it: **Tracks** (all the tracks together) and the
+effect. The arrow at the left of the chip folds them. Right-click **Master** for **Connect MAIN to the Audio module**,
+**Automate its volume in the timeline**, and the master's Track Out items (a Track Out on the master puts an effect
+on everything).
 
 ## Several sources on one track
 
@@ -102,14 +110,15 @@ When the pane is less than about 200 px tall, for example in the in-panel editor
 knob, with what is sounding on the ring inside it, a pan knob, **M** and **S**. Drag the level knob up or down; everything
 else works the same. An effect loop's knob is its **Mix**.
 
-The knobs sit one above the other, spaced to fill the strip, with the level in dB when there is room for it. In a very short
+The knobs sit one above the other, spaced to fill the strip, with its setting in dB when there is room for it. In a very short
 pane, under about 80 px, they sit side by side.
 
 ## Sending to other tracks
 
 To share one effect between tracks, send to it. Any track can receive sends: add a track, name it "Reverb", patch
 its Track Out **OUT** into a reverb module and the reverb's output back into its **IN** (an
-[effect loop](#effects-on-a-track) at 100% Mix). Then send other tracks to it.
+[effect loop](#effects-on-a-track) at 100% Mix). Its chip then says **1 fx**, and the reverb's **Mix** strip sits
+beside it, as on any track with an effect. Then send other tracks to it.
 
 - **Add a send**: click the dim **+** under a strip's name and pick a track. Tracks that would feed back into this
   one are listed but can't be picked ("Would feed back into Bass"). The send starts at -inf and the faders switch

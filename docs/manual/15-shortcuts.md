@@ -116,7 +116,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | ? (Shift+/) | Shortcut help |
 | Ctrl+Shift+E | Export MIDI… |
 | Ctrl+Shift+O | Import audio… |
-| Esc | Cancel a drag, clear the selection, then close the editor |
+| Esc | Cancel a drag, clear the selection; then Esc twice closes the editor |
 
 ## While keyboard play is on (Ctrl+K)
 

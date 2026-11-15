@@ -57,7 +57,7 @@ class Inspector : public InteractiveView {
     float section(NVGcontext* vg, float y, const char* title);
     float row(NVGcontext* vg, float y, const std::string& label, const std::string& value);
     /// A track setting you can change: the value is a chip with a caret, and a click opens its menu.
-    enum class Setting { Voices, Input, Recording, Audio, Send, AddSend };
+    enum class Setting { Voices, Input, Recording, Audio, Send, AddSend, Output };
     float settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value, Setting which,
                      uint64_t target = 0);
     /// Opens the menu for a setting row of the selected track (`target`: the track a Send row sends to).

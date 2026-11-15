@@ -58,7 +58,7 @@ class MixerPane : public InteractiveView {
         bool knob = false; // a short pane: `fader` is a level knob
         int64_t inputModule = -1; // an input strip's output module; -1 = the track's clips (the master's mix)
         bool loop = false;        // an input strip that is an effect loop: its fader is the Mix (DECISIONS §153)
-        std::string label;        // an input strip's name
+        std::string label;        // an input strip's name, or a drum lane strip's lane name
         int lane = -1; // a drum track's lane IN (Drum Out output 0..7): a narrow strip after its track's
         GroupId group; // a group's strip, after its last track's (§3.5)
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;

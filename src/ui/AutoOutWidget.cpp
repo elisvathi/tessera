@@ -160,7 +160,8 @@ struct AutoOutWidget : rack::app::ModuleWidget {
         menu->addChild(rack::createSubmenuItem("Source", m->binding().sourceName,
                                                [m](rack::ui::Menu* sub) { appendSourceMenu(sub, m, "Auto Out"); }));
         menu->addChild(rack::createSubmenuItem(
-            "Track", "", [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Auto Out"); }, m->source() == nullptr));
+            "Track", boundTrackLabel(m), [m](rack::ui::Menu* sub) { appendTrackMenu(sub, m, "Auto Out"); },
+            m->source() == nullptr));
     }
 
   private:
