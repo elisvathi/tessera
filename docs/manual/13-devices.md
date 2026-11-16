@@ -118,9 +118,12 @@ Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate
   turn the wheel over it), or drag the white line where a shorter row ends. Rows of different lengths drift against
   each other: a 12-step Vel row over 16 note steps makes a line that only repeats every 3 bars.
 - **While it plays**, each row outlines the step it is on.
-- **Every step can be automated.** Right-click a Vel, Gate, Oct or Semi cell for the same menu a setting has: type a
-  value, reset it, **Modulate with**, **Draw a curve**, **Automate in the timeline** or **in this clip**. Lanes name it
-  "Step 5 velocity" and so on. A cell a lane sets wears an **A**.
+- **Every step can be automated and modulated.** Right-click a Vel, Gate, Oct or Semi cell for the same menu a
+  setting has: type a value, reset it, **Modulate with**, **Draw a curve**, **Automate in the timeline** or **in this
+  clip**. Lanes name it "Step 5 velocity" and so on. Mapping works on steps too: click a modulator's arrow and the
+  steps it can reach light up with the tags; click one for +50%, or drag it up or down for how far. A step a modulator
+  moves is outlined in its colour with a dot on its corner, and it shows its value as it plays. A step a lane sets
+  wears an **A**.
 - **Reset** in the card's header starts again from a plain rising arpeggio: notes 1 2 3 4 repeated, every row back to
   its default and 16 steps long. One undo step.
 - Once you have edited it, the dice switch reads **Yours**. The dice writes fresh notes for the line (one undo step);

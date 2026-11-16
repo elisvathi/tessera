@@ -1732,13 +1732,33 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
     }
     case Kind::PatternGrid: {
         const Device* d = findDevice(m->song(), DeviceId(p.id));
-        if (!d || ctx.mappingModulator)
+        if (!d)
             return nullptr;
         PatternGeometry g(p.rect);
         int row = g.rowAt(pos.y);
         if (row < 0)
             return nullptr;
         int lane = row - 5;
+        if (ctx.mappingModulator) {
+            // Mapping: a value step takes the modulator like a tag does, a click at +50%, a drag for how far.
+            if (lane < 0 || pos.x < g.cellsX() || pos.x >= g.cellsRight())
+                return nullptr;
+            ParamRef ref{ParamRef::Kind::Device, d->id.value,
+                         uint16_t(chain::arpLaneFirst(chain::ArpLane(lane)) + g.columnAt(pos.x))};
+            if (!reachableNow(ref))
+                return nullptr;
+            ModulatorId mod(ctx.mappingModulator);
+            return std::make_unique<ClickOrDrag>(std::make_unique<AmountDrag>(*this, ctx, mod, ref, pos), pos,
+                                                 [c, mod, ref] {
+                                                     TesseraModule* mm = c->module();
+                                                     if (!mm || modulationsOn(mm->song(), ref) > 0)
+                                                         return;
+                                                     Modulation route;
+                                                     route.target = ref;
+                                                     route.amount = 0.5f;
+                                                     mm->perform(addRoute(mm->song(), mod, route));
+                                                 });
+        }
         int length = lane < 0 ? (d->line.empty() ? chain::kMaxLineSteps : int(d->line.size()))
                               : int(std::lround(patternValue(d->id, chain::arpLaneSteps(chain::ArpLane(lane)))));
         // A row's end (its line, or its length on the right) sets how long it is; a value step is dragged.
@@ -1908,7 +1928,8 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         deviceActions::openModulatorBrowserAt(ctx, sectionPlace(*hit));
         break;
     case Kind::PatternGrid:
-        editPatternGrid(*hit, pos);
+        if (!ctx.mappingModulator)
+            editPatternGrid(*hit, pos);
         break;
     case Kind::PatternReset:
         resetPattern(DeviceId(hit->id));
@@ -2226,6 +2247,13 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
     case Kind::PatternGrid: {
         PatternGeometry g(hit->rect);
         int row = g.rowAt(pos.y);
+        if (ctx.mappingModulator) {
+            if (row < 5 || pos.x < g.cellsX() || pos.x >= g.cellsRight())
+                return CursorShape::NotAllowed;
+            ParamRef ref{ParamRef::Kind::Device, hit->id,
+                         uint16_t(chain::arpLaneFirst(chain::ArpLane(row - 5)) + g.columnAt(pos.x))};
+            return reachableNow(ref) ? CursorShape::ResizeV : CursorShape::NotAllowed;
+        }
         if (row < 0 || pos.x < g.cellsX())
             return row == 5 + int(chain::ArpLane::Semitone) ? CursorShape::Hand : CursorShape::Arrow;
         if (pos.x >= g.cellsRight())
@@ -2718,11 +2746,15 @@ void DeviceStrip::updateTip() {
         const Part& p = parts[size_t(hovered)];
         if (p.kind == Kind::PatternReset)
             want = "Starts the line again from a plain rising arpeggio: notes 1 2 3 4, every row back to its default";
-        if (p.kind == Kind::PatternGrid) {
+        if (p.kind == Kind::PatternGrid && !APP->scene->getFirstDescendantOfType<rack::ui::MenuOverlay>()) {
             PatternGeometry g(p.rect);
             Vec mouse = localMouse();
             int row = g.rowAt(mouse.y);
-            if (row == 5 + int(chain::ArpLane::Semitone) && mouse.x < g.cellsX())
+            if (ctx.mappingModulator)
+                want = row >= 5 && mouse.x >= g.cellsX() && mouse.x < g.cellsRight()
+                           ? "Click: the modulator moves this step by 50%. Drag up or down for how far"
+                           : "";
+            else if (row == 5 + int(chain::ArpLane::Semitone) && mouse.x < g.cellsX())
                 want = "Click: count the Semi row in semitones, or in steps of the key (Key)";
             else if (row >= 0 && mouse.x >= g.cellsRight())
                 want = "This row's length in steps: drag left or right, or turn the wheel. Rows of different lengths "
@@ -3461,6 +3493,8 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
                           chain::kMaxLineSteps);
     };
     int64_t played = m->arpStep(id);
+    bool mapping = ctx.mappingModulator != 0;
+    NVGcolor mappingColor = mapping ? deviceActions::colorOf(ModulatorId(ctx.mappingModulator)) : c.accent;
     auto playingAt = [&](int length) { return played >= 0 ? int(played % int64_t(length)) : -1; };
     NVGcolor cellFill = nvgTransRGBAf(c.text2, 0.13f), beatFill = nvgTransRGBAf(c.text2, 0.22f);
     NVGcolor playing = nvgTransRGBAf(c.text0, 0.85f);
@@ -3492,6 +3526,8 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
                                     : (col % 4 == 0 ? beatFill : cellFill);
             if (!in)
                 fill.a *= 0.35f; // past the row's end: fainter than the steps that play
+            if (mapping)
+                fill.a *= 0.3f; // a modulator can't move a note step
             draw::roundedRect(vg, cell, 2, fill);
             if (col == notesAt && own)
                 outline(cell);
@@ -3520,8 +3556,11 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
         for (int col = 0; col < chain::kMaxLineSteps; col++) {
             Rect cell = g.laneCell(l, col);
             bool in = col < length;
+            ParamRef ref{ParamRef::Kind::Device, id.value, uint16_t(first + col)};
+            // While mapping, the steps the modulator can reach are lit in its colour and the rest fade.
+            bool lit = mapping && reachableNow(ref);
             nvgSave(vg);
-            nvgGlobalAlpha(vg, in ? 1.f : 0.35f);
+            nvgGlobalAlpha(vg, (in ? 1.f : 0.35f) * (mapping && !lit ? 0.3f : 1.f));
             draw::roundedRect(vg, cell, 3, col % 4 == 0 ? beatFill : cellFill);
             float v = patternValue(id, first + col);
             NVGcolor bar = nvgTransRGBAf(tint, col == at ? 0.95f : 0.6f);
@@ -3554,8 +3593,17 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
                 break;
             }
             }
-            // A step a lane sets wears an "A", like a tag.
-            ParamRef ref{ParamRef::Kind::Device, id.value, uint16_t(first + col)};
+            // A step a modulator moves is outlined in its colour with a dot on its corner, like a tag; one a lane
+            // sets wears an "A".
+            if (std::optional<NVGcolor> moved = modulatorColorOn(ref)) {
+                draw::roundedRectStroke(vg, cell.shrink(Vec(0.5f, 0.5f)), 3, *moved, 1.2f);
+                nvgBeginPath(vg);
+                nvgCircle(vg, cell.getRight() - 3.5f, cell.pos.y + 3.5f, 2.5f);
+                nvgFillColor(vg, *moved);
+                nvgFill(vg);
+            }
+            if (lit)
+                draw::roundedRectStroke(vg, cell.shrink(Vec(0.5f, 0.5f)), 3, mappingColor, 1.5f);
             if (m->automated(ref)) {
                 draw::roundedRect(vg, Rect(cell.pos.x, cell.pos.y, 9, 9), 2, c.accent);
                 draw::TextStyle a{theme::fonts::uiStrong(), 7.5f, c.onTile, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};

@@ -2876,3 +2876,6 @@ agreed with changes): one view, no lower pane.
   or down changes only the pressed step; sideways paints a run, except on Gate, where sideways makes that step longer
   (its bar grows to the right). A click steps the value: up on the cell's top half, down on its bottom half, as in the
   mockup. Steps past a row's end are fainter (their alpha scaled, not set).
+- **Pattern steps take modulators like tags do**: while mapping, the value steps a modulator can reach are lit in its
+  colour (note steps fade: a modulator can't move them); a click adds +50%, a drag sets how far. A modulated step is
+  outlined in its modulator's colour with a dot on its corner. A cell's tooltip hides while a menu is open.
