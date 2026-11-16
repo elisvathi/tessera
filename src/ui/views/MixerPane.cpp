@@ -1642,29 +1642,6 @@ void MixerPane::drawTab(NVGcontext* vg) {
     float cy = tab.size.y / 2;
     if (!m || !hasSound())
         return;
-    // A thin live meter per track in its colour: the header still shows what plays.
-    float x = tabLeft + 8;
-    const AudioPlayer& player = m->audioPlayer();
-    for (const Strip& s : strips) {
-        if (s.master || s.lane >= 0)
-            continue;
-        const Track* t = m->song().findTrack(s.track);
-        float level = std::max(player.level(s.playerIndex, 0), player.level(s.playerIndex, 1));
-        float w = 40 * meterPos(voltsDb(level));
-        nvgBeginPath(vg);
-        nvgRect(vg, x, cy - 1.5f, 40, 3);
-        nvgFillColor(vg, theme::recessed(c, c.bg0, 0.5f));
-        nvgFill(vg);
-        if (w > 0) {
-            nvgBeginPath(vg);
-            nvgRect(vg, x, cy - 1.5f, w, 3);
-            nvgFillColor(vg, theme::track(t ? t->color : 0x888888));
-            nvgFill(vg);
-        }
-        x += 46;
-        if (x > box.size.x - 260 - tabRight)
-            break;
-    }
     float right = maximizeButton->box.pos.x - 8 - tabRight;
     draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1,
                           NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};

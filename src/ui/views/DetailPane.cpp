@@ -185,15 +185,16 @@ void DetailPane::layout() {
     // it folds into one button that names what shows.
     bool sound = mixer && mixer->hasSound();
     bool tabs = ctx.module() && notesTab;
+    // An audio track has no devices (`devices` above), so its switch is Audio | Mixer.
     float h = theme::metrics::kPaneHeader - 6, tx = 4;
     float devicesWidth = kSwitchWidth + 12;
-    float full = kSwitchWidth + 2 + devicesWidth + 2 + (sound ? kSwitchWidth + 2 : 0);
+    float full = kSwitchWidth + 2 + (devices ? devicesWidth + 2 : 0) + (sound ? kSwitchWidth + 2 : 0);
     bool fold = tabs && box.size.x < full + kFoldBelowRest;
     if (notesTab) {
         notesTab->visible = tabs && !fold;
         mixerTab->visible = tabs && !fold && sound;
     }
-    devicesTab->visible = tabs && !fold;
+    devicesTab->visible = tabs && !fold && devices;
     foldedTab->visible = fold;
     if (fold) {
         std::string what = showsMixer() ? "Mixer" : ctx.devicesFillPane ? "Devices" : audioTrack() ? "Audio" : "Notes";
@@ -203,8 +204,10 @@ void DetailPane::layout() {
     } else if (tabs) {
         notesTab->box = rack::math::Rect(tx, 3, kSwitchWidth, h);
         tx += kSwitchWidth + 2;
-        devicesTab->box = rack::math::Rect(tx, 3, devicesWidth, h);
-        tx += devicesWidth + 2;
+        if (devices) {
+            devicesTab->box = rack::math::Rect(tx, 3, devicesWidth, h);
+            tx += devicesWidth + 2;
+        }
         if (sound) {
             mixerTab->box = rack::math::Rect(tx, 3, kSwitchWidth, h);
             tx += kSwitchWidth + 2;

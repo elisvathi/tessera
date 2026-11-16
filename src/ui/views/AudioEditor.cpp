@@ -40,6 +40,23 @@ constexpr float kBeatBand = 9;         // the ruler's lower strip, where beat li
 constexpr float kFlagHeight = 14;
 constexpr double kDriftQuietMs = 5, kDriftFarMs = 15; // a hit this far off its grid line is dim / amber
 
+/// Hatches `area` between `x0` and `x1`: a stretch with no audio (a take's missing pass, a gap between parts).
+void drawHatch(NVGcontext* vg, rack::math::Rect area, float x0, float x1, NVGcolor color) {
+    if (x1 <= x0)
+        return;
+    nvgSave(vg);
+    nvgIntersectScissor(vg, x0, area.pos.y, x1 - x0, area.size.y);
+    nvgBeginPath(vg);
+    for (float s = x0 - area.size.y; s < x1; s += 8) {
+        nvgMoveTo(vg, s, area.getBottom());
+        nvgLineTo(vg, s + area.size.y, area.pos.y);
+    }
+    nvgStrokeWidth(vg, 1);
+    nvgStrokeColor(vg, color);
+    nvgStroke(vg);
+    nvgRestore(vg);
+}
+
 /// "0:01.250": a place in the file.
 std::string timeText(double frames, double rate) {
     double s = rate > 0 ? std::max(0.0, frames / rate) : 0;
@@ -1760,20 +1777,8 @@ void AudioEditor::drawTakeRows(NVGcontext* vg) {
         // No audio here: the pass stopped early, or started late.
         auto [first, last] = regions::takeSpan(*cl, take, f);
         auto hatch = [&](double fromTick, double toTick) {
-            float hx0 = std::max(0.f, float(tickToX(fromTick))), hx1 = std::min(box.size.x, float(tickToX(toTick)));
-            if (hx1 <= hx0)
-                return;
-            nvgSave(vg);
-            nvgIntersectScissor(vg, hx0, body.pos.y, hx1 - hx0, body.size.y);
-            nvgBeginPath(vg);
-            for (float s = hx0 - body.size.y; s < hx1; s += 8) {
-                nvgMoveTo(vg, s, body.getBottom());
-                nvgLineTo(vg, s + body.size.y, body.pos.y);
-            }
-            nvgStrokeWidth(vg, 1);
-            nvgStrokeColor(vg, c.line2);
-            nvgStroke(vg);
-            nvgRestore(vg);
+            drawHatch(vg, body, std::max(0.f, float(tickToX(fromTick))), std::min(box.size.x, float(tickToX(toTick))),
+                      c.line2);
         };
         if (last <= first) {
             hatch(0, double(cl->length));
@@ -1820,8 +1825,10 @@ void AudioEditor::drawView(const DrawArgs& args) {
     regions::List list = parts();
     regions::Files f = state.files;
 
-    // The rest of the file, dim, before the first part and after the last.
+    // The rest of the file, dim, outside the clip: before its start and after its end. Inside the clip, where no part
+    // plays, a hatched gap, so a silent stretch never looks like the file past the clip's end.
     if (!list.empty()) {
+        double clipEnd = std::max(double(cl->length), double(list.back().end()));
         NVGcolor dim = nvgTransRGBAf(c.text2, 0.35f);
         auto ghost = [&](const AudioRegion& r, float from, float to) {
             audioDraw::ClipState ghostState = state;
@@ -1837,8 +1844,18 @@ void AudioEditor::drawView(const DrawArgs& args) {
                                         return column.to > 0 && column.from < fileFrames;
                                     });
         };
-        ghost(list.front(), 0, float(tickToX(double(list.front().start))));
-        ghost(list.back(), float(tickToX(double(list.back().end()))), box.size.x);
+        ghost(list.front(), 0, float(tickToX(std::min(0.0, double(list.front().start)))));
+        ghost(list.back(), float(tickToX(clipEnd)), box.size.x);
+        double covered = 0;
+        for (const AudioRegion& r : list) {
+            if (double(r.start) > covered)
+                drawHatch(vg, wave, std::max(0.f, float(tickToX(covered))),
+                          std::min(box.size.x, float(tickToX(double(r.start)))), c.line2);
+            covered = std::max(covered, double(r.end()));
+        }
+        if (clipEnd > covered)
+            drawHatch(vg, wave, std::max(0.f, float(tickToX(covered))), std::min(box.size.x, float(tickToX(clipEnd))),
+                      c.line2);
     }
     for (const AudioRegion& r : list)
         drawPart(vg, r, wave, color);
@@ -1961,6 +1978,9 @@ void AudioEditor::drawView(const DrawArgs& args) {
         note += "  " + st;
     draw::TextStyle small{theme::fonts::ui(), theme::metrics::kTextRuler, rendering ? c.text0 : c.text2,
                           NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
+    // On a backing, so it reads over the waveform's first peaks.
+    draw::roundedRect(vg, Rect(3, wave.pos.y + 1, draw::textWidth(vg, small, note) + 6, theme::metrics::kTextRuler + 4),
+                      theme::metrics::kRadiusItem, nvgTransRGBAf(c.bg0, 0.85f));
     draw::text(vg, small, 6, wave.pos.y + 2, note);
     if (rendering)
         audioDraw::drawRenderBar(

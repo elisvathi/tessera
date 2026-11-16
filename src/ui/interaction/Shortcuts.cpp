@@ -100,8 +100,6 @@ std::vector<ActionInfo> buildTable() {
         {Ac::PageLeft, "View", "Scroll one screen left", {K(GLFW_KEY_PAGE_UP)}},
         {Ac::PageRight, "View", "Scroll one screen right", {K(GLFW_KEY_PAGE_DOWN)}},
         {Ac::FitAllTracks, "View", "Fit all tracks", {C("f", S)}, Sc::TopPane},
-        {Ac::ShowUsedLanes, "View", "Show used automation lanes", {C("a", S)}},
-        {Ac::MaximizeLane, "View", "Maximize automation lane", {C("a")}},
         {Ac::GridNarrower, "View", "Narrower grid", {C("1", Ctl)}},
         {Ac::GridWider, "View", "Wider grid", {C("2", Ctl)}},
         {Ac::GridTriplet, "View", "Triplet grid", {C("3", Ctl)}},

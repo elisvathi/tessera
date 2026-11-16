@@ -59,8 +59,8 @@ more room.
   restores the panes.
 - Each pane has a **maximize** button in its top-right corner. Double-clicking the line between the panes does the
   same.
-- The lower pane's header starts with **Notes · Devices · Mixer** (**Audio** instead of **Notes** when an audio
-  track is selected), the same in both windows. The lower pane shows the clip or the [mixer](18-mixer.md), never
+- The lower pane's header starts with **Notes · Devices · Mixer** (**Audio · Mixer** when an audio track is
+  selected, since it has no devices), the same in both windows. The lower pane shows the clip or the [mixer](18-mixer.md), never
   both: **F4** switches, and clicking any clip goes back to it. **Mixer** appears once something makes sound. In a
   narrow pane the switch folds into one button that names what shows.
 - **F2** widens the clips beside the timeline (handy when performing). Press it again to narrow them.

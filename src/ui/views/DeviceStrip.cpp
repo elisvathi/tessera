@@ -1810,6 +1810,22 @@ bool DeviceStrip::handleAction(Action action) {
     case Action::Copy:
         copySelection();
         return ctx.state().stripSelected();
+    case Action::Cut:
+        if (!ctx.state().stripSelected())
+            return false;
+        cutSelection();
+        return true;
+    case Action::SelectAll:
+        // While the strip has the focus, select all acts on its cards, never on the notes under it.
+        selectAllInStrip();
+        return true;
+    case Action::SelectNone: {
+        EditorState& st = ctx.state();
+        st.stripDevices.clear();
+        st.stripModulators.clear();
+        st.stripSections.clear();
+        return true;
+    }
     case Action::Paste:
     case Action::PasteAtMouse: {
         const StripClipboard& cb = stripClipboard();
@@ -1826,7 +1842,7 @@ bool DeviceStrip::handleAction(Action action) {
     case Action::Duplicate:
         if (!ctx.state().stripSelected())
             return false;
-        pasteItems(gatherSelection(), pasteIndexAfter(-1));
+        pasteItems(gatherSelection(), pasteIndexAfter(-1), "Duplicated");
         return true;
     default:
         return false;
@@ -4164,7 +4180,7 @@ DeviceStrip::Copied DeviceStrip::gatherSelection() {
     return out;
 }
 
-void DeviceStrip::copySelection() {
+void DeviceStrip::copySelection(bool quiet) {
     Copied items = gatherSelection();
     if (items.empty())
         return;
@@ -4173,10 +4189,25 @@ void DeviceStrip::copySelection() {
     cb.modulators = items.modulators;
     cb.songModulators = items.songModulators;
     cb.label = items.label;
-    ctx.toast("Copied " + items.label);
+    if (!quiet)
+        ctx.toast("Copied " + items.label);
 }
 
-void DeviceStrip::pasteItems(const Copied& items, int index) {
+void DeviceStrip::cutSelection() {
+    copySelection(true);
+    deleteSelection("Cut");
+}
+
+void DeviceStrip::selectAllInStrip() {
+    EditorState& st = ctx.state();
+    st.stripDevices.clear();
+    st.stripModulators.clear();
+    st.stripSections.clear();
+    for (const Device& d : chain())
+        st.stripDevices.push_back(d.id.value);
+}
+
+void DeviceStrip::pasteItems(const Copied& items, int index, const char* verb) {
     TesseraModule* m = ctx.module();
     if (!m || items.empty())
         return;
@@ -4188,18 +4219,19 @@ void DeviceStrip::pasteItems(const Copied& items, int index) {
         return;
     }
     m->perform(std::move(command));
-    ctx.toast("Pasted " + items.label +
+    ctx.toast(std::string(verb) + " " + items.label +
               (dropped > 0 ? " · " + std::to_string(dropped) + (dropped == 1 ? " move" : " moves") +
                                  " left behind: out of reach here"
                            : ""));
 }
 
-void DeviceStrip::deleteSelection() {
+void DeviceStrip::deleteSelection(const char* verb) {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
     Copied items = gatherSelection();
-    auto all = std::make_unique<CompoundCommand>("Delete " + items.label);
+    auto all = std::make_unique<CompoundCommand>(std::string(std::strcmp(verb, "Cut") == 0 ? "Cut " : "Delete ") +
+                                                 items.label);
     Song work = m->song();
     auto add = [&](CommandPtr c) {
         if (!c)
@@ -4216,6 +4248,7 @@ void DeviceStrip::deleteSelection() {
     if (all->empty())
         return;
     m->perform(std::move(all));
+    ctx.toast(std::string(verb) + " " + items.label);
     EditorState& st = ctx.state();
     st.stripDevices.clear();
     st.stripModulators.clear();
@@ -4237,6 +4270,11 @@ int DeviceStrip::pasteIndexAfter(int cardIndex) {
 void DeviceStrip::appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full) {
     std::weak_ptr<DeviceStrip*> weak = self;
     Copied items = gatherSelection();
+    if (!items.empty() && full)
+        menu->addChild(rack::createMenuItem("Cut " + items.label, shortcutLabel(Action::Cut), [weak] {
+            if (auto s = weak.lock())
+                (*s)->cutSelection();
+        }));
     if (!items.empty())
         menu->addChild(rack::createMenuItem("Copy " + items.label, shortcutLabel(Action::Copy), [weak] {
             if (auto s = weak.lock())
@@ -4253,7 +4291,7 @@ void DeviceStrip::appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool ful
     if (!items.empty() && full) {
         menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate), [weak, items] {
             if (auto s = weak.lock())
-                (*s)->pasteItems(items, (*s)->pasteIndexAfter(-1));
+                (*s)->pasteItems(items, (*s)->pasteIndexAfter(-1), "Duplicated");
         }));
         menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [weak] {
             if (auto s = weak.lock())

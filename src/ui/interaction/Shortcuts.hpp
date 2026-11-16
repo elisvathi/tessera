@@ -86,8 +86,6 @@ enum class Action {
     PageLeft,
     PageRight,
     FitAllTracks,
-    ShowUsedLanes,
-    MaximizeLane,
     GridNarrower,
     GridWider,
     GridTriplet,

@@ -188,8 +188,10 @@ section's header (or an empty part of it) to select the whole section without li
 or removes one, **Shift+click** takes everything between, the same as with tracks and clips. Click empty strip space,
 or press **Esc**, to clear the selection.
 
-- **Ctrl+C** copies what is selected, **Ctrl+V** pastes it, **Ctrl+D** duplicates it and **Delete** removes it. The
-  right-click menu has **Copy** and **Paste** too, naming what they copy and paste ("Copy Arpeggiator + Env 1").
+- **Ctrl+C** copies what is selected, **Ctrl+X** cuts it, **Ctrl+V** pastes it, **Ctrl+D** duplicates it and
+  **Delete** removes it. **Ctrl+A** selects every card. These keys act on the strip after you click in it, never on
+  the notes under it. The right-click menu has **Cut**, **Copy** and **Paste** too, naming what they act on ("Copy
+  Arpeggiator + Env 1").
 - A paste goes into the chain the TRACK | CLIP switch shows, after the card you right-clicked (or the last selected
   one), else at the end. Modulators go into that track's (or clip's) section. A card's own DEVICE modulators always
   go with it.

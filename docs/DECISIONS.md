@@ -2983,3 +2983,18 @@ read at its own place (rows have their own lengths), modulators as they are now,
 arpeggio holds (the engine's count, so the grid matches what sounds; while stopped, what the clips send it). Notes
 written but playing elsewhere or resting are outlines; a 0% Vel cell reads "rest". This replaces the outline-only
 display of §172, which only worked when the Move and Vel rows were as long as the notes.
+
+## 174. QA fixes, 17 Nov
+
+From the QA pass of 16 Nov (Trello BUGS):
+- **The device strip owns its keys while it has the focus**: Ctrl+X cuts the selected cards and modulators (it used to
+  cut the clip's notes), Ctrl+A selects every card, Ctrl+Shift+A clears the strip's selection. Messages say Cut,
+  Duplicated, Deleted, not Pasted for everything; the menu gains Cut.
+- **No Devices tab on an audio track**: the switch is Audio | Mixer (it has no devices; the tab did nothing).
+- **The mixer header lost its per-track mini meters**, left from when the mixer was a folded pane of its own: the
+  strips under it show the same, and empty they looked like a stray line.
+- **A and Shift+A left the shortcut table**: nothing handled them (Maximize automation lane, Show used lanes), so the
+  help overlay promised keys that did nothing. They come back with the feature.
+- **Audio editor: gaps are hatched**, and the faint rest of the file only shows outside the clip. Deleting the last
+  part used to look exactly like the clip ending there.
+- **The audio editor's name or "Comp" label sits on a backing**, readable over the waveform's first peaks.

@@ -270,10 +270,17 @@ class DeviceStrip : public InteractiveView {
         bool empty() const { return devices.empty() && modulators.empty() && songModulators.empty(); }
     };
     Copied gatherSelection();
-    void copySelection();
-    /// Pastes `items` into the shown chain, its devices from `index` on (-1 = the end), as one undo step.
-    void pasteItems(const Copied& items, int index);
-    void deleteSelection();
+    /// Puts the selection on the strip's clipboard; says so unless `quiet`.
+    void copySelection(bool quiet = false);
+    /// Copies the selection and removes it, as one undo step (Ctrl+X while the strip has the focus).
+    void cutSelection();
+    /// Selects every card of the shown chain (Ctrl+A while the strip has the focus).
+    void selectAllInStrip();
+    /// Pastes `items` into the shown chain, its devices from `index` on (-1 = the end), as one undo step; the
+    /// message starts with `verb` ("Pasted", "Duplicated").
+    void pasteItems(const Copied& items, int index, const char* verb = "Pasted");
+    /// Removes the selection as one undo step; the message starts with `verb` ("Deleted", "Cut").
+    void deleteSelection(const char* verb = "Deleted");
     /// Where pasted devices go after card `cardIndex` (-1: after the last selected card, else at the end).
     int pasteIndexAfter(int cardIndex);
     /// An Arpeggiator on Pattern: its settings in a slim column, then the line's grid; returns where the grid ends.
