@@ -2929,3 +2929,11 @@ total. The branch has no other framebuffers or NanoVG images. CLAUDE.md now forb
 The Pattern grid's right-click menu lost **Made from the held notes again**: the user found it pointless, and the dice
 beside it already writes a line from the held notes (one control per idea). The menu keeps **Reset**; undo still
 brings back an untouched line.
+
+## 170. Arpeggiator Hold: the next chord replaces the last one, also back to back (16 Nov)
+
+The user saw Hold "still changing notes" and asked whether it makes sense. It is a latch: the last chord plays on
+through rests until new notes come. A bug made it look broken: chords back to back start on the tick the old ones
+end, and the new notes arrived before the old ones' ends, so Hold took the old chord as still held and added the new
+notes to it, an arpeggio over both chords. A note ending at the new note's start now counts as let go. Kept, since
+rests and live playing need it; the manual now says what it does.

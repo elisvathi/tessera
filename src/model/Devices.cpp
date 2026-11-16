@@ -612,9 +612,11 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         release(stage, m.note.id, hold);
         return; // the held notes themselves never sound: the steps do
     case Kind::On: {
+        // A note ending right as this one starts has let go: chords back to back come in as the new one's starts
+        // before the old one's ends.
         bool anyDown = false;
         for (int i = 0; i < s.heldCount; i++)
-            anyDown |= s.held[size_t(i)].down;
+            anyDown |= s.held[size_t(i)].down && s.held[size_t(i)].note.end > m.time + 1e-6;
         if (hold && !anyDown)
             s.heldCount = 0; // new notes after letting go replace the latched ones
         if (s.heldCount == kMaxHeld) {

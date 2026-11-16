@@ -94,6 +94,11 @@ highest. **Octaves** adds the notes again an octave up, and the pattern runs ove
 | **Pattern** | A line of up to 16 steps you can write yourself (see below). Until you do, it is made from the held notes, the lowest note twice as often as each of the others. | for example C G C E C C G E… |
 | **Chord** | All the notes together on every step. | C+E+G… |
 
+**Hold.** With **Hold** on, the arpeggio keeps playing the last chord after its notes end, through a rest, until the
+next chord comes and takes its place. Chords that follow each other without a gap sound the same with Hold on or off;
+Hold only changes the rests. It is most useful when you play the track live from a keyboard: play a chord, let go,
+and the arpeggio plays on.
+
 **Writing a Pattern line.** With **Pattern** picked, the card changes. Its settings sit in a narrow column on the left
 (**Pattern**, **Rate**, **Swing**, **Hold**), and the rest of the card is the line: 16 steps, everything in one view.
 Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate** and **Velocity** don't show.

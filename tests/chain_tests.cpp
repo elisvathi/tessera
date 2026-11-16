@@ -959,6 +959,26 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
     }
 }
 
+TEST_CASE("arpeggiator Hold keeps the last chord through a rest and lets the next chord replace it") {
+    auto play = [](bool hold, Tick gap) {
+        Rig rig;
+        rig.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                          {chain::knob::kHold, hold ? 1.f : 0.f}}); // 1/16 = 240 ticks
+        for (int p : {60, 64, 67})
+            rig.push(rig.note(0, 960, p));
+        for (int p : {62, 65, 69})
+            rig.push(rig.note(960 + gap, 960, p));
+        rig.runTicks(-1, 960 + gap + 960 - 1);
+        return pitchesOf(rig.out.notes);
+    };
+    // Without Hold the rest is silent; with it the first chord plays on through the rest.
+    CHECK(play(false, 960) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
+    CHECK(play(true, 960) == std::vector<int>{60, 64, 67, 60, 64, 67, 60, 64, 62, 65, 69, 62});
+    // Chords back to back: the next replaces the last, with or without Hold.
+    CHECK(play(false, 0) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
+    CHECK(play(true, 0) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
+}
+
 TEST_CASE("Echo repeats notes, fading") {
     Rig rig;
     rig.add(DeviceType::Echo, {{chain::knob::kTime, float(devices::rateIndex("1/8"))},
