@@ -36,6 +36,8 @@ Engine::Engine()
       liveKnobs(new std::atomic<float>[size_t(kMaxKnobs)]()), liveBases(new std::atomic<float>[size_t(kMaxKnobs)]()),
       liveModulators(new std::atomic<float>[size_t(kMaxModulatorSlots)]()) {
     indexOfSlot.fill(-1);
+    for (std::atomic<int64_t>& step : liveArpSteps)
+        step.store(-1, std::memory_order_relaxed);
     setSampleRate(sampleRate);
 }
 
@@ -234,6 +236,7 @@ void Engine::assignChains() {
             ChainRuntime& rt = (*chains)[r];
             rt.owner = key;
             rt.structure = info ? info->structure : 0;
+            rt.idCount = -1;
             rt.chain.clear();
             return int(r);
         }
@@ -262,12 +265,29 @@ void Engine::assignChains() {
             // Expression curves live in the old snapshot, which is about to be freed.
             rt.chain.dropExtras();
             uint64_t structure = info ? info->structure : 0;
-            if (rt.structure != structure) {
-                // Devices came or went: what they held is dropped, and notes waiting for them to end end now.
-                rt.structure = structure;
-                rt.chain.clear();
-                releaseOpenVoices(state);
+            std::array<uint64_t, kMaxDevices> ids{};
+            std::array<bool, kMaxDevices> ons{};
+            int idCount = info ? std::min<int>(int(info->devices.size()), kMaxDevices) : 0;
+            for (int k = 0; k < idCount; k++) {
+                ids[size_t(k)] = info->devices[size_t(k)].id;
+                ons[size_t(k)] = info->devices[size_t(k)].on;
             }
+            if (rt.structure != structure) {
+                rt.structure = structure;
+                if (rt.idCount >= 0) {
+                    // Devices came, went, moved or were switched: each one that stays keeps what it holds, so the
+                    // track plays on through the edit (a live set changes its chain while it plays).
+                    ChainSink sink(*this, *snapshot->tracks[i], state);
+                    rt.chain.restructure(rt.ids.data(), rt.ons.data(), rt.idCount, ids.data(), ons.data(), idCount,
+                                         freeTick, sink);
+                } else {
+                    rt.chain.clear();
+                    releaseOpenVoices(state);
+                }
+            }
+            rt.ids = ids;
+            rt.ons = ons;
+            rt.idCount = idCount;
         }
     }
     for (size_t r = 0; r < chains->size(); r++)
@@ -285,6 +305,7 @@ int Engine::claimRuntime(uint64_t key, uint64_t structure) {
             continue;
         rt.owner = key;
         rt.structure = structure;
+        rt.idCount = -1;
         rt.chain.clear();
         return int(r);
     }
@@ -872,6 +893,9 @@ void Engine::stop() {
         releaseAll(t);
         t.voices.forgetUse(); // each playhead channel sends one voice again until it needs more
     }
+    // Their chains went quiet: no Pattern step plays now (a key played while stopped reports again).
+    for (std::atomic<int64_t>& step : liveArpSteps)
+        step.store(-1, std::memory_order_relaxed);
 }
 
 void Engine::reset() {
@@ -887,6 +911,8 @@ void Engine::reset() {
         t.launchTick = 0;
         releaseAll(t);
     }
+    for (std::atomic<int64_t>& step : liveArpSteps)
+        step.store(-1, std::memory_order_relaxed);
     seekAll();
     resetPending = true;
     if (wasRecording)
@@ -2045,11 +2071,19 @@ void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runti
     if (runtime < 0 || !info || !snapshot)
         return;
     chain::Chain& c = (*chains)[size_t(runtime)].chain;
-    if (c.idle())
-        return;
     const std::vector<DevicePlayback>& devices = info->devices;
-    std::array<chain::DeviceSlot, kMaxDevices> slots;
     int count = std::min<int>(int(devices.size()), kMaxDevices);
+    // Where each Arpeggiator is in its line, for the editor to light the step playing.
+    auto report = [&] {
+        for (int k = 0; k < count; k++)
+            if (int slot = devices[size_t(k)].arpSlot; slot >= 0)
+                liveArpSteps[size_t(slot)].store(c.arpStep(k), std::memory_order_relaxed);
+    };
+    if (c.idle()) {
+        report();
+        return;
+    }
+    std::array<chain::DeviceSlot, kMaxDevices> slots;
     for (int k = 0; k < count; k++) {
         const DevicePlayback& d = devices[size_t(k)];
         slots[size_t(k)] = {d.type,
@@ -2079,6 +2113,7 @@ void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runti
     };
     ChainSink sink(*this, track, state);
     c.run(until, context, sink);
+    report();
 }
 
 void Engine::triggerModulators(const ChainPlayback* info, const chain::ChainNote& note) {

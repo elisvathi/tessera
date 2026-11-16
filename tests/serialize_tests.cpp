@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/model/DeviceTypes.hpp"
 #include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
@@ -317,4 +318,27 @@ TEST_CASE("the swing grid is saved, and swing on 1/8s moves the off-beat 1/8") {
     song.swingStep = kPpq / 2;
     CHECK(throughText(song).swingStep == kPpq / 2);
     CHECK(swung(double(kPpq / 2), 1.f, kPpq / 2) == doctest::Approx(double(kPpq / 2 + kPpq / 4)));
+}
+
+TEST_CASE("a Pattern line saved before version 13 keeps its octaves and its gate") {
+    Song song = makeDefaultSong();
+    const auto& info = devices::deviceInfo(DeviceType::Arpeggiator).params;
+    Device arp = devices::makeDevice(DeviceType::Arpeggiator, song.newId<DeviceId>());
+    arp.params.resize(7); // the settings it had then
+    arp.params[chain::knob::kGate] = devices::normalize(info[chain::knob::kGate], 120);
+    arp.line = {chain::lineStep(1, 1), chain::lineStep(2, -1), chain::lineStep(3, 0)};
+    song.tracks[0].devices.push_back(arp);
+    json::Ref j(songToJson(song));
+    REQUIRE(migrateSong(j.get(), 12));
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    const Device& d = loaded.tracks[0].devices[0];
+    REQUIRE(d.params.size() == info.size());
+    auto shown = [&](int k) { return devices::display(info[size_t(k)], d.params[size_t(k)]); };
+    using chain::ArpLane;
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Octave)) == doctest::Approx(1));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Octave) + 1) == doctest::Approx(-1));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Octave) + 2) == doctest::Approx(0));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Gate) + 5) == doctest::Approx(120));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Velocity)) == doctest::Approx(100));
+    CHECK(d.line == std::vector<uint8_t>{chain::lineStep(1, 0), chain::lineStep(2, 0), chain::lineStep(3, 0)});
 }

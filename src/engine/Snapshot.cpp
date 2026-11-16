@@ -466,13 +466,22 @@ uint64_t chainStructure(const std::vector<Device>& chain) {
 void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slots) {
     auto addOwner = [&snap](ParamRef::Kind kind, uint64_t id, const std::vector<float>& params) {
         int first = int(snap.knobs.size());
-        int most = kind == ParamRef::Kind::Playhead ? playheads::kMaxPlayheadParams : kMaxDeviceParams;
+        int most = kind == ParamRef::Kind::Playhead    ? playheads::kMaxPlayheadParams
+                   : kind == ParamRef::Kind::Modulator ? kMaxModulatorParams
+                                                       : kMaxDeviceParams;
         int n = std::min<int>(int(params.size()), most);
         snap.knobs.insert(snap.knobs.end(), params.begin(), params.begin() + n);
         snap.owners.push_back({kind, id, first, n});
         return first;
     };
 
+    auto arpSlot = [&snap](const Device& d) {
+        if (d.type != DeviceType::Arpeggiator || int(snap.arpSlots.size()) >= kMaxArpSlots)
+            return -1;
+        int slot = int(snap.arpSlots.size());
+        snap.arpSlots.push_back({d.id.value, slot});
+        return slot;
+    };
     auto buildChain = [&](const std::vector<Device>& devices, ChainPlayback& chain) {
         const Device* reader = activePlayheads(devices);
         bool beforeReader = reader != nullptr;
@@ -511,6 +520,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                         bp.variation = b.variation;
                         bp.line = b.line;
                         bp.knobs = addOwner(ParamRef::Kind::Device, b.id.value, b.params);
+                        bp.arpSlot = arpSlot(b);
                         bp.lane = uint8_t(k + 1);
                         chain.devices.push_back(bp);
                         chain.active |= bp.on;
@@ -528,6 +538,7 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
             dp.variation = d.variation;
             dp.line = d.line;
             dp.knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
+            dp.arpSlot = arpSlot(d);
             chain.devices.push_back(dp);
             chain.active |= d.on;
         }

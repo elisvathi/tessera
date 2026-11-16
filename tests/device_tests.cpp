@@ -85,8 +85,16 @@ TEST_CASE("device and modulator tables are complete and consistent") {
         const devices::TypeInfo& info = devices::modulatorInfo(ModulatorType(t));
         CAPTURE(t);
         REQUIRE(info.name != nullptr);
-        CHECK(info.params.size() <= size_t(kMaxDeviceParams));
+        CHECK(info.params.size() <= size_t(kMaxModulatorParams));
     }
+    // The Pattern line's settings sit where the knob names say.
+    const auto& arp = devices::deviceInfo(DeviceType::Arpeggiator).params;
+    REQUIRE(arp.size() == size_t(chain::knob::kArpParamCount));
+    CHECK(std::string(arp[chain::knob::kArpSemiKey].name) == "Semitones in key");
+    CHECK(std::string(arp[chain::arpLaneSteps(chain::ArpLane::Gate)].name) == "Gate steps");
+    CHECK(std::string(arp[chain::knob::kArpStepVel + 4].name) == "Step 5 velocity");
+    CHECK(std::string(arp[chain::knob::kArpStepSemi + 15].name) == "Step 16 semitones");
+    CHECK(arp[chain::arpLaneFirst(chain::ArpLane::Octave)].min == -3);
 
     auto checkParam = [](const devices::ParamInfo& p) {
         CAPTURE(p.name);

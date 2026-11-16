@@ -224,7 +224,7 @@ struct TrackPlayback {
 /// Upper bounds the engine sizes its tables by, so it never allocates.
 constexpr int kMaxModulatorSlots =
     kMaxSongModulators + kMaxTracks * (kMaxTrackModulators + kMaxDevices * kMaxDeviceModulators);
-constexpr int kMaxKnobs = (kMaxTracks * kMaxDevices + kMaxModulatorSlots) * kMaxDeviceParams +
+constexpr int kMaxKnobs = kMaxTracks * kMaxDevices * kMaxDeviceParams + kMaxModulatorSlots * kMaxModulatorParams +
                           kMaxTracks * playheads::kMaxPlayheads * playheads::kMaxPlayheadParams;
 
 /// A device as the engine runs it. Its knob values start at `knobs` in the knob table.
@@ -237,7 +237,11 @@ struct DevicePlayback {
     uint8_t lane = 0; // in a playhead's branch: that playhead's place (1..16); 0 = the track's chain
     int32_t variation = 1; // its dice
     std::vector<uint8_t> line; // an Arpeggiator's own Pattern line
+    int arpSlot = -1;          // an Arpeggiator: where the engine says which step it played (Engine::arpStep)
 };
+
+/// Arpeggiators whose last step the engine reports, for the editor to light it.
+constexpr int kMaxArpSlots = 64;
 
 /// One modulation onto a knob or an AUTO channel: a modulator (by slot) and how far it moves its target.
 struct ModSource {
@@ -359,6 +363,7 @@ struct Snapshot {
     std::vector<ModulatorPlayback> modulators;
     std::vector<KnobModulation> modulated; // knobs that modulators move
     std::vector<int> laneKnobs;            // knobs that knob lanes turn, sorted
+    std::vector<std::pair<uint64_t, int>> arpSlots; // each Arpeggiator's device ID value and its report slot
 
     /// The own chain of clip `clip` (its ID value), or nullptr when it doesn't play through one.
     const ChainPlayback* ownChainOf(uint64_t clip) const {
@@ -369,6 +374,13 @@ struct Snapshot {
     }
     /// The knob table index of a device knob or modulator setting; -1 when it isn't there.
     int knobIndex(const ParamRef& ref) const;
+    /// Where the engine reports the steps of the Arpeggiator with this ID value; -1 for none.
+    int arpSlotOf(uint64_t device) const {
+        for (const auto& [id, slot] : arpSlots)
+            if (id == device)
+                return slot;
+        return -1;
+    }
 };
 
 /// Gives each track an output-bus slot that stays the same for the track's whole lifetime, so reordering

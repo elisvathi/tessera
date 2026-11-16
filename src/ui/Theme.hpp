@@ -103,6 +103,8 @@ struct DeviceColors {
     NVGcolor keyBlack;
     NVGcolor caption;
     NVGcolor link;      // the line from card to card
+    NVGcolor stepUp;    // a Pattern step moved up (octaves, semitones)
+    NVGcolor stepDown;  // and down
     float glow;         // how strongly coloured shapes glow (less on light schemes)
 };
 const DeviceColors& deviceColors();
@@ -213,7 +215,7 @@ constexpr float kDisplayLarge = 22;
 constexpr float kStatusBar = 3; // colored strip at the top of an output display
 
 // The device strip (docs/DEVICES.md §1.1): cards of pictures, each picture with its tags on it.
-constexpr float kDeviceTile = 100;        // a picture's height
+constexpr float kDeviceTile = 150;        // a picture's height (the Arpeggiator's Pattern grid needs it)
 constexpr float kDeviceTileRadius = 9;
 constexpr float kDeviceTileGap = 8;       // between the pictures of a card
 constexpr float kDeviceCardHeader = 30;

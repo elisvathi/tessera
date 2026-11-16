@@ -1,6 +1,8 @@
 #include "doctest.h"
 
 #include "../src/engine/Snapshot.hpp"
+#include "../src/model/DeviceTypes.hpp"
+#include "../src/model/Devices.hpp"
 #include "../src/model/TrackCommands.hpp"
 #include "../src/ui/interaction/TrackRows.hpp"
 #include "RandomSong.hpp"
@@ -299,6 +301,17 @@ TEST_CASE("auto voices follow the most notes a track's clips play at once") {
     song.clips.emplace(clip.id, clip);
     track.slots[0].clip = clip.id;
     CHECK(song.voicesOf(track) == 3);
+
+    // An arpeggiator plays one note at a time, but a Pattern line's "all" step plays the whole chord.
+    Device arp = devices::makeDevice(DeviceType::Arpeggiator, DeviceId(900));
+    arp.params[chain::knob::kPattern] = devices::normalize(
+        *devices::paramInfo(DeviceType::Arpeggiator, chain::knob::kPattern), float(chain::ArpPattern::Pattern));
+    arp.line = {chain::lineStep(1, 0), chain::lineStep(2, 0)};
+    track.devices = {arp};
+    CHECK(song.voicesOf(track) == 1);
+    track.devices[0].line.push_back(chain::lineStep(chain::kAllRow, 0));
+    CHECK(song.voicesOf(track) == 3);
+    track.devices.clear();
 
     track.polyphony = 5;
     CHECK(song.voicesOf(track) == 5);

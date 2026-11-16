@@ -2825,3 +2825,54 @@ scrolls and zooms like the piano roll.
   everywhere, as in the piano roll.
 - **Not done yet**: modulators moving volume, pan and send levels (they are automatable with lanes already), and a
   lane for the to-Master switch.
+
+## 165. A bigger Pattern grid, Oct repeats your line, one row of cards, new modulators on their device (16 Nov)
+
+- **The Pattern grid is a picture of its own** (replaced by §166: one view), after the picture with Pattern on it (380 px wide, the full picture
+  height). Under the tags it had about 8 px per row; now about 13 px, with "+1 / −1" in the oct row and a "len" row,
+  closer to the mockup (§163). The mockup's 17 px rows would need a taller card, and every card shares one height.
+  The first picture then shows the held chord pointing at the grid ("Plays the line in the grid").
+- **Oct with your own line plays the line once per octave** (replaced by §166: octaves per step), each pass an octave higher. Before, rows 1 to 4 only
+  reached the held notes, so Oct did nothing. "all" plays the held notes (plus the pass's octave), not every octave
+  at once.
+- **The device strip is always one row** (supersedes the strip's rows grip): it scrolls sideways. The grip, the
+  wrapping and the up-down scroll are gone; the saved "stripRows" setting is no longer read.
+- **Modulate with › A new modulator…** on a device's setting lights that device's chip, so the new modulator lives
+  on the device, not the track. The other chips are still there to pick.
+- **Live edits to a chain keep it playing.** Adding, removing, moving or switching a device used to clear the whole
+  chain (an arpeggiator went silent until the next note). Now the chain is rearranged by device ID
+  (`Chain::restructure`): each device that stays keeps its state at its new place, waiting notes at a removed device go
+  on to the next one, and a removed or switched-off device hands its held notes on and ends only the notes it alone
+  would end (chord notes, legato notes). A new device starts with the next notes.
+- **A card's DEVICE section sits inside the card's outline**: left corners follow the card, the right side is square
+  against the divider, so the outline and the selection colour run all the way round.
+
+## 166. The Pattern line in one view, taller pictures for every card (16 Nov)
+
+The user found the Pattern grid tiny and the octave row unreadable, and asked for gate, velocity and semitones per
+step, every step automatable, each row its own length, a reset to a normal arpeggio, and the grid to show what plays.
+Two mockups on the design canvas (D8 with tabs per row, rejected: "edit everything quick and fast in one view"; D9,
+agreed with changes): one view, no lower pane.
+- **Every card's picture is 150 px tall** (was 100), so the strip never changes height when Pattern shows. Today's
+  drawings are centred in the taller space; they can grow into it later.
+- **On Pattern the card shows a slim column of settings** (Pattern, Rate, Swing, Hold) **and the line's grid**. Oct,
+  Gate and Velocity hide: the line sets them per step. Every other pattern keeps its pictures.
+- **The grid**: five note rows (all, 4..1), then four value rows: Vel (scales the held note's velocity, 0-100%), Gate
+  (5-200% of a step), Oct (-3..+3), Semi (-12..+12; its label switches to Key: steps of the key). Values are cells you
+  drag up or down; dragging across paints a run; wheel steps; double-click resets. Oct and Semi show numbers in an up
+  or down colour (theme `stepUp`, `stepDown`).
+- **Each value row has its own length** (1-16), shown on its right; the notes row's length is the line's. Shorter rows
+  end in a white line; drag it or the number.
+- **Every step is a setting** (Arpeggiator knobs 12-75: "Step 5 velocity"...), so lanes, curves and modulators work
+  as for any setting, from the cell's right-click menu. A device may now have 80 settings (modulators stay at 16).
+- **Animated**: the engine reports each Arpeggiator's last step (`Engine::arpStep`, a slot per Arpeggiator in the
+  snapshot); each row outlines its own step.
+- **Reset** in the header writes notes 1 2 3 4 over 16 steps and every row's default.
+- **The card's Oct no longer repeats an own line** (replaces the rule from §165): octaves are per step.
+- **Schema 13**: a line saved before kept its octave inside each step and played the card's Gate; both move into the
+  step settings on load.
+- **Auto voices** count a second voice when a step's gate is over 100%.
+- **A value drag picks its way on its first move** (after the user found a gate drag changing the next gate too): up
+  or down changes only the pressed step; sideways paints a run, except on Gate, where sideways makes that step longer
+  (its bar grows to the right). A click steps the value: up on the cell's top half, down on its bottom half, as in the
+  mockup. Steps past a row's end are fainter (their alpha scaled, not set).

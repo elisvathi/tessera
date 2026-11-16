@@ -94,6 +94,10 @@ CommandPtr setModulatorVariation(const Song& song, ModulatorId id, int32_t varia
 /// notes again).
 CommandPtr setArpLine(const Song& song, DeviceId id, std::vector<uint8_t> line, int32_t variation,
                       const std::string& name);
+/// An Arpeggiator's Pattern line, its dice and some of its settings (display values by knob: steps, row lengths)
+/// together, as one undo step: a drag that paints steps, a new length, a reset. Null when nothing changes.
+CommandPtr setArpPattern(const Song& song, DeviceId id, std::vector<uint8_t> line, int32_t variation,
+                         const std::vector<std::pair<int, float>>& settings, const std::string& name);
 /// The song as one run with roll `roll` plays it: everything on "New every play" fixed to that run's number. A bake or
 /// export renders this, so what it writes can be kept.
 Song songRolled(const Song& song, uint32_t roll);

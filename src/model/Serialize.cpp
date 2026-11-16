@@ -1308,6 +1308,58 @@ bool migrateSong(json_t* songJ, int fromVersion) {
     // Version 10 made the Note Filter's Channel a set of channels (songFromJson turns the one channel into a set).
     // Version 11 gave every length and synced rate the one scale, short to long (kept by name, like version 8).
     // Version 12 let a clip have its own device chain; older songs have none, so nothing changes for them.
+    if (fromVersion < 13) {
+        // Version 13 gave the Arpeggiator's Pattern line a row of settings per step. A line saved before kept each
+        // step's octave inside the line and played every note for the card's Gate: both move into the new step
+        // settings, so the line sounds as it did.
+        const auto& info = devices::deviceInfo(DeviceType::Arpeggiator).params;
+        auto migrate = [&](json_t* d) {
+            json_t* line = json_object_get(d, "line");
+            const char* type = json_string_value(json_object_get(d, "type"));
+            if (!type || std::string(type) != "arpeggiator" || json_array_size(line) == 0)
+                return;
+            json_t* params = json_object_get(d, "params");
+            if (!json_is_array(params))
+                return;
+            while (json_array_size(params) < info.size())
+                json_array_append_new(params, json_real(devices::defaultNormalized(info[json_array_size(params)])));
+            json_t* gateJ = json_array_get(params, size_t(chain::knob::kGate));
+            float gate = devices::display(info[chain::knob::kGate],
+                                          json_is_number(gateJ) ? float(json_number_value(gateJ))
+                                                                : devices::defaultNormalized(info[chain::knob::kGate]));
+            for (int k = 0; k < 16; k++) {
+                int at = chain::arpLaneFirst(chain::ArpLane::Gate) + k;
+                json_array_set_new(params, size_t(at), json_real(devices::normalize(info[size_t(at)], gate)));
+            }
+            size_t k;
+            json_t* step;
+            json_array_foreach(line, k, step) {
+                auto v = uint8_t(std::clamp<json_int_t>(json_integer_value(step), 0, 0x3F));
+                if (k < 16) {
+                    int at = chain::arpLaneFirst(chain::ArpLane::Octave) + int(k);
+                    json_array_set_new(params, size_t(at),
+                                       json_real(devices::normalize(info[size_t(at)], float(chain::lineOctave(v)))));
+                }
+                json_array_set_new(line, k, json_integer(chain::lineStep(chain::lineRow(v), 0)));
+            }
+        };
+        auto chainOf = [&](json_t* devicesJ) {
+            size_t k, h, b;
+            json_t *d, *p, *bd;
+            json_array_foreach(devicesJ, k, d) {
+                migrate(d);
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_array_foreach(json_object_get(p, "branch"), b, bd) migrate(bd);
+                }
+            }
+        };
+        size_t i;
+        json_t* t;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) chainOf(json_object_get(t, "devices"));
+        json_array_foreach(json_object_get(songJ, "clips"), i, t) {
+            chainOf(json_object_get(json_object_get(t, "ownChain"), "devices"));
+        }
+    }
     if (fromVersion == 6) {
         // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
         // notes for the written length by default, so at half speed a note stopped halfway while the playhead was

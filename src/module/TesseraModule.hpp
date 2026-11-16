@@ -275,6 +275,8 @@ class TesseraModule : public rack::engine::Module {
     const AutomationEnvelope* recordingKnobLane(const ParamRef& ref) const;
     /// A modulator's output now: -1..1 when bipolar, else 0..1.
     float modulatorOutput(ModulatorId id) const;
+    /// The step the Arpeggiator `id` played last, counted from where its pattern started; -1 while it plays nothing.
+    int64_t arpStep(DeviceId id) const;
 
     /// Arranger mode: some track plays a launched clip (or was stopped) instead of the arrangement.
     bool anyTrackOverridden() const;

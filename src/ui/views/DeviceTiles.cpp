@@ -21,6 +21,7 @@ namespace ph = playheads::knob;
 namespace dk = chain::knob;
 
 constexpr float kYB = 70; // the time line most pictures stand on
+constexpr float kArtHeight = 100; // the height the drawings are made for; a taller picture centres them
 constexpr float kPi = 3.14159265f;
 constexpr float kRnd[] = {0.13f, 0.71f, 0.42f, 0.88f, 0.27f, 0.63f, 0.05f, 0.94f, 0.51f, 0.36f,
                           0.79f, 0.18f, 0.67f, 0.31f, 0.84f, 0.46f, 0.22f, 0.58f, 0.09f, 0.75f};
@@ -705,6 +706,8 @@ void drawTile(NVGcontext* vg, DeviceType type, int tile, const tags::Values& v, 
     nvgIntersectScissor(vg, 0, 0, width, h);
 
     Pen p{vg, tint, c};
+    nvgSave(vg);
+    nvgTranslate(vg, 0, std::round((h - kArtHeight) / 2));
     switch (type) {
     case DeviceType::Playheads:
         tile == 0   ? drawMoves(p, v, width)
@@ -753,6 +756,7 @@ void drawTile(NVGcontext* vg, DeviceType type, int tile, const tags::Values& v, 
         break;
     }
 
+    nvgRestore(vg);
     draw::TextStyle cap{theme::fonts::ui(), theme::metrics::kDeviceCaptionText, c.caption,
                         NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE};
     draw::text(vg, cap, 10, h - 8, draw::ellipsize(vg, cap, caption, width - 20));

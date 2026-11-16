@@ -1213,6 +1213,11 @@ float TesseraModule::liveKnob(const ParamRef& ref) const {
     return moving ? engine.liveKnob(k) : snap->knobs[size_t(k)];
 }
 
+int64_t TesseraModule::arpStep(DeviceId id) const {
+    const Snapshot* snap = snapshots.latest();
+    return snap ? engine.arpStep(snap->arpSlotOf(id.value)) : -1;
+}
+
 float TesseraModule::modulatorOutput(ModulatorId id) const {
     return engine.modulatorOutput(snapshotBuilder.modulatorSlots().slotOf(id));
 }

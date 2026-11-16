@@ -24,7 +24,27 @@ enum ScaleDevice { kKeyFrom, kRoot, kScale, kOffKey };
 enum Velocity { kCurve, kMin, kMax, kRandom };
 enum NoteLength { kMode, kScaleBy, kLength, kOverlap };
 enum ChordDevice { kChord, kInKey, kInversion, kVoicing, kStrum };
-enum Arpeggiator { kPattern, kRate, kGate, kArpOctaves, kSwing, kArpVelocity, kHold };
+/// After the first seven: the Pattern line's settings. Its four value rows (velocity, gate, octave, semitones) each
+/// have a length and one setting per step, so every step can be automated on its own.
+enum Arpeggiator {
+    kPattern,
+    kRate,
+    kGate,
+    kArpOctaves,
+    kSwing,
+    kArpVelocity,
+    kHold,
+    kArpSemiKey, // the semitone row counts steps of the key instead
+    kArpVelSteps,
+    kArpGateSteps,
+    kArpOctSteps,
+    kArpSemiSteps,
+    kArpStepVel,                       // 16 steps: the held note's velocity scaled, 0..100%
+    kArpStepGate = kArpStepVel + 16,   // 16 steps: how long each note is, 5..200% of a step
+    kArpStepOct = kArpStepGate + 16,   // 16 steps: octaves, -3..+3
+    kArpStepSemi = kArpStepOct + 16,   // 16 steps: semitones (or key steps), -12..+12
+    kArpParamCount = kArpStepSemi + 16 // 76
+};
 enum Echo { kTime, kRepeats, kDecay, kEchoPitch, kEchoGate };
 enum NoteRepeat { kRepeatRate, kRepeatGate, kRepeatDecay };
 enum Random { kRandomPitch, kRandomInKey, kDrop };
@@ -33,6 +53,12 @@ enum Groove { kGrooveSwing, kGrooveGrid };
 enum NoteFilter { kLowest, kHighest, kMinVelocity, kMaxVelocity, kEvery, kOffset, kChannel /* a set: Kind::Mask */ };
 enum Motion { kMotionPitch, kMotionTime, kMotionLength, kMotionVelocity, kMotionInKey };
 } // namespace knob
+
+/// The Pattern line's value rows, top to bottom: each one's length setting and its first step setting.
+enum class ArpLane : uint8_t { Velocity, Gate, Octave, Semitone };
+constexpr int kArpLaneCount = 4;
+constexpr int arpLaneSteps(ArpLane l) { return knob::kArpVelSteps + int(l); }
+constexpr int arpLaneFirst(ArpLane l) { return knob::kArpStepVel + 16 * int(l); }
 
 enum class KeyFrom : uint8_t { Clip, Song, Fixed };
 enum class OffKey : uint8_t { Nearest, Up, Down, Drop };
@@ -158,6 +184,21 @@ class Chain {
     /// Forgets the notes of one playhead's lane (1..16) that haven't come out yet: waiting starts, echo repeats and
     /// the notes an arpeggiator holds. Ends stay, so nothing waits for a note that never ends.
     void dropLane(uint8_t lane);
+    /// The chain's devices changed while it plays (one added, removed, moved, switched on or off): `oldIds` and
+    /// `oldOn` are the devices it had, stage by stage, `newIds` and `newOn` the ones it has now. What a device that
+    /// stays holds follows it to its new place, so an arpeggiator plays on; waiting notes at a device that left go
+    /// on to the next one. A device that left or was switched off hands its held notes on at `now` and ends the
+    /// notes only it would have ended (a chord's notes, a legato note), so nothing hangs.
+    void restructure(const uint64_t* oldIds, const bool* oldOn, int oldCount, const uint64_t* newIds, const bool* newOn,
+                     int newCount, double now, Output& out);
+    /// The step an arpeggiator at `stage` played last, counted from where its pattern started, while it runs; -1
+    /// when it doesn't (nothing held). The editor lights each Pattern row's step from it.
+    int64_t arpStep(int stage) const {
+        if (stage < 0 || stage >= kMaxDevices)
+            return -1;
+        const DeviceState& s = states[size_t(stage)];
+        return s.running && s.heldCount > 0 ? s.played : -1;
+    }
     /// A fresh ID for a note entering the chain (never 0, never with kLiveNote).
     uint32_t newId() {
         ids = (ids + 1) & ~kLiveNote;
@@ -204,6 +245,7 @@ class Chain {
         uint64_t patternStart = 0; // the arpeggiator step its pattern last started again on
         uint32_t stepArrivals = 0; // `arrivals` at its last step: notes arriving after it are new
         int walk = 0;              // where a Walk pattern is in its list of notes
+        int64_t played = -1;       // an arpeggiator's last step since its pattern started; -1 before the first
     };
 
     void post(int stage, Kind kind, const ChainNote& note, double time, Output& out, uint8_t step = 0);

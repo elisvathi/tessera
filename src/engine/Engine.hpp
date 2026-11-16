@@ -299,6 +299,11 @@ class Engine {
         return slot >= 0 && slot < kMaxModulatorSlots ? liveModulators[size_t(slot)].load(std::memory_order_relaxed)
                                                       : 0.f;
     }
+    /// The step the Arpeggiator in report slot `slot` (Snapshot::arpSlotOf) played last, counted from where its
+    /// pattern started; -1 while it plays nothing. Any thread.
+    int64_t arpStep(int slot) const {
+        return slot >= 0 && slot < kMaxArpSlots ? liveArpSteps[size_t(slot)].load(std::memory_order_relaxed) : -1;
+    }
     /// Notes the device chains had to drop because too many were in flight.
     int chainOverflows() const;
 
@@ -618,6 +623,11 @@ class Engine {
     struct ChainRuntime {
         uint64_t owner = 0; // the track's ID value, or for a clip's own chain the clip's
         uint64_t structure = 0;
+        // The devices the chain ran last, stage by stage, so an edit can carry what each one holds to its new place.
+        // -1: not known yet (a runtime just claimed), then an edit clears the chain instead.
+        std::array<uint64_t, kMaxDevices> ids{};
+        std::array<bool, kMaxDevices> ons{};
+        int idCount = -1;
         chain::Chain chain;
     };
     class ChainSink;
@@ -787,6 +797,7 @@ class Engine {
     std::unique_ptr<std::atomic<float>[]> liveKnobs;      // for the UI
     std::unique_ptr<std::atomic<float>[]> liveBases;      // for the UI: knob lane values
     std::unique_ptr<std::atomic<float>[]> liveModulators; // for the UI
+    std::array<std::atomic<int64_t>, kMaxArpSlots> liveArpSteps; // for the UI: each Arpeggiator's last step
     ParamRef overrideRef;
     float overrideValue = 0;
     bool overrideOn = false;

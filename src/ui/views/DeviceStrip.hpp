@@ -28,17 +28,13 @@ class DeviceStrip : public InteractiveView {
   public:
     explicit DeviceStrip(EditorContext& ctx);
 
-    /// A card's height (header, pictures, padding), the room above and below a row for a playhead frame, and the
-    /// gap between rows when the strip shows several.
-    static constexpr float kCardHeight = 148;
+    /// A card's height (header, pictures, padding), and the room above and below the row for a playhead frame.
+    static constexpr float kCardHeight = 198;
     static constexpr float kTop = 10;
-    static constexpr float kRowGap = 20;
-    /// One row of cards.
+    /// The open strip's height: one row of cards, which scrolls sideways when they don't fit.
     static constexpr float kOpenHeight = kCardHeight + 2 * kTop;
     /// The notes need this much under the strip; with less room the open strip takes the whole pane (devices only).
     static constexpr float kMinNotes = 110;
-    /// The strip's height for `rows` rows of cards.
-    static float heightFor(int rows) { return float(rows) * (kCardHeight + kRowGap) - kRowGap + 2 * kTop; }
     /// Card indices from here on are devices in the shown playhead's branch (index - kBranchBase).
     static constexpr int kBranchBase = 1000;
     static constexpr float kClosedHeight = 24;
@@ -83,7 +79,6 @@ class DeviceStrip : public InteractiveView {
             Power,
             Menu,
             Dot,
-            ResizeEdge,   // the strip's bottom edge: drag it for more or fewer rows, or the whole pane
             TagBadge,     // the "A" on an automated tag: shows its lane
             Insert,       // the + on a link: adds a device there
             AddTile,      // "+ Add device" at the chain's end
@@ -108,7 +103,9 @@ class DeviceStrip : public InteractiveView {
             DiceRoll,    // a random device's dice: rolls another number and keeps it
             DiceFixed,   // its switch's number: the same every time (double-click to type one)
             DiceNew,     // its switch's New: new every play and loop pass
-            PatternGrid  // an Arpeggiator's own Pattern line, on its first picture: rows, octaves, length
+            PatternGrid,   // an Arpeggiator on Pattern: its line's note rows and value rows (Vel, Gate, Oct, Semi)
+            PatternColumn, // its settings beside the grid (Pattern, Rate, Swing, Hold), one under another
+            PatternReset   // "Reset" in its header: a plain rising line again
         };
         Kind kind;
         rack::math::Rect rect;
@@ -129,6 +126,11 @@ class DeviceStrip : public InteractiveView {
     std::optional<std::pair<uint64_t, int>> directionPreview; // a playhead's Direction tag (its 0..7 value)
     std::optional<std::pair<uint64_t, uint16_t>> channelPreview; // a Note Filter's channels being typed
     int dropIndex = -1;                                          // where a dragged card would land
+    /// A Pattern drag on the Arpeggiator `patternPreviewDevice`: the step settings it sets (knob -> display value)
+    /// and a row length it sets (row -1: the notes; 0..3: Vel, Gate, Oct, Semi).
+    std::map<int, float> stepPreview;
+    std::optional<std::pair<int, int>> lengthPreview;
+    uint64_t patternPreviewDevice = 0;
     /// The tag a press, drag or panel last touched: the arrow keys step it.
     std::optional<TagRef> focusedTag;
 
@@ -144,6 +146,16 @@ class DeviceStrip : public InteractiveView {
     void openPanel(const TagRef& t);
     /// Sets a tag back to its default (a channel set to any channel) as one undo step: what a double-click does.
     void resetTag(const TagRef& t);
+    /// An Arpeggiator setting as it shows (display units): a running drag's value, else what plays now (a lane or a
+    /// modulator may be moving it), else the saved one.
+    float patternValue(DeviceId device, int knob);
+    /// Sets some Pattern settings (display values by knob) as one undo step. A device still on the line made from
+    /// the held notes gets its own line first, written by its dice, so what is edited is what plays.
+    void commitPattern(DeviceId device, const std::vector<std::pair<int, float>>& settings, const std::string& name);
+    /// A Pattern row's length (row -1: the notes, 0..3 a value row), 1..16 steps, as one undo step.
+    void setPatternLength(DeviceId device, int row, int length);
+    /// "Reset": notes 1 2 3 4 over 16 steps, every value row back to its default and 16 steps long.
+    void resetPattern(DeviceId device);
 
   protected:
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
@@ -253,6 +265,9 @@ class DeviceStrip : public InteractiveView {
     /// Where pasted devices go after card `cardIndex` (-1: after the last selected card, else at the end).
     int pasteIndexAfter(int cardIndex);
     /// An edit to the Pattern grid at `pos`: a step's row, its octave, or the line's length (DECISIONS §163).
+    /// An Arpeggiator on Pattern: its settings in a slim column, then the line's grid; returns where the grid ends.
+    float layoutPattern(const Device& d, int index, float x, float top, NVGcolor tint);
+    /// A click in the grid: a note step (on, off, another row) or the Semi chip (semitones or steps of the key).
     void editPatternGrid(const Part& grid, rack::math::Vec pos);
     void drawPatternGrid(NVGcontext* vg, const Part& grid);
     /// Copy and Paste for a right-click menu, and with `full` Duplicate and Delete too (a card's or a modulator's
@@ -269,14 +284,12 @@ class DeviceStrip : public InteractiveView {
     /// The tint of the card with index `index`: the accent, a Motion's colour, or a playhead's.
     NVGcolor tintOf(const Device& d, int index);
 
-    /// Wraps the cards onto as many rows as the strip has room for (one row scrolls sideways instead).
-    void flowRows(const std::vector<std::pair<size_t, size_t>>& units);
-    /// Shows the pictures laid out this frame, where flowRows put them.
+    /// Shows the pictures laid out this frame.
     void showTiles();
 
     std::vector<Part> parts;
     std::vector<TagRef> tagRefs; // the tags of this frame, which parts point into
-    /// A picture laid out this frame, shown by showTiles once the rows are flowed.
+    /// A picture laid out this frame, shown by showTiles once the whole row is laid out.
     struct PendingTile {
         int device, tile;
         uint64_t key, hash;
@@ -286,13 +299,6 @@ class DeviceStrip : public InteractiveView {
         float width, alpha;
     };
     std::vector<PendingTile> pending;
-    float scrollY = 0, contentHeight = 0;
-  public:
-    /// How many rows the cards need when wrapped at the strip's width: the strip never grows past them.
-    int rowsNeeded = 1;
-    /// Whether dragging the bottom edge can change anything: the cards need more rows and the pane has room for two
-    /// with the notes under them.
-    bool resizable() const { return rowsNeeded > 1 && paneRoom - heightFor(2) >= kMinNotes; }
 
   private:
     int hovered = -1;

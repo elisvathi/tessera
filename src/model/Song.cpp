@@ -96,8 +96,8 @@ int playheadOverlap(const Playhead& p) {
 }
 
 /// How many voices `chain` needs for `voices` notes at once: chords multiply them, echoes and longer notes overlap
-/// them, an arpeggiator plays one step at a time (all of them at once in its Chord pattern), and each playhead
-/// plays its own notes through its own branch.
+/// them, an arpeggiator plays one step at a time (all of them at once in its Chord pattern or a Pattern line's "all"
+/// steps), and each playhead plays its own notes through its own branch.
 int voicesThrough(const std::vector<Device>& chain, int voices) {
     for (const Device& d : chain) {
         if (!d.on)
@@ -113,12 +113,29 @@ int voicesThrough(const std::vector<Device>& chain, int voices) {
             voices *= std::max(1, chordSize(shapes[size_t(shape)].shape));
             break;
         }
-        case DeviceType::Arpeggiator:
-            if (chain::ArpPattern(int(shown(chain::knob::kPattern))) == chain::ArpPattern::Chord)
+        case DeviceType::Arpeggiator: {
+            auto pattern = chain::ArpPattern(int(shown(chain::knob::kPattern)));
+            // A Pattern line's "all" steps play every held note at once, like the Chord pattern without octaves.
+            bool ownLine = pattern == chain::ArpPattern::Pattern && !d.line.empty();
+            bool allSteps = ownLine && std::any_of(d.line.begin(), d.line.end(), [](uint8_t step) {
+                                return chain::lineRow(step) == chain::kAllRow;
+                            });
+            // A note longer than its step still sounds when the next one starts. A line's steps each have a gate.
+            bool overlaps = shown(chain::knob::kGate) > 100;
+            if (ownLine) {
+                overlaps = false;
+                int steps = std::clamp(int(shown(chain::arpLaneSteps(chain::ArpLane::Gate))), 1, 16);
+                for (int k = 0; k < steps; k++)
+                    overlaps |= shown(chain::arpLaneFirst(chain::ArpLane::Gate) + k) > 100;
+            }
+            if (pattern == chain::ArpPattern::Chord)
                 voices *= std::max(1, int(shown(chain::knob::kArpOctaves)));
+            else if (allSteps)
+                voices *= overlaps ? 2 : 1;
             else
-                voices = shown(chain::knob::kGate) > 100 ? 2 : 1;
+                voices = overlaps ? 2 : 1;
             break;
+        }
         case DeviceType::Echo: // the note and each of its repeats can sound together
             voices *= 1 + std::max(0, int(std::lround(shown(chain::knob::kRepeats))));
             break;

@@ -828,8 +828,11 @@ void openKnobMenu(EditorContext& ctx, const ParamRef& ref) {
                 mod->perform(addRoute(mod->song(), id, route));
             }));
         sub->addChild(new rack::ui::MenuSeparator);
-        sub->addChild(rack::createMenuItem("A new modulator…", "+50%",
-                                           [c, ref] { openModulatorBrowser(*c, shownChain(*c), DeviceId(), ref); }));
+        // A device's knob: the new modulator lives on that device unless another chip is picked.
+        DeviceId device = ref.kind == ParamRef::Kind::Device ? DeviceId(ref.owner) : DeviceId();
+        sub->addChild(rack::createMenuItem("A new modulator…", "+50%", [c, ref, device] {
+            openModulatorBrowser(*c, shownChain(*c), device, ref);
+        }));
     }));
     if (!on.empty()) {
         menu->addChild(rack::createSubmenuItem("Remove modulation", "", [c, on](rack::ui::Menu* sub) {

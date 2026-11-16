@@ -27,10 +27,13 @@ modulators that go with it.
 When the strip is closed, a track with devices shows a thin bar naming its chain ("Arpeggiator → Echo"). Click it to
 open the strip. A track without devices keeps the strip closed.
 
-**Room for more cards.** The strip shows one row of cards and scrolls sideways when they don't fit. When the cards
-need more than one row, a small grip sits in the middle of the strip's bottom edge: drag it down for more rows, up for
-fewer. The cards then wrap from one row to the next, and the mouse wheel scrolls up and down. The strip grows only as
-far as its cards need, and it always leaves the notes some room.
+**Room for more cards.** The strip always shows one row of cards. When they don't fit, the row scrolls sideways: turn
+the mouse wheel over the cards.
+
+**Changing the chain while it plays.** Adding, removing, moving or switching off a device while the song plays doesn't
+stop the track. Every device that stays keeps what it holds, so an Arpeggiator plays on through the change, on its next
+step. A device you remove or switch off hands the notes it holds on to the next device, so a chord keeps sounding. A
+device you add starts working on the notes that come next.
 
 **A short pane.** When the pane is too short for one row of cards and the notes together (the editor in the module
 panel, for example), the devices take the whole pane. **Devices** then switches: click it to see the devices, and click **Notes**, or
@@ -72,7 +75,7 @@ A track holds up to 16 devices.
 [Playheads](#playheads) below.
 
 **Arpeggiator patterns.** The examples hold C, E and G. All patterns except As played go from the lowest note to the
-highest. **Octaves** adds the notes again an octave up, and the pattern runs over all of them.
+highest. **Octaves** adds the notes again an octave up, and the pattern runs over all of them (Pattern sets octaves per step instead).
 
 | Pattern | What it plays | C E G |
 |---|---|---|
@@ -91,17 +94,38 @@ highest. **Octaves** adds the notes again an octave up, and the pattern runs ove
 | **Pattern** | A line of up to 16 steps you can write yourself (see below). Until you do, it is made from the held notes, the lowest note twice as often as each of the others. | for example C G C E C C G E… |
 | **Chord** | All the notes together on every step. | C+E+G… |
 
-**Writing a Pattern line.** With **Pattern** picked, the card's first picture becomes a grid of 16 steps. Its rows are
-the held notes from the lowest (**1**) to the fourth (**4**), and **all** for the whole chord on that step.
+**Writing a Pattern line.** With **Pattern** picked, the card changes. Its settings sit in a narrow column on the left
+(**Pattern**, **Rate**, **Swing**, **Hold**), and the rest of the card is the line: 16 steps, everything in one view.
+Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate** and **Velocity** don't show.
 
-- Click a cell: that note plays on that step. Click it again for a rest. The first click fills the grid with a line
-  from the dice, so it is never empty; your click changes it from there.
-- The **oct** row moves a step an octave up (+) or down (−): click to go through 0, +, −.
-- The thin row at the bottom sets the length: click the step the line ends on (1 to 16).
-- A row past the notes held plays from the lowest again, an octave up, so a line keeps its shape on any chord.
-- Once you have edited it, the dice switch reads **Yours**. The dice writes a fresh line (one undo step); **New**
-  plays a fresh line on every play and loop pass, and **Yours** goes back to yours.
-- Right-click the grid ▸ **Made from the held notes again** to go back to the line made from the held notes.
+![An Arpeggiator on Pattern: notes 1 2 3 4 rising, one step an octave up and one down, a long gate, a step a fifth up, and a Vel row 12 steps long](images/arp-pattern.png)
+
+- **The note rows.** Rows **1** to **4** are the held notes from the lowest; **all** plays the whole chord on that
+  step. Click a cell: that note plays on that step. Click it again for a rest. The first click fills the grid with a
+  line from the dice, so it is never empty; your click changes it from there. A row past the notes held plays from the
+  lowest again, an octave up, so a line keeps its shape on any chord.
+- **Vel** scales the velocity of the note you hold (100% plays it as it is). **Gate** is how long each note is, from 5%
+  to 200% of a step; a → shows a note that runs into the next step.
+- **Oct** moves a step from three octaves down to three up. **Semi** moves it by semitones, −12 to +12. Click the
+  **Semi** label to count in steps of the key instead (it then reads **Key**): +2 on C in C major plays E, so the line
+  never leaves the key.
+- **Changing a value.** Drag up or down in a cell; only that step changes. Start a drag sideways to set a whole run
+  of steps to the same value in one move (on **Gate**, sideways makes that step longer or shorter instead, like its
+  bar). A click on a cell's top half steps it up, on its bottom half down (Vel by 10%, Gate by 25%, Oct and Semi by
+  one). The mouse wheel steps a cell (Vel and Gate by 5%). Double-click resets a cell. Steps past a row's end are
+  drawn fainter.
+- **Each row has its own length.** The number on the right is the row's length in steps. Drag it left or right (or
+  turn the wheel over it), or drag the white line where a shorter row ends. Rows of different lengths drift against
+  each other: a 12-step Vel row over 16 note steps makes a line that only repeats every 3 bars.
+- **While it plays**, each row outlines the step it is on.
+- **Every step can be automated.** Right-click a Vel, Gate, Oct or Semi cell for the same menu a setting has: type a
+  value, reset it, **Modulate with**, **Draw a curve**, **Automate in the timeline** or **in this clip**. Lanes name it
+  "Step 5 velocity" and so on. A cell a lane sets wears an **A**.
+- **Reset** in the card's header starts again from a plain rising arpeggio: notes 1 2 3 4 repeated, every row back to
+  its default and 16 steps long. One undo step.
+- Once you have edited it, the dice switch reads **Yours**. The dice writes fresh notes for the line (one undo step);
+  **New** plays fresh notes on every play and loop pass, and **Yours** goes back to yours.
+- Right-click the note rows ▸ **Made from the held notes again** to go back to the line made from the held notes.
 
 When you change to a new chord, the pattern starts again from its beginning, also with **Hold** on or when the chords
 follow each other without a gap. If only one note of the chord changes (an inner voice moving), the pattern carries
@@ -189,8 +213,9 @@ Click or right-click a tag to open its panel: the setting's name, a box to type 
 - **Draw a curve** opens a curve for the setting in the lower pane (see [Curves](#playheads) below), and
   **Modulate, automate…** has **Modulate with ▸**, **Remove modulation ▸**, **Automate in the timeline** and
   **Automate in this clip**. **Modulate with ▸** lists the modulators that can reach the setting; pick one and it
-  moves the setting by +50%. **A new modulator…** at its end makes a new one that moves the setting by +50%. Its
-  chips only offer places a modulator there can reach the setting from. One undo removes both.
+  moves the setting by +50%. **A new modulator…** at its end makes a new one that moves the setting by +50%. On a
+  device's setting the new modulator lives on that device unless you pick another chip. The chips only offer places a
+  modulator there can reach the setting from. One undo removes both.
 
 The Note Filter's **Channels** panel has **Any** and the 16 channels to switch on and off; each click keeps the change.
 You can also type a set: "1-4, 10", "any" or "all".

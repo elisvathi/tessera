@@ -877,9 +877,11 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
     SUBCASE("Pattern with its own line: rows, a chord step, a rest, an octave, and a row past the held notes") {
         Rig r;
         r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
-                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)},
+                                        {chain::knob::kArpOctaves, 3.f}}); // Oct leaves an own line alone
         std::vector<uint8_t> line = {chain::lineStep(1, 0), chain::lineStep(3, 0), chain::lineStep(chain::kAllRow, 0),
-                                     chain::lineStep(0, 0), chain::lineStep(2, 1), chain::lineStep(4, 0)};
+                                     chain::lineStep(0, 0), chain::lineStep(2, 0), chain::lineStep(4, 0)};
+        r.set(0, chain::knob::kArpStepOct + 4, 1);
         r.slots[0].line = line.data();
         r.slots[0].lineLength = uint8_t(line.size());
         for (int p : {60, 64, 67})
@@ -887,6 +889,45 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         r.runTicks(-1, 240 * 6 - 1);
         // C, G, the chord, a rest, E an octave up, and row 4 of three notes: C an octave up.
         CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 67, 60, 64, 67, 76, 72});
+    }
+    SUBCASE("Pattern rows: velocity, gate, octave and semitones per step, each row its own length") {
+        auto rig = [](Rig& r, int steps) {
+            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                            {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+            static const std::vector<uint8_t> line = {chain::lineStep(1, 0), chain::lineStep(2, 0),
+                                                      chain::lineStep(3, 0), chain::lineStep(1, 0)};
+            r.slots[0].line = line.data();
+            r.slots[0].lineLength = 4;
+            for (int p : {60, 64, 67})
+                r.push(r.note(0, 240 * steps, p, 0.8f));
+        };
+        Rig r;
+        rig(r, 6);
+        using chain::ArpLane;
+        r.set(0, chain::arpLaneSteps(ArpLane::Velocity), 2); // 100%, 50%, 100%, 50%...
+        r.set(0, chain::arpLaneFirst(ArpLane::Velocity) + 1, 50);
+        r.set(0, chain::arpLaneFirst(ArpLane::Gate) + 2, 150);
+        r.set(0, chain::arpLaneSteps(ArpLane::Octave), 3); // 0, -1, 0, 0, -1, 0
+        r.set(0, chain::arpLaneFirst(ArpLane::Octave) + 1, -1);
+        r.set(0, chain::arpLaneFirst(ArpLane::Semitone) + 3, 7);
+        r.runTicks(-1, 240 * 6 - 1);
+        REQUIRE(r.out.notes.size() == 6);
+        // Notes C E G C C E; octave row 0 -1 0 repeating; step 4 a fifth up.
+        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 52, 67, 67, 48, 64});
+        std::vector<float> velocities;
+        for (const ChainNote& n : r.out.notes)
+            velocities.push_back(std::round(n.velocity * 100) / 100);
+        CHECK(velocities == std::vector<float>{0.8f, 0.4f, 0.8f, 0.4f, 0.8f, 0.4f});
+        CHECK(r.out.notes[2].end - r.out.notes[2].start == doctest::Approx(360)); // 150% of a 1/16
+        CHECK(r.out.notes[0].end - r.out.notes[0].start == doctest::Approx(120)); // 50%, the default
+        SUBCASE("semitones in key: +2 from C in C major is E") {
+            Rig k;
+            rig(k, 1);
+            k.set(0, chain::knob::kArpSemiKey, 1);
+            k.set(0, chain::arpLaneFirst(ArpLane::Semitone), 2);
+            k.runTicks(-1, 100);
+            CHECK(pitchesOf(k.out.notes) == std::vector<int>{64});
+        }
     }
     SUBCASE("a new chord starts the pattern again; one voice moving inside it doesn't") {
         auto run = [](bool hold, const std::vector<std::tuple<double, double, int>>& notes) {
@@ -2826,4 +2867,91 @@ TEST_CASE("engine: live keys go through the track's chain while a clip plays thr
     h.engine.liveNote({LiveSource::Midi, 0, 64, 0, false});
     h.runTo(h.sample + 2 * kPpq * kSamplesPerTick);
     CHECK_FALSE(h.anyGate());
+}
+
+TEST_CASE("a chain edited while it plays keeps what its devices hold") {
+    SUBCASE("a device added after an arpeggiator: it plays on, through the new device") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 8, p));
+        r.runTicks(-1, 479);
+        uint64_t before[] = {100};
+        bool on[] = {true, true};
+        r.add(DeviceType::Transpose, {{chain::knob::kSemitones, 12}});
+        uint64_t after[] = {100, 101};
+        r.chain.restructure(before, on, 1, after, on, 2, 479, r.out);
+        r.runTicks(479, 240 * 4 - 1);
+        // Up over C E G: steps 3 and 4 come on time, an octave up.
+        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 64, 79, 72});
+    }
+    SUBCASE("an arpeggiator removed: its chord sounds on at once") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 8, p));
+        r.runTicks(-1, 479);
+        uint64_t before[] = {100};
+        bool on[] = {true};
+        r.chain.restructure(before, on, 1, nullptr, nullptr, 0, 479, r.out);
+        r.slots.clear();
+        r.knobs.clear();
+        r.out.notes.clear();
+        r.runTicks(479, 600);
+        std::vector<int> chord = pitchesOf(r.out.notes);
+        std::sort(chord.begin(), chord.end());
+        CHECK(chord == std::vector<int>{60, 64, 67});
+    }
+    SUBCASE("a chord device removed: its chord notes end, the played note ends when it is let go") {
+        Rig r;
+        r.add(DeviceType::Chord);
+        ChainNote held = r.note(0, 0, 60);
+        held.end = INFINITY;
+        r.push(held);
+        r.run(10);
+        REQUIRE(r.out.notes.size() >= 2);
+        uint64_t before[] = {100};
+        bool on[] = {true};
+        r.chain.restructure(before, on, 1, nullptr, nullptr, 0, 10, r.out);
+        r.slots.clear();
+        r.knobs.clear();
+        r.run(11);
+        CHECK(r.out.ends.size() == r.out.notes.size() - 1);
+        r.chain.end(held.id, 20, r.out);
+        r.run(21);
+        CHECK(r.out.ends.size() == r.out.notes.size());
+    }
+    SUBCASE("an arpeggiator switched off hands its chord on") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 8, p));
+        r.runTicks(-1, 479);
+        uint64_t ids[] = {100};
+        bool was[] = {true}, now[] = {false};
+        r.chain.restructure(ids, was, 1, ids, now, 1, 479, r.out);
+        r.slots[0].on = false;
+        r.out.notes.clear();
+        r.runTicks(479, 240 * 4 - 1);
+        std::vector<int> chord = pitchesOf(r.out.notes);
+        std::sort(chord.begin(), chord.end());
+        CHECK(chord == std::vector<int>{60, 64, 67}); // the held chord, and no more arpeggio steps
+    }
+}
+
+TEST_CASE("engine: adding a device while an arpeggio plays keeps it playing on the next step") {
+    Song song = songWith({{0, 3600, 60}, {0, 3600, 64}, {0, 3600, 67}});
+    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+    Harness h(song);
+    h.runTo(2 * 240 * kSamplesPerTick + 100);
+    REQUIRE(h.anyGate());
+    addDevice(h.song, DeviceType::Transpose, {{chain::knob::kSemitones, 12}});
+    h.republish();
+    // Step 4 of Up over C E G is C, now an octave up; before the fix the chain forgot the chord and stayed silent.
+    h.runTo(3 * 240 * kSamplesPerTick + 100);
+    std::vector<int> sounding;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding.push_back(h.pitch(v));
+    CHECK(sounding == std::vector<int>{72});
 }

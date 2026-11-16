@@ -38,7 +38,8 @@ constexpr int kModulatorTypeCount = 8;
 enum class ModLevel : uint8_t { Song, Track, Device, Clip };
 
 constexpr int kMaxDevices = 16;      // per chain: a track's, or a clip's own
-constexpr int kMaxDeviceParams = 16; // knobs per device
+constexpr int kMaxDeviceParams = 80;    // knobs per device (the Arpeggiator's Pattern line has 76)
+constexpr int kMaxModulatorParams = 16; // knobs per modulator
 constexpr int kMaxSongModulators = 16;
 constexpr int kMaxTrackModulators = 8; // a clip's own modulators too
 constexpr int kMaxDeviceModulators = 4;

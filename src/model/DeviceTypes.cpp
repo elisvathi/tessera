@@ -52,6 +52,36 @@ std::vector<std::string> chordNames() {
     return out;
 }
 
+/// "Step 5 velocity" and the like, for the Arpeggiator's 64 step settings: built once and never changed, so the
+/// names its ParamInfos point at stay put.
+const std::vector<std::string>& arpStepNames() {
+    static const std::vector<std::string> names = [] {
+        std::vector<std::string> out;
+        for (const char* what : {"velocity", "gate", "octave", "semitones"})
+            for (int k = 1; k <= 16; k++)
+                out.push_back("Step " + std::to_string(k) + " " + what);
+        return out;
+    }();
+    return names;
+}
+
+/// The Arpeggiator's Pattern line settings after its first seven: the semitone row's key switch, the four rows'
+/// lengths, then each row's 16 steps.
+void addArpLineParams(std::vector<ParamInfo>& params) {
+    params.push_back(toggle("Semitones in key", false));
+    for (const char* row : {"Velocity steps", "Gate steps", "Octave steps", "Semitone steps"})
+        params.push_back(integer(row, 1, 16, 16));
+    const std::vector<std::string>& names = arpStepNames();
+    for (int k = 0; k < 16; k++)
+        params.push_back(number(names[size_t(k)].c_str(), 0, 100, 100, "%"));
+    for (int k = 0; k < 16; k++)
+        params.push_back(number(names[size_t(16 + k)].c_str(), 5, 200, 50, "%"));
+    for (int k = 0; k < 16; k++)
+        params.push_back(integer(names[size_t(32 + k)].c_str(), -3, 3, 0, "oct"));
+    for (int k = 0; k < 16; k++)
+        params.push_back(integer(names[size_t(48 + k)].c_str(), -12, 12, 0, "st"));
+}
+
 std::vector<TypeInfo> buildDevices() {
     std::vector<TypeInfo> t(kDeviceTypeCount);
     t[size_t(DeviceType::Transpose)] = {"Transpose",
@@ -81,6 +111,7 @@ std::vector<TypeInfo> buildDevices() {
          choice("Rate", rates(), rateAt("1/16")), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
          number("Swing", 0, 100, 0, "%"), choice("Velocity", {"As played", "Fixed", "Accent"}, 0),
          toggle("Hold", false)}};
+    addArpLineParams(t[size_t(DeviceType::Arpeggiator)].params);
     t[size_t(DeviceType::NoteRepeat)] = {
         "Note Repeat",
         {choice("Rate", rates(), rateAt("1/16")), number("Gate", 5, 100, 50, "%"), number("Decay", 0, 100, 0, "%")}};

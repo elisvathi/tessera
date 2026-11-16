@@ -296,6 +296,8 @@ const DeviceColors& deviceColors() {
         d.keyBlack = p.dark ? mix(p.bg0, p.bg2, 0.45f) : mix(p.bg0, p.line2, 0.7f);
         d.caption = p.text1;
         d.link = p.line2;
+        d.stepUp = p.dark ? rgb(0x9CC4FF) : rgb(0x2D6AC4);
+        d.stepDown = p.dark ? rgb(0xC9B6FF) : rgb(0x7650C8);
         d.glow = p.dark ? 0.38f : 0.18f;
     }
     return d;
