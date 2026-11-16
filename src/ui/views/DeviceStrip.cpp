@@ -658,14 +658,20 @@ class PatternNoteDrag : public DragGesture {
     bool lit = true;
 };
 
-/// Dragging where a Pattern row ends (its end line, or its length on the right): the row is as many steps long as
-/// the step under the pointer. One undo step on release.
+/// Dragging how long a Pattern row is. On its end line the row ends at the step under the pointer; on its length
+/// number at the right it starts from the length it has and moves a step per cell the pointer moves, so a press on
+/// the number never jumps to 16. One undo step on release.
 class PatternLengthDrag : public DragGesture {
   public:
-    PatternLengthDrag(DeviceStrip& strip, DeviceId device, int row, PatternGeometry g, int length)
-        : strip(strip), device(device), row(row), g(g), start(length), length(length) {}
+    PatternLengthDrag(DeviceStrip& strip, DeviceId device, int row, PatternGeometry g, int length, Vec press,
+                      bool fromNumber)
+        : strip(strip), device(device), row(row), g(g), start(length), length(length), press(press),
+          fromNumber(fromNumber) {}
     void update(Vec pos, Modifiers) override {
-        length = pos.x < g.cellsX() ? 1 : g.columnAt(pos.x) + 1;
+        if (fromNumber)
+            length = std::clamp(start + int(std::lround((pos.x - press.x) / g.cellW)), 1, chain::kMaxLineSteps);
+        else
+            length = pos.x < g.cellsX() ? 1 : g.columnAt(pos.x) + 1;
         strip.patternPreviewDevice = device.value;
         strip.lengthPreview = std::make_pair(row, length);
     }
@@ -687,6 +693,8 @@ class PatternLengthDrag : public DragGesture {
     int row;
     PatternGeometry g;
     int start, length;
+    Vec press;
+    bool fromNumber;
 };
 
 } // namespace
@@ -2009,7 +2017,8 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
         // A row's end (its line, or its length on the right) sets how long it is; a value step is dragged.
         bool onEnd = pos.x >= g.cellsRight() || (length < chain::kMaxLineSteps && std::fabs(pos.x - g.endX(length)) <= 4);
         if (onEnd && pos.x >= g.cellsX())
-            return std::make_unique<PatternLengthDrag>(*this, d->id, lane < 0 ? -1 : lane, g, length);
+            return std::make_unique<PatternLengthDrag>(*this, d->id, lane < 0 ? -1 : lane, g, length, pos,
+                                                       pos.x >= g.cellsRight());
         if (lane >= 0 && pos.x >= g.cellsX())
             return std::make_unique<PatternDrag>(*this, ctx, d->id, chain::ArpLane(lane), g.columnAt(pos.x), g, pos);
         if (lane < 0 && pos.x >= g.cellsX() && pos.x < g.cellsRight())
@@ -3004,7 +3013,8 @@ void DeviceStrip::updateTip() {
             else if (row >= PatternGeometry::kFirstLane && mouse.x < g.cellsX())
                 want = "Every step of this row: turn the wheel, or right-click to modulate or automate the whole row";
             else if (row >= 0 && mouse.x >= g.cellsRight())
-                want = "This row's length in steps: drag left or right, or turn the wheel. Rows of different lengths "
+                want = "This row's length in steps: drag left or right (its end line follows), turn the wheel, or "
+                       "double-click for 16. Rows of different lengths "
                        "drift against each other";
             else if (row >= PatternGeometry::kFirstLane && mouse.x >= g.cellsX()) {
                 int knob = chain::arpLaneFirst(chain::ArpLane(row - PatternGeometry::kFirstLane)) + g.columnAt(mouse.x);

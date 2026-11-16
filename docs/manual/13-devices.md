@@ -130,8 +130,9 @@ Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate
   bar). A click on a cell's top half steps it up, on its bottom half down (Vel by 10%, Gate by 25%, Oct and Move by
   one). The mouse wheel steps a cell (Vel and Gate by 5%). Double-click resets a cell. Steps past a row's end are
   drawn fainter.
-- **Each row has its own length.** The number on the right is the row's length in steps. Drag it left or right (or
-  turn the wheel over it), or drag the white line where a shorter row ends. Rows of different lengths drift against
+- **Each row has its own length.** The number on the right is the row's length in steps. Drag it left or right: the
+  row's end moves as far as the pointer, starting from the length it has. Or turn the wheel over it, double-click it
+  for 16, or drag the white line where a shorter row ends. Rows of different lengths drift against
   each other: a 12-step Vel row over 16 note steps makes a line that only repeats every 3 bars.
 - **While it plays**, each row outlines the step it is on.
 - **Every step can be automated and modulated.** Right-click a Vel, Gate, Oct or Move cell for the same menu a
