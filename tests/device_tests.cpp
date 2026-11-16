@@ -90,10 +90,11 @@ TEST_CASE("device and modulator tables are complete and consistent") {
     // The Pattern line's settings sit where the knob names say.
     const auto& arp = devices::deviceInfo(DeviceType::Arpeggiator).params;
     REQUIRE(arp.size() == size_t(chain::knob::kArpParamCount));
-    CHECK(std::string(arp[chain::knob::kArpSemiKey].name) == "Semitones in key");
+    CHECK(std::string(arp[chain::knob::kArpMoveUnit].name) == "Move by");
     CHECK(std::string(arp[chain::arpLaneSteps(chain::ArpLane::Gate)].name) == "Gate steps");
     CHECK(std::string(arp[chain::knob::kArpStepVel + 4].name) == "Step 5 velocity");
-    CHECK(std::string(arp[chain::knob::kArpStepSemi + 15].name) == "Step 16 semitones");
+    CHECK(std::string(arp[chain::knob::kArpStepMove + 15].name) == "Step 16 move");
+    CHECK(std::string(arp[chain::arpLaneShift(chain::ArpLane::Move)].name) == "Move, every step");
     CHECK(arp[chain::arpLaneFirst(chain::ArpLane::Octave)].min == -3);
 
     auto checkParam = [](const devices::ParamInfo& p) {
@@ -750,8 +751,9 @@ TEST_CASE("an arpeggiator's own Pattern line saves with the song, and the dice w
     CHECK(line == chain::generatedLine(42, 12)); // the same seed, the same line
     CHECK(line != chain::generatedLine(43, 12));
     for (uint8_t step : line)
-        CHECK((chain::lineRow(step) >= 1 && chain::lineRow(step) <= 4));
-    line[3] = chain::lineStep(chain::kAllRow, -1);
+        CHECK((step == chain::stepOf(1) || step == chain::stepOf(2) || step == chain::stepOf(3) ||
+               step == chain::stepOf(4)));
+    line[3] = uint8_t(chain::stepOf(1) | chain::stepOf(3));
     CommandPtr set = setArpLine(song, arp, line, 5, "Edit the line");
     REQUIRE(set);
     set->apply(song);

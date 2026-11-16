@@ -130,6 +130,10 @@ class DeviceStrip : public InteractiveView {
     /// and a row length it sets (row -1: the notes; 0..3: Vel, Gate, Oct, Semi).
     std::map<int, float> stepPreview;
     std::optional<std::pair<int, int>> lengthPreview;
+    /// A note row being painted: the Arpeggiator's ID and its line as the drag would leave it.
+    std::optional<std::pair<uint64_t, std::vector<uint8_t>>> lineDraft;
+    /// Sets an Arpeggiator's Pattern line as one undo step named `name`; the dice switch then reads Yours.
+    void commitLine(DeviceId device, const std::vector<uint8_t>& line, const std::string& name);
     uint64_t patternPreviewDevice = 0;
     /// The tag a press, drag or panel last touched: the arrow keys step it.
     std::optional<TagRef> focusedTag;
@@ -272,7 +276,6 @@ class DeviceStrip : public InteractiveView {
     void deleteSelection();
     /// Where pasted devices go after card `cardIndex` (-1: after the last selected card, else at the end).
     int pasteIndexAfter(int cardIndex);
-    /// An edit to the Pattern grid at `pos`: a step's row, its octave, or the line's length (DECISIONS §163).
     /// An Arpeggiator on Pattern: its settings in a slim column, then the line's grid; returns where the grid ends.
     float layoutPattern(const Device& d, int index, float x, float top, NVGcolor tint);
     /// How many held-note rows an Arpeggiator's Pattern grid shows (4 to 8, docs/DECISIONS.md §171): the most notes
@@ -280,7 +283,7 @@ class DeviceStrip : public InteractiveView {
     int patternNotes(const Device& d, int index);
     std::map<uint64_t, int> arpHeard;                           // per Arpeggiator: the most notes it held
     std::map<uint64_t, std::pair<uint64_t, int>> arpNotesCounted; // per Arpeggiator: song revision + 1, notes in
-    /// A click in the grid: a note step (on, off, another row) or the Semi chip (semitones or steps of the key).
+    /// A click in the grid: on the Move row's name it cycles the row's unit (semitones, key steps, chord notes).
     void editPatternGrid(const Part& grid, rack::math::Vec pos);
     void drawPatternGrid(NVGcontext* vg, const Part& grid);
     /// Copy and Paste for a right-click menu, and with `full` Duplicate and Delete too (a card's or a modulator's

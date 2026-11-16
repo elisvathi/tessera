@@ -574,7 +574,7 @@ double chance(uint64_t seed, uint64_t k) { return double(mixed(seed ^ mixed(k)) 
 uint8_t generatedLineStep(uint64_t seed, int k) {
     double r = chance(seed ^ 0x51A7E0F1ull, uint64_t(k));
     int row = r < 0.4 ? 1 : 2 + std::min(2, int((r - 0.4) / 0.2));
-    return lineStep(row, 0);
+    return stepOf(row);
 }
 
 std::vector<uint8_t> generatedLine(uint64_t seed, int length) {
@@ -759,33 +759,44 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
     }
     case ArpPattern::Pattern: {
         if (d.lineLength > 0) {
-            // Its own line. The notes row says which held note plays (from the lowest; a row past the notes held
-            // plays from the lowest again, an octave up), all of them, or a rest. Each value row has its own length,
-            // so the rows drift against each other: velocity scales the held note's, gate sets how long the note
-            // is, octaves and semitones (or steps of the key) move it. On New a fresh notes row plays instead.
+            // Its own line. Each step lights the held notes it plays (from the lowest; none is a rest). Each value
+            // row has its own length, so the rows drift against each other: velocity scales the held note's (0% is
+            // a rest), gate sets how long the note is, octaves and the Move row (semitones, steps of the key or
+            // notes of the chord) move it. On New a fresh notes row plays instead.
             auto valueAt = [&](ArpLane lane) {
                 int length = std::clamp(int(std::lround(shown(d, arpLaneSteps(lane)))), 1, kMaxLineSteps);
-                return shown(d, arpLaneFirst(lane) + int(into % uint64_t(length)));
+                int k = arpLaneFirst(lane) + int(into % uint64_t(length));
+                const devices::ParamInfo& step = *devices::paramInfo(d.type, k);
+                return std::clamp(shown(d, k) + shown(d, arpLaneShift(lane)), step.min, step.max);
             };
             int k = int(into % uint64_t(d.lineLength));
-            uint8_t v = d.variation >= 1 ? d.line[k] : generatedLineStep(variationSeed(d.variation, c.roll, d.id), k);
-            int row = lineRow(v);
+            uint8_t notes = d.variation >= 1 ? d.line[k] : generatedLineStep(variationSeed(d.variation, c.roll, d.id), k);
             float scale = valueAt(ArpLane::Velocity) / 100;
+            if (notes == 0 || scale <= 0)
+                break; // a rest, or a step at 0% velocity
             double length = std::max(1.0, rate * double(valueAt(ArpLane::Gate)) / 100);
             int octave = int(std::lround(valueAt(ArpLane::Octave)));
-            int semitones = int(std::lround(valueAt(ArpLane::Semitone)));
-            bool inKey = shown(d, knob::kArpSemiKey) > 0.5f;
-            auto playStep = [&](int index) {
-                auto [h, p] = at(index);
-                if (semitones != 0)
-                    p = inKey ? c.keyOf(h->note.key).stepBy(std::clamp(p, 0, 127), semitones) : p + semitones;
+            int move = int(std::lround(valueAt(ArpLane::Move)));
+            auto unit = ArpMove(std::clamp(int(std::lround(shown(d, knob::kArpMoveUnit))), 0, 2));
+            int held = s.heldCount;
+            uint32_t played = 0; // the held notes this step already played: a note twice plays once
+            for (int row = 1; row <= kMaxLineNotes; row++) {
+                if (!stepHas(notes, row))
+                    continue;
+                // Rows past the notes held, and Chord moves past either end, wrap around in the same octave.
+                int index = row - 1 + (unit == ArpMove::Chord ? move : 0);
+                index = ((index % held) + held) % held;
+                if (played & (1u << index))
+                    continue;
+                played |= 1u << index;
+                const Held* h = order[size_t(index)];
+                int p = h->note.pitch;
+                if (unit == ArpMove::Semitones)
+                    p += move;
+                else if (unit == ArpMove::Key && move != 0)
+                    p = c.keyOf(h->note.key).stepBy(std::clamp(p, 0, 127), move);
                 play(h, p + 12 * octave, length, scale);
-            };
-            if (row == kAllRow)
-                for (int i = 0; i < s.heldCount; i++)
-                    playStep(i);
-            else if (row >= 1)
-                playStep(row - 1);
+            }
             break;
         }
         // Made from the held notes: any note on each of its 16 steps, the lowest one twice as likely as each other.

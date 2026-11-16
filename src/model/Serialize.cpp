@@ -921,10 +921,15 @@ Device deviceFromJson(const json_t* j) {
     d.on = getBool(j, "on", d.on);
     d.affectDrumLanes = getBool(j, "drumLanes", d.affectDrumLanes);
     d.params = floatsFromJson(get(j, "params"));
+    // Settings a device gained since the song was saved start at their defaults: the engine reads every setting
+    // its type has, so a short list must never reach it.
+    const std::vector<devices::ParamInfo>& info = devices::deviceInfo(d.type).params;
+    while (d.params.size() < info.size())
+        d.params.push_back(devices::defaultNormalized(info[d.params.size()]));
     d.variation = variationFromJson(j);
     forEach(get(j, "line"), [&](const json_t* step) {
         if (d.line.size() < 16)
-            d.line.push_back(uint8_t(std::clamp<json_int_t>(json_integer_value(step), 0, 0x3F)));
+            d.line.push_back(uint8_t(std::clamp<json_int_t>(json_integer_value(step), 0, 0xFF)));
     });
     d.modulators = modulatorListFromJson(get(j, "modulators"));
     forEach(get(j, "playheads"), [&](const json_t* pj) { d.playheads.push_back(playheadFromJson(pj)); });
@@ -1338,9 +1343,9 @@ bool migrateSong(json_t* songJ, int fromVersion) {
                 if (k < 16) {
                     int at = chain::arpLaneFirst(chain::ArpLane::Octave) + int(k);
                     json_array_set_new(params, size_t(at),
-                                       json_real(devices::normalize(info[size_t(at)], float(chain::lineOctave(v)))));
+                                       json_real(devices::normalize(info[size_t(at)], float(int((v >> 4) & 3) - 1))));
                 }
-                json_array_set_new(line, k, json_integer(chain::lineStep(chain::lineRow(v), 0)));
+                json_array_set_new(line, k, json_integer(v & 7)); // the row; the octave went into the step setting
             }
         };
         auto chainOf = [&](json_t* devicesJ) {
@@ -1361,7 +1366,7 @@ bool migrateSong(json_t* songJ, int fromVersion) {
         }
     }
     if (fromVersion < 14) {
-        // Version 14 gave the Pattern line rows for up to 8 held notes: "all" moved from row 5 to kAllRow, since 5
+        // Version 14 gave the Pattern line rows for up to 8 held notes: "all" moved from row 5 to row 9, since 5
         // is now the fifth note.
         auto migrate = [](json_t* d) {
             const char* type = json_string_value(json_object_get(d, "type"));
@@ -1373,8 +1378,49 @@ bool migrateSong(json_t* songJ, int fromVersion) {
                 json_int_t v = json_integer_value(step);
                 if ((v & 7) == 5)
                     json_array_set_new(json_object_get(d, "line"), k,
-                                       json_integer((v & ~json_int_t(15)) | json_int_t(chain::kAllRow)));
+                                       json_integer((v & ~json_int_t(15)) | 9));
             }
+        };
+        auto chainOf = [&](json_t* devicesJ) {
+            size_t k, h, b;
+            json_t *d, *p, *bd;
+            json_array_foreach(devicesJ, k, d) {
+                migrate(d);
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_array_foreach(json_object_get(p, "branch"), b, bd) migrate(bd);
+                }
+            }
+        };
+        size_t i;
+        json_t* t;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) chainOf(json_object_get(t, "devices"));
+        json_array_foreach(json_object_get(songJ, "clips"), i, t) {
+            chainOf(json_object_get(json_object_get(t, "ownChain"), "devices"));
+        }
+    }
+    if (fromVersion < 15) {
+        // Version 15 made each Pattern step a set of rows (a bit per held note, so a step can be any chord) and the
+        // semitone row's key switch the Move row's unit (Semitones, Key, Chord). A step's one row becomes that row's
+        // bit, "all" (row 9) every row; "in key" moves from the switch's 1 to the choice's middle.
+        const devices::ParamInfo& unit =
+            devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(chain::knob::kArpMoveUnit)];
+        auto migrate = [&unit](json_t* d) {
+            const char* type = json_string_value(json_object_get(d, "type"));
+            if (!type || std::string(type) != "arpeggiator")
+                return;
+            size_t k;
+            json_t* step;
+            json_t* line = json_object_get(d, "line");
+            json_array_foreach(line, k, step) {
+                int row = int(json_integer_value(step) & 15);
+                int bits = row == 9 ? chain::kFullStep : chain::stepOf(row);
+                json_array_set_new(line, k, json_integer(bits));
+            }
+            json_t* params = json_object_get(d, "params");
+            json_t* inKey = json_array_get(params, size_t(chain::knob::kArpMoveUnit));
+            if (json_is_number(inKey))
+                json_array_set_new(params, size_t(chain::knob::kArpMoveUnit),
+                                   json_real(devices::normalize(unit, json_number_value(inKey) > 0.5 ? 1.f : 0.f)));
         };
         auto chainOf = [&](json_t* devicesJ) {
             size_t k, h, b;

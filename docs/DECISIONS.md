@@ -2952,3 +2952,24 @@ steps. Agreed from the mockup ("Pattern rows follow the chord"):
 - **Schema 14**: a step's row has 4 bits (0 rest, 1-8, 9 all). Lines saved before had "all" at row 5; it moves to 9
   on load.
 - The line the dice writes still uses rows 1-4; a row past the notes held still plays from the lowest an octave up.
+
+## 172. Pattern steps light any notes; Vel 0 is a rest; Move counts semitones, key steps or chord notes (16 Nov)
+
+The user wanted a step that can be switched off (and modulated), and the note per step modulated, and asked to
+rethink the grid. Agreed on the "Free cells" mockup, with the user's own rule for notes past the chord:
+- **Every cell is its own switch.** A step is a set of rows (a bit per held note, `chain::stepOf`): several lit is a
+  chord, none a rest. The "all" row is gone. Drag along a row to light or clear a run (`PatternNoteDrag`, one undo
+  step). The first click on an untouched line still fills it from the dice; the clicked step plays only that note.
+- **Rows past the notes held wrap around in the same octave** (user rule; replaces "an octave up" from §166). A note
+  twice in one step plays once, so a full step is exactly the chord. Octaves come only from Oct.
+- **No On/Off row: Vel 0% is a rest.** The step's notes stay written and show as outlines. Modulating Vel switches
+  steps on and off.
+- **The Semi row is the Move row**, its unit a chip by the name (`kArpMoveUnit`: semi, key, chord). In chord, +1 moves
+  every note of the step to the next held note, wrapping around; the grid outlines where a moved step plays now (only
+  when the Move row is as long as the notes, so columns line up; the wrap count is what the arpeggio holds, or while
+  stopped what its clips send it).
+- **A whole-row setting per value row** (`arpLaneShift`, "Move, every step"...), added to each step and clamped to the
+  step's range. Mapping a row's name maps it: one route for the whole row (a modulator reaches at most 8 settings, so
+  16 step routes were not an option). Wheel and right-click on the name set or automate it. The Arpeggiator now has
+  80 settings, the limit; devices load with defaults for settings their saved song didn't have.
+- **Schema 15**: old steps (one row, 9 all) become bits, all every row; the key switch's 1 becomes Move by key steps.

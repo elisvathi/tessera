@@ -57,7 +57,7 @@ std::vector<std::string> chordNames() {
 const std::vector<std::string>& arpStepNames() {
     static const std::vector<std::string> names = [] {
         std::vector<std::string> out;
-        for (const char* what : {"velocity", "gate", "octave", "semitones"})
+        for (const char* what : {"velocity", "gate", "octave", "move"})
             for (int k = 1; k <= 16; k++)
                 out.push_back("Step " + std::to_string(k) + " " + what);
         return out;
@@ -65,11 +65,11 @@ const std::vector<std::string>& arpStepNames() {
     return names;
 }
 
-/// The Arpeggiator's Pattern line settings after its first seven: the semitone row's key switch, the four rows'
-/// lengths, then each row's 16 steps.
+/// The Arpeggiator's Pattern line settings after its first seven: the Move row's unit, the four rows' lengths, then
+/// each row's 16 steps.
 void addArpLineParams(std::vector<ParamInfo>& params) {
-    params.push_back(toggle("Semitones in key", false));
-    for (const char* row : {"Velocity steps", "Gate steps", "Octave steps", "Semitone steps"})
+    params.push_back(choice("Move by", {"Semitones", "Key steps", "Chord notes"}, 0));
+    for (const char* row : {"Velocity steps", "Gate steps", "Octave steps", "Move steps"})
         params.push_back(integer(row, 1, 16, 16));
     const std::vector<std::string>& names = arpStepNames();
     for (int k = 0; k < 16; k++)
@@ -79,7 +79,12 @@ void addArpLineParams(std::vector<ParamInfo>& params) {
     for (int k = 0; k < 16; k++)
         params.push_back(integer(names[size_t(32 + k)].c_str(), -3, 3, 0, "oct"));
     for (int k = 0; k < 16; k++)
-        params.push_back(integer(names[size_t(48 + k)].c_str(), -12, 12, 0, "st"));
+        params.push_back(integer(names[size_t(48 + k)].c_str(), -12, 12, 0));
+    // Each row's whole-row setting, added to every step (the engine clamps the sum to the step's range).
+    params.push_back(number("Velocity, every step", -100, 100, 0, "%"));
+    params.push_back(number("Gate, every step", -200, 200, 0, "%"));
+    params.push_back(integer("Octave, every step", -3, 3, 0, "oct"));
+    params.push_back(integer("Move, every step", -12, 12, 0));
 }
 
 std::vector<TypeInfo> buildDevices() {

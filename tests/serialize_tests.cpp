@@ -320,22 +320,38 @@ TEST_CASE("the swing grid is saved, and swing on 1/8s moves the off-beat 1/8") {
     CHECK(swung(double(kPpq / 2), 1.f, kPpq / 2) == doctest::Approx(double(kPpq / 2 + kPpq / 4)));
 }
 
-TEST_CASE("a Pattern line saved before version 14 keeps its all steps, now past the eight note rows") {
+/// A song with one Arpeggiator whose saved line holds `raw` steps as they were written then, migrated from `version`.
+Device arpFromOldLine(const std::vector<int>& raw, int version, float inKey = 0) {
     Song song = makeDefaultSong();
     Device arp = devices::makeDevice(DeviceType::Arpeggiator, song.newId<DeviceId>());
-    arp.line = {chain::lineStep(1, 0), chain::lineStep(5, 0), chain::lineStep(4, 0), chain::lineStep(0, 0)};
+    arp.params[chain::knob::kArpMoveUnit] = inKey; // then a switch: 0 or 1
     song.tracks[0].devices.push_back(arp);
     json::Ref j(songToJson(song));
-    REQUIRE(migrateSong(j.get(), 13)); // row 5 was "all" then
-    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
-    CHECK(loaded.tracks[0].devices[0].line == std::vector<uint8_t>{chain::lineStep(1, 0),
-                                                                   chain::lineStep(chain::kAllRow, 0),
-                                                                   chain::lineStep(4, 0), chain::lineStep(0, 0)});
+    json_t* line = json_array();
+    for (int v : raw)
+        json_array_append_new(line, json_integer(v));
+    json_t* devicesJ = json_object_get(json_array_get(json_object_get(j.get(), "tracks"), 0), "devices");
+    json_object_set_new(json_array_get(devicesJ, 0), "line", line);
+    REQUIRE(migrateSong(j.get(), version));
+    return songFromJson(j.get(), Song::kSchemaVersion).tracks[0].devices[0];
+}
 
-    SUBCASE("a line saved now keeps notes 5 to 8") {
+TEST_CASE("Pattern lines saved before version 15 become sets of rows, and in key becomes Move by key steps") {
+    // Version 14: rows 1 to 8 and 9 for all, with the octave bits of then (16).
+    Device d = arpFromOldLine({1 | 16, 5 | 16, 9 | 16, 0 | 16}, 14, 1);
+    CHECK(d.line == std::vector<uint8_t>{chain::stepOf(1), chain::stepOf(5), chain::kFullStep, 0});
+    const devices::ParamInfo& unit = *devices::paramInfo(DeviceType::Arpeggiator, chain::knob::kArpMoveUnit);
+    CHECK(devices::display(unit, d.params[chain::knob::kArpMoveUnit]) == doctest::Approx(float(chain::ArpMove::Key)));
+    // Version 13: 5 was all.
+    CHECK(arpFromOldLine({1 | 16, 5 | 16, 4 | 16}, 13).line ==
+          std::vector<uint8_t>{chain::stepOf(1), chain::kFullStep, chain::stepOf(4)});
+    // A device saved with fewer settings gets the new ones at their defaults.
+    CHECK(d.params.size() == devices::deviceInfo(DeviceType::Arpeggiator).params.size());
+
+    SUBCASE("a line saved now keeps its chords") {
         Song now = makeDefaultSong();
         Device a = devices::makeDevice(DeviceType::Arpeggiator, now.newId<DeviceId>());
-        a.line = {chain::lineStep(5, 0), chain::lineStep(8, 0), chain::lineStep(chain::kAllRow, 0)};
+        a.line = {chain::stepOf(5), chain::stepOf(8), chain::kFullStep, uint8_t(chain::stepOf(1) | chain::stepOf(3))};
         now.tracks[0].devices.push_back(a);
         json::Ref saved(songToJson(now));
         REQUIRE(migrateSong(saved.get(), Song::kSchemaVersion));
@@ -349,7 +365,7 @@ TEST_CASE("a Pattern line saved before version 13 keeps its octaves and its gate
     Device arp = devices::makeDevice(DeviceType::Arpeggiator, song.newId<DeviceId>());
     arp.params.resize(7); // the settings it had then
     arp.params[chain::knob::kGate] = devices::normalize(info[chain::knob::kGate], 120);
-    arp.line = {chain::lineStep(1, 1), chain::lineStep(2, -1), chain::lineStep(3, 0)};
+    arp.line = {1 | 2 << 4, 2 | 0 << 4, 3 | 1 << 4}; // rows 1 2 3, octaves +1 -1 0, as written then
     song.tracks[0].devices.push_back(arp);
     json::Ref j(songToJson(song));
     REQUIRE(migrateSong(j.get(), 12));
@@ -363,5 +379,5 @@ TEST_CASE("a Pattern line saved before version 13 keeps its octaves and its gate
     CHECK(shown(chain::arpLaneFirst(ArpLane::Octave) + 2) == doctest::Approx(0));
     CHECK(shown(chain::arpLaneFirst(ArpLane::Gate) + 5) == doctest::Approx(120));
     CHECK(shown(chain::arpLaneFirst(ArpLane::Velocity)) == doctest::Approx(100));
-    CHECK(d.line == std::vector<uint8_t>{chain::lineStep(1, 0), chain::lineStep(2, 0), chain::lineStep(3, 0)});
+    CHECK(d.line == std::vector<uint8_t>{chain::stepOf(1), chain::stepOf(2), chain::stepOf(3)});
 }

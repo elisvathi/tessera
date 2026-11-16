@@ -874,28 +874,28 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         std::vector<int> wide = run(float(chain::ArpPattern::Shuffled), 4);
         CHECK(std::set<int>(wide.begin(), wide.end()).size() == 8); // no repeats inside a round of 12
     }
-    SUBCASE("Pattern with its own line: rows, a chord step, a rest, an octave, and a row past the held notes") {
+    SUBCASE("Pattern with its own line: notes, a chord step, a rest, an octave, and a row past the held notes") {
         Rig r;
         r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
                                         {chain::knob::kPattern, float(chain::ArpPattern::Pattern)},
                                         {chain::knob::kArpOctaves, 3.f}}); // Oct leaves an own line alone
-        std::vector<uint8_t> line = {chain::lineStep(1, 0), chain::lineStep(3, 0), chain::lineStep(chain::kAllRow, 0),
-                                     chain::lineStep(0, 0), chain::lineStep(2, 0), chain::lineStep(4, 0)};
+        std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(3), chain::kFullStep,
+                                     0,                chain::stepOf(2), chain::stepOf(4)};
         r.set(0, chain::knob::kArpStepOct + 4, 1);
         r.slots[0].line = line.data();
         r.slots[0].lineLength = uint8_t(line.size());
         for (int p : {60, 64, 67})
             r.push(r.note(0, 240 * 6, p));
         r.runTicks(-1, 240 * 6 - 1);
-        // C, G, the chord, a rest, E an octave up, and row 4 of three notes: C an octave up.
-        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 67, 60, 64, 67, 76, 72});
+        // C, G, the chord (each note once), a rest, E an octave up, and row 4 of three notes wraps around to C.
+        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 67, 60, 64, 67, 76, 60});
     }
     SUBCASE("Pattern rows: velocity, gate, octave and semitones per step, each row its own length") {
         auto rig = [](Rig& r, int steps) {
             r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
                                             {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
-            static const std::vector<uint8_t> line = {chain::lineStep(1, 0), chain::lineStep(2, 0),
-                                                      chain::lineStep(3, 0), chain::lineStep(1, 0)};
+            static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(2), chain::stepOf(3),
+                                                      chain::stepOf(1)};
             r.slots[0].line = line.data();
             r.slots[0].lineLength = 4;
             for (int p : {60, 64, 67})
@@ -909,7 +909,7 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         r.set(0, chain::arpLaneFirst(ArpLane::Gate) + 2, 150);
         r.set(0, chain::arpLaneSteps(ArpLane::Octave), 3); // 0, -1, 0, 0, -1, 0
         r.set(0, chain::arpLaneFirst(ArpLane::Octave) + 1, -1);
-        r.set(0, chain::arpLaneFirst(ArpLane::Semitone) + 3, 7);
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 3, 7);
         r.runTicks(-1, 240 * 6 - 1);
         REQUIRE(r.out.notes.size() == 6);
         // Notes C E G C C E; octave row 0 -1 0 repeating; step 4 a fifth up.
@@ -920,11 +920,11 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(velocities == std::vector<float>{0.8f, 0.4f, 0.8f, 0.4f, 0.8f, 0.4f});
         CHECK(r.out.notes[2].end - r.out.notes[2].start == doctest::Approx(360)); // 150% of a 1/16
         CHECK(r.out.notes[0].end - r.out.notes[0].start == doctest::Approx(120)); // 50%, the default
-        SUBCASE("semitones in key: +2 from C in C major is E") {
+        SUBCASE("moving by key steps: +2 from C in C major is E") {
             Rig k;
             rig(k, 1);
-            k.set(0, chain::knob::kArpSemiKey, 1);
-            k.set(0, chain::arpLaneFirst(ArpLane::Semitone), 2);
+            k.set(0, chain::knob::kArpMoveUnit, float(chain::ArpMove::Key));
+            k.set(0, chain::arpLaneFirst(ArpLane::Move), 2);
             k.runTicks(-1, 100);
             CHECK(pitchesOf(k.out.notes) == std::vector<int>{64});
         }
@@ -979,7 +979,7 @@ TEST_CASE("arpeggiator Hold keeps the last chord through a rest and lets the nex
     CHECK(play(true, 0) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
 }
 
-TEST_CASE("a Pattern line plays held notes 5 to 8 of a big chord, and wraps an octave up past the chord") {
+TEST_CASE("a Pattern line plays held notes 5 to 8 of a big chord, and wraps around past the chord") {
     auto play = [](std::vector<int> chord, const std::vector<uint8_t>& line) {
         Rig r;
         r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
@@ -991,12 +991,62 @@ TEST_CASE("a Pattern line plays held notes 5 to 8 of a big chord, and wraps an o
         r.runTicks(-1, 240 * int(line.size()) - 1);
         return pitchesOf(r.out.notes);
     };
-    static const std::vector<uint8_t> big = {chain::lineStep(5, 0), chain::lineStep(8, 0), chain::lineStep(6, 0),
-                                             chain::lineStep(1, 0)};
+    static const std::vector<uint8_t> big = {chain::stepOf(5), chain::stepOf(8), chain::stepOf(6), chain::stepOf(1)};
     CHECK(play({48, 52, 55, 59, 62, 65, 69, 72}, big) == std::vector<int>{62, 72, 65, 48});
-    // Three notes: row 5 is the second note an octave up, row 8 the second two octaves up.
-    static const std::vector<uint8_t> past = {chain::lineStep(5, 0), chain::lineStep(8, 0)};
-    CHECK(play({60, 64, 67}, past) == std::vector<int>{76, 88});
+    // Three notes: rows past them wrap around in the same octave, so rows 5 and 8 both play the second note.
+    static const std::vector<uint8_t> past = {chain::stepOf(5), chain::stepOf(8)};
+    CHECK(play({60, 64, 67}, past) == std::vector<int>{64, 64});
+}
+
+TEST_CASE("Pattern steps light any notes, Vel 0 is a rest, and Move by chord notes walks the chord") {
+    using chain::ArpLane;
+    auto rig = [](Rig& r, const std::vector<uint8_t>& line) {
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+        r.slots[0].line = line.data();
+        r.slots[0].lineLength = uint8_t(line.size());
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * int(line.size()), p));
+    };
+    auto run = [](Rig& r, int steps) {
+        r.runTicks(-1, 240 * steps - 1);
+        return pitchesOf(r.out.notes);
+    };
+    SUBCASE("a step with two notes plays both; rows that wrap onto the same note play it once") {
+        static const std::vector<uint8_t> line = {uint8_t(chain::stepOf(1) | chain::stepOf(3)),
+                                                  uint8_t(chain::stepOf(1) | chain::stepOf(4))};
+        Rig r;
+        rig(r, line);
+        CHECK(run(r, 2) == std::vector<int>{60, 67, 60});
+    }
+    SUBCASE("Vel 0 plays nothing on that step") {
+        static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(2), chain::stepOf(3)};
+        Rig r;
+        rig(r, line);
+        r.set(0, chain::arpLaneSteps(ArpLane::Velocity), 3);
+        r.set(0, chain::arpLaneFirst(ArpLane::Velocity) + 1, 0);
+        CHECK(run(r, 3) == std::vector<int>{60, 67});
+    }
+    SUBCASE("Move by chord notes: +1 is the next held note, wrapping around in the same octave") {
+        static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(3), chain::stepOf(2)};
+        Rig r;
+        rig(r, line);
+        r.set(0, chain::knob::kArpMoveUnit, float(chain::ArpMove::Chord));
+        r.set(0, chain::arpLaneSteps(ArpLane::Move), 3);
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 0, 1);  // C -> E
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 1, 1);  // G -> C (wraps)
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 2, -2); // E -> G (wraps down)
+        CHECK(run(r, 3) == std::vector<int>{64, 60, 67});
+    }
+    SUBCASE("a row's setting for every step adds to each step") {
+        static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(2)};
+        Rig r;
+        rig(r, line);
+        r.set(0, chain::knob::kArpMoveUnit, float(chain::ArpMove::Chord));
+        r.set(0, chain::arpLaneShift(ArpLane::Move), 1);
+        r.set(0, chain::arpLaneShift(ArpLane::Octave), 1);
+        CHECK(run(r, 2) == std::vector<int>{76, 79});
+    }
 }
 
 TEST_CASE("Echo repeats notes, fading") {

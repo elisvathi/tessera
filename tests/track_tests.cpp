@@ -302,14 +302,16 @@ TEST_CASE("auto voices follow the most notes a track's clips play at once") {
     track.slots[0].clip = clip.id;
     CHECK(song.voicesOf(track) == 3);
 
-    // An arpeggiator plays one note at a time, but a Pattern line's "all" step plays the whole chord.
+    // An arpeggiator plays one note at a time, but a Pattern step that lights several notes plays them together.
     Device arp = devices::makeDevice(DeviceType::Arpeggiator, DeviceId(900));
     arp.params[chain::knob::kPattern] = devices::normalize(
         *devices::paramInfo(DeviceType::Arpeggiator, chain::knob::kPattern), float(chain::ArpPattern::Pattern));
-    arp.line = {chain::lineStep(1, 0), chain::lineStep(2, 0)};
+    arp.line = {chain::stepOf(1), chain::stepOf(2)};
     track.devices = {arp};
     CHECK(song.voicesOf(track) == 1);
-    track.devices[0].line.push_back(chain::lineStep(chain::kAllRow, 0));
+    track.devices[0].line.push_back(uint8_t(chain::stepOf(1) | chain::stepOf(2)));
+    CHECK(song.voicesOf(track) == 2);
+    track.devices[0].line.push_back(chain::kFullStep); // every row: the whole chord of three
     CHECK(song.voicesOf(track) == 3);
     track.devices.clear();
 

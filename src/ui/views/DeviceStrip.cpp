@@ -88,17 +88,17 @@ constexpr float kPatternGridWidth = 720;   // an Arpeggiator's Pattern grid: its
 constexpr float kPatternColumnWidth = 104; // the settings beside it, one under another
 constexpr float kPatternResetWidth = 50;   // "Reset" in the card's header
 
-/// Where a Pattern grid's parts are, inside its picture: the note rows (all, then one per held note from the highest
-/// down to 1: 4 to 8 of them), then the four value rows (Vel, Gate, Oct, Semi), each 16 steps wide between the row
-/// names and each row's length. With more notes the note rows get thinner and the value rows a little lower, so the
+/// Where a Pattern grid's parts are, inside its picture: the note rows (one per held note, from the highest down to
+/// 1: 4 to 8 of them), then the four value rows (Vel, Gate, Oct, Move), each 16 steps wide between the row names and
+/// each row's length. With more notes the note rows get thinner and the value rows a little lower, so the
 /// card keeps its height (docs/DECISIONS.md §171).
 struct PatternGeometry {
-    static constexpr float kPadX = 10, kPadTop = 6, kLabel = 34, kEnd = 26, kLaneGap = 3, kSplit = 5;
+    static constexpr float kPadX = 10, kPadTop = 6, kLabel = 62, kEnd = 26, kLaneGap = 3, kSplit = 5;
     /// rowAt's first value row: after the most note rows there can be, so a row number means the same at any count.
     static constexpr int kFirstLane = chain::kMaxLineNotes + 1;
     Rect area;
     float cellW = 0;
-    int notes = 4; // held-note rows, besides "all"
+    int notes = 4; // held-note rows
     float noteRow = 11, noteGap = 2, laneRow = 16;
     PatternGeometry(Rect picture, int noteRows)
         : area(picture.pos.x + kPadX, picture.pos.y + kPadTop, picture.size.x - 2 * kPadX,
@@ -108,13 +108,13 @@ struct PatternGeometry {
         noteGap = notes <= 4 ? 2 : 1.5f;
         float room = area.size.y - kSplit - float(chain::kArpLaneCount) * laneRow -
                      float(chain::kArpLaneCount - 1) * kLaneGap;
-        noteRow = std::min(11.f, (room - float(notes) * noteGap) / float(notes + 1));
+        noteRow = std::min(13.f, (room - float(notes - 1) * noteGap) / float(notes));
         cellW = (area.size.x - kLabel - kEnd) / float(chain::kMaxLineSteps);
     }
-    int noteRows() const { return notes + 1; }
+    int noteRows() const { return notes; }
     float cellsX() const { return area.pos.x + kLabel; }
     float cellsRight() const { return cellsX() + float(chain::kMaxLineSteps) * cellW; }
-    /// Where note row `r` (0 = all, `notes` = row 1) and value row `l` (0 = Vel .. 3 = Semi) start.
+    /// Where note row `r` (0 = the highest, `notes - 1` = row 1) and value row `l` (0 = Vel .. 3 = Move) start.
     float noteY(int r) const { return area.pos.y + float(r) * (noteRow + noteGap); }
     float laneY(int l) const { return noteY(noteRows()) - noteGap + kSplit + float(l) * (laneRow + kLaneGap); }
     Rect noteCell(int r, int col) const { return Rect(cellsX() + float(col) * cellW + 1, noteY(r), cellW - 2, noteRow); }
@@ -135,8 +135,8 @@ struct PatternGeometry {
     float rowMid(int row) const {
         return row < kFirstLane ? noteY(row) + noteRow / 2 : laneY(row - kFirstLane) + laneRow / 2;
     }
-    /// A note row's line value: row 0 is "all", the others held notes from the highest row down to 1.
-    int rowValue(int r) const { return r == 0 ? chain::kAllRow : notes + 1 - r; }
+    /// The held note (1 = the lowest) note row `r` stands for: the top row is the highest.
+    int rowValue(int r) const { return notes - r; }
 };
 
 /// The Arpeggiator's setting `knob`.
@@ -144,7 +144,7 @@ const devices::ParamInfo& arpInfo(int knob) {
     return devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(knob)];
 }
 
-/// How far a Pattern value row's drag moves per unit: a Vel or Gate bar slides, an Oct or Semi number steps.
+/// How far a Pattern value row's drag moves per unit: a Vel or Gate bar slides, an Oct or Move number steps.
 float pxPerUnit(chain::ArpLane lane) {
     switch (lane) {
     case chain::ArpLane::Velocity:
@@ -153,7 +153,7 @@ float pxPerUnit(chain::ArpLane lane) {
         return 0.6f;
     case chain::ArpLane::Octave:
         return 12.f;
-    case chain::ArpLane::Semitone:
+    case chain::ArpLane::Move:
     default:
         return 7.f;
     }
@@ -165,6 +165,15 @@ std::string stepText(chain::ArpLane lane, float v) {
         return std::to_string(int(std::lround(v))) + "%";
     int n = int(std::lround(v));
     return n > 0 ? "+" + std::to_string(n) : n < 0 ? "\xE2\x88\x92" + std::to_string(-n) : "0";
+}
+
+/// The line a Pattern edit starts from: the device's own, or for one still on the line made from the held notes, a
+/// whole line its dice writes, so the grid is never empty.
+std::vector<uint8_t> lineToEdit(const Device& d) {
+    if (!d.line.empty())
+        return d.line;
+    return chain::generatedLine(uint64_t(variationNumber(d.variation)) * 0x9E3779B97F4A7C15ull + d.id.value,
+                                chain::kMaxLineSteps);
 }
 
 /// A device's setting `k` as its choice or number, in the setting's own units.
@@ -526,7 +535,7 @@ class PatternDrag : public DragGesture {
         const devices::ParamInfo& info = arpInfo(first + column);
         float px = pxPerUnit(lane) * (mods.shift ? 3.f : 1.f);
         float v = mode == Mode::Longer ? start + d.x / px : start - d.y / px;
-        if (lane == chain::ArpLane::Octave || lane == chain::ArpLane::Semitone)
+        if (lane == chain::ArpLane::Octave || lane == chain::ArpLane::Move)
             v = std::round(v);
         value = std::clamp(v, info.min, info.max);
         painted = {column};
@@ -594,6 +603,61 @@ class PatternDrag : public DragGesture {
     std::vector<int> painted;
 };
 
+/// Painting a Pattern note row: the pressed cell flips (lit or cleared) and every cell of that row the pointer passes
+/// takes the same state, so a drag lights or clears a run. A click flips one cell. One undo step on release. On a
+/// line not yet written (`first`), the dice fills the rest and the painted steps play only the painted note.
+class PatternNoteDrag : public DragGesture {
+  public:
+    PatternNoteDrag(DeviceStrip& strip, DeviceId device, int note, int column, PatternGeometry g,
+                    std::vector<uint8_t> line, bool first)
+        : strip(strip), device(device), note(note), from(column), to(column), g(g), base(std::move(line)),
+          seed(rack::random::u64()), first(first) {
+        lit = first || !chain::stepHas(stepAt(column), note);
+        show();
+    }
+    void update(Vec pos, Modifiers) override {
+        to = g.columnAt(pos.x);
+        show();
+    }
+    void commit() override {
+        strip.lineDraft.reset();
+        strip.commitLine(device, painted(), lit ? "Pattern notes on" : "Pattern notes off");
+    }
+    void cancel() override { strip.lineDraft.reset(); }
+    std::string readout() const override {
+        int n = std::abs(to - from) + 1;
+        return "Note " + std::to_string(note) + (lit ? " on" : " off") +
+               (n > 1 ? ", " + std::to_string(n) + " steps" : std::string());
+    }
+    CursorShape cursor() const override { return CursorShape::Hand; }
+
+  private:
+    /// Step `k` of the line before the drag; past its end, the step the dice would write there.
+    uint8_t stepAt(int k) const {
+        return k < int(base.size()) ? base[size_t(k)] : chain::generatedLineStep(seed, k);
+    }
+    /// The line with the run painted: long enough to reach the run, which it lights or clears.
+    std::vector<uint8_t> painted() const {
+        std::vector<uint8_t> line = base;
+        int last = std::max(from, to);
+        while (int(line.size()) <= last)
+            line.push_back(stepAt(int(line.size())));
+        uint8_t bit = chain::stepOf(note);
+        for (int k = std::min(from, to); k <= last; k++)
+            line[size_t(k)] = first ? bit : lit ? uint8_t(line[size_t(k)] | bit) : uint8_t(line[size_t(k)] & ~bit);
+        return line;
+    }
+    void show() { strip.lineDraft = std::make_pair(device.value, painted()); }
+    DeviceStrip& strip;
+    DeviceId device;
+    int note, from, to;
+    PatternGeometry g;
+    std::vector<uint8_t> base;
+    uint64_t seed;
+    bool first;
+    bool lit = true;
+};
+
 /// Dragging where a Pattern row ends (its end line, or its length on the right): the row is as many steps long as
 /// the step under the pointer. One undo step on release.
 class PatternLengthDrag : public DragGesture {
@@ -612,7 +676,7 @@ class PatternLengthDrag : public DragGesture {
     }
     void cancel() override { strip.lengthPreview.reset(); }
     std::string readout() const override {
-        static const char* const kRows[] = {"Notes", "Vel", "Gate", "Oct", "Semi"};
+        static const char* const kRows[] = {"Notes", "Vel", "Gate", "Oct", "Move"};
         return std::string(kRows[row + 1]) + "  " + std::to_string(length) + (length == 1 ? " step" : " steps");
     }
     CursorShape cursor() const override { return CursorShape::ResizeH; }
@@ -1237,9 +1301,14 @@ int DeviceStrip::patternNotes(const Device& d, int index) {
     if (!m || !t)
         return 4;
     int most = 4;
+    // A full step plays the whole chord, whatever its size: it doesn't ask for more rows.
     for (uint8_t step : d.line)
-        if (int row = chain::lineRow(step); row >= 1 && row <= chain::kMaxLineNotes)
-            most = std::max(most, row);
+        if (step != chain::kFullStep)
+            for (int row = chain::kMaxLineNotes; row > most; row--)
+                if (chain::stepHas(step, row)) {
+                    most = row;
+                    break;
+                }
     int& heard = arpHeard[d.id.value];
     heard = std::max(heard, m->arpHeld(d.id));
     // What the clips send it only changes with an edit, and counting it goes through every note: kept until then.
@@ -1914,11 +1983,13 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
             return nullptr;
         int lane = row - PatternGeometry::kFirstLane;
         if (ctx.mappingModulator) {
-            // Mapping: a value step takes the modulator like a tag does, a click at +50%, a drag for how far.
-            if (lane < 0 || pos.x < g.cellsX() || pos.x >= g.cellsRight())
+            // Mapping: a value step takes the modulator like a tag does, a click at +50%, a drag for how far. A
+            // row's name takes it for every step of the row (its whole-row setting).
+            if (lane < 0 || pos.x >= g.cellsRight())
                 return nullptr;
-            ParamRef ref{ParamRef::Kind::Device, d->id.value,
-                         uint16_t(chain::arpLaneFirst(chain::ArpLane(lane)) + g.columnAt(pos.x))};
+            int knob = pos.x < g.cellsX() ? chain::arpLaneShift(chain::ArpLane(lane))
+                                          : chain::arpLaneFirst(chain::ArpLane(lane)) + g.columnAt(pos.x);
+            ParamRef ref{ParamRef::Kind::Device, d->id.value, uint16_t(knob)};
             if (!reachableNow(ref))
                 return nullptr;
             ModulatorId mod(ctx.mappingModulator);
@@ -1941,7 +2012,10 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
             return std::make_unique<PatternLengthDrag>(*this, d->id, lane < 0 ? -1 : lane, g, length);
         if (lane >= 0 && pos.x >= g.cellsX())
             return std::make_unique<PatternDrag>(*this, ctx, d->id, chain::ArpLane(lane), g.columnAt(pos.x), g, pos);
-        return nullptr; // note steps and the Semi chip are clicks
+        if (lane < 0 && pos.x >= g.cellsX() && pos.x < g.cellsRight())
+            return std::make_unique<PatternNoteDrag>(*this, d->id, g.rowValue(row), g.columnAt(pos.x), g,
+                                                     lineToEdit(*d), d->line.empty());
+        return nullptr; // the Move unit chip is a click
     }
     case Kind::CardHeader: {
         if (p.device >= kBranchBase)
@@ -2016,8 +2090,10 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             // A value step has its setting's menu: type it, reset it, modulate it, automate it.
             PatternGeometry g(hit->rect, hit->param);
             int row = g.rowAt(pos.y);
-            if (row >= PatternGeometry::kFirstLane && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
-                int knob = chain::arpLaneFirst(chain::ArpLane(row - PatternGeometry::kFirstLane)) + g.columnAt(pos.x);
+            if (row >= PatternGeometry::kFirstLane && pos.x < g.cellsRight()) {
+                // A step's own setting, or on the row's name the setting for every step of the row.
+                auto lane = chain::ArpLane(row - PatternGeometry::kFirstLane);
+                int knob = pos.x < g.cellsX() ? chain::arpLaneShift(lane) : chain::arpLaneFirst(lane) + g.columnAt(pos.x);
                 deviceActions::openKnobMenu(ctx, {ParamRef::Kind::Device, d->id.value, uint16_t(knob)});
                 return;
             }
@@ -2348,9 +2424,9 @@ void DeviceStrip::wheel(Vec pos, Vec delta, Modifiers mods) {
         int row = g.rowAt(pos.y);
         int way = delta.y > 0 ? 1 : -1;
         DeviceId id(hit->id);
-        if (row >= PatternGeometry::kFirstLane && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
+        if (row >= PatternGeometry::kFirstLane && pos.x < g.cellsRight()) {
             auto lane = chain::ArpLane(row - PatternGeometry::kFirstLane);
-            int knob = chain::arpLaneFirst(lane) + g.columnAt(pos.x);
+            int knob = pos.x < g.cellsX() ? chain::arpLaneShift(lane) : chain::arpLaneFirst(lane) + g.columnAt(pos.x);
             const devices::ParamInfo& info = arpInfo(knob);
             float step = lane == chain::ArpLane::Velocity || lane == chain::ArpLane::Gate ? 5.f : 1.f;
             float v = std::clamp(patternValue(id, knob) + step * float(way), info.min, info.max);
@@ -2412,14 +2488,16 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
         PatternGeometry g(hit->rect, hit->param);
         int row = g.rowAt(pos.y);
         if (ctx.mappingModulator) {
-            if (row < PatternGeometry::kFirstLane || pos.x < g.cellsX() || pos.x >= g.cellsRight())
+            if (row < PatternGeometry::kFirstLane || pos.x >= g.cellsRight())
                 return CursorShape::NotAllowed;
+            auto lane = chain::ArpLane(row - PatternGeometry::kFirstLane);
             ParamRef ref{ParamRef::Kind::Device, hit->id,
-                         uint16_t(chain::arpLaneFirst(chain::ArpLane(row - PatternGeometry::kFirstLane)) + g.columnAt(pos.x))};
+                         uint16_t(pos.x < g.cellsX() ? chain::arpLaneShift(lane)
+                                                     : chain::arpLaneFirst(lane) + g.columnAt(pos.x))};
             return reachableNow(ref) ? CursorShape::ResizeV : CursorShape::NotAllowed;
         }
         if (row < 0 || pos.x < g.cellsX())
-            return row == PatternGeometry::kFirstLane + int(chain::ArpLane::Semitone) ? CursorShape::Hand : CursorShape::Arrow;
+            return row >= PatternGeometry::kFirstLane ? CursorShape::Hand : CursorShape::Arrow;
         if (pos.x >= g.cellsRight())
             return CursorShape::ResizeH;
         return row >= PatternGeometry::kFirstLane ? CursorShape::ResizeV : CursorShape::Hand;
@@ -2915,11 +2993,16 @@ void DeviceStrip::updateTip() {
             Vec mouse = localMouse();
             int row = g.rowAt(mouse.y);
             if (ctx.mappingModulator)
-                want = row >= PatternGeometry::kFirstLane && mouse.x >= g.cellsX() && mouse.x < g.cellsRight()
+                want = row >= PatternGeometry::kFirstLane && mouse.x < g.cellsX()
+                           ? "Click: the modulator moves every step of this row by 50%. Drag up or down for how far"
+                       : row >= PatternGeometry::kFirstLane && mouse.x < g.cellsRight()
                            ? "Click: the modulator moves this step by 50%. Drag up or down for how far"
                            : "";
-            else if (row == PatternGeometry::kFirstLane + int(chain::ArpLane::Semitone) && mouse.x < g.cellsX())
-                want = "Click: count the Semi row in semitones, or in steps of the key (Key)";
+            else if (row == PatternGeometry::kFirstLane + int(chain::ArpLane::Move) && mouse.x < g.cellsX())
+                want = "Click: what one step of Move is: a semitone (semi), a step of the key (key) or the next note "
+                       "of the chord (chord). Right-click or turn the wheel to move every step at once";
+            else if (row >= PatternGeometry::kFirstLane && mouse.x < g.cellsX())
+                want = "Every step of this row: turn the wheel, or right-click to modulate or automate the whole row";
             else if (row >= 0 && mouse.x >= g.cellsRight())
                 want = "This row's length in steps: drag left or right, or turn the wheel. Rows of different lengths "
                        "drift against each other";
@@ -2931,8 +3014,8 @@ void DeviceStrip::updateTip() {
                                                               : ": drag up or down, or sideways to paint a run") +
                        ". Click the top or bottom half to step it; double-click resets; right-click to automate";
             } else if (row >= 0 && row < PatternGeometry::kFirstLane && mouse.x >= g.cellsX())
-                want = "Click: this note on this step, again for a rest. Rows 1 to 4 are the held notes from the "
-                       "lowest; all plays the chord";
+                want = "Click: this held note plays on this step (1 is the lowest); light several for a chord, none "
+                       "for a rest. Drag along the row to light or clear a run. Past the notes held, rows wrap around";
         }
     }
     if (want != tipText) {
@@ -3620,18 +3703,6 @@ float DeviceStrip::patternValue(DeviceId device, int knob) {
     return devices::display(arpInfo(knob), shownValue({ParamRef::Kind::Device, device.value, uint16_t(knob)}));
 }
 
-namespace {
-
-/// The line a Pattern edit starts from: the device's own, or for one still on the line made from the held notes, a
-/// whole line its dice writes, so the grid is never empty.
-std::vector<uint8_t> lineToEdit(const Device& d) {
-    if (!d.line.empty())
-        return d.line;
-    return chain::generatedLine(uint64_t(variationNumber(d.variation)) * 0x9E3779B97F4A7C15ull + d.id.value,
-                                chain::kMaxLineSteps);
-}
-
-} // namespace
 
 void DeviceStrip::commitPattern(DeviceId device, const std::vector<std::pair<int, float>>& settings,
                                 const std::string& name) {
@@ -3672,9 +3743,9 @@ void DeviceStrip::resetPattern(DeviceId device) {
         return;
     std::vector<uint8_t> line;
     for (int k = 0; k < chain::kMaxLineSteps; k++)
-        line.push_back(chain::lineStep(k % 4 + 1, 0));
+        line.push_back(chain::stepOf(k % 4 + 1));
     std::vector<std::pair<int, float>> settings;
-    for (int k = chain::knob::kArpSemiKey; k < chain::knob::kArpParamCount; k++)
+    for (int k = chain::knob::kArpMoveUnit; k < chain::knob::kArpParamCount; k++)
         settings.push_back({k, arpInfo(k).def});
     if (CommandPtr set = setArpPattern(m->song(), device, line, variationNumber(d->variation), settings, "Reset Pattern"))
         m->perform(std::move(set));
@@ -3691,7 +3762,9 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
     PatternGeometry g(grid.rect, grid.param);
     DeviceId id = d->id;
     draw::roundedRect(vg, grid.rect, mx::kDeviceTileRadius, dc.screen);
-    bool own = !d->line.empty();
+    // The line as written, or as a note row being painted would leave it.
+    const std::vector<uint8_t>& line = lineDraft && lineDraft->first == id.value ? lineDraft->second : d->line;
+    bool own = !line.empty();
     bool fresh = d->variation < 0 && own;
     bool previewing = patternPreviewDevice == id.value;
     // Each row's length (row -1: the notes) and the step it plays now, from the step the engine played last.
@@ -3699,7 +3772,7 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
         if (previewing && lengthPreview && lengthPreview->first == row)
             return lengthPreview->second;
         if (row < 0)
-            return own ? int(d->line.size()) : chain::kMaxLineSteps;
+            return own ? int(line.size()) : chain::kMaxLineSteps;
         return std::clamp(int(std::lround(patternValue(id, chain::arpLaneSteps(chain::ArpLane(row))))), 1,
                           chain::kMaxLineSteps);
     };
@@ -3723,47 +3796,94 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
     };
 
     int notes = lengthOf(-1), notesAt = playingAt(notes);
+    // What a value step plays now: its own setting plus its row's setting for every step, within the step's range.
+    auto liveStep = [&](chain::ArpLane lane, int col) {
+        int k = chain::arpLaneFirst(lane) + col;
+        const devices::ParamInfo& info = arpInfo(k);
+        return std::clamp(patternValue(id, k) + patternValue(id, chain::arpLaneShift(lane)), info.min, info.max);
+    };
+    auto unit = chain::ArpMove(std::clamp(int(std::lround(patternValue(id, chain::knob::kArpMoveUnit))), 0, 2));
+    // A Vel or Move step lines up with a note column only when its row is as long as the notes.
+    bool velAligned = lengthOf(int(chain::ArpLane::Velocity)) == notes;
+    bool moveAligned = unit == chain::ArpMove::Chord && lengthOf(int(chain::ArpLane::Move)) == notes;
+    // How many notes the moved steps wrap around: what it holds while playing, else the most its clips send it.
+    int held = m->arpHeld(id);
+    if (held <= 0) {
+        auto counted = arpNotesCounted.find(id.value);
+        held = counted != arpNotesCounted.end() && counted->second.second > 0 ? counted->second.second : g.notes;
+    }
     draw::TextStyle noteLabel = label;
     noteLabel.size = std::min(label.size, g.noteRow + 1.5f);
     for (int r = 0; r < g.noteRows(); r++) {
-        draw::text(vg, noteLabel, g.area.pos.x, g.rowMid(r), r == 0 ? std::string("all") : std::to_string(g.rowValue(r)));
+        int note = g.rowValue(r);
+        draw::text(vg, noteLabel, g.area.pos.x, g.rowMid(r), std::to_string(note));
         for (int col = 0; col < chain::kMaxLineSteps; col++) {
             Rect cell = g.noteCell(r, col);
             bool in = col < notes;
-            int row = own && in && col < int(d->line.size()) ? chain::lineRow(d->line[size_t(col)]) : 0;
-            bool on = row != 0 && row == g.rowValue(r);
-            bool chord = r > 0 && row == chain::kAllRow;
-            NVGcolor fill = on      ? nvgTransRGBAf(tint, fresh ? 0.45f : 1.f)
-                            : chord ? nvgTransRGBAf(tint, 0.3f)
-                                    : (col % 4 == 0 ? beatFill : cellFill);
+            uint8_t step = own && in && col < int(line.size()) ? line[size_t(col)] : 0;
+            bool on = chain::stepHas(step, note);
+            // A step at 0% velocity keeps its notes but plays none: they show as outlines.
+            bool silent = on && velAligned && liveStep(chain::ArpLane::Velocity, col) <= 0;
+            NVGcolor fill = on ? nvgTransRGBAf(tint, fresh ? 0.45f : 1.f) : (col % 4 == 0 ? beatFill : cellFill);
             if (!in)
                 fill.a *= 0.35f; // past the row's end: fainter than the steps that play
             if (mapping)
-                fill.a *= 0.3f; // a modulator can't move a note step
-            draw::roundedRect(vg, cell, 2, fill);
+                fill.a *= 0.3f; // a modulator can't light a note cell
+            if (silent) {
+                draw::roundedRect(vg, cell, 2, col % 4 == 0 ? beatFill : cellFill);
+                draw::roundedRectStroke(vg, cell.shrink(Vec(0.5f, 0.5f)), 2, nvgTransRGBAf(tint, 0.7f), 1);
+            } else {
+                draw::roundedRect(vg, cell, 2, fill);
+            }
+            // Moved by chord notes: where the step's notes play now, wrapping around the notes held.
+            if (moveAligned && step != 0 && !mapping) {
+                int move = int(std::lround(liveStep(chain::ArpLane::Move, col)));
+                bool here = false;
+                for (int q = 1; q <= chain::kMaxLineNotes && move != 0; q++)
+                    if (chain::stepHas(step, q))
+                        here |= (((q - 1 + move) % held) + held) % held + 1 == note;
+                if (here)
+                    draw::roundedRectStroke(vg, cell.shrink(Vec(1, 1)), 2, move > 0 ? dc.stepUp : dc.stepDown, 1.5f);
+            }
             if (col == notesAt && own)
                 outline(cell);
         }
     }
-    endLine(g.noteY(0), g.noteY(g.notes) + g.noteRow, notes);
-    draw::text(vg, number, g.area.getRight(), g.rowMid(g.notes), std::to_string(notes));
+    endLine(g.noteY(0), g.noteY(g.notes - 1) + g.noteRow, notes);
+    draw::text(vg, number, g.area.getRight(), g.rowMid(g.notes - 1), std::to_string(notes));
 
-    static const char* const kLaneNames[] = {"Vel", "Gate", "Oct"};
-    bool inKey = patternValue(id, chain::knob::kArpSemiKey) > 0.5f;
+    static const char* const kLaneNames[] = {"Vel", "Gate", "Oct", "Move"};
+    static const char* const kUnits[] = {"semi", "key", "chord"};
     for (int l = 0; l < chain::kArpLaneCount; l++) {
         auto lane = chain::ArpLane(l);
         int first = chain::arpLaneFirst(lane);
         int length = lengthOf(l), at = playingAt(length);
         float mid = g.rowMid(PatternGeometry::kFirstLane + l);
-        if (lane == chain::ArpLane::Semitone) {
-            // The Semi row's name is a switch: semitones, or steps of the key.
-            Rect chip(g.area.pos.x - 2, g.laneY(l) + 1, PatternGeometry::kLabel - 6, g.laneRow - 2);
+        // The row's name stands for its setting for every step: lit while mapping, outlined when something moves it.
+        ParamRef rowRef{ParamRef::Kind::Device, id.value, uint16_t(chain::arpLaneShift(lane))};
+        Rect name(g.area.pos.x - 3, g.laneY(l), PatternGeometry::kLabel - 6, g.laneRow);
+        if (mapping && reachableNow(rowRef))
+            draw::roundedRectStroke(vg, name, 3, mappingColor, 1.5f);
+        else if (std::optional<NVGcolor> moved = modulatorColorOn(rowRef))
+            draw::roundedRectStroke(vg, name, 3, *moved, 1.2f);
+        else if (m->automated(rowRef))
+            draw::roundedRectStroke(vg, name, 3, c.accent, 1.2f);
+        draw::text(vg, label, g.area.pos.x, mid, kLaneNames[l]);
+        float shift = patternValue(id, chain::arpLaneShift(lane));
+        if (lane == chain::ArpLane::Move) {
+            // The unit chip: what one step of Move is. A click cycles it.
+            draw::TextStyle chipText{theme::fonts::ui(), 8, nvgLerpRGBA(c.text0, tint, 0.45f),
+                                     NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+            const char* unitName = kUnits[int(unit)];
+            float w = draw::textWidth(vg, chipText, unitName) + 8;
+            Rect chip(g.cellsX() - 6 - w, g.laneY(l) + 2, w, g.laneRow - 4);
             draw::roundedRectStroke(vg, chip, 4, nvgTransRGBAf(tint, 0.55f), 1);
-            draw::TextStyle chipText = label;
-            chipText.color = nvgLerpRGBA(c.text0, tint, 0.45f);
-            draw::text(vg, chipText, chip.pos.x + 4, mid, inKey ? "Key" : "Semi");
-        } else {
-            draw::text(vg, label, g.area.pos.x, mid, kLaneNames[l]);
+            draw::text(vg, chipText, chip.getCenter().x, mid, unitName);
+        } else if (std::fabs(shift) > 1e-3f) {
+            // A whole-row setting that isn't 0 shows beside the name.
+            draw::TextStyle shiftText{theme::fonts::mono(), 8, nvgLerpRGBA(c.text0, tint, 0.45f),
+                                      NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+            draw::text(vg, shiftText, g.cellsX() - 6, mid, stepText(lane, shift));
         }
         for (int col = 0; col < chain::kMaxLineSteps; col++) {
             Rect cell = g.laneCell(l, col);
@@ -3793,7 +3913,7 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
                 break;
             }
             case chain::ArpLane::Octave:
-            case chain::ArpLane::Semitone:
+            case chain::ArpLane::Move:
             default: {
                 int n = int(std::lround(v));
                 if (n != 0) {
@@ -3807,6 +3927,22 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
                 }
                 break;
             }
+            }
+            if (std::fabs(shift) > 1e-3f && in) {
+                // With the row's setting for every step: what this step plays now, a line on Vel and Gate, a small
+                // number on Oct and Move.
+                float live = liveStep(lane, col);
+                NVGcolor mark = nvgTransRGBAf(c.text0, 0.9f);
+                if (lane == chain::ArpLane::Velocity) {
+                    float y = cell.getBottom() - cell.size.y * std::clamp(live / 100, 0.f, 1.f);
+                    draw::roundedRect(vg, Rect(cell.pos.x + 2, y - 0.75f, cell.size.x - 4, 1.5f), 0.75f, mark);
+                } else if (lane == chain::ArpLane::Gate) {
+                    float x = cell.pos.x + cell.size.x * std::clamp(live / 100, 0.f, 1.f);
+                    draw::roundedRect(vg, Rect(x - 0.75f, cell.pos.y + 2, 1.5f, cell.size.y - 4), 0.75f, mark);
+                } else {
+                    draw::TextStyle small{theme::fonts::mono(), 7.5f, mark, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP};
+                    draw::text(vg, small, cell.getRight() - 2, cell.pos.y + 1, stepText(lane, live));
+                }
             }
             // A step a modulator moves is outlined in its colour, like a tag, and like a tag it has a depth bar:
             // along its bottom, how far each modulator and lane moves it across its range, and a dot where it is now.
@@ -3860,24 +3996,20 @@ void DeviceStrip::editPatternGrid(const Part& grid, Vec pos) {
     if (!d)
         return;
     PatternGeometry g(grid.rect, grid.param);
-    int row = g.rowAt(pos.y);
-    if (row == PatternGeometry::kFirstLane + int(chain::ArpLane::Semitone) && pos.x < g.cellsX()) {
-        bool inKey = patternValue(d->id, chain::knob::kArpSemiKey) > 0.5f;
-        commitPattern(d->id, {{chain::knob::kArpSemiKey, inKey ? 0.f : 1.f}},
-                      inKey ? "Semitones" : "Semitones in key");
+    if (g.rowAt(pos.y) != PatternGeometry::kFirstLane + int(chain::ArpLane::Move) || pos.x >= g.cellsX())
         return;
-    }
-    if (row < 0 || row >= g.noteRows() || pos.x < g.cellsX() || pos.x >= g.cellsRight())
+    // The Move row's name cycles its unit: semitones, steps of the key, notes of the chord.
+    static const char* const kNames[] = {"Move by semitones", "Move by key steps", "Move by chord notes"};
+    int next = (int(std::lround(patternValue(d->id, chain::knob::kArpMoveUnit))) + 1) % 3;
+    commitPattern(d->id, {{chain::knob::kArpMoveUnit, float(next)}}, kNames[next]);
+}
+
+void DeviceStrip::commitLine(DeviceId device, const std::vector<uint8_t>& line, const std::string& name) {
+    TesseraModule* m = ctx.module();
+    const Device* d = m ? findDevice(m->song(), device) : nullptr;
+    if (!d)
         return;
-    int col = g.columnAt(pos.x);
-    std::vector<uint8_t> line = lineToEdit(*d);
-    uint64_t seed = rack::random::u64();
-    while (int(line.size()) <= col)
-        line.push_back(chain::generatedLineStep(seed, int(line.size())));
-    uint8_t& v = line[size_t(col)];
-    int value = g.rowValue(row);
-    v = chain::lineStep(chain::lineRow(v) == value ? 0 : value, 0);
-    if (CommandPtr set = setArpPattern(m->song(), d->id, line, variationNumber(d->variation), {}, "Pattern step"))
+    if (CommandPtr set = setArpPattern(m->song(), device, line, variationNumber(d->variation), {}, name))
         m->perform(std::move(set));
 }
 

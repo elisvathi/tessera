@@ -91,7 +91,7 @@ highest. **Octaves** adds the notes again an octave up, and the pattern runs ove
 | **Random** | Any note on each step; the same note can come twice. | for example E E C G… |
 | **Walk** | Starts on the lowest note and wanders: half the time on to the next note, a quarter of the time the same note again, a quarter back one (round the ends). The same notes always walk the same path. | for example C E E C E G G E… |
 | **Shuffled** | Each note once per round, in a mixed order. The same notes always mix the same way, so a loop sounds the same every pass. | for example G C E, G C E… |
-| **Pattern** | A line of up to 16 steps you can write yourself (see below). Until you do, it is made from the held notes, the lowest note twice as often as each of the others. | for example C G C E C C G E… |
+| **Pattern** | A line of up to 16 steps you can write yourself, with chords and rests (see below). Until you do, it is made from the held notes, the lowest note twice as often as each of the others. | for example C G C E C C G E… |
 | **Chord** | All the notes together on every step. | C+E+G… |
 
 **Hold.** With **Hold** on, the arpeggio keeps playing the last chord after its notes end, through a rest, until the
@@ -103,31 +103,41 @@ and the arpeggio plays on.
 (**Pattern**, **Rate**, **Swing**, **Hold**), and the rest of the card is the line: 16 steps, everything in one view.
 Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate** and **Velocity** don't show.
 
-![An Arpeggiator on Pattern: notes 1 2 3 4 rising, one step an octave up and one down, a long gate, a step a fifth up, and a Vel row 12 steps long](images/arp-pattern.png)
+![An Arpeggiator on Pattern: a chord of notes 1 and 3 on step 1, step 2 moved one chord note up (Move counts chord notes), step 3 silent at Vel 0, and the rest a line from the dice](images/arp-pattern.png)
 
-- **The note rows.** Rows **1**, **2**, **3**… are the held notes from the lowest; **all** plays the whole chord on
-  that step. The grid has a row for each note of the biggest chord the arpeggio gets, from 4 up to 8: a track of
-  six-note chords shows rows 1 to 6. It counts the clips' chords (with what a **Chord** device before it adds) and
-  the chords it has held while playing. With more rows, the rows get thinner so the card keeps its height. Click a cell: that note plays on that step. Click it again for a rest. The first click fills the grid with a
-  line from the dice, so it is never empty; your click changes it from there. A row past the notes held plays from the
-  lowest again, an octave up, so a line keeps its shape on any chord.
-- **Vel** scales the velocity of the note you hold (100% plays it as it is). **Gate** is how long each note is, from 5%
-  to 200% of a step; a → shows a note that runs into the next step.
-- **Oct** moves a step from three octaves down to three up. **Semi** moves it by semitones, −12 to +12. Click the
-  **Semi** label to count in steps of the key instead (it then reads **Key**): +2 on C in C major plays E, so the line
-  never leaves the key.
+- **The note rows.** Rows **1**, **2**, **3**… are the held notes, 1 the lowest. The grid has a row for each note of
+  the biggest chord the arpeggio gets, from 4 up to 8: a track of six-note chords shows rows 1 to 6. It counts the
+  clips' chords (with what a **Chord** device before it adds) and the chords it has held while playing. With more
+  rows, the rows get thinner so the card keeps its height.
+- **Lighting notes.** Each cell is its own switch: click it to light or clear that note on that step. Light several
+  in one step for a chord, none for a rest. Drag along a row to light or clear a run of steps in one move. The first
+  click fills the grid with a line from the dice, so it is never empty; the step you click then plays only your note.
+- **Past the notes held**, a row wraps around to the lowest note again, in the same octave: rows 1 2 3 4 on C E G play
+  C E G C. A note that comes up twice in one step plays once, so a step with every row lit plays exactly the chord.
+- **Vel** scales the velocity of the note you hold (100% plays it as it is). At **0%** the step is a rest: its notes
+  stay written (they show as outlines) but don't play. **Gate** is how long each note is, from 5% to 200% of a step; a
+  → shows a note that runs into the next step.
+- **Oct** moves a step from three octaves down to three up. **Move** moves it −12 to +12. The small chip by its name
+  says what one step of Move is; click it to change: **semi** (a semitone), **key** (a step of the key: +2 on C in C
+  major plays E, so the line never leaves the key) or **chord** (the next held note: +1 on C in C E G plays E, and
+  past the top it wraps around to the lowest). With **chord**, the grid outlines where a moved step plays now.
 - **Changing a value.** Drag up or down in a cell; only that step changes. Start a drag sideways to set a whole run
   of steps to the same value in one move (on **Gate**, sideways makes that step longer or shorter instead, like its
-  bar). A click on a cell's top half steps it up, on its bottom half down (Vel by 10%, Gate by 25%, Oct and Semi by
+  bar). A click on a cell's top half steps it up, on its bottom half down (Vel by 10%, Gate by 25%, Oct and Move by
   one). The mouse wheel steps a cell (Vel and Gate by 5%). Double-click resets a cell. Steps past a row's end are
   drawn fainter.
 - **Each row has its own length.** The number on the right is the row's length in steps. Drag it left or right (or
   turn the wheel over it), or drag the white line where a shorter row ends. Rows of different lengths drift against
   each other: a 12-step Vel row over 16 note steps makes a line that only repeats every 3 bars.
 - **While it plays**, each row outlines the step it is on.
-- **Every step can be automated and modulated.** Right-click a Vel, Gate, Oct or Semi cell for the same menu a
+- **Every step can be automated and modulated.** Right-click a Vel, Gate, Oct or Move cell for the same menu a
   setting has: type a value, reset it, **Modulate with**, **Draw a curve**, **Automate in the timeline** or **in this
-  clip**. Lanes name it "Step 5 velocity" and so on. Mapping works on steps too: click a modulator's arrow and the
+  clip**. Lanes name it "Step 5 velocity" and so on.
+- **A whole row at once.** Each value row also has one setting that adds to every one of its steps: turn the wheel
+  over the row's name, or right-click the name to type it, modulate it or automate it ("Move, every step"). While
+  mapping, click a row's name to map the modulator to the whole row: an LFO on the Move row's name walks the whole
+  line up and down the chord. When it isn't 0, the value shows by the name, and each step shows what it plays with
+  it: a white line on Vel and Gate, a small number on Oct and Move. Mapping works on steps too: click a modulator's arrow and the
   steps it can reach light up with the tags; click one for +50%, or drag it up or down for how far. A step a modulator
   moves is outlined in its colour and, like a tag, has a depth bar along its bottom: the coloured part is how far each
   modulator or lane moves it across its range, the dot is where it is now. A step a lane sets

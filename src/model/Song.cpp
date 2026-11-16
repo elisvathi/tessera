@@ -115,11 +115,12 @@ int voicesThrough(const std::vector<Device>& chain, int voices) {
         }
         case DeviceType::Arpeggiator: {
             auto pattern = chain::ArpPattern(int(shown(chain::knob::kPattern)));
-            // A Pattern line's "all" steps play every held note at once, like the Chord pattern without octaves.
+            // A Pattern line's step plays as many held notes as it lights (each note once).
             bool ownLine = pattern == chain::ArpPattern::Pattern && !d.line.empty();
-            bool allSteps = ownLine && std::any_of(d.line.begin(), d.line.end(), [](uint8_t step) {
-                                return chain::lineRow(step) == chain::kAllRow;
-                            });
+            int most = 0;
+            if (ownLine)
+                for (uint8_t step : d.line)
+                    most = std::max(most, __builtin_popcount(step));
             // A note longer than its step still sounds when the next one starts. A line's steps each have a gate.
             bool overlaps = shown(chain::knob::kGate) > 100;
             if (ownLine) {
@@ -130,8 +131,8 @@ int voicesThrough(const std::vector<Device>& chain, int voices) {
             }
             if (pattern == chain::ArpPattern::Chord)
                 voices *= std::max(1, int(shown(chain::knob::kArpOctaves)));
-            else if (allSteps)
-                voices *= overlaps ? 2 : 1;
+            else if (most > 1)
+                voices = std::min(voices, most) * (overlaps ? 2 : 1);
             else
                 voices = overlaps ? 2 : 1;
             break;

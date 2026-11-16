@@ -24,7 +24,7 @@ enum ScaleDevice { kKeyFrom, kRoot, kScale, kOffKey };
 enum Velocity { kCurve, kMin, kMax, kRandom };
 enum NoteLength { kMode, kScaleBy, kLength, kOverlap };
 enum ChordDevice { kChord, kInKey, kInversion, kVoicing, kStrum };
-/// After the first seven: the Pattern line's settings. Its four value rows (velocity, gate, octave, semitones) each
+/// After the first seven: the Pattern line's settings. Its four value rows (velocity, gate, octave, move) each
 /// have a length and one setting per step, so every step can be automated on its own.
 enum Arpeggiator {
     kPattern,
@@ -34,16 +34,17 @@ enum Arpeggiator {
     kSwing,
     kArpVelocity,
     kHold,
-    kArpSemiKey, // the semitone row counts steps of the key instead
+    kArpMoveUnit, // what one step of the Move row is: a semitone, a step of the key or a note of the chord (ArpMove)
     kArpVelSteps,
     kArpGateSteps,
     kArpOctSteps,
-    kArpSemiSteps,
+    kArpMoveSteps,
     kArpStepVel,                       // 16 steps: the held note's velocity scaled, 0..100%
     kArpStepGate = kArpStepVel + 16,   // 16 steps: how long each note is, 5..200% of a step
     kArpStepOct = kArpStepGate + 16,   // 16 steps: octaves, -3..+3
-    kArpStepSemi = kArpStepOct + 16,   // 16 steps: semitones (or key steps), -12..+12
-    kArpParamCount = kArpStepSemi + 16 // 76
+    kArpStepMove = kArpStepOct + 16,   // 16 steps: how far each step's notes move, -12..+12 (in kArpMoveUnit)
+    kArpRowShift = kArpStepMove + 16,  // 4 rows (Vel, Gate, Oct, Move): added to every step of the row
+    kArpParamCount = kArpRowShift + 4  // 80
 };
 enum Echo { kTime, kRepeats, kDecay, kEchoPitch, kEchoGate };
 enum NoteRepeat { kRepeatRate, kRepeatGate, kRepeatDecay };
@@ -55,10 +56,14 @@ enum Motion { kMotionPitch, kMotionTime, kMotionLength, kMotionVelocity, kMotion
 } // namespace knob
 
 /// The Pattern line's value rows, top to bottom: each one's length setting and its first step setting.
-enum class ArpLane : uint8_t { Velocity, Gate, Octave, Semitone };
+enum class ArpLane : uint8_t { Velocity, Gate, Octave, Move };
+/// What one step of the Move row is.
+enum class ArpMove : uint8_t { Semitones, Key, Chord };
 constexpr int kArpLaneCount = 4;
 constexpr int arpLaneSteps(ArpLane l) { return knob::kArpVelSteps + int(l); }
 constexpr int arpLaneFirst(ArpLane l) { return knob::kArpStepVel + 16 * int(l); }
+/// The setting added to every step of a row: one number a modulator, lane or curve moves the whole row with.
+constexpr int arpLaneShift(ArpLane l) { return knob::kArpRowShift + int(l); }
 
 enum class KeyFrom : uint8_t { Clip, Song, Fixed };
 enum class OffKey : uint8_t { Nearest, Up, Down, Drop };
@@ -120,14 +125,15 @@ struct DeviceSlot {
 };
 
 constexpr int kMaxLineSteps = 16;
-/// A Pattern line step's parts: the row (0 rest, 1 to kMaxLineNotes a held note from the lowest, kAllRow all of them)
-/// and the octave (-1 to 1; only read when loading songs from before schema 13). Before schema 14, all was row 5.
+/// A Pattern line step: which held notes it plays, a bit per row (bit 0 the lowest note, up to kMaxLineNotes rows);
+/// 0 is a rest. A row past the notes held wraps around to the lowest, and a note twice in one step plays once, so a
+/// full step (kFullStep) plays exactly the chord. Before schema 15 a step was one row number and an octave.
 constexpr int kMaxLineNotes = 8;
-constexpr int kAllRow = kMaxLineNotes + 1;
-inline int lineRow(uint8_t step) { return step & 15; }
-inline int lineOctave(uint8_t step) { return int((step >> 4) & 3) - 1; }
-inline uint8_t lineStep(int row, int octave) { return uint8_t((row & 15) | ((octave + 1) & 3) << 4); }
-/// Step `k` of a line the dice writes from `seed`: one held note each step, the lowest twice as often as each other.
+constexpr uint8_t kFullStep = 0xFF;
+inline bool stepHas(uint8_t step, int row) { return row >= 1 && row <= kMaxLineNotes && ((step >> (row - 1)) & 1); }
+inline uint8_t stepOf(int row) { return row >= 1 && row <= kMaxLineNotes ? uint8_t(1u << (row - 1)) : 0; }
+/// Step `k` of a line the dice writes from `seed`: one of the four lowest rows each step, the lowest twice as often
+/// as each other.
 uint8_t generatedLineStep(uint64_t seed, int k);
 /// A whole line of `length` steps the dice writes from `seed`.
 std::vector<uint8_t> generatedLine(uint64_t seed, int length);
