@@ -267,7 +267,7 @@ void EditorState::forgetSong() {
     curveTarget = ParamRef();
     curveOpenedOn = TrackId();
     openModulator = selectedDevice = stripOpenedFor = selectedPlayhead = 0;
-    songModsOpen = trackModsOpen = true;
+    songModsOpen = trackModsOpen = false;
     songModsOpenNarrow = trackModsOpenNarrow = false;
     deviceModsOpen.clear();
     stripDevices.clear();

@@ -236,6 +236,14 @@ class DeviceStrip : public InteractiveView {
     /// modulator; folded, a rail with a dot per modulator and a small upright fader per Macro. Returns its width.
     float layoutSection(const SectionSpec& spec, float x, float top, float height, float width, bool open, bool fixed,
                         int device);
+    /// A folded song, track or clip section (docs/DECISIONS.md §167): its fold arrow and icon at the top, its word
+    /// under them only when it fits whole, then a dot per modulator, or rows of small dots when the rail is short,
+    /// and + at the bottom when there is room. Clears its label in `sectionLabels` when the word doesn't fit.
+    void layoutIconRail(const SectionSpec& spec, size_t label, float x, float top, float height, int device);
+    /// Words show on every folded song or track rail and in the switch, or on none, so the bars always match: clears
+    /// the rails' words unless all of them, and the switch's, fit a strip part `height` tall.
+    void fitRailWords(bool withSwitch, float height);
+    bool switchWords = true; // from fitRailWords: the switch shows TRACK and CLIP under its icons
     /// Where a section's new modulators go: its level, and for a device section the device.
     ModulatorPlace sectionPlace(const Part& p);
     /// The sections in the part that stays put (`fixed`), or the cards' sections, over what is drawn under them.

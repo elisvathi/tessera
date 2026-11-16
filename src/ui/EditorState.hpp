@@ -151,10 +151,10 @@ struct EditorState {
     }
     // The device strip, session only: IDs, so nothing points into the song across frames.
     uint64_t openModulator = 0; // ModulatorId whose settings are open beside its section
-    // The strip's modulator sections (docs/DECISIONS.md §163): open, or folded to a rail. A device's section starts
-    // open when it has modulators; `deviceModsOpen` holds the ones set by hand.
-    bool songModsOpen = true, trackModsOpen = true;
-    bool songModsOpenNarrow = false, trackModsOpenNarrow = false; // the same in a narrow strip, which starts folded
+    // The strip's modulator sections (docs/DECISIONS.md §163, §167): open, or folded to a rail. SONG and TRACK start
+    // folded; a device's section starts open when it has modulators; `deviceModsOpen` holds the ones set by hand.
+    bool songModsOpen = false, trackModsOpen = false;
+    bool songModsOpenNarrow = false, trackModsOpenNarrow = false; // the same in a narrow strip
     std::map<uint64_t, bool> deviceModsOpen;
     // What is selected in the strip, to copy, paste, duplicate or delete (docs/DECISIONS.md §163): cards (DeviceIds),
     // modulator rows (ModulatorIds) and whole sections (the strip's section keys).

@@ -30,6 +30,11 @@ constexpr float kSectionWidth = 178;       // an open song or track section
 constexpr float kDeviceSectionWidth = 150; // an open section on a card
 constexpr float kRail = 30;                // a folded section
 constexpr float kSwitchWidth = 30;         // the TRACK | CLIP switch
+constexpr float kRailTop = 18;             // a song or track rail's top: its fold arrow and icon side by side
+constexpr float kRailIcon = 15;            // the icon on a rail and in the switch
+constexpr float kRailSmallStep = 8;        // a small dot's cell, when a short rail lists its modulators in rows
+constexpr size_t kRailSmallPerRow = 3;
+constexpr float kSwitchWordPad = 4; // room above and below the icon and word in a switch half
 constexpr float kSectionHeader = 22;
 constexpr float kSectionRow = 26;
 constexpr float kSettingsWidth = 270; // ModulatorPopover::kWidth
@@ -37,6 +42,45 @@ constexpr float kLeftGap = 6;
 // Narrower than this, the song and track sections show as rails, unless one holds the open settings.
 constexpr float kNarrowStrip = 700;
 constexpr uint64_t kSongSection = 1, kTrackSection = 2;
+/// Draws the icon of a modulator level, `size` wide, centred on `m`: the song as clips spread over time, a track as
+/// a lane with its header, a clip as a block with notes. Used on the folded rails and in the TRACK | CLIP switch.
+void drawLevelIcon(NVGcontext* vg, ModLevel level, Vec m, float size, NVGcolor color) {
+    float k = size / 16;
+    auto box = [&](float x, float y, float w, float h, float r) {
+        nvgRoundedRect(vg, m.x + (x - 8) * k, m.y + (y - 8) * k, w * k, h * k, r * k);
+    };
+    nvgStrokeColor(vg, color);
+    nvgStrokeWidth(vg, 1.3f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgBeginPath(vg);
+    switch (level) {
+    case ModLevel::Song:
+        box(1.5f, 2.5f, 7, 3, 1);
+        box(6.5f, 6.5f, 8, 3, 1);
+        box(3.5f, 10.5f, 9, 3, 1);
+        nvgStroke(vg);
+        break;
+    case ModLevel::Track:
+        box(1.5f, 5.5f, 13, 5, 1.2f);
+        nvgStroke(vg);
+        nvgBeginPath(vg);
+        box(1.5f, 5.5f, 3.5f, 5, 1);
+        nvgFillColor(vg, color);
+        nvgFill(vg);
+        break;
+    case ModLevel::Clip:
+        box(1.5f, 3, 13, 10, 2);
+        nvgMoveTo(vg, m.x - 4 * k, m.y - 1.5f * k);
+        nvgLineTo(vg, m.x - 1 * k, m.y - 1.5f * k);
+        nvgMoveTo(vg, m.x - 0.5f * k, m.y + 1.5f * k);
+        nvgLineTo(vg, m.x + 3.5f * k, m.y + 1.5f * k);
+        nvgStroke(vg);
+        break;
+    default:
+        break;
+    }
+}
+
 /// A device section's key: its device's ID, marked so it never meets the song's or the track's.
 uint64_t deviceSection(DeviceId id) { return id.value | (uint64_t(1) << 62); }
 constexpr float kDiceRoll = 20, kDiceFixed = 36, kDiceNew = 34; // the dice and its two-part switch
@@ -996,6 +1040,8 @@ void DeviceStrip::layoutParts() {
     lx += layoutSection(trackSpec, lx, ltop, lh, kSectionWidth, trackOpen, true, -1) + kLeftGap;
     settingsAfter(trackLevel);
 
+    fitRailWords(clip != nullptr, lh);
+
     chainLeft = lx - 2;
     float x = chainLeft - scrollX;
     float top = kTop;
@@ -1215,11 +1261,17 @@ float DeviceStrip::layoutSection(const SectionSpec& spec, float x, float top, fl
         parts.push_back(p);
     };
     float w = open ? width : kRail;
+    bool iconRail = !open && spec.place.level != ModLevel::Device;
     Part section{Kind::ModSection, Rect(x, top, w, height), device, int(spec.place.level), spec.place.device.value};
     section.tag = int(sectionLabels.size());
     sectionLabels.push_back(open ? spec.label : spec.railLabel);
     push(section);
-    push({Kind::ModFold, Rect(x + 4, top + 3, 16, 16), device, int(spec.place.level), spec.place.device.value});
+    Rect fold = iconRail ? Rect(x + 2, top + 3, w - 4, kRailTop) : Rect(x + 4, top + 3, 16, 16);
+    push({Kind::ModFold, fold, device, int(spec.place.level), spec.place.device.value});
+    if (iconRail) {
+        layoutIconRail(spec, size_t(section.tag), x, top, height, device);
+        return w;
+    }
     if (open) {
         push({Kind::AddModulator, Rect(x + w - 22, top + 3, 18, 16), device, int(spec.place.level),
               spec.place.device.value});
@@ -1252,6 +1304,78 @@ float DeviceStrip::layoutSection(const SectionSpec& spec, float x, float top, fl
     push({Kind::AddModulator, Rect(x + 6, top + height - 21, 18, 16), device, int(spec.place.level),
           spec.place.device.value});
     return w;
+}
+
+void DeviceStrip::fitRailWords(bool withSwitch, float height) {
+    NVGcontext* vg = APP->window->vg;
+    draw::TextStyle word{theme::fonts::uiStrong(), 10, theme::colors().text2, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE, 1.5f};
+    float half = (height - 6) / 2 + 3 - 6; // a switch half, as drawSwitch shrinks it
+    switchWords = !withSwitch || (vg && kRailIcon + 6 + draw::textWidth(vg, word, "TRACK") + 2 * kSwitchWordPad <= half);
+    std::vector<size_t> rails;
+    bool all = switchWords;
+    for (const Part& p : parts)
+        if (p.kind == Kind::ModSection && p.fixed && p.rect.size.x <= kRail + 1 && p.tag >= 0) {
+            rails.push_back(size_t(p.tag));
+            all = all && !sectionLabels[size_t(p.tag)].empty();
+        }
+    if (all)
+        return;
+    switchWords = false;
+    for (size_t label : rails)
+        sectionLabels[label].clear();
+}
+
+void DeviceStrip::layoutIconRail(const SectionSpec& spec, size_t label, float x, float top, float height,
+                                 int device) {
+    auto push = [&](Part p) {
+        p.fixed = true;
+        p.section = spec.key;
+        p.device = device;
+        parts.push_back(p);
+    };
+    float y = top + 3 + kRailTop + 6;
+    float room = top + height - 4 - y;
+    float plus = 16 + 1;
+    size_t n = spec.mods.size();
+    float bigHeight = 0;
+    for (const Modulator* m : spec.mods)
+        bigHeight += (isMacro(*m) ? 30 : 14) + 6;
+    if (n > 0)
+        bigHeight -= 6;
+    float smallHeight = float((n + kRailSmallPerRow - 1) / kRailSmallPerRow) * kRailSmallStep;
+    NVGcontext* vg = APP->window->vg;
+    draw::TextStyle head{theme::fonts::uiStrong(), 9.5f, theme::colors().text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE,
+                         theme::metrics::kPanelLabelSpacing};
+    float word = vg ? draw::textWidth(vg, head, spec.railLabel) + 8 : 1e6f;
+    bool big = bigHeight + plus <= room;
+    // The word only shows whole, under the icon, when the dots and + fit below it too.
+    if (!big || word + bigHeight + plus > room)
+        sectionLabels[label].clear();
+    else
+        y += word;
+    if (big) {
+        for (const Modulator* m : spec.mods) {
+            float tall = isMacro(*m) ? 30 : 14;
+            push({Kind::ModulatorRow, Rect(x + 8, y, 14, tall), device, 1, m->id.value});
+            y += tall + 6;
+        }
+    } else {
+        // Too short for a dot each, one under another: rows of small dots.
+        bool withPlus = std::min(smallHeight, room) + plus <= room;
+        float last = top + height - 4 - (withPlus ? plus : 0);
+        for (size_t i = 0; i < n; i++) {
+            float rowTop = y + float(i / kRailSmallPerRow) * kRailSmallStep;
+            if (rowTop + kRailSmallStep > last + 0.5f)
+                break;
+            float cx = x + kRail / 2 + (float(i % kRailSmallPerRow) - 1) * kRailSmallStep;
+            push({Kind::ModulatorRow, Rect(cx - kRailSmallStep / 2, rowTop, kRailSmallStep, kRailSmallStep), device, 2,
+                  spec.mods[i]->id.value});
+        }
+        if (!withPlus)
+            return;
+    }
+    push({Kind::AddModulator, Rect(x + 6, top + height - 21, 18, 16), device, int(spec.place.level),
+          spec.place.device.value});
 }
 
 ModulatorPlace DeviceStrip::sectionPlace(const Part& p) {
@@ -1716,12 +1840,12 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
         const Modulator* mod = findModulator(m->song(), ModulatorId(p.id));
         if (!mod || !isMacro(*mod) || ctx.mappingModulator)
             return nullptr;
-        bool upright = p.param == 1;
+        bool upright = p.param != 0;
         uint64_t id = p.id, section = p.section;
         std::weak_ptr<DeviceStrip*> weak = self;
         return std::make_unique<ClickOrDrag>(
             std::make_unique<MacroDrag>(*this, ctx, macroRef(*mod), mod->name, shownValue(macroRef(*mod)),
-                                        upright ? p.rect.size.y * 3 : p.rect.size.x, upright, pos),
+                                        upright ? std::max(p.rect.size.y * 3, 60.f) : p.rect.size.x, upright, pos),
             pos, [c, id, section, weak] {
                 Modifiers now = Modifiers::fromGlfw(APP->window->getMods());
                 if (auto s = weak.lock())
@@ -2270,7 +2394,7 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
     case Kind::ModulatorRow: {
         const Modulator* mod = ctx.module() ? findModulator(ctx.module()->song(), ModulatorId(hit->id)) : nullptr;
         if (mod && isMacro(*mod) && !ctx.mappingModulator)
-            return hit->param == 1 ? CursorShape::ResizeV : CursorShape::ResizeH;
+            return hit->param != 0 ? CursorShape::ResizeV : CursorShape::ResizeH;
         return CursorShape::Hand;
     }
     default:
@@ -3212,6 +3336,17 @@ void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
                                   ModLevel(p.param) == ModLevel::Device
                                       ? "Modulators that move only this device. + to add."
                                       : "LFOs, envelopes, ramps and Macros that turn settings for you. + to add.");
+            } else if (ModLevel(p.param) != ModLevel::Device) {
+                // Folded song, track or clip rail: its word under the icon, when layout found room for it whole.
+                if (!label.empty()) {
+                    draw::TextStyle up = head;
+                    up.align = NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE;
+                    nvgSave(vg);
+                    nvgTranslate(vg, p.rect.getCenter().x, p.rect.pos.y + 3 + kRailTop + 6);
+                    nvgRotate(vg, float(-M_PI / 2));
+                    draw::text(vg, up, 0, 0, label);
+                    nvgRestore(vg);
+                }
             } else {
                 // Folded: its name up the rail.
                 nvgSave(vg);
@@ -3232,7 +3367,14 @@ void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
         case Kind::ModFold:
             if (hot)
                 draw::roundedRect(vg, p.rect, 3, c.line0);
-            arrow(p.rect.getCenter(), open, c.text1);
+            if (!open && ModLevel(p.param) != ModLevel::Device) {
+                Vec m = p.rect.getCenter();
+                arrow(Vec(p.rect.pos.x + 4, m.y), false, c.text2);
+                drawLevelIcon(vg, ModLevel(p.param), Vec(p.rect.getRight() - 1 - kRailIcon / 2, m.y), kRailIcon,
+                              hot ? c.text0 : c.text1);
+            } else {
+                arrow(p.rect.getCenter(), open, c.text1);
+            }
             break;
         case Kind::AddModulator: {
             if (hot)
@@ -3250,11 +3392,26 @@ void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
             bool mapping = ctx.mappingModulator == p.id;
             if (partSelected(p)) {
                 // Selected: a light tint and the accent outline, under what the row draws.
-                Rect sel = p.param == 1 ? p.rect.grow(Vec(3, 3)) : p.rect;
+                Rect sel = p.param != 0 ? p.rect.grow(Vec(3, 3)) : p.rect;
                 draw::roundedRect(vg, sel, 4, nvgTransRGBAf(c.select, 0.16f));
                 draw::roundedRectStroke(vg, sel, 4, c.select, 1.2f);
             }
             float level = isMacro(*mod) ? shownValue(macroRef(*mod)) : 0;
+            if (p.param == 2) {
+                // On a short rail: a small dot, Macros too.
+                Vec m = p.rect.getCenter();
+                if (isOpen || hot || mapping) {
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, m.x, m.y, 4.5f);
+                    nvgFillColor(vg, c.bg2);
+                    nvgFill(vg);
+                }
+                nvgBeginPath(vg);
+                nvgCircle(vg, m.x, m.y, 2.5f);
+                nvgFillColor(vg, color);
+                nvgFill(vg);
+                break;
+            }
             if (p.param == 1) {
                 // On a rail: an upright fader for a Macro, else a dot.
                 if (isMacro(*mod)) {
@@ -3369,6 +3526,7 @@ void DeviceStrip::drawSwitch(NVGcontext* vg) {
     draw::roundedRect(vg, pill, radius, theme::recessed(c, c.bg0, 0.7f));
     draw::roundedRectStroke(vg, pill, radius, c.line0, 1);
     NVGcolor trackColor = theme::track(t->color);
+    draw::TextStyle word{theme::fonts::uiStrong(), 10, c.text2, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE, 1.5f};
     for (const Part* half : {trackHalf, ownHalf}) {
         bool on = (half == ownHalf) == own;
         bool hot = hovered >= 0 && &parts[size_t(hovered)] == half;
@@ -3377,13 +3535,26 @@ void DeviceStrip::drawSwitch(NVGcontext* vg) {
             draw::roundedRect(vg, r, r.size.x / 2, half == ownHalf ? clipTint() : trackColor);
         else if (hot)
             draw::roundedRect(vg, r, r.size.x / 2, c.bg2);
-        draw::TextStyle word{theme::fonts::uiStrong(), 10, on ? c.bg0 : c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE,
-                             1.5f};
-        nvgSave(vg);
-        nvgTranslate(vg, r.getCenter().x, r.getCenter().y);
-        nvgRotate(vg, float(-M_PI / 2));
-        draw::text(vg, word, 0, 0, half == ownHalf ? "CLIP" : "TRACK");
-        nvgRestore(vg);
+        NVGcolor ink = on ? c.bg0 : c.text2;
+        ModLevel level = half == ownHalf ? ModLevel::Clip : ModLevel::Track;
+        const char* name = half == ownHalf ? "CLIP" : "TRACK";
+        // The icon always; the word under it only when both fit whole.
+        float icon = std::min(kRailIcon, r.size.y - 4);
+        float wordLength = draw::textWidth(vg, word, name);
+        float both = icon + 6 + wordLength;
+        Vec m = r.getCenter();
+        if (switchWords && both + 2 * kSwitchWordPad <= r.size.y) {
+            float iconTop = m.y - both / 2;
+            drawLevelIcon(vg, level, Vec(m.x, iconTop + icon / 2), icon, ink);
+            word.color = ink;
+            nvgSave(vg);
+            nvgTranslate(vg, m.x, iconTop + icon + 6);
+            nvgRotate(vg, float(-M_PI / 2));
+            draw::text(vg, word, 0, 0, name);
+            nvgRestore(vg);
+        } else if (icon >= 8) {
+            drawLevelIcon(vg, level, m, icon, ink);
+        }
     }
     // An arrow from the side that plays into the section it picks.
     const Part* on = own ? ownHalf : trackHalf;

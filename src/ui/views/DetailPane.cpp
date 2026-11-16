@@ -186,10 +186,7 @@ void DetailPane::layout() {
     bool sound = mixer && mixer->hasSound();
     bool tabs = ctx.module() && notesTab;
     float h = theme::metrics::kPaneHeader - 6, tx = 4;
-    const std::vector<Device>* shown = ctx.module() ? &deviceActions::shownDevices(ctx) : nullptr;
-    size_t n = shown && !audioTrack() ? shown->size() : 0;
-    devicesTab->setText(n > 0 ? "Devices " + std::to_string(n) : "Devices");
-    float devicesWidth = kSwitchWidth + (n > 0 ? 22 : 12);
+    float devicesWidth = kSwitchWidth + 12;
     float full = kSwitchWidth + 2 + devicesWidth + 2 + (sound ? kSwitchWidth + 2 : 0);
     bool fold = tabs && box.size.x < full + kFoldBelowRest;
     if (notesTab) {

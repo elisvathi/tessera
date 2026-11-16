@@ -18,7 +18,7 @@ modulators, then the devices, each with its own **DEVICE** modulators on its lef
 track's devices from left to right, in the order the notes flow through them: **in** → devices → **out**. Each device
 is a card in the track's colour, with one to three small pictures that show what it does to the notes.
 
-![The device strip: an LFO, an Arpeggiator and an Echo on the Chords track](images/device-strip.png)
+![The device strip: an Arpeggiator and an Echo on the Chords track, and its LFO as a dot on the folded TRACK section](images/device-strip.png)
 
 The upright **TRACK | CLIP** switch says which devices the clip on show plays through: the track's or its own (see
 [A clip's own devices](#a-clips-own-devices)). The side that plays is filled, and a small arrow points into the
@@ -564,9 +564,14 @@ Modulators live in three places, and each place has the same kind of **section**
 
 Click a section's **+** to add a modulator there: where you click decides what it can reach. Each section has a fold
 arrow at its top left. Folded, a section is a thin strip with a dot per modulator and a small upright fader per Macro.
-A card's DEVICE section starts folded until the device has modulators. Opening a section makes room for it: the
-cards move right and the strip scrolls, but a device never gets narrower. In a narrow strip the SONG and TRACK sections
-start folded.
+The SONG and TRACK sections start folded: click the arrow or the icon next to it to open one, or click its **+** to
+add a modulator, which opens it.
+
+Each folded strip has an icon at its top: SONG shows clips spread over time, TRACK a lane, CLIP a block with notes.
+The TRACK | CLIP switch shows the same icons. When the pane is tall enough, the names show under the icons too. In a
+short pane only the icons show, the dots get smaller and sit in rows, and in the shortest pane the **+** goes: open
+the strip to add a modulator there. A card's DEVICE section starts folded until the device has modulators. Opening a section makes room for it:
+the cards move right and the strip scrolls, but a device never gets narrower.
 
 ![The modulator browser](images/modulator-browser.png)
 
@@ -605,7 +610,7 @@ small upright fader up or down. While the track is armed and recording, a drag r
 
 ### Connecting a modulator to settings
 
-1. Click the modulator's **↗** (or **Map to knobs** in its settings column; for a Curve, **Moves ▾** › **Map to more knobs**).
+1. Open its section with the fold arrow, then click the modulator's **↗** (or **Map to knobs** in its settings column; for a Curve, **Moves ▾** › **Map to more knobs**).
 2. The tags it can reach light up in its colour; the others fade. A message says "Mapping LFO · drag a lit tag up or
    down".
 3. **Drag a lit tag** up for a positive amount, down for a negative one. The bar under the tag shows how far it will

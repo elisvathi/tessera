@@ -2880,3 +2880,23 @@ agreed with changes): one view, no lower pane.
   colour (note steps fade: a modulator can't move them); a click adds +50%, a drag sets how far. A modulated step is
   outlined in its modulator's colour and has the tags' depth bar along its bottom (how far each modulator and lane
   moves it, and where it is now), so the amount shows without a tooltip. A cell's tooltip hides while a menu is open.
+
+## 167. Folded SONG and TRACK rails with icons; no count on Devices (16 Nov)
+
+The user found the strip's left side broken in a short in-panel editor: the rails' turned words cut to "S…", the
+TRACK | CLIP switch's words gone or overflowing. They asked for the sections folded by default, rejected three new
+layouts (one flat column, the switch in the pane header, a hidden Modulators button) because they like the upright
+bars, and picked D1 from the mockups: the bars stay, with icons.
+- **SONG and TRACK (or CLIP) start folded** to their 30 px rails, at every strip width (replaces "open unless the
+  strip is narrow" from §163). The fold arrow or the icon opens one; adding a modulator opens its section; a section
+  stays open while one of its modulators shows its settings. A device's section still starts open when it has
+  modulators, and its rail is unchanged (no icon: a card is always tall enough for its word).
+- **Every rail and switch half has an icon**: the song as clips spread over time, a track as a lane with its header,
+  a clip as a block with notes (`drawLevelIcon`). On a rail it sits beside the fold arrow, at the top.
+- **Words only whole, and all or none**: SONG, TRACK and the switch's TRACK and CLIP show under their icons only when
+  every one of them fits, so the bars always match. In practice: words in a tall strip, icons only from about 120 px
+  down.
+- **Short rails list modulators as small dots** in rows of three when a dot (or Macro fader) each, one under
+  another, doesn't fit; a small Macro dot still drags up and down. The rail's **+** goes when there's no room left
+  for it; open the rail to add.
+- **The Devices tab shows no count** (was "Devices 2"): the user didn't like it; the strip shows the devices.
