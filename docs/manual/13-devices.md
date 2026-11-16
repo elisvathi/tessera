@@ -114,13 +114,17 @@ Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate
   click fills the grid with a line from the dice, so it is never empty; the step you click then plays only your note.
 - **Past the notes held**, a row wraps around to the lowest note again, in the same octave: rows 1 2 3 4 on C E G play
   C E G C. A note that comes up twice in one step plays once, so a step with every row lit plays exactly the chord.
-- **Vel** scales the velocity of the note you hold (100% plays it as it is). At **0%** the step is a rest: its notes
-  stay written (they show as outlines) but don't play. **Gate** is how long each note is, from 5% to 200% of a step; a
+- **What plays now.** The lit cells are what each step plays in this pass of the line, with the modulators as they
+  are now, so the grid moves while they move. A note you wrote that plays somewhere else now (moved by **Move**), or
+  not at all (a rest), shows as an outline where you wrote it.
+- **Vel** scales the velocity of the note you hold (100% plays it as it is). At **0%** the step is a rest: no note, no
+  gate. Its Vel cell reads **rest**, and its notes stay written as outlines. **Gate** is how long each note is, from 5% to 200% of a step; a
   → shows a note that runs into the next step.
 - **Oct** moves a step from three octaves down to three up. **Move** moves it −12 to +12. The small chip by its name
   says what one step of Move is; click it to change: **semi** (a semitone), **key** (a step of the key: +2 on C in C
   major plays E, so the line never leaves the key) or **chord** (the next held note: +1 on C in C E G plays E, and
-  past the top it wraps around to the lowest). With **chord**, the grid outlines where a moved step plays now.
+  past the top it wraps around to the lowest, never changing octave: that is **Oct**'s job). With **chord**, the lit
+  cells move inside the chord as the step moves.
 - **Changing a value.** Drag up or down in a cell; only that step changes. Start a drag sideways to set a whole run
   of steps to the same value in one move (on **Gate**, sideways makes that step longer or shorter instead, like its
   bar). A click on a cell's top half steps it up, on its bottom half down (Vel by 10%, Gate by 25%, Oct and Move by

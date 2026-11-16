@@ -2973,3 +2973,13 @@ rethink the grid. Agreed on the "Free cells" mockup, with the user's own rule fo
   16 step routes were not an option). Wheel and right-click on the name set or automate it. The Arpeggiator now has
   80 settings, the limit; devices load with defaults for settings their saved song didn't have.
 - **Schema 15**: old steps (one row, 9 all) become bits, all every row; the key switch's 1 becomes Move by key steps.
+
+## 173. The Pattern grid lights what plays now (16 Nov)
+
+The user didn't see notes move when Move counted chord notes, and didn't see that a 0% Vel step is a rest. An On row
+per step was designed and dropped again: the user settled on Vel 0 as the rest (no note, no gate) and asked for the
+chord moves to show. Now the note cells are what each step plays in the current pass of the line: every value row
+read at its own place (rows have their own lengths), modulators as they are now, chord moves wrapped around what the
+arpeggio holds (the engine's count, so the grid matches what sounds; while stopped, what the clips send it). Notes
+written but playing elsewhere or resting are outlines; a 0% Vel cell reads "rest". This replaces the outline-only
+display of §172, which only worked when the Move and Vel rows were as long as the notes.

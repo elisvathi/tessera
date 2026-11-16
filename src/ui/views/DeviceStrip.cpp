@@ -3803,48 +3803,47 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
         return std::clamp(patternValue(id, k) + patternValue(id, chain::arpLaneShift(lane)), info.min, info.max);
     };
     auto unit = chain::ArpMove(std::clamp(int(std::lround(patternValue(id, chain::knob::kArpMoveUnit))), 0, 2));
-    // A Vel or Move step lines up with a note column only when its row is as long as the notes.
-    bool velAligned = lengthOf(int(chain::ArpLane::Velocity)) == notes;
-    bool moveAligned = unit == chain::ArpMove::Chord && lengthOf(int(chain::ArpLane::Move)) == notes;
-    // How many notes the moved steps wrap around: what it holds while playing, else the most its clips send it.
+    // How many notes chord moves wrap around: what it holds while playing, else the most its clips send it.
     int held = m->arpHeld(id);
     if (held <= 0) {
         auto counted = arpNotesCounted.find(id.value);
         held = counted != arpNotesCounted.end() && counted->second.second > 0 ? counted->second.second : g.notes;
     }
+    // The grid shows what each step plays in this pass of the notes row: the value rows have their own lengths, so
+    // step `col` reads each row at its own place, with the modulators as they are now.
+    int64_t passStart = played >= 0 ? played - played % int64_t(notes) : 0;
+    auto liveAt = [&](chain::ArpLane lane, int col) {
+        return liveStep(lane, int((passStart + col) % int64_t(lengthOf(int(lane)))));
+    };
     draw::TextStyle noteLabel = label;
     noteLabel.size = std::min(label.size, g.noteRow + 1.5f);
-    for (int r = 0; r < g.noteRows(); r++) {
-        int note = g.rowValue(r);
-        draw::text(vg, noteLabel, g.area.pos.x, g.rowMid(r), std::to_string(note));
-        for (int col = 0; col < chain::kMaxLineSteps; col++) {
+    for (int r = 0; r < g.noteRows(); r++)
+        draw::text(vg, noteLabel, g.area.pos.x, g.rowMid(r), std::to_string(g.rowValue(r)));
+    for (int col = 0; col < chain::kMaxLineSteps; col++) {
+        bool in = col < notes;
+        uint8_t step = own && in && col < int(line.size()) ? line[size_t(col)] : 0;
+        // A step at 0% velocity is a rest: its notes stay written but nothing plays.
+        bool silent = step != 0 && liveAt(chain::ArpLane::Velocity, col) <= 0;
+        int move = unit == chain::ArpMove::Chord && step != 0 ? int(std::lround(liveAt(chain::ArpLane::Move, col))) : 0;
+        // The rows the step plays now: as written, or moved by chord notes, wrapping around the notes held.
+        uint8_t plays = 0;
+        for (int q = 1; q <= chain::kMaxLineNotes && !silent; q++)
+            if (chain::stepHas(step, q))
+                plays |= chain::stepOf(move == 0 ? q : (((q - 1 + move) % held) + held) % held + 1);
+        for (int r = 0; r < g.noteRows(); r++) {
+            int note = g.rowValue(r);
             Rect cell = g.noteCell(r, col);
-            bool in = col < notes;
-            uint8_t step = own && in && col < int(line.size()) ? line[size_t(col)] : 0;
-            bool on = chain::stepHas(step, note);
-            // A step at 0% velocity keeps its notes but plays none: they show as outlines.
-            bool silent = on && velAligned && liveStep(chain::ArpLane::Velocity, col) <= 0;
-            NVGcolor fill = on ? nvgTransRGBAf(tint, fresh ? 0.45f : 1.f) : (col % 4 == 0 ? beatFill : cellFill);
+            bool written = chain::stepHas(step, note), now = chain::stepHas(plays, note);
+            NVGcolor base = col % 4 == 0 ? beatFill : cellFill;
+            NVGcolor fill = now ? nvgTransRGBAf(tint, fresh ? 0.45f : 1.f) : base;
             if (!in)
                 fill.a *= 0.35f; // past the row's end: fainter than the steps that play
             if (mapping)
                 fill.a *= 0.3f; // a modulator can't light a note cell
-            if (silent) {
-                draw::roundedRect(vg, cell, 2, col % 4 == 0 ? beatFill : cellFill);
-                draw::roundedRectStroke(vg, cell.shrink(Vec(0.5f, 0.5f)), 2, nvgTransRGBAf(tint, 0.7f), 1);
-            } else {
-                draw::roundedRect(vg, cell, 2, fill);
-            }
-            // Moved by chord notes: where the step's notes play now, wrapping around the notes held.
-            if (moveAligned && step != 0 && !mapping) {
-                int move = int(std::lround(liveStep(chain::ArpLane::Move, col)));
-                bool here = false;
-                for (int q = 1; q <= chain::kMaxLineNotes && move != 0; q++)
-                    if (chain::stepHas(step, q))
-                        here |= (((q - 1 + move) % held) + held) % held + 1 == note;
-                if (here)
-                    draw::roundedRectStroke(vg, cell.shrink(Vec(1, 1)), 2, move > 0 ? dc.stepUp : dc.stepDown, 1.5f);
-            }
+            draw::roundedRect(vg, cell, 2, fill);
+            // Written here but not playing here now (moved away, or a rest): an outline.
+            if (written && !now)
+                draw::roundedRectStroke(vg, cell.shrink(Vec(0.75f, 0.75f)), 2, nvgTransRGBAf(tint, 0.75f), 1.2f);
             if (col == notesAt && own)
                 outline(cell);
         }
@@ -3900,6 +3899,11 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
             case chain::ArpLane::Velocity: {
                 float h = cell.size.y * std::clamp(v / 100, 0.f, 1.f);
                 draw::roundedRect(vg, Rect(cell.pos.x, cell.getBottom() - h, cell.size.x, h), 2, bar);
+                if (v <= 0) {
+                    // 0% plays nothing: the step is a rest.
+                    draw::TextStyle rest{theme::fonts::ui(), 8.5f, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+                    draw::text(vg, rest, cell.getCenter().x, cell.getCenter().y, "rest");
+                }
                 break;
             }
             case chain::ArpLane::Gate: {
