@@ -2923,3 +2923,9 @@ panel art use it: it draws directly while its size or zoom changed in the last 0
 longest side is over 8192 px; once settled it caches again, one texture per change. Measured after: a 10-step zoom
 makes no Tessera textures (only Rack's own rail tile, which we can't change); a 40-step pane drag asks for 94 MB in
 total. The branch has no other framebuffers or NanoVG images. CLAUDE.md now forbids plain `FramebufferWidget`.
+
+## 169. No "Made from the held notes again" (16 Nov)
+
+The Pattern grid's right-click menu lost **Made from the held notes again**: the user found it pointless, and the dice
+beside it already writes a line from the held notes (one control per idea). The menu keeps **Reset**; undo still
+brings back an untouched line.

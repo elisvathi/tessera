@@ -129,7 +129,6 @@ Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate
   its default and 16 steps long. One undo step.
 - Once you have edited it, the dice switch reads **Yours**. The dice writes fresh notes for the line (one undo step);
   **New** plays fresh notes on every play and loop pass, and **Yours** goes back to yours.
-- Right-click the note rows ▸ **Made from the held notes again** to go back to the line made from the held notes.
 
 When you change to a new chord, the pattern starts again from its beginning, also with **Hold** on or when the chords
 follow each other without a gap. If only one note of the chord changes (an inner voice moving), the pattern carries

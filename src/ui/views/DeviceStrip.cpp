@@ -1974,16 +1974,6 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             rack::ui::Menu* menu = rack::createMenu();
             menu->addChild(rack::createMenuLabel("Pattern"));
             DeviceId id = d->id;
-            int32_t variation = d->variation;
-            EditorContext* c = &ctx;
-            menu->addChild(rack::createMenuItem(
-                "Made from the held notes again", "",
-                [c, id, variation] {
-                    if (TesseraModule* x = c->module())
-                        if (CommandPtr set = setArpLine(x->song(), id, {}, variation, "Line from the held notes"))
-                            x->perform(std::move(set));
-                },
-                d->line.empty()));
             std::weak_ptr<DeviceStrip*> weak = self;
             menu->addChild(rack::createMenuItem("Reset", "notes 1 2 3 4, every row back to its default", [weak, id] {
                 if (auto st = weak.lock())
