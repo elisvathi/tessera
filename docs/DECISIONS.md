@@ -2904,3 +2904,22 @@ bars, and picked D1 from the mockups: the bars stay, with icons.
   another, doesn't fit; a small Macro dot still drags up and down. The rail's **+** goes when there's no room left
   for it; open the rail to add.
 - **The Devices tab shows no count** (was "Devices 2"): the user didn't like it; the strip shows the devices.
+
+## 168. Every cached picture goes through one guarded framebuffer (16 Nov)
+
+On 15 Nov a Mac (M4, Retina) froze while the user dragged the editor's pane divider. 2.0.10 (main, 39a7462) made
+`CachedLayer` draw directly while its size changes and when it would be huge: measured on a Retina-sized test Rack,
+a 40-step pane drag asked for 3.2 GB of textures before and 0.1 GB after. Merging main into this branch, two holes
+were left, and one rule was too loose:
+- **Zooming the rack** made a new texture per zoom step for every cached layer, since the size in pixels changes
+  even when the widget's doesn't.
+- **The modules' panel artwork** sat in a plain `FramebufferWidget`. Zooming in on Tessera's 30 HP panel made a new
+  texture of up to 140 MB at every step.
+- **The huge-texture limit** checked the transformed size, but Rack's texture is that times the pixel ratio again
+  (measured: 4x the point size per side at pixel ratio 2), so 8192 let through 16384 px textures on Retina.
+
+So `GuardedFramebuffer` (`src/ui/widgets/GuardedFramebuffer.hpp`) holds the rule, and both `CachedLayer` and the
+panel art use it: it draws directly while its size or zoom changed in the last 0.25 s, or when the real texture's
+longest side is over 8192 px; once settled it caches again, one texture per change. Measured after: a 10-step zoom
+makes no Tessera textures (only Rack's own rail tile, which we can't change); a 40-step pane drag asks for 94 MB in
+total. The branch has no other framebuffers or NanoVG images. CLAUDE.md now forbids plain `FramebufferWidget`.

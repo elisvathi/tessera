@@ -2,6 +2,7 @@
 
 #include "../Theme.hpp"
 #include "Draw.hpp"
+#include "GuardedFramebuffer.hpp"
 
 namespace tessera {
 
@@ -92,8 +93,9 @@ void PanelArt::draw(const DrawArgs& args) {
 PanelBuilder::PanelBuilder(rack::app::ModuleWidget* widget, int hp, const std::string& title) : mw(widget) {
     rack::math::Vec size(hp * rack::RACK_GRID_WIDTH, rack::RACK_GRID_HEIGHT);
 
-    // The artwork never changes while the module is on screen, so cache it in a framebuffer.
-    auto* fb = new rack::widget::FramebufferWidget;
+    // The artwork never changes while the module is on screen, so cache it in a framebuffer; a guarded one, since a
+    // wide panel zoomed in on a Retina screen makes a huge texture at every zoom step otherwise.
+    auto* fb = new GuardedFramebuffer;
     fb->box.size = size;
     artWidget = new PanelArt(size);
     fb->addChild(artWidget);
