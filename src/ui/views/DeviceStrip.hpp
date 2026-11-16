@@ -275,6 +275,11 @@ class DeviceStrip : public InteractiveView {
     /// An edit to the Pattern grid at `pos`: a step's row, its octave, or the line's length (DECISIONS §163).
     /// An Arpeggiator on Pattern: its settings in a slim column, then the line's grid; returns where the grid ends.
     float layoutPattern(const Device& d, int index, float x, float top, NVGcolor tint);
+    /// How many held-note rows an Arpeggiator's Pattern grid shows (4 to 8, docs/DECISIONS.md §171): the most notes
+    /// its clips send it at once, the most it has held while playing this session, and the highest row its line uses.
+    int patternNotes(const Device& d, int index);
+    std::map<uint64_t, int> arpHeard;                           // per Arpeggiator: the most notes it held
+    std::map<uint64_t, std::pair<uint64_t, int>> arpNotesCounted; // per Arpeggiator: song revision + 1, notes in
     /// A click in the grid: a note step (on, off, another row) or the Semi chip (semitones or steps of the key).
     void editPatternGrid(const Part& grid, rack::math::Vec pos);
     void drawPatternGrid(NVGcontext* vg, const Part& grid);

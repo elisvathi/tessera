@@ -277,6 +277,8 @@ class TesseraModule : public rack::engine::Module {
     float modulatorOutput(ModulatorId id) const;
     /// The step the Arpeggiator `id` played last, counted from where its pattern started; -1 while it plays nothing.
     int64_t arpStep(DeviceId id) const;
+    /// How many notes the Arpeggiator `id` holds while it plays; 0 when it plays nothing.
+    int arpHeld(DeviceId id) const;
 
     /// Arranger mode: some track plays a launched clip (or was stopped) instead of the arrangement.
     bool anyTrackOverridden() const;

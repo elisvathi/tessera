@@ -120,11 +120,13 @@ struct DeviceSlot {
 };
 
 constexpr int kMaxLineSteps = 16;
-/// A Pattern line step's parts: the row (0 rest, 1 to 4 a held note, kAllRow all of them) and the octave (-1 to 1).
-constexpr int kAllRow = 5;
-inline int lineRow(uint8_t step) { return step & 7; }
+/// A Pattern line step's parts: the row (0 rest, 1 to kMaxLineNotes a held note from the lowest, kAllRow all of them)
+/// and the octave (-1 to 1; only read when loading songs from before schema 13). Before schema 14, all was row 5.
+constexpr int kMaxLineNotes = 8;
+constexpr int kAllRow = kMaxLineNotes + 1;
+inline int lineRow(uint8_t step) { return step & 15; }
 inline int lineOctave(uint8_t step) { return int((step >> 4) & 3) - 1; }
-inline uint8_t lineStep(int row, int octave) { return uint8_t((row & 7) | ((octave + 1) & 3) << 4); }
+inline uint8_t lineStep(int row, int octave) { return uint8_t((row & 15) | ((octave + 1) & 3) << 4); }
 /// Step `k` of a line the dice writes from `seed`: one held note each step, the lowest twice as often as each other.
 uint8_t generatedLineStep(uint64_t seed, int k);
 /// A whole line of `length` steps the dice writes from `seed`.
@@ -198,6 +200,14 @@ class Chain {
             return -1;
         const DeviceState& s = states[size_t(stage)];
         return s.running && s.heldCount > 0 ? s.played : -1;
+    }
+    /// How many notes the arpeggiator at `stage` holds while it runs; 0 when it doesn't. The editor shows a Pattern
+    /// row for each note of the biggest chord it has held.
+    int arpHeld(int stage) const {
+        if (stage < 0 || stage >= kMaxDevices)
+            return 0;
+        const DeviceState& s = states[size_t(stage)];
+        return s.running ? s.heldCount : 0;
     }
     /// A fresh ID for a note entering the chain (never 0, never with kLiveNote).
     uint32_t newId() {

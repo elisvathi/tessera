@@ -320,6 +320,29 @@ TEST_CASE("the swing grid is saved, and swing on 1/8s moves the off-beat 1/8") {
     CHECK(swung(double(kPpq / 2), 1.f, kPpq / 2) == doctest::Approx(double(kPpq / 2 + kPpq / 4)));
 }
 
+TEST_CASE("a Pattern line saved before version 14 keeps its all steps, now past the eight note rows") {
+    Song song = makeDefaultSong();
+    Device arp = devices::makeDevice(DeviceType::Arpeggiator, song.newId<DeviceId>());
+    arp.line = {chain::lineStep(1, 0), chain::lineStep(5, 0), chain::lineStep(4, 0), chain::lineStep(0, 0)};
+    song.tracks[0].devices.push_back(arp);
+    json::Ref j(songToJson(song));
+    REQUIRE(migrateSong(j.get(), 13)); // row 5 was "all" then
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK(loaded.tracks[0].devices[0].line == std::vector<uint8_t>{chain::lineStep(1, 0),
+                                                                   chain::lineStep(chain::kAllRow, 0),
+                                                                   chain::lineStep(4, 0), chain::lineStep(0, 0)});
+
+    SUBCASE("a line saved now keeps notes 5 to 8") {
+        Song now = makeDefaultSong();
+        Device a = devices::makeDevice(DeviceType::Arpeggiator, now.newId<DeviceId>());
+        a.line = {chain::lineStep(5, 0), chain::lineStep(8, 0), chain::lineStep(chain::kAllRow, 0)};
+        now.tracks[0].devices.push_back(a);
+        json::Ref saved(songToJson(now));
+        REQUIRE(migrateSong(saved.get(), Song::kSchemaVersion));
+        CHECK(songFromJson(saved.get(), Song::kSchemaVersion).tracks[0].devices[0].line == a.line);
+    }
+}
+
 TEST_CASE("a Pattern line saved before version 13 keeps its octaves and its gate") {
     Song song = makeDefaultSong();
     const auto& info = devices::deviceInfo(DeviceType::Arpeggiator).params;

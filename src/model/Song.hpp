@@ -60,7 +60,7 @@ struct Marker {
 struct Song {
     // 7 was taken twice, on two branches: the Playheads device and audio. 8: more playhead rates and lengths.
     // 9: more Arpeggiator patterns.
-    static constexpr int kSchemaVersion = 13;
+    static constexpr int kSchemaVersion = 14;
 
     TimeSig timeSig;
     float swing = 0;           // 0..1, shown as 50..75% (Swing.hpp)
@@ -117,6 +117,10 @@ struct Song {
     std::vector<VoiceBlock> voiceBlocks(const Track& track) const;
     /// The most notes the track's clips ever play at once (at least 1), before its devices.
     int mostNotesAtOnce(const Track& track) const;
+    /// The most notes that reach a device at once, for an Arpeggiator's Pattern rows: the most the clips feeding its
+    /// chain play together (`ownClip`'s alone when the chain is that clip's), through `before`, the devices ahead of
+    /// it (a Chord device makes each note several).
+    int notesInto(const Track& track, const Clip* ownClip, const std::vector<Device>& before) const;
 
     /// Whether any clip in the track's slots or on its timeline has a note: the track has something to play.
     bool hasNotes(const Track& track) const;

@@ -267,6 +267,11 @@ int Song::mostNotesAtOnce(const Track& track) const {
     return most;
 }
 
+int Song::notesInto(const Track& track, const Clip* ownClip, const std::vector<Device>& before) const {
+    int notes = ownClip ? ownClip->maxSimultaneousNotes() : mostNotesAtOnce(track);
+    return voicesThrough(before, std::clamp(notes, 1, kMaxVoices));
+}
+
 bool Song::anySolo() const {
     return std::any_of(tracks.begin(), tracks.end(), [](const Track& t) { return t.solo; });
 }

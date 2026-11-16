@@ -105,8 +105,10 @@ Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate
 
 ![An Arpeggiator on Pattern: notes 1 2 3 4 rising, one step an octave up and one down, a long gate, a step a fifth up, and a Vel row 12 steps long](images/arp-pattern.png)
 
-- **The note rows.** Rows **1** to **4** are the held notes from the lowest; **all** plays the whole chord on that
-  step. Click a cell: that note plays on that step. Click it again for a rest. The first click fills the grid with a
+- **The note rows.** Rows **1**, **2**, **3**… are the held notes from the lowest; **all** plays the whole chord on
+  that step. The grid has a row for each note of the biggest chord the arpeggio gets, from 4 up to 8: a track of
+  six-note chords shows rows 1 to 6. It counts the clips' chords (with what a **Chord** device before it adds) and
+  the chords it has held while playing. With more rows, the rows get thinner so the card keeps its height. Click a cell: that note plays on that step. Click it again for a rest. The first click fills the grid with a
   line from the dice, so it is never empty; your click changes it from there. A row past the notes held plays from the
   lowest again, an octave up, so a line keeps its shape on any chord.
 - **Vel** scales the velocity of the note you hold (100% plays it as it is). **Gate** is how long each note is, from 5%

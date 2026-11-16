@@ -1218,6 +1218,11 @@ int64_t TesseraModule::arpStep(DeviceId id) const {
     return snap ? engine.arpStep(snap->arpSlotOf(id.value)) : -1;
 }
 
+int TesseraModule::arpHeld(DeviceId id) const {
+    const Snapshot* snap = snapshots.latest();
+    return snap ? engine.arpHeld(snap->arpSlotOf(id.value)) : 0;
+}
+
 float TesseraModule::modulatorOutput(ModulatorId id) const {
     return engine.modulatorOutput(snapshotBuilder.modulatorSlots().slotOf(id));
 }

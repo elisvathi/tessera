@@ -979,6 +979,26 @@ TEST_CASE("arpeggiator Hold keeps the last chord through a rest and lets the nex
     CHECK(play(true, 0) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
 }
 
+TEST_CASE("a Pattern line plays held notes 5 to 8 of a big chord, and wraps an octave up past the chord") {
+    auto play = [](std::vector<int> chord, const std::vector<uint8_t>& line) {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+        r.slots[0].line = line.data();
+        r.slots[0].lineLength = uint8_t(line.size());
+        for (int p : chord)
+            r.push(r.note(0, 240 * int(line.size()), p));
+        r.runTicks(-1, 240 * int(line.size()) - 1);
+        return pitchesOf(r.out.notes);
+    };
+    static const std::vector<uint8_t> big = {chain::lineStep(5, 0), chain::lineStep(8, 0), chain::lineStep(6, 0),
+                                             chain::lineStep(1, 0)};
+    CHECK(play({48, 52, 55, 59, 62, 65, 69, 72}, big) == std::vector<int>{62, 72, 65, 48});
+    // Three notes: row 5 is the second note an octave up, row 8 the second two octaves up.
+    static const std::vector<uint8_t> past = {chain::lineStep(5, 0), chain::lineStep(8, 0)};
+    CHECK(play({60, 64, 67}, past) == std::vector<int>{76, 88});
+}
+
 TEST_CASE("Echo repeats notes, fading") {
     Rig rig;
     rig.add(DeviceType::Echo, {{chain::knob::kTime, float(devices::rateIndex("1/8"))},
@@ -1196,6 +1216,23 @@ TEST_CASE("engine: an arpeggiator plays steps on the song's grid") {
     CHECK(starts[0] == std::make_pair(int64_t(0), 60));
     CHECK(starts[1] == std::make_pair(int64_t(240 * kSamplesPerTick), 64));
     CHECK(starts[2] == std::make_pair(int64_t(480 * kSamplesPerTick), 67));
+}
+
+TEST_CASE("a Pattern's rows count the notes that reach the arpeggiator, and the engine says how many it holds") {
+    // A six-note chord in the clip: six rows.
+    Song song = songWith({{0, 960, 48}, {0, 960, 52}, {0, 960, 55}, {0, 960, 59}, {0, 960, 62}, {0, 960, 65}});
+    CHECK(song.notesInto(song.tracks[0], nullptr, {}) == 6);
+    // Single notes through a seventh chord before it: four.
+    Song single = songWith({{0, 480, 60}, {480, 480, 62}});
+    Device chord = devices::makeDevice(DeviceType::Chord, single.newId<DeviceId>());
+    chord.params = knobsOf(DeviceType::Chord, {{chain::knob::kChord, float(shapeIndex("7th in key"))}});
+    CHECK(single.notesInto(single.tracks[0], nullptr, {chord}) == 4);
+
+    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+    Harness h(song);
+    for (int64_t s = 0; s < 300 * kSamplesPerTick; s++)
+        h.step();
+    CHECK(h.engine.arpHeld(h.snapshot->arpSlotOf(song.tracks[0].devices[0].id.value)) == 6);
 }
 
 TEST_CASE("engine: an arpeggiator's held notes let go of their curves when the snapshot is replaced") {

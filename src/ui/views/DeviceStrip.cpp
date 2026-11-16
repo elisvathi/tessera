@@ -88,43 +88,56 @@ constexpr float kPatternGridWidth = 720;   // an Arpeggiator's Pattern grid: its
 constexpr float kPatternColumnWidth = 104; // the settings beside it, one under another
 constexpr float kPatternResetWidth = 50;   // "Reset" in the card's header
 
-/// Where a Pattern grid's parts are, inside its picture: five note rows (all, 4, 3, 2, 1), then the four value rows
-/// (Vel, Gate, Oct, Semi), each 16 steps wide between the row names and each row's length.
+/// Where a Pattern grid's parts are, inside its picture: the note rows (all, then one per held note from the highest
+/// down to 1: 4 to 8 of them), then the four value rows (Vel, Gate, Oct, Semi), each 16 steps wide between the row
+/// names and each row's length. With more notes the note rows get thinner and the value rows a little lower, so the
+/// card keeps its height (docs/DECISIONS.md §171).
 struct PatternGeometry {
-    static constexpr float kPadX = 10, kPadTop = 6, kLabel = 34, kEnd = 26, kNoteRow = 11, kNoteGap = 2,
-                           kLaneRow = 16, kLaneGap = 3, kSplit = 5;
+    static constexpr float kPadX = 10, kPadTop = 6, kLabel = 34, kEnd = 26, kLaneGap = 3, kSplit = 5;
+    /// rowAt's first value row: after the most note rows there can be, so a row number means the same at any count.
+    static constexpr int kFirstLane = chain::kMaxLineNotes + 1;
     Rect area;
     float cellW = 0;
-    explicit PatternGeometry(Rect picture)
+    int notes = 4; // held-note rows, besides "all"
+    float noteRow = 11, noteGap = 2, laneRow = 16;
+    PatternGeometry(Rect picture, int noteRows)
         : area(picture.pos.x + kPadX, picture.pos.y + kPadTop, picture.size.x - 2 * kPadX,
                picture.size.y - kPadTop - 3) {
+        notes = std::clamp(noteRows, 4, chain::kMaxLineNotes);
+        laneRow = notes <= 4 ? 16 : notes <= 6 ? 14 : 13;
+        noteGap = notes <= 4 ? 2 : 1.5f;
+        float room = area.size.y - kSplit - float(chain::kArpLaneCount) * laneRow -
+                     float(chain::kArpLaneCount - 1) * kLaneGap;
+        noteRow = std::min(11.f, (room - float(notes) * noteGap) / float(notes + 1));
         cellW = (area.size.x - kLabel - kEnd) / float(chain::kMaxLineSteps);
     }
+    int noteRows() const { return notes + 1; }
     float cellsX() const { return area.pos.x + kLabel; }
     float cellsRight() const { return cellsX() + float(chain::kMaxLineSteps) * cellW; }
-    /// Where note row `r` (0 = all, 4 = row 1) and value row `l` (0 = Vel .. 3 = Semi) start.
-    float noteY(int r) const { return area.pos.y + float(r) * (kNoteRow + kNoteGap); }
-    float laneY(int l) const { return noteY(5) - kNoteGap + kSplit + float(l) * (kLaneRow + kLaneGap); }
-    Rect noteCell(int r, int col) const { return Rect(cellsX() + float(col) * cellW + 1, noteY(r), cellW - 2, kNoteRow); }
-    Rect laneCell(int l, int col) const { return Rect(cellsX() + float(col) * cellW + 1, laneY(l), cellW - 2, kLaneRow); }
+    /// Where note row `r` (0 = all, `notes` = row 1) and value row `l` (0 = Vel .. 3 = Semi) start.
+    float noteY(int r) const { return area.pos.y + float(r) * (noteRow + noteGap); }
+    float laneY(int l) const { return noteY(noteRows()) - noteGap + kSplit + float(l) * (laneRow + kLaneGap); }
+    Rect noteCell(int r, int col) const { return Rect(cellsX() + float(col) * cellW + 1, noteY(r), cellW - 2, noteRow); }
+    Rect laneCell(int l, int col) const { return Rect(cellsX() + float(col) * cellW + 1, laneY(l), cellW - 2, laneRow); }
     /// Where a row `length` steps long ends: the gap after its last step.
     float endX(int length) const { return cellsX() + float(length) * cellW; }
     int columnAt(float x) const { return std::clamp(int(std::floor((x - cellsX()) / cellW)), 0, chain::kMaxLineSteps - 1); }
-    /// The row under `y`: 0..4 the note rows, 5..8 the value rows, -1 between them or outside.
+    /// The row under `y`: 0..notes the note rows, kFirstLane.. the value rows, -1 between them or outside.
     int rowAt(float y) const {
-        for (int r = 0; r < 5; r++)
-            if (y >= noteY(r) - kNoteGap / 2 && y < noteY(r) + kNoteRow + kNoteGap / 2)
+        for (int r = 0; r < noteRows(); r++)
+            if (y >= noteY(r) - noteGap / 2 && y < noteY(r) + noteRow + noteGap / 2)
                 return r;
         for (int l = 0; l < chain::kArpLaneCount; l++)
-            if (y >= laneY(l) - kLaneGap / 2 && y < laneY(l) + kLaneRow + kLaneGap / 2)
-                return 5 + l;
+            if (y >= laneY(l) - kLaneGap / 2 && y < laneY(l) + laneRow + kLaneGap / 2)
+                return kFirstLane + l;
         return -1;
     }
-    float rowMid(int row) const { return row < 5 ? noteY(row) + kNoteRow / 2 : laneY(row - 5) + kLaneRow / 2; }
+    float rowMid(int row) const {
+        return row < kFirstLane ? noteY(row) + noteRow / 2 : laneY(row - kFirstLane) + laneRow / 2;
+    }
+    /// A note row's line value: row 0 is "all", the others held notes from the highest row down to 1.
+    int rowValue(int r) const { return r == 0 ? chain::kAllRow : notes + 1 - r; }
 };
-
-/// A note row's line value: row 0 is "all", rows 1 to 4 are held notes 4 down to 1.
-int rowValue(int r) { return r == 0 ? chain::kAllRow : 5 - r; }
 
 /// The Arpeggiator's setting `knob`.
 const devices::ParamInfo& arpInfo(int knob) {
@@ -1218,6 +1231,42 @@ float DeviceStrip::layoutTiles(const Device& d, int index, float x, float top, P
     return tx - mx::kDeviceTileGap;
 }
 
+int DeviceStrip::patternNotes(const Device& d, int index) {
+    TesseraModule* m = ctx.module();
+    const Track* t = track();
+    if (!m || !t)
+        return 4;
+    int most = 4;
+    for (uint8_t step : d.line)
+        if (int row = chain::lineRow(step); row >= 1 && row <= chain::kMaxLineNotes)
+            most = std::max(most, row);
+    int& heard = arpHeard[d.id.value];
+    heard = std::max(heard, m->arpHeld(d.id));
+    // What the clips send it only changes with an edit, and counting it goes through every note: kept until then.
+    std::pair<uint64_t, int>& counted = arpNotesCounted[d.id.value];
+    uint64_t revision = m->songRevision() + 1; // 0: not counted yet
+    if (counted.first != revision) {
+        const Song& song = m->song();
+        ChainOwner owner = deviceActions::shownChain(ctx);
+        const std::vector<Device>& devices = chain();
+        std::vector<Device> before;
+        if (index < kBranchBase) {
+            before.assign(devices.begin(), devices.begin() + std::min<long>(index, long(devices.size())));
+        } else {
+            // In a playhead's own devices: the chain up to the Playheads card, then the branch up to this one.
+            for (size_t i = 0; i < devices.size(); i++)
+                if (const Playhead* p = devices[i].type == DeviceType::Playheads ? shownPlayhead(devices[i]) : nullptr) {
+                    before.assign(devices.begin(), devices.begin() + long(i));
+                    size_t k = std::min(size_t(index - kBranchBase), p->branch.size());
+                    before.insert(before.end(), p->branch.begin(), p->branch.begin() + long(k));
+                    break;
+                }
+        }
+        counted = {revision, song.notesInto(*t, owner.isClip() ? song.findClip(owner.clip) : nullptr, before)};
+    }
+    return std::clamp(std::max({most, heard, counted.second}), 4, chain::kMaxLineNotes);
+}
+
 float DeviceStrip::layoutPattern(const Device& d, int index, float x, float top, NVGcolor tint) {
     float ty = top + mx::kDeviceCardTop + mx::kDeviceCardHeader;
     // The settings that still apply, one under another. Oct, Gate and Velocity live in the line's own rows.
@@ -1248,7 +1297,8 @@ float DeviceStrip::layoutPattern(const Device& d, int index, float x, float top,
     // After its tags, so they take the clicks (the first part under the pointer wins).
     parts.push_back({Kind::PatternColumn, Rect(x, ty, kPatternColumnWidth, mx::kDeviceTile), index, -1, d.id.value});
     float gx = x + kPatternColumnWidth + mx::kDeviceTileGap;
-    parts.push_back({Kind::PatternGrid, Rect(gx, ty, kPatternGridWidth, mx::kDeviceTile), index, -1, d.id.value});
+    parts.push_back(
+        {Kind::PatternGrid, Rect(gx, ty, kPatternGridWidth, mx::kDeviceTile), index, patternNotes(d, index), d.id.value});
     return gx + kPatternGridWidth;
 }
 
@@ -1858,11 +1908,11 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
         const Device* d = findDevice(m->song(), DeviceId(p.id));
         if (!d)
             return nullptr;
-        PatternGeometry g(p.rect);
+        PatternGeometry g(p.rect, p.param);
         int row = g.rowAt(pos.y);
         if (row < 0)
             return nullptr;
-        int lane = row - 5;
+        int lane = row - PatternGeometry::kFirstLane;
         if (ctx.mappingModulator) {
             // Mapping: a value step takes the modulator like a tag does, a click at +50%, a drag for how far.
             if (lane < 0 || pos.x < g.cellsX() || pos.x >= g.cellsRight())
@@ -1964,10 +2014,10 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             if (!d)
                 return;
             // A value step has its setting's menu: type it, reset it, modulate it, automate it.
-            PatternGeometry g(hit->rect);
+            PatternGeometry g(hit->rect, hit->param);
             int row = g.rowAt(pos.y);
-            if (row >= 5 && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
-                int knob = chain::arpLaneFirst(chain::ArpLane(row - 5)) + g.columnAt(pos.x);
+            if (row >= PatternGeometry::kFirstLane && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
+                int knob = chain::arpLaneFirst(chain::ArpLane(row - PatternGeometry::kFirstLane)) + g.columnAt(pos.x);
                 deviceActions::openKnobMenu(ctx, {ParamRef::Kind::Device, d->id.value, uint16_t(knob)});
                 return;
             }
@@ -2267,13 +2317,13 @@ void DeviceStrip::doubleClick(Vec pos, Modifiers mods) {
         }
     }
     if (hit && hit->kind == Kind::PatternGrid && !ctx.mappingModulator) {
-        PatternGeometry g(hit->rect);
+        PatternGeometry g(hit->rect, hit->param);
         int row = g.rowAt(pos.y);
-        if (row >= 5 && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
-            int knob = chain::arpLaneFirst(chain::ArpLane(row - 5)) + g.columnAt(pos.x);
+        if (row >= PatternGeometry::kFirstLane && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
+            int knob = chain::arpLaneFirst(chain::ArpLane(row - PatternGeometry::kFirstLane)) + g.columnAt(pos.x);
             commitPattern(DeviceId(hit->id), {{knob, arpInfo(knob).def}}, std::string("Reset ") + arpInfo(knob).name);
         } else if (row >= 0 && pos.x >= g.cellsRight()) {
-            setPatternLength(DeviceId(hit->id), row < 5 ? -1 : row - 5, chain::kMaxLineSteps);
+            setPatternLength(DeviceId(hit->id), row < PatternGeometry::kFirstLane ? -1 : row - PatternGeometry::kFirstLane, chain::kMaxLineSteps);
         }
         return;
     }
@@ -2294,12 +2344,12 @@ void DeviceStrip::wheel(Vec pos, Vec delta, Modifiers mods) {
     const Part* hit = partAt(pos);
     // Over a Pattern value step the wheel steps it (Vel and Gate by 5%); over a row's length it steps the length.
     if (hit && hit->kind == Kind::PatternGrid && std::fabs(delta.y) > std::fabs(delta.x) && !ctx.mappingModulator) {
-        PatternGeometry g(hit->rect);
+        PatternGeometry g(hit->rect, hit->param);
         int row = g.rowAt(pos.y);
         int way = delta.y > 0 ? 1 : -1;
         DeviceId id(hit->id);
-        if (row >= 5 && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
-            auto lane = chain::ArpLane(row - 5);
+        if (row >= PatternGeometry::kFirstLane && pos.x >= g.cellsX() && pos.x < g.cellsRight()) {
+            auto lane = chain::ArpLane(row - PatternGeometry::kFirstLane);
             int knob = chain::arpLaneFirst(lane) + g.columnAt(pos.x);
             const devices::ParamInfo& info = arpInfo(knob);
             float step = lane == chain::ArpLane::Velocity || lane == chain::ArpLane::Gate ? 5.f : 1.f;
@@ -2309,9 +2359,9 @@ void DeviceStrip::wheel(Vec pos, Vec delta, Modifiers mods) {
         }
         if (row >= 0 && pos.x >= g.cellsRight()) {
             const Device* d = ctx.module() ? findDevice(ctx.module()->song(), id) : nullptr;
-            int length = row < 5 ? (d && !d->line.empty() ? int(d->line.size()) : chain::kMaxLineSteps)
-                                 : int(std::lround(patternValue(id, chain::arpLaneSteps(chain::ArpLane(row - 5)))));
-            setPatternLength(id, row < 5 ? -1 : row - 5, length + way);
+            int length = row < PatternGeometry::kFirstLane ? (d && !d->line.empty() ? int(d->line.size()) : chain::kMaxLineSteps)
+                                 : int(std::lround(patternValue(id, chain::arpLaneSteps(chain::ArpLane(row - PatternGeometry::kFirstLane)))));
+            setPatternLength(id, row < PatternGeometry::kFirstLane ? -1 : row - PatternGeometry::kFirstLane, length + way);
             return;
         }
     }
@@ -2359,20 +2409,20 @@ CursorShape DeviceStrip::hoverCursor(Vec pos, Modifiers mods) {
     case Kind::CardHeader:
         return CursorShape::Move;
     case Kind::PatternGrid: {
-        PatternGeometry g(hit->rect);
+        PatternGeometry g(hit->rect, hit->param);
         int row = g.rowAt(pos.y);
         if (ctx.mappingModulator) {
-            if (row < 5 || pos.x < g.cellsX() || pos.x >= g.cellsRight())
+            if (row < PatternGeometry::kFirstLane || pos.x < g.cellsX() || pos.x >= g.cellsRight())
                 return CursorShape::NotAllowed;
             ParamRef ref{ParamRef::Kind::Device, hit->id,
-                         uint16_t(chain::arpLaneFirst(chain::ArpLane(row - 5)) + g.columnAt(pos.x))};
+                         uint16_t(chain::arpLaneFirst(chain::ArpLane(row - PatternGeometry::kFirstLane)) + g.columnAt(pos.x))};
             return reachableNow(ref) ? CursorShape::ResizeV : CursorShape::NotAllowed;
         }
         if (row < 0 || pos.x < g.cellsX())
-            return row == 5 + int(chain::ArpLane::Semitone) ? CursorShape::Hand : CursorShape::Arrow;
+            return row == PatternGeometry::kFirstLane + int(chain::ArpLane::Semitone) ? CursorShape::Hand : CursorShape::Arrow;
         if (pos.x >= g.cellsRight())
             return CursorShape::ResizeH;
-        return row >= 5 ? CursorShape::ResizeV : CursorShape::Hand;
+        return row >= PatternGeometry::kFirstLane ? CursorShape::ResizeV : CursorShape::Hand;
     }
     case Kind::PatternColumn:
     case Kind::Card:
@@ -2861,26 +2911,26 @@ void DeviceStrip::updateTip() {
         if (p.kind == Kind::PatternReset)
             want = "Starts the line again from a plain rising arpeggio: notes 1 2 3 4, every row back to its default";
         if (p.kind == Kind::PatternGrid && !APP->scene->getFirstDescendantOfType<rack::ui::MenuOverlay>()) {
-            PatternGeometry g(p.rect);
+            PatternGeometry g(p.rect, p.param);
             Vec mouse = localMouse();
             int row = g.rowAt(mouse.y);
             if (ctx.mappingModulator)
-                want = row >= 5 && mouse.x >= g.cellsX() && mouse.x < g.cellsRight()
+                want = row >= PatternGeometry::kFirstLane && mouse.x >= g.cellsX() && mouse.x < g.cellsRight()
                            ? "Click: the modulator moves this step by 50%. Drag up or down for how far"
                            : "";
-            else if (row == 5 + int(chain::ArpLane::Semitone) && mouse.x < g.cellsX())
+            else if (row == PatternGeometry::kFirstLane + int(chain::ArpLane::Semitone) && mouse.x < g.cellsX())
                 want = "Click: count the Semi row in semitones, or in steps of the key (Key)";
             else if (row >= 0 && mouse.x >= g.cellsRight())
                 want = "This row's length in steps: drag left or right, or turn the wheel. Rows of different lengths "
                        "drift against each other";
-            else if (row >= 5 && mouse.x >= g.cellsX()) {
-                int knob = chain::arpLaneFirst(chain::ArpLane(row - 5)) + g.columnAt(mouse.x);
+            else if (row >= PatternGeometry::kFirstLane && mouse.x >= g.cellsX()) {
+                int knob = chain::arpLaneFirst(chain::ArpLane(row - PatternGeometry::kFirstLane)) + g.columnAt(mouse.x);
                 want = std::string(arpInfo(knob).name) + " " +
-                       stepText(chain::ArpLane(row - 5), patternValue(DeviceId(p.id), knob)) +
-                       (row - 5 == int(chain::ArpLane::Gate) ? ": drag up or down, or sideways to make it longer"
+                       stepText(chain::ArpLane(row - PatternGeometry::kFirstLane), patternValue(DeviceId(p.id), knob)) +
+                       (row - PatternGeometry::kFirstLane == int(chain::ArpLane::Gate) ? ": drag up or down, or sideways to make it longer"
                                                               : ": drag up or down, or sideways to paint a run") +
                        ". Click the top or bottom half to step it; double-click resets; right-click to automate";
-            } else if (row >= 0 && row < 5 && mouse.x >= g.cellsX())
+            } else if (row >= 0 && row < PatternGeometry::kFirstLane && mouse.x >= g.cellsX())
                 want = "Click: this note on this step, again for a rest. Rows 1 to 4 are the held notes from the "
                        "lowest; all plays the chord";
         }
@@ -3638,7 +3688,7 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
     const theme::Palette& c = theme::colors();
     const theme::DeviceColors& dc = theme::deviceColors();
     NVGcolor tint = tintOf(*d, grid.device);
-    PatternGeometry g(grid.rect);
+    PatternGeometry g(grid.rect, grid.param);
     DeviceId id = d->id;
     draw::roundedRect(vg, grid.rect, mx::kDeviceTileRadius, dc.screen);
     bool own = !d->line.empty();
@@ -3672,15 +3722,16 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
         nvgFill(vg);
     };
 
-    static const char* const kNoteRows[] = {"all", "4", "3", "2", "1"};
     int notes = lengthOf(-1), notesAt = playingAt(notes);
-    for (int r = 0; r < 5; r++) {
-        draw::text(vg, label, g.area.pos.x, g.rowMid(r), kNoteRows[r]);
+    draw::TextStyle noteLabel = label;
+    noteLabel.size = std::min(label.size, g.noteRow + 1.5f);
+    for (int r = 0; r < g.noteRows(); r++) {
+        draw::text(vg, noteLabel, g.area.pos.x, g.rowMid(r), r == 0 ? std::string("all") : std::to_string(g.rowValue(r)));
         for (int col = 0; col < chain::kMaxLineSteps; col++) {
             Rect cell = g.noteCell(r, col);
             bool in = col < notes;
             int row = own && in && col < int(d->line.size()) ? chain::lineRow(d->line[size_t(col)]) : 0;
-            bool on = row != 0 && row == rowValue(r);
+            bool on = row != 0 && row == g.rowValue(r);
             bool chord = r > 0 && row == chain::kAllRow;
             NVGcolor fill = on      ? nvgTransRGBAf(tint, fresh ? 0.45f : 1.f)
                             : chord ? nvgTransRGBAf(tint, 0.3f)
@@ -3694,8 +3745,8 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
                 outline(cell);
         }
     }
-    endLine(g.noteY(0), g.noteY(4) + PatternGeometry::kNoteRow, notes);
-    draw::text(vg, number, g.area.getRight(), g.rowMid(4), std::to_string(notes));
+    endLine(g.noteY(0), g.noteY(g.notes) + g.noteRow, notes);
+    draw::text(vg, number, g.area.getRight(), g.rowMid(g.notes), std::to_string(notes));
 
     static const char* const kLaneNames[] = {"Vel", "Gate", "Oct"};
     bool inKey = patternValue(id, chain::knob::kArpSemiKey) > 0.5f;
@@ -3703,10 +3754,10 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
         auto lane = chain::ArpLane(l);
         int first = chain::arpLaneFirst(lane);
         int length = lengthOf(l), at = playingAt(length);
-        float mid = g.rowMid(5 + l);
+        float mid = g.rowMid(PatternGeometry::kFirstLane + l);
         if (lane == chain::ArpLane::Semitone) {
             // The Semi row's name is a switch: semitones, or steps of the key.
-            Rect chip(g.area.pos.x - 2, g.laneY(l) + 1, PatternGeometry::kLabel - 6, PatternGeometry::kLaneRow - 2);
+            Rect chip(g.area.pos.x - 2, g.laneY(l) + 1, PatternGeometry::kLabel - 6, g.laneRow - 2);
             draw::roundedRectStroke(vg, chip, 4, nvgTransRGBAf(tint, 0.55f), 1);
             draw::TextStyle chipText = label;
             chipText.color = nvgLerpRGBA(c.text0, tint, 0.45f);
@@ -3790,12 +3841,12 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
             if (col == at && own)
                 outline(cell);
         }
-        endLine(g.laneY(l), g.laneY(l) + PatternGeometry::kLaneRow, length);
+        endLine(g.laneY(l), g.laneY(l) + g.laneRow, length);
         draw::text(vg, number, g.area.getRight(), mid, std::to_string(length));
     }
     if (!own) {
         draw::TextStyle hint{theme::fonts::ui(), 10, c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        Vec at(g.cellsX() + (g.cellsRight() - g.cellsX()) / 2, g.rowMid(2));
+        Vec at(g.cellsX() + (g.cellsRight() - g.cellsX()) / 2, g.rowMid(g.noteRows() / 2));
         std::string text = "Made from the held notes \xC2\xB7 click a step to write your own";
         float w = draw::textWidth(vg, hint, text) + 14;
         draw::roundedRect(vg, Rect(at.x - w / 2, at.y - 9, w, 18), 4, nvgTransRGBAf(dc.screen, 0.92f));
@@ -3808,15 +3859,15 @@ void DeviceStrip::editPatternGrid(const Part& grid, Vec pos) {
     const Device* d = m ? findDevice(m->song(), DeviceId(grid.id)) : nullptr;
     if (!d)
         return;
-    PatternGeometry g(grid.rect);
+    PatternGeometry g(grid.rect, grid.param);
     int row = g.rowAt(pos.y);
-    if (row == 5 + int(chain::ArpLane::Semitone) && pos.x < g.cellsX()) {
+    if (row == PatternGeometry::kFirstLane + int(chain::ArpLane::Semitone) && pos.x < g.cellsX()) {
         bool inKey = patternValue(d->id, chain::knob::kArpSemiKey) > 0.5f;
         commitPattern(d->id, {{chain::knob::kArpSemiKey, inKey ? 0.f : 1.f}},
                       inKey ? "Semitones" : "Semitones in key");
         return;
     }
-    if (row < 0 || row > 4 || pos.x < g.cellsX() || pos.x >= g.cellsRight())
+    if (row < 0 || row >= g.noteRows() || pos.x < g.cellsX() || pos.x >= g.cellsRight())
         return;
     int col = g.columnAt(pos.x);
     std::vector<uint8_t> line = lineToEdit(*d);
@@ -3824,7 +3875,7 @@ void DeviceStrip::editPatternGrid(const Part& grid, Vec pos) {
     while (int(line.size()) <= col)
         line.push_back(chain::generatedLineStep(seed, int(line.size())));
     uint8_t& v = line[size_t(col)];
-    int value = rowValue(row);
+    int value = g.rowValue(row);
     v = chain::lineStep(chain::lineRow(v) == value ? 0 : value, 0);
     if (CommandPtr set = setArpPattern(m->song(), d->id, line, variationNumber(d->variation), {}, "Pattern step"))
         m->perform(std::move(set));

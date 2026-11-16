@@ -304,6 +304,10 @@ class Engine {
     int64_t arpStep(int slot) const {
         return slot >= 0 && slot < kMaxArpSlots ? liveArpSteps[size_t(slot)].load(std::memory_order_relaxed) : -1;
     }
+    /// How many notes the Arpeggiator in report slot `slot` holds while it runs; 0 when it doesn't. Any thread.
+    int arpHeld(int slot) const {
+        return slot >= 0 && slot < kMaxArpSlots ? liveArpHeld[size_t(slot)].load(std::memory_order_relaxed) : 0;
+    }
     /// Notes the device chains had to drop because too many were in flight.
     int chainOverflows() const;
 
@@ -798,6 +802,7 @@ class Engine {
     std::unique_ptr<std::atomic<float>[]> liveBases;      // for the UI: knob lane values
     std::unique_ptr<std::atomic<float>[]> liveModulators; // for the UI
     std::array<std::atomic<int64_t>, kMaxArpSlots> liveArpSteps; // for the UI: each Arpeggiator's last step
+    std::array<std::atomic<int>, kMaxArpSlots> liveArpHeld;      // for the UI: how many notes each one holds
     ParamRef overrideRef;
     float overrideValue = 0;
     bool overrideOn = false;

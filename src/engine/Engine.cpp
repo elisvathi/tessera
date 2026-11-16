@@ -38,6 +38,8 @@ Engine::Engine()
     indexOfSlot.fill(-1);
     for (std::atomic<int64_t>& step : liveArpSteps)
         step.store(-1, std::memory_order_relaxed);
+    for (std::atomic<int>& held : liveArpHeld)
+        held.store(0, std::memory_order_relaxed);
     setSampleRate(sampleRate);
 }
 
@@ -2076,8 +2078,10 @@ void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runti
     // Where each Arpeggiator is in its line, for the editor to light the step playing.
     auto report = [&] {
         for (int k = 0; k < count; k++)
-            if (int slot = devices[size_t(k)].arpSlot; slot >= 0)
+            if (int slot = devices[size_t(k)].arpSlot; slot >= 0) {
                 liveArpSteps[size_t(slot)].store(c.arpStep(k), std::memory_order_relaxed);
+                liveArpHeld[size_t(slot)].store(c.arpHeld(k), std::memory_order_relaxed);
+            }
     };
     if (c.idle()) {
         report();

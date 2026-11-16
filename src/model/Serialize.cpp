@@ -1360,6 +1360,39 @@ bool migrateSong(json_t* songJ, int fromVersion) {
             chainOf(json_object_get(json_object_get(t, "ownChain"), "devices"));
         }
     }
+    if (fromVersion < 14) {
+        // Version 14 gave the Pattern line rows for up to 8 held notes: "all" moved from row 5 to kAllRow, since 5
+        // is now the fifth note.
+        auto migrate = [](json_t* d) {
+            const char* type = json_string_value(json_object_get(d, "type"));
+            if (!type || std::string(type) != "arpeggiator")
+                return;
+            size_t k;
+            json_t* step;
+            json_array_foreach(json_object_get(d, "line"), k, step) {
+                json_int_t v = json_integer_value(step);
+                if ((v & 7) == 5)
+                    json_array_set_new(json_object_get(d, "line"), k,
+                                       json_integer((v & ~json_int_t(15)) | json_int_t(chain::kAllRow)));
+            }
+        };
+        auto chainOf = [&](json_t* devicesJ) {
+            size_t k, h, b;
+            json_t *d, *p, *bd;
+            json_array_foreach(devicesJ, k, d) {
+                migrate(d);
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_array_foreach(json_object_get(p, "branch"), b, bd) migrate(bd);
+                }
+            }
+        };
+        size_t i;
+        json_t* t;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) chainOf(json_object_get(t, "devices"));
+        json_array_foreach(json_object_get(songJ, "clips"), i, t) {
+            chainOf(json_object_get(json_object_get(t, "ownChain"), "devices"));
+        }
+    }
     if (fromVersion == 6) {
         // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
         // notes for the written length by default, so at half speed a note stopped halfway while the playhead was

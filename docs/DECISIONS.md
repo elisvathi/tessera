@@ -2937,3 +2937,18 @@ through rests until new notes come. A bug made it look broken: chords back to ba
 end, and the new notes arrived before the old ones' ends, so Hold took the old chord as still held and added the new
 notes to it, an arpeggio over both chords. A note ending at the new note's start now counts as let go. Kept, since
 rests and live playing need it; the manual now says what it does.
+
+## 171. Pattern rows for up to 8 held notes (16 Nov)
+
+The user asked why Pattern had only 4 note rows when a chord can have more; notes 5 and up only sounded on "all"
+steps. Agreed from the mockup ("Pattern rows follow the chord"):
+- **Up to 8 note rows.** The grid shows a row per note of the biggest chord the arpeggio gets, at least 4: the most
+  notes its clips send at once through the devices before it (`Song::notesInto`, counted again only after an edit),
+  the most it has held while playing this session (`Engine::arpHeld`, reported beside the step), and the highest row
+  its line already uses, so a written step never hides.
+- **The card keeps its 150 px picture.** Up to 4 notes nothing changes (note rows 11 px, value rows 16). With 5-6 the
+  value rows are 14 px, with 7-8 13 px, and the note rows share what is left (about 7 px at 8). Note labels shrink
+  with them.
+- **Schema 14**: a step's row has 4 bits (0 rest, 1-8, 9 all). Lines saved before had "all" at row 5; it moves to 9
+  on load.
+- The line the dice writes still uses rows 1-4; a row past the notes held still plays from the lowest an octave up.
