@@ -2878,4 +2878,5 @@ agreed with changes): one view, no lower pane.
   mockup. Steps past a row's end are fainter (their alpha scaled, not set).
 - **Pattern steps take modulators like tags do**: while mapping, the value steps a modulator can reach are lit in its
   colour (note steps fade: a modulator can't move them); a click adds +50%, a drag sets how far. A modulated step is
-  outlined in its modulator's colour with a dot on its corner. A cell's tooltip hides while a menu is open.
+  outlined in its modulator's colour and has the tags' depth bar along its bottom (how far each modulator and lane
+  moves it, and where it is now), so the amount shows without a tooltip. A cell's tooltip hides while a menu is open.

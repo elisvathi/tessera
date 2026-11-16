@@ -122,7 +122,8 @@ Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate
   setting has: type a value, reset it, **Modulate with**, **Draw a curve**, **Automate in the timeline** or **in this
   clip**. Lanes name it "Step 5 velocity" and so on. Mapping works on steps too: click a modulator's arrow and the
   steps it can reach light up with the tags; click one for +50%, or drag it up or down for how far. A step a modulator
-  moves is outlined in its colour with a dot on its corner, and it shows its value as it plays. A step a lane sets
+  moves is outlined in its colour and, like a tag, has a depth bar along its bottom: the coloured part is how far each
+  modulator or lane moves it across its range, the dot is where it is now. A step a lane sets
   wears an **A**.
 - **Reset** in the card's header starts again from a plain rising arpeggio: notes 1 2 3 4 repeated, every row back to
   its default and 16 steps long. One undo step.

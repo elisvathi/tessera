@@ -3588,19 +3588,35 @@ void DeviceStrip::drawPatternGrid(NVGcontext* vg, const Part& grid) {
                     NVGcolor way = n > 0 ? dc.stepUp : dc.stepDown;
                     draw::roundedRect(vg, cell, 3, nvgTransRGBAf(way, 0.16f));
                     draw::TextStyle text{theme::fonts::mono(), 10.5f, way, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-                    draw::text(vg, text, cell.getCenter().x, cell.getCenter().y + 0.5f, stepText(lane, v));
+                    bool barBelow = modulationsOn(m->song(), {ParamRef::Kind::Device, id.value, uint16_t(first + col)}) > 0 ||
+                                    m->automated({ParamRef::Kind::Device, id.value, uint16_t(first + col)});
+                    draw::text(vg, text, cell.getCenter().x, cell.getCenter().y + (barBelow ? -1.5f : 0.5f),
+                               stepText(lane, v));
                 }
                 break;
             }
             }
-            // A step a modulator moves is outlined in its colour with a dot on its corner, like a tag; one a lane
-            // sets wears an "A".
-            if (std::optional<NVGcolor> moved = modulatorColorOn(ref)) {
+            // A step a modulator moves is outlined in its colour, like a tag, and like a tag it has a depth bar:
+            // along its bottom, how far each modulator and lane moves it across its range, and a dot where it is now.
+            if (std::optional<NVGcolor> moved = modulatorColorOn(ref))
                 draw::roundedRectStroke(vg, cell.shrink(Vec(0.5f, 0.5f)), 3, *moved, 1.2f);
+            std::vector<Span> spans = spansOn(ref);
+            if (!spans.empty()) {
+                Rect bar(cell.pos.x + 4, cell.getBottom() - 4.5f, cell.size.x - 8, 3);
+                draw::roundedRect(vg, bar.grow(Vec(1.5f, 1.5f)), 2.5f, nvgTransRGBAf(dc.screen, 0.9f));
+                draw::roundedRect(vg, bar, 1.5f, nvgTransRGBAf(dc.tagEdge, 0.8f));
+                for (const Span& span : spans) {
+                    float a = bar.pos.x + span.from * bar.size.x, b = bar.pos.x + span.to * bar.size.x;
+                    draw::roundedRect(vg, Rect(a, bar.pos.y, std::max(3.f, b - a), bar.size.y), 1.5f, span.color);
+                }
+                float live = std::clamp(devices::normalize(arpInfo(first + col), v), 0.f, 1.f);
                 nvgBeginPath(vg);
-                nvgCircle(vg, cell.getRight() - 3.5f, cell.pos.y + 3.5f, 2.5f);
-                nvgFillColor(vg, *moved);
+                nvgCircle(vg, bar.pos.x + live * bar.size.x, bar.getCenter().y, 2.3f);
+                nvgFillColor(vg, c.text0);
                 nvgFill(vg);
+                nvgStrokeColor(vg, dc.screen);
+                nvgStrokeWidth(vg, 1);
+                nvgStroke(vg);
             }
             if (lit)
                 draw::roundedRectStroke(vg, cell.shrink(Vec(0.5f, 0.5f)), 3, mappingColor, 1.5f);
