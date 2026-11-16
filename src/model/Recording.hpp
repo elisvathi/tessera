@@ -149,11 +149,22 @@ CommandPtr recordNewClip(const Song& song, TrackId track, int slot, Tick length,
 CommandPtr recordIntoClip(const Song& song, ClipId clip, const Take& take, const NextId& nextId,
                           edits::IdSet* noteIds = nullptr);
 
-/// A new clip on the timeline over [from, to) holding the take (timeline ticks). With Stack it stacks over the
-/// clips already there, which stay as they were; with Replace they are trimmed or split around it.
+/// Where Merge's new clip for notes outside every clip goes (timeline ticks).
+struct MergeClipPlace {
+    Tick origin; // where the clip itself starts: the bar line before the first note, so its grid is the song's
+    Tick start;  // where it starts playing: `origin`, or later when a clip ends after that bar line
+};
+/// The place for Merge's new clip whose first note or value is at `first`. It never covers a clip that ends
+/// between the bar line and `first`; then it starts playing where that clip ends, partway into itself, and
+/// quantizing still lands on the song's beats.
+MergeClipPlace mergeClipPlace(const Track& track, double first, TimeSig ts);
+
+/// A new clip on the timeline over [from, to) holding the take (timeline ticks). The clip itself starts at
+/// `origin` (at most `from`; -1 means `from`) and plays from `from`. With Stack it stacks over the clips already
+/// there, which stay as they were; with Replace they are trimmed or split around it.
 CommandPtr recordToArrangement(const Song& song, TrackId track, Tick from, Tick to, const Take& take,
                                ArrangerRecordMode mode, const NextId& nextId, ClipId* clipId = nullptr,
-                               edits::IdSet* noteIds = nullptr);
+                               edits::IdSet* noteIds = nullptr, Tick origin = -1);
 
 /// A timeline take (timeline ticks) merged into the clips playing on the track where it was played: each note and
 /// lane value goes into the clip of the top instance there, at the clip time it plays (loops and stretch

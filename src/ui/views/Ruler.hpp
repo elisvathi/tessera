@@ -128,6 +128,9 @@ class Ruler : public InteractiveView {
 
     /// The marker whose flag is under x, or -1.
     int markerAt(const std::vector<Marker>& markers, float x);
+    /// The length the overview strip maps onto its width: the song's content, or the visible range when the view
+    /// shows more than that, so the overview is never more zoomed in than the view it sums up.
+    double overviewEnd();
     /// The overview window: the visible range drawn on the whole-content strip.
     rack::math::Rect overviewWindow();
     double overviewTickAt(float x);
