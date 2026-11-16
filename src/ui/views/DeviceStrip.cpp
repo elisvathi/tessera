@@ -1174,7 +1174,6 @@ float DeviceStrip::layoutTiles(const Device& d, int index, float x, float top, P
 
 float DeviceStrip::layoutPattern(const Device& d, int index, float x, float top, NVGcolor tint) {
     float ty = top + mx::kDeviceCardTop + mx::kDeviceCardHeader;
-    parts.push_back({Kind::PatternColumn, Rect(x, ty, kPatternColumnWidth, mx::kDeviceTile), index, -1, d.id.value});
     // The settings that still apply, one under another. Oct, Gate and Velocity live in the line's own rows.
     float y = ty + mx::kDeviceTagInset;
     for (int param : {chain::knob::kPattern, chain::knob::kRate, chain::knob::kSwing, chain::knob::kHold}) {
@@ -1200,6 +1199,8 @@ float DeviceStrip::layoutPattern(const Device& d, int index, float x, float top,
         parts.push_back(part);
         y += mx::kDeviceTag + 7;
     }
+    // After its tags, so they take the clicks (the first part under the pointer wins).
+    parts.push_back({Kind::PatternColumn, Rect(x, ty, kPatternColumnWidth, mx::kDeviceTile), index, -1, d.id.value});
     float gx = x + kPatternColumnWidth + mx::kDeviceTileGap;
     parts.push_back({Kind::PatternGrid, Rect(gx, ty, kPatternGridWidth, mx::kDeviceTile), index, -1, d.id.value});
     return gx + kPatternGridWidth;
