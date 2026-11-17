@@ -100,3 +100,51 @@ TEST_CASE("a Send lane names the track it sends to, and saves") {
     CHECK(back.tracks[0].automation[0].sendTo == lead);
     CHECK(back.tracks[0].automation[0].drive == LaneDrive::Send);
 }
+
+TEST_CASE("a drum lane, the clips or an input sends on its own, beside the track's own send, and saves") {
+    Song song = fourTracks();
+    TrackId drums = idAt(song, 3), lead = idAt(song, 2), bass = idAt(song, 0);
+    REQUIRE(song.tracks[3].type == TrackType::Drum);
+    addSend(song, drums, lead)->apply(song);
+    CommandPtr snare = addSend(song, drums, lead, -6, SendFrom::ofLane(1));
+    REQUIRE(snare);
+    snare->apply(song);
+    CHECK(addSend(song, drums, lead, -6, SendFrom::ofLane(1)) == nullptr); // already sends there
+    CHECK(sendersTo(song, lead) == std::vector<TrackId>{drums});         // a track counts once
+    CHECK(sendsInto(song, lead).size() == 2);
+    CHECK(findSend(song, drums, lead, SendFrom::ofLane(1))->db == -6);
+    CHECK(findSend(song, drums, lead)->db == kSilentDb);
+    // A part's send can't close a loop either: Lead can't send back to Drums.
+    CHECK(addSend(song, lead, drums) == nullptr);
+    Send moved = *findSend(song, drums, lead, SendFrom::ofLane(1));
+    moved.db = -3;
+    setSend(song, drums, moved, "Send -3 dB")->apply(song);
+    CHECK(findSend(song, drums, lead, SendFrom::ofLane(1))->db == -3);
+    CHECK(findSend(song, drums, lead)->db == kSilentDb);
+    addSend(song, bass, lead, -9, SendFrom::input(42))->apply(song);
+    // Saved and loaded back with where each send comes from.
+    json::Ref j(songToJson(song));
+    Song back = songFromJson(j.get(), Song::kSchemaVersion);
+    CHECK(back.tracks[3].sends == song.tracks[3].sends);
+    REQUIRE(back.tracks[0].sends.size() == 1);
+    CHECK(back.tracks[0].sends[0].from == SendFrom::input(42));
+    CommandPtr gone = removeSend(song, drums, lead, SendFrom::ofLane(1));
+    REQUIRE(gone);
+    gone->apply(song);
+    CHECK(findSend(song, drums, lead, SendFrom::ofLane(1)) == nullptr);
+    CHECK(findSend(song, drums, lead) != nullptr);
+    CHECK(removeSend(song, drums, lead, SendFrom::ofLane(1)) == nullptr);
+}
+
+TEST_CASE("normalize drops a part's send the track can't have") {
+    Song song = fourTracks();
+    TrackId lead = idAt(song, 2);
+    song.tracks[0].sends = {{lead, 0, false, SendFrom::ofLane(2)}, {lead, 0, false, SendFrom::clips()},
+                            {lead, 0, false, SendFrom::input(7)}};
+    song.tracks[3].sends = {{lead, 0, false, SendFrom::ofLane(9)}, {lead, 0, false, SendFrom::ofLane(2)}};
+    normalize(song);
+    REQUIRE(song.tracks[0].sends.size() == 1); // an instrument track has no lanes and no clips
+    CHECK(song.tracks[0].sends[0].from == SendFrom::input(7));
+    REQUIRE(song.tracks[3].sends.size() == 1); // lane 9 doesn't exist
+    CHECK(song.tracks[3].sends[0].from == SendFrom::ofLane(2));
+}

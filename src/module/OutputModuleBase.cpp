@@ -77,6 +77,8 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
                 continue;
             float x = in.getVoltageSum();
             float l = x * sourceGainL[i], r = x * sourceGainR[i];
+            laneL[i] = l;
+            laneR[i] = r;
             sumL += l;
             sumR += r;
             sourcePeak[i] = std::max(sourcePeak[i], std::max(std::fabs(l), std::fabs(r)));
@@ -92,12 +94,14 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
                 sourcePeak[i] = 0;
             }
         }
-        int slot = sourceSlot.load(std::memory_order_relaxed);
-        if (on && slot >= 0 && any) {
-            sumL *= inputGain;
-            sumR *= inputGain;
-            inputPeak = std::max(inputPeak, std::max(std::fabs(sumL), std::fabs(sumR)));
-            b->returns().write(args.frame, slot, track, sumL, sumR);
+        if (on && any) {
+            inputPeak = std::max(inputPeak, std::max(std::fabs(sumL), std::fabs(sumR)) * inputGain);
+            for (int k = 0; k < audioPorts.sourceCount; k++) {
+                int slot = sourceSlots[size_t(k)].load(std::memory_order_relaxed);
+                if (slot >= 0 && inputs[size_t(audioPorts.sourceFirst + k)].isConnected())
+                    b->returns().write(args.frame, slot, track, laneL[size_t(k)] * inputGain,
+                                       laneR[size_t(k)] * inputGain);
+            }
         }
     }
     if (audioPorts.inL < 0)
@@ -154,11 +158,14 @@ void OutputModuleBase::processBypass(const ProcessArgs& args) {
 }
 
 void OutputModuleBase::releaseReturn() {
-    for (std::atomic<int>* held : {&returnSlot, &sourceSlot}) {
-        int slot = held->exchange(-1);
+    auto drop = [&](std::atomic<int>& held) {
+        int slot = held.exchange(-1);
         if (returnOwner && slot >= 0)
             returnOwner->returns().release(slot);
-    }
+    };
+    drop(returnSlot);
+    for (std::atomic<int>& held : sourceSlots)
+        drop(held);
     returnOwner.reset();
 }
 
@@ -174,9 +181,21 @@ int OutputModuleBase::activeSource() const {
     if (audioPorts.sourceCount <= 0 || !audioOn.load(std::memory_order_relaxed))
         return -1;
     for (int k = 0; k < audioPorts.sourceCount; k++)
-        if (inputs[size_t(audioPorts.sourceFirst + k)].channels > 0)
-            return sourceSlot.load(std::memory_order_relaxed);
+        if (int slot = sourceSlots[size_t(k)].load(std::memory_order_relaxed);
+            slot >= 0 && inputs[size_t(audioPorts.sourceFirst + k)].channels > 0)
+            return slot;
     return -1;
+}
+
+std::vector<std::pair<int, int>> OutputModuleBase::activeSources() const {
+    std::vector<std::pair<int, int>> out;
+    if (audioPorts.sourceCount <= 0 || !audioOn.load(std::memory_order_relaxed))
+        return out;
+    for (int k = 0; k < audioPorts.sourceCount; k++)
+        if (int slot = sourceSlots[size_t(k)].load(std::memory_order_relaxed);
+            slot >= 0 && inputs[size_t(audioPorts.sourceFirst + k)].channels > 0)
+            out.push_back({k, slot});
+    return out;
 }
 
 BoundKind OutputModuleBase::boundKind() const {
@@ -335,10 +354,18 @@ void OutputModuleBase::refreshBinding() {
                 returnOwner = owner;
                 if (audioPorts.inL >= 0)
                     returnSlot.store(owner->returns().claim());
-                if (audioPorts.sourceCount > 0)
-                    sourceSlot.store(owner->returns().claim());
             }
         }
+        // A slot per lane IN while it has a cable: eight for every Drum Out would crowd the 128 slots.
+        if (returnOwner)
+            for (int k = 0; k < audioPorts.sourceCount && k < kMaxSources; k++) {
+                bool patched = inputs[size_t(audioPorts.sourceFirst + k)].isConnected();
+                std::atomic<int>& held = sourceSlots[size_t(k)];
+                if (patched && held.load() < 0)
+                    held.store(returnOwner->returns().claim());
+                else if (!patched && held.load() >= 0)
+                    returnOwner->returns().release(held.exchange(-1));
+            }
     }
 }
 

@@ -27,14 +27,14 @@ bool sendsReach(const Song& song, TrackId from, TrackId to) {
     return false;
 }
 
-std::string whyNoSend(const Song& song, TrackId from, TrackId to) {
+std::string whyNoSend(const Song& song, TrackId from, TrackId to, SendFrom part) {
     const Track* a = song.findTrack(from);
     const Track* b = song.findTrack(to);
     if (!a || !b)
         return "No such track";
     if (from == to)
         return "A track can't send to itself";
-    if (findSend(song, from, to))
+    if (findSend(song, from, to, part))
         return "Already sends to " + b->name;
     if (sendsReach(song, to, from))
         return "Would feed back into " + a->name;
@@ -44,9 +44,17 @@ std::string whyNoSend(const Song& song, TrackId from, TrackId to) {
 std::vector<TrackId> sendersTo(const Song& song, TrackId to) {
     std::vector<TrackId> out;
     for (const Track& t : song.tracks)
+        if (std::any_of(t.sends.begin(), t.sends.end(), [&](const Send& s) { return s.to == to; }))
+            out.push_back(t.id);
+    return out;
+}
+
+std::vector<SendRef> sendsInto(const Song& song, TrackId to) {
+    std::vector<SendRef> out;
+    for (const Track& t : song.tracks)
         for (const Send& s : t.sends)
             if (s.to == to)
-                out.push_back(t.id);
+                out.push_back({t.id, s});
     return out;
 }
 
@@ -68,21 +76,21 @@ std::vector<TrackId> sendOrder(const Song& song) {
     return out;
 }
 
-const Send* findSend(const Song& song, TrackId from, TrackId to) {
+const Send* findSend(const Song& song, TrackId from, TrackId to, SendFrom part) {
     const Track* t = song.findTrack(from);
     if (!t)
         return nullptr;
     for (const Send& s : t->sends)
-        if (s.to == to)
+        if (s.to == to && s.from == part)
             return &s;
     return nullptr;
 }
 
-CommandPtr addSend(const Song& song, TrackId from, TrackId to, float db) {
-    if (!whyNoSend(song, from, to).empty())
+CommandPtr addSend(const Song& song, TrackId from, TrackId to, float db, SendFrom part) {
+    if (!whyNoSend(song, from, to, part).empty())
         return nullptr;
     std::vector<Send> sends = song.findTrack(from)->sends;
-    sends.push_back({to, std::clamp(db, kSilentDb, kMaxFaderDb), false});
+    sends.push_back({to, std::clamp(db, kSilentDb, kMaxFaderDb), false, part});
     return setTrackField(song, from, &Track::sends, sends, "Send to " + song.findTrack(to)->name);
 }
 
@@ -92,20 +100,25 @@ CommandPtr setSend(const Song& song, TrackId from, Send send, const std::string&
         return nullptr;
     send.db = std::clamp(send.db, kSilentDb, kMaxFaderDb);
     std::vector<Send> sends = t->sends;
-    auto it = std::find_if(sends.begin(), sends.end(), [&](const Send& s) { return s.to == send.to; });
+    auto it = std::find_if(sends.begin(), sends.end(),
+                           [&](const Send& s) { return s.to == send.to && s.from == send.from; });
     if (it == sends.end())
         return nullptr;
     *it = send;
     return setTrackField(song, from, &Track::sends, sends, name);
 }
 
-CommandPtr removeSend(const Song& song, TrackId from, TrackId to) {
+CommandPtr removeSend(const Song& song, TrackId from, TrackId to, SendFrom part) {
     const Track* t = song.findTrack(from);
     const Track* target = song.findTrack(to);
     if (!t)
         return nullptr;
     std::vector<Send> sends = t->sends;
-    sends.erase(std::remove_if(sends.begin(), sends.end(), [&](const Send& s) { return s.to == to; }), sends.end());
+    size_t before = sends.size();
+    sends.erase(std::remove_if(sends.begin(), sends.end(), [&](const Send& s) { return s.to == to && s.from == part; }),
+                sends.end());
+    if (sends.size() == before)
+        return nullptr;
     return setTrackField(song, from, &Track::sends, sends,
                          "Remove send to " + (target ? target->name : std::string("track")));
 }
@@ -120,7 +133,14 @@ void normalizeSends(Song& song) {
     for (size_t i = 0; i < song.tracks.size(); i++) {
         Track& t = song.tracks[i];
         for (Send s : wanted[i]) {
-            if (!whyNoSend(song, t.id, s.to).empty())
+            if (!whyNoSend(song, t.id, s.to, s.from).empty())
+                continue;
+            bool fits = s.from.kind == SendFrom::Kind::Track ||
+                        (s.from.kind == SendFrom::Kind::Clips && t.type == TrackType::Audio) ||
+                        (s.from.kind == SendFrom::Kind::Lane && t.type == TrackType::Drum && s.from.lane >= 0 &&
+                         s.from.lane < kDrumInputs) ||
+                        (s.from.kind == SendFrom::Kind::Input && s.from.module >= 0);
+            if (!fits)
                 continue;
             s.db = std::isfinite(s.db) ? std::clamp(s.db, kSilentDb, kMaxFaderDb) : kSilentDb;
             t.sends.push_back(s);

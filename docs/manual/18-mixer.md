@@ -51,10 +51,11 @@ comes back on a Track Out's or Drum Out's IN. From top to bottom:
    **Show Track Out in the rack** scrolls the rack to the module and makes its screen flash; **Add another Track Out**
    (or **Add a Track Out for this track** when it has none) places a new Track Out (a Drum Out for a drum track) bound
    to it, right of Roll.
-3. **Sends**: under **SENDS**, a row for each send with the receiving track's name over a thin level bar, then
-   **+ Send**. See [Sending to other tracks](#sending-to-other-tracks).
+3. **Sends**: under **SENDS**, a slider for each send under the receiving track's name, then **+ Send**. A track
+   that receives sends also lists them under **FROM**, with **+ From**. See
+   [Sending to other tracks](#sending-to-other-tracks).
 4. **Pan**: drag it to move the sound left or right. Double-click centres it.
-5. **M** and **S**: mute and solo, the same switches as in the track rows.
+5. **M** and **S**: mute and solo, the same switches as in the track rows. A click on **S** adds the track to the solo; **Shift+click** solos only this track.
 6. **The fader and the meter**. The fader sets the volume; the meter beside it shows the level as it plays.
 7. **The volume** in dB, and **→ Master**: where the track goes after its fader. Click it to choose **To the Master**
    (or to its group) or **Only its sends**: then the track feeds what it sends to, a reverb say, and isn't heard dry.
@@ -147,13 +148,21 @@ beside it, as on any track with an effect. Then send other tracks to it.
 - **Add a send**: click **+ Send** on a strip (or **Send to ▸** in the track menu) and pick a track. **Tracks with an effect** come first, each with the
   effect's name on the right (**Reverb · Plateau**), then **Other tracks**. Tracks that would feed back into this one
   are listed but can't be picked ("Would feed back into Bass"). The send starts at -12 dB, so you hear it at once.
-- **The SENDS rows**: each send has a row on the sending strip, with the receiving track's full name in its colour
-  over a thin level bar (the small tick is 0 dB), and **pre** when it goes before the fader. Drag the row sideways;
-  double-click for -inf; scroll for 0.5 dB steps (Alt: finer). Right-click it to type a level, put it **before** or **after the
-  fader**, or **remove** it. Hover it for its level. In a pane too short for the rows, each send is a coloured dot
-  instead, brighter the louder: drag it up or down, and hover it for the name and level.
-- **← 2** under a strip's name means two tracks send to it. Click it (or right-click the name ▸ **Sends to this
-  track**) for a list of them, each with its send level and the send's menu.
+- **The SENDS rows**: each send has a slider on the sending strip, under the receiving track's name in its colour:
+  a groove filled to the level, a small tick at 0 dB, and a handle. The level shows on the right when there is room,
+  with **pre** when the send goes before the fader; on a narrow strip it shows while you point at the row or drag it.
+  Drag the row sideways; double-click for -inf; scroll for 0.5 dB steps (Alt: finer). Right-click it to type a level,
+  put it **before** or **after the fader**, or **remove** it. Hover it for its level. In a pane too short for the
+  rows, each send is a coloured dot instead, brighter the louder: drag it up or down, and hover it for the name and
+  level.
+- **FROM on the receiving track**: a track that gets sends, or that has an effect patched to it, lists under **FROM**
+  a slider for each send coming in, named after who sends ("Vox", or "Drums · Snare" for one lane). It is the same
+  send as on the sending strip, so the two always agree: set the reverb for the whole song from the reverb's own
+  strip. **+ From** adds a send to this track from any track, drum lane or input. Right-click the track's name ▸
+  **Sends to this track** lists them too.
+
+![The mixer's sends: Drums and the Snare lane send to Reverb, and Reverb lists everything it gets under FROM](images/mixer-sends.png)
+
 - What a track is sent joins its sound before its chain. With a reverb loop at 100% Mix you hear only the reverb;
   with no effect patched yet, you hear what it is sent as it is.
 - A track that receives sends has a thin **OUT meter** beside its fader: what goes into its chain. It is dim while
@@ -173,6 +182,18 @@ beside it, as on any track with an effect. Then send other tracks to it.
   tracks that send to it.
 - Deleting a track removes the sends to it, in the same undo step.
 
+### Sending one drum lane or one input
+
+The narrow strips can send too: a drum lane's strip (**Kick**, **Snare**), and on a track with a strip per input,
+**Clips** and each **IN**. Click the small **+** under the strip's name to send only that sound, for example only the
+snare to the reverb.
+
+- **What it sends**: the lane's or input's sound after its own fader and pan. The track's fader doesn't change it, so
+  you can turn the kit down and keep the snare's reverb.
+- **The track's mute stops it**, and so does a solo elsewhere, as for the track's own sends.
+- It has no before/after the fader choice and no automation lane yet; its menu says so.
+- An input's send belongs to its Track Out: delete the module and the send plays nothing.
+
 ## Group strips
 
 A group of tracks (select them and press **Ctrl+G**) gets a strip of its own in the mixer, right before its tracks
@@ -188,7 +209,9 @@ right after the drum track's strip, in the lane's colour and named after it (**K
 knob, a fader with a meter, and its level in dB. Faders and pan knobs work as on any strip: drag, double-click to
 reset, scroll, right-click to type a level.
 
-Use them to balance the kit inside Roll; the drum track's own fader then sets the whole kit. The kit's **OUT**
+Use them to balance the kit inside Roll; the drum track's own fader then sets the whole kit. A lane strip can also
+send on its own, for example only the snare to a reverb: see
+[Sending one drum lane or one input](#sending-one-drum-lane-or-one-input). The kit's **OUT**
 on the Drum Out carries the lanes at these levels and pans.
 
 ## Faders

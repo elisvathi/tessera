@@ -611,7 +611,10 @@ void Inspector::openSetting(Setting which, uint64_t target) {
     if (which == Setting::Output) {
         audioActions::appendOutputItems(menu, ctx, t->id);
     } else if (which == Setting::Send) {
-        sendActions::appendSendItems(menu, ctx, t->id, TrackId(target));
+        if (target < t->sends.size()) {
+            const Send& send = t->sends[size_t(target)];
+            sendActions::appendSendItems(menu, ctx, t->id, send.to, send.from);
+        }
     } else if (which == Setting::AddSend) {
         sendActions::appendAddSendItems(menu, ctx, t->id);
     } else if (which == Setting::Voices) {
@@ -1002,22 +1005,29 @@ void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
 float Inspector::drawSends(NVGcontext* vg, float y, const Track& t) {
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
-    std::vector<TrackId> from = sendersTo(song, t.id);
+    std::vector<SendRef> from = sendsInto(song, t.id);
     // Only tracks that make sound send or receive; the others keep the inspector as it was.
     if (m->soundIndex(t.id) < 0 && t.sends.empty())
         return y;
     y += kSectionGap;
     y = section(vg, y, "SENDS");
-    for (const Send& s : t.sends)
-        if (const Track* to = song.findTrack(s.to))
-            y = settingRow(vg, y, to->name, audioDraw::dbText(s.db) + (s.preFader ? " · before fader" : " · after fader"),
-                           Setting::Send, s.to.value);
+    for (size_t k = 0; k < t.sends.size(); k++) {
+        const Send& s = t.sends[k];
+        const Track* to = song.findTrack(s.to);
+        if (!to)
+            continue;
+        // A part's send is named after the part too ("Snare → Reverb"); it always goes after the part's own level.
+        std::string part = sendActions::partName(*m, t, s.from);
+        std::string where = !s.from.whole() ? "" : s.preFader ? " · before fader" : " · after fader";
+        y = settingRow(vg, y, part.empty() ? to->name : part + " \xE2\x86\x92 " + to->name,
+                       audioDraw::dbText(s.db) + where, Setting::Send, k);
+    }
     y = settingRow(vg, y, "Send to", "+", Setting::AddSend);
     if (!from.empty()) {
         std::string names;
-        for (TrackId id : from)
-            if (const Track* f = song.findTrack(id))
-                names += (names.empty() ? "" : ", ") + f->name;
+        for (const SendRef& ref : from)
+            if (const Track* f = song.findTrack(ref.track))
+                names += (names.empty() ? "" : ", ") + sendActions::senderName(*m, *f, ref.send.from);
         y = row(vg, y, "Gets sends from", names);
     }
     return y;

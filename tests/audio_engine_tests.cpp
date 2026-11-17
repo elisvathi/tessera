@@ -914,6 +914,65 @@ TEST_CASE("performance: playing and mixing audio tracks stays inside its budget 
 #endif
 }
 
+TEST_CASE("a drum lane or an input sends alone, after its own level, whatever the track's fader") {
+    Song song = makeDefaultSong();
+    FakeBuffers buffers;
+    TrackId drums = song.tracks[0].id, reverb = song.tracks[1].id;
+    song.tracks[0].channel.volumeDb = -6.0206f;
+    addSend(song, drums, reverb, 0, SendFrom::ofLane(5))->apply(song); // lane 5 has no cable: it sends nothing
+    addSend(song, drums, reverb, 0, SendFrom::ofLane(1))->apply(song);
+    addSend(song, drums, reverb, 0, SendFrom::input(77))->apply(song);
+    MixPlan plan;
+    // Two lane INs of a Drum Out (module 50), each on its own slot, and a Track Out (module 77) that adds sound.
+    plan.returns = {{drums, 2, true, true, false, 0, 0, 50},
+                    {drums, 3, true, true, false, 0, 1, 50},
+                    {drums, 4, false, true, false, 0, -1, 77},
+                    {reverb, 1, false, true, true, 0}};
+    plan.busSlots = {{drums, 0}, {reverb, 1}};
+    Engine engine;
+    engine.setSampleRate(kRate);
+    AudioPlayer player;
+    player.setSampleRate(kRate);
+    std::vector<std::unique_ptr<AudioSnapshot>> kept;
+    ReturnBus returns;
+    std::array<AudioOutFrame, kMaxTracks + 1> out{};
+    std::array<TrackFrame, kMaxTracks> frames{};
+    TransportEvents events;
+    int64_t n = 0;
+    float left = 0, right = 0;
+    ReturnFrame wet;
+    wet.dry = 0;
+    wet.loop = true;
+    auto play = [&] {
+        kept.push_back(buildAudioSnapshot(song, buffers, kRate, 120, {}, plan).snapshot);
+        player.setSnapshot(kept.back().get());
+        for (int i = 0; i < 2000; i++, n++) {
+            returns.write(n, 2, drums, 1.f, 1.f);    // kick
+            returns.write(n, 3, drums, 0.5f, 0.5f);  // snare
+            returns.write(n, 4, drums, 0.25f, 0.25f); // the Track Out's IN
+            returns.write(n, 1, reverb, wet);
+            engine.process(frames.data(), events);
+            player.process(engine, left, right, {&returns, out.data(), n});
+        }
+    };
+    play();
+    REQUIRE(kept.back()->tracks.size() == 2);
+    REQUIRE(kept.back()->tracks[0].sends.size() == 3); // in the song's order, the silent one too
+    // The snare and the input reach the reverb whole: the track's -6 dB fader doesn't touch them.
+    CHECK(out[1].l == doctest::Approx(0.75f).epsilon(1e-3));
+    CHECK(left == doctest::Approx(1.75f * 0.5f).epsilon(1e-3)); // the kit is heard at its fader
+    // The whole track's send, before the fader, adds all of it.
+    addSend(song, drums, reverb, 0)->apply(song);
+    Send pre = *findSend(song, drums, reverb);
+    pre.preFader = true;
+    setSend(song, drums, pre, "pre")->apply(song);
+    play();
+    CHECK(out[1].l == doctest::Approx(0.75f + 1.75f).epsilon(1e-3));
+    song.tracks[0].mute = true; // muting the track stops its parts' sends too
+    play();
+    CHECK(std::abs(out[1].l) < 1e-4f);
+}
+
 TEST_CASE("a send goes to the receiving track's OUT, before or after the fader, and follows mute and solo") {
     Song song = makeDefaultSong();
     FakeBuffers buffers;

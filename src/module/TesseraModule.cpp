@@ -379,7 +379,8 @@ void TesseraModule::audioStep() {
     uint64_t planKey = 0;
     for (const MixPlan::Return& r : plan.returns)
         planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1) * 16 + (r.source ? 1 : 0) +
-                  (r.hasIn ? 2 : 0) + (r.loop ? 4 : 0) + uint64_t(r.delay) * 7919u;
+                  (r.hasIn ? 2 : 0) + (r.loop ? 4 : 0) + uint64_t(r.delay) * 7919u + uint64_t(r.lane + 1) * 104729u +
+                  uint64_t(r.module) * 37u;
     for (const auto& [track, slot] : plan.busSlots)
         planKey = planKey * 1000003u + track.value * 31u + uint64_t(slot + 1);
     for (TrackId track : plan.inputSolo)
@@ -440,12 +441,12 @@ MixPlan TesseraModule::currentMixPlan() const {
             plan.busSlots.push_back({t.id, slot});
     // Output modules whose jacks join their track's (or the master's) chain, in its order (§2, §8.3, DECISIONS §153).
     for (OutputModuleBase* o : orderedOutputs()) {
-        if (int slot = o->activeSource(); slot >= 0)
-            plan.returns.push_back({o->boundTrack(), slot, true});
+        for (const auto& [lane, slot] : o->activeSources())
+            plan.returns.push_back({o->boundTrack(), slot, true, true, false, 0, lane, o->id});
         if (int slot = o->chainSlot(); slot >= 0) {
             bool loop = o->isLoop();
-            plan.returns.push_back(
-                {o->boundTrack(), slot, false, o->activeReturn() >= 0, loop, loop ? o->loopDelay() : 0});
+            plan.returns.push_back({o->boundTrack(), slot, false, o->activeReturn() >= 0, loop,
+                                    loop ? o->loopDelay() : 0, -1, o->id});
         }
         if (o->sourceSetting().solo)
             plan.inputSolo.push_back(o->boundTrack());

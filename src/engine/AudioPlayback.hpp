@@ -106,13 +106,19 @@ struct AudioClipPlay {
 /// The most sends one track plays; more are kept in the song but not heard.
 constexpr int kMaxSendsPerTrack = 16;
 
-/// One send as the player works it out: into the OUT of the track at index `to` of the snapshot.
+/// One send as the player works it out: into the OUT of the track at index `to` of the snapshot. A send from a part
+/// of the track (DECISIONS §175) takes the clips, or what return slot `slot` brings (a lane IN or one input), after
+/// their own level and pan, never the track's fader.
 struct SendPlay {
     int to = -1;
     float gain = 0;
     bool preFader = false;
     uint64_t toId = 0; // the receiving TrackId value, for a drag that holds this send
     std::vector<AutoPoint> lane; // its Send lane as fader positions over song ticks; empty when none plays
+    bool part = false;    // from a part: the clips, or `slot`; nothing when neither is there
+    bool clips = false;   // from the track's clips
+    int slot = -1;        // from this return slot
+    uint64_t fromKey = 0; // SendFrom::key(), for a drag that holds this send
 };
 
 /// One track that makes sound: an audio track's clips, and for any track the return slots its output modules' IN

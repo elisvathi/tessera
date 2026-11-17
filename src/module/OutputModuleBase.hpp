@@ -73,8 +73,11 @@ class OutputModuleBase : public rack::engine::Module {
     /// The return bus slot its IN jacks write to while audio comes back on them, for Tessera's mix plan; -1 when
     /// nothing comes back (no IN, no cable, following the editor, or not bound). UI thread.
     int activeReturn() const;
-    /// The return bus slot its source inputs (Drum Out's lane INs) write to while any has a cable; -1 otherwise.
+    /// A return bus slot one of its source inputs (Drum Out's lane INs) writes to while any has a cable; -1 otherwise.
     int activeSource() const;
+    /// Each source input with a cable and the return bus slot it writes to, as (input, slot): every lane IN has its
+    /// own slot, so a lane can be sent on its own (DECISIONS §175). UI thread.
+    std::vector<std::pair<int, int>> activeSources() const;
     /// Its return bus slot while it has a place in its track's chain: a cable on IN or on OUT; -1 otherwise. UI thread.
     int chainSlot() const;
     /// Whether it is an effect loop of its track (DECISIONS §153): bound, with a cable on OUT. What comes back on IN
@@ -175,7 +178,8 @@ class OutputModuleBase : public rack::engine::Module {
     std::atomic<int> partValue{0}; // the channel it plays (part()), 0 for all
     std::atomic<int> audioSlot{-1};         // where OUT reads on the output bus: the track's slot, or the master's
     std::atomic<int> returnSlot{-1};        // where IN writes on the return bus
-    std::atomic<int> sourceSlot{-1};        // where the source inputs write
+    // Where each source input writes, while it has a cable; -1 without one.
+    std::array<std::atomic<int>, kMaxSources> sourceSlots{{{-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1}}};
     std::atomic<bool> audioOn{false};       // OUT and IN work: bound, and not following the editor's selection
     std::atomic<bool> trackGone{false};     // its track was deleted: IN is ignored and its light turns amber
     std::shared_ptr<OutputBus> returnOwner; // the bus whose return slot this module holds (UI thread)
@@ -184,6 +188,7 @@ class OutputModuleBase : public rack::engine::Module {
     std::array<std::atomic<float>, kMaxSources> sourceTargetL{}, sourceTargetR{};
     std::array<float, kMaxSources> sourceGainL{}, sourceGainR{};
     std::array<float, kMaxSources> sourcePeak{};
+    std::array<float, kMaxSources> laneL{}, laneR{}; // each source this sample, after its level and pan
     std::array<std::atomic<float>, kMaxSources> sourceMeter{};
     int meterCount = 0;
     bool sourcesFresh = true;

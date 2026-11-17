@@ -301,15 +301,36 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
     // Each send by the index of its receiving track, which comes later in the order.
     for (size_t i = 0; i < snap.tracks.size(); i++) {
         const Track* t = song.findTrack(snap.tracks[i].id);
-        for (const Send& send : t->sends)
+        for (const Send& send : t->sends) {
+            // A part's send plays only while the part brings sound: a lane IN or an input with a cable. It keeps its
+            // place either way, so the player's sends line up with the song's (meters and lanes go by index).
+            int slot = -1;
+            if (send.from.kind == SendFrom::Kind::Lane || send.from.kind == SendFrom::Kind::Input)
+                for (const MixPlan::Return& r : plan.returns)
+                    if (r.track == t->id && !r.loop &&
+                        (send.from.kind == SendFrom::Kind::Lane ? r.source && r.lane == send.from.lane
+                                                                : !r.source && r.hasIn && r.module == send.from.module))
+                        slot = r.slot;
+            bool clips = send.from.kind == SendFrom::Kind::Clips && t->type == TrackType::Audio;
             for (size_t j = i + 1; j < snap.tracks.size(); j++)
                 if (snap.tracks[j].id == send.to && snap.tracks[i].sends.size() < size_t(kMaxSendsPerTrack)) {
-                    SendPlay play{int(j), dbToGain(send.db), send.preFader, send.to.value, {}};
-                    for (const AutomationEnvelope& l : t->automation)
-                        if (l.drive == LaneDrive::Send && l.sendTo == send.to && !l.mute && !l.points.empty())
-                            play.lane = l.points;
+                    SendPlay play;
+                    play.to = int(j);
+                    play.gain = dbToGain(send.db);
+                    play.preFader = send.from.whole() && send.preFader;
+                    play.toId = send.to.value;
+                    play.part = !send.from.whole();
+                    play.clips = clips;
+                    play.slot = slot;
+                    play.fromKey = send.from.key();
+                    // Only a whole track's send has a Send lane in the timeline.
+                    if (send.from.whole())
+                        for (const AutomationEnvelope& l : t->automation)
+                            if (l.drive == LaneDrive::Send && l.sendTo == send.to && !l.mute && !l.points.empty())
+                                play.lane = l.points;
                     snap.tracks[i].sends.push_back(std::move(play));
                 }
+        }
     }
     return out;
 }

@@ -2998,3 +2998,22 @@ From the QA pass of 16 Nov (Trello BUGS):
 - **Audio editor: gaps are hatched**, and the faint rest of the file only shows outside the clip. Deleting the last
   part used to look exactly like the clip ending there.
 - **The audio editor's name or "Comp" label sits on a backing**, readable over the waveform's first peaks.
+
+## 175. Sends from drum lanes and inputs; sends as sliders; FROM on the receiving track (17 Nov)
+
+- **The user asked for sends from a drum lane or from one input** of a track with several. A `Send` now says where it
+  comes from (`SendFrom`: the whole track, the clips, a lane IN, or one Track Out's IN by module ID), kept with the
+  track's other sends, so undo, saving and the no-loop rule are unchanged: a part's send counts as its track's.
+- **A part sends what it adds to its track**: after its own level and pan, never through the track's fader, so the kit
+  can go down while the snare's reverb stays. The track's mute and solo stop it, as for the track's own sends. No
+  before/after choice and no Send lane for a part yet.
+- **Each Drum Out lane IN writes its own return slot** (claimed while it has a cable, so eight per Drum Out don't
+  crowd the 128 slots); Tessera sums them for the kit and reads one again for a lane's send. An input's send reads
+  its Track Out's return slot again. A part whose cable is gone keeps its place in the player's sends and plays
+  nothing, so meters and Send lanes, found by index, still line up.
+- **Sends are sliders**: a dot was rejected because nobody could tell it could be dragged. Every send row has a
+  groove, a fill in the other track's colour, a 0 dB tick and a handle; the level shows on the right when it fits,
+  else while pointed at or dragged. Dots stay only for panes too short for rows.
+- **FROM on the receiving track**: the user wanted to set send levels on the reverb itself. A track that receives
+  sends, or has an effect loop, lists a slider per incoming send (named "Drums · Snare" for a part) and **+ From**;
+  it is the same send as on the sender, so both always agree. It replaces the "← N" count and its list.

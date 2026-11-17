@@ -996,6 +996,10 @@ TEST_CASE("a Pattern line plays held notes 5 to 8 of a big chord, and wraps arou
     // Three notes: rows past them wrap around in the same octave, so rows 5 and 8 both play the second note.
     static const std::vector<uint8_t> past = {chain::stepOf(5), chain::stepOf(8)};
     CHECK(play({60, 64, 67}, past) == std::vector<int>{64, 64});
+    // Row 1 is the lowest note however the chord arrives.
+    static const std::vector<uint8_t> up = {chain::stepOf(1), chain::stepOf(2), chain::stepOf(3)};
+    CHECK(play({67, 60, 64}, up) == std::vector<int>{60, 64, 67});
+    CHECK(play({64, 67, 60}, up) == std::vector<int>{60, 64, 67});
 }
 
 TEST_CASE("Pattern steps light any notes, Vel 0 is a rest, and Move by chord notes walks the chord") {

@@ -1007,6 +1007,21 @@ json_t* trackToJson(const Track& t) {
             setNumber(sj, "volume", send.db);
             if (send.preFader)
                 setBool(sj, "pre", true);
+            switch (send.from.kind) {
+            case SendFrom::Kind::Clips:
+                setString(sj, "from", "clips");
+                break;
+            case SendFrom::Kind::Lane:
+                setString(sj, "from", "lane");
+                setInt(sj, "lane", send.from.lane);
+                break;
+            case SendFrom::Kind::Input:
+                setString(sj, "from", "input");
+                setInt(sj, "module", send.from.module);
+                break;
+            default:
+                break;
+            }
             json_array_append_new(sends, sj);
         }
         set(j, "sends", sends);
@@ -1061,6 +1076,13 @@ Track trackFromJson(const json_t* j) {
         send.to = readId<TrackId>(get(sj, "to"));
         send.db = getFloat(sj, "volume", send.db);
         send.preFader = getBool(sj, "pre", false);
+        std::string from = getString(sj, "from", "");
+        if (from == "clips")
+            send.from = SendFrom::clips();
+        else if (from == "lane")
+            send.from = SendFrom::ofLane(saturate<int>(getInt(sj, "lane", -1)));
+        else if (from == "input")
+            send.from = SendFrom::input(getInt(sj, "module", -1));
         t.sends.push_back(send);
     });
     return t;

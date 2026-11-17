@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../model/Track.hpp"
 #include "../interaction/InteractiveView.hpp"
 #include "../interaction/Shortcuts.hpp"
 #include "../widgets/HoverTooltip.hpp"
@@ -7,6 +8,7 @@
 #include <array>
 #include <map>
 #include <optional>
+#include <tuple>
 
 namespace tessera {
 class ToolButton;
@@ -68,11 +70,20 @@ class MixerPane : public InteractiveView {
         rack::math::Rect
             fold; // the arrow left of the name that folds the strips under it (inputs, lanes, a group's tracks)
         rack::math::Rect box, name, chip, pan, mute, solo, fader, meter, readout, clipLight, connect;
-        // Sends (§7.6, DECISIONS §164): "← N" when it receives some (a click lists them), a row (or, when short, a
-        // dot) per send it has, the "+ Send" that adds one, and the OUT meter of a track that receives sends.
-        rack::math::Rect receives, addSend, outMeter;
+        // Sends (§7.6, DECISIONS §164, §175): a slider row (or, when short, a dot) per send it has, the "+ Send" that
+        // adds one, and on a receiving track a FROM row per send it gets with "+ From", and the OUT meter.
+        rack::math::Rect receives, addSend, addFrom, outMeter;
         rack::math::Rect destination; // "→ Master" under the level: a click picks the Master or only its sends
         std::vector<rack::math::Rect> sendKnobs;
+        /// One send row: whose send (track and part) to which track; `incoming` for a receiving strip's FROM rows.
+        struct SendRow {
+            TrackId track;
+            SendFrom from;
+            TrackId to;
+            bool incoming = false;
+        };
+        std::vector<SendRow> sendRows; // one per entry of sendKnobs
+        float sendsLabelY = -1, fromLabelY = -1; // where SENDS and FROM sit, when shown
         int playerIndex = -1; // its index among the player's tracks
     };
     enum class Part {
@@ -90,6 +101,7 @@ class MixerPane : public InteractiveView {
         Receives,
         SendKnob,
         AddSend,
+        AddFrom,
         Destination,
         Fold
     };
@@ -117,10 +129,12 @@ class MixerPane : public InteractiveView {
         heldLanes.clear();
         heldSends.clear();
     }
-    /// The level (dB) of the send from strip `s`'s track to `to`: what a drag holds, the song's, or -inf when there
-    /// is no send.
-    float shownSend(const Strip& s, TrackId to) const;
-    void showHeldSend(TrackId from, TrackId to, float db) { heldSends[{from.value, to.value}] = db; }
+    /// The level (dB) of a send row's send: what a drag holds, what its lane plays, the song's, or -inf when there
+    /// is no such send.
+    float shownSend(const Strip::SendRow& row) const;
+    void showHeldSend(const Strip::SendRow& row, float db) {
+        heldSends[{row.track.value, row.from.key(), row.to.value}] = db;
+    }
     /// Where the strip's fader cap sits (0..1): its volume, or in Show sends its send, gliding over 120 ms between
     /// the two.
     float capPos(const Strip& s) const;
@@ -129,10 +143,10 @@ class MixerPane : public InteractiveView {
     void setLane(const Strip& s, Channel c, const std::string& name);
     /// The menu to type a level or reset it (right-click, or a double-click on the readout).
     void openTyping(const Strip& s);
-    /// The "+" menu: every track this one can send to, in track order; the ones that would make a loop greyed.
-    void openAddSend(TrackId from);
-    /// A send knob's menu: type a level, before or after the fader, remove.
-    void openSendMenu(TrackId from, TrackId to);
+    /// The "+" menu: every track this one (or its part) can send to, in track order; loops greyed.
+    void openAddSend(TrackId from, SendFrom part);
+    /// A send row's menu: type a level, before or after the fader, remove.
+    void openSendMenu(const Strip::SendRow& row);
     /// The source chip's menu: Add a Track Out for this track, and Show in the rack for each module that plays it.
     void openChipMenu(const Strip& s);
 
@@ -181,7 +195,7 @@ class MixerPane : public InteractiveView {
     ToolButton* maximizeButton;
     std::map<uint64_t, std::pair<float, float>> held; // drags in progress: volume dB, pan
     std::map<std::pair<uint64_t, int>, Channel> heldLanes; // lane strip drags in progress
-    std::map<std::pair<uint64_t, uint64_t>, float> heldSends; // send drags in progress: from, to → dB
+    std::map<std::tuple<uint64_t, uint64_t, uint64_t>, float> heldSends; // send drags: track, part, to → dB
     struct Peak {
         float level = 0;
         double at = 0;
@@ -195,6 +209,14 @@ class MixerPane : public InteractiveView {
     float scrollRight = 0;  // where the scrolling strips end: the pinned master strips start there
     /// The drum lane INs of `t` that have a cable, each with a strip of its own.
     std::vector<int> patchedLanes(const Track& t) const;
+    /// The part of its track a strip sends from: the whole track, a lane, the clips or one input (DECISIONS §175).
+    static SendFrom partOf(const Strip& s);
+    /// Whether a strip can have sends: a track's strip, a drum lane's, or a track's clips or input that adds sound.
+    bool canSend(const Strip& s) const;
+    /// Whether a track's strip shows FROM rows: it receives sends, or it has an effect patched to it.
+    bool showsFrom(const Track& t) const;
+    /// The send rows of a strip (its SENDS and FROM) and "+ Send" / "+ From".
+    void drawSends(NVGcontext* vg, const Strip& s);
     HoverTooltip tip{""};
     std::string tipText; // what the tooltip says now; empty when none shows
     /// The frames that hold a parent strip and what it folds (`pinned`: the master's, else the tracks'), drawn behind

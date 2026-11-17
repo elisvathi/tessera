@@ -54,12 +54,13 @@ void AudioPlayer::holdClips(uint64_t track, float gain) {
     }
 }
 
-void AudioPlayer::holdSend(uint64_t track, uint64_t to, float gain) {
+void AudioPlayer::holdSend(uint64_t track, uint64_t to, float gain, uint64_t from) {
     for (Hold& h : holds) {
         uint64_t id = h.track.load(std::memory_order_relaxed);
         if (id == track || id == 0) {
             h.send.store(gain, std::memory_order_relaxed);
             h.sendTo.store(to, std::memory_order_relaxed);
+            h.sendFrom.store(from, std::memory_order_relaxed);
             h.parts.store(kHoldSend, std::memory_order_relaxed);
             h.track.store(track, std::memory_order_release);
             return;
@@ -129,10 +130,10 @@ void AudioPlayer::runTaps(const Engine& engine, double song, float masterL, floa
         anyTap.store(false, std::memory_order_relaxed);
 }
 
-bool AudioPlayer::heldSend(uint64_t track, uint64_t to, float& gain) const {
+bool AudioPlayer::heldSend(uint64_t track, uint64_t to, float& gain, uint64_t from) const {
     for (const Hold& h : holds)
         if (h.track.load(std::memory_order_acquire) == track && (h.parts.load(std::memory_order_relaxed) & kHoldSend) &&
-            h.sendTo.load(std::memory_order_relaxed) == to) {
+            h.sendTo.load(std::memory_order_relaxed) == to && h.sendFrom.load(std::memory_order_relaxed) == from) {
             gain = h.send.load(std::memory_order_relaxed);
             return true;
         }
@@ -310,13 +311,14 @@ void AudioPlayer::startBlock(const Engine& engine) {
         }
         float heardOwn = t.audible && t.own ? 1.f : 0.f;
         // A drag on one send holds it where the hand is.
-        uint64_t heldTo = 0;
+        uint64_t heldTo = 0, heldFrom = 0;
         float heldSend = 0;
         if (anyHold)
             for (const Hold& h : holds)
                 if (h.track.load(std::memory_order_acquire) == t.id.value &&
                     (h.parts.load(std::memory_order_relaxed) & kHoldSend)) {
                     heldTo = h.sendTo.load(std::memory_order_relaxed);
+                    heldFrom = h.sendFrom.load(std::memory_order_relaxed);
                     heldSend = h.send.load(std::memory_order_relaxed);
                 }
         std::array<float, kMaxSendsPerTrack> sendTarget{};
@@ -331,7 +333,8 @@ void AudioPlayer::startBlock(const Engine& engine) {
                 sendAutoDb[i][k].store(db, std::memory_order_relaxed);
                 sendAuto |= 1u << k;
             }
-            sendTarget[k] = !t.sending ? 0.f : t.sends[k].toId == heldTo ? heldSend : g;
+            bool held = t.sends[k].toId == heldTo && t.sends[k].fromKey == heldFrom;
+            sendTarget[k] = !t.sending ? 0.f : held ? heldSend : g;
         }
         sendAutoFlags[i].store(sendAuto, std::memory_order_relaxed);
         if (run.fresh) {
@@ -576,6 +579,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             run.clipsGain += run.clipsStep;
             sl *= run.clipsGain * run.clipsPanL;
             sr *= run.clipsGain * run.clipsPanR;
+            float clipsL = sl, clipsR = sr;
             // The track's own sources (a Drum Out's lane INs) join its clips.
             float srcL = 0, srcR = 0;
             if (rack.returns)
@@ -620,7 +624,21 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                 if (s.to < 0 || s.to >= int(kMaxTracks))
                     continue;
                 float g = run.sendGain[k];
-                float xl = (s.preFader ? sl : postL) * g, xr = (s.preFader ? sr : postR) * g;
+                float xl, xr;
+                if (s.clips) {
+                    xl = clipsL * g;
+                    xr = clipsR * g;
+                } else if (s.part) {
+                    // A lane IN or one input: what it adds to the track, read again from its return slot.
+                    float rl = 0, rr = 0;
+                    if (rack.returns && s.slot >= 0)
+                        rack.returns->read(rack.frame, s.slot, tp.id, rl, rr);
+                    xl = rl * g;
+                    xr = rr * g;
+                } else {
+                    xl = (s.preFader ? sl : postL) * g;
+                    xr = (s.preFader ? sr : postR) * g;
+                }
                 sendBus[size_t(s.to)][0] += xl;
                 sendBus[size_t(s.to)][1] += xr;
                 run.sendPeak[k] = std::max(run.sendPeak[k], std::max(std::abs(xl), std::abs(xr)));

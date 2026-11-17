@@ -106,10 +106,12 @@ class AudioPlayer {
         clipsPanValue.store(pan, std::memory_order_relaxed);
         clipsPanTrack.store(track, std::memory_order_release);
     }
-    /// Holds the send from `track` to `to` at `gain` while a drag moves it (Show sends, a send knob).
-    void holdSend(uint64_t track, uint64_t to, float gain);
-    /// The send from `track` to `to` a drag holds now, as a gain, for recording it into its lane. UI thread.
-    bool heldSend(uint64_t track, uint64_t to, float& gain) const;
+    /// Holds the send from `track` (its part with SendFrom::key() `from`, 0 for the whole track) to `to` at `gain`
+    /// while a drag moves it.
+    void holdSend(uint64_t track, uint64_t to, float gain, uint64_t from = 0);
+    /// The send from `track` (part `from`) to `to` a drag holds now, as a gain, for recording it into its lane. UI
+    /// thread.
+    bool heldSend(uint64_t track, uint64_t to, float& gain, uint64_t from = 0) const;
     /// Whether a Send lane moves track `track`'s (its index in the snapshot) send `k` now, and to what (dB).
     bool sendAutomated(int track, int k, float& db) const {
         if (track < 0 || track >= kMaxTracks || k < 0 || k >= kMaxSendsPerTrack ||
@@ -401,7 +403,7 @@ class AudioPlayer {
     struct Hold {
         std::atomic<uint64_t> track{0};
         std::atomic<float> volume{1}, pan{0}, clips{1}, send{0};
-        std::atomic<uint64_t> sendTo{0};
+        std::atomic<uint64_t> sendTo{0}, sendFrom{0};
         std::atomic<uint8_t> parts{0};
     };
     std::array<Hold, kMaxTracks + 1> holds{};

@@ -56,6 +56,8 @@ struct MixPlan {
         bool hasIn = true;   // something is patched into its IN; without, it only sends the sound out on OUT
         bool loop = false;   // an effect loop (its OUT has a cable): what comes back replaces the sound by its Mix
         int delay = 0;       // a loop's round trip in samples, which delay compensation counts
+        int lane = -1;       // a source: which lane IN it is (Drum Out output 0..7)
+        int64_t module = -1; // the output module it comes from, for a send from one input (DECISIONS §175)
     };
     std::vector<Return> returns;
     std::vector<std::pair<TrackId, int>> busSlots;

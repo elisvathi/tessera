@@ -257,14 +257,52 @@ struct Channel {
     bool operator!=(const Channel& o) const { return !(*this == o); }
 };
 
+/// Which part of a track a send takes its sound from (DECISIONS §175): the whole track, its clips, one drum lane IN,
+/// or one Track Out's IN. A part sends what it adds to the track, after its own level and pan; the track's fader
+/// never changes it.
+struct SendFrom {
+    enum class Kind : uint8_t { Track, Clips, Lane, Input };
+    Kind kind = Kind::Track;
+    int lane = -1;       // Lane: the Drum Out output, 0..kDrumInputs-1
+    int64_t module = -1; // Input: the Track Out's module ID
+
+    /// The clips of an audio track.
+    static SendFrom clips() { return {Kind::Clips, -1, -1}; }
+    /// Drum lane IN `k` (Drum Out output 0..7).
+    static SendFrom ofLane(int k) { return {Kind::Lane, k, -1}; }
+    /// The IN of the Track Out with module ID `id`.
+    static SendFrom input(int64_t id) { return {Kind::Input, -1, id}; }
+    /// The whole track: after its chain, before or after its fader.
+    bool whole() const { return kind == Kind::Track; }
+    /// One number per part, for the audio player's drag holds: 0 for the whole track.
+    uint64_t key() const {
+        switch (kind) {
+        case Kind::Clips:
+            return 1;
+        case Kind::Lane:
+            return 2 + uint64_t(std::max(0, lane));
+        case Kind::Input:
+            return 16 + uint64_t(module);
+        default:
+            return 0;
+        }
+    }
+
+    bool operator==(const SendFrom& o) const { return kind == o.kind && lane == o.lane && module == o.module; }
+    bool operator!=(const SendFrom& o) const { return !(*this == o); }
+};
+
 /// A send: some of a track's sound going to another track's OUT, for an effect patched there (§7.6). Before the
-/// fader, or after its fader and pan.
+/// fader, or after its fader and pan; from the whole track or from one of its parts (`from`).
 struct Send {
     TrackId to;
     float db = kSilentDb;
     bool preFader = false;
+    SendFrom from;
 
-    bool operator==(const Send& o) const { return to == o.to && db == o.db && preFader == o.preFader; }
+    bool operator==(const Send& o) const {
+        return to == o.to && db == o.db && preFader == o.preFader && from == o.from;
+    }
     bool operator!=(const Send& o) const { return !(*this == o); }
 };
 
