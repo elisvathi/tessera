@@ -18,16 +18,18 @@ bool canContinue(const Note& a, const Note& b, Tick reach) {
     return !a.muted && a.channel == b.channel && a.start < b.start && a.end() >= b.start - reach && a.end() < b.end();
 }
 
-/// Adds `offset(t)` (semitones, at clip tick t) to `n`'s pitch curve over [from, to], holding `offset(from)`
-/// before and `offset(to)` after. Points inside are sampled so a bent glide stays bent.
+/// Adds `offset(t)` (semitones, at tick t) to a pitch curve across a note of [start, start + length) over
+/// [from, to], holding `offset(from)` before and `offset(to)` after. Points inside are sampled so a bent glide stays
+/// bent.
 template <typename Offset>
-void addToPitchCurve(Note& n, Tick from, Tick to, bool bent, Offset offset) {
-    double len = double(std::max<Tick>(1, n.length));
-    auto posOf = [&](double t) { return std::clamp((t - double(n.start)) / len, 0.0, 1.0); };
-    auto tickOf = [&](double pos) { return double(n.start) + pos * len; };
-    double p0 = posOf(double(from)), p1 = posOf(double(to));
+void addToCurve(std::vector<ExprPoint>& curve, double start, double length, double from, double to, bool bent,
+                Offset offset) {
+    double len = std::max(1.0, length);
+    auto posOf = [&](double t) { return std::clamp((t - start) / len, 0.0, 1.0); };
+    auto tickOf = [&](double pos) { return start + pos * len; };
+    double p0 = posOf(from), p1 = posOf(to);
     std::vector<double> at;
-    for (const ExprPoint& p : n.pitchExpr)
+    for (const ExprPoint& p : curve)
         at.push_back(p.pos);
     int steps = bent ? 8 : 1;
     for (int k = 0; k <= steps; k++)
@@ -36,18 +38,29 @@ void addToPitchCurve(Note& n, Tick from, Tick to, bool bent, Offset offset) {
     at.erase(std::unique(at.begin(), at.end(), [](double a, double b) { return std::abs(a - b) < 1e-6; }), at.end());
     std::vector<ExprPoint> out;
     for (double pos : at) {
-        double t = std::clamp(tickOf(pos), double(from), double(to));
-        float own = expressionAt(n.pitchExpr, float(pos), 0);
+        double t = std::clamp(tickOf(pos), from, to);
+        float own = expressionAt(curve, float(pos), 0);
         float tension = 0;
-        for (const ExprPoint& p : n.pitchExpr)
+        for (const ExprPoint& p : curve)
             if (std::abs(p.pos - pos) < 1e-6 && (pos < p0 || pos > p1))
                 tension = p.tension; // a point outside the glide keeps its bend
         out.push_back({float(pos), std::clamp(own + float(offset(t)), -48.f, 48.f), tension});
     }
-    n.pitchExpr = std::move(out);
+    curve = std::move(out);
 }
 
 } // namespace
+
+void addGlide(std::vector<ExprPoint>& first, double firstStart, double firstLength, std::vector<ExprPoint>& second,
+              double secondStart, double secondLength, const Glide& g) {
+    if (!g.moves())
+        return;
+    bool bent = g.shape != 0;
+    addToCurve(first, firstStart, firstLength, double(g.from), double(g.joint), bent,
+               [&](double t) { return pitchAt(g, t) - g.p0; });
+    addToCurve(second, secondStart, secondLength, double(g.joint), double(g.to), bent,
+               [&](double t) { return pitchAt(g, t) - g.p1; });
+}
 
 std::vector<int> partners(const NoteList& notes, Tick loopStart, Tick loopEnd) {
     std::vector<int> out(notes.size(), -1);
@@ -159,12 +172,8 @@ NoteList untie(const NoteList& notes, const IdSet& ids, bool keepGlide) {
             continue;
         if (keepGlide && p[i] >= 0) {
             Note& a = out[size_t(p[i])];
-            Glide g = glideOf(a, b);
-            if (g.moves()) {
-                bool bent = g.shape != 0;
-                addToPitchCurve(a, g.from, g.joint, bent, [&](double t) { return pitchAt(g, t) - g.p0; });
-                addToPitchCurve(b, g.joint, g.to, bent, [&](double t) { return pitchAt(g, t) - g.p1; });
-            }
+            addGlide(a.pitchExpr, double(a.start), double(a.length), b.pitchExpr, double(b.start),
+                     double(b.length), glideOf(a, b));
         }
         b.tied = false;
         b.glideBefore = b.glideAfter = 0;

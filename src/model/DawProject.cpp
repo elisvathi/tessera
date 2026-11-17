@@ -5,6 +5,7 @@
 #include "Arrangement.hpp"
 #include "AudioSource.hpp"
 #include "AutomationEdits.hpp"
+#include "NoteOperators.hpp"
 #include "Zip.hpp"
 
 #include <algorithm>
@@ -110,19 +111,70 @@ class Xml {
     int next = 0;
 };
 
+/// One of a note's curves as a per-note expression timeline: its times in beats from the note's start (the curve
+/// spans `span` ticks), pitch as "transpose" in semitones, timbre and pressure from 0 to 1 in the "linear" unit
+/// Bitwig Studio writes them in. A bent segment is written as several straight ones.
+void notePoints(Xml& x, const char* expression, const char* unit, const std::vector<ExprPoint>& curve, double span) {
+    x.open("Points", {{"id", x.id()}, {"unit", unit}});
+    x.leaf("Target", {{"expression", expression}});
+    auto point = [&](double pos, double value) {
+        x.leaf("RealPoint", {{"time", beats(pos * span)}, {"value", num(value)}, {"interpolation", "linear"}});
+    };
+    for (size_t i = 0; i < curve.size(); i++) {
+        const ExprPoint& p = curve[i];
+        point(p.pos, p.value);
+        if (i + 1 < curve.size() && p.tension != 0) {
+            constexpr int kSteps = 8;
+            for (int k = 1; k < kSteps; k++) {
+                float pos = p.pos + (curve[i + 1].pos - p.pos) * float(k) / kSteps;
+                point(pos, expressionAt(curve, pos, 0));
+            }
+        }
+    }
+    x.close("Points");
+}
+
 /// `channel` is the track's (0-based); with `noteChannels` each note goes on its own instead. Tied notes are
-/// written overlapping a little (the format has no tie), so a mono instrument in legato mode plays them on.
+/// written overlapping a little, their glides in their pitch curves (the format has no tie), so a mono instrument in
+/// legato mode plays them on. Each note's pitch, timbre and pressure curves go inside it: one curve as a direct
+/// child, several in a Lanes (the schema allows one child).
 void notesElement(Xml& x, const std::vector<ExportNote>& source, double origin, int channel, bool noteChannels) {
     std::vector<ExportNote> notes = source;
-    render::overlapTies(notes);
+    render::overlapTies(notes, true);
     x.open("Notes", {{"id", x.id()}});
-    for (const ExportNote& n : notes)
-        x.leaf("Note", {{"time", beats(n.start - origin)},
-                        {"duration", beats(std::max(1.0, n.end - n.start))},
-                        {"channel", std::to_string(noteChannels ? std::clamp(int(n.channel), 1, 16) - 1 : channel)},
-                        {"key", std::to_string(std::clamp(n.pitch, 0, 127))},
-                        {"vel", num(std::clamp(n.velocity, 0.f, 1.f))},
-                        {"rel", num(std::clamp(n.release, 0.f, 1.f))}});
+    for (const ExportNote& n : notes) {
+        Attrs attrs = {{"time", beats(n.start - origin)},
+                            {"duration", beats(std::max(1.0, n.end - n.start))},
+                            {"channel", std::to_string(noteChannels ? std::clamp(int(n.channel), 1, 16) - 1 : channel)},
+                            {"key", std::to_string(std::clamp(n.pitch, 0, 127))},
+                            {"vel", num(std::clamp(n.velocity, 0.f, 1.f))},
+                            {"rel", num(std::clamp(n.release, 0.f, 1.f))}};
+        struct Curve {
+            const char* expression;
+            const char* unit;
+            const std::vector<ExprPoint>* points;
+        };
+        std::vector<Curve> curves;
+        if (!n.pitchExpr.empty())
+            curves.push_back({"transpose", "semitones", &n.pitchExpr});
+        if (!n.timbreExpr.empty())
+            curves.push_back({"timbre", "linear", &n.timbreExpr});
+        if (!n.pressureExpr.empty())
+            curves.push_back({"pressure", "linear", &n.pressureExpr});
+        if (curves.empty()) {
+            x.leaf("Note", attrs);
+            continue;
+        }
+        double span = n.span > 0 ? n.span : n.end - n.start;
+        x.open("Note", attrs);
+        if (curves.size() > 1)
+            x.open("Lanes", {{"id", x.id()}});
+        for (const Curve& c : curves)
+            notePoints(x, c.expression, c.unit, *c.points, span);
+        if (curves.size() > 1)
+            x.close("Lanes");
+        x.close("Note");
+    }
     x.close("Notes");
 }
 
@@ -281,6 +333,26 @@ void automationPoints(Xml& x, const Song& song, const Track& t, const Options& o
         x.leaf("Target", {{"expression", "channelController"},
                           {"channel", std::to_string(channel)},
                           {"controller", std::to_string(std::clamp(o.laneCc[size_t(output)], 0, 119))}});
+        for (const AutoPoint& p : points)
+            x.leaf("RealPoint", {{"time", beats(double(p.t))}, {"value", num(p.value)}, {"interpolation", "linear"}});
+        x.close("Points");
+    }
+    // Pitch bend and channel pressure lanes, as the raw MIDI value: bend 0..1 around 0.5, pressure 0..1.
+    for (auto [drive, expression] : {std::pair{LaneDrive::Pitch, "pitchBend"},
+                                     std::pair{LaneDrive::Pressure, "channelPressure"}}) {
+        std::vector<std::pair<Tick, float>> samples = render::controlSamples(song, t, drive, o, 0, end);
+        if (samples.empty())
+            continue;
+        autoEdits::Points points;
+        for (const auto& [tick, v] : samples) {
+            AutoPoint p;
+            p.t = tick;
+            p.value = v;
+            points.push_back(p);
+        }
+        points = autoEdits::simplify(points, kCurveTolerance);
+        x.open("Points", {{"id", x.id()}, {"unit", "normalized"}});
+        x.leaf("Target", {{"expression", expression}, {"channel", std::to_string(channel)}});
         for (const AutoPoint& p : points)
             x.leaf("RealPoint", {{"time", beats(double(p.t))}, {"value", num(p.value)}, {"interpolation", "linear"}});
         x.close("Points");

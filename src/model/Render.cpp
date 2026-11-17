@@ -1058,6 +1058,41 @@ void emitAutomation(smf::Track& out, const Song& song, const Track& t, int ch, T
     }
 }
 
+/// The track's pitch bend and channel pressure lanes as MIDI pitch bend and channel pressure on each of `channels`,
+/// after a bend range message (RPN 0) saying the bend lane's range, so the receiving instrument bends as far.
+void emitControlLanes(smf::Track& out, const Song& song, const Track& t, const std::vector<int>& channels, Tick from,
+                      Tick to, const Options& o) {
+    if (o.automation == AutomationMode::Off)
+        return;
+    int range = 2;
+    std::vector<std::pair<Tick, float>> bend = controlSamples(song, t, LaneDrive::Pitch, o, from, to, &range);
+    std::vector<std::pair<Tick, float>> pressure = controlSamples(song, t, LaneDrive::Pressure, o, from, to);
+    for (int c : channels) {
+        if (!bend.empty()) {
+            out.events.push_back(smf::controlChange(0, c, 101, 0));
+            out.events.push_back(smf::controlChange(0, c, 100, 0));
+            out.events.push_back(smf::controlChange(0, c, 6, range));
+            out.events.push_back(smf::controlChange(0, c, 38, 0));
+            out.events.push_back(smf::controlChange(0, c, 101, 127));
+            out.events.push_back(smf::controlChange(0, c, 100, 127));
+        }
+        int last = INT32_MIN;
+        for (const auto& [tick, v] : bend) {
+            int b = std::clamp(int(std::lround((double(v) * 2 - 1) * 8192)), -8192, 8191);
+            if (b != last)
+                out.events.push_back(smf::pitchBend(tick - from, c, b));
+            last = b;
+        }
+        last = INT32_MIN;
+        for (const auto& [tick, v] : pressure) {
+            int x = smf::value7(v);
+            if (x != last)
+                out.events.push_back(smf::channelPressure(tick - from, c, x));
+            last = x;
+        }
+    }
+}
+
 /// A song with only `clip` on its track, once from 0: how a clip exports on its own.
 Song soloSong(const Song& song, const Track& t, const Clip& clip) {
     Song solo = song;
@@ -1223,6 +1258,17 @@ smf::File renderSong(const Song& song, const Options& o, const Context& ctx, con
         writeTies(played, o);
         emitNotes(out, played, ch, from, to, o);
         emitAutomation(out, song, t, ch, from, to, o);
+        // Bend and pressure lanes act on the channel: with MPE on its master channel, which every note follows;
+        // with note channels on each channel the notes use.
+        std::vector<int> channels{o.expressions == ExpressionMode::Mpe ? kMasterChannel : ch};
+        if (o.noteChannels && o.expressions != ExpressionMode::Mpe) {
+            channels.clear();
+            for (const Played& p : played)
+                if (int c = std::clamp(int(p.channel), 1, 16) - 1;
+                    std::find(channels.begin(), channels.end(), c) == channels.end())
+                    channels.push_back(c);
+        }
+        emitControlLanes(out, song, t, channels, from, to, o);
         file.tracks.push_back(std::move(out));
     }
     return file;
@@ -1246,8 +1292,23 @@ smf::File renderClip(const Song& song, const Options& o, const Context& ctx, Tra
     return renderSong(solo, clipOptions, ctx);
 }
 
-void overlapTies(std::vector<ExportNote>& notes) {
+void overlapTies(std::vector<ExportNote>& notes, bool glides) {
     std::vector<int> partners = tiePartners(notes, [](const ExportNote& n) { return n.tied; });
+    for (size_t i = 0; glides && i < notes.size(); i++) {
+        int p = partners[i];
+        if (p < 0)
+            continue;
+        ExportNote& a = notes[size_t(p)];
+        ExportNote& b = notes[i];
+        ties::Glide g;
+        g.joint = Tick(std::llround(b.start));
+        g.from = std::max(Tick(std::llround(a.start)), g.joint - std::max<Tick>(0, b.glideBefore));
+        g.to = g.joint + std::min<Tick>(std::max<Tick>(0, b.glideAfter), Tick(std::llround(b.span)));
+        g.p0 = a.pitch;
+        g.p1 = b.pitch;
+        g.shape = b.glideShape;
+        ties::addGlide(a.pitchExpr, a.start, a.span, b.pitchExpr, b.start, b.span, g);
+    }
     for (size_t i = 0; i < notes.size(); i++)
         if (int p = partners[i]; p >= 0)
             notes[size_t(p)].end = overlappedEnd(notes[size_t(p)].end, notes[i].start, notes[i].end);
@@ -1261,6 +1322,7 @@ std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Option
     std::vector<Played> played = trackPlayed(song, *t, o, double(songEnd(song)), ctx.tempo);
     for (const Played& p : played) {
         out.push_back({p.start, p.end, p.pitch, p.velocity, p.release, p.channel, {}, {}, {}});
+        out.back().span = p.end - p.start;
         if (p.source) {
             ExportNote& n = out.back();
             n.pitchExpr = p.source->pitchExpr;
@@ -1306,6 +1368,44 @@ std::vector<std::pair<Tick, float>> clipLaneSamples(const Song& song, TrackId tr
 bool modulatedOutput(const Song& song, TrackId track, int output) {
     const Track* t = song.findTrack(track);
     return t && !routesTo(song, *t, output).empty();
+}
+
+std::vector<std::pair<Tick, float>> controlSamples(const Song& song, const Track& t, LaneDrive drive,
+                                                    const Options& o, Tick from, Tick to, int* range) {
+    auto which = [drive](const AutomationEnvelope& lane) { return !lane.paramTarget.valid() && lane.drive == drive; };
+    std::vector<std::pair<Tick, float>> out;
+    const AutomationEnvelope* first = nullptr;
+    for (const AutomationEnvelope& lane : t.automation)
+        if (!first && which(lane) && !lane.mute && !lane.points.empty())
+            first = &lane;
+    for (const ArrangerClip& a : t.arrangement)
+        if (const Clip* clip = song.findClip(a.clip))
+            for (const AutomationEnvelope& lane : clip->automation)
+                if (!first && which(lane) && !lane.mute && !lane.points.empty())
+                    first = &lane;
+    if (!first)
+        return out;
+    if (range)
+        *range = std::clamp(int(std::lround(std::max(std::fabs(first->rangeMin), std::fabs(first->rangeMax)) * 12)),
+                            1, 96);
+    // Where no lane plays, the engine rests the bend in the middle and the pressure at 0.
+    float rest = drive == LaneDrive::Pitch ? 0.5f : 0.f;
+    std::vector<Tick> ticks;
+    for (Tick tick = from; tick < to; tick += std::max<Tick>(1, o.ccStep))
+        ticks.push_back(tick);
+    for (const AutomationEnvelope& lane : t.automation)
+        if (which(lane))
+            for (const AutoPoint& p : lane.points)
+                if (p.t >= from && p.t < to)
+                    ticks.push_back(p.t);
+    std::sort(ticks.begin(), ticks.end());
+    ticks.erase(std::unique(ticks.begin(), ticks.end()), ticks.end());
+    for (Tick tick : ticks) {
+        float v = laneValue(song, t, which, o, tick).value_or(rest);
+        if (out.empty() ? v != rest : out.back().second != v)
+            out.push_back({tick, v});
+    }
+    return out;
 }
 
 std::vector<std::pair<Tick, float>> driveSamples(const Song& song, TrackId track, LaneDrive drive, const Options& o,

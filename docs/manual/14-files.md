@@ -75,7 +75,7 @@ Export your music as a Standard MIDI File, to open it in any music program.
 | **Timing** | **As written** (on the grid), or **As played** (with swing and micro-timing). |
 | **Note operators** | **As written** (every note, ignoring chance and repeats), or **Rendered** (each loop pass as it really plays, with chance, repeats and conditions). |
 | **Devices** | **Applied** (what the devices play: arpeggios, echoes, chords), or **Bypassed** (the clips as written). |
-| **Automation** | **Off**, **As CC** (each AUTO lane as a MIDI controller), or **As CC + 14-bit** (finer steps). |
+| **Automation** | **Off**, **As CC** (each AUTO lane as a MIDI controller), or **As CC + 14-bit** (finer steps). Pitch bend and pressure lanes (what a bend wheel and aftertouch record) go out as pitch bend and channel pressure, with a bend range message that matches the lane's range. With **MPE** they go on the master channel, so every note follows them. |
 | **Expressions** | **Off**, **MPE** (each note on its own channel, with its bend, timbre and pressure), or **Flatten** (timbre as CC74, pressure as polyphonic aftertouch; bends are dropped). |
 | **Ties as** | MIDI files have no ties. **Overlapping notes** (the default): the first note of a tie ends a 1/128 after the next one starts, so an instrument in mono legato mode plays on with no new attack (its own glide setting makes the slide). **One note with bend (MPE)**: with **Expressions** on **MPE**, a chain of tied notes becomes one note, its glides written as pitch bend, exactly as drawn. Without MPE, ties go out overlapping. |
 | **Include muted tracks and clips** | Off by default. Muted notes are never exported. |
@@ -106,8 +106,13 @@ writes:
   clip's tempo, with its fades and loop, and every audio file goes inside the project so it opens with its sound.
   Audio clips in the clips panel, reversed clips, clip gain and pitch don't go across yet.
 
-Per-note bends, timbre and pressure, and the devices themselves, don't go across (with Devices applied, their notes
-do). Ties go across as notes that overlap by a 1/128, as in MIDI export: DAWproject has no ties either.
+- each note's own **Pitch**, **Timbre** and **Pressure** curves, inside the note (pitch in semitones, timbre and
+  pressure from 0 to 1, as Bitwig Studio writes them);
+- pitch bend and pressure lanes as the track's pitch bend and channel pressure (with Automation set to As CC).
+
+Ties go across as notes that overlap by a 1/128, with each glide written into the two notes' pitch curves, so an
+instrument in mono legato mode plays the glide with no new attack. DAWproject has no ties either. The devices
+themselves don't go across (with Devices applied, their notes do).
 
 ## Importing MIDI files
 

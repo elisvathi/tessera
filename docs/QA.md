@@ -861,3 +861,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       channel. Reset: a strummed chord puts its lowest note on channel 1. Rotate: each new note on the next channel.
 - [ ] Export MIDI with a tie: the first note ends a 1/128 after the second starts. Expressions MPE and Ties as **One
       note with bend**: one note, its glide as bend. Import that overlapping file again: the notes come back tied.
+- [ ] DAWproject: a note with a drawn bend, timbre and pressure, a tie with a glide, and a recorded bend-wheel lane.
+      Export (Automation As CC) and open it in Bitwig Studio: the note shows its pitch, timbre and pressure
+      expressions where they were, the tie plays legato with its glide, and the track has the pitch bend lane.
+      MIDI export of the same: the bend wheel moves, and a synth set to ±2 bends as Tessera did.

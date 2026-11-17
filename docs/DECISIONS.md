@@ -3050,3 +3050,22 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   whose glides are bend. DAWproject writes the overlap only: a DAWproject note may hold "transpose" points, but its
   reference doesn't say whether their times count from the note or the clip, so they wait until that is checked.
   MIDI import ties a one-line part's hand-over overlaps, so Tessera's own files come back tied.
+
+## 177. Note curves, bend and pressure lanes in MIDI and DAWproject export (17 Nov)
+
+- **The user asked whether pitch, timbre and pressure reach DAWproject: they didn't**, and neither export wrote the
+  pitch bend and pressure lanes a bend wheel, aftertouch or MIDI import makes. Both do now.
+- **MIDI**: a bend lane goes out as pitch bend, its 0..1 value straight as the wheel position (0.5 = middle, the
+  inverse of what import and recording store), after an RPN 0 message giving the lane's range (±2 by default), so the
+  receiving synth bends as far as Tessera did. A pressure lane is channel pressure. With MPE both go on the master
+  channel; with note channels on each channel the notes use. They follow the Automation choice, like CC lanes.
+- **DAWproject per-note curves**: the reference names the expressions but gives no units, ranges or time base. We
+  followed what the tools that meet real Bitwig files agree on: an importer tested on Bitwig 6 projects (point times
+  in beats from the note's start, pressure written by Bitwig as "linear" 0..1, timbre 0..1, one curve as the note's
+  direct child and several in a Lanes), DawVert's writer (per-note pitch is "transpose" in "semitones") and the
+  official schema (a note holds one timeline child). Our files validate against the official Project.xsd.
+- **DAWproject bend and pressure lanes**: "pitchBend" and "channelPressure" Points on the track, "normalized", the
+  raw 0..1 value (0.5 = no bend), as the same importer reads Bitwig's. The bend range has nowhere to go in the format.
+- **Ties in DAWproject**: the overlap stays, and each glide is written into the two notes' "transpose" curves (the
+  untie-keep math, `ties::addGlide`), so a legato instrument elsewhere plays the glide too.
+- Still untested in Bitwig itself: we found no Bitwig file with note expressions to compare against. QA step below.

@@ -40,6 +40,11 @@ Glide glideOf(const Note& a, const Note& b);
 double shaped(float shape, double x);
 /// The pitch along `g` at clip tick `t`, in semitones (`p0` before it, `p1` after).
 double pitchAt(const Glide& g, double t);
+/// Writes glide `g` into the pitch curves of the two notes it joins (each across its note, given by its start and
+/// length in the glide's ticks): the first leaves its pitch, the second arrives at its own. Untie keeps a glide this
+/// way, and DAWproject export writes it so (no file format has ties).
+void addGlide(std::vector<ExprPoint>& first, double firstStart, double firstLength, std::vector<ExprPoint>& second,
+              double secondStart, double secondLength, const Glide& g);
 
 /// Ties the notes in `ids`. One note continues the note before it on its channel; several continue one another,
 /// so a selection becomes one line. Each joins the earlier note nearest in pitch that ends within kTieReach of its

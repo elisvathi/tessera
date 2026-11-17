@@ -60,8 +60,8 @@ No file format has a tie mark. The two ways every program reads:
   legato mode plays it without a new attack; its own glide setting makes the slide.
 - **One note with pitch bend**: a chain of tied notes becomes one note, its glides written as pitch bend. MIDI
   export with MPE only (channel bend for one-voice tracks without MPE is not built).
-- DAWproject writes the overlap. Its notes may hold "transpose" points, but the reference doesn't say whether their
-  times count from the note or the clip; per-note curves wait until that is checked.
+- DAWproject writes the overlap, with each glide in the two notes' "transpose" curves (DECISIONS §177), so a legato
+  instrument plays the glide too.
 - Bouncing notes keeps the ties.
 
 MIDI import: a part that is one line (where overlaps only happen as one note hands over to the next) gets those

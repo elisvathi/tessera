@@ -82,6 +82,7 @@ struct ExportNote {
     float velocity, release;
     uint8_t channel = 1;
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr; // the note's own curves, across its length
+    double span = 0; // the length its curves stretch across: the note as it plays, before a tie's overlap
     // It continues the note before it, with this glide (as Note's own fields).
     bool tied = false;
     Tick glideBefore = 0, glideAfter = 0;
@@ -90,8 +91,14 @@ struct ExportNote {
 /// The overlap a tie is written with: the earlier note ends this long after the tied one starts.
 constexpr Tick kTieOverlap = kPpq / 32;
 /// Makes each note a tie continues run on past the tied note's start by kTieOverlap (and no further than it
-/// ends), so programs that know no ties play the pair legato. For DAWproject; MIDI export does the same itself.
-void overlapTies(std::vector<ExportNote>& notes);
+/// ends), so programs that know no ties play the pair legato. With `glides`, each tie's glide is written into the two
+/// notes' pitch curves first, so it plays there too. For DAWproject; MIDI export does the same itself.
+void overlapTies(std::vector<ExportNote>& notes, bool glides = false);
+/// A track's pitch bend or channel pressure lanes (`drive` says which) over [from, to) as the raw MIDI value
+/// (0..1; bend rests at 0.5, pressure at 0 where no lane plays), one entry per change, sampled every ccStep. Empty
+/// when the track has no such lane. `range` (when given) gets the bend range of its first bend lane, in semitones.
+std::vector<std::pair<Tick, float>> controlSamples(const Song& song, const Track& t, LaneDrive drive,
+                                                    const Options& o, Tick from, Tick to, int* range = nullptr);
 /// Every note a track plays on the timeline with the chosen timing, operators and devices: what MIDI export writes
 /// for it (the whole song; muted clips only with `includeMuted`).
 std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Options& o, const Context& ctx);

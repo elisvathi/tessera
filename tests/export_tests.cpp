@@ -10,6 +10,7 @@
 #include "../src/model/MidiFile.hpp"
 #include "../src/model/MidiImport.hpp"
 #include "../src/model/NoteOperators.hpp"
+#include "../src/model/Recording.hpp"
 #include "../src/model/Render.hpp"
 #include "../src/model/Zip.hpp"
 
@@ -877,4 +878,87 @@ TEST_CASE("export: export options keep how ties are written") {
     json_t* j = o.toJson();
     CHECK(Options::fromJson(j).ties == TieMode::Bend);
     json_decref(j);
+}
+
+TEST_CASE("export: a pitch bend lane goes out as pitch bend with its range, a pressure lane as channel pressure") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Clip& clip = addClip(song, kBar, {makeNote(song, 0, kBar, 60)});
+    AutomationEnvelope bend = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::PitchBend}, 0, 0);
+    bend.points = {{0, 0.5f, CurveType::Hold, 0}, {kBeat, 1.f, CurveType::Hold, 0}};
+    AutomationEnvelope press = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::Pressure}, 0, 0);
+    press.points = {{0, 0.f, CurveType::Hold, 0}, {kBeat * 2, 1.f, CurveType::Hold, 0}};
+    clip.automation = {bend, press};
+    place(song, lead, clip.id, 0, kBar);
+    Options o;
+    o.automation = AutomationMode::Cc;
+    smf::File f = roundTrip(renderSong(song, o, Context()));
+    const smf::Track& t = f.tracks[1];
+    // The bend range (RPN 0) says ±2, as the lane does.
+    bool range = false;
+    for (const smf::Event& e : t.events)
+        range |= e.bytes == std::vector<uint8_t>{0xB0, 6, 2};
+    CHECK(range);
+    std::vector<std::pair<Tick, int>> bends, pressures;
+    for (const smf::Event& e : t.events) {
+        if (e.status() == 0xE0)
+            bends.push_back({e.tick, (e.bytes[1] | e.bytes[2] << 7) - 8192});
+        if (e.status() == 0xD0)
+            pressures.push_back({e.tick, e.bytes[1]});
+    }
+    REQUIRE(!bends.empty());
+    CHECK(bends.front() == std::pair<Tick, int>{kBeat, 8191});
+    REQUIRE(!pressures.empty());
+    CHECK(pressures.front() == std::pair<Tick, int>{2 * kBeat, 127});
+    // Automation off: neither.
+    smf::File none = roundTrip(renderSong(song, Options(), Context()));
+    for (const smf::Event& e : none.tracks[1].events)
+        CHECK((e.status() & 0xF0) != 0xE0);
+}
+
+TEST_CASE("dawproject: each note's curves go inside it, and a tie's glide is in its notes' pitch curves") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    a.timbreExpr = {{0, 0.25f, 0}, {1, 0.75f, 0}};
+    a.pressureExpr = {{0, 1, 0}};
+    Note b = makeNote(song, 2 * kBeat, kBeat, 64);
+    Note c = makeNote(song, 3 * kBeat, kBeat, 67);
+    c.tied = true;
+    c.glideBefore = kBeat / 2;
+    c.glideAfter = kBeat / 2;
+    Clip& clip = addClip(song, kBar, {a, b, c});
+    place(song, lead, clip.id, 0, kBar);
+    std::string xml = dawproject::projectXml(song, Options(), Context{120, "t"}, "2.0.0");
+    if (const char* out = std::getenv("TESSERA_DAWPROJECT_NOTES_OUT"))
+        std::ofstream(out) << xml;
+    // One curve: straight inside the note, times from the note's start in beats.
+    CHECK(xml.find("<Points id=") != std::string::npos);
+    CHECK(xml.find("unit=\"linear\">") != std::string::npos);
+    CHECK(xml.find("<Target expression=\"timbre\"/>") != std::string::npos);
+    CHECK(xml.find("<RealPoint time=\"1.0\" value=\"0.75\" interpolation=\"linear\"/>") != std::string::npos);
+    // Two curves on one note: in a Lanes.
+    CHECK(count(xml, "<Lanes id=") >= 1);
+    CHECK(xml.find("<Target expression=\"pressure\"/>") != std::string::npos);
+    // The tie: the first note bends up halfway (+1.5 of 3) by the joint; the tied note starts 1.5 below.
+    CHECK(xml.find("<Target expression=\"transpose\"/>") != std::string::npos);
+    CHECK(xml.find("value=\"1.5\"") != std::string::npos);
+    CHECK(xml.find("value=\"-1.5\"") != std::string::npos);
+}
+
+TEST_CASE("dawproject: pitch bend and pressure lanes go across as pitchBend and channelPressure") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Clip& clip = addClip(song, kBar, {makeNote(song, 0, kBar, 60)});
+    AutomationEnvelope bend = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::PitchBend}, 0, 0);
+    bend.points = {{0, 0.75f, CurveType::Hold, 0}};
+    clip.automation = {bend};
+    place(song, lead, clip.id, 0, kBar);
+    Options o;
+    o.automation = AutomationMode::Cc;
+    std::string xml = dawproject::projectXml(song, o, Context{120, "t"}, "2.0.0");
+    if (const char* out = std::getenv("TESSERA_DAWPROJECT_BEND_OUT"))
+        std::ofstream(out) << xml;
+    CHECK(xml.find("<Target expression=\"pitchBend\" channel=\"0\"/>") != std::string::npos);
+    CHECK(xml.find("value=\"0.75\"") != std::string::npos);
 }
