@@ -15,6 +15,7 @@
 #include "../model/AudioEdits.hpp"
 #include "../model/AutomationTake.hpp"
 #include "../model/Commands.hpp"
+#include "../model/DawImport.hpp"
 #include "../model/TrackCommands.hpp"
 #include "../ui/EditorState.hpp"
 #include "OutputBus.hpp"
@@ -411,6 +412,10 @@ class TesseraModule : public rack::engine::Module {
     }
     ClipId heardTakeClip() const { return heardClip; }
     int heardTakeIndex() const { return heardTake; }
+    /// DAWproject import (docs/DECISIONS.md §178): the song becomes `in.song` and the tempo `in.tempo`, as one undo step.
+    /// Each audio file in `files` (a path on disk by source ID) is copied into the patch first; a file that can't be
+    /// read adds a line to `in.leftOut`.
+    void applyDawProject(dawImport::Imported& in, const std::map<uint64_t, std::string>& files);
     /// Replace file: copies `path` into patch storage and gives it to audio clip `clip` (§6.5), as one undo step.
     /// False when the file isn't audio Tessera reads.
     bool replaceAudioFile(ClipId clip, const std::string& path);

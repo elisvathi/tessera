@@ -3069,3 +3069,34 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **Ties in DAWproject**: the overlap stays, and each glide is written into the two notes' "transpose" curves (the
   untie-keep math, `ties::addGlide`), so a legato instrument elsewhere plays the glide too.
 - Still untested in Bitwig itself: we found no Bitwig file with note expressions to compare against. QA step below.
+
+## 178. DAWproject import (17 Nov)
+
+- **The user asked for it, "the same way as MIDI import", and agreed it replaces the song**: a project brings its own
+  tempo, markers and scenes, which half-merged into a song would only confuse. Roll ▾ → Import DAWproject…, after the
+  same OK as Open project; one undo step brings the old song back (the module's JSON, as Open project).
+- **No library**: a DEFLATE unpacker (`inflate::raw`, with a 9-bit look-up table so audio unpacks quickly), a zip
+  reader that follows the central directory (stored and DEFLATE, up to 4 GB; `zip::list`, `zip::extract`), and a
+  small XML reader (`xml::parse`, numbers read in the C locale). Unpacking runs as a file job on a worker; the files
+  go into the patch on the UI thread (AudioStore::importFile, as dropped files), from a folder each so the patch keeps
+  their names.
+- **Mapping** (`dawImport::readProject`, pure and unit tested against projects in the shapes Bitwig 5 writes, and a
+  round trip through our export): note tracks → instrument, audio and effect tracks → audio tracks (an effect track
+  keeps the sends to it), a group track → a group with its level and pan (deeper groups flatten), the master's
+  channel → the master. Volume "linear" is gain (1 = 0 dB), pan "normalized" 0..1. A send at -inf that no lane moves
+  is left out: some programs list one from every track to every effect track. Timeline clips keep place, length,
+  playStart (the instance's offset), loop and fades; nested clips (audio sits one level down in Bitwig's files) are
+  read through. Times in seconds count at the project tempo.
+- **Audio**: warps that are a straight line give the clip tempo (48 beats over 19.2 s = 150) and its start; bent
+  ones become warp markers. The project's sample rate counts the frames; the file's own rate wins when it differs.
+  A file that can't be read leaves its clips showing it missing, so Find in a folder can bring it back.
+- **Notes**: channel 0..15 → 1..16; per-note "transpose" (semitones), "timbre" and "pressure" (0..1, "linear" or
+  "normalized"), times from the note's start (as §177 writes them). A one-line part's hand-over overlaps become
+  ties (`ties::tieHandovers`, as MIDI import), so our own exports come back tied.
+- **Lanes**: CC, pitch bend and channel pressure → MIDI control lanes (each CC one AUTO channel per track, eight at
+  most); volume, pan and send parameters → mixer lanes on their track (master volume on the master).
+- **The report** lists what had no place: plugins by track (the sound is rebuilt in Rack), plugin and mute lanes,
+  gain/pan/formant note curves, tempo and time signature changes (Roll has one of each), and what passed a limit.
+  Plays switches to Timeline when the project has timeline clips.
+- Checked in the hidden Rack with real Bitwig 5 projects found online (a Canon arrangement with a warped guitar,
+  the reference mixer demo), through a stand-in for the dialog tool (zenity draws nothing on the hidden display).

@@ -25,6 +25,7 @@ so you can use them without opening the editor.
 | **Save project** | Saves to the project file you opened or saved last (its name shows in the menu). |
 | **Save project as…** | Saves a new `.tessera` file. |
 | **Import MIDI file as tracks…** | Adds a track for each part of a MIDI file. See [Importing MIDI](#importing-midi-files). |
+| **Import DAWproject…** | Opens a project from another music program as the song (it replaces the current one). See [Importing DAWproject](#importing-dawproject). |
 | **Import audio…** | Ctrl+Shift+O. Adds an audio file on a new audio track. See [Audio](17-audio.md). |
 | **Audio files…** | Lists the audio files the song holds. See [Audio](17-audio.md#the-audio-files-list). |
 | **Remove unused audio** | Removes the audio files no clip plays. See [Audio](17-audio.md#removing-audio-you-dont-use). |
@@ -113,6 +114,34 @@ writes:
 Ties go across as notes that overlap by a 1/128, with each glide written into the two notes' pitch curves, so an
 instrument in mono legato mode plays the glide with no new attack. DAWproject has no ties either. The devices
 themselves don't go across (with Devices applied, their notes do).
+
+## Importing DAWproject
+
+**Roll ▾ → Import DAWproject…** opens a `.dawproject` file that another music program saved, as the song. It
+replaces the current song (Roll asks first); **Undo** (Ctrl+Z) brings the old one back. What comes across:
+
+| In the project | In Roll |
+|---|---|
+| Tempo, time signature, markers | the same; Plays switches to **Timeline** when the project has clips on its timeline |
+| Note tracks, audio tracks, effect tracks | instrument, audio and audio tracks; an effect track keeps the sends coming to it |
+| Group tracks | groups, with their level and pan (a group inside a group: its tracks go in the outer one) |
+| Volume, pan, mute, solo, sends, the master's level | the same in the mixer (sends that send nothing are left out) |
+| Timeline clips: place, length, start offset, loop, fades | timeline clips |
+| Scenes and their clip slots | scenes and slots |
+| Notes with velocity, release velocity, channel, and pitch, timbre and pressure curves | the same; a line of notes that overlap where one hands over to the next comes in [tied](08-shaping-notes.md#ties-and-glides) |
+| Audio clips | audio clips: each file is copied into the patch, and plays at the tempo the project's warps give it (with warp markers where they bend) |
+| Volume, pan and send automation, controller (CC), pitch bend and pressure lanes | mixer lanes, MIDI control lanes on AUTO channels, bend and pressure lanes |
+
+Unpacking a big project takes a moment; the editor shows how far it is. When something doesn't come across, a
+message lists it:
+
+- **Instruments and effects** are plugins Roll can't play: each track keeps its notes, and the message names the
+  instrument it used, so you can rebuild the sound in Rack.
+- Automation of instrument or effect knobs, mute automation, and gain, pan or formant curves on notes.
+- **Tempo and time signature changes**: Roll plays one tempo and one time signature, the project's first.
+- Anything past 64 tracks or 64 scenes, a track's ninth controller lane, and a second audio part inside one clip.
+- An audio file the project names but doesn't hold: its clips show the file as missing, and **Find in a folder…**
+  in the clip's menu brings it back.
 
 ## Importing MIDI files
 

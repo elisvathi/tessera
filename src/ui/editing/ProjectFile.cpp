@@ -3,7 +3,9 @@
 #include "ImportMidi.hpp"
 
 #include "../../audio/ProjectBundle.hpp"
+#include "../../model/DawImport.hpp"
 #include "../../model/Serialize.hpp"
+#include "../../model/Zip.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../ModuleUndo.hpp"
 #include "../interaction/Shortcuts.hpp"
@@ -11,6 +13,10 @@
 #include "ExportMidi.hpp"
 
 #include <osdialog.h>
+
+#include <fstream>
+#include <iterator>
+#include <memory>
 
 namespace tessera::projectFile {
 
@@ -208,6 +214,100 @@ void save(TesseraModule* m, bool as, Say say) {
         });
 }
 
+void importDawProject(TesseraModule* m, Say say) {
+    if (m->fileJobRunning()) {
+        say(kStillBusy, true);
+        return;
+    }
+    osdialog_filters* filters = osdialog_filters_parse("DAWproject:dawproject");
+    char* chosen = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, filters);
+    osdialog_filters_free(filters);
+    if (!chosen)
+        return;
+    std::string path = chosen;
+    std::free(chosen);
+    std::string name = rack::system::getFilename(path);
+    // Unpacking may take a while: on the worker, into a folder beside the patch's audio. The song changes on the UI
+    // thread once the files are there.
+    struct Job {
+        dawImport::Imported imported;
+        std::map<uint64_t, std::string> files;
+        std::string error;
+        std::string folder;
+    };
+    auto job = std::make_shared<Job>();
+    job->folder = rack::system::join(m->audioStorage(), "dawproject-import");
+    uint64_t firstId = m->song().nextId;
+    std::string projectFolder = rack::system::getDirectory(path);
+    bool started = m->startFileJob(
+        [job, path, firstId, projectFolder](std::atomic<float>& progress) {
+            std::ifstream in(path, std::ios::binary);
+            std::string archive((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::vector<zip::Entry> entries = zip::list(archive);
+            auto find = [&](const std::string& n) -> const zip::Entry* {
+                for (const zip::Entry& e : entries)
+                    if (e.name == n)
+                        return &e;
+                return nullptr;
+            };
+            std::string project, meta;
+            const zip::Entry* p = find("project.xml");
+            if (!p || !zip::extract(archive, *p, project)) {
+                job->error = entries.empty() ? "isn't a DAWproject file" : "is damaged";
+                return false;
+            }
+            if (const zip::Entry* e = find("metadata.xml"))
+                zip::extract(archive, *e, meta);
+            if (!dawImport::readProject(project, meta, firstId, job->imported, &job->error))
+                return false;
+            rack::system::createDirectories(job->folder);
+            const std::vector<dawImport::AudioFile>& audio = job->imported.audio;
+            for (size_t i = 0; i < audio.size(); i++) {
+                progress = float(i) / float(std::max<size_t>(1, audio.size()));
+                const dawImport::AudioFile& f = audio[i];
+                if (f.external) {
+                    std::string onDisk = rack::system::isFile(f.path) ? f.path : rack::system::join(projectFolder, f.path);
+                    if (rack::system::isFile(onDisk))
+                        job->files[f.source.value] = onDisk;
+                    continue;
+                }
+                const zip::Entry* e = find(f.path);
+                std::string data;
+                if (!e || !zip::extract(archive, *e, data))
+                    continue;
+                // A folder each, so two files of one name don't meet and the patch keeps the file's own name.
+                std::string dir = rack::system::join(job->folder, std::to_string(i));
+                rack::system::createDirectories(dir);
+                std::string out = rack::system::join(dir, rack::system::getFilename(f.path));
+                std::ofstream file(out, std::ios::binary);
+                file.write(data.data(), std::streamsize(data.size()));
+                if (file.good())
+                    job->files[f.source.value] = out;
+            }
+            return true;
+        },
+        percentTicker(m, "Importing " + name + "…"),
+        [m, job, name](bool ok) {
+            if (!ok) {
+                m->fileMessage = name + " " + (job->error.empty() ? "couldn't be read" : job->error);
+                return;
+            }
+            m->applyDawProject(job->imported, job->files);
+            rack::system::removeRecursively(job->folder); // the files are in the patch now
+            const Song& song = m->song();
+            m->fileMessage = "Imported " + name + ": " + std::to_string(song.tracks.size()) +
+                             (song.tracks.size() == 1 ? " track" : " tracks") + "  ·  undo brings the old song back";
+            if (!job->imported.leftOut.empty()) {
+                std::string text = "Imported " + name + ". What didn't come across:\n";
+                for (const std::string& line : job->imported.leftOut)
+                    text += "\n• " + line;
+                osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, text.c_str());
+            }
+        });
+    if (!started)
+        say(kStillBusy, true);
+}
+
 void newSong(TesseraModule* m, Say say) {
     withModuleUndo(m, "new song", [&] {
         // Through the engine, which pauses the audio thread while the module resets (Rack's Initialize does this).
@@ -241,6 +341,10 @@ void appendFileMenu(rack::ui::Menu* menu, TesseraModule* m, std::function<Editor
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(
         rack::createMenuItem("Import MIDI file as tracks…", "", [m, say] { importMidi::asTracks(m, say); }));
+    menu->addChild(rack::createMenuItem("Import DAWproject…", "replaces the song", [m, say] {
+        if (confirmReplace(m, "Import a DAWproject?"))
+            importDawProject(m, say);
+    }));
     menu->addChild(rack::createMenuItem("Import audio…", shortcutLabel(Action::ImportAudio), [editor] {
         if (EditorContext* c = editor())
             audioActions::importDialog(*c);

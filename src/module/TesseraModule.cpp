@@ -10,6 +10,7 @@
 #include "../model/Json.hpp"
 #include "../model/Sends.hpp"
 #include "../model/Serialize.hpp"
+#include "../ui/ModuleUndo.hpp"
 #include "CommandAction.hpp"
 #include "Registry.hpp"
 
@@ -714,6 +715,61 @@ TesseraModule::AudioDropResult TesseraModule::importAudioFiles(const std::vector
     }
     APP->history->push(complex);
     return result;
+}
+
+void TesseraModule::applyDawProject(dawImport::Imported& in, const std::map<uint64_t, std::string>& files) {
+    setupAudioFolder();
+    int unread = 0;
+    for (const dawImport::AudioFile& f : in.audio) {
+        auto path = files.find(f.source.value);
+        AudioSource* source = nullptr;
+        for (AudioSource& s : in.song.audioSources)
+            if (s.id == f.source)
+                source = &s;
+        if (!source)
+            continue;
+        AudioImport imp;
+        if (audio && path != files.end())
+            imp = audio->importFile(path->second, in.tempo, in.song.timeSig);
+        if (!imp.ok) {
+            unread++;
+            continue; // the clip stays, showing its file as missing, so Find in a folder can bring it back
+        }
+        // The project counted frames at the rate it names; the file's own rate wins.
+        double declared = f.sampleRate > 0 ? f.sampleRate : imp.source.sampleRate;
+        double ratio = declared > 0 ? imp.source.sampleRate / declared : 1;
+        AudioSourceId id = source->id;
+        std::string name = source->name;
+        *source = imp.source;
+        source->id = id;
+        source->name = name;
+        if (std::abs(ratio - 1) > 1e-9)
+            for (auto& [cid, clip] : in.song.clips)
+                if (clip.audio && clip.audio->source == id) {
+                    clip.audio->sourceStart = std::llround(double(clip.audio->sourceStart) * ratio);
+                    for (WarpMarker& w : clip.audio->warps)
+                        w.frame = std::llround(double(w.frame) * ratio);
+                }
+    }
+    if (unread > 0)
+        in.leftOut.push_back(unread == 1 ? "1 audio file couldn't be read: its clips show it missing"
+                                         : std::to_string(unread) + " audio files couldn't be read: their clips show "
+                                                                    "them missing");
+    json_t* data = dataToJson();
+    json_object_set_new(data, "song", songToJson(in.song));
+    json_object_set_new(data, "projectPath", json_string(""));
+    float bpm = float(std::clamp(in.tempo, Engine::kMinBpm, Engine::kMaxBpm));
+    // A project arranged on its timeline plays it; one with only scenes plays the clips.
+    bool timeline = std::any_of(in.song.tracks.begin(), in.song.tracks.end(),
+                                [](const Track& t) { return !t.arrangement.empty(); });
+    withModuleUndo(this, "import DAWproject", [&] {
+        dataFromJson(data);
+        params[BPM_PARAM].setValue(bpm);
+        params[MODE_PARAM].setValue(timeline ? 1.f : 0.f);
+    });
+    json_decref(data);
+    if (audio)
+        audio->sync(songData);
 }
 
 bool TesseraModule::relinkAudioSource(AudioSourceId id, const std::string& path) {

@@ -865,3 +865,14 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       Export (Automation As CC) and open it in Bitwig Studio: the note shows its pitch, timbre and pressure
       expressions where they were, the tie plays legato with its glide, and the track has the pitch bend lane.
       MIDI export of the same: the bend wheel moves, and a synth set to ±2 bends as Tessera did.
+
+## DAWproject import, 17 Nov (docs/DECISIONS.md §178)
+
+- [ ] Roll ▾ → Import DAWproject… on a project from another program with note tracks, an audio track, an effect
+      track with sends, a group and scenes: Roll asks first; the tracks, mixer levels, sends, group, clips, scenes,
+      markers and tempo come across, Plays shows Timeline, and the audio plays in time at the song tempo.
+- [ ] The message lists the project's instruments by track and anything else left out. Ctrl+Z brings the old song
+      back; Ctrl+Shift+Z the imported one.
+- [ ] Save the patch, reload it: the imported audio plays (its files are in the patch).
+- [ ] Export DAWproject from Roll and import it again: the same song, ties and note curves included.
+- [ ] A project whose audio file is missing: the clip shows it missing, and Find in a folder brings it back.
