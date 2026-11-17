@@ -19,8 +19,11 @@ CXXFLAGS += -std=c++17
 # -Wextra would flag every such line.
 CXXFLAGS += -Wno-missing-field-initializers
 
-# Faster local builds. Rack's release toolchain sets CROSS_COMPILE, so the published plugin is built as it always was.
+# Faster local builds, on Linux only, where they are tested. Rack's release toolchain sets CROSS_COMPILE, so the
+# published plugin is built as it always was. Other systems build as before too: macOS's make 3.81 has no `private`
+# and fails on the rule below, macOS has no nproc, and the precompiled header is made the GCC way.
 ifndef CROSS_COMPILE
+ifdef ARCH_LIN
 
 # An explicit -jN on the command line still wins.
 ifeq (,$(filter -j%,$(MAKEFLAGS)))
@@ -59,6 +62,7 @@ $(PCH): $(PCH_HEADER) $(RACK_DIR)/include/rack.hpp Makefile
 $(PCH_OBJECTS): $(PCH)
 $(PCH_OBJECTS): private CXXFLAGS += -include $(PCH_HEADER) -Winvalid-pch
 
+endif
 endif
 
 # Unit tests: the model and engine build without Rack, so tests are a plain native binary.
