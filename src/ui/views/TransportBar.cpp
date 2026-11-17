@@ -1,5 +1,6 @@
 #include "TransportBar.hpp"
 
+#include "../editing/ClipControlMenu.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ExportMidi.hpp"
@@ -245,6 +246,9 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
                                 projectFile::appendFileMenu(
                                     menu, m, [c] { return c; }, [c](const std::string& text, bool) { c->toast(text); });
                                 menu->addChild(new rack::ui::MenuSeparator);
+                                menu->addChild(rack::createSubmenuItem(
+                                    "Clip control", clipControl::layoutName(m->clipControlSettings().layout),
+                                    [m](rack::ui::Menu* sub) { clipControlMenu::append(sub, m); }));
                                 menu->addChild(rack::createSubmenuItem(
                                     "Colour scheme", "", [](rack::ui::Menu* sub) { theme::appendSchemeMenu(sub); }));
                                 appendEditorSizeItem(menu, m);

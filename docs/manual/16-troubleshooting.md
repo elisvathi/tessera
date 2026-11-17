@@ -134,4 +134,5 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Every shortcut | Press **?** in the editor |
 | The mixer | The **Mixer** bar under the notes pane (only when the song has an audio track), or **F4** |
 | Where audio comes out | **MAIN L** and **MAIN R** on the Roll panel |
+| Launching clips from a MIDI controller | **Roll ▾ → Clip control**, or right-click the Roll panel → **Clip control** |
 | A clip's tempo, follow tempo, sound type | Right-click the audio clip, or the inspector |

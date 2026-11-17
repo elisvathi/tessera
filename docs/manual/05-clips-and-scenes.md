@@ -127,6 +127,40 @@ The Roll panel can launch scenes without the editor: **PREV** and **NEXT** pick 
 **STOP ALL** stops all clips. The **SCENE** and **LAUNCH** inputs do the same from CV, so a sequencer or a MIDI
 keyboard can switch your song's parts. The picked scene shows on the display and is outlined in the editor.
 
+## Launching clips from a MIDI controller
+
+**Roll ▾ → Clip control** in the editor (or right-click the Roll panel → **Clip control**) sets up a MIDI controller
+to launch clips. There are three ways, and
+you can use them together.
+
+**A pad grid.** Pick your controller under **Controller**: **Launchpad X**, **Launchpad Mini MK3**, **APC mini MK2**,
+or **Any 8x8 pads (notes)** for other pad controllers. Then pick it under **Controller input**, and for the first
+three also under **Controller lights (its MIDI out)** (on a Launchpad, its **MIDI** port, not its DAW port). The pads
+show 8 tracks by 8 scenes of the launcher, outlined in the editor:
+
+| On the controller | What it does |
+|---|---|
+| A pad | Launches that slot's clip. A pad with no clip stops its track (as an empty slot's ■ does). |
+| The right column (Launchpad), the scene buttons (APC mini) | Launch that row's scene. |
+| The track buttons (APC mini) | Stop that track. |
+| The arrows (Launchpad), Shift + the last four track buttons (APC mini) | Move the 8x8 window a track or a scene. |
+| The top row's last button (Launchpad) | Stops all clips. |
+
+The pads light up as the launcher does: a clip in its own colour (dim while it waits), pulsing while it plays,
+flashing while it waits to start or stop, red while it records. Clips start on the launch quantize, as when you
+click them. For **Any 8x8 pads**, set the note of the **Bottom-left pad**; those controllers get no lights.
+
+**Learned controls.** Right-click a slot or a scene → **Learn MIDI**, then press any pad, key, button or pedal on
+the controller: it now launches that slot or scene. A slot with a learned control shows a small dot in its corner;
+the menu names the control (**Note C3, ch 1**) and has **Forget MIDI**. A learned control wins over the grid, and
+**Clip control → Forget learned controls** clears them all.
+
+**Program changes.** With **Program changes launch scenes** on, program change 1 launches the first scene, 2 the
+second, and so on: handy for foot controllers and set lists. **Channel** limits learned controls, the note pads
+and program changes to one MIDI channel.
+
+The controller settings are saved with the patch (not in project files: the devices belong to your setup).
+
 ## What plays: clips or timeline
 
 The **Plays** switch in the transport bar (and **PLAYS** on the panel) decides what the tracks play:
@@ -138,6 +172,6 @@ The section that plays is framed in green while the transport runs. The other on
 it.
 
 **Launching over the timeline.** While the timeline plays, you can still launch a clip. That track then leaves the
-timeline and plays the clip. Its timeline lane is dimmed and its header says "Launcher clip playing". Click **Back to
+timeline and plays the clip. Its timeline lane is dimmed. Click **Back to
 timeline** on the timeline's ruler to bring every track back. Switching the Plays switch to Timeline also brings them
 back.

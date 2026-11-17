@@ -127,6 +127,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | W E T Y U O P | Black keys |
 | Z / X | Octave down / up |
 | C / V | Softer / louder |
+| Other letters, digits, punctuation | Nothing: no shortcut fires while you play. Space, Escape, the arrows and Ctrl/Alt shortcuts still work. |
 
 ## While step input is on (Ctrl+R)
 

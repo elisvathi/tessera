@@ -14,6 +14,7 @@
 #include "../engine/TapTempo.hpp"
 #include "../model/AudioEdits.hpp"
 #include "../model/AutomationTake.hpp"
+#include "../model/ClipControl.hpp"
 #include "../model/Commands.hpp"
 #include "../model/DawImport.hpp"
 #include "../model/TrackCommands.hpp"
@@ -26,6 +27,7 @@
 #include <atomic>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -200,6 +202,22 @@ class TesseraModule : public rack::engine::Module {
         return s >= 0 ? s : selectedScene();
     }
     void stopAllClips() { launch({LaunchEvent::Kind::StopAll}); }
+
+    // ---- Clip control: a MIDI controller that launches clips (docs/DECISIONS.md §179) ----
+
+    rack::midi::InputQueue& clipControlInput() { return controlIn; }
+    /// Where the pad lights go.
+    rack::midi::Output& clipControlOutput() { return controlOut; }
+    const clipControl::Settings& clipControlSettings() const { return controlSettings; }
+    void setClipControlSettings(const clipControl::Settings& s) { controlSettings = s; }
+    /// The part of the launcher a grid controller shows.
+    clipControl::Window clipControlWindow() const { return controlWindow; }
+    /// Learn: the next control pressed on the controller does `action` (its control fields are ignored).
+    void learnClipControl(const clipControl::Binding& action) { controlLearn = action; }
+    bool learningClipControl() const { return controlLearn.has_value(); }
+    void cancelClipControlLearn() { controlLearn.reset(); }
+    /// The control learned for `action`, if any.
+    const clipControl::Binding* clipControlFor(const clipControl::Binding& action) const;
     /// Arranger mode: every track the launcher took over plays the arrangement again.
     void backToArrangement() { launch({LaunchEvent::Kind::BackToArrangement}); }
     PlayMode playMode() { return params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher; }
@@ -726,6 +744,25 @@ class TesseraModule : public rack::engine::Module {
     rack::dsp::PulseGenerator beatFlash;
     rack::dsp::BooleanTrigger recButton;
     rack::midi::InputQueue midiIn;
+    // Clip control (§179): the controller's input and lights, what they do, the window, and what is lit now.
+    rack::midi::InputQueue controlIn;
+    rack::midi::Output controlOut;
+    clipControl::Settings controlSettings;
+    clipControl::Window controlWindow;
+    clipControl::InputState controlState;
+    std::optional<clipControl::Binding> controlLearn;
+    std::map<int, clipControl::Message> controlLit;
+    int controlDeviceSent = -1;
+    clipControl::Layout controlLayoutSent = clipControl::Layout::Off;
+    /// Reads the controller, carries out what it asks, and lights its pads; once per UI frame.
+    void clipControlStep();
+    /// One action from the controller.
+    void clipControlDo(const clipControl::Action& a);
+    /// The launcher as the controller shows it, in the window.
+    clipControl::Surface clipControlSurface() const;
+    /// Puts a controller's lights out and gives it back its own mode (the module goes, or the layout changes).
+    void clipControlRelease();
+    void sendControl(const clipControl::Message& bytes);
     rack::midi::Message midiMessage; // reused: a Message holds a vector, so a new one per sample would allocate
     MidiReader midiReader;           // audio thread
     bool midiReaderMpe = false;      // the MPE setting the reader was last given

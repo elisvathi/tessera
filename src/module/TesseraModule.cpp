@@ -292,6 +292,7 @@ void TesseraModule::applyInputSolo() {
 
 void TesseraModule::uiStep() {
     applyInputSolo();
+    clipControlStep();
     snapshots.collect();
     sourcesStep();
     audioStep();
@@ -1634,7 +1635,170 @@ void TesseraModule::onAdd(const AddEvent& e) {
         registry.recordPaste(savedId, id);
 }
 
-void TesseraModule::onRemove(const RemoveEvent& e) { Registry::get().removeSource(this); }
+void TesseraModule::onRemove(const RemoveEvent& e) {
+    Registry::get().removeSource(this);
+    clipControlRelease();
+}
+
+const clipControl::Binding* TesseraModule::clipControlFor(const clipControl::Binding& action) const {
+    for (const clipControl::Binding& b : controlSettings.learned)
+        if (b.sameAction(action))
+            return &b;
+    return nullptr;
+}
+
+void TesseraModule::sendControl(const clipControl::Message& bytes) {
+    rack::midi::Message m;
+    m.bytes = bytes;
+    controlOut.sendMessage(m);
+}
+
+void TesseraModule::clipControlRelease() {
+    if (controlDeviceSent < 0)
+        return;
+    // Dark pads, then the controller's own mode back.
+    clipControl::Surface dark;
+    std::map<int, clipControl::Message> lit;
+    for (const clipControl::Message& m : clipControl::lights(controlLayoutSent, dark, lit))
+        sendControl(m);
+    for (const clipControl::Message& m : clipControl::leave(controlLayoutSent))
+        sendControl(m);
+    controlLit.clear();
+    controlDeviceSent = -1;
+}
+
+clipControl::Surface TesseraModule::clipControlSurface() const {
+    using clipControl::Cell;
+    using clipControl::kSize;
+    clipControl::Surface s;
+    const Song& song = songData;
+    int tracks = int(song.tracks.size()), scenes = int(song.scenes.size());
+    for (int col = 0; col < kSize; col++) {
+        int ti = controlWindow.track + col;
+        if (ti >= tracks)
+            continue;
+        const Track& t = song.tracks[size_t(ti)];
+        LauncherStatus st = launcherStatus(t.id);
+        s.trackPlays[size_t(col)] = st.playing != kNoSlot;
+        s.anyPlays |= st.playing != kNoSlot;
+        for (int row = 0; row < kSize; row++) {
+            int scene = controlWindow.scene + row;
+            if (scene >= scenes || scene >= int(t.slots.size()) || !t.slots[size_t(scene)].clip)
+                continue;
+            const Clip* clip = song.findClip(*t.slots[size_t(scene)].clip);
+            if (!clip)
+                continue;
+            Cell& c = s.cells[size_t(row)][size_t(col)];
+            c.color = clip->shownColor(t.color);
+            if (st.playing == scene)
+                c.state = recording() && t.armed ? Cell::State::Recording
+                          : st.queued == kNoSlot ? Cell::State::Stopping
+                                                 : Cell::State::Playing;
+            else if (st.queued == scene)
+                c.state = Cell::State::Queued;
+            else
+                c.state = Cell::State::Clip;
+            s.sceneHasClips[size_t(row)] = true;
+        }
+    }
+    s.up = controlWindow.scene > 0;
+    s.down = controlWindow.scene + kSize < scenes;
+    s.left = controlWindow.track > 0;
+    s.right = controlWindow.track + kSize < tracks;
+    return s;
+}
+
+void TesseraModule::clipControlDo(const clipControl::Action& a) {
+    using clipControl::Kind;
+    const Song& song = songData;
+    auto trackOf = [&]() -> const Track* {
+        if (a.track.valid())
+            return song.findTrack(a.track);
+        int i = controlWindow.track + a.column;
+        return a.column >= 0 && i < int(song.tracks.size()) ? &song.tracks[size_t(i)] : nullptr;
+    };
+    switch (a.kind) {
+    case Kind::Slot: {
+        const Track* t = trackOf();
+        if (!t || a.scene < 0 || a.scene >= int(t->slots.size()))
+            return;
+        // A pad with no clip stops its track, as an empty slot's stop square does (when it has one).
+        if (t->slots[size_t(a.scene)].clip)
+            launchSlot(t->id, a.scene);
+        else if (t->slots[size_t(a.scene)].stop)
+            stopTrack(t->id, a.scene);
+        return;
+    }
+    case Kind::Scene:
+        if (a.scene >= 0 && a.scene < int(song.scenes.size()))
+            launchScene(a.scene);
+        return;
+    case Kind::StopTrack:
+        if (const Track* t = trackOf())
+            stopTrack(t->id);
+        return;
+    case Kind::StopAll:
+        stopAllClips();
+        return;
+    case Kind::Up:
+    case Kind::Down:
+    case Kind::Left:
+    case Kind::Right:
+        controlWindow = clipControl::moved(controlWindow, a.kind, int(song.tracks.size()), int(song.scenes.size()));
+        return;
+    case Kind::None:
+        return;
+    }
+}
+
+void TesseraModule::clipControlStep() {
+    using namespace clipControl;
+    const Song& song = songData;
+    controlWindow = clamped(controlWindow, int(song.tracks.size()), int(song.scenes.size()));
+    rack::midi::Message msg;
+    while (controlIn.tryPop(&msg, INT64_MAX)) {
+        const uint8_t* bytes = msg.bytes.data();
+        int size = int(msg.bytes.size());
+        if (controlLearn) {
+            Binding seen;
+            if (!controlOf(bytes, size, seen))
+                continue;
+            Binding b = *controlLearn;
+            b.type = seen.type;
+            b.channel = seen.channel;
+            b.number = seen.number;
+            controlLearn.reset();
+            withModuleUndo(this, "learn MIDI control", [&] {
+                // One control does one thing, and one thing has one control.
+                std::vector<Binding>& list = controlSettings.learned;
+                list.erase(std::remove_if(list.begin(), list.end(),
+                                          [&](const Binding& o) { return o.sameControl(b) || o.sameAction(b); }),
+                           list.end());
+                list.push_back(b);
+            });
+            fileMessage = "Learned: that control now launches it";
+            continue;
+        }
+        clipControlDo(decode(controlSettings, controlWindow, controlState, bytes, size));
+    }
+    // A controller that came (or a layout picked) is put in the mode Tessera lights it in, and lit from scratch.
+    int device = controlOut.getDeviceId();
+    if (device != controlDeviceSent || controlSettings.layout != controlLayoutSent) {
+        if (controlDeviceSent >= 0 && device == controlDeviceSent)
+            for (const Message& m : leave(controlLayoutSent))
+                sendControl(m);
+        controlLit.clear();
+        controlDeviceSent = device;
+        controlLayoutSent = controlSettings.layout;
+        if (device >= 0)
+            for (const Message& m : enter(controlSettings.layout))
+                sendControl(m);
+    }
+    if (device < 0 || !hasLights(controlSettings.layout))
+        return;
+    for (const Message& m : clipControl::lights(controlSettings.layout, clipControlSurface(), controlLit))
+        sendControl(m);
+}
 
 void TesseraModule::onReset(const ResetEvent& e) {
     Module::onReset(e);
@@ -1680,6 +1844,10 @@ json_t* TesseraModule::dataToJson() {
     json_object_set_new(root, "ui", editorState.toJson());
     json_object_set_new(root, "record", recorder.settings.toJson());
     json_object_set_new(root, "midiInput", midiIn.toJson());
+    json_t* control = controlSettings.toJson();
+    json_object_set_new(control, "input", controlIn.toJson());
+    json_object_set_new(control, "output", controlOut.toJson());
+    json_object_set_new(root, "clipControl", control);
     if (!projectPath.empty())
         json_object_set_new(root, "projectPath", json_string(projectPath.c_str()));
     return root;
@@ -1688,7 +1856,7 @@ json_t* TesseraModule::dataToJson() {
 namespace {
 constexpr const char* kProjectFormat = "tessera-project";
 // Keys of the module data that belong to the patch, not the project.
-const char* const kPatchKeys[] = {"savedId", "midiInput", "projectPath"};
+const char* const kPatchKeys[] = {"savedId", "midiInput", "projectPath", "clipControl"};
 } // namespace
 
 json_t* TesseraModule::projectToJson() {
@@ -1783,6 +1951,13 @@ void TesseraModule::dataFromJson(json_t* root) {
     setRecordSettings(RecordSettings::fromJson(json_object_get(root, "record")));
     if (json_t* midiJ = json_object_get(root, "midiInput"))
         midiIn.fromJson(midiJ);
+    if (json_t* control = json_object_get(root, "clipControl")) {
+        controlSettings = clipControl::Settings::fromJson(control);
+        if (json_t* in = json_object_get(control, "input"))
+            controlIn.fromJson(in);
+        if (json_t* out = json_object_get(control, "output"))
+            controlOut.fromJson(out);
+    }
     const char* path = json_string_value(json_object_get(root, "projectPath"));
     projectPath = path ? path : "";
 }

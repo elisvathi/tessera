@@ -876,3 +876,18 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Save the patch, reload it: the imported audio plays (its files are in the patch).
 - [ ] Export DAWproject from Roll and import it again: the same song, ties and note curves included.
 - [ ] A project whose audio file is missing: the clip shows it missing, and Find in a folder brings it back.
+
+## Clip control, 17 Nov (docs/DECISIONS.md §179)
+
+- [ ] Launchpad X or Mini MK3: Clip control → Controller → it; input and lights → its MIDI port. The pads light in
+      the clips' colours; a pad launches on the launch quantize (flashing, then pulsing); an empty pad stops its
+      track; the right column launches scenes; the arrows move the window and its outline in the launcher; the top
+      right button stops all. Remove the Roll: the Launchpad goes back to its own mode.
+- [ ] APC mini MK2: the same with its scene buttons and track (stop) buttons; Shift + the last four track buttons
+      move the window; the track buttons light while their track plays.
+- [ ] Any 8x8 pads with Bottom-left pad C1: a pad controller launches; no lights are sent.
+- [ ] Right-click a slot → Learn MIDI, press a key: the slot shows a dot, its menu names the key; the key launches it.
+      Learn the same key for a scene: the slot loses it. Forget MIDI, then Forget learned controls. Undo each.
+- [ ] Program changes launch scenes on: program change 2 launches scene 2. Channel 5: messages on other channels
+      do nothing.
+- [ ] Save and reopen the patch: the controller, its ports and the learned controls come back.

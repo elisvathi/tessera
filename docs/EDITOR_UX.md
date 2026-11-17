@@ -283,7 +283,7 @@ Menu: `Notes` in the toolbar's `⋯`, and the right-click menu on selected notes
 
 ### 4.10 Computer keyboard as instrument
 
-`Ctrl/Cmd+K` toggles "keyboard play" (only while the editor is focused): two rows of the QWERTY keyboard play notes on the selected track (Z-row lower octave, Q-row upper, `Z`/`X` octave down/up, `C`/`V` velocity down/up). While active, the tool shortcuts are disabled and a banner shows "Keyboard play — Ctrl/Cmd+K to exit". Works with recording and step input.
+`Ctrl/Cmd+K` toggles "keyboard play" (only while the editor is focused): two rows of the QWERTY keyboard play notes on the selected track (Z-row lower octave, Q-row upper, `Z`/`X` octave down/up, `C`/`V` velocity down/up). While active, every plain letter, digit and punctuation key belongs to it (the other letters do nothing), so no shortcut fires while you play; Space, Escape, the arrows, Backspace and shortcuts with Ctrl/Cmd or Alt still work. A banner shows "Keyboard play — Ctrl/Cmd+K to exit". Works with recording and step input.
 
 ### 4.11 Scale tools in the roll
 

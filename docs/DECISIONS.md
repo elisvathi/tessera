@@ -3100,3 +3100,31 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   Plays switches to Timeline when the project has timeline clips.
 - Checked in the hidden Rack with real Bitwig 5 projects found online (a Canon arrangement with a warped guitar,
   the reference mixer demo), through a stand-in for the dialog tool (zenity draws nothing on the hidden display).
+
+## 179. Clip control: launching clips from a MIDI controller (17 Nov)
+
+- **User requests**: launching launcher clips from a MIDI controller. Looked at how it is done: pad grids that show a
+  window of the launcher and light up to match it, MIDI learn for any control, and program changes for scenes. The
+  user asked for all three ("industry standard, and flexibility"); the picks were agreed: Launchpad X, Launchpad
+  Mini MK3, APC mini MK2, a generic 8x8 note grid, learn, and program changes.
+- **One place**: Roll's own menu (Clip control), with its own MIDI input and output, beside the recording input. No
+  new module: the Roll carries it (§153's lesson). Settings, learned controls and the devices are saved with the
+  patch, not in project files (devices belong to a setup, like the recording input).
+- **Pure logic** (`clipControl::decode`, `lights`, `moved`; unit tested): the module only owns the ports and calls
+  the same launch, stop and scene functions a click calls, on the UI thread once a frame, so launches follow the
+  launch quantize exactly as clicks do. A frame of delay (about 16 ms) is below any quantize; with quantize Off it is
+  the same as a click's.
+- **Protocols from the makers' programming guides**: Launchpads in Programmer mode (SysEx `F0 00 20 29 02 0C|0D 0E
+  01 F7`, back with `00`), pads 11-88, right column CC 89-19, top row CC 91-98, channel 1 steady / 2 flashing / 3
+  pulsing; APC mini MK2 pads 0-63 from the bottom left, track buttons 100-107, scene buttons 112-119, Shift 122,
+  the channel picking brightness (2 = 50%), pulsing (9) or blinking (13). Both share one 128-colour list: a clip's
+  colour lights the pad nearest it.
+- **Layout**: pads launch (an empty pad stops its track when its slot has a stop square, as a click does); the right
+  column or scene buttons launch scenes; APC track buttons stop tracks; arrows (APC: Shift + the last four track
+  buttons) move the window a step; a Launchpad's top-right button stops all. Lights: a waiting clip dim in its
+  colour, playing pulses, queued flashes, recording pulses red, a stop that waits flashes.
+- **Learn**: a slot's or scene's menu → Learn MIDI; the next pressed note, CC or program change is bound. One
+  control does one thing and one thing has one control (learning again replaces). A learned control wins over the
+  grid. The learned slot shows a dot. Program change n launches scene n (first = 1 in the menus' counting).
+- Only lights are sent; Tessera never moves a controller's faders. Checked in the hidden Rack with Rack's computer
+  keyboard as the controller (grid and learn); the lights are unit tested only, no controller here.

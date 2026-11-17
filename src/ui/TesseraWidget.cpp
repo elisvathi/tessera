@@ -1,4 +1,5 @@
 #include "../engine/ClockDivisions.hpp"
+#include "editing/ClipControlMenu.hpp"
 #include "../module/Registry.hpp"
 #include "../module/TesseraModule.hpp"
 #include "../plugin.hpp"
@@ -395,6 +396,9 @@ struct TesseraWidget : rack::app::ModuleWidget {
         menu->addChild(rack::createSubmenuItem("MIDI input (for recording)", "", [m](rack::ui::Menu* sub) {
             rack::app::appendMidiMenu(sub, &m->midiInput());
         }));
+        menu->addChild(rack::createSubmenuItem(
+            "Clip control", clipControl::layoutName(m->clipControlSettings().layout),
+            [m](rack::ui::Menu* sub) { clipControlMenu::append(sub, m); }));
         std::vector<std::string> sizes;
         for (int hp : kPanelSizes)
             sizes.push_back(hp == EditorState::kPanelMinHp ? "Off" : std::to_string(hp) + " HP");

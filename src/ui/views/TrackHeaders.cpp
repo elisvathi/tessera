@@ -1293,16 +1293,6 @@ void TrackHeaders::drawTrackRow(NVGcontext* vg, int index, float top, float h) {
     Rect nameBox = nameRect(index);
     draw::text(vg, name, nameBox.pos.x, y, draw::ellipsize(vg, name, t.name, nameBox.size.x));
 
-    // Arranger mode, but a launched clip has taken this track over: say why its timeline is silent.
-    if (h >= 44 && m->playMode() == PlayMode::Arranger && m->launcherStatus(t.id).overridden) {
-        draw::TextStyle detail{theme::fonts::ui(), theme::metrics::kTextRuler, c.queue,
-                               NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        float x = indent + tileW + kNameGap;
-        draw::text(vg, detail, x, top + kRowTopPad + kButtonH + 12,
-                   draw::ellipsize(vg, detail, "Launcher clip playing  ·  \"Back to timeline\" resumes it",
-                                   box.size.x - x - kPad));
-    }
-
     nvgBeginPath(vg);
     nvgRect(vg, 0, top + h - 1, box.size.x, 1);
     nvgFillColor(vg, c.line0);

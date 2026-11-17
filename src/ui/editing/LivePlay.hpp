@@ -29,6 +29,8 @@ class KeyboardPlay {
   private:
     /// Whether a press of a setting key (Z, X, C, V) is the key held down rather than pressed again.
     bool heldDown(int key, int action);
+    /// A letter, digit or punctuation key: while keyboard play is on, none of them reach the editor's shortcuts.
+    static bool typingKey(int key);
 
     std::map<int, int> held; // key -> pitch, so a release ends the note its press started
     TrackId heardOn;

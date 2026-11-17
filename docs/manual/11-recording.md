@@ -162,7 +162,9 @@ Press **Ctrl+K** in the editor to play notes with your computer keyboard. A bann
 - **C** and **V** make notes softer and louder.
 - **Ctrl+K** again turns it off.
 
-While keyboard play is on, the letter keys don't switch tools. Armed tracks play and record the notes, like MIDI. If
+While keyboard play is on, no letter, digit or punctuation key does anything else in the editor (a stray Q won't
+quantize, R won't record): only **Space** (play/stop), **Escape**, the arrows, Backspace and shortcuts with Ctrl or
+Alt still work. Armed tracks play and record the notes, like MIDI. If
 the selected track isn't armed, you still hear the notes on it.
 
 ## Step input

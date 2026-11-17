@@ -1,5 +1,6 @@
 #include "LauncherPanel.hpp"
 
+#include "../editing/ClipControlMenu.hpp"
 #include "../editing/AudioActions.hpp"
 
 #include "../../model/LauncherCommands.hpp"
@@ -288,6 +289,10 @@ void LauncherPanel::click(Vec pos, int button, Modifiers mods) {
                     m2->perform(setScene(m2->song(), scene, after, "Rename scene"));
                 });
             });
+            clipControl::Binding action;
+            action.kind = clipControl::Kind::Scene;
+            action.scene = scene;
+            clipControlMenu::appendLearnItems(menu, m, action);
         } else if (h.part == Hit::Part::SceneLaunch) {
             m->launchScene(h.scene);
         }
@@ -303,6 +308,11 @@ void LauncherPanel::click(Vec pos, int button, Modifiers mods) {
             clipActions::appendClipMenu(menu, ctx, h.track, h.scene);
         else
             clipActions::appendEmptySlotMenu(menu, ctx, h.track, h.scene);
+        clipControl::Binding action;
+        action.kind = clipControl::Kind::Slot;
+        action.track = h.track;
+        action.scene = h.scene;
+        clipControlMenu::appendLearnItems(menu, m, action);
         return;
     }
     if (button != GLFW_MOUSE_BUTTON_LEFT)
@@ -429,6 +439,11 @@ void LauncherPanel::drawView(const DrawArgs& args) {
         if (r.kind != TrackRow::Kind::Track)
             continue;
         LauncherStatus status = m->launcherStatus(r.track);
+        const clipControl::Settings& control = m->clipControlSettings();
+        clipControl::Window window = m->clipControlWindow();
+        int index = m->song().trackIndex(r.track);
+        bool inWindow = clipControl::isGrid(control.layout) && index >= window.track &&
+                        index < window.track + clipControl::kSize;
         for (int s = 0; s < sceneCount(); s++) {
             float x = columnX(s);
             if (x + kSlotWidth < 0 || x > box.size.x)
@@ -436,6 +451,20 @@ void LauncherPanel::drawView(const DrawArgs& args) {
             bool hovered = hover.row == int(row) && hover.scene == s;
             Rect cell = cellRect(int(row), s);
             slotDraw::drawSlot(vg, ctx, cell, r.track, s, status, hovered, hovered && hover.part == Hit::Part::Launch);
+            if (!control.learned.empty()) {
+                clipControl::Binding slot;
+                slot.kind = clipControl::Kind::Slot;
+                slot.track = r.track;
+                slot.scene = s;
+                if (m->clipControlFor(slot)) { // a control is learned for it: a small dot in its corner
+                    const Track* t = m->song().findTrack(r.track);
+                    bool full = t && slotClip(m->song(), *t, s);
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, cell.getRight() - 4, cell.pos.y + 4, theme::metrics::kLearnedMark);
+                    nvgFillColor(vg, full ? c.onTile : c.accent);
+                    nvgFill(vg);
+                }
+            }
             // While the timeline plays the clips step back, but a clip that took its track over stays lit.
             if (quiet && status.playing != s && status.queued != s) {
                 nvgBeginPath(vg);
@@ -444,6 +473,28 @@ void LauncherPanel::drawView(const DrawArgs& args) {
                 nvgFillColor(vg, nvgTransRGBAf(background, kQuietAlpha));
                 nvgFill(vg);
             }
+        }
+        // The part of the launcher a grid controller shows: an outline around its 8 tracks by 8 scenes.
+        if (inWindow && window.scene < sceneCount()) {
+            int last = std::min(sceneCount(), window.scene + clipControl::kSize) - 1;
+            float x0 = columnX(window.scene) + 0.5f, x1 = columnX(last) + kSlotWidth - 0.5f;
+            int lastTrack = std::min(int(m->song().tracks.size()), window.track + clipControl::kSize) - 1;
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x0, top);
+            nvgLineTo(vg, x0, top + h);
+            nvgMoveTo(vg, x1, top);
+            nvgLineTo(vg, x1, top + h);
+            if (index == window.track) {
+                nvgMoveTo(vg, x0, top + 0.5f);
+                nvgLineTo(vg, x1, top + 0.5f);
+            }
+            if (index == lastTrack) {
+                nvgMoveTo(vg, x0, top + h - 0.5f);
+                nvgLineTo(vg, x1, top + h - 0.5f);
+            }
+            nvgStrokeColor(vg, nvgTransRGBAf(c.accent, 0.7f));
+            nvgStrokeWidth(vg, theme::metrics::kControlWindowLine);
+            nvgStroke(vg);
         }
     }
     nvgRestore(vg);
