@@ -885,7 +885,7 @@ void MixerPane::layout() {
                 continue;
             }
             addNumber++;
-            add(o, adds > 1 ? "IN " + std::to_string(addNumber) : "IN");
+            add(o, sources::inputLabel(o, addNumber, adds));
         }
         return out;
     };
@@ -1390,6 +1390,13 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         int64_t module = s->inputModule;
         TrackId track = s->track;
         rack::ui::Menu* menu = rack::createMenu();
+        std::string label = s->label;
+        menu->addChild(rack::createMenuItem("Rename…", "", [label, module] {
+            renameMenu("Rename input (empty: IN)", label, [module](const std::string& text) {
+                if (OutputModuleBase* o = sources::moduleById(module))
+                    sources::renameInput(o, text);
+            });
+        }));
         menu->addChild(rack::createMenuItem("Show this module in the rack", "", [m, track, module] {
             for (OutputModuleBase* o : audioActions::outputsFor(m, track))
                 if (o->id == module)
@@ -2423,10 +2430,14 @@ void MixerPane::drawView(const DrawArgs& args) {
     if (notesOnly > 0) {
         draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextRuler, c.text2,
                              NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        float x = hintX;
+        // Only in the free room after the last strip: it never runs into the Master (or the strips, scrolled).
+        float room = scrollRight - kGap - hintX;
         std::string text =
             std::to_string(notesOnly) + (notesOnly == 1 ? " track plays" : " tracks play") + " notes only";
-        draw::text(vg, hint, x, tab.size.y + 14, text);
+        if (draw::textWidth(vg, hint, text) > room)
+            text = std::to_string(notesOnly) + " notes only";
+        if (draw::textWidth(vg, hint, text) <= room)
+            draw::text(vg, hint, hintX, tab.size.y + 14, text);
     }
     nvgRestore(vg);
 }

@@ -43,6 +43,7 @@ class DrumLaneHeaders : public InteractiveView {
     PianoRollView& owner;
     Hit hover;
     std::bitset<128> sounding;
+    std::bitset<128> input; // lanes hit on a live input (MIDI, REC CV, the computer keyboard)
 };
 
 } // namespace tessera

@@ -875,7 +875,7 @@ Rect AudioEditor::waveRect() {
 void AudioEditor::fit() {
     auto [from, to] = reach(parts());
     double span = std::max(1.0, to - from);
-    double width = std::max(1.f, box.size.x);
+    double width = std::isfinite(box.size.x) ? std::max(1.f, box.size.x) : 1.0;
     // A little room either side, so a part's edges can be grabbed at the file's ends.
     ticksPerPx = span * 1.04 / width;
     left = from - span * 0.02;
@@ -884,7 +884,8 @@ void AudioEditor::fit() {
 }
 
 void AudioEditor::step() {
-    float width = box.size.x;
+    // A width that isn't a real number (a widget never laid out) would fit a zoom of 0.
+    float width = std::isfinite(box.size.x) ? box.size.x : 0;
     if (clip != fitted || (fittedWidth <= 1 && width > 1)) {
         if (clip != fitted)
             stopHearing();

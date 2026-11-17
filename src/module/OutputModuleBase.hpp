@@ -118,6 +118,10 @@ class OutputModuleBase : public rack::engine::Module {
     /// What it brings in as a source of its track (§7.8): Level and Use, saved with the module. Applies to every
     /// audio input it has (IN, and a Drum Out's lane INs). UI thread; the caller records the undo step.
     SourceLevel sourceSetting() const { return setting; }
+    /// The name its audio input goes by in the mixer, the sends and the sources list ("Synth"); empty: numbered
+    /// "IN", "IN 2". Saved with the module. UI thread; the caller records the undo step.
+    const std::string& inputName() const { return ownInputName; }
+    void setInputName(std::string name) { ownInputName = std::move(name); }
     void setSourceSetting(SourceLevel level);
     /// Plays a Level at once while the sources list drags it, before the drag is committed; nullopt ends it.
     void holdSourceLevel(std::optional<float> db) { heldLevelDb = db; }
@@ -193,6 +197,7 @@ class OutputModuleBase : public rack::engine::Module {
     int meterCount = 0;
     bool sourcesFresh = true;
     SourceLevel setting;
+    std::string ownInputName;
     std::optional<float> heldLevelDb;
     std::optional<float> heldPan;
     bool heardBySolo = true;

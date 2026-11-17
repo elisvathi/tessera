@@ -1063,6 +1063,7 @@ void DeviceStrip::layoutParts() {
     const Song& song = ctx.module()->song();
     EditorState& st = ctx.state();
     sectionLabels.clear();
+    sectionPlaces.clear();
     ModulatorPlace openPlace;
     const Modulator* openMod =
         st.openModulator ? findModulator(song, ModulatorId(st.openModulator), &openPlace) : nullptr;
@@ -1392,6 +1393,7 @@ float DeviceStrip::layoutSection(const SectionSpec& spec, float x, float top, fl
     Part section{Kind::ModSection, Rect(x, top, w, height), device, int(spec.place.level), spec.place.device.value};
     section.tag = int(sectionLabels.size());
     sectionLabels.push_back(open ? spec.label : spec.railLabel);
+    sectionPlaces[spec.key] = spec.place;
     push(section);
     Rect fold = iconRail ? Rect(x + 2, top + 3, w - 4, kRailTop) : Rect(x + 4, top + 3, 16, 16);
     push({Kind::ModFold, fold, device, int(spec.place.level), spec.place.device.value});
@@ -1831,7 +1833,8 @@ bool DeviceStrip::handleAction(Action action) {
         const StripClipboard& cb = stripClipboard();
         if (cb.label.empty())
             return false;
-        pasteItems({cb.devices, cb.modulators, cb.songModulators, cb.label}, pasteIndexAfter(-1));
+        pasteItems({cb.devices, cb.modulators, cb.songModulators, cb.label}, pasteIndexAfter(-1), "Pasted",
+                   pasteTarget(nullptr));
         return true;
     }
     case Action::Delete:
@@ -2072,10 +2075,10 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         focusedTag.reset();
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         std::weak_ptr<DeviceStrip*> weak = self;
-        auto top = [weak](int pasteIndex) {
-            return [weak, pasteIndex](rack::ui::Menu* menu) {
+        auto top = [weak](int pasteIndex, std::optional<ModulatorPlace> into) {
+            return [weak, pasteIndex, into](rack::ui::Menu* menu) {
                 if (auto s = weak.lock())
-                    (*s)->appendEditItems(menu, pasteIndex, false);
+                    (*s)->appendEditItems(menu, pasteIndex, false, into);
             };
         };
         if (!hit) {
@@ -2100,12 +2103,12 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         case Kind::Menu:
         case Kind::Tile:
             pick(Kind::Card, hit->id, 0);
-            deviceActions::openDeviceMenu(ctx, DeviceId(hit->id), top(pasteIndexAfter(hit->device)));
+            deviceActions::openDeviceMenu(ctx, DeviceId(hit->id), top(pasteIndexAfter(hit->device), pasteTarget(hit)));
             return;
         case Kind::ModulatorRow:
         case Kind::ModulatorMap:
             pick(Kind::ModulatorRow, hit->id, hit->section);
-            deviceActions::openModulatorMenu(ctx, ModulatorId(hit->id), top(pasteIndexAfter(-1)));
+            deviceActions::openModulatorMenu(ctx, ModulatorId(hit->id), top(pasteIndexAfter(-1), pasteTarget(hit)));
             return;
         case Kind::PatternGrid: {
             TesseraModule* mm = ctx.module();
@@ -2140,7 +2143,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
                 if (p.kind == Kind::ModSection && p.section == hit->section && p.tag >= 0 &&
                     size_t(p.tag) < sectionLabels.size())
                     menu->addChild(rack::createMenuLabel(sectionLabels[size_t(p.tag)]));
-            appendEditItems(menu, pasteIndexAfter(-1));
+            appendEditItems(menu, pasteIndexAfter(-1), true, pasteTarget(hit));
             return;
         }
         default:
@@ -4207,19 +4210,20 @@ void DeviceStrip::selectAllInStrip() {
         st.stripDevices.push_back(d.id.value);
 }
 
-void DeviceStrip::pasteItems(const Copied& items, int index, const char* verb) {
+void DeviceStrip::pasteItems(const Copied& items, int index, const char* verb, std::optional<ModulatorPlace> into) {
     TesseraModule* m = ctx.module();
     if (!m || items.empty())
         return;
     int dropped = 0;
     CommandPtr command = pasteChainItems(m->song(), deviceActions::shownChain(ctx), index, items.devices,
-                                         items.modulators, items.songModulators, m->ids(), &dropped);
+                                         items.modulators, items.songModulators, m->ids(), &dropped, into);
     if (!command) {
-        ctx.toast("Nothing to paste here: the chain or its modulator sections are full");
+        ctx.toast(into ? "Nothing to paste: " + placeName(*into) + " has no room for more modulators"
+                       : "Nothing to paste here: the chain or its modulator sections are full");
         return;
     }
     m->perform(std::move(command));
-    ctx.toast(std::string(verb) + " " + items.label +
+    ctx.toast(std::string(verb) + " " + items.label + (into ? " into " + placeName(*into) : "") +
               (dropped > 0 ? " · " + std::to_string(dropped) + (dropped == 1 ? " move" : " moves") +
                                  " left behind: out of reach here"
                            : ""));
@@ -4267,7 +4271,69 @@ int DeviceStrip::pasteIndexAfter(int cardIndex) {
     return after;
 }
 
-void DeviceStrip::appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full) {
+std::optional<ModulatorPlace> DeviceStrip::pasteTarget(const Part* clicked) {
+    TesseraModule* m = ctx.module();
+    const StripClipboard& cb = stripClipboard();
+    if (!m || (cb.modulators.empty() && cb.songModulators.empty()))
+        return std::nullopt;
+    auto sectionAt = [&](uint64_t key) -> std::optional<ModulatorPlace> {
+        auto it = sectionPlaces.find(key);
+        return it != sectionPlaces.end() ? std::optional<ModulatorPlace>(it->second) : std::nullopt;
+    };
+    // Devices pasted after a card keep their modulators where they were, so moves between them hold.
+    auto cardSection = [&](uint64_t device) -> std::optional<ModulatorPlace> {
+        if (!cb.devices.empty())
+            return std::nullopt;
+        return ModulatorPlace{ModLevel::Device, TrackId(), DeviceId(device), ClipId()};
+    };
+    if (clicked) {
+        switch (clicked->kind) {
+        case Kind::ModSection:
+        case Kind::ModFold:
+        case Kind::ModulatorRow:
+        case Kind::ModulatorMap:
+            return sectionAt(clicked->section);
+        case Kind::Card:
+        case Kind::CardHeader:
+        case Kind::Power:
+        case Kind::Menu:
+        case Kind::Tile:
+            return cardSection(clicked->id);
+        default:
+            return std::nullopt;
+        }
+    }
+    const EditorState& st = ctx.state();
+    if (!st.stripSections.empty())
+        return sectionAt(st.stripSections.back());
+    if (!st.stripModulators.empty()) {
+        ModulatorPlace place;
+        if (findModulator(m->song(), ModulatorId(st.stripModulators.back()), &place))
+            return place;
+    }
+    if (!st.stripDevices.empty())
+        return cardSection(st.stripDevices.back());
+    return std::nullopt;
+}
+
+std::string DeviceStrip::placeName(const ModulatorPlace& place) {
+    switch (place.level) {
+    case ModLevel::Song:
+        return "the song";
+    case ModLevel::Track:
+        return "the track";
+    case ModLevel::Clip:
+        return "the clip";
+    case ModLevel::Device:
+    default: {
+        TesseraModule* m = ctx.module();
+        const Device* d = m ? findDevice(m->song(), place.device) : nullptr;
+        return d ? nameOf(*d) : "the device";
+    }
+    }
+}
+
+void DeviceStrip::appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full, std::optional<ModulatorPlace> into) {
     std::weak_ptr<DeviceStrip*> weak = self;
     Copied items = gatherSelection();
     if (!items.empty() && full)
@@ -4282,12 +4348,15 @@ void DeviceStrip::appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool ful
         }));
     const StripClipboard& cb = stripClipboard();
     if (!cb.label.empty())
-        menu->addChild(rack::createMenuItem("Paste " + cb.label, shortcutLabel(Action::Paste), [weak, pasteIndex] {
-            if (auto s = weak.lock()) {
-                const StripClipboard& now = stripClipboard();
-                (*s)->pasteItems({now.devices, now.modulators, now.songModulators, now.label}, pasteIndex);
-            }
-        }));
+        menu->addChild(rack::createMenuItem("Paste " + cb.label + (into ? " into " + placeName(*into) : ""),
+                                            shortcutLabel(Action::Paste), [weak, pasteIndex, into] {
+                                                if (auto s = weak.lock()) {
+                                                    const StripClipboard& now = stripClipboard();
+                                                    (*s)->pasteItems(
+                                                        {now.devices, now.modulators, now.songModulators, now.label},
+                                                        pasteIndex, "Pasted", into);
+                                                }
+                                            }));
     if (!items.empty() && full) {
         menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate), [weak, items] {
             if (auto s = weak.lock())

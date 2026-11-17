@@ -739,6 +739,71 @@ TEST_CASE("pasting strip items: new IDs, moves between copies kept, moves out of
     CHECK(song.findTrack(to)->devices.empty());
 }
 
+TEST_CASE("a copied modulator pastes into any section: a device's, the song's, a clip's") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId arp, echo;
+    addDevice(song, ChainOwner(track), DeviceType::Arpeggiator, -1, next, &arp)->apply(song);
+    addDevice(song, ChainOwner(track), DeviceType::Echo, -1, next, &echo)->apply(song);
+    ModulatorId env;
+    addModulator(song, {ModLevel::Track, track, DeviceId(), ClipId()}, ModulatorType::Envelope, next, &env)
+        ->apply(song);
+    for (auto [dev, knob] : {std::pair<DeviceId, int>{arp, chain::knob::kGate}, {echo, chain::knob::kDecay}}) {
+        Modulation r;
+        r.target = {ParamRef::Kind::Device, dev.value, uint16_t(knob)};
+        r.amount = 0.5f;
+        addRoute(song, env, r)->apply(song);
+    }
+    std::vector<Modulator> copied = {*findModulator(song, env)};
+
+    // Into the arpeggiator's own section: it keeps the move on the arpeggiator, the echo is out of its reach.
+    int dropped = -1;
+    CommandPtr intoDevice = pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, &dropped,
+                                            ModulatorPlace{ModLevel::Device, TrackId(), arp, ClipId()});
+    REQUIRE(intoDevice);
+    intoDevice->apply(song);
+    const Device& a = *findDevice(song, arp);
+    REQUIRE(a.modulators.size() == 1);
+    CHECK(a.modulators[0].id != env);
+    REQUIRE(a.modulators[0].routes.size() == 1);
+    CHECK(a.modulators[0].routes[0].target.owner == arp.value);
+    CHECK(dropped == 1);
+    CHECK(song.findTrack(track)->modulators.size() == 1); // nothing went to the track
+    intoDevice->revert(song);
+    CHECK(findDevice(song, arp)->modulators.empty());
+
+    // Into the song: both moves are in reach.
+    CommandPtr intoSong = pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, &dropped,
+                                          ModulatorPlace{ModLevel::Song, TrackId(), DeviceId(), ClipId()});
+    REQUIRE(intoSong);
+    intoSong->apply(song);
+    REQUIRE(song.modulators.size() == 1);
+    CHECK(song.modulators[0].routes.size() == 2);
+    CHECK(dropped == 0);
+
+    // A song modulator pastes back onto the track, numbered afresh beside the original.
+    std::vector<Modulator> fromSong = {song.modulators[0]};
+    CommandPtr intoTrack = pasteChainItems(song, ChainOwner(track), -1, {}, {}, fromSong, next, &dropped,
+                                           ModulatorPlace{ModLevel::Track, track, DeviceId(), ClipId()});
+    REQUIRE(intoTrack);
+    intoTrack->apply(song);
+    const Track& t = *song.findTrack(track);
+    REQUIRE(t.modulators.size() == 2);
+    CHECK(t.modulators[1].name != t.modulators[0].name);
+    CHECK(t.modulators[1].routes.size() == 2);
+
+    // A device's section holds kMaxDeviceModulators: the rest is left out, and a full section pastes nothing.
+    std::vector<Modulator> many(size_t(kMaxDeviceModulators + 2), copied[0]);
+    CommandPtr fill = pasteChainItems(song, ChainOwner(track), -1, {}, many, {}, next, &dropped,
+                                      ModulatorPlace{ModLevel::Device, TrackId(), echo, ClipId()});
+    REQUIRE(fill);
+    fill->apply(song);
+    CHECK(int(findDevice(song, echo)->modulators.size()) == kMaxDeviceModulators);
+    CHECK_FALSE(pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, &dropped,
+                                ModulatorPlace{ModLevel::Device, TrackId(), echo, ClipId()}));
+}
+
 TEST_CASE("an arpeggiator's own Pattern line saves with the song, and the dice writes lines") {
     Song song = makeDefaultSong();
     TrackId track = song.tracks[0].id;

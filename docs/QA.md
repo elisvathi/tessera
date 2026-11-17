@@ -891,3 +891,33 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Program changes launch scenes on: program change 2 launches scene 2. Channel 5: messages on other channels
       do nothing.
 - [ ] Save and reopen the patch: the controller, its ports and the learned controls come back.
+
+## Input lights and follow, 17 Nov (docs/DECISIONS.md §180)
+
+- [ ] Play a MIDI keyboard into Roll with no track armed: each held key lights on the piano roll keyboard with an
+      outline, its grid row gets a faint band, and both go out on release. The same with REC CV (gate + V/OCT) and
+      keyboard play (Ctrl+K). With the song's key and live input following it, the snapped key lights.
+- [ ] A drum track: hitting a pad lights its lane name.
+- [ ] Turn on playheads on a clip and follow (Ctrl+F, Page by page and Scroll smoothly): the notes view stays put
+      while it plays. Turn the playheads off: following works again.
+
+## Pane restore freeze, 17 Nov (docs/DECISIONS.md §181)
+
+- [ ] In-panel editor: maximize the notes pane, open Devices, drag the splitter so the song pane is as small as it
+      gets, then press the top-right restore button. Both panes show at once and Rack stays responsive. The same
+      in the full editor, and with the song pane maximized instead.
+
+## Paste modulators anywhere, 17 Nov (docs/DECISIONS.md §182)
+
+- [ ] Copy a track LFO that moves two devices. Right-click a card → Paste LFO into <card>: it lands in the card's
+      DEVICE section and keeps only the move on that card; the message says one move was left behind. Undo.
+- [ ] Right-click the SONG section → Paste LFO into the song: both moves stay. Copy that song LFO, select the
+      TRACK section, Ctrl+V: it lands on the track as "LFO 2".
+- [ ] Copy a card with its track envelope and paste after another card: the envelope still goes to the track.
+
+## Input names, 17 Nov (docs/DECISIONS.md §183)
+
+- [ ] Two Track Outs on one track, both with IN patched. Mixer: right-click IN 1's name → Rename… → "Synth": the
+      strip, the FROM row of a send from it and the sources list say Synth. Undo brings back IN 1. Right-click the
+      other Track Out module → Input name → "Mic": the mixer follows. Clear it: back to IN 2. Save and reopen.
+- [ ] Mixer with tracks filling the width and a note-only track: "1 track plays notes only" never overlaps Master.

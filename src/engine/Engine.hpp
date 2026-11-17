@@ -106,6 +106,7 @@ struct RecordEvent {
     Kind kind = Kind::Note;
     uint64_t track = 0; // TrackId value; 0 = not routed to a track
     int8_t pitch = 60;
+    int8_t inPitch = -1; // Note: the pitch as it came in, before the song's key snapped it (drum lanes go by this)
     float velocity = 0.8f;
     uint8_t channel = 1; // the MIDI channel it came in on, 1..16 (1 for CV and the computer keyboard)
     bool on = true;

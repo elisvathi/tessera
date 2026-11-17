@@ -197,6 +197,13 @@ or press **Esc**, to clear the selection.
   go with it.
 - Cards and track (or clip) modulators can be copied together, so an envelope keeps moving the arpeggiator it moves.
   Song modulators are copied on their own and paste as new song modulators.
+- **Copied modulators paste into any section**, whatever section you copied them from. Right-click a section (SONG,
+  TRACK, CLIP or a card's DEVICE section), or a modulator in it, and pick **Paste … into …**: for example, copy an
+  LFO from the track and paste it into the song or into a device. With only modulators copied, right-clicking a card
+  pastes them into that card's own DEVICE section. **Ctrl+V** does the same with the selected section, modulator or
+  card. A pasted copy gets the next free number when its name is taken there ("LFO 2").
+- A section is full at 16 modulators for the song, 8 for a track or clip, and 4 for a device. What doesn't fit is
+  left out.
 - What a copied modulator moves among the copied cards follows the copies. Settings it moved that aren't in reach
   where you paste are left out, and the message says how many.
 - A copy also pastes into another Roll in the same patch.

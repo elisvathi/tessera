@@ -34,6 +34,12 @@ void DrumLaneHeaders::step() {
         for (const Note& n : owner.notes())
             if (!n.muted && double(n.start) <= now && now < double(n.end()) && n.pitch >= 0)
                 sounding.set(size_t(n.pitch));
+    // A lane hit on a live input lights with an outline, so playing along reads apart from the clip.
+    input.reset();
+    if (m && m->heldInput().any())
+        for (int p = 0; p < 128; p++)
+            if (owner.inputHeld(p))
+                input.set(size_t(p));
     InteractiveView::step();
 }
 
@@ -185,6 +191,14 @@ void DrumLaneHeaders::drawLane(NVGcontext* vg, const DrumLane& l, int index, flo
     nvgRect(vg, 0, top, w, h);
     nvgFillColor(vg, fill);
     nvgFill(vg);
+    if (l.pitch >= 0 && input.test(size_t(l.pitch))) {
+        float inset = theme::metrics::kInputMarkWidth / 2;
+        nvgBeginPath(vg);
+        nvgRect(vg, inset, top + inset, w - 2 * inset, h - 2 * inset);
+        nvgStrokeColor(vg, c.accent);
+        nvgStrokeWidth(vg, theme::metrics::kInputMarkWidth);
+        nvgStroke(vg);
+    }
     nvgBeginPath(vg);
     nvgRect(vg, 4, top + std::min(4.f, h / 4), kChip, std::max(1.f, h - 2 * std::min(4.f, h / 4)));
     nvgFillColor(vg, color);

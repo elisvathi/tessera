@@ -111,6 +111,21 @@ TEST_CASE("TimeAxis: zoom and scroll stay within limits") {
     CHECK(axis.right() == doctest::Approx(50000)); // content end stops at the right edge
 }
 
+TEST_CASE("TimeAxis: a view size that isn't a real number never reaches the axis") {
+    // A pane hidden while another is maximized was laid out at Rack's default infinite size; the arranger's ruler
+    // then drew toward an infinite right edge and froze Rack (DECISIONS §181).
+    TimeAxis axis;
+    for (double bad : {INFINITY, -INFINITY, NAN}) {
+        axis.setViewWidth(bad);
+        CHECK(axis.viewWidth() == 1);
+        axis.setZoomLimits(8.0 / 3840, axis.viewWidth() / 3840);
+        CHECK(std::isfinite(axis.right()));
+    }
+    PitchAxis pitch;
+    pitch.setViewHeight(INFINITY);
+    CHECK(pitch.viewHeight() == 1);
+}
+
 TEST_CASE("TimeAxis: animated zoom ends exactly where an instant zoom would") {
     TimeAxis instant, smooth;
     for (TimeAxis* a : {&instant, &smooth}) {

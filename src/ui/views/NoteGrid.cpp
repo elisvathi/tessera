@@ -944,6 +944,7 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
     nvgScissor(vg, 0, 0, box.size.x, box.size.y);
     if (owner.clip()) {
         drawHoverGuide(vg);
+        drawInputRows(vg);
         collectGhosts();
         drawGhosts(vg);
         drawTimelineRepeats(vg);
@@ -1073,7 +1074,11 @@ void NoteGrid::drawMovedNote(NVGcontext* vg, const Note& n, const render::Motion
     // The written note, see-through (drawNotes): a dashed outline in the mover's colour, "moved from here".
     float top = written + 0.75f, bottom = written + row - 1.25f, right = x0 + w;
     nvgBeginPath(vg);
-    for (float x = x0; x < right; x += 6) {
+    // Dashes only across the view, still on the note's own 6 px beat: a long note zoomed in would otherwise take
+    // millions of steps (and past 2^24 px a float can no longer step 6 at all).
+    float dashFrom = x0 + std::floor(std::max(0.f, -6.f - x0) / 6) * 6;
+    float dashTo = std::min(right, box.size.x + 6);
+    for (float x = dashFrom; x < dashTo; x += 6) {
         nvgMoveTo(vg, x, top);
         nvgLineTo(vg, std::min(x + 3, right), top);
         nvgMoveTo(vg, x, bottom);
@@ -1303,6 +1308,20 @@ void NoteGrid::drawHoverGuide(NVGcontext* vg) {
     nvgStrokeColor(vg, nvgTransRGBAf(theme::colors().accent, 0.6f));
     nvgStrokeWidth(vg, 1);
     nvgStroke(vg);
+}
+
+void NoteGrid::drawInputRows(NVGcontext* vg) {
+    TesseraModule* m = ctx.module();
+    if (!m || !m->heldInput().any())
+        return;
+    const PitchAxis& pitch = owner.pitch;
+    float row = float(pitch.rowHeight());
+    nvgBeginPath(vg);
+    for (int p = 0; p < 128; p++)
+        if (pitch.shown(p) && owner.inputHeld(p))
+            nvgRect(vg, 0, float(pitch.pitchToY(p)), box.size.x, row);
+    nvgFillColor(vg, nvgTransRGBAf(theme::colors().accent, theme::metrics::kInputRowAlpha));
+    nvgFill(vg);
 }
 
 void NoteGrid::drawNotes(NVGcontext* vg) {

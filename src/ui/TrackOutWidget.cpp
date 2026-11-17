@@ -129,6 +129,7 @@ struct TrackOutWidget : rack::app::ModuleWidget {
         menu->addChild(rack::createSubmenuItem("Channel", m->part() == 0 ? "All" : std::to_string(m->part()),
                                                [m](rack::ui::Menu* sub) { appendChannelMenu(sub, m); }));
         sources::appendModuleItems(menu, m);
+        sources::appendInputNameItem(menu, m);
     }
 
   private:

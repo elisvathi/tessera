@@ -30,6 +30,11 @@ When the header is narrow, some of these fold into a **⋯** menu. Nothing is ev
 - **Click** a key to hear it. **Drag** along the keys for a glissando.
 - **Ctrl+click** a key to select every note of that pitch.
 - With a key chosen, keys outside the key are dimmed and each root is marked.
+- Keys light up in the track's colour while the clip plays their notes.
+- Keys you play on a MIDI keyboard, the **REC CV** inputs or your computer keyboard (Ctrl+K) light up too, with a
+  bright outline, and a faint band runs along their rows in the grid. So you can see where the note you just played
+  would go. This works for every note that comes in, whether or not the track is armed. On a drum track the lane you
+  hit lights up the same way.
 
 ## Drawing notes
 

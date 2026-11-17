@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/engine/HeldInput.hpp"
 #include "../src/engine/Metronome.hpp"
 #include "../src/engine/Recorder.hpp"
 #include "../src/model/AutomationEdits.hpp"
@@ -1540,4 +1541,42 @@ TEST_CASE("a poly track records overlapping keys as a chord, as before") {
     REQUIRE(clip->notes.size() == 2);
     CHECK(clip->notes[0].end() == 500);
     CHECK_FALSE(clip->notes[1].tied);
+}
+
+TEST_CASE("every live note's capture copy carries the pitch it came in on, and held input counts it") {
+    Song song = recordSong();
+    song.scale = ScaleRef{0, "major"};
+    EngineRig rig(song);
+    rig.engine.setLiveToKey(true);
+    rig.engine.liveNote({LiveSource::Midi, 0, 61, 0.8f, true}); // C# snaps into C major
+    HeldInput held;
+    for (const RecordEvent& e : rig.drain())
+        if (e.kind == RecordEvent::Kind::Note && e.track == 0) {
+            CHECK(e.inPitch == 61);
+            CHECK(e.pitch != 61);
+            held.note(e.pitch, e.inPitch, e.on);
+        }
+    CHECK(held.any());
+    CHECK(held.cameIn(61));
+    CHECK_FALSE(held.plays(61));
+    rig.engine.liveNote({LiveSource::Midi, 0, 61, 0, false});
+    for (const RecordEvent& e : rig.drain())
+        if (e.kind == RecordEvent::Kind::Note && e.track == 0)
+            held.note(e.pitch, e.inPitch, e.on);
+    CHECK_FALSE(held.any());
+    CHECK_FALSE(held.cameIn(61));
+}
+
+TEST_CASE("held input keeps a key lit until every input holding it lets go, and ignores stray releases") {
+    HeldInput held;
+    held.note(60, 60, false);
+    CHECK_FALSE(held.any());
+    held.note(60, 60, true);
+    held.note(60, 60, true); // the same key on MIDI and on REC CV
+    held.note(60, 60, false);
+    CHECK(held.plays(60));
+    held.note(60, 60, false);
+    CHECK_FALSE(held.plays(60));
+    held.note(200, -1, true);
+    CHECK_FALSE(held.any());
 }

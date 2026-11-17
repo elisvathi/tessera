@@ -157,6 +157,17 @@ std::string freeName(const std::vector<Modulator>& mods, const std::string& base
     }
 }
 
+/// A name without the number freeName() adds ("LFO 2" -> "LFO"), so a pasted copy is numbered afresh.
+std::string baseName(const std::string& name) {
+    size_t space = name.find_last_of(' ');
+    if (space == std::string::npos || space == 0 || space + 1 == name.size())
+        return name;
+    for (size_t i = space + 1; i < name.size(); i++)
+        if (name[i] < '0' || name[i] > '9')
+            return name;
+    return name.substr(0, space);
+}
+
 std::vector<Device>::iterator deviceIn(std::vector<Device>& chain, DeviceId id) {
     return std::find_if(chain.begin(), chain.end(), [&](const Device& d) { return d.id == id; });
 }
@@ -434,10 +445,18 @@ CommandPtr copyDevice(const Song& song, DeviceId id, ChainOwner to, int index, c
 
 CommandPtr pasteChainItems(const Song& song, ChainOwner to, int index, std::vector<Device> devices,
                            std::vector<Modulator> modulators, std::vector<Modulator> songModulators,
-                           const NextId& nextId, int* dropped) {
+                           const NextId& nextId, int* dropped, std::optional<ModulatorPlace> into) {
     const std::vector<Device>* target = devicesOf(song, to);
     if (!target || (to.isClip() && song.findClip(to.clip)->isAudio()))
         return nullptr;
+    if (into) {
+        // A device's section is found through the chain it is in: a track's, or a clip's own.
+        if (into->level == ModLevel::Device)
+            into->clip = ownerOf(song, into->device).clip;
+        Song probe = chainsOf(song);
+        if (!modulatorsAt(probe, *into))
+            return nullptr;
+    }
     // The devices and their section's modulators renew together, so moves from one to the other follow the copies.
     ChainRemap remap, songRemap;
     renewIds(devices, modulators, nextId, remap);
@@ -464,21 +483,19 @@ CommandPtr pasteChainItems(const Song& song, ChainOwner to, int index, std::vect
             insertDevice(chain, at++, std::move(d));
             any = true;
         }
-        std::vector<Modulator>* section = nullptr;
-        if (to.isClip())
-            section = &work.findClip(to.clip)->modulators;
-        else if (Track* t = work.findTrack(to.track))
-            section = &t->modulators;
-        for (Modulator& m : modulators)
-            if (section && int(section->size()) < kMaxTrackModulators) {
-                section->push_back(std::move(m));
-                any = true;
-            }
-        for (Modulator& m : songModulators)
-            if (int(work.modulators.size()) < kMaxSongModulators) {
-                work.modulators.push_back(std::move(m));
-                any = true;
-            }
+        ModulatorPlace chainPlace{to.isClip() ? ModLevel::Clip : ModLevel::Track, to.track, DeviceId(), to.clip};
+        ModulatorPlace songPlace{ModLevel::Song, TrackId(), DeviceId(), ClipId()};
+        auto put = [&](std::vector<Modulator>& mods, const ModulatorPlace& place) {
+            std::vector<Modulator>* section = modulatorsAt(work, place);
+            for (Modulator& m : mods)
+                if (section && section->size() < limitAt(place.level)) {
+                    m.name = freeName(*section, baseName(m.name));
+                    section->push_back(std::move(m));
+                    any = true;
+                }
+        };
+        put(modulators, into ? *into : chainPlace);
+        put(songModulators, into ? *into : songPlace);
         int pasted = countRoutes(work) - before;
         int pruned = pruneRoutes(work);
         if (dropped)

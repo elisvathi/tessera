@@ -7,6 +7,7 @@
 #include "../engine/ClockSync.hpp"
 #include "../engine/CvNoteInput.hpp"
 #include "../engine/Engine.hpp"
+#include "../engine/HeldInput.hpp"
 #include "../engine/Metronome.hpp"
 #include "../engine/Recorder.hpp"
 #include "../engine/SnapshotExchange.hpp"
@@ -183,6 +184,8 @@ class TesseraModule : public rack::engine::Module {
     }
     /// Notes played on any input (MIDI, REC CV, computer keyboard) since the last call, for step input.
     std::vector<RecordEvent> takeLiveInput() { return std::exchange(liveInput, {}); }
+    /// The keys held now on any live input, for lighting them in the editor.
+    const HeldInput& heldInput() const { return inputKeys; }
     /// Launches or stops clips (DESIGN.md §10). Carried out on the next sample.
     void launch(const LaunchEvent& event) { launches.push(event); }
     void launchSlot(TrackId track, int slot) { launch({LaunchEvent::Kind::Slot, track.value, slot}); }
@@ -564,6 +567,7 @@ class TesseraModule : public rack::engine::Module {
     SpscQueue<AuditionEvent, 256> auditions;
     SpscQueue<LiveNote, 256> keyboardNotes;
     std::vector<RecordEvent> liveInput;
+    HeldInput inputKeys;
     SpscQueue<LaunchEvent, 256> launches;
     std::atomic<bool> captureArmed{false};
 

@@ -100,7 +100,10 @@ std::string partName(const TesseraModule& m, const Track& t, SendFrom part) {
             }
         if (number == 0)
             return "IN (gone)";
-        return adds > 1 ? "IN " + std::to_string(number) : "IN";
+        for (OutputModuleBase* o : m.sourceModules(t.id))
+            if (o->id == part.module)
+                return sources::inputLabel(o, number, adds);
+        return "IN";
     }
     default:
         return "";

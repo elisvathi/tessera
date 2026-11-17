@@ -48,7 +48,11 @@ void drawWaveform(NVGcontext* vg, rack::math::Rect body, float left, float right
         nvgIntersectScissor(vg, body.pos.x, body.pos.y, body.size.x, body.size.y);
         nvgBeginPath(vg);
         float step = theme::metrics::kHatchSpacing;
-        for (float x = body.pos.x - body.size.y; x < body.getRight(); x += step) {
+        // Only the stripes in view, still on the clip's own spacing, so a long clip zoomed in stays cheap.
+        float start = body.pos.x - body.size.y;
+        float from = start + std::floor(std::max(0.f, left - body.size.y - start) / step) * step;
+        float to = std::min(body.getRight(), right);
+        for (float x = from; x < to; x += step) {
             nvgMoveTo(vg, x, body.getBottom());
             nvgLineTo(vg, x + body.size.y, body.pos.y);
         }

@@ -132,6 +132,9 @@ class PianoRollView : public EditorPane, public NoteTarget {
     bool keyActive();
     bool highlightKey();
     bool snapToKey();
+    /// Whether a key held on a live input (MIDI, REC CV, the computer keyboard) plays `pitch` here: as it came in
+    /// on a drum track, where it picks the lane, else as the song's key may have snapped it.
+    bool inputHeld(int pitch);
     /// Moves a pitch by grid rows (positive = down): key steps with scale snap (unless `chromatic`), shown rows
     /// when folded, else semitones.
     int stepPitch(int pitchValue, int rows, bool chromatic);

@@ -130,6 +130,13 @@ void PianoKeyboard::step() {
                 sounding.set(size_t(n.pitch));
     }
 
+    // Keys held on a live input light too, in a look of their own, so playing along reads apart from the clip.
+    input.reset();
+    if (m && m->heldInput().any())
+        for (int p = 0; p < 128; p++)
+            if (owner.inputHeld(p))
+                input.set(size_t(p));
+
     const PitchAxis& pitch = owner.pitch;
     uint64_t key = 0;
     key = hashMix(key, pitch.top());
@@ -190,39 +197,40 @@ void PianoKeyboard::paintKeys(NVGcontext* vg) {
 }
 
 void PianoKeyboard::drawForeground(const DrawArgs& args) {
-    if (sounding.none() && hoverPitch < 0)
+    if (sounding.none() && input.none() && hoverPitch < 0)
         return;
     NVGcontext* vg = args.vg;
     int first, last, lo, hi;
     visibleRows(first, last, lo, hi);
     auto on = [&](int p) { return p >= 0 && p < 128 && sounding.test(size_t(p)); };
+    auto in = [&](int p) { return p >= 0 && p < 128 && input.test(size_t(p)); };
     nvgSave(vg);
     nvgScissor(vg, 0, 0, box.size.x - 1, box.size.y);
     if (look.named) {
         for (int r = first; r <= last; r++) {
             int p = owner.pitch.pitchAtRow(r);
-            if (on(p) || p == hoverPitch)
-                paintNamedKey(vg, p, on(p), p == hoverPitch);
+            if (on(p) || in(p) || p == hoverPitch)
+                paintNamedKey(vg, p, on(p), p == hoverPitch, in(p));
         }
     } else {
         float w = box.size.x - 1;
         for (int p = std::min(127, hi + 1); p >= std::max(0, lo - 1); p--) {
-            if (isBlackKey(p) || !(on(p) || p == hoverPitch))
+            if (isBlackKey(p) || !(on(p) || in(p) || p == hoverPitch))
                 continue;
             // A lit white key is repainted whole, so its black neighbours go back on top, clipped to it so their
             // shadows aren't laid twice over the keys around it.
             auto [y0, y1] = whiteKeySpan(p);
             nvgSave(vg);
             nvgIntersectScissor(vg, 0, y0, w, y1 - y0);
-            paintWhiteKey(vg, p, on(p), p == hoverPitch);
+            paintWhiteKey(vg, p, on(p), p == hoverPitch, in(p));
             for (int n : {p + 1, p - 1})
                 if (n >= 0 && n <= 127 && isBlackKey(n))
                     paintBlackKey(vg, n, false, false, true);
             nvgRestore(vg);
         }
         for (int p = std::min(127, hi + 1); p >= std::max(0, lo - 1); p--)
-            if (isBlackKey(p) && (on(p) || p == hoverPitch))
-                paintBlackKey(vg, p, on(p), p == hoverPitch, false);
+            if (isBlackKey(p) && (on(p) || in(p) || p == hoverPitch))
+                paintBlackKey(vg, p, on(p), p == hoverPitch, false, in(p));
     }
     nvgRestore(vg);
 }
@@ -235,7 +243,7 @@ std::pair<float, float> PianoKeyboard::whiteKeySpan(int p) const {
     return {y - up * row + 0.5f, y + row + down * row - 0.5f};
 }
 
-void PianoKeyboard::paintWhiteKey(NVGcontext* vg, int p, bool on, bool hover) {
+void PianoKeyboard::paintWhiteKey(NVGcontext* vg, int p, bool on, bool hover, bool input) {
     const theme::Palette& c = theme::colors();
     const theme::KeyColors& k = theme::keyColors();
     float row = float(owner.pitch.rowHeight());
@@ -258,6 +266,8 @@ void PianoKeyboard::paintWhiteKey(NVGcontext* vg, int p, bool on, bool hover) {
         nvgFillColor(vg, nvgTransRGBAf(on ? keyColor[size_t(p)] : c.accent, on ? 0.55f : 0.15f));
         nvgFill(vg);
     }
+    if (input)
+        drawInputMark(vg, rack::math::Rect(0, y0, w - kLip, y1 - y0), 1.5f, on);
     if (look.rootMark && look.key.isRoot(p))
         drawRootMark(vg, y, row);
     bool isC = p % 12 == 0;
@@ -269,7 +279,7 @@ void PianoKeyboard::paintWhiteKey(NVGcontext* vg, int p, bool on, bool hover) {
     }
 }
 
-void PianoKeyboard::paintBlackKey(NVGcontext* vg, int p, bool on, bool hover, bool shadow) {
+void PianoKeyboard::paintBlackKey(NVGcontext* vg, int p, bool on, bool hover, bool shadow, bool input) {
     const theme::Palette& c = theme::colors();
     const theme::KeyColors& k = theme::keyColors();
     float row = float(owner.pitch.rowHeight());
@@ -296,11 +306,13 @@ void PianoKeyboard::paintBlackKey(NVGcontext* vg, int p, bool on, bool hover, bo
         nvgFillColor(vg, nvgTransRGBAf(on ? keyColor[size_t(p)] : c.accent, on ? 0.85f : 0.3f));
         nvgFill(vg);
     }
+    if (input)
+        drawInputMark(vg, rack::math::Rect(0, y, bw, h), 2, on);
     if (look.rootMark && look.key.isRoot(p))
         drawRootMark(vg, y - 0.6f, row);
 }
 
-void PianoKeyboard::paintNamedKey(NVGcontext* vg, int p, bool on, bool hover) {
+void PianoKeyboard::paintNamedKey(NVGcontext* vg, int p, bool on, bool hover, bool input) {
     const theme::Palette& c = theme::colors();
     const theme::KeyColors& k = theme::keyColors();
     float row = float(owner.pitch.rowHeight());
@@ -324,6 +336,8 @@ void PianoKeyboard::paintNamedKey(NVGcontext* vg, int p, bool on, bool hover) {
         nvgFillColor(vg, nvgTransRGBAf(on ? keyColor[size_t(p)] : c.accent, on ? 0.7f : 0.2f));
         nvgFill(vg);
     }
+    if (input)
+        drawInputMark(vg, body, 2, on);
     bool root = look.rootMark && look.key.isRoot(p);
     if (root)
         drawRootMark(vg, y, row);
@@ -340,6 +354,20 @@ void PianoKeyboard::paintNamedKey(NVGcontext* vg, int p, bool on, bool hover) {
     } else {
         draw::text(vg, label, w - kLip - 5, y + row / 2, pitchName(p));
     }
+}
+
+void PianoKeyboard::drawInputMark(NVGcontext* vg, rack::math::Rect key, float radius, bool on) {
+    NVGcolor accent = theme::colors().accent;
+    rack::math::Rect r = key.grow(rack::math::Vec(-theme::metrics::kInputMarkWidth / 2));
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, r.pos.x, r.pos.y, r.size.x, r.size.y, radius);
+    if (!on) {
+        nvgFillColor(vg, nvgTransRGBAf(accent, 0.25f));
+        nvgFill(vg);
+    }
+    nvgStrokeColor(vg, accent);
+    nvgStrokeWidth(vg, theme::metrics::kInputMarkWidth);
+    nvgStroke(vg);
 }
 
 void PianoKeyboard::drawRootMark(NVGcontext* vg, float y, float row) {

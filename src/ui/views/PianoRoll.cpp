@@ -3,6 +3,7 @@
 #include "AudioEditor.hpp"
 #include "AudioHeader.hpp"
 
+#include "../../model/DeviceLookup.hpp"
 #include "../../model/DeviceTypes.hpp"
 #include "../../model/Ties.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -490,6 +491,8 @@ void PianoRollView::layout() {
         audioEditor->box = rack::math::Rect(0, header, box.size.x, std::max(0.f, box.size.y - header));
         audioEditor->clip = source.clip;
     } else {
+        // Hidden, it still steps: a real (empty) size, never Rack's infinite default (DECISIONS §181).
+        audioEditor->box = rack::math::Rect(0, header, 0, 0);
         ruler->visible = grid->visible = true;
         if (TesseraModule* m = ctx.module(); m && m->heardTakeClip().valid())
             m->setHeardTake(ClipId(), -1);
@@ -630,7 +633,11 @@ void PianoRollView::step() {
         lastStep = now;
 
         if (drives) {
-            if (m->playing() && !ctx.followPaused())
+            // Playheads read the clip in their own places, so no one position is worth following: the view would
+            // jump each time the clip's own position wraps or moves.
+            const Track* t = track();
+            bool byPlayheads = t && activePlayheads(*t, clip()) != nullptr;
+            if (m->playing() && !ctx.followPaused() && !byPlayheads)
                 if (auto left = followScroll(state.follow, source.playhead(), viewport.time))
                     viewport.time.scrollTo(*left);
             state.detail = viewport.time.state();
@@ -748,7 +755,7 @@ void PianoRollView::appendViewItems(rack::ui::Menu* menu) {
         "Name notes with flats (Db, not C#)", "", [] { return accidentals() == Accidentals::Flats; },
         [](bool on) { setAccidentals(on ? Accidentals::Flats : Accidentals::Sharps); }));
     menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createMenuLabel("Follow the playhead"));
+    menu->addChild(rack::createMenuLabel("Follow the playhead (never while playheads play)"));
     auto follow = [c, menu](std::string text, FollowMode mode) {
         menu->addChild(rack::createCheckMenuItem(
             text, "", [c, mode] { return c->module() && c->state().follow == mode; },
@@ -982,6 +989,15 @@ Scale PianoRollView::scale() {
         return resolveScale(own ? *own : preview.song, song.customScales);
     }
     return c ? clipScale(song, *c) : resolveScale(song.scale, song.customScales);
+}
+
+bool PianoRollView::inputHeld(int pitch) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return false;
+    const Track* t = track();
+    bool drum = t && t->type == TrackType::Drum;
+    return drum ? m->heldInput().cameIn(pitch) : m->heldInput().plays(pitch);
 }
 
 bool PianoRollView::keyActive() {

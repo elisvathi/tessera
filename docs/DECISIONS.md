@@ -3128,3 +3128,57 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   grid. The learned slot shows a dot. Program change n launches scene n (first = 1 in the menus' counting).
 - Only lights are sent; Tessera never moves a controller's faders. Checked in the hidden Rack with Rack's computer
   keyboard as the controller (grid and learn); the lights are unit tested only, no controller here.
+
+## 180. Live input lights the keys; playheads never move the notes view (17 Nov)
+
+- **Input lights.** A key held on any live input (MIDI, REC CV, keyboard play) lights on the piano roll keyboard
+  with an accent outline (a faint accent fill when the clip isn't also playing it), and a faint accent band runs
+  along its grid row. Drum lane names light the same way. The user chose: every incoming note lights, armed or not
+  (it also shows the controller works); a look apart from playback, so playing along reads apart from the clip;
+  and the row band, to show where the note would go.
+- The engine's capture copy of each live note (sent always, track 0) now carries `inPitch`, the pitch before the
+  song's key snapped it. Instrument tracks light the played pitch; drum tracks the incoming one, since that picks
+  the lane. `HeldInput` counts holds on the UI thread, so a key held on two inputs stays lit until both let go.
+- **Follow.** With playheads on the open clip, the piano roll never follows, whatever the follow setting: each
+  playhead reads its own place, and following the clip's own position made the view jump. The View menu says so.
+
+## 181. Hidden panes get a zero size; axes refuse sizes that aren't real numbers (17 Nov)
+
+- Freeze, seen twice by the user: in-panel editor with the notes pane maximized (device strip open), then restore
+  (top-right button) froze Rack, with memory growing to 8 GB. A crash dump showed `Ruler::drawTimeLabels` drawing
+  lines without end: the arranger's time axis had an infinite width.
+- Cause: `PaneStack::layout` never set the hidden pane's box, so it kept Rack's default infinite size. Hidden widgets
+  still step, so the arranger fitted its time axis to that width. After restore with a short top pane
+  (`topFraction` 0), the arranger's lanes were under `kMinViewSize`, so it skipped refitting, and the ruler drew to
+  an infinite right edge.
+- Fix: a hidden pane gets a zero-size box, and every axis takes view sizes through `viewSize()`, which turns
+  anything not finite (or under 1 px) into 1. Reproduced and checked in the hidden Rack with the user's patch.
+- Audit of the same kind of fault (17 Nov): every loop that steps through space or time, and every hidden widget
+  that keeps stepping. Loops over ticks step by guarded amounts (grid spacing, snap, region length, playhead cycle,
+  all checked > 0) and end at a guarded axis edge. Two more hidden views kept Rack's infinite size until first
+  shown, the mixer in the lower pane and the audio editor (it fitted a zoom of 0 from it): both now get a zero size
+  while hidden, and the audio editor ignores a size that isn't finite. Two drawings stepped a float along a whole
+  note or clip, not just the part in view (a moved note's dashed outline, a missing file's stripes): a long one
+  zoomed in took millions of steps, and past 2^24 px a float stops moving; both now draw only what is in view.
+  `main` has none of these views; the pane and axis fix covers it (PR #21).
+
+## 182. Copied modulators paste into any section (17 Nov)
+
+- The user copied an LFO from the track and wanted to paste it into a device: a paste only went into the shown
+  track's or clip's section (song modulators only into the song). Now the section you paste into decides:
+  right-click a section or a modulator row in it → **Paste … into …**; right-click a card with only modulators
+  copied → that card's DEVICE section; Ctrl+V uses the selected section, row or card the same way. Without such a
+  target the old places hold, so copied devices with their track modulators still keep their moves.
+- `pasteChainItems` takes an optional `into` place; every pasted modulator, song ones too, goes there, up to that
+  section's limit. Moves out of reach from the new place go, counted in the message (a device's own modulator
+  reaches only its device). Pasted names are numbered afresh where taken ("LFO 2").
+
+## 183. Track Out inputs can be named (17 Nov)
+
+- The mixer called each Track Out input strip "IN", "IN 1", "IN 2"; the user wanted to rename them, from the mixer
+  and from the module. The name lives on the output module (`inputName`, saved in its patch data, like its Level),
+  so it moves with the module; set from the strip's right-click **Rename…** or the module menu's **Input name**,
+  one Rack undo step each. Empty goes back to the numbered name. Used by the input strip, the sends' FROM rows and
+  the sources list. Effect loops keep the name of the module they feed.
+- Same day: "N tracks play notes only" in the mixer was drawn over the Master strip's name when the tracks filled
+  the width; it now takes only the free room after the last strip (shorter, or hidden, when there is none).

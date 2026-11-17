@@ -160,6 +160,9 @@ constexpr float kTieArc = 6;
 // Clip control in the launcher (DECISIONS §179): the grid controller's window, and a learned slot's dot
 constexpr float kControlWindowLine = 1.5f;
 constexpr float kLearnedMark = 2.5f;
+// A key held on a live input: its outline on the keyboard and drum lanes, and the faint band along its grid row
+constexpr float kInputMarkWidth = 1.5f;
+constexpr float kInputRowAlpha = 0.08f;
 
 constexpr float kTextUi = 11;
 constexpr float kTextHeader = 12;

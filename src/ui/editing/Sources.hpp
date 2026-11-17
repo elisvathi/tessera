@@ -78,6 +78,12 @@ std::string mixText(float mix);
 void moveInChain(TesseraModule& m, TrackId track, int64_t module, int64_t before);
 /// What a chain module's strip is called: for a loop, the module its OUT is patched into ("Delay"), else `fallback`.
 std::string chainLabel(OutputModuleBase* module, const std::string& fallback);
+/// What an input strip is called: the name given to it, else "IN" alone or "IN 2" (`number` of `count`).
+std::string inputLabel(const OutputModuleBase* module, int number, int count);
+/// Names a module's input, as one Rack undo step; an empty name goes back to "IN".
+void renameInput(OutputModuleBase* module, const std::string& name);
+/// The module menu's "Input name" field.
+void appendInputNameItem(rack::ui::Menu* menu, OutputModuleBase* module);
 
 } // namespace sources
 } // namespace tessera

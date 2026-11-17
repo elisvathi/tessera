@@ -85,7 +85,9 @@ the master amount for all of them. The arrow left of the track's name folds the 
 - **M** silences that input, without pulling a cable. Everything after it in the track's chain hears it go too: to
   keep an effect and drop the dry sound, set the effect's **Mix** to 100% instead.
 - **S** plays that input alone, and solos its track too.
-- Right-click an **IN** strip's name for **Show this module in the rack**.
+- Right-click an **IN** strip's name for **Rename…** and **Show this module in the rack**. Give each input a name
+  ("Synth", "Vocal mic"): the strip, the sends' **FROM** rows and the track's source list then use it. The Track Out's
+  own right-click menu has the same name under **Input name**. Clear the name to go back to **IN**.
 - **Counted once**: when one cable feeds the INs of two Track Outs on the same track, the second adds nothing.
 
 A Track Out's **Use** and **Level** are kept in the module and also sit in its right-click menu, under **As a source

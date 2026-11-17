@@ -308,7 +308,10 @@ void TesseraModule::uiStep() {
     while (recordEvents.pop(recordEvent)) {
         // Every live note also comes once without a track (the capture copy): that one is what step input hears.
         constexpr size_t kMaxLiveInput = 256;
-        if (recordEvent.kind == RecordEvent::Kind::Note && recordEvent.track == 0 && liveInput.size() < kMaxLiveInput)
+        bool captureCopy = recordEvent.kind == RecordEvent::Kind::Note && recordEvent.track == 0;
+        if (captureCopy)
+            inputKeys.note(recordEvent.pitch, recordEvent.inPitch, recordEvent.on);
+        if (captureCopy && liveInput.size() < kMaxLiveInput)
             liveInput.push_back(recordEvent);
         recorder.handle(recordEvent);
     }

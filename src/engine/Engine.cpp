@@ -746,6 +746,7 @@ void Engine::liveNote(const LiveNote& note) {
     uint8_t noteChannel = note.source == LiveSource::Midi ? uint8_t(std::clamp(part + 1, 1, 16)) : 1;
     RecordEvent e;
     e.pitch = pitch;
+    e.inPitch = note.pitch;
     e.velocity = note.velocity;
     e.channel = noteChannel;
     e.on = note.on;

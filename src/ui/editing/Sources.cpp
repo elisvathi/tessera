@@ -4,8 +4,10 @@
 #include "../../module/OutputModuleBase.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../EditorContext.hpp"
+#include "../ModuleUndo.hpp"
 #include "../Theme.hpp"
 #include "../views/AudioClipDraw.hpp"
+#include "../widgets/MenuTextField.hpp"
 #include "AudioActions.hpp"
 
 #include <history.hpp>
@@ -273,6 +275,8 @@ std::vector<Row> rowsOf(TesseraModule& m, TrackId track) {
         std::string name = audioActions::outputName(o);
         if (total[name] > 1)
             name += " " + std::to_string(++seen[name]);
+        if (!o->inputName().empty())
+            name = o->inputName();
         rows.push_back({o, name, o->sourceSetting(), o->isCountedOnce()});
     }
     return rows;
@@ -422,6 +426,32 @@ std::string chainLabel(OutputModuleBase* module, const std::string& fallback) {
                 c->inputModule != module && c->inputModule->model)
                 return c->inputModule->model->name;
     return "FX";
+}
+
+std::string inputLabel(const OutputModuleBase* module, int number, int count) {
+    if (module && !module->inputName().empty())
+        return module->inputName();
+    return count > 1 ? "IN " + std::to_string(number) : "IN";
+}
+
+void renameInput(OutputModuleBase* module, const std::string& name) {
+    if (!module)
+        return;
+    std::string trimmed = name;
+    trimmed.erase(0, trimmed.find_first_not_of(' '));
+    trimmed.erase(trimmed.find_last_not_of(' ') + 1);
+    withModuleUndo(module, "Rename input", [&] { module->setInputName(trimmed); });
+}
+
+void appendInputNameItem(rack::ui::Menu* menu, OutputModuleBase* module) {
+    if (!module || module->isLoop())
+        return;
+    menu->addChild(rack::createMenuLabel("Input name (empty: IN)"));
+    int64_t id = module->id;
+    menu->addChild(new MenuTextField(module->inputName(), [id](const std::string& text) {
+        if (OutputModuleBase* o = moduleById(id); o && text != o->inputName())
+            renameInput(o, text);
+    }));
 }
 
 SourceLevel inputLevel(EditorContext& ctx, TrackId track, int64_t module) {

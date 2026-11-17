@@ -225,6 +225,8 @@ void DetailPane::layout() {
             mixer->box = rack::math::Rect(rack::math::Vec(), box.size);
         } else {
             roll->visible = true;
+            // Hidden, it still lays itself out: a real (empty) size, never Rack's infinite default (§181).
+            mixer->box = rack::math::Rect(0, 0, 0, 0);
         }
     }
 }

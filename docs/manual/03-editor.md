@@ -136,7 +136,8 @@ While you drag a note or clip near the edge, the view scrolls by itself.
 
 The follow button in the transport bar (or **Ctrl+F**) keeps the playhead in view while playing. Pick how it moves
 in the notes header's **View ▾** menu: **Page by page** or **Scroll smoothly**. Following pauses while you drag or
-right after you scroll, then comes back.
+right after you scroll, then comes back. While a clip plays through [playheads](13-devices.md#playheads), the notes view never follows:
+each playhead reads its own part of the clip, so there is no one place to follow.
 
 ## Mouse keys that work everywhere
 

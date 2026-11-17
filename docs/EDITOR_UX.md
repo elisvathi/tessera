@@ -135,7 +135,7 @@ Toggle `Ctrl/Cmd+F` (button in transport). Modes: **Page** (jumps when the playh
 └──────┴───────────────────────────────────────────────────────────┴───────┘
 ```
 
-- **Keyboard** (left): click/drag to audition (glissando across keys while dragging). Scale notes tinted, root marked, active (playing) notes light up. Ctrl/Cmd+click a key selects all notes of that pitch. Drum tracks show lane names instead of keys.
+- **Keyboard** (left): click/drag to audition (glissando across keys while dragging). Scale notes tinted, root marked, active (playing) notes light up. Keys held on any live input (MIDI, REC CV, computer keyboard) light with an accent outline, and their grid rows get a faint band (DECISIONS §180). Ctrl/Cmd+click a key selects all notes of that pitch. Drum tracks show lane names instead of keys.
 - **Grid**: bar / beat / subdivision lines at three strengths; black-key rows shaded; out-of-scale rows dimmed when a scale is active; clip loop region shown, content beyond the loop end dimmed.
 - **Expression lanes** (bottom, resizable, multiple visible at once stacked, or tabbed): see §4.6.
 - **Inspector** (right, collapsible with `I`): see §4.7.

@@ -194,6 +194,8 @@ class NoteGrid : public TimelineView {
     void drawTakeNotes(NVGcontext* vg);
     void drawTransformFrame(NVGcontext* vg);
     void drawHoverGuide(NVGcontext* vg);
+    /// A faint band along the row of each key held on a live input, so you see where the note you play would go.
+    void drawInputRows(NVGcontext* vg);
     void drawEmptyState(NVGcontext* vg);
 
     PianoRollView& owner;

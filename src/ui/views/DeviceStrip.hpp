@@ -277,8 +277,15 @@ class DeviceStrip : public InteractiveView {
     /// Selects every card of the shown chain (Ctrl+A while the strip has the focus).
     void selectAllInStrip();
     /// Pastes `items` into the shown chain, its devices from `index` on (-1 = the end), as one undo step; the
-    /// message starts with `verb` ("Pasted", "Duplicated").
-    void pasteItems(const Copied& items, int index, const char* verb = "Pasted");
+    /// message starts with `verb` ("Pasted", "Duplicated"). With `into`, every modulator goes into that section.
+    void pasteItems(const Copied& items, int index, const char* verb = "Pasted",
+                    std::optional<ModulatorPlace> into = std::nullopt);
+    /// The section a paste puts modulators into, from what was right-clicked or is selected (docs/DECISIONS.md
+    /// §182): a section, a modulator row's section, or a card's own section while only modulators are copied.
+    /// None: the usual places (the track's or clip's section, and the song's for song modulators).
+    std::optional<ModulatorPlace> pasteTarget(const Part* clicked);
+    /// "the song", "the track", "the clip" or the device's name, for the Paste item.
+    std::string placeName(const ModulatorPlace& place);
     /// Removes the selection as one undo step; the message starts with `verb` ("Deleted", "Cut").
     void deleteSelection(const char* verb = "Deleted");
     /// Where pasted devices go after card `cardIndex` (-1: after the last selected card, else at the end).
@@ -294,8 +301,9 @@ class DeviceStrip : public InteractiveView {
     void editPatternGrid(const Part& grid, rack::math::Vec pos);
     void drawPatternGrid(NVGcontext* vg, const Part& grid);
     /// Copy and Paste for a right-click menu, and with `full` Duplicate and Delete too (a card's or a modulator's
-    /// own menu has those already); pasted devices land at `pasteIndex`.
-    void appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full = true);
+    /// own menu has those already); pasted devices land at `pasteIndex`, modulators in `into` when set.
+    void appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full = true,
+                         std::optional<ModulatorPlace> into = std::nullopt);
     void drawCard(NVGcontext* vg, const Part& card);
     void drawPlayheadChip(NVGcontext* vg, const Device& d, const Part& part, bool hot);
     /// Shows the tooltip for the part under the mouse: a playhead chip's dot or name.
@@ -330,6 +338,7 @@ class DeviceStrip : public InteractiveView {
     float scrollX = 0, contentWidth = 0;
     std::map<uint64_t, float> sectionScroll; // per section key: how far its rows are scrolled
     std::vector<std::string> sectionLabels;  // this frame's section labels, which ModSection parts point into
+    std::map<uint64_t, ModulatorPlace> sectionPlaces; // this frame's sections by key: where their modulators live
     float chainLeft = 0; // where the scrolling chain starts (the modulator list stays put)
     // Each modulator's last outputs (0..1 for drawing), for its row's little graph.
     std::map<uint64_t, std::array<float, 40>> scopes;

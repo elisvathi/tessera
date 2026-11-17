@@ -470,6 +470,8 @@ json_t* OutputModuleBase::dataToJson() {
         json_object_set_new(root, "mix", json_real(mix));
     if (chainPos >= 0)
         json_object_set_new(root, "chain", json_integer(chainPos));
+    if (!ownInputName.empty())
+        json_object_set_new(root, "inputName", json_string(ownInputName.c_str()));
     return root;
 }
 
@@ -498,6 +500,8 @@ void OutputModuleBase::dataFromJson(json_t* root) {
     }
     if (json_t* j = json_object_get(root, "chain"); json_is_integer(j))
         chainPos = int(json_integer_value(j));
+    const char* name = json_string_value(json_object_get(root, "inputName"));
+    ownInputName = name ? name : "";
 }
 
 } // namespace tessera

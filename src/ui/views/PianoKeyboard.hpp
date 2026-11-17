@@ -52,12 +52,15 @@ class PianoKeyboard : public InteractiveView {
     void visibleRows(int& first, int& last, int& lo, int& hi) const;
     /// Paints every key unlit: the cached layer's contents.
     void paintKeys(NVGcontext* vg);
-    /// Paints one white key with its name and root mark, lit while it sounds, tinted while hovered.
-    void paintWhiteKey(NVGcontext* vg, int p, bool on, bool hover);
+    /// Paints one white key with its name and root mark, lit while it sounds, tinted while hovered, outlined while
+    /// held on a live input.
+    void paintWhiteKey(NVGcontext* vg, int p, bool on, bool hover, bool input = false);
     /// `shadow` off repaints a key over its own cached image, which already has the shadow under it.
-    void paintBlackKey(NVGcontext* vg, int p, bool on, bool hover, bool shadow);
+    void paintBlackKey(NVGcontext* vg, int p, bool on, bool hover, bool shadow, bool input = false);
     /// Paints one row as a named key of its own (folded rows, drum lanes).
-    void paintNamedKey(NVGcontext* vg, int p, bool on, bool hover);
+    void paintNamedKey(NVGcontext* vg, int p, bool on, bool hover, bool input = false);
+    /// Marks a key held on a live input: a bright outline, filled faintly when the clip isn't also playing it.
+    void drawInputMark(NVGcontext* vg, rack::math::Rect key, float radius, bool on);
     /// Marks the key's root on the front edge of the key at `y`.
     void drawRootMark(NVGcontext* vg, float y, float row);
     /// The top and bottom edge of a white key, which reaches halfway under its black neighbours.
@@ -68,6 +71,7 @@ class PianoKeyboard : public InteractiveView {
     CachedLayer* layer;
     Look look;
     std::bitset<128> sounding;
+    std::bitset<128> input;               // held on a live input (MIDI, REC CV, the computer keyboard)
     std::array<NVGcolor, 128> keyColor{}; // each sounding key's colour: the track's, or the playhead's reading it
     int hoverPitch = -1;
 };
