@@ -48,9 +48,10 @@ ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), sou
     back.active = [] { return true; };
     backButton = new ToolButton(back);
     backButton->visible = false;
-    addChild(backButton);
     ruler = new Ruler(ctx, viewport, source);
     addChild(ruler);
+    // After the ruler it sits on, or the ruler hides it and takes its clicks.
+    addChild(backButton);
     lanes = new ArrangerLanes(ctx, *this);
     addChild(lanes);
     panel = new LauncherPanel(ctx, *this);
