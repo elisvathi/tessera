@@ -117,6 +117,8 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Quantize | **Notes ▾ → Quantize…**, or **Q** |
 | Clip length | The clip chip at the left of the notes header |
 | Launch quantize | **Launch 1 bar ▾** above the track names |
+| A clip that plays the next one by itself | A clip's menu › **Next action**, or **NEXT ACTION** in the inspector |
+| Holding every clip where it is | **Launch 1 bar ▾ → Next actions** off |
 | Ripple, Stack, Automation follows clips | The ▾ next to Select and Draw in the song pane |
 | MPE input | The ▾ next to the record button |
 | Merge, Stack or Replace when recording on the timeline | The ▾ next to the record button: **Recording over timeline clips** |

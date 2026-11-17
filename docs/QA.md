@@ -152,6 +152,16 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       its clip plays.
 - [ ] Plays switch: Clips frames the clips and dims the timeline; Timeline frames the timeline and dims the
       clips, except a clip launched over the timeline, which stays lit. Undo restores the switch.
+- [ ] Next actions (DECISIONS §184): right-click a clip → Next action → Play next. Its slot shows "→ 4"; launched,
+      it counts 1/4 … 4/4, the clip to its right blinks yellow one bar before the end, then starts on the bar line.
+      Round robin on every clip of a row goes round; Play random sometimes repeats a clip, Play other never does.
+- [ ] Next action menu: After (loops / bars), How often 75% with Otherwise, Pick from This block (an empty slot
+      splits the row in two groups that never mix). The inspector's NEXT ACTION rows set the same and its sentence
+      names the next clip. Each change is one undo step; save and reload keeps them.
+- [ ] Launch ▾ → Next actions off: the tags fade, a waiting next action stops blinking, clips keep looping. On again:
+      they move on at the end of a count. Launching a clip by hand always wins over a next action.
+- [ ] A narrow slot shows the action's icon alone; a slot with its own devices or playheads keeps its marks beside
+      the tag.
 
 ## Arranger
 - [ ] ARRANGE (panel) / the transport Plays switch: the timeline plays; notes start on time. In Launcher

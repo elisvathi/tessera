@@ -266,6 +266,16 @@ class Engine {
     double clipPosition(size_t i) const;
     /// Clip ticks played since the playing clip started (not wrapped by its loop). NaN when nothing plays.
     double clipElapsed(size_t i) const { return tracks[i].playing != kNoSlot ? playTick - tracks[i].launchTick : NAN; }
+    /// Ticks the playing clip of track `i` has counted toward its next action (from its launch, or from the last
+    /// roll that kept it playing); NaN when it has none.
+    double actionElapsed(size_t i) const {
+        return tracks[i].playing != kNoSlot && std::isfinite(tracks[i].actionFrom) ? playTick - tracks[i].actionFrom
+                                                                                   : NAN;
+    }
+    /// Next actions on (the default) or held: while held every clip keeps looping, and a next action already
+    /// waiting for its launch line is called off.
+    void setNextActions(bool on);
+    bool nextActions() const { return nextActionsOn; }
     /// Where playhead `head` of track `i` has read its clip to (clip ticks), as its settings and their curves and
     /// modulators moved it; NaN while it isn't reading. For the editor's playhead lines. Audio thread.
     double playheadPosition(size_t i, size_t head) const {
@@ -370,6 +380,13 @@ class Engine {
         double queuedAt = 0;     // playTick when the queued change happens
         double queuedClipTime = NAN; // the queued clip starts from this clip time (a ruler click); NaN = its start
         double launchTick = 0;   // playTick when the playing clip started
+        // Next actions (docs/DECISIONS.md §184): where the playing clip's count started (NaN: it has no next action),
+        // the clip that played before it, whether the queued launch is one a next action picked, and whether this
+        // count's roll came out "keep looping" (the count starts over when it ends).
+        double actionFrom = NAN;
+        ClipId previousClip;
+        bool queuedByAction = false;
+        bool actionKept = false;
         bool overridden = false; // launched or stopped by the launcher since the last "back to arrangement"
         size_t arrangementCursor = 0;
         // Automation per AUTO channel: the smoothed value (0..1), its volts, and where each lane list was.
@@ -568,6 +585,13 @@ class Engine {
     static size_t arrangementIndex(const TrackPlayback& track, double songPos);
     void queueLaunch(const TrackPlayback& track, TrackState& state, int slot, bool immediate);
     void switchTo(const TrackPlayback& track, TrackState& state, int slot, double at);
+    /// When the playing clip's next action is due by play tick `curPlay`: picks where it goes and queues that for the
+    /// end of its count, one launch line ahead, so the editor shows what comes next. Nothing while a launch waits.
+    void decideNextAction(const TrackPlayback& track, TrackState& state, double curPlay);
+    /// The play tick at which the playing clip's next action is picked; INFINITY for none.
+    double nextActionDue(const TrackPlayback& track, const TrackState& state) const;
+    /// A number in [0, 1) for a next action's dice: new on every draw.
+    double drawAction();
     /// Carries out the track's queued launch at play tick `at`, from its queued clip time when it has one.
     void switchQueued(const TrackPlayback& track, TrackState& state, double at);
     /// Carries out every queued launch now (on stop and reset).
@@ -798,6 +822,8 @@ class Engine {
 
     bool playing = false;
     uint32_t roll = 1; // see currentRoll()
+    bool nextActionsOn = true;
+    uint64_t actionDraws = 0; // next actions' dice: how many were drawn
     bool resetPending = false;
     double songTick = 0;
     double windowStart = 0; // song tick where the current sample's window begins

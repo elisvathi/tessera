@@ -5,6 +5,7 @@
 #include "AudioSource.hpp"
 #include "Automation.hpp"
 #include "Device.hpp"
+#include "NextAction.hpp"
 #include "Note.hpp"
 #include "ScaleRef.hpp"
 
@@ -51,6 +52,7 @@ struct Clip {
     std::vector<AutomationEnvelope> automation; // clip time, loops with the clip
     std::optional<ScaleRef> scaleOverride;
     std::optional<LaunchQuantize> launchQuantize; // overrides the song's setting for this clip
+    NextActionSettings next;                      // what it does by itself once launched
     std::optional<AudioContent> audio;            // set on audio clips, which have no notes
     /// The clip's own device chain (docs/DECISIONS.md §157): while `playsOwnChain` is set it plays only through these
     /// devices and modulators, and its track's chain is skipped for it. `hasOwnChain` says it has one at all (an
@@ -84,7 +86,7 @@ struct Clip {
         return id == o.id && name == o.name && color == o.color && ownColor == o.ownColor && length == o.length &&
                loopStart == o.loopStart && loopEnd == o.loopEnd && loopMode == o.loopMode && notes == o.notes &&
                automation == o.automation && scaleOverride == o.scaleOverride && launchQuantize == o.launchQuantize &&
-               audio == o.audio && hasOwnChain == o.hasOwnChain && playsOwnChain == o.playsOwnChain &&
+               next == o.next && audio == o.audio && hasOwnChain == o.hasOwnChain && playsOwnChain == o.playsOwnChain &&
                devices == o.devices && modulators == o.modulators && variation == o.variation;
     }
 };

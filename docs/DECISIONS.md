@@ -3128,3 +3128,31 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   grid. The learned slot shows a dot. Program change n launches scene n (first = 1 in the menus' counting).
 - Only lights are sent; Tessera never moves a controller's faders. Checked in the hidden Rack with Rack's computer
   keyboard as the controller (grid and learn); the lights are unit tested only, no controller here.
+
+## 184. Next actions: clips that move on by themselves (17 Nov)
+
+- **User request** (GitHub issue #20): after a few loops a clip plays the next one, a random one, and more. The user
+  asked for as much flexibility as we can give. Agreed from a mockup with three boards (slot tag, clip menu,
+  inspector).
+- **Actions**: Keep looping (the default), Play next, Play previous, Play first, Play last, Play random (this clip
+  too), Play other (never this clip), Round robin (next, wrapping to the first), Go back (the clip that played
+  before), Stop. "Next" is the slot to the right: tracks are rows, scenes columns. Next and Previous stop at the ends;
+  Round robin wraps. Play other with no other clip keeps playing.
+- **Settings per clip** (`NextActionSettings`, saved in the clip as `next` only when it differs from the default):
+  After a count of loops (default 4) or bars; How often (a chance, default Always) with an Otherwise action; Pick from
+  the whole track or the clip's block (a run of clips between empty slots). A clip that plays once does its action
+  when it ends, whatever the count. "How often" is not called "Chance": the CLIP section's dice row already is.
+- **Engine**: the count runs from the launch. One launch line before it ends (the clip's own launch quantize, else the
+  song's; at most the whole count), the action is rolled and its target goes into the track's queue as an ordinary
+  launch for the count's end. So the target blinks yellow as any launch does, a random pick shows before it plays,
+  stop and reset carry it out as they do any queued launch, and a launch by hand replaces it. A roll that comes out
+  Keep looping starts a new count at the old one's end. The pick (`pickNextAction`) is pure model code with tests;
+  the dice is the engine's own counter mixed with the play roll, so it allocates nothing.
+- **Next actions switch** in the Launch ▾ menu (beside Record into timeline, and in the song menu when the header has
+  no room): off holds every clip where it is, calls off a next action already waiting, and fades the slot tags. It is
+  a performance switch saved with the patch, like Record into timeline, not an undo step. The mockup drew it as a
+  header pill; the header has no room for a third control, so it joined the menu that holds the other launch switch.
+- **Slot tag**: the action's icon and count at the slot's right ("→ 4", "↻ 8 bars"), counting while it plays ("2/4");
+  the icon alone on a narrow slot, nothing when the name would lose its last 36 px.
+- Not done: scene follow actions (a scene that launches the next scene), which the launcher design (S4) also plans;
+  the timeline ignores next actions; MIDI and DAWproject export don't write them.

@@ -179,6 +179,18 @@ constexpr float kOwnMarkWidth = 16; // the device-card mark of a clip with its o
 constexpr float kOwnMarkHeight = 12;
 constexpr float kOwnMarkDot = 3.5f;     // its small form, on a slot too narrow for the card and the name
 constexpr float kOwnMarkCardRoom = 100; // the slot body from which the card fits beside the name
+// A clip's next action on its slot (DECISIONS §184): a small tag with the action's icon and its count ("2/4" while it
+// plays) while the name keeps kNextMarkNameRoom; on a narrower slot the icon alone, bare, while the name keeps
+// kNextMarkBareNameRoom; then nothing.
+constexpr float kNextMarkIcon = 9;
+constexpr float kNextMarkBareNameRoom = 18;
+constexpr float kNextMarkPad = 3;
+constexpr float kNextMarkHeight = 14;
+constexpr float kNextMarkNameRoom = 36;
+constexpr float kNextMarkStroke = 1.3f;
+constexpr float kNextMarkFill = 0.14f;        // the tag's tint over the clip colour
+constexpr float kNextMarkFillPlaying = 0.24f; // stronger while the clip counts
+constexpr float kNextMarkHeldAlpha = 0.45f;   // its icon and count while next actions are held
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
 // down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip.

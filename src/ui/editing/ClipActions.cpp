@@ -5,6 +5,7 @@
 #include "AudioActions.hpp"
 #include "BounceActions.hpp"
 #include "ImportMidi.hpp"
+#include "NextActionMenu.hpp"
 
 #include "ExportMidi.hpp"
 #include "TrackActions.hpp"
@@ -632,6 +633,8 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
             sub->addChild(
                 rack::createCheckMenuItem(quantizeLabel(q), "", [isSet, q] { return isSet(q); }, [set, q] { set(q); }));
     }));
+    menu->addChild(rack::createSubmenuItem("Next action", nextActionMenu::shortLabel(clip->next),
+                                           [c, id](rack::ui::Menu* sub) { nextActionMenu::appendMenu(sub, *c, id); }));
 
     // A clip file holds notes; an audio clip's sound lives in the patch.
     if (!clip->isAudio()) {
@@ -739,6 +742,16 @@ void appendSceneMenu(rack::ui::Menu* menu, EditorContext& ctx, int scene, std::f
             mod->perform(removeScene(mod->song(), scene));
         },
         song.scenes.size() <= 1));
+}
+
+void appendNextActionsSwitch(rack::ui::Menu* menu, EditorContext& ctx) {
+    EditorContext* c = &ctx;
+    menu->addChild(rack::createCheckMenuItem(
+        "Next actions", "clips move on by themselves", [c] { return c->module() && c->module()->nextActionsOn(); },
+        [c] {
+            if (TesseraModule* m = c->module())
+                m->setNextActionsOn(!m->nextActionsOn());
+        }));
 }
 
 void appendQuantizeMenu(rack::ui::Menu* menu, EditorContext& ctx) {

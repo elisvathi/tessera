@@ -28,6 +28,12 @@ void drawRing(NVGcontext* vg, rack::math::Vec c, float radius, float progress, N
 void drawNotePreview(NVGcontext* vg, const Clip& clip, const std::vector<DrumLane>* lanes, rack::math::Rect r,
                      NVGcolor color);
 bool blinkOn();
+/// The icon of a next action, `size` pixels square around `c`: an arrow for the actions that walk the slots, a die
+/// for the random ones, a turning arrow for round robin, a bent arrow for back, a square for stop. Nothing for None.
+void drawActionIcon(NVGcontext* vg, NextAction action, rack::math::Vec c, float size, NVGcolor color);
+/// What a clip's next action tag says: its count ("4", "8 bars"), or while it plays how far it got ("2/4"); empty for
+/// a clip that plays once. `elapsed` is LauncherStatus::actionElapsed, NaN when the clip isn't counting.
+std::string nextActionCount(const Clip& clip, Tick loopLength, TimeSig ts, double elapsed);
 /// The mark of a clip played by playheads: one short stripe per playhead of `device` (the Playheads device of the
 /// chain the clip plays through), in its colour (hollow when muted), stacked from `topRight` down and leftwards.
 /// Draws nothing for a null `device`.

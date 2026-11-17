@@ -76,6 +76,7 @@ ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), sou
                 if (TesseraModule* m = c->module())
                     m->setRecordArrangement(!m->recordingArrangement());
             }));
+        clipActions::appendNextActionsSwitch(menu, *c);
     };
     quantize.caret = true;
     quantize.activeColor = &theme::Palette::record;
@@ -202,6 +203,7 @@ void ArrangerView::appendSongMenu(rack::ui::Menu* menu) {
             if (TesseraModule* m = c->module())
                 m->setRecordArrangement(!m->recordingArrangement());
         }));
+    clipActions::appendNextActionsSwitch(menu, *c);
 }
 
 void ArrangerView::applyZoomLimits() {
