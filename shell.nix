@@ -47,7 +47,7 @@ pkgs.mkShell {
     git
     clang-tools
   ];
-  buildInputs = [ pkgs.jansson ] ++ lib.optionals stdenv.hostPlatform.isLinux [ pkgs.libGL ];
+  buildInputs = [ pkgs.jansson pkgs.libsamplerate ] ++ lib.optionals stdenv.hostPlatform.isLinux [ pkgs.libGL ];
 
   # Rack uses GCC on Linux (including -fno-gnu-unique) and Clang on macOS.
   # Use the same wrapped compiler for the sanitizer-enabled unit tests.

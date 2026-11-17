@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y jq libjansson-dev pkg-config libgl-dev
+        run: sudo apt-get update && sudo apt-get install -y jq libjansson-dev libsamplerate0-dev pkg-config libgl-dev
       - name: Get the Rack SDK
         run: |
           curl -fsSL "https://vcvrack.com/downloads/Rack-SDK-$RACK_SDK_VERSION-lin-x64.zip" -o sdk.zip
