@@ -1,15 +1,13 @@
 #include "AudioStore.hpp"
 
+#include "Filesystem.hpp"
 #include "Resample.hpp"
 #include "TimeStretcher.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <filesystem>
 #include <new>
-
-namespace fs = std::filesystem;
 
 namespace tessera {
 

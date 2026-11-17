@@ -1,5 +1,6 @@
 #include "TesseraModule.hpp"
 
+#include "../audio/Filesystem.hpp"
 #include "../model/Sends.hpp"
 
 #include "CommandAction.hpp"
@@ -9,7 +10,6 @@
 #include <chrono>
 #include <cstring>
 #include <limits>
-#include <filesystem>
 
 // Recording audio, bouncing and exporting (docs/design/AUDIO_MIXER.md §8.6): the UI-thread side. The audio thread
 // fills rings through the player's taps; the writer thread turns them into files; this turns files into clips.
@@ -111,9 +111,9 @@ void TesseraModule::captureStep() {
         c.track = t.id;
         c.tap = tap;
         c.ring = std::make_shared<FrameRing>(size_t(kRingSeconds * rate));
-        std::filesystem::path dir = std::filesystem::temp_directory_path() / ("tessera-" + std::to_string(id));
+        fs::path dir = fs::temp_directory_path() / ("tessera-" + std::to_string(id));
         std::error_code ec;
-        std::filesystem::create_directories(dir, ec);
+        fs::create_directories(dir, ec);
         c.path = (dir / (t.name + " take " + std::to_string(++takeCounter) + ".wav")).string();
         c.writer = captureWriter->start(c.ring, c.path, rate, CaptureWriter::Format::Float32);
         AudioPlayer::TapSpec spec;
@@ -163,7 +163,7 @@ void TesseraModule::captureStep() {
                 takes.push_back(take);
             } else {
                 std::error_code ec;
-                std::filesystem::remove(c.path, ec);
+                fs::remove(c.path, ec);
             }
             it = captures.erase(it);
             continue;
@@ -193,9 +193,9 @@ bool TesseraModule::startBounce(TrackId track, Tick from, Tick to, bool untilSil
     c.track = track;
     c.tap = tap;
     c.ring = std::make_shared<FrameRing>(size_t(kRingSeconds * rate));
-    std::filesystem::path dir = std::filesystem::temp_directory_path() / ("tessera-" + std::to_string(id));
+    fs::path dir = fs::temp_directory_path() / ("tessera-" + std::to_string(id));
     std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
+    fs::create_directories(dir, ec);
     std::string fileName = t->name + " (bounce).wav";
     std::replace(fileName.begin(), fileName.end(), '/', '-');
     c.path = (dir / fileName).string();
@@ -337,9 +337,9 @@ bool TesseraModule::glueAudio(TrackId track, const std::vector<ArrangementId>& i
     job->track = track;
     job->instances = instances;
     job->from = from;
-    std::filesystem::path dir = std::filesystem::temp_directory_path() / ("tessera-" + std::to_string(id));
+    fs::path dir = fs::temp_directory_path() / ("tessera-" + std::to_string(id));
     std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
+    fs::create_directories(dir, ec);
     job->path = (dir / (t->name + " glued.wav")).string();
     startOfflineRender(std::move(job), solo, from, to, bpm);
     return true;
@@ -426,9 +426,9 @@ bool TesseraModule::renderClip(ClipId clipId) {
     auto job = std::make_unique<GlueJob>();
     job->track = owner->id;
     job->renderClip = clipId;
-    std::filesystem::path dir = std::filesystem::temp_directory_path() / ("tessera-" + std::to_string(id));
+    fs::path dir = fs::temp_directory_path() / ("tessera-" + std::to_string(id));
     std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
+    fs::create_directories(dir, ec);
     job->path = (dir / (clip->name + " rendered.wav")).string();
     startOfflineRender(std::move(job), solo, 0, only->length, bpm);
     return true;
@@ -446,7 +446,7 @@ void TesseraModule::glueStep() {
     double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
     AudioImport imp = audio->importFile(job->path, songTempo, songData.timeSig);
     std::error_code ec;
-    std::filesystem::remove(job->path, ec);
+    fs::remove(job->path, ec);
     if (!imp.ok)
         return;
     if (job->renderClip.valid()) {
@@ -809,7 +809,7 @@ void TesseraModule::bounceStep() {
     const Track* t = songData.findTrack(done.track);
     if (!t || frames == 0) {
         std::error_code ec;
-        std::filesystem::remove(path, ec);
+        fs::remove(path, ec);
         removeBounceTrack(done);
         exportResult = "Bounce stopped before any sound was recorded";
         return;
@@ -817,7 +817,7 @@ void TesseraModule::bounceStep() {
     double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
     AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
     std::error_code ec;
-    std::filesystem::remove(path, ec);
+    fs::remove(path, ec);
     if (!imp.ok) {
         removeBounceTrack(done);
         exportResult = "Bounce failed: the recorded file couldn't be read";
@@ -894,7 +894,7 @@ void TesseraModule::importTakes(const std::vector<Take>& takes) {
         const Track* t = songData.findTrack(take.track);
         AudioImport imp = t ? audio->importFile(take.path, songTempo, songData.timeSig) : AudioImport{};
         std::error_code ec;
-        std::filesystem::remove(take.path, ec);
+        fs::remove(take.path, ec);
         if (!imp.ok)
             continue;
         // A take that starts where an audio clip starts (a loop pass) becomes another take of that clip, in every

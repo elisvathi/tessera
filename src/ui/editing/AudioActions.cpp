@@ -4,6 +4,7 @@
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../../plugin.hpp"
+#include "../../audio/Filesystem.hpp"
 #include "../../engine/AudioSnapshotBuilder.hpp"
 #include "../EditorContext.hpp"
 #include "../interaction/Shortcuts.hpp"
@@ -18,7 +19,6 @@
 #include <patch.hpp>
 #include <osdialog.h>
 
-#include <filesystem>
 
 namespace tessera::audioActions {
 
@@ -624,7 +624,7 @@ void openAudioFiles(EditorContext& ctx) {
                                            [&](const AudioTake& tk) { return tk.source == s->id; })))
                 uses += song.clipUses(id);
         std::error_code ec;
-        uintmax_t size = std::filesystem::file_size(rack::system::join(folder, s->file), ec);
+        uintmax_t size = fs::file_size(rack::system::join(folder, s->file), ec);
         if (!ec)
             total += size;
         bool lost = std::count(missing.begin(), missing.end(), s->id) > 0;

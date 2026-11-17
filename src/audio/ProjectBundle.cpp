@@ -3,15 +3,13 @@
 #include "../model/Serialize.hpp"
 #include "../model/Zip.hpp"
 #include "AudioDecode.hpp"
+#include "Filesystem.hpp"
 
 #include <algorithm>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <map>
-
-namespace fs = std::filesystem;
 
 namespace tessera::bundle {
 
@@ -64,7 +62,7 @@ struct Written {
 using ReadBytes = std::function<size_t(char* into, size_t n)>;
 
 /// Streams one entry to `out`. Its size is known up front, so only the checksum is filled in afterwards.
-bool addEntry(std::ofstream& out, uint64_t& at, std::vector<Written>& list, const std::string& name, uint64_t size,
+bool addEntry(fs::ofstream& out, uint64_t& at, std::vector<Written>& list, const std::string& name, uint64_t size,
               const ReadBytes& read, const std::function<void(size_t)>& advanced) {
     Written w;
     w.name = name;
@@ -122,7 +120,7 @@ bool addEntry(std::ofstream& out, uint64_t& at, std::vector<Written>& list, cons
 }
 
 /// The central directory and end records that close the archive.
-void addDirectory(std::ofstream& out, uint64_t at, const std::vector<Written>& list) {
+void addDirectory(fs::ofstream& out, uint64_t at, const std::vector<Written>& list) {
     std::string d;
     for (const Written& w : list) {
         std::string extra;
@@ -206,7 +204,7 @@ struct Entry {
     uint64_t size = 0, offset = 0;
 };
 
-bool readAt(std::ifstream& in, uint64_t pos, void* into, size_t n) {
+bool readAt(fs::ifstream& in, uint64_t pos, void* into, size_t n) {
     in.clear();
     in.seekg(std::streamoff(pos));
     in.read(static_cast<char*>(into), std::streamsize(n));
@@ -215,7 +213,7 @@ bool readAt(std::ifstream& in, uint64_t pos, void* into, size_t n) {
 
 /// Reads the archive's table of contents. A project may come from anyone, so every length is checked against the
 /// file before it is used.
-bool readDirectory(std::ifstream& in, uint64_t total, std::map<std::string, Entry>& out) {
+bool readDirectory(fs::ifstream& in, uint64_t total, std::map<std::string, Entry>& out) {
     constexpr size_t kEndSize = 22;
     constexpr size_t kMaxComment = 65535;
     if (total < kEndSize)
@@ -296,7 +294,7 @@ bool readDirectory(std::ifstream& in, uint64_t total, std::map<std::string, Entr
 }
 
 /// Where the entry's data starts, read from its local header. False when it runs past the end of the file.
-bool dataStart(std::ifstream& in, uint64_t total, const Entry& e, uint64_t& start) {
+bool dataStart(fs::ifstream& in, uint64_t total, const Entry& e, uint64_t& start) {
     unsigned char h[30];
     if (e.offset > total || total - e.offset < sizeof h || !readAt(in, e.offset, h, sizeof h) ||
         get32(h) != kLocalHeader)
@@ -306,7 +304,7 @@ bool dataStart(std::ifstream& in, uint64_t total, const Entry& e, uint64_t& star
 }
 
 /// Opens the archive at `path` and reads its table of contents.
-bool open(const std::string& path, std::ifstream& in, uint64_t& total, std::map<std::string, Entry>& entries) {
+bool open(const std::string& path, fs::ifstream& in, uint64_t& total, std::map<std::string, Entry>& entries) {
     std::error_code ec;
     fs::path p = fs::u8path(path);
     total = fs::file_size(p, ec);
@@ -322,7 +320,7 @@ bool writeText(const std::string& path, const std::string& text) {
     fs::path target = fs::u8path(path), temporary = fs::u8path(path + ".part");
     bool ok;
     {
-        std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+        fs::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         out.write(text.data(), std::streamsize(text.size()));
         out.flush();
         ok = out.is_open() && out.good();
@@ -351,7 +349,7 @@ bool write(const std::string& path, const std::string& projectJson, const std::v
 
     bool ok = true;
     {
-        std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+        fs::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         ok = out.is_open();
         uint64_t at = 0;
         std::vector<Written> list;
@@ -366,7 +364,7 @@ bool write(const std::string& path, const std::string& projectJson, const std::v
                        },
                        advanced);
         for (size_t i = 0; ok && i < audio.size(); i++) {
-            std::ifstream in(fs::u8path(audio[i].path), std::ios::binary);
+            fs::ifstream in(fs::u8path(audio[i].path), std::ios::binary);
             ok = in.is_open() && addEntry(
                                      out, at, list, audio[i].name, sizes[i],
                                      [&](char* into, size_t n) {
@@ -385,14 +383,14 @@ bool write(const std::string& path, const std::string& projectJson, const std::v
 }
 
 bool isBundle(const std::string& path) {
-    std::ifstream in(fs::u8path(path), std::ios::binary);
+    fs::ifstream in(fs::u8path(path), std::ios::binary);
     unsigned char magic[4];
     in.read(reinterpret_cast<char*>(magic), sizeof magic);
     return in.good() && get32(magic) == kLocalHeader;
 }
 
 bool readProject(const std::string& path, std::string& json) {
-    std::ifstream in;
+    fs::ifstream in;
     uint64_t total = 0, start = 0;
     std::map<std::string, Entry> entries;
     if (!open(path, in, total, entries))
@@ -408,7 +406,7 @@ bool readProject(const std::string& path, std::string& json) {
 
 int extract(const std::string& path, const std::vector<Wanted>& wanted, const std::string& storage,
             std::atomic<float>* progress) {
-    std::ifstream in;
+    fs::ifstream in;
     uint64_t total = 0, wantedBytes = 0, done = 0;
     std::map<std::string, Entry> entries;
     if (!open(path, in, total, entries))
@@ -436,7 +434,7 @@ int extract(const std::string& path, const std::vector<Wanted>& wanted, const st
         temporary += ".part";
         bool ok;
         {
-            std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+            fs::ofstream out(temporary, std::ios::binary | std::ios::trunc);
             ok = out.is_open();
             in.clear();
             in.seekg(std::streamoff(start));

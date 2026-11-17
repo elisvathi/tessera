@@ -86,7 +86,7 @@ TEST_BIN := build/tests/tessera_tests
 test: $(TEST_BIN)
 	$(TEST_BIN)
 
-# Expose only Rack's GLFW headers, so the tests' jansson header matches the system library they link.
+# Expose only Rack's GLFW and ghc headers, so the tests' jansson header matches the system library they link.
 TEST_INCLUDE := build/tests/include
 
 # One object per source, so `make -j test` compiles on every core and an edit only recompiles what it touches
@@ -98,7 +98,12 @@ $(TEST_INCLUDE)/GLFW:
 	@mkdir -p $(TEST_INCLUDE)
 	@ln -sfn $(abspath $(RACK_DIR))/dep/include/GLFW $(TEST_INCLUDE)/GLFW
 
-$(TEST_OBJ_DIR)/%.o: %.cpp | $(TEST_INCLUDE)/GLFW
+# Rack's ghc::filesystem too: the audio code uses it in place of std::filesystem, which old macOS lacks.
+$(TEST_INCLUDE)/ghc:
+	@mkdir -p $(TEST_INCLUDE)
+	@ln -sfn $(abspath $(RACK_DIR))/dep/include/ghc $(TEST_INCLUDE)/ghc
+
+$(TEST_OBJ_DIR)/%.o: %.cpp | $(TEST_INCLUDE)/GLFW $(TEST_INCLUDE)/ghc
 	@mkdir -p $(dir $@)
 	$(TEST_CXX) $(TEST_FLAGS) -MMD -MP -isystem $(TEST_INCLUDE) $(shell pkg-config --cflags jansson 2>/dev/null) \
 		$(DEP_FLAGS) -c -o $@ $<
