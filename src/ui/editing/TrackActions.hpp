@@ -13,6 +13,8 @@ namespace tessera::trackActions {
 /// "Auto (3)", "3", or "4 per channel (12)" with playheads: the track's voice setting, and the channel count it
 /// sends when that differs from the setting.
 std::string voicesLabel(const Song& song, const Track& track);
+/// "Rotate", "Reuse" or "Reset".
+const char* allocationName(VoiceAllocation a);
 
 /// The tracks an operation on `clicked` applies to: the selection if `clicked` is in it, else just `clicked`.
 std::vector<TrackId> targets(EditorContext& ctx, TrackId clicked);

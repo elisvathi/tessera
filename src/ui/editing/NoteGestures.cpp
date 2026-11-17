@@ -2,6 +2,7 @@
 
 #include "../../model/DrumKit.hpp"
 #include "../../model/NoteOperators.hpp"
+#include "../../model/Ties.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../interaction/Navigation.hpp"
@@ -949,6 +950,102 @@ class ArchGesture : public NoteGesture {
     NoteList result;
 };
 
+// ---- Glides on ties -----------------------------------------------------------------------------------------
+
+/// Drags a tie's glide: the joint dot opens it evenly, the end handles move one side, the middle handle bends it.
+/// Every selected tied note takes the same values (each `glideAfter` kept inside its note).
+class GlideGesture : public NoteGesture {
+  public:
+    GlideGesture(PianoRollView& view, Vec press, NoteId tied, GlideGrab grab)
+        : NoteGesture(view, press), grab(grab), pressY(press.y) {
+        IdSet selected = view.selectedIds();
+        bool group = selected.count(tied) > 0;
+        for (const Note& n : before)
+            if (n.tied && (n.id == tied || (group && selected.count(n.id))))
+                ids.insert(n.id);
+        if (const Note* n = findNote(before, tied))
+            anchor = *n;
+        result = before;
+    }
+
+    void update(Vec pos, Modifiers mods) override {
+        Tick grid = step(mods.alt);
+        auto snap = [grid](double ticks) {
+            return grid > 0 ? Tick(std::llround(ticks / double(grid))) * grid : Tick(std::llround(ticks));
+        };
+        double t = tickAt(pos);
+        double joint = double(anchor.start);
+        Tick before0 = anchor.glideBefore, after0 = anchor.glideAfter;
+        float shape0 = anchor.glideShape;
+        switch (grab) {
+        case GlideGrab::Joint:
+            before0 = after0 = std::max<Tick>(0, snap(std::abs(t - joint)));
+            break;
+        case GlideGrab::Start:
+            before0 = std::max<Tick>(0, snap(joint - t));
+            break;
+        case GlideGrab::End:
+            after0 = std::max<Tick>(0, snap(t - joint));
+            break;
+        case GlideGrab::Shape:
+            shape0 = std::clamp(anchor.glideShape + float(pressY - pos.y) * kShapePerPx *
+                                                        (mods.shift ? float(kFineFactor) : 1.f),
+                                -1.f, 1.f);
+            break;
+        }
+        shown = {before0, after0, shape0};
+        result = before;
+        for (Note& n : result) {
+            if (!ids.count(n.id))
+                continue;
+            if (grab == GlideGrab::Shape) {
+                n.glideShape = shape0;
+                continue;
+            }
+            if (grab != GlideGrab::End)
+                n.glideBefore = before0;
+            if (grab != GlideGrab::Start)
+                n.glideAfter = std::min(after0, n.length);
+        }
+        view.setPreview(result);
+    }
+
+    void commit() override {
+        view.clearPreview();
+        if (result == before)
+            return;
+        view.commit(ids.size() == 1 ? "Glide" : "Glide " + std::to_string(ids.size()) + " ties", before, result);
+    }
+    std::string readout() const override {
+        if (grab == GlideGrab::Shape) {
+            char text[32];
+            snprintf(text, sizeof(text), "Curve %+.0f%%", double(shown.shape) * 100);
+            return text;
+        }
+        if (shown.before == 0 && shown.after == 0)
+            return "No glide (jump)";
+        return "Glide " + glideLengthText(shown.before) + " before · " + glideLengthText(shown.after) + " after";
+    }
+    CursorShape cursor() const override {
+        return grab == GlideGrab::Shape ? CursorShape::ResizeV : CursorShape::ResizeH;
+    }
+    bool autoScrollY() const override { return false; }
+
+  private:
+    static constexpr float kShapePerPx = 1.f / 60;
+    struct Shown {
+        Tick before = 0, after = 0;
+        float shape = 0;
+    };
+
+    GlideGrab grab;
+    double pressY;
+    IdSet ids;
+    Note anchor;
+    Shown shown;
+    NoteList result;
+};
+
 // ---- Picking curve points ---------------------------------------------------------------------------------
 
 class PickPointsGesture : public NoteGesture {
@@ -1194,6 +1291,26 @@ std::unique_ptr<DragGesture> pickPoints(PianoRollView& view, Vec press, expr::Cu
                                         std::function<bool(const Note&)> inScope, bool selectNotes, Modifiers mods) {
     return std::make_unique<PickPointsGesture>(view, press, curve, std::move(yOf), std::move(inScope), selectNotes,
                                                mods);
+}
+std::unique_ptr<DragGesture> glide(PianoRollView& view, Vec press, NoteId tied, GlideGrab grab) {
+    return std::make_unique<GlideGesture>(view, press, tied, grab);
+}
+
+std::string glideLengthText(Tick length) {
+    if (length <= 0)
+        return "none";
+    Tick whole = 4 * kPpq;
+    Tick a = length, b = whole;
+    while (b) {
+        Tick r = a % b;
+        a = b;
+        b = r;
+    }
+    if (whole / a <= 128)
+        return std::to_string(length / a) + "/" + std::to_string(whole / a);
+    char buf[32];
+    snprintf(buf, sizeof buf, "%.3g beats", double(length) / double(kPpq));
+    return buf;
 }
 std::unique_ptr<DragGesture> rubberBand(PianoRollView& view, Vec press, Modifiers mods) {
     return std::make_unique<RubberBandGesture>(view, press, mods);

@@ -2,6 +2,7 @@
 
 #include "../model/DeviceTypes.hpp"
 #include "../model/Recording.hpp"
+#include "../model/Ties.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -124,6 +125,7 @@ void Engine::setSnapshot(const Snapshot* s) {
         state.voiceClip = clips;
         state.voiceNote = notes;
         state.voices.setRetriggerGap(retriggerGap);
+        state.voices.setAllocation(tp.allocation);
         state.drums.setRetriggerGap(retriggerGap);
         // A new layout of voices (a playhead added, removed or moved) carries every sounding note to its channel's
         // new place; what the engine keeps per voice goes along.
@@ -513,6 +515,8 @@ void Engine::releaseAll(TrackState& state) {
     clearPending(state);
     state.voices.releaseAll();
     state.drums.releaseAll();
+    state.glide.fill(VoiceGlide());
+    state.glidingVoices = 0;
     holdDrumCurves(state);
     state.audition.fill(-1);
     state.auditions = 0;
@@ -592,6 +596,8 @@ void Engine::moveVoiceState(TrackState& state, const std::array<int8_t, kMaxTrac
     move(state.liveBend, 0.f);
     move(state.liveTimbre, 0.f);
     move(state.livePress, 0.f);
+    move(state.glide, VoiceGlide());
+    state.glidingVoices = int(std::count_if(state.glide.begin(), state.glide.end(), [](const VoiceGlide& g) { return g.any(); }));
 }
 
 void Engine::advanceAuditions(TrackState& state) {
@@ -939,7 +945,7 @@ void Engine::releaseClipVoices(TrackState& state) {
     state.drums.releaseAll();
     for (int v = 0; v < state.voices.polyphony(); v++)
         if (state.audition[size_t(v)] < 0)
-            state.voices.release(v);
+            state.voices.cut(v);
 }
 
 void Engine::launch(const LaunchEvent& e) {
@@ -1200,7 +1206,7 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         if (controlTick)
             advanceAutomation(*snapshot->tracks[i], state);
         // Read before the drum curves move on: a curve that ends on this sample still writes its last value.
-        bool curved = state.curvedVoices > 0 || state.curvedLanes > 0;
+        bool curved = state.curvedVoices > 0 || state.glidingVoices > 0 || state.curvedLanes > 0;
         if (state.curvedLanes > 0)
             advanceDrumCurves(state);
         if (state.busSlot >= 0) {
@@ -1232,7 +1238,7 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
 
 bool Engine::idleUntilControl(const TrackState& state, uint64_t sample) const {
     uint64_t next = (sample | (kControlBlock - 1)) + 1;
-    if (state.curvedVoices > 0 || state.curvedLanes > 0 || state.auditions > 0 || state.drums.counting() ||
+    if (state.curvedVoices > 0 || state.glidingVoices > 0 || state.curvedLanes > 0 || state.auditions > 0 || state.drums.counting() ||
         !state.voices.quietFor(int64_t(next - sample)))
         return false; // something counts down or moves on every sample
     // Both bus buffers must hold the current outputs, or the skipped samples would publish an older one.
@@ -1674,6 +1680,8 @@ void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const 
                             TrackState::PendingHit hit{onPlay,  onPlay + length, n.pitch, n.velocity, n.releaseVelocity,
                                                        nullptr, double(n.start), pass,    n.key,      n.channel,
                                                        lane};
+                            hit.tied = n.tied;
+                            hit.lowerLater = n.lowerLater;
                             state.pending[size_t(state.pendingCount++)] = hit;
                         } else {
                             startNote(track, state, n, onPlay, onPlay + length, pass, lane);
@@ -1796,6 +1804,8 @@ void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, c
         hit.key = n.key;
         hit.channel = n.channel;
         hit.lane = lane;
+        hit.tied = n.tied && i == 0; // repeats of a note start gates of their own
+        hit.lowerLater = n.lowerLater;
         if (hit.start < playTick)
             startHit(track, state, hit);
         else if (state.pendingCount < kMaxPendingHits)
@@ -1818,6 +1828,8 @@ void Engine::startHit(const TrackPlayback& track, TrackState& state, const Track
     n.motion = hit.extras ? hit.extras->note.motion.value : 0;
     n.origin = hit.origin;
     n.pass = hit.pass;
+    n.tied = hit.tied;
+    n.lowerLater = hit.lowerLater;
     deliver(track, state, n);
 }
 
@@ -1932,6 +1944,8 @@ void Engine::startNote(const TrackPlayback& track, TrackState& state, const Note
     n.origin = double(e.start);
     n.pass = pass;
     n.lane = lane;
+    n.tied = e.tied;
+    n.lowerLater = e.lowerLater;
     deliver(track, state, n);
 }
 
@@ -1964,9 +1978,23 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
     // while stopped), so they round a hair apart: a note ending where this one starts has ended, and its voice is
     // free for this one. Otherwise a line of back-to-back notes now and then takes a second voice.
     constexpr double kHair = 1e-6; // ticks: far less than a sample at any tempo
+    // A tied note takes over the voice of the note it continues, still sounding: no new gate (TIES_VOICES.md).
+    int v = n.tied ? state.voices.continued(n.pitch, n.channel, n.start, kHair) : -1;
+    // On one voice, a key pressed while another is held plays legato, as a mono synth does (and records as a tie).
+    if (v < 0 && (n.id & chain::kLiveNote) && state.voices.sizeFor(n.channel) == 1) {
+        int held = state.voices.continued(n.pitch, n.channel, n.start, kHair);
+        if (held >= 0 && (state.voices.voice(held).id & chain::kLiveNote))
+            v = held;
+    }
+    bool continues = v >= 0;
+    float joinedAt = continues ? glidedVolts(state.glide[size_t(v)], pitchToVolts(state.voices.voice(v).pitch), playTick)
+                               : 0.f;
+    if (continues)
+        state.voices.takeOver(v, n.pitch, n.velocity, n.release, n.end, n.id, n.start);
     state.voices.releaseEndedBefore(n.start + kHair);
     // Into its channel's own voices: a playhead's notes never take another channel's.
-    int v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id, n.channel);
+    if (!continues)
+        v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id, n.channel, n.start, n.lowerLater);
     clearLiveVoice(state, v);
     if (n.id & chain::kLiveNote) {
         // Held until its key is released, like an audition: clip events leave it alone.
@@ -1990,6 +2018,52 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
     double length = note ? double(note->length) * scale : n.open() ? double(kPpq) : double(n.end - n.start);
     state.voiceScale[size_t(v)] = scale;
     state.voiceLength[size_t(v)] = std::max(1.0, length);
+    setGlide(state, v, glideFor(n, extras, continues, joinedAt, scale));
+}
+
+Engine::VoiceGlide Engine::glideFor(const chain::ChainNote& n, const NoteExtras* extras, bool continues,
+                                    float joinedAt, double scale) const {
+    VoiceGlide g;
+    double start = n.start - clockOffset();
+    float volts = pitchToVolts(n.pitch);
+    if (continues && extras && extras->note.tied && extras->note.glideAfter > 0) {
+        double before = double(std::max<Tick>(0, extras->note.glideBefore)) * scale;
+        double after = double(std::min(extras->note.glideAfter, extras->note.length)) * scale;
+        g.in.from = start - before;
+        g.in.to = start + after;
+        g.in.startAt = start;
+        g.in.e0 = float(ties::shaped(extras->note.glideShape, before / (before + after)));
+        g.in.a = joinedAt;
+        g.in.b = volts;
+        g.in.shape = extras->note.glideShape;
+        g.in.on = joinedAt != volts;
+    }
+    if (extras && extras->glideOut.moves()) {
+        const NoteExtras::GlideOut& o = extras->glideOut;
+        g.out.from = start + (o.joint - o.before) * scale;
+        g.out.to = start + (o.joint + o.after) * scale;
+        g.out.volts = o.semis / 12.f;
+        g.out.shape = o.shape;
+        g.out.on = true;
+    }
+    return g;
+}
+
+float Engine::glidedVolts(const VoiceGlide& g, float volts, double t) {
+    if (g.in.on) {
+        if (t >= g.in.to) {
+            volts = g.in.b;
+        } else if (t > g.in.startAt) {
+            double e = ties::shaped(g.in.shape, (t - g.in.from) / (g.in.to - g.in.from));
+            double rest = std::max(1e-6, 1.0 - double(g.in.e0));
+            volts = float(g.in.a + (g.in.b - g.in.a) * std::clamp((e - g.in.e0) / rest, 0.0, 1.0));
+        } else {
+            volts = g.in.a;
+        }
+    }
+    if (g.out.on && t > g.out.from)
+        volts += g.out.volts * float(ties::shaped(g.out.shape, std::min(1.0, (t - g.out.from) / (g.out.to - g.out.from))));
+    return volts;
 }
 
 void Engine::endNote(const TrackPlayback& track, TrackState& state, uint32_t id) {
@@ -2607,7 +2681,8 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
     bool live = playsLiveValues(track);
     for (int v = 0; v < voices.polyphony(); v++) {
         const VoiceAllocator::Voice& voice = voices.voice(v);
-        frame.voct[v] = pitchToVolts(voice.pitch);
+        frame.voct[v] = state.glide[size_t(v)].any() ? glidedVolts(state.glide[size_t(v)], pitchToVolts(voice.pitch), playTick)
+                                                     : pitchToVolts(voice.pitch);
         frame.gate[v] = voices.gate(v) ? 10.f : 0.f;
         frame.vel[v] = voice.velocity * 10.f;
         frame.rel[v] = voice.releaseVelocity * 10.f;

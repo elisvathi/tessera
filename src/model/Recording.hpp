@@ -62,6 +62,7 @@ struct TakeNote {
     float velocity = 0.8f;
     float release = 0.5f;
     uint8_t channel = 1;
+    bool tied = false; // continues the note before it (a key played legato on a one-voice track)
     // What was played on the note itself (poly aftertouch, MPE), across the note: pitch in semitones, else 0..1.
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr;
 };

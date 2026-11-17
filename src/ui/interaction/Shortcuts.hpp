@@ -49,6 +49,7 @@ enum class Action {
     SelectInvert,
     Split,
     Glue,
+    Tie,
     MakeUnique,
     Bounce,
     Quantize,

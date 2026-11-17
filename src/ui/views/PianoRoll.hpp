@@ -105,6 +105,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
     // ---- Editing ----
 
     /// Records `before` -> `after` as one undo step named `name`. Only the notes that differ are stored.
+    /// The Tie key: ties the selected notes, or unties them (keeping their glides) when they all are tied.
+    void toggleTie();
     void commit(const std::string& name, const edits::NoteList& before, const edits::NoteList& after,
                 std::optional<edits::IdSet> selectAfter = std::nullopt) override;
     /// The grid step for snapping at the current zoom (0 when snapping is off).

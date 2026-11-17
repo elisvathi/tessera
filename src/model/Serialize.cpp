@@ -71,6 +71,7 @@ const char* const kAutoRecordModes[] = {"touch", "latch", "write"};
 const char* const kLaneDrives[] = {"auto", "pitch", "pressure", "volume", "pan", "send"};
 const char* const kMidiControls[] = {"none", "bend", "pressure", "cc"};
 const char* const kLoopModes[] = {"off", "loop"};
+const char* const kAllocations[] = {"rotate", "reuse", "reset"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
@@ -322,6 +323,16 @@ json_t* noteToJson(const Note& n) {
         set(extras, "pressure", exprToJson(n.pressureExpr));
     if (n.motion.valid())
         set(extras, "motion", idJson(n.motion));
+    if (n.tied) {
+        json_t* tie = json_object();
+        if (n.glideBefore)
+            setInt(tie, "before", n.glideBefore);
+        if (n.glideAfter)
+            setInt(tie, "after", n.glideAfter);
+        if (n.glideShape != 0)
+            setNumber(tie, "shape", n.glideShape);
+        set(extras, "tie", tie);
+    }
     if (json_object_size(extras) > 0)
         json_array_append_new(arr, extras);
     else
@@ -352,6 +363,12 @@ bool noteFromJson(const json_t* arr, Note& n) {
         n.timbreExpr = exprFromJson(get(extras, "timbre"));
         n.pressureExpr = exprFromJson(get(extras, "pressure"));
         n.motion = readId<DeviceId>(get(extras, "motion"));
+        if (const json_t* tie = get(extras, "tie"); json_is_object(tie)) {
+            n.tied = true;
+            n.glideBefore = std::max<Tick>(0, getInt(tie, "before", 0));
+            n.glideAfter = std::max<Tick>(0, getInt(tie, "after", 0));
+            n.glideShape = std::clamp(getFloat(tie, "shape", 0), -1.f, 1.f);
+        }
     }
     return true;
 }
@@ -944,6 +961,8 @@ json_t* trackToJson(const Track& t) {
     setInt(j, "color", t.color);
     setString(j, "type", enumName(t.type, kTrackTypes));
     setInt(j, "polyphony", t.polyphony);
+    if (t.allocation != VoiceAllocation::Rotate)
+        setString(j, "allocation", enumName(t.allocation, kAllocations));
     setBool(j, "mute", t.mute);
     setBool(j, "solo", t.solo);
     setBool(j, "armed", t.armed);
@@ -1036,6 +1055,7 @@ Track trackFromJson(const json_t* j) {
     t.color = saturate<uint32_t>(getInt(j, "color", t.color));
     t.type = enumFromName(get(j, "type"), kTrackTypes, t.type);
     t.polyphony = saturate<int>(getInt(j, "polyphony", t.polyphony));
+    t.allocation = enumFromName(get(j, "allocation"), kAllocations, t.allocation);
     t.mute = getBool(j, "mute", t.mute);
     t.solo = getBool(j, "solo", t.solo);
     t.armed = getBool(j, "armed", t.armed);

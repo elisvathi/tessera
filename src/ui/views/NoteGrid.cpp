@@ -439,6 +439,10 @@ std::unique_ptr<DragGesture> NoteGrid::startGesture(Vec pos, int button, Modifie
         if (handle != noteGestures::BoxHandle::None)
             return noteGestures::transformBox(owner, pos, handle);
     }
+    // A tie's dot and glide handles sit on the joint, over the note edges: they go first.
+    if (!owner.drumMode() && (tool == Tool::Pointer || tool == Tool::Draw))
+        if (auto tie = tieAt(pos))
+            return noteGestures::glide(owner, pos, tie->first, tie->second);
 
     NoteHit hit = hitAt(pos);
     // While the lower pane shows Pitch, Select and Draw bend the notes instead of moving them: picking the lane is
@@ -578,6 +582,11 @@ void NoteGrid::click(Vec pos, int button, Modifiers mods) {
             return;
         }
     }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && owner.clip() && !owner.drumMode())
+        if (auto tie = tieAt(pos, true)) {
+            openTieMenu(tie->first);
+            return;
+        }
     if (button == GLFW_MOUSE_BUTTON_RIGHT && owner.clip()) {
         NoteHit hit = hitAt(pos);
         if (hit.any()) {
@@ -625,6 +634,9 @@ CursorShape NoteGrid::hoverCursor(Vec pos, Modifiers mods) {
     NoteHit hit = hitAt(pos);
     hovered = hit.id;
     Tool tool = ctx.state().tool;
+    if (!owner.drumMode() && (tool == Tool::Pointer || tool == Tool::Draw))
+        if (auto tie = tieAt(pos))
+            return tie->second == noteGestures::GlideGrab::Shape ? CursorShape::ResizeV : CursorShape::ResizeH;
     if (tool == Tool::Pointer) {
         using H = noteGestures::BoxHandle;
         H handle = boxHandleAt(pos);
@@ -736,6 +748,11 @@ void NoteGrid::openNoteMenu(NoteId id) {
         menu->addChild(new rack::ui::MenuSeparator);
         drumActions::appendHitOperators(menu, owner);
         menu->addChild(new rack::ui::MenuSeparator);
+    }
+    if (!owner.drumMode()) {
+        bool tied = ties::allTied(owner.committedNotes(), owner.selectedIds());
+        menu->addChild(rack::createMenuItem(tied ? "Untie, keep the glide" : "Tie to the note before",
+                                            shortcutLabel(Action::Tie), [view] { view->handleAction(Action::Tie); }));
     }
     menu->addChild(
         rack::createSubmenuItem("Transform", "", [view](rack::ui::Menu* sub) { transformMenu::addItems(sub, *view); }));
@@ -936,8 +953,10 @@ void NoteGrid::drawForeground(const DrawArgs& args) {
         drawMotionMarks(vg);
         drawSegmentEdges(vg);
         dimSilentLanes(vg);
-        if (!owner.drumMode())
+        if (!owner.drumMode()) {
             drawBends(vg);
+            drawTies(vg);
+        }
         drawStrips(vg);
         drawTakeNotes(vg);
         drawTransformFrame(vg);
@@ -1523,6 +1542,174 @@ void NoteGrid::drawBends(NVGcontext* vg) {
             nvgStroke(vg);
         }
     }
+}
+
+std::vector<NoteGrid::TieMark> NoteGrid::tieMarks() {
+    std::vector<TieMark> marks;
+    const NoteList& notes = owner.notes();
+    if (std::none_of(notes.begin(), notes.end(), [](const Note& n) { return n.tied; }))
+        return marks;
+    const Clip* clip = owner.clip();
+    bool loops = clip && clip->loopMode == LoopMode::Loop;
+    std::vector<int> partners =
+        ties::partners(notes, loops ? clip->loopStart : 0, loops ? clip->loopEnd : 0);
+    TimeAxis& t = time();
+    PitchAxis& pitch = owner.pitch;
+    IdSet selected = owner.selectedIds();
+    auto at = [&](double tick, double p) { return Vec(float(t.tickToX(tick)), float(pitch.bentPitchToY(p))); };
+    for (size_t i = 0; i < notes.size(); i++) {
+        const Note& b = notes[i];
+        if (!b.tied)
+            continue;
+        TieMark m;
+        m.tied = b.id;
+        int p = partners[i];
+        if (p < 0 || notes[size_t(p)].start > b.start) {
+            // Nothing before it to continue (or the loop's last note does, round the loop): a dot at its start.
+            m.broken = p < 0;
+            m.samePitch = true;
+            m.joint = at(double(b.start), b.pitch);
+            marks.push_back(m);
+            continue;
+        }
+        const Note& a = notes[size_t(p)];
+        m.samePitch = a.pitch == b.pitch;
+        m.glide = ties::glideOf(a, b);
+        m.glides = m.glide.moves();
+        m.shown = selected.count(a.id) || selected.count(b.id);
+        double joint = double(b.start);
+        m.joint = at(joint, m.glides ? ties::pitchAt(m.glide, joint) : (a.pitch + b.pitch) / 2.0);
+        if (m.samePitch)
+            m.joint.y = float(pitch.bentPitchToY(b.pitch) - pitch.rowHeight() / 2);
+        m.start = at(double(m.glide.from), a.pitch);
+        m.end = at(double(m.glide.to), b.pitch);
+        double mid = (double(m.glide.from) + double(m.glide.to)) / 2;
+        m.middle = at(mid, ties::pitchAt(m.glide, mid));
+        marks.push_back(m);
+    }
+    return marks;
+}
+
+std::optional<std::pair<NoteId, noteGestures::GlideGrab>> NoteGrid::tieAt(Vec pos, bool anyTie) {
+    using G = noteGestures::GlideGrab;
+    constexpr float kReach = 6;
+    auto near = [&](Vec p) { return std::hypot(p.x - pos.x, p.y - pos.y) <= kReach; };
+    for (const TieMark& m : tieMarks()) {
+        if (m.broken || m.samePitch) {
+            if (anyTie && near(m.joint))
+                return std::make_pair(m.tied, G::Joint);
+            continue;
+        }
+        if (m.shown && m.glides) {
+            if (near(m.start))
+                return std::make_pair(m.tied, G::Start);
+            if (near(m.end))
+                return std::make_pair(m.tied, G::End);
+            if (near(m.middle))
+                return std::make_pair(m.tied, G::Shape);
+            continue;
+        }
+        if (near(m.joint))
+            return std::make_pair(m.tied, G::Joint);
+    }
+    return std::nullopt;
+}
+
+void NoteGrid::drawTies(NVGcontext* vg) {
+    std::vector<TieMark> marks = tieMarks();
+    if (marks.empty())
+        return;
+    const theme::Palette& c = theme::colors();
+    const Track* track = owner.track();
+    NVGcolor line = nvgLerpRGBA(theme::track(track ? track->color : 0x9AA1AB), c.text0, 0.55f);
+    TimeAxis& t = time();
+    PitchAxis& pitch = owner.pitch;
+    auto dot = [&](Vec p, float r, NVGcolor fill, NVGcolor stroke) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, p.x, p.y, r);
+        nvgFillColor(vg, fill);
+        nvgFill(vg);
+        nvgStrokeColor(vg, stroke);
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+    };
+    for (const TieMark& m : marks) {
+        if (m.joint.x < -20 || m.joint.x > box.size.x + 20)
+            continue;
+        if (m.broken) {
+            dot(m.joint, theme::metrics::kTieDot, c.bg0, c.text2);
+            continue;
+        }
+        nvgBeginPath(vg);
+        if (m.samePitch) {
+            // One long note: a small arc over the joint.
+            float w = theme::metrics::kTieArc;
+            nvgMoveTo(vg, m.joint.x - w, m.joint.y + 2);
+            nvgQuadTo(vg, m.joint.x, m.joint.y - 4, m.joint.x + w, m.joint.y + 2);
+        } else if (m.glides) {
+            const ties::Glide& g = m.glide;
+            float x0 = float(t.tickToX(double(g.from))), x1 = float(t.tickToX(double(g.to)));
+            bool first = true;
+            draw::sampleSpan(x0, x1, 0, box.size.x, 3, [&](float x, bool) {
+                double tick = t.xToTick(x);
+                float y = float(pitch.bentPitchToY(ties::pitchAt(g, tick)));
+                if (first)
+                    nvgMoveTo(vg, x, y);
+                else
+                    nvgLineTo(vg, x, y);
+                first = false;
+            });
+        } else {
+            // A jump: straight from one pitch to the other at the joint.
+            nvgMoveTo(vg, m.joint.x, float(pitch.bentPitchToY(m.glide.p0)));
+            nvgLineTo(vg, m.joint.x, float(pitch.bentPitchToY(m.glide.p1)));
+        }
+        nvgStrokeColor(vg, line);
+        nvgStrokeWidth(vg, theme::metrics::kTieLine);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgStroke(vg);
+        if (m.samePitch)
+            continue;
+        if (m.shown && m.glides) {
+            // Selected: its ends and the hollow handle that bends it, which sits where the dot was.
+            dot(m.start, theme::metrics::kTieHandle, line, c.bg0);
+            dot(m.end, theme::metrics::kTieHandle, line, c.bg0);
+            dot(m.middle, theme::metrics::kTieDot, c.bg0, line);
+            continue;
+        }
+        dot(m.joint, theme::metrics::kTieDot, line, c.bg0);
+    }
+}
+
+void NoteGrid::openTieMenu(NoteId tied) {
+    PianoRollView* view = &owner;
+    IdSet selected = owner.selectedIds();
+    IdSet ids = selected.count(tied) ? selected : IdSet{tied};
+    bool glides = false;
+    for (const Note& n : owner.committedNotes())
+        glides = glides || (ids.count(n.id) && n.tied && (n.glideBefore > 0 || n.glideAfter > 0));
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(ids.size() == 1 ? "Tie" : std::to_string(ids.size()) + " notes"));
+    auto untie = [view, ids](bool keep) {
+        NoteList before = view->committedNotes();
+        view->commit("Untie " + countNotes(ids.size()), before, ties::untie(before, ids, keep));
+    };
+    menu->addChild(rack::createMenuItem(glides ? "Untie, keep the glide" : "Untie", shortcutLabel(Action::Tie),
+                                        [untie] { untie(true); }));
+    if (glides) {
+        menu->addChild(rack::createMenuItem("Untie, remove the glide", "", [untie] { untie(false); }));
+        menu->addChild(rack::createMenuItem("No glide (jump)", "", [view, ids] {
+            NoteList before = view->committedNotes(), after = before;
+            for (Note& n : after)
+                if (ids.count(n.id) && n.tied) {
+                    n.glideBefore = n.glideAfter = 0;
+                    n.glideShape = 0;
+                }
+            view->commit("Remove glide", before, after);
+        }));
+    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createMenuLabel("Drag the dot sideways for a glide"));
 }
 
 void NoteGrid::drawStrips(NVGcontext* vg) {

@@ -22,6 +22,9 @@ enum class ExpressionMode { Off, Mpe, Flatten }; // per-note curves as MPE, or f
 enum class RangeMode { Song, Loop, Selection };
 enum class Split { OneFile, PerTrack, PerClip };
 enum class DeviceMode { Applied, Bypassed }; // Applied: the notes the tracks' device chains play
+/// How tied notes are written (docs/design/TIES_VOICES.md §4): overlapping a little, so a mono instrument in legato
+/// mode plays on without a new attack; or, with MPE, a chain of tied notes as one note with its glides as bend.
+enum class TieMode { Overlap, Bend };
 
 constexpr int kLanes = 8;
 
@@ -36,6 +39,7 @@ struct Options {
     DeviceMode devices = DeviceMode::Applied;
     bool includeMuted = false;
     bool noteChannels = false; // each note on its own channel instead of its track's (not with MPE)
+    TieMode ties = TieMode::Overlap; // Bend only with MPE expressions
     // With devices applied, a track whose Input is another track's notes plays those too, through its own devices, as
     // it does live; the track it listens to feeds it even when muted. For a bounce, not for exports (it isn't saved).
     bool followInput = false;
@@ -78,7 +82,16 @@ struct ExportNote {
     float velocity, release;
     uint8_t channel = 1;
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr; // the note's own curves, across its length
+    // It continues the note before it, with this glide (as Note's own fields).
+    bool tied = false;
+    Tick glideBefore = 0, glideAfter = 0;
+    float glideShape = 0;
 };
+/// The overlap a tie is written with: the earlier note ends this long after the tied one starts.
+constexpr Tick kTieOverlap = kPpq / 32;
+/// Makes each note a tie continues run on past the tied note's start by kTieOverlap (and no further than it
+/// ends), so programs that know no ties play the pair legato. For DAWproject; MIDI export does the same itself.
+void overlapTies(std::vector<ExportNote>& notes);
 /// Every note a track plays on the timeline with the chosen timing, operators and devices: what MIDI export writes
 /// for it (the whole song; muted clips only with `includeMuted`).
 std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Options& o, const Context& ctx);

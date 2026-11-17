@@ -228,6 +228,10 @@ Per-note expression curves (Pitch, Timbre, Pressure):
   Draw alike); timbre and pressure are shaped in a strip above the selected notes while the lower pane shows them
   (docs/DECISIONS.md §63–66).
 - Output: per voice, the Pitch curve is added to the V/OCT output; Timbre and Pressure go to Track Out's **TIMBRE** and **PRESS** poly outputs (see DESIGN.md §6).
+- **Ties and glides** (docs/design/TIES_VOICES.md, DECISIONS §176): a tie is a dot on the joint with the jump or
+  glide line, an arc for the same pitch, an open dot when nothing is there to continue. Drag the dot sideways to
+  open a glide evenly; on a selected tie drag its start or end handle, or its hollow middle handle to bend it. These
+  handles go before note edges. J ties or unties; the tie's right-click menu removes the glide or unties without it.
 
 ### 4.7 Inspector (selection editing panel)
 
@@ -455,6 +459,7 @@ Shortcuts are active only while the editor overlay is focused. They are defined 
 | | Delete | Delete / Backspace |
 | | Select all / none / invert | Ctrl/Cmd+A, Ctrl/Cmd+Shift+A, Ctrl/Cmd+I |
 | | Split / glue / make unique | Ctrl/Cmd+E, Ctrl/Cmd+J, Ctrl/Cmd+U |
+| | Tie the selection / untie, keeping the glide (notes pane) | J |
 | | Quantize / quantize dialog | Q, Shift+Q |
 | | Transpose ±1 / ±octave | Up/Down, Shift+Up/Down |
 | | Nudge grid / fine / bar | Left/Right, Alt+Left/Right, Shift+Left/Right |

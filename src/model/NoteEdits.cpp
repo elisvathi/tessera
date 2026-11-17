@@ -139,6 +139,9 @@ NoteList slice(const NoteList& notes, NoteId id, Tick at, const IdSource& newId)
         right.id = newId();
         right.start = at;
         right.length = n.end() - at;
+        right.tied = false; // a cut starts a new note; the left part keeps continuing whatever it did
+        right.glideBefore = right.glideAfter = 0;
+        right.glideShape = 0;
         n.length = at - n.start;
         expr::keepInTime(right, n.start, right.end() - n.start);
         expr::keepInTime(n, n.start, right.end() - n.start);

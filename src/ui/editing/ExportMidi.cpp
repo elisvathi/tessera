@@ -42,7 +42,8 @@ struct Form {
     }
 };
 
-/// `daw`: DAWproject has no 14-bit controllers and Tessera doesn't export expressions to it.
+/// `daw`: DAWproject has no 14-bit controllers and Tessera doesn't export expressions to it (ties go out as
+/// overlapping notes).
 void addPlayback(Form& form, const Options& o, bool daw = false) {
     form.add(settings::choice("Timing", {"As written", "As played"}, int(o.timing)),
              [](Choices& c, double v) { c.options.timing = Timing(int(v)); });
@@ -60,6 +61,10 @@ void addPlayback(Form& form, const Options& o, bool daw = false) {
              [](Choices& c, double v) { c.options.automation = AutomationMode(int(v)); });
     form.add(settings::choice("Expressions", {"Off", "MPE", "Flatten"}, int(o.expressions)),
              [](Choices& c, double v) { c.options.expressions = ExpressionMode(int(v)); });
+    // No file format has a tie: a tied pair overlaps a little (a legato instrument plays on), or with MPE a
+    // chain of tied notes becomes one note with its glides as pitch bend.
+    form.add(settings::choice("Ties as", {"Overlapping notes", "One note with bend (MPE)"}, int(o.ties)),
+             [](Choices& c, double v) { c.options.ties = TieMode(int(v)); });
 }
 
 /// One row per AUTO channel the exported tracks use, to pick its controller number.

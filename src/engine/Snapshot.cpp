@@ -6,6 +6,7 @@
 #include "../model/Devices.hpp"
 #include "../model/DrumKit.hpp"
 #include "../model/Swing.hpp"
+#include "../model/Ties.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -42,11 +43,16 @@ namespace {
 /// Drum lanes keep their pitches: transposing a drum track would move notes onto other lanes.
 int transposeOf(const Track& track) { return track.type == TrackType::Drum ? 0 : track.transpose; }
 
-NoteEvent noteEvent(const Note& note, const Track& track, Tick end) {
-    Tick length = std::max<Tick>(1, Tick(note.length * track.gateLengthScale));
+/// A note as the engine plays it, ending by `end`. A note a tie continues keeps its whole length, whatever the
+/// gate length, and runs a hair past it (and past `end`, into the next pass) so its voice is still sounding when
+/// the tied note takes it over.
+NoteEvent noteEvent(const Note& note, const Track& track, Tick end, bool continued = false) {
+    Tick length = continued ? note.length + ties::kTieOverlap
+                            : std::max<Tick>(1, Tick(note.length * track.gateLengthScale));
     NoteEvent e;
     e.start = note.start;
-    e.end = std::min(note.start + length, end);
+    e.end = std::min(note.start + length, continued ? end + ties::kTieOverlap : end);
+    e.tied = note.tied;
     e.pitch = int8_t(std::clamp(note.pitch + transposeOf(track), 0, 127));
     e.velocity = note.velocity;
     e.releaseVelocity = note.releaseVelocity;
@@ -79,7 +85,50 @@ std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& la
 
 bool hasExtras(const Note& n) {
     return !(n.ops == NoteOperators()) || n.microOffset != 0 || !n.pitchExpr.empty() || !n.timbreExpr.empty() ||
-           !n.pressureExpr.empty() || n.motion.valid();
+           !n.pressureExpr.empty() || n.motion.valid() || (n.tied && (n.glideBefore > 0 || n.glideAfter > 0));
+}
+
+/// The glide the tied note `b` starts inside `a`, which it continues; `joint` is where `b` starts, in ticks from
+/// `a`'s start (the loop end for a tie round the loop).
+NoteExtras::GlideOut glideOut(const Note& a, const Note& b, Tick joint) {
+    NoteExtras::GlideOut g;
+    if (b.pitch == a.pitch)
+        return g;
+    g.joint = double(joint);
+    g.before = double(std::min<Tick>(std::max<Tick>(0, b.glideBefore), joint));
+    g.after = double(std::min<Tick>(std::max<Tick>(0, b.glideAfter), b.length));
+    g.semis = float(b.pitch - a.pitch);
+    g.shape = b.glideShape;
+    return g;
+}
+
+/// For each of `notes`, the glide a tied note after it starts inside it (none for most).
+std::vector<NoteExtras::GlideOut> glidesOut(const std::vector<Note>& notes, const std::vector<int>& partners) {
+    std::vector<NoteExtras::GlideOut> out(notes.size());
+    for (size_t i = 0; i < notes.size(); i++) {
+        int p = partners[i];
+        if (p < 0)
+            continue;
+        const Note& a = notes[size_t(p)];
+        const Note& b = notes[i];
+        Tick joint = b.start > a.start ? b.start - a.start : a.length; // round the loop: at the loop end
+        out[size_t(p)] = glideOut(a, b, joint);
+    }
+    return out;
+}
+
+/// Counts, for each event (sorted by start), the lower notes on its channel that start later but within
+/// kTogether of it: a strummed chord's notes, which Reset allocation puts low to high.
+void markStrums(std::vector<NoteEvent>& events) {
+    constexpr Tick kTogether = kPpq / 8;
+    for (size_t i = 0; i < events.size(); i++) {
+        int n = 0;
+        for (size_t j = i + 1; j < events.size() && events[j].start - events[i].start <= kTogether; j++)
+            if (events[j].start > events[i].start && events[j].channel == events[i].channel &&
+                events[j].pitch < events[i].pitch)
+                n++;
+        events[i].lowerLater = uint8_t(std::min(n, 255));
+    }
 }
 
 /// Gives an event the extras of its note: an index into `extras`, and its start moved by the note's micro-timing
@@ -96,13 +145,13 @@ void swingEvent(NoteEvent& e, float swing, Tick step, Tick limit) {
 }
 
 void attachExtras(NoteEvent& e, const Note& note, std::vector<NoteExtras>& extras, const Clip& clip, Tick loopStart,
-                  Tick length, bool looping, double stretch = 1) {
-    if (!hasExtras(note) || extras.size() >= kNoExtras)
+                  Tick length, bool looping, double stretch = 1, const NoteExtras::GlideOut& out = {}) {
+    if ((!hasExtras(note) && !out.moves()) || extras.size() >= kNoExtras)
         return;
     double spread = operators::spreadTicks(note);
     Tick shift = Tick(std::llround(operators::microTicks(note) - spread));
     e.extras = uint16_t(extras.size());
-    extras.push_back({note, clip.id.value, spread, stretch, clip.variation});
+    extras.push_back({note, clip.id.value, spread, stretch, clip.variation, out});
     if (shift == 0)
         return;
     Tick duration = e.end - e.start;
@@ -228,14 +277,21 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
     // The clip plays through the playheads then, so its own loop never reads this list.
     bool canvas = activePlayheads(track) != nullptr;
     Tick readEnd = canvas ? std::numeric_limits<Tick>::max() / 4 : out.loopEnd;
-    for (const Note& note : clip.notes) {
+    bool wraps = out.looping && !canvas;
+    std::vector<int> partners = ties::partners(clip.notes, wraps ? out.loopStart : 0, wraps ? out.loopEnd : 0);
+    std::vector<char> continued = ties::continued(partners);
+    std::vector<NoteExtras::GlideOut> glides = glidesOut(clip.notes, partners);
+    for (size_t i = 0; i < clip.notes.size(); i++) {
+        const Note& note = clip.notes[i];
         if (note.muted || (!canvas && (note.start < out.loopStart || note.start >= out.loopEnd)))
             continue;
         if (std::find(ownLoopPitches.begin(), ownLoopPitches.end(), note.pitch) != ownLoopPitches.end())
             continue;
-        out.notes.push_back(noteEvent(note, track, readEnd));
-        swingEvent(out.notes.back(), swing, swingStep, readEnd);
-        attachExtras(out.notes.back(), note, out.extras, clip, out.loopStart, out.loopLength(), out.looping);
+        Tick limit = readEnd + (continued[i] ? ties::kTieOverlap : 0);
+        out.notes.push_back(noteEvent(note, track, readEnd, continued[i]));
+        swingEvent(out.notes.back(), swing, swingStep, limit);
+        attachExtras(out.notes.back(), note, out.extras, clip, out.loopStart, out.loopLength(), out.looping, 1,
+                     glides[i]);
     }
     // With lanes of their own length the clip loops their whole cycle, so every pass plays the same; its other notes
     // keep repeating its own loop inside it.
@@ -248,6 +304,7 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
     }
     // Clip notes are already sorted by start; stable keeps chords in pitch order.
     sortEvents(out.notes);
+    markStrums(out.notes);
     out.notesByEnd = playheads::orderByEnd(out.notes);
     playheads::markChordRoles(out.notes, [](NoteEvent& n) -> uint8_t& { return n.role; });
     bool any = false;
@@ -317,6 +374,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     tp->id = track.id;
     tp->busSlot = slots.slotOf(track.id);
     tp->polyphony = song.voicesOf(track);
+    tp->allocation = track.allocation;
     std::vector<Song::VoiceBlock> blocks = song.voiceBlocks(track);
     tp->voiceBlockCount = int(std::min(blocks.size(), tp->voiceBlocks.size()));
     for (int b = 0; b < tp->voiceBlockCount; b++)
@@ -427,6 +485,11 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         uint8_t key = keyIndex(*clip);
         renderInstance(*clip, a, timed, transposeOf(track), track.gateLengthScale,
                        track.type == TrackType::Drum ? &track.drumLanes : nullptr);
+        ClipSpan span = clipSpan(*clip);
+        std::vector<int> partners =
+            ties::partners(clip->notes, span.looping ? span.start : 0, span.looping ? span.end : 0);
+        std::vector<char> continued = ties::continued(partners);
+        std::vector<NoteExtras::GlideOut> glides = glidesOut(clip->notes, partners);
         tp->arrangement.reserve(timed.size());
         for (size_t i = first; i < timed.size(); i++) {
             const TimedNote& n = timed[i];
@@ -434,13 +497,19 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
             e.pass = n.pass;
             e.key = key;
             e.channel = n.source ? n.source->channel : 1;
-            swingEvent(e, songSwingFor(song, track), song.swingStep, instanceEnd(a));
+            size_t at = n.source ? size_t(n.source - clip->notes.data()) : clip->notes.size();
+            bool known = at < clip->notes.size();
+            e.tied = n.source && n.source->tied;
+            Tick limit = instanceEnd(a) + (known && continued[at] ? ties::kTieOverlap : 0);
+            swingEvent(e, songSwingFor(song, track), song.swingStep, limit);
             attachExtras(e, *n.source, tp->arrangementExtras, *clip, 0, 0, false,
-                         std::clamp(double(a.stretch), double(kMinStretch), double(kMaxStretch)));
+                         std::clamp(double(a.stretch), double(kMinStretch), double(kMaxStretch)),
+                         known ? glides[at] : NoteExtras::GlideOut());
             tp->arrangement.push_back(e);
         }
     }
     sortEvents(tp->arrangement);
+    markStrums(tp->arrangement);
     return tp;
 }
 

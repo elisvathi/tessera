@@ -63,6 +63,7 @@ std::vector<ActionInfo> buildTable() {
         {Ac::SelectInvert, "Edit", "Invert selection", {C("i", Ctl)}},
         {Ac::Split, "Edit", "Split", {C("e", Ctl)}},
         {Ac::Glue, "Edit", "Glue", {C("j", Ctl)}},
+        {Ac::Tie, "Edit", "Tie notes: the next one plays on with no new gate (again: untie, keeping the glide)", {C("j")}, Sc::DetailPane},
         {Ac::MakeUnique, "Edit", "Make unique", {C("u", Ctl)}},
         {Ac::Bounce, "Edit", "Bounce the selected track to a new track", {C("b", Ctl)}},
         {Ac::Quantize, "Edit", "Quantize", {C("q")}},

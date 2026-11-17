@@ -88,6 +88,7 @@ struct Track {
     uint32_t color = 0; // 0xRRGGBB
     TrackType type = TrackType::Instrument;
     int polyphony = kAutoVoices; // 1..16, or kAutoVoices: as many as the track's clips need
+    VoiceAllocation allocation = VoiceAllocation::Rotate;
     bool mute = false;
     bool solo = false;
     bool armed = false;
@@ -121,6 +122,7 @@ struct Track {
 
     bool operator==(const Track& o) const {
         return id == o.id && name == o.name && color == o.color && type == o.type && polyphony == o.polyphony &&
+               allocation == o.allocation &&
                mute == o.mute && solo == o.solo && armed == o.armed && monitor == o.monitor &&
                recordInput == o.recordInput && midiChannel == o.midiChannel && listen == o.listen &&
                listenTrack == o.listenTrack && recordFrom == o.recordFrom && gateLengthScale == o.gateLengthScale &&

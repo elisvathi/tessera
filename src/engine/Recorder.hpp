@@ -56,12 +56,15 @@ class Recorder {
         Tick start = 0; // in the target's ticks
         float velocity = 0;
         uint8_t channel = 1;
+        bool tied = false; // pressed while another key was held on a one-voice track: it continues that note
         Samples pitch, timbre, pressure; // what the key itself played while held
     };
     /// One armed track's take in progress.
     struct Session {
         TrackId track;
         Target target = Target::NewClip;
+        bool mono = false; // the track has one voice: keys played overlapping record as ties
+        double lastOff = -1; // the play tick of its last note-off: a note-on right then continues it (CV legato)
         ClipId clip; // Overdub
         int slot = kNoSlot;
         double clipStart = 0;       // NewClip, Overdub: the play tick of clip tick 0

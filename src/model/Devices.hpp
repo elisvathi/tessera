@@ -106,6 +106,8 @@ struct ChainNote {
     double origin = 0;            // where it was written (clip or song ticks), so randomness repeats
     int64_t pass = 0;
     uint64_t motion = 0; // the Motion device the written note moves with; 0 = none
+    bool tied = false;   // continues the note before it with no new gate (docs/design/TIES_VOICES.md)
+    uint8_t lowerLater = 0; // lower notes of its strummed chord still to come (NoteEvent::lowerLater)
 
     bool open() const { return !std::isfinite(end); }
 };

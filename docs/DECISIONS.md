@@ -3017,3 +3017,36 @@ From the QA pass of 16 Nov (Trello BUGS):
 - **FROM on the receiving track**: the user wanted to set send levels on the reverb itself. A track that receives
   sends, or has an effect loop, lists a slider per incoming send (named "Drums · Snare" for a part) and **+ From**;
   it is the same send as on the sender, so both always agree. It replaces the "← N" count and its list.
+
+## 176. Ties, glides and voice allocation (17 Nov)
+
+Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "Ties" and "Voices".
+
+- **A tie is a mark on the note** (`Note::tied`: "continues the note before it"), not an overlap rule, so what you
+  see is what plays. Its partner is found by one rule (`ties::partners`): same channel, starts earlier, still
+  sounding at its start, nearest pitch, each continued once; round a clip's loop, the loop's last note. No partner:
+  an open dot, and it plays as a normal note.
+- **The engine takes the partner's voice over** (`VoiceAllocator::continued` / `takeOver`) instead of starting a gate.
+  The snapshot plays a continued note one tick past its end (and never shortens it by the gate scale), so the tied
+  note always finds it still sounding: ends and starts are worked out apart and may round a sample apart, and a
+  single low sample would start an envelope. Stop, the song loop wrap and clip switches `cut` voices, so no tie
+  carries over them; a clip's own loop does carry one.
+- **The glide is a pitch line across the joint, owned by the tie** (the user: "adjustable on both ends"):
+  `glideBefore` inside the first note, `glideAfter` inside the second, `glideShape` as a curve's tension. No
+  track-wide glide time: a slew limiter does that, as long as nothing retriggers. The engine runs it per voice
+  (`VoiceGlide`): the first note starts moving from the snapshot's `GlideOut`, and the tied note carries on from
+  wherever the voice is, so a device that changes the interval never makes a jump.
+- **Untie keeps the glide by default** (J), written into both notes' pitch curves, so nothing is lost; the tie's
+  right-click menu also removes it. Slicing a tied note leaves its right part untied.
+- **Voice allocation is about which channel a note lands on**, as Rack's MIDI-CV: Rotate (default, today's), Reuse,
+  Reset. The user dropped a Mono/Poly switch, note priority, per-playhead voices and a track glide: the voice count
+  stays Auto or 1-16, and playheads keep deciding their own. "Low to high" was agreed as a fourth option, then folded
+  into Reset (notes starting within 1/32 go low to high, from `NoteEvent::lowerLater`), which gives the same result.
+  Under Rotate a playhead's voices keep their first-free rule, or a one-note playhead would send several channels.
+  Rotation restarts when play starts, so every play lands the same.
+- **One voice is the mono case**: overlapping live keys play legato and record as ties (also a CV pitch change with
+  the gate held, DECISIONS §24); other tracks record chords as before.
+- **Export**: no format has ties. MIDI writes a 1/128 overlap, or with MPE and "Ties as: One note with bend" one note
+  whose glides are bend. DAWproject writes the overlap only: a DAWproject note may hold "transpose" points, but its
+  reference doesn't say whether their times count from the note or the clip, so they wait until that is checked.
+  MIDI import ties a one-line part's hand-over overlaps, so Tessera's own files come back tied.

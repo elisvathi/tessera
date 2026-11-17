@@ -32,17 +32,30 @@ struct NoteEvent {
     uint8_t key = 0;             // the key it was written in: 0 = the song's, k = TrackPlayback::keys[k - 1]
     uint8_t channel = 1;         // the note's channel, 1..16
     uint8_t role = 3;            // lowest and/or highest of the notes starting with it (playheads::kLowestNote...)
+    bool tied = false;           // continues the note before it (docs/design/TIES_VOICES.md)
+    // Notes starting with it (within kTogether) that are lower and start later: a strummed chord's notes take
+    // channels low to high under Reset allocation, so this note leaves that many free channels below it.
+    uint8_t lowerLater = 0;
 };
 
 /// What a note with operators, micro-timing or expression curves needs at playback (EDITOR_UX §4.5-4.6).
 /// Its event was moved earlier by its micro-timing and by `early`, the room timing spread needs; the engine adds
 /// `early` back plus a random spread, so it only ever delays.
 struct NoteExtras {
+    /// The glide a tied note after this one starts while this one still plays, in its written ticks: it leaves
+    /// this note's pitch `before` ticks ahead of the joint (`joint` ticks after this note starts) and arrives
+    /// `semis` away `after` ticks past it.
+    struct GlideOut {
+        double joint = 0, before = 0, after = 0;
+        float semis = 0, shape = 0;
+        bool moves() const { return before > 0 && semis != 0; }
+    };
     Note note;
     uint64_t clip = 0; // ClipId value, for the randomness
     double early = 0;
     double stretch = 1; // played ticks per written tick (a timeline clip's stretch): curves span the written note
     int32_t variation = 1; // its clip's dice, for the randomness
+    GlideOut glideOut;
 };
 
 /// A drum lane that loops on its own length inside a looping clip (polymeter). Its notes are not in the clip's
@@ -146,6 +159,7 @@ struct TrackPlayback {
     TrackId id;
     int busSlot = -1;
     int polyphony = 1;
+    VoiceAllocation allocation = VoiceAllocation::Rotate;
     // Its voices as blocks, one per channel of its playheads in playhead order (Song::voiceBlocks).
     std::array<VoiceAllocator::Block, VoiceAllocator::kMaxBlocks> voiceBlocks{{{0, 0, 1}}};
     int voiceBlockCount = 1;

@@ -35,6 +35,8 @@ const Info kInfo[] = {
     {"Pitch", "st", -48, 48, 0.1, false},
     {"Timbre", "%", 0, 100, 0.5, false},
     {"Pressure", "%", 0, 100, 0.5, false},
+    {"Glide before", "beats", 0, 64, 1.0 / 64, false},
+    {"Glide after", "beats", 0, 64, 1.0 / 64, false},
 };
 static_assert(sizeof(kInfo) / sizeof(kInfo[0]) == size_t(Field::Count), "one Info per field");
 
@@ -127,6 +129,10 @@ double get(const Note& n, Field f) {
         return n.ops.timingSpread * 100.0;
     case Field::Channel:
         return n.channel;
+    case Field::GlideBefore:
+        return double(n.glideBefore) / kBeat;
+    case Field::GlideAfter:
+        return double(n.glideAfter) / kBeat;
     case Field::Bend:
     case Field::Timbre:
     case Field::Pressure:
@@ -197,6 +203,11 @@ void set(Note& n, Field f, double value) {
         break;
     case Field::Channel:
         n.channel = uint8_t(v);
+        break;
+    case Field::GlideBefore:
+    case Field::GlideAfter:
+        if (n.tied)
+            (f == Field::GlideBefore ? n.glideBefore : n.glideAfter) = std::max<Tick>(0, std::llround(v * kBeat));
         break;
     case Field::Bend:
     case Field::Timbre:
@@ -414,6 +425,22 @@ std::string format(Field f, double v, TimeSig ts) {
         if (bbt.tick % step != 0)
             position += "." + std::to_string(bbt.tick % step);
         return position;
+    }
+    case Field::GlideBefore:
+    case Field::GlideAfter: {
+        Tick ticks = std::llround(v * kBeat), whole = 4 * kPpq;
+        if (ticks <= 0)
+            return "None";
+        Tick a = ticks, b = whole;
+        while (b) {
+            Tick r = a % b;
+            a = b;
+            b = r;
+        }
+        if (whole / a <= 128)
+            return std::to_string(ticks / a) + "/" + std::to_string(whole / a);
+        snprintf(text, sizeof(text), "%.3g beats", v);
+        return text;
     }
     case Field::Length: {
         Tick ticks = std::llround(v * kBeat), bar = ticksPerBar(ts);

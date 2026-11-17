@@ -13,6 +13,7 @@
 #include "Playheads.hpp"
 #include "Scale.hpp"
 #include "Swing.hpp"
+#include "Ties.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -32,6 +33,7 @@ const char* const kExpressionNames[] = {"off", "mpe", "flatten"};
 const char* const kRangeNames[] = {"song", "loop", "selection"};
 const char* const kSplitNames[] = {"one", "track", "clip"};
 const char* const kDeviceNames[] = {"applied", "bypassed"};
+const char* const kTieNames[] = {"overlap", "bend"};
 
 template <typename E, size_t N>
 E named(const json_t* j, const char* key, const char* const (&names)[N], E fallback) {
@@ -57,6 +59,9 @@ struct Played {
     uint8_t key = 0; // 0 = the song's key, k = the clip key k - 1
     uint8_t channel = 1;
     uint8_t lane = 0; // the playhead that read it (1..16), for its branch
+    // A chain of tied notes written as one (TieMode::Bend): the pitch curve across all of it, in semitones.
+    std::vector<ExprPoint> mergedPitch;
+    bool merged = false;
 };
 
 /// The channel a clip note plays on; 1 for notes made by the export itself.
@@ -681,6 +686,137 @@ std::vector<Played> trackPlayed(const Song& song, const Track& t, const Options&
     return out;
 }
 
+/// For each of `notes` (sorted by start), the earlier note its tie continues, or -1: on the same channel, starting
+/// before it and still sounding at its start, the nearest in pitch, each continued once (as ties::partners).
+template <typename N, typename Tied>
+std::vector<int> tiePartners(const std::vector<N>& notes, Tied tied) {
+    std::vector<int> out(notes.size(), -1);
+    std::vector<char> taken(notes.size(), 0);
+    for (size_t i = 0; i < notes.size(); i++) {
+        if (!tied(notes[i]))
+            continue;
+        const N& b = notes[i];
+        int best = -1;
+        for (size_t j = 0; j < notes.size() && notes[j].start < b.start; j++) {
+            const N& a = notes[j];
+            if (taken[j] || a.channel != b.channel || a.end < b.start - 0.5 || a.end >= b.end)
+                continue;
+            if (best < 0 || std::abs(a.pitch - b.pitch) < std::abs(notes[size_t(best)].pitch - b.pitch))
+                best = int(j);
+        }
+        if (best >= 0) {
+            out[i] = best;
+            taken[size_t(best)] = 1;
+        }
+    }
+    return out;
+}
+
+/// Where a note a tie continues ends when written with an overlap: kTieOverlap past the tied note's start, but
+/// before that note ends.
+double overlappedEnd(double end, double nextStart, double nextEnd) {
+    double over = std::min(nextStart + double(kTieOverlap), (nextStart + nextEnd) / 2);
+    return std::max(end, over);
+}
+
+/// Folds each chain of tied notes in `notes` into its first note: as long as the whole chain, its pitch curve
+/// running through every note's pitch and glide, sampled every `step`.
+void mergeTies(std::vector<Played>& notes, const std::vector<int>& partners, Tick step) {
+    std::vector<int> head(notes.size(), -1), next(notes.size(), -1);
+    for (size_t i = 0; i < notes.size(); i++) {
+        int p = partners[i];
+        if (p < 0)
+            continue;
+        next[size_t(p)] = int(i);
+        head[i] = head[size_t(p)] >= 0 ? head[size_t(p)] : p;
+    }
+    std::vector<char> drop(notes.size(), 0);
+    for (size_t h = 0; h < notes.size(); h++) {
+        if (head[h] >= 0 || next[h] < 0)
+            continue;
+        std::vector<size_t> chain{h};
+        while (next[chain.back()] >= 0)
+            chain.push_back(size_t(next[chain.back()]));
+        Played& first = notes[h];
+        double start = first.start, end = notes[chain.back()].end;
+        // The pitch at song tick t, in semitones above the first note.
+        auto pitchAt = [&](double t) {
+            for (size_t k = 0; k < chain.size(); k++) {
+                const Played& n = notes[chain[k]];
+                bool last = k + 1 == chain.size();
+                double until = last ? end : notes[chain[k + 1]].start;
+                if (t >= until && !last)
+                    continue;
+                const Note* src = n.source;
+                double length = std::max(1.0, n.end - n.start);
+                float own = src ? expressionAt(src->pitchExpr, float((t - n.start) / length), 0) : 0.f;
+                double pitch = n.pitch;
+                // Inside a glide into this note or out of it into the next.
+                auto glide = [&](const Played& a, const Played& b) -> std::optional<double> {
+                    const Note* bs = b.source;
+                    if (!bs || a.pitch == b.pitch)
+                        return std::nullopt;
+                    double from = b.start - double(std::max<Tick>(0, bs->glideBefore));
+                    double to = b.start + double(std::max<Tick>(0, bs->glideAfter));
+                    if (t <= from || t >= to || to <= from)
+                        return std::nullopt;
+                    return a.pitch + (b.pitch - a.pitch) * ties::shaped(bs->glideShape, (t - from) / (to - from));
+                };
+                if (k > 0)
+                    if (auto g = glide(notes[chain[k - 1]], n))
+                        pitch = *g;
+                if (!last)
+                    if (auto g = glide(n, notes[chain[k + 1]]))
+                        pitch = *g;
+                return pitch + own - first.pitch;
+            }
+            return 0.0;
+        };
+        std::vector<double> at;
+        for (double t = start; t < end; t += double(std::max<Tick>(1, step)))
+            at.push_back(t);
+        for (size_t k = 1; k < chain.size(); k++) {
+            double joint = notes[chain[k]].start;
+            at.push_back(joint - 1); // a jump stays a jump
+            at.push_back(joint);
+        }
+        std::sort(at.begin(), at.end());
+        std::vector<ExprPoint> curve;
+        for (double t : at)
+            if (t >= start && t < end)
+                curve.push_back({float((t - start) / (end - start)), std::clamp(float(pitchAt(t)), -96.f, 96.f), 0});
+        first.end = end;
+        first.release = notes[chain.back()].release;
+        first.mergedPitch = std::move(curve);
+        first.merged = true;
+        for (size_t k = 1; k < chain.size(); k++)
+            drop[chain[k]] = 1;
+    }
+    size_t kept = 0;
+    for (size_t i = 0; i < notes.size(); i++) {
+        if (drop[i])
+            continue;
+        if (kept != i) // never onto itself: a moved-from vector may come back empty
+            notes[kept] = std::move(notes[i]);
+        kept++;
+    }
+    notes.resize(kept);
+}
+
+/// Writes ties the way the options ask: overlapping, or (with MPE) merged into one note with bend.
+void writeTies(std::vector<Played>& notes, const Options& o) {
+    std::vector<int> partners = tiePartners(notes, [](const Played& n) { return n.source && n.source->tied; });
+    if (std::all_of(partners.begin(), partners.end(), [](int p) { return p < 0; }))
+        return;
+    if (o.ties == TieMode::Bend && o.expressions == ExpressionMode::Mpe) {
+        mergeTies(notes, partners, o.ccStep);
+        return;
+    }
+    for (size_t i = 0; i < notes.size(); i++)
+        if (int p = partners[i]; p >= 0)
+            notes[size_t(p)].end = overlappedEnd(notes[size_t(p)].end, notes[i].start, notes[i].end);
+}
+
 int bend14(float semitones, int range) {
     return std::clamp(int(std::lround(double(semitones) / double(std::max(1, range)) * 8192)), -8192, 8191);
 }
@@ -740,7 +876,7 @@ void emitNotes(smf::Track& out, const std::vector<Played>& notes, int ch, Tick f
         }
         const Note* src = n.source;
         static const std::vector<ExprPoint> none;
-        const std::vector<ExprPoint>& pitchCurve = src ? src->pitchExpr : none;
+        const std::vector<ExprPoint>& pitchCurve = n.merged ? n.mergedPitch : src ? src->pitchExpr : none;
         const std::vector<ExprPoint>& timbreCurve = src ? src->timbreExpr : none;
         const std::vector<ExprPoint>& pressureCurve = src ? src->pressureExpr : none;
         if (o.expressions == ExpressionMode::Mpe) {
@@ -1084,6 +1220,7 @@ smf::File renderSong(const Song& song, const Options& o, const Context& ctx, con
         smf::Track out;
         out.events.push_back(smf::trackName(0, t.name));
         std::vector<Played> played = trackPlayed(song, t, o, double(to), ctx.tempo);
+        writeTies(played, o);
         emitNotes(out, played, ch, from, to, o);
         emitAutomation(out, song, t, ch, from, to, o);
         file.tracks.push_back(std::move(out));
@@ -1109,6 +1246,13 @@ smf::File renderClip(const Song& song, const Options& o, const Context& ctx, Tra
     return renderSong(solo, clipOptions, ctx);
 }
 
+void overlapTies(std::vector<ExportNote>& notes) {
+    std::vector<int> partners = tiePartners(notes, [](const ExportNote& n) { return n.tied; });
+    for (size_t i = 0; i < notes.size(); i++)
+        if (int p = partners[i]; p >= 0)
+            notes[size_t(p)].end = overlappedEnd(notes[size_t(p)].end, notes[i].start, notes[i].end);
+}
+
 std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Options& o, const Context& ctx) {
     std::vector<ExportNote> out;
     const Track* t = song.findTrack(track);
@@ -1118,9 +1262,14 @@ std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Option
     for (const Played& p : played) {
         out.push_back({p.start, p.end, p.pitch, p.velocity, p.release, p.channel, {}, {}, {}});
         if (p.source) {
-            out.back().pitchExpr = p.source->pitchExpr;
-            out.back().timbreExpr = p.source->timbreExpr;
-            out.back().pressureExpr = p.source->pressureExpr;
+            ExportNote& n = out.back();
+            n.pitchExpr = p.source->pitchExpr;
+            n.timbreExpr = p.source->timbreExpr;
+            n.pressureExpr = p.source->pressureExpr;
+            n.tied = p.source->tied;
+            n.glideBefore = p.source->glideBefore;
+            n.glideAfter = p.source->glideAfter;
+            n.glideShape = p.source->glideShape;
         }
     }
     return out;
@@ -1181,6 +1330,7 @@ json_t* Options::toJson() const {
     setString(j, "devices", kDeviceNames[int(devices)]);
     setBool(j, "includeMuted", includeMuted);
     setBool(j, "noteChannels", noteChannels);
+    setString(j, "ties", kTieNames[int(ties)]);
     setInt(j, "ccStep", ccStep);
     setInt(j, "bendRange", bendRange);
     json_t* ccs = json_array();
@@ -1207,6 +1357,7 @@ Options Options::fromJson(const json_t* j) {
     o.devices = named(j, "devices", kDeviceNames, o.devices);
     o.includeMuted = getBool(j, "includeMuted", o.includeMuted);
     o.noteChannels = getBool(j, "noteChannels", o.noteChannels);
+    o.ties = named(j, "ties", kTieNames, o.ties);
     o.ccStep = std::clamp<Tick>(getInt(j, "ccStep", o.ccStep), 1, kPpq);
     o.bendRange = int(std::clamp<int64_t>(getInt(j, "bendRange", o.bendRange), 1, 96));
     const json_t* ccs = get(j, "laneCc");
@@ -1224,7 +1375,7 @@ Options Options::fromJson(const json_t* j) {
 bool Options::operator==(const Options& o) const {
     return timing == o.timing && operators == o.operators && automation == o.automation &&
            expressions == o.expressions && range == o.range && split == o.split && devices == o.devices &&
-           includeMuted == o.includeMuted && noteChannels == o.noteChannels && from == o.from && to == o.to &&
+           includeMuted == o.includeMuted && noteChannels == o.noteChannels && ties == o.ties && from == o.from && to == o.to &&
            ccStep == o.ccStep && bendRange == o.bendRange && laneCc == o.laneCc && channels == o.channels;
 }
 

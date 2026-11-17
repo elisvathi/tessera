@@ -32,7 +32,7 @@ class Inspector : public InteractiveView {
 
     /// One clickable or draggable part of the notes section.
     struct Region {
-        enum class Kind { Field, Chart, Mean, Spread, Chaos, Chip, Occurrence, Pass, Motion };
+        enum class Kind { Field, Chart, Mean, Spread, Chaos, Chip, Occurrence, Pass, Motion, Tie };
         Kind kind;
         fields::Field field = fields::Field::Velocity;
         int index = 0; // Chip: the operator; Occurrence: the choice; Pass: the pass

@@ -817,3 +817,64 @@ TEST_CASE("dawproject: an audio track's clips point at their files inside the pr
         zip::read(dawproject::build(song, Options(), ctx, "2.0.0", {{"audio/Drum loop.wav", "RIFF"}}));
     CHECK(files["audio/Drum loop.wav"] == "RIFF");
 }
+
+TEST_CASE("export: a tie is written as a small overlap, so a legato instrument plays on") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    Note b = makeNote(song, kBeat, kBeat, 64);
+    b.tied = true;
+    Note c = makeNote(song, 3 * kBeat, kBeat, 67); // not tied: ends as written
+    Clip& clip = addClip(song, kBar, {a, b, c});
+    place(song, lead, clip.id, 0, kBar);
+    smf::File f = roundTrip(renderSong(song, Options(), Context()));
+    auto notes = notesOf(f.tracks[1]);
+    REQUIRE(notes.size() == 3);
+    CHECK(notes[1].on == kBeat);
+    CHECK(notes[0].off == kBeat + kTieOverlap);
+    CHECK(notes[1].off == 2 * kBeat);
+}
+
+TEST_CASE("export: with MPE, ties can go out as one note whose glide is pitch bend") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    Note b = makeNote(song, kBeat, kBeat, 64);
+    b.tied = true;
+    b.glideBefore = kBeat / 4;
+    b.glideAfter = kBeat / 4;
+    Clip& clip = addClip(song, kBar, {a, b});
+    place(song, lead, clip.id, 0, kBar);
+    Options o;
+    o.expressions = ExpressionMode::Mpe;
+    o.ties = TieMode::Bend;
+    smf::File f = roundTrip(renderSong(song, o, Context()));
+    auto notes = notesOf(f.tracks[1]);
+    REQUIRE(notes.size() == 1);
+    CHECK(notes[0].pitch == 60);
+    CHECK(notes[0].off == 2 * kBeat);
+    // Halfway at the joint (+2 of ±48), all the way (+4) once the glide is over.
+    int ch = notes[0].channel;
+    int atJoint = 0, last = 0;
+    for (const smf::Event& e : f.tracks[1].events)
+        if (e.status() == (0xE0 | ch)) {
+            int v = (e.bytes[1] | e.bytes[2] << 7) - 8192;
+            if (e.tick <= kBeat)
+                atJoint = v;
+            last = v;
+        }
+    CHECK(atJoint == doctest::Approx(2.0 / 48 * 8192).epsilon(0.05));
+    CHECK(last == doctest::Approx(4.0 / 48 * 8192).epsilon(0.02));
+
+    // Asked for bend without MPE: overlapping notes still.
+    o.expressions = ExpressionMode::Off;
+    CHECK(notesOf(roundTrip(renderSong(song, o, Context())).tracks[1]).size() == 2);
+}
+
+TEST_CASE("export: export options keep how ties are written") {
+    Options o;
+    o.ties = TieMode::Bend;
+    json_t* j = o.toJson();
+    CHECK(Options::fromJson(j).ties == TieMode::Bend);
+    json_decref(j);
+}

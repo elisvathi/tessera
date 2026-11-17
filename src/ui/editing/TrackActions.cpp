@@ -18,11 +18,24 @@ namespace tessera::trackActions {
 
 std::string voicesLabel(const Song& song, const Track& track) {
     std::string total = std::to_string(song.voicesOf(track));
+    std::string how = track.allocation == VoiceAllocation::Rotate ? "" : std::string(" · ") + allocationName(track.allocation);
     if (track.polyphony == kAutoVoices)
-        return "Auto (" + total + ")";
+        return "Auto (" + total + ")" + how;
     // With playheads a fixed count is for each channel, so the track sends more in all.
     std::string set = std::to_string(std::clamp(track.polyphony, 1, kMaxVoices));
-    return set == total ? set : set + " per channel (" + total + ")";
+    return (set == total ? set : set + " per channel (" + total + ")") + how;
+}
+
+const char* allocationName(VoiceAllocation a) {
+    switch (a) {
+    case VoiceAllocation::Reuse:
+        return "Reuse";
+    case VoiceAllocation::Reset:
+        return "Reset";
+    case VoiceAllocation::Rotate:
+    default:
+        return "Rotate";
+    }
 }
 
 namespace {
@@ -453,10 +466,38 @@ void appendVoicesItems(rack::ui::Menu* menu, EditorContext& ctx, const std::vect
         "Auto", "", [has] { return has(kAutoVoices); },
         [c, ids] { setField(*c, ids, &Track::polyphony, kAutoVoices, "Set voices to auto"); }));
     menu->addChild(new rack::ui::MenuSeparator);
-    for (int v = 1; v <= kMaxVoices; v++)
-        menu->addChild(rack::createCheckMenuItem(
-            std::to_string(v), "", [has, v] { return has(v); },
-            [c, ids, v] { setField(*c, ids, &Track::polyphony, v, "Set voices to " + std::to_string(v)); }));
+    for (int v = 1; v <= kMaxVoices; v++) {
+        rack::ui::MenuItem* item = rack::createCheckMenuItem(
+            std::to_string(v), v == 1 ? "mono: legato keys record as ties" : "", [has, v] { return has(v); },
+            [c, ids, v] { setField(*c, ids, &Track::polyphony, v, "Set voices to " + std::to_string(v)); });
+        menu->addChild(item);
+    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    const Track* first = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+    menu->addChild(rack::createSubmenuItem(
+        "Allocation", first ? allocationName(first->allocation) : "", [c, ids](rack::ui::Menu* sub) {
+            struct Choice {
+                VoiceAllocation a;
+                const char* hint;
+            };
+            static const Choice choices[] = {
+                {VoiceAllocation::Rotate, "next free voice: release tails ring out"},
+                {VoiceAllocation::Reuse, "each pitch keeps its voice"},
+                {VoiceAllocation::Reset, "lowest free voice; chords low to high"}};
+            for (const Choice& ch : choices) {
+                VoiceAllocation a = ch.a;
+                sub->addChild(rack::createCheckMenuItem(
+                    allocationName(a), ch.hint,
+                    [c, ids, a] {
+                        const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+                        return t && t->allocation == a;
+                    },
+                    [c, ids, a] {
+                        setField(*c, ids, &Track::allocation, a,
+                                 std::string("Set voice allocation to ") + allocationName(a));
+                    }));
+            }
+        }));
 }
 
 void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vector<TrackId>& ids) {

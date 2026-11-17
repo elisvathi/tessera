@@ -1500,3 +1500,44 @@ TEST_CASE("the metronome clicks on a trigger, louder at first, higher on the bar
     json::Ref j(s.toJson());
     CHECK(RecordSettings::fromJson(j.get()) == s);
 }
+
+TEST_CASE("a one-voice track records keys played overlapping as ties, and keys played apart as notes") {
+    Song song = recordSong();
+    song.tracks[0].polyphony = 1;
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    rec.handle(note(t, 64, true, 400, 400)); // 60 still held: legato
+    rec.handle(note(t, 60, false, 500, 500));
+    rec.handle(note(t, 64, false, 900, 900));
+    rec.handle(note(t, 67, true, 1000, 1000)); // played apart
+    rec.handle(note(t, 67, false, 1200, 1200));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 1300, 1300, false));
+    const Clip* clip = slotClip(host.song_, 0, 0);
+    REQUIRE(clip);
+    REQUIRE(clip->notes.size() == 3);
+    CHECK(clip->notes[0].end() == 400);
+    CHECK_FALSE(clip->notes[0].tied);
+    CHECK(clip->notes[1].tied);
+    CHECK(clip->notes[1].length == 500);
+    CHECK_FALSE(clip->notes[2].tied);
+}
+
+TEST_CASE("a poly track records overlapping keys as a chord, as before") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    rec.handle(note(t, 64, true, 400, 400));
+    rec.handle(note(t, 60, false, 500, 500));
+    rec.handle(note(t, 64, false, 900, 900));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 1000, 1000, false));
+    const Clip* clip = slotClip(host.song_, 0, 0);
+    REQUIRE(clip);
+    REQUIRE(clip->notes.size() == 2);
+    CHECK(clip->notes[0].end() == 500);
+    CHECK_FALSE(clip->notes[1].tied);
+}

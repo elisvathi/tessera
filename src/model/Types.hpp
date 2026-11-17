@@ -78,6 +78,13 @@ inline BarBeatTick toBarBeatTick(Tick t, TimeSig ts) {
     return {barIndex + 1, int(inBar / beat) + 1, inBar % beat};
 }
 
+/// Which voice (poly channel) a new note takes (docs/design/TIES_VOICES.md §3).
+enum class VoiceAllocation : uint8_t {
+    Rotate, // the next free voice after the last one used
+    Reuse,  // the voice that played this pitch last, even while it still sounds
+    Reset   // the lowest free voice; notes starting together go low to high
+};
+
 } // namespace tessera
 
 namespace std {

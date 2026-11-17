@@ -110,8 +110,11 @@ class Xml {
     int next = 0;
 };
 
-/// `channel` is the track's (0-based); with `noteChannels` each note goes on its own instead.
-void notesElement(Xml& x, const std::vector<ExportNote>& notes, double origin, int channel, bool noteChannels) {
+/// `channel` is the track's (0-based); with `noteChannels` each note goes on its own instead. Tied notes are
+/// written overlapping a little (the format has no tie), so a mono instrument in legato mode plays them on.
+void notesElement(Xml& x, const std::vector<ExportNote>& source, double origin, int channel, bool noteChannels) {
+    std::vector<ExportNote> notes = source;
+    render::overlapTies(notes);
     x.open("Notes", {{"id", x.id()}});
     for (const ExportNote& n : notes)
         x.leaf("Note", {{"time", beats(n.start - origin)},

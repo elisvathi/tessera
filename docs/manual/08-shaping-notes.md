@@ -33,6 +33,9 @@ and a tick marks each note.
 **Micro-timing** moves a note a little early or late (up to half a sixteenth) while it stays on the grid in the
 editor.
 
+Under the fields, **Tie to the note before** ties the selected notes (see [Ties and glides](#ties-and-glides)). On
+tied notes it reads **Tied: no new gate**, and two more fields appear: **Glide before** and **Glide after**.
+
 ### The chart: Mean, Spread and Chaos
 
 With several notes selected, click a field such as **Velocity** to open its chart below it. The chart shows how many
@@ -116,6 +119,35 @@ Choose **Timbre** or **Pressure** in the lower lane's menu, and select some note
 them, four rows tall: 0% at the bottom, 100% at the top. Press near a curve to add a point, drag points and arch
 handles the same way as bends. With several notes selected, each gets its point at the same beat, so they swell
 together.
+
+## Ties and glides
+
+A tie joins a note to the one before it. The gate stays high, so the envelope does not start again: the pitch just
+moves on, as when you play legato on a mono synth. The pitch can jump, or glide from one note to the other.
+
+![Ties: A1 glides into C2, C2 is tied on at the same pitch, and E2 jumps to D2](images/ties.png)
+
+| To do this | Do this |
+|---|---|
+| Tie notes | Select them and press **J** (or right-click → **Tie to the note before**). One note ties to the note before it; several tie to one another, so a selection becomes one line. Notes up to a 1/16 apart close up; a note that overlaps the next is trimmed. |
+| Make a glide | Drag the dot on the joint sideways. The glide opens evenly on both sides. |
+| Set where the glide starts and ends | Select the tie. Drag the handle at the start (inside the first note) or at the end (inside the second). They snap to the grid; hold **Alt** for any place. |
+| Bend the glide | Drag its hollow middle handle up or down (a slow or fast start). |
+| Remove the glide | Right-click the tie → **No glide (jump)**. |
+| Untie | Press **J** again: the glide stays, written into the two notes' own pitch curves, and the second note starts again. Right-click the tie → **Untie, remove the glide** drops the glide too. |
+
+- A tie is drawn as a dot on the joint, with a straight line for a jump or the glide's curve. Two notes of the same
+  pitch show a small arc: they play as one long note.
+- In a chord, each tied note continues the note before it nearest in pitch, so a chord can glide into the next.
+- A tied note needs a note on its channel that ends where it starts (or overlaps it). If you drag them apart, the
+  tie shows as an empty dot and the note plays as a normal note again.
+- While tied, the glide belongs to the tie: move or transpose either note and the line stays joined. Each note's own
+  bend plays on top of it.
+- Several selected tied notes change their glides together. **Glide before** and **Glide after** in the inspector
+  type the same values in.
+- Ties carry on round a clip's loop (the last note into the first). Stop, a loop of the song, and switching clips
+  end the note.
+- Drum tracks have no ties.
 
 ## Transforms
 

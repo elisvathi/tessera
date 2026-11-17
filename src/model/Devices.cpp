@@ -689,6 +689,7 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         ChainNote note = h->note;
         note.id = newId();
         note.pitch = int8_t(pitch);
+        note.tied = false; // a step of its own, even when the held note was tied
         note.start = t + swing;
         note.end = note.start + (length > 0 ? length : gate);
         note.origin = t + c.songOffset;

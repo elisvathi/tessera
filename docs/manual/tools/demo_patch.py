@@ -5,7 +5,7 @@ Run it with an output folder: `demo_patch.py build/manual-rack`. It writes demo.
 modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the modules zoomed in), first.vcv
 (Roll, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Roll alone) and
 polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own), playheads.vcv
-(Lead read by three playheads), devices.vcv (the Chords track open with an Arpeggiator and an Echo, and a track LFO
+(Lead read by three playheads), ties.vcv (the Bass track on one voice, its verse a tied line with a glide), devices.vcv (the Chords track open with an Arpeggiator and an Echo, and a track LFO
 that moves the arpeggio's Gate), curve.vcv (the Bass track open, a 16-bar Curve on its Transpose's key steps that
 plays bars 5 to 8), hitvalues.vcv (the Drums track open on its Pitch lane: the snares tuned up step by step, the
 second a shaped curve, the hats with timbre) and audio.vcv (the demo with an audio track, "Loop", playing a
@@ -223,6 +223,24 @@ def hit_values_song():
     return song, verse
 
 
+def ties_song():
+    """The demo song with Bass on one voice and its verse clip a tied line: A1 glides into C2 (1/16 each side of the
+    joint), C2 is tied on at the same pitch, E2 is played apart, then tied into D2 with no glide (a jump). Returns the
+    song and the clip."""
+    song, _ = make_song()
+    bass = next(t for t in song["tracks"] if t["name"] == "Bass")
+    bass["polyphony"] = 1
+    verse = next(c for c in song["clips"] if c["name"] == "Verse bass")
+    q = BEAT
+    line = [note(0, 2 * q, 33), note(2 * q, q, 36), note(3 * q, q, 36), note(BAR + q // 2, q + q // 2, 40),
+            note(BAR + 2 * q, 2 * q, 38)]
+    line[1].append({"tie": {"before": q // 4, "after": q // 4}})
+    line[2].append({"tie": {}})
+    line[4].append({"tie": {}})
+    verse["notes"] = line
+    return song, verse
+
+
 def playheads_module():
     """The demo song with a Playheads device on Lead: three playheads (Sparkle off), the first with its own Echo,
     then a Scale for all of them. The device strip is open. Sparkle is off by the old "mute" switch, which loads as its
@@ -421,6 +439,8 @@ def main():
     values, beat = hit_values_song()
     (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, hp, False, "Drums", "pitch")] +
                                                          outputs(hp))))
+    tied, line = ties_song()
+    (out / "ties.vcv").write_text(json.dumps(patch([tessera_module(tied, line, hp, False, "Bass")] + outputs(hp))))
     (out / "playheads.vcv").write_text(json.dumps(patch([playheads_module()] + outputs(hp))))
     (out / "curve.vcv").write_text(json.dumps(patch([curve_module()] + outputs(hp))))
     (out / "devices.vcv").write_text(json.dumps(patch([devices_module()] + outputs(hp))))

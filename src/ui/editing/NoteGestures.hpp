@@ -62,6 +62,14 @@ std::unique_ptr<DragGesture> pickPoints(PianoRollView& view, rack::math::Vec pre
 std::unique_ptr<DragGesture> rubberBand(PianoRollView& view, rack::math::Vec press, Modifiers mods);
 
 /// The transform box handles around a multi-note selection.
+/// What a press on a tie grabs (docs/design/TIES_VOICES.md §2): the joint dot opens a glide evenly both ways, the
+/// start and end handles move one end, the middle handle bends it.
+enum class GlideGrab { Joint, Start, End, Shape };
+/// Drags the glide of tied note `tied` (and of the other selected tied notes with it). One undo step.
+std::unique_ptr<DragGesture> glide(PianoRollView& view, rack::math::Vec press, NoteId tied, GlideGrab grab);
+/// "1/16" for a length that is a whole fraction of a bar of 4/4 ("3/32" too), else beats.
+std::string glideLengthText(Tick length);
+
 enum class BoxHandle { None, Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight };
 /// Side handles stretch time, top and bottom scale the pitch range, corners do both.
 std::unique_ptr<DragGesture> transformBox(PianoRollView& view, rack::math::Vec press, BoxHandle handle);

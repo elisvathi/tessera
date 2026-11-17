@@ -1,6 +1,7 @@
 #include "BounceNotes.hpp"
 
 #include "Render.hpp"
+#include "Ties.hpp"
 #include "TrackColors.hpp"
 
 #include <algorithm>
@@ -120,11 +121,22 @@ CommandPtr bounceNotes(const Song& song, const NoteBounce& what, double tempo, c
         n.pitchExpr = p.pitchExpr;
         n.timbreExpr = p.timbreExpr;
         n.pressureExpr = p.pressureExpr;
+        n.tied = p.tied;
+        n.glideBefore = p.glideBefore;
+        n.glideAfter = p.glideAfter;
+        n.glideShape = p.glideShape;
         clip.notes.push_back(n);
     }
     if (clip.notes.empty())
         return nullptr;
     clip.sortNotes();
+    // A note a tie continues plays a hair longer than written: it ends where the tied note starts again.
+    std::vector<NoteId> tied;
+    for (const Note& n : clip.notes)
+        if (n.tied)
+            tied.push_back(n.id);
+    for (NoteId id : tied)
+        clip.notes = ties::tie(clip.notes, {id});
 
     Track track;
     track.id = TrackId(nextId());

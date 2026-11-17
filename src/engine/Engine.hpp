@@ -171,9 +171,13 @@ class Engine {
     void setSnapshot(const Snapshot* snapshot);
 
     void play() {
-        // Every play rolls again for what is set to "New every play" (docs/DECISIONS.md §163).
-        if (!playing)
+        // Every play rolls again for what is set to "New every play" (docs/DECISIONS.md §163), and lands its notes on
+        // the same voices.
+        if (!playing) {
             roll++;
+            for (TrackState& t : tracks)
+                t.voices.restartRotation();
+        }
         playing = true;
         wakeAll();
     }
@@ -315,6 +319,29 @@ class Engine {
     void process(TrackFrame* frames, TransportEvents& events);
 
   private:
+    /// A voice's glides (docs/design/TIES_VOICES.md §2), in play ticks. `in`: the move into a tied note, from the
+    /// pitch the voice had at the joint (`a`, V/OCT, at `startAt`) to the note's (`b`), along the curve that runs
+    /// from `from` to `to` and stood at `e0` at `startAt`. `out`: the move a tied note after this one starts
+    /// while this one plays, `volts` up or down over [from, to].
+    struct VoiceGlide {
+        struct In {
+            double from = 0, to = 0, startAt = 0;
+            float e0 = 0, a = 0, b = 0, shape = 0;
+            bool on = false;
+        } in;
+        struct Out {
+            double from = 0, to = 0;
+            float volts = 0, shape = 0;
+            bool on = false;
+        } out;
+        bool any() const { return in.on || out.on; }
+    };
+    /// Where voice glide `g` puts a voice's V/OCT at play tick `t`, given the note's own `volts`.
+    static float glidedVolts(const VoiceGlide& g, float volts, double t);
+    /// The glides of note `n` as it starts on a voice: into it when it `continues` a tied note (from `joinedAt`,
+    /// the V/OCT the voice had), and out of it toward a tied note after it. `scale`: play ticks per written tick.
+    VoiceGlide glideFor(const chain::ChainNote& n, const NoteExtras* extras, bool continues, float joinedAt,
+                        double scale) const;
     struct TrackState {
         TrackState() {
             audition.fill(-1);
@@ -325,7 +352,8 @@ class Engine {
 
         // Output frames: what changed since each bus buffer was last written (DESIGN.md §18).
         uint64_t autoChanges = 0;
-        int curvedVoices = 0; // voices playing expression curves change their outputs every sample
+        int curvedVoices = 0;  // voices playing expression curves change their outputs every sample
+        int glidingVoices = 0; // so do voices with a glide (VoiceGlide)
         int auditions = 0;    // voices with an audition, so the per-sample countdown is skipped when there are none
         int busSlot = -1;     // the track's frame on the bus (a copy of TrackPlayback::busSlot, kept close at hand)
         std::array<uint64_t, 2> written{~uint64_t(0), ~uint64_t(0)};
@@ -370,6 +398,8 @@ class Engine {
             uint8_t key;
             uint8_t channel;
             uint8_t lane; // the playhead that read it, for its branch; 0 = none
+            bool tied = false;      // continues the note before it (only a note's first hit)
+            uint8_t lowerLater = 0; // NoteEvent::lowerLater
         };
         std::array<PendingHit, kMaxPendingHits> pending{};
         /// How far ahead the playheads have read the launched clip (ticks since it started): they read a control
@@ -395,6 +425,7 @@ class Engine {
         // speed), so a curve found again in a new snapshot keeps its pace.
         std::array<const NoteExtras*, kMaxTrackVoices> voiceExtras{};
         std::array<double, kMaxTrackVoices> voiceStart{}, voiceLength{}, voiceScale{};
+        std::array<VoiceGlide, kMaxTrackVoices> glide{};
         std::array<uint8_t, kMaxTrackVoices> voicePart{}; // the channel of each voice's note
         std::array<uint8_t, kMaxDrumLanes> lanePart{};    // the channel of each drum lane's last hit
         // The playhead (1..16; 0 = none) that read each voice's note and each drum lane's last hit, so turning a
@@ -463,6 +494,12 @@ class Engine {
         slot = extras;
         state.voiceClip[size_t(voice)] = extras ? extras->clip : 0;
         state.voiceNote[size_t(voice)] = extras ? extras->note.id.value : 0;
+    }
+    /// Sets voice `v`'s glides, keeping the count of gliding voices.
+    static void setGlide(TrackState& state, int v, const VoiceGlide& g) {
+        VoiceGlide& slot = state.glide[size_t(v)];
+        state.glidingVoices += int(g.any()) - int(slot.any());
+        slot = g;
     }
     /// After a snapshot swap: sounding voices find their notes' curves in the new snapshot (edited or not), so a
     /// long note keeps bending instead of going flat until it starts again.

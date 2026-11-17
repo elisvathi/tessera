@@ -77,6 +77,7 @@ Export your music as a Standard MIDI File, to open it in any music program.
 | **Devices** | **Applied** (what the devices play: arpeggios, echoes, chords), or **Bypassed** (the clips as written). |
 | **Automation** | **Off**, **As CC** (each AUTO lane as a MIDI controller), or **As CC + 14-bit** (finer steps). |
 | **Expressions** | **Off**, **MPE** (each note on its own channel, with its bend, timbre and pressure), or **Flatten** (timbre as CC74, pressure as polyphonic aftertouch; bends are dropped). |
+| **Ties as** | MIDI files have no ties. **Overlapping notes** (the default): the first note of a tie ends a 1/128 after the next one starts, so an instrument in mono legato mode plays on with no new attack (its own glide setting makes the slide). **One note with bend (MPE)**: with **Expressions** on **MPE**, a chain of tied notes becomes one note, its glides written as pitch bend, exactly as drawn. Without MPE, ties go out overlapping. |
 | **Include muted tracks and clips** | Off by default. Muted notes are never exported. |
 | **Use note channels** | Each note goes out on its own MIDI channel. Off: each track uses one channel. |
 | **Automation as controllers** | The CC number for each AUTO lane in use (1, 2, 11, 16… by default). |
@@ -106,7 +107,7 @@ writes:
   Audio clips in the clips panel, reversed clips, clip gain and pitch don't go across yet.
 
 Per-note bends, timbre and pressure, and the devices themselves, don't go across (with Devices applied, their notes
-do).
+do). Ties go across as notes that overlap by a 1/128, as in MIDI export: DAWproject has no ties either.
 
 ## Importing MIDI files
 
@@ -123,6 +124,8 @@ There are three ways in. Each is one undo step.
 - Channel 10 becomes a drum track, with a lane for each drum sound used (General MIDI names where known, up to 16
   lanes).
 - Notes keep their timing, velocity and release velocity. Clips are whole bars long and loop.
+- A part that plays one line, whose notes only overlap where one hands over to the next (as playing legato on a mono
+  keyboard writes them), comes in with those notes [tied](08-shaping-notes.md#ties-and-glides). Chords stay chords.
 - Poly aftertouch and MPE come in as each note's **Pressure**, **Timbre** and **Pitch** curves. Pitch bend, channel
   aftertouch and controllers become clip lanes (see [Expression and controls](11-recording.md#expression-and-controls)).
 - Only controllers that move get a lane, such as the mod wheel or expression. Setup a file sends once and never

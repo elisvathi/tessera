@@ -3,6 +3,7 @@
 #include "AutomationEdits.hpp"
 #include "Json.hpp"
 #include "LauncherCommands.hpp"
+#include "Ties.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -81,6 +82,7 @@ Note toNote(const TakeNote& t, Tick start, const NextId& nextId) {
     n.pitchExpr = t.pitchExpr;
     n.timbreExpr = t.timbreExpr;
     n.pressureExpr = t.pressureExpr;
+    n.tied = t.tied;
     return n;
 }
 
@@ -744,7 +746,15 @@ CommandPtr quantizeTake(const Song& song, ClipId clipId, const edits::IdSet& ids
     const Clip* clip = song.findClip(clipId);
     if (!clip || grid <= 0 || ids.empty())
         return nullptr;
-    return replaceNotes("Quantize recording", clipId, clip->notes, quantizeStarts(clip->notes, ids, grid, strength));
+    edits::NoteList after = quantizeStarts(clip->notes, ids, grid, strength);
+    // Starts moved to the grid: tied notes join up again with the notes they continue.
+    edits::IdSet tied;
+    for (const Note& n : after)
+        if (n.tied && ids.count(n.id))
+            tied.insert(n.id);
+    for (NoteId id : tied)
+        after = ties::tie(after, {id});
+    return replaceNotes("Quantize recording", clipId, clip->notes, after);
 }
 
 } // namespace tessera

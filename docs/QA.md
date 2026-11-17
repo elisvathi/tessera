@@ -838,3 +838,26 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       a faint line under its title; drag the line down to −6 dB: the line stays, shaded above. Hover it: "Gain −6.0 dB
       · double-click for 0 dB". Double-click: 0 dB, the line goes. Its title bar still only moves it.
 
+
+## Ties, glides and voice allocation, 17 Nov (docs/DECISIONS.md §176)
+
+- [ ] A bass track on 1 voice into a VCO, ADSR and VCA. Draw two touching notes, select the second, press **J**: a dot
+      on the joint. Play: one attack, the pitch jumps at the joint. Drag the dot sideways: a glide opens both ways;
+      the VCO slides across the joint and the envelope never starts again.
+- [ ] Select the tie: two end handles and a hollow middle one. Drag the start into the first note and the end into
+      the second (on the grid; Alt free): the readout says "Glide 1/16 before · 1/8 after". Drag the middle handle up
+      and down: it bends. Each drag is one undo step.
+- [ ] Transpose the second note: the line stays joined. Move it away by a bar: an open dot, and it plays with its own
+      attack. Move it back: tied again.
+- [ ] **J** on the tied note: untied, the glide now drawn as the notes' own bend, and a new attack at the joint.
+      Right-click a tie → **Untie, remove the glide**: both notes plain.
+- [ ] A chord C-E-G touching D-F-A, select all six, **J**: three lines; on 3 voices each voice glides to its nearest
+      note with no new attack.
+- [ ] A tie from the clip's last note to its first, clip looping: no new attack at the loop. Stop: the gate drops.
+      A song loop over a tied joint: the gate drops at the wrap.
+- [ ] Arm the 1-voice track, play legato on a MIDI keyboard: no new attacks while you play, and the take shows ties;
+      play detached: separate notes. On a 4-voice track the same playing records chords.
+- [ ] Voices ▸ Allocation ▸ Reuse on a 4-voice track: a repeated pitch always comes out on the same Track Out
+      channel. Reset: a strummed chord puts its lowest note on channel 1. Rotate: each new note on the next channel.
+- [ ] Export MIDI with a tie: the first note ends a 1/128 after the second starts. Expressions MPE and Ties as **One
+      note with bend**: one note, its glide as bend. Import that overlapping file again: the notes come back tied.

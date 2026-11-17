@@ -50,6 +50,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Ctrl+I | Invert the selection |
 | Ctrl+E | Split |
 | Ctrl+J | Glue |
+| J | Tie the selected notes; again: untie, keeping the glide (*notes pane*) |
 | Ctrl+U | Make unique |
 | Q | Quantize |
 | Shift+Q | Quantize… (settings) |

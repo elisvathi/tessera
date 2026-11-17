@@ -2,6 +2,7 @@
 
 #include "DrumKit.hpp"
 #include "MidiFile.hpp"
+#include "Ties.hpp"
 #include "TrackColors.hpp"
 
 #include <algorithm>
@@ -235,7 +236,9 @@ Clip clipOf(const Imported& in, int part, TimeSig timeSig, const NextId& nextId,
     for (size_t i = 0; i < in.parts.size(); i++) {
         if (part >= 0 && int(i) != part)
             continue;
-        for (const Note& n : in.parts[i].notes) {
+        // A part played legato on one line comes in tied, as it was played.
+        edits::NoteList notes = in.parts[i].drum ? in.parts[i].notes : ties::tieHandovers(in.parts[i].notes);
+        for (const Note& n : notes) {
             Note copy = n;
             copy.id = NoteId(nextId());
             clip.notes.push_back(copy);

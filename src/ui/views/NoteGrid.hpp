@@ -3,10 +3,12 @@
 #include "../../model/ExpressionEdits.hpp"
 #include "../../model/NoteFields.hpp"
 #include "../../model/Render.hpp"
+#include "../../model/Ties.hpp"
 #include "../editing/NoteGestures.hpp"
 #include "../editing/NoteHitTest.hpp"
 #include "TimelineView.hpp"
 
+#include <optional>
 #include <set>
 #include <tuple>
 
@@ -168,6 +170,24 @@ class NoteGrid : public TimelineView {
     /// Every note's pitch curve, drawn at the pitch it plays, with its points while the Bend tool is on or the
     /// note is selected.
     void drawBends(NVGcontext* vg);
+    /// A tie as the grid draws it (docs/design/TIES_VOICES.md): where its joint dot and glide handles are.
+    struct TieMark {
+        NoteId tied;
+        bool broken = false;   // nothing to continue: an open dot at the note's start
+        bool samePitch = false;
+        bool glides = false;   // the pitch moves along a line, not a jump
+        bool shown = false;    // one of its notes is selected: its handles show and can be dragged
+        ties::Glide glide;
+        rack::math::Vec joint, start, end, middle;
+    };
+    /// The ties of the shown notes, in view coordinates.
+    std::vector<TieMark> tieMarks();
+    /// The tie part under pos. With `anyTie`, same-pitch and broken ties count too (for the right-click menu).
+    std::optional<std::pair<NoteId, noteGestures::GlideGrab>> tieAt(rack::math::Vec pos, bool anyTie = false);
+    /// Every tie: a dot on the joint and the jump or glide line; a selected glide shows its two end handles and a
+    /// hollow middle one (which bends it) instead of the dot.
+    void drawTies(NVGcontext* vg);
+    void openTieMenu(NoteId tied);
     /// The timbre or pressure strips above the selection.
     void drawStrips(NVGcontext* vg);
     /// Notes being recorded into this clip right now.

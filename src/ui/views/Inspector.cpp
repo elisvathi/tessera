@@ -1,6 +1,7 @@
 #include "Inspector.hpp"
 
 #include "../../model/Sends.hpp"
+#include "../../model/Ties.hpp"
 #include "../editing/SendActions.hpp"
 
 #include "../editing/AudioActions.hpp"
@@ -226,9 +227,20 @@ void Inspector::layoutRegions() {
     if (drumTrack())
         for (Field f : kHitFields)
             field(f);
-    else
+    else {
         for (Field f : kNoteFields)
             field(f);
+        // The tie switch, and the glide of the tied notes (docs/design/TIES_VOICES.md).
+        regions.push_back({Region::Kind::Tie, Field::Count, 0, Rect(kPad, y, w - 2 * kPad, kChipHeight)});
+        y += kChipHeight + 4;
+        bool anyTied = false;
+        for (const Note& n : editor->notes())
+            anyTied = anyTied || (n.tied && selected.count(n.id));
+        if (anyTied) {
+            field(Field::GlideBefore);
+            field(Field::GlideAfter);
+        }
+    }
     y += kSectionGap / 2;
 
     titles.push_back({y, "OPERATORS"});
@@ -397,6 +409,21 @@ void Inspector::click(Vec pos, int button, Modifiers mods) {
     case Region::Kind::Motion:
         openMotionMenu();
         break;
+    case Region::Kind::Tie: {
+        if (!left)
+            return;
+        if (ties::allTied(before, ids)) {
+            editor->commit("Untie " + notes, before, ties::untie(before, ids, true));
+        } else {
+            edits::IdSet tied;
+            edits::NoteList after = ties::tie(before, ids, &tied);
+            if (tied.empty())
+                ctx.toast("Nothing to tie: a note ties to the one before it, at most 1/16 apart, on its channel");
+            else
+                editor->commit("Tie " + countNotes(tied.size()), before, after);
+        }
+        break;
+    }
     case Region::Kind::Chip: {
         if (!left)
             return;
@@ -758,6 +785,18 @@ void Inspector::drawRegion(NVGcontext* vg, const Region& r, bool hot) {
         nvgStrokeColor(vg, c.text1);
         nvgStrokeWidth(vg, 1.2f);
         nvgStroke(vg);
+        break;
+    }
+    case Region::Kind::Tie: {
+        size_t on = 0;
+        for (const Note& n : notes)
+            on += n.tied && ids.count(n.id) ? 1 : 0;
+        bool all = on > 0 && on == ids.size(), some = on > 0;
+        NVGcolor fill = all ? c.accent : some ? nvgTransRGBAf(c.accent, 0.3f) : (hot ? c.line0 : c.bg2);
+        draw::roundedRect(vg, rect, theme::metrics::kRadiusControl, fill);
+        centered.color = all ? c.ink : some ? c.text0 : c.text1;
+        draw::text(vg, centered, rect.getCenter().x, rect.getCenter().y,
+                   all ? "Tied: no new gate" : "Tie to the note before");
         break;
     }
     case Region::Kind::Chip: {

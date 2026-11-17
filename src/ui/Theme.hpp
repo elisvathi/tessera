@@ -152,6 +152,11 @@ namespace metrics {
 constexpr float kSpacing = 4;
 constexpr float kRadiusControl = 4;
 constexpr float kRadiusItem = 3; // notes and clips
+// Ties in the piano roll (docs/design/TIES_VOICES.md): the joint dot, glide handles, the line and a same-pitch arc
+constexpr float kTieDot = 3.5f;
+constexpr float kTieHandle = 3;
+constexpr float kTieLine = 2;
+constexpr float kTieArc = 6;
 
 constexpr float kTextUi = 11;
 constexpr float kTextHeader = 12;

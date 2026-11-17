@@ -4,6 +4,7 @@
 #include "AudioHeader.hpp"
 
 #include "../../model/DeviceTypes.hpp"
+#include "../../model/Ties.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
@@ -818,6 +819,27 @@ void PianoRollView::select(IdSet ids) { ctx.state().selection = NoteSelection{so
 
 // ---- Editing ------------------------------------------------------------------------------------------------
 
+void PianoRollView::toggleTie() {
+    IdSet ids = selectedIds();
+    if (ids.empty() || drumMode())
+        return;
+    NoteList before = committedNotes();
+    if (ties::allTied(before, ids)) {
+        size_t n = 0;
+        for (const Note& note : before)
+            n += note.tied && ids.count(note.id) ? 1 : 0;
+        commit("Untie " + countNotes(n), before, ties::untie(before, ids, true));
+        return;
+    }
+    IdSet tied;
+    NoteList after = ties::tie(before, ids, &tied);
+    if (tied.empty()) {
+        ctx.toast("Nothing to tie: a note ties to the one before it, at most 1/16 apart, on its channel");
+        return;
+    }
+    commit("Tie " + countNotes(tied.size()), before, after);
+}
+
 void PianoRollView::commit(const std::string& name, const NoteList& before, const NoteList& after,
                            std::optional<IdSet> selectAfter) {
     TesseraModule* m = ctx.module();
@@ -1128,6 +1150,9 @@ bool PianoRollView::editAction(Action action) {
         }
     }
     switch (action) {
+    case Action::Tie:
+        toggleTie();
+        return true;
     case Action::Quantize:
         transformMenu::quantizeNow(*this);
         return true;
