@@ -297,3 +297,31 @@ TEST_CASE("next actions: a clip that plays once does its action when it ends") {
     h.runTo(100 * kSamplesPerTick + 1);
     CHECK(h.playing() == 1);
 }
+
+TEST_CASE("next actions: set on a clip that already plays, it counts from the loop it is in; removed, it is called off") {
+    ActionHarness h({60, 62});
+    h.start();
+    h.runTo(kBar + kBar / 2); // halfway through the second loop
+    h.clip(0).next.action = NextAction::Next;
+    h.clip(0).next.count = 1;
+    auto withAction = buildSnapshot(h.song, h.slots);
+    h.engine.setSnapshot(withAction.get());
+    h.runTo(kBar + kBar / 2 + 10);
+    CHECK(h.queued() == 1);
+    h.runTo(2 * kBar);
+    CHECK(h.playing() == 1);
+
+    // Taken off again while its pick waits: the clip plays on.
+    ActionHarness h2({60, 62});
+    h2.clip(0).next.action = NextAction::Next;
+    h2.clip(0).next.count = 2;
+    h2.start();
+    h2.runTo(kBar + 10);
+    CHECK(h2.queued() == 1);
+    h2.clip(0).next = NextActionSettings();
+    auto without = buildSnapshot(h2.song, h2.slots);
+    h2.engine.setSnapshot(without.get());
+    CHECK(h2.queued() == kNothingQueued);
+    h2.runTo(3 * kBar);
+    CHECK(h2.playing() == 0);
+}

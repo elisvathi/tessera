@@ -387,6 +387,24 @@ void Engine::resolveSlots(const TrackPlayback& tp, TrackState& state) {
         if (state.queued == kNoSlot)
             state.queued = kNothingQueued;
     }
+    // A next action set or taken off while the clip plays: it counts from the loop the clip is in now, or the launch
+    // it picked is called off.
+    const ClipPlayback* clip = tp.slot(state.playing);
+    if (clip && clip->nextSpan > 0) {
+        if (!std::isfinite(state.actionFrom)) {
+            double loop = double(clip->loopLength());
+            double played = playTick - state.launchTick;
+            state.actionFrom =
+                clip->looping && loop > 0 ? state.launchTick + std::floor(played / loop) * loop : state.launchTick;
+            state.actionKept = false;
+        }
+    } else {
+        state.actionFrom = NAN;
+        if (state.queuedByAction) {
+            state.queued = kNothingQueued;
+            state.queuedByAction = false;
+        }
+    }
 }
 
 void Engine::seek(double tick) {
