@@ -31,11 +31,15 @@ void PaneStack::layout() {
     ViewState& view = ctx.view();
     rack::math::Vec size = box.size;
 
+    // A hidden pane still steps. Left at Rack's default infinite size, its views would fit themselves to it and
+    // keep that size for a frame after it shows again: the ruler then drew lines without end and froze Rack.
     if (view.maximized == Pane::Top) {
         top->box = Rect(0, 0, size.x, size.y);
+        bottom->box = Rect(0, 0, 0, 0);
         top->visible = true;
         bottom->visible = splitter->visible = false;
     } else if (view.maximized == Pane::Detail) {
+        top->box = Rect(0, 0, 0, 0);
         bottom->box = Rect(0, 0, size.x, size.y);
         bottom->visible = true;
         top->visible = splitter->visible = false;

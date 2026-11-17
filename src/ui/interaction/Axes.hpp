@@ -2,17 +2,22 @@
 
 #include "../../model/Types.hpp"
 
+#include <cmath>
 #include <vector>
 
 /// Coordinate math for every editor view: time <-> x, pitch <-> y, track <-> y, with zoom and scroll.
 /// No Rack dependency, so the anchoring math is unit tested. Positions are view-local pixels.
 namespace tessera {
 
+/// A view's size in pixels as an axis keeps it: at least 1, and 1 for a size that isn't a real number. A widget
+/// Rack never laid out is infinitely big, and an axis that took that would make every loop over the view endless.
+inline double viewSize(double px) { return std::isfinite(px) && px > 1 ? px : 1; }
+
 /// Maps ticks to x. `left` is the tick at the view's left edge.
 class TimeAxis {
   public:
     void setViewWidth(double px) {
-        width = px > 1 ? px : 1;
+        width = viewSize(px);
         clamp();
     }
     double viewWidth() const { return width; }
@@ -101,7 +106,7 @@ class PitchAxis {
     PitchAxis();
 
     void setViewHeight(double px) {
-        height = px > 1 ? px : 1;
+        height = viewSize(px);
         clamp();
     }
     double viewHeight() const { return height; }
@@ -180,7 +185,7 @@ class TrackAxis {
     static constexpr double kMaxHeight = 240;
 
     void setViewHeight(double px) {
-        height = px > 1 ? px : 1;
+        height = viewSize(px);
         clamp();
     }
     void setHeights(std::vector<double> heights);
