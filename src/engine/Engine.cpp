@@ -698,8 +698,19 @@ void Engine::audition(const AuditionEvent& event) {
             return;
         }
         if (event.on) {
-            int v = state.voices.noteOn(event.pitch, event.velocity, 0.5f, std::numeric_limits<double>::infinity(),
-                                        event.id);
+            constexpr double kInf = std::numeric_limits<double>::infinity();
+            // On one voice, a key pressed while another is held plays legato, as in sound(): a track with no
+            // devices plays live keys here, and they must not retrigger either (issue #12).
+            int v = -1;
+            if ((event.id & chain::kLiveNote) && state.voices.sizeFor(0) == 1) {
+                int held = state.voices.continued(event.pitch, 0, freeTick, 1e-6);
+                if (held >= 0 && (state.voices.voice(held).id & chain::kLiveNote))
+                    v = held;
+            }
+            if (v >= 0)
+                state.voices.takeOver(v, event.pitch, event.velocity, 0.5f, kInf, event.id, freeTick);
+            else
+                v = state.voices.noteOn(event.pitch, event.velocity, 0.5f, kInf, event.id, 0, freeTick);
             clearLiveVoice(state, v);
             if (state.audition[size_t(v)] < 0)
                 state.auditions++;

@@ -6,6 +6,7 @@
 #include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
+#include "../src/model/Ties.hpp"
 #include "../src/model/Transforms.hpp"
 
 #include <cmath>
@@ -248,7 +249,7 @@ TEST_CASE("a note-off reaches the tracks its note-on went to, even after disarmi
     CHECK_FALSE(rig.gate(0));
 }
 
-TEST_CASE("a legato pitch change on REC CV retriggers the monitor at the new pitch (issue #12)") {
+TEST_CASE("a legato pitch change on REC CV plays legato on a one-voice track, with no new gate (issue #12)") {
     Song song = recordSong();
     song.tracks[0].polyphony = 1;
     EngineRig rig(song);
@@ -263,9 +264,34 @@ TEST_CASE("a legato pitch change on REC CV retriggers the monitor at the new pit
         rig.run(1);
         dropped |= !rig.gate(0);
     }
-    CHECK(dropped);
-    CHECK(rig.gate(0));
+    CHECK_FALSE(dropped);
     CHECK(f.voct[0] == doctest::Approx(7.f / 12.f));
+    rig.engine.liveNote({LiveSource::Cv, 0, 67, 0.5f, false});
+    rig.run(1);
+    CHECK_FALSE(rig.gate(0)); // releasing the key still ends it
+}
+
+TEST_CASE("a MIDI key pressed while another is held plays legato on a one-voice track") {
+    Song song = recordSong();
+    song.tracks[0].polyphony = 1;
+    EngineRig rig(song);
+    const TrackFrame& f = rig.frames[size_t(rig.slots.slotOf(rig.song.tracks[0].id))];
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0.8f, true});
+    rig.run(100);
+    rig.engine.liveNote({LiveSource::Midi, 0, 64, 0.8f, true});
+    bool dropped = false;
+    for (int i = 0; i < 200; i++) {
+        rig.run(1);
+        dropped |= !rig.gate(0);
+    }
+    CHECK_FALSE(dropped);
+    CHECK(f.voct[0] == doctest::Approx(4.f / 12.f));
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0, false}); // the first key, already handed over
+    rig.run(1);
+    CHECK(rig.gate(0));
+    rig.engine.liveNote({LiveSource::Midi, 0, 64, 0, false});
+    rig.run(1);
+    CHECK_FALSE(rig.gate(0));
 }
 
 TEST_CASE("live notes can snap to the song key") {
@@ -1524,6 +1550,32 @@ TEST_CASE("a one-voice track records keys played overlapping as ties, and keys p
     CHECK(clip->notes[1].tied);
     CHECK(clip->notes[1].length == 500);
     CHECK_FALSE(clip->notes[2].tied);
+}
+
+TEST_CASE("recorded ties meet the note they continue, whatever the ticks round to (issue #12)") {
+    Song song = recordSong();
+    song.tracks[0].polyphony = 1;
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0.4, 0.4));
+    rec.handle(note(t, 60, true, 10.4, 10.4));
+    rec.handle(note(t, 64, true, 20.6, 20.6)); // keys overlapping: 60 ends where 64 starts
+    rec.handle(note(t, 60, false, 30.0, 30.0));
+    rec.handle(note(t, 64, false, 40.4, 40.4)); // CV legato: an off and an on in the same sample
+    rec.handle(note(t, 67, true, 40.4, 40.4));
+    rec.handle(note(t, 67, false, 90.0, 90.0));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 100, 100, false));
+    const Clip* clip = slotClip(host.song_, 0, 0);
+    REQUIRE(clip);
+    REQUIRE(clip->notes.size() == 3);
+    CHECK(clip->notes[1].tied);
+    CHECK(clip->notes[2].tied);
+    CHECK(clip->notes[0].end() == clip->notes[1].start);
+    CHECK(clip->notes[1].end() == clip->notes[2].start);
+    std::vector<int> partners = ties::partners(clip->notes);
+    CHECK(partners[1] == 0);
+    CHECK(partners[2] == 1);
 }
 
 TEST_CASE("a poly track records overlapping keys as a chord, as before") {

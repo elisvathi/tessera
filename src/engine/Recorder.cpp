@@ -224,6 +224,7 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
     take.lanes = takeLanes(s);
     filterControls(s.track, take.lanes, s.reported);
     s.done.clear();
+    s.lastOff = -1; // the note it ended is committed: a note-on now has nothing left to continue
     s.controls.clear();
     s.songControls.clear();
     for (Session::LaneRecording& r : s.lanes)
@@ -398,7 +399,8 @@ void Recorder::handle(const RecordEvent& e) {
     }
     if (e.on) {
         // One voice: a key pressed while another is held takes over its note, as a mono synth plays legato.
-        bool tied = s->mono && e.playTick == s->lastOff;
+        bool tied = s->mono && e.playTick == s->lastOff && !s->done.empty();
+        size_t continued = tied ? s->done.size() - 1 : s->done.size();
         if (s->mono)
             for (auto it = s->open.begin(); it != s->open.end();) {
                 if (it->first == e.pitch) {
@@ -411,6 +413,12 @@ void Recorder::handle(const RecordEvent& e) {
             }
         Open o{e.playTick, targetTick(*s, e), e.velocity, e.channel};
         o.tied = tied;
+        // A note's start and the end of the note it continues round to ticks apart, and can land a tick apart: a
+        // tie needs them to meet, or it finds nothing to continue and plays a new gate (issue #12).
+        if (tied)
+            for (size_t i = continued; i < s->done.size(); i++)
+                if (s->done[i].start < o.start)
+                    s->done[i].length = o.start - s->done[i].start;
         s->open[e.pitch] = o;
         return;
     }

@@ -93,8 +93,8 @@ If you played nothing, nothing is made.
 
 On a track set to one voice (**Voices → 1**), a key you press while another is still held plays on legato, with no
 new attack, and records as a [tie](08-shaping-notes.md#ties-and-glides). Keys you play apart record as separate
-notes. The same goes for the REC V/OCT input: a pitch change while the gate stays high records as a tie. On other
-tracks, overlapping keys record as chords.
+notes. The same goes for the REC V/OCT input: a pitch change while the gate stays high plays on with no new gate,
+and records as a tie. On other tracks, overlapping keys record as chords.
 
 While recording you see it happen: the target slot is red, a clip being added to has a red outline and its new notes
 show in red, and timeline takes grow as a red region.
