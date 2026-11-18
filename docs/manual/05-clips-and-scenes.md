@@ -11,6 +11,11 @@ the scene's ▶ and name on top.
 
 ![Clips playing: the Chorus scene is running](images/clips-playing.png)
 
+The clips form a grid: each slot fills its track's row. At the usual height a slot is one line: ▶, the name and
+its notes in miniature. Make a track taller (drag the bottom edge of its header) and its slots grow with it: from
+about twice the usual height they get a title bar, as a clip on the timeline has, with ▶ and the name on top and
+the notes across the whole slot below.
+
 A slot can look like this:
 
 | Slot | Meaning |
@@ -21,10 +26,11 @@ A slot can look like this:
 | Blinking yellow ▶ | Waiting to start at the next launch line. |
 | Red | Recording into this slot. |
 
-![Verse queued: its triangles blink yellow until the next bar](images/clips-queued.png)
+![Verse queued: its triangles blink yellow until the next launch line](images/clips-queued.png)
 
-**F2** widens the clips to fill most of the song pane, for performing. Press it again to narrow them. You can also
-drag the clips' right edge. **Shift+wheel** scrolls through scenes.
+**F2** (or the **›** handle on the clips' right edge) widens the clips across the song pane, for performing; the
+timeline keeps whatever room the scenes leave. Press it again to narrow them. You can also drag the clips' right
+edge. **Shift+wheel** scrolls through scenes.
 
 ## Making clips
 
@@ -45,7 +51,9 @@ drag the clips' right edge. **Shift+wheel** scrolls through scenes.
 - Only one clip plays per track. Launching another one replaces it at the launch line.
 - A clip with looping off plays once, then the track stops.
 
-When you press play later, the clips that were playing start again.
+When you press play later, the clips that were playing start again. If no clip is launched at all, play starts the
+scene picked on the panel (the first scene, unless you pick another with **PREV** and **NEXT**), so play always
+plays something.
 
 ## Launch quantize: when clips start
 
@@ -60,6 +68,8 @@ Click **Launch 1 bar ▾** (above the track names) to choose the launch line.
 - Clicking a ruler to move the playhead while playing waits on the same lines, landing on the beat you clicked.
   See [The editor](03-editor.md#the-ruler-loop-and-markers).
 - **Record into timeline** writes what you launch onto the timeline. See [The timeline](06-timeline.md#recording-what-you-launch).
+- **Next actions** (on by default) lets clips move on by themselves. Turn it off to hold every clip where it is. See
+  [Next actions](#next-actions-clips-that-move-on-by-themselves).
 
 ## Editing clips
 
@@ -82,12 +92,13 @@ Right-click a clip in a slot:
 | **Edit this scene's clips together** | On a note clip: shows the other clips of the scene dimmed in the piano roll, so you can write parts that fit. See [The piano roll](07-piano-roll.md#editing-several-clips-together). |
 | **Rename** | A new name for the clip. Every place that uses the clip shows it. |
 | **Colour** | **Track colour** (the default: it follows the track) or one of 16 colours, for the slot and every copy of the clip on the timeline. Handy to tell takes apart, such as record, overdub and play clips. Notes keep the track's colour. |
-| **Devices** | Whether the clip plays through the track's devices or its own, and deleting its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A slot with its own devices shows a small dot in its top-right corner (a wide slot shows a small device card instead). |
+| **Devices** | Whether the clip plays through the track's devices or its own, and deleting its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A slot with its own devices shows a small device card at the right of its name. Hover it to be told what it means. |
 | **Place on the timeline at the playhead** | Puts a linked copy on the timeline at the playhead. |
 | **Duplicate**, **Delete** | As above. |
 | **Export as MIDI…** | Saves this clip as a MIDI file. |
 | **Loop** | On: the clip repeats. Off: it plays once and stops. |
 | **Launch quantize** | This clip's own launch line. |
+| **Next action** | What the clip does by itself after a few loops: play the next clip, a random one, and more. See [Next actions](#next-actions-clips-that-move-on-by-themselves). |
 | **Length** | **×2 longer** (half speed), **×½ shorter** (double speed), or a typed percentage. Notes, loop and automation all stretch, and every timeline use grows or shrinks with it. |
 | **Save as / Replace with Tessera clip file…** | A `.tessera-clip` file, to reuse a clip in another patch. |
 
@@ -112,6 +123,54 @@ The clip chip at the left of the notes header ("Lead · Hook · 4 bars ▾") cha
 
 In the piano roll's ruler, the coloured loop bar shows the clip's loop. Drag its ends to change it. If you draw notes
 past the end of a looping clip, the clip grows to hold them, in whole bars.
+
+## Next actions: clips that move on by themselves
+
+A clip can launch another clip by itself once it has played for a while. For example: play the bass line 4 times,
+then the next one. Or: after every loop, pick a lead line at random. Your song plays itself, and changes as it goes.
+
+Right-click a clip → **Next action**, and pick what it does:
+
+![The Next action menu of a clip](images/next-action-menu.png)
+
+| Action | What happens |
+|---|---|
+| **Keep looping** | Nothing (the default). The clip loops until you launch something else. |
+| **Play next** | The clip to the right, skipping empty slots. After the last clip, the track stops. |
+| **Play previous** | The clip to the left. Before the first clip, the track stops. |
+| **Play first**, **Play last** | The first or the last clip on the track. |
+| **Play random** | Any clip on the track. It can be the same clip again: then it starts over. |
+| **Play other** | A random clip, but never the one that just played. |
+| **Round robin** | The next clip, and after the last one the first again. The track goes round and round. |
+| **Go back** | The clip that played before this one. |
+| **Stop** | The track stops. |
+| **Back to timeline** | The track plays the timeline again, in either Plays mode. |
+
+In the same menu:
+
+- **After**: how long the clip plays first. Count **loops of the clip** (the default is 4) or **bars**. A clip with
+  looping off plays once, then does its action.
+- **How often**: **Always**, or a chance such as **75%**. The rest of the time the clip does its **Otherwise** action
+  instead. For example: 75% **Play next**, otherwise **Play other**. With **Keep looping** as the Otherwise action,
+  the clip plays another round and rolls again.
+- **Pick from**: the **whole track**, or **this block**. A block is a run of clips with an empty slot on each side. So
+  one track can hold two groups of clips, for example verse parts and chorus parts, and the next actions stay in
+  their own group.
+
+The inspector (**I**) shows the same settings under **NEXT ACTION** when a clip in a slot is selected, with a
+sentence that says what will happen, such as "Plays 4 times, then Bass 2."
+
+**On the slot.** A clip with a next action shows a small tag at its right: the action's icon and its count, such as
+→ **4** (4 loops) or ↻ **8 bars**. While the clip plays, the tag counts: **2/4** means the second of four loops. One
+launch line before the action, the clip that comes next blinks yellow, as a launched clip does. So even a random pick
+shows before it plays. A narrow slot shows the icon alone.
+
+**You stay in charge.** Launching a clip yourself always wins over a next action. To hold everything where it is,
+turn off **Next actions** in the **Launch 1 bar ▾** menu. The tags fade, and every clip keeps looping until you turn it
+back on.
+
+Next actions work in the launcher. A track that plays the timeline doesn't use them, and **Record into timeline**
+writes the clips they launch onto the timeline as it would your own launches.
 
 ## Scenes
 
@@ -165,13 +224,27 @@ The controller settings are saved with the patch (not in project files: the devi
 
 The **Plays** switch in the transport bar (and **PLAYS** on the panel) decides what the tracks play:
 
-- **Clips**: each track plays the clip you launched. The timeline is silent.
+- **Clips**: each track plays the clip you launched. The timeline is silent. Switching to Clips with no clip
+  launched starts the scene picked on the panel (on the launch line while playing).
 - **Timeline**: each track plays the timeline from left to right.
 
 The section that plays is framed in green while the transport runs. The other one is dimmed, but you can still edit
 it.
 
 **Launching over the timeline.** While the timeline plays, you can still launch a clip. That track then leaves the
-timeline and plays the clip. Its timeline lane is dimmed. Click **Back to
-timeline** on the timeline's ruler to bring every track back. Switching the Plays switch to Timeline also brings them
-back.
+timeline and plays the clip. Its timeline lane is dimmed.
+
+**Back to the timeline.** A track can go back to playing the timeline in either Plays mode. Like a launch, it waits
+for the next launch line (at once while stopped), and its ↩ blinks yellow until then.
+
+- **One track:** click the ↩ at the right end of its row in the clips panel. Each track has one there, in a column
+  that stays put while you scroll the scenes. It is faint when the track already plays the timeline. While the clips
+  play, a track you send back plays the timeline on its own: its timeline row lights up while the rest stay dimmed,
+  and launching a clip on it takes it off the timeline again.
+- **Every track:** click the ↩ at the top of that column. While the timeline plays, **Timeline** on the Plays
+  switch does the same: it shows a ↩ instead of its ▶ while some tracks play launched clips. On the panel,
+  **TIMELINE** is only outlined then, not filled: click it to do the same.
+- **By itself:** give a clip the next action **Back to timeline**. See
+  [Next actions](#next-actions-clips-that-move-on-by-themselves).
+
+Switching the Plays switch starts afresh: on Timeline every track plays the timeline, on Clips none does.

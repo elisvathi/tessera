@@ -134,7 +134,9 @@ struct MainMeter : rack::widget::Widget {
 };
 
 /// PLAYS: what the tracks play, the clips or the timeline. One switch with two halves; the lit half plays, and a
-/// click on a half picks it. Same param as the editor's Plays switch.
+/// click on a half picks it. Same param as the editor's Plays switch. While clips launched over the timeline have
+/// taken tracks over, TIMELINE is only outlined (not every track plays it), and a click on it brings them all back
+/// (docs/DECISIONS.md §185); the panel has no room for the editor's return arrow beside the word.
 struct PlaysSwitch : rack::app::Switch {
     static constexpr float kWidthMm = 24;
     static constexpr float kHeightMm = 6.5f;
@@ -167,14 +169,23 @@ struct PlaysSwitch : rack::app::Switch {
         Switch::onButton(e);
     }
     void onDragStart(const DragStartEvent& e) override {
-        // A click on the half that already plays changes nothing; the other half switches.
-        if (e.button == GLFW_MOUSE_BUTTON_LEFT && pressedPlaying)
+        // A click on the half that already plays changes nothing, except on TIMELINE with tracks away from it; the
+        // other half switches.
+        if (e.button == GLFW_MOUSE_BUTTON_LEFT && pressedPlaying) {
+            if (TesseraModule* m = module(); m && timeline() && m->anyTrackOverridden())
+                m->backToArrangement();
             return;
+        }
         Switch::onDragStart(e);
     }
 
   private:
     bool pressedPlaying = false;
+
+    TesseraModule* module() {
+        rack::engine::ParamQuantity* q = getParamQuantity();
+        return q ? static_cast<TesseraModule*>(q->module) : nullptr;
+    }
     float split = 0; // where the halves meet: "TIMELINE" gets more room than "CLIPS"
 
     void drawHalves(NVGcontext* vg, bool lit) {
@@ -193,9 +204,17 @@ struct PlaysSwitch : rack::app::Switch {
             if (on != lit)
                 continue;
             Rect r = i == 0 ? Rect(2, 2, first, box.size.y - 4) : Rect(split, 2, inner - first, box.size.y - 4);
-            if (on)
-                draw::roundedRect(vg, r, theme::metrics::kRadiusControl, c.play);
-            style.color = on ? c.ink : c.text2;
+            TesseraModule* m = module();
+            bool partly = on && i == 1 && m && m->anyTrackOverridden();
+            if (partly) {
+                draw::roundedRectStroke(vg, r.shrink(Vec(0.5f, 0.5f)), theme::metrics::kRadiusControl, c.play,
+                                        theme::metrics::kPartlyOutline);
+                style.color = c.play;
+            } else {
+                if (on)
+                    draw::roundedRect(vg, r, theme::metrics::kRadiusControl, c.play);
+                style.color = on ? c.ink : c.text2;
+            }
             draw::text(vg, style, r.getCenter().x, r.getCenter().y + 0.5f, labels[i]);
         }
     }

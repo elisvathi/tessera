@@ -678,8 +678,28 @@ void openDeviceMenu(EditorContext& ctx, DeviceId id, std::function<void(rack::ui
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Delete", "Delete", [c, id] {
         if (TesseraModule* mod = c->module())
-            mod->perform(removeDevice(mod->song(), id));
+            performChainEdit(*c, removeDevice(mod->song(), id));
     }));
+}
+
+void performChainEdit(EditorContext& ctx, CommandPtr command, const std::string& done) {
+    TesseraModule* m = ctx.module();
+    if (!m || !command)
+        return;
+    std::vector<ClipId> own;
+    for (const auto& [id, clip] : m->song().clips)
+        if (clip.hasOwnChain)
+            own.push_back(id);
+    m->perform(std::move(command));
+    std::string text = done;
+    for (ClipId id : own)
+        if (const Clip* clip = m->song().findClip(id); clip && !clip->hasOwnChain) {
+            text += (text.empty() ? "" : " · ") + (clip->name.empty() ? std::string("The clip") : clip->name) +
+                    " plays through the track's devices again";
+            break;
+        }
+    if (!text.empty())
+        ctx.toast(text);
 }
 
 void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce) {
@@ -908,7 +928,7 @@ void openModulatorMenu(EditorContext& ctx, ModulatorId id, std::function<void(ra
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Remove", "", [c, id] {
         if (TesseraModule* m2 = c->module()) {
-            m2->perform(removeModulator(m2->song(), id));
+            performChainEdit(*c, removeModulator(m2->song(), id));
             if (c->state().openModulator == id.value)
                 c->state().openModulator = 0;
             if (c->mappingModulator == id.value)

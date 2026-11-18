@@ -8,7 +8,7 @@ switch a device off at any time.
 
 ## The device strip
 
-Click **Devices** at the left of the lower pane's header, between **Notes** and **Mixer** (or press **F3**), to open
+Click **Devices** at the left of the lower pane's header, between **Notes** and **Mixer** (or press **F4**), to open
 the strip above the notes. **Devices** stays lit while the strip is open, and **Notes** too, since the notes still show
 under it. Audio tracks have no note devices, so there **Devices** is greyed.
 
@@ -279,6 +279,10 @@ after the switch becomes **CLIP · Chorus chords**. Hover either half to be told
 track's devices"). Click **TRACK** to play through the track's devices again. The clip keeps its own, so you can
 switch back and forth while it plays to compare. Both are undoable.
 
+**Deleting them.** Delete the last of a clip's own devices and modulators, and the clip plays through the track's
+devices again; a short note says so, and one undo brings its own back. Right-click the clip → **Devices** →
+**Delete its own devices** removes them all at once.
+
 **The other chain.** The chain that isn't shown is folded into a dashed block at the end of the strip, listing its
 devices:
 
@@ -290,7 +294,8 @@ devices:
 **The mark.** A timeline tile of a clip with its own devices shows a tiny device card, with two tags on it, in its
 title bar. It is light while the clip plays through them, and dark with a light outline while the clip keeps them but
 plays the track's. A
-launcher slot is narrower, so it shows the same mark as a small dot in its top-right corner: light, or a light ring.
+launcher slot shows the same card, smaller on a narrow slot, at the right of the clip's name. Hover it for a reminder
+of what it means.
 The notes header adds "own devices" to the clip's name.
 
 ![The mark on slots and timeline tiles: Chorus chords plays its own devices (light), Verse chords keeps its own off (outlined)](images/clip-mark.png)

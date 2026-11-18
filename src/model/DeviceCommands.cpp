@@ -345,6 +345,22 @@ CommandPtr addDevice(const Song& song, ChainOwner owner, DeviceType type, int in
     });
 }
 
+namespace {
+
+/// A clip whose own chain an edit emptied (no device, no modulator left) plays through its track's devices again,
+/// instead of playing dry with a chain that has nothing in it (docs/DECISIONS.md §189). Clips that were already empty
+/// before the edit are left alone.
+void dropEmptiedChains(const Song& before, Song& work) {
+    for (auto& [id, clip] : work.clips) {
+        const Clip* was = before.findClip(id);
+        if (clip.hasOwnChain && clip.devices.empty() && clip.modulators.empty() && was &&
+            (!was->devices.empty() || !was->modulators.empty()))
+            clip.hasOwnChain = clip.playsOwnChain = false;
+    }
+}
+
+} // namespace
+
 CommandPtr removeDevice(const Song& song, DeviceId id) {
     if (!findDevice(song, id))
         return nullptr;
@@ -352,6 +368,7 @@ CommandPtr removeDevice(const Song& song, DeviceId id) {
         std::vector<Device>& chain = *chainOf(work, id);
         chain.erase(std::find_if(chain.begin(), chain.end(), [&](const Device& d) { return d.id == id; }));
         pruneRoutes(work);
+        dropEmptiedChains(song, work);
         return true;
     });
 }
@@ -384,6 +401,7 @@ CommandPtr moveDevice(const Song& song, DeviceId id, ChainOwner to, int index) {
             at--;
         insertDevice(toChain, at, std::move(device));
         pruneRoutes(work);
+        dropEmptiedChains(song, work);
         return true;
     });
 }
@@ -872,6 +890,7 @@ CommandPtr removeModulator(const Song& song, ModulatorId id) {
         std::vector<Modulator>& list = *modulatorsAt(work, place);
         list.erase(std::find_if(list.begin(), list.end(), [&](const Modulator& m) { return m.id == id; }));
         pruneRoutes(work);
+        dropEmptiedChains(song, work);
         return true;
     });
 }

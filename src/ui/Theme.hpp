@@ -180,8 +180,33 @@ constexpr float kLevelLineMinBody = 10;
 constexpr float kLevelLineHit = 3;
 constexpr float kOwnMarkWidth = 16; // the device-card mark of a clip with its own devices
 constexpr float kOwnMarkHeight = 12;
-constexpr float kOwnMarkDot = 3.5f;     // its small form, on a slot too narrow for the card and the name
+constexpr float kOwnMarkSmallWidth = 12; // its small form, on a slot too narrow for the card beside the name
+constexpr float kOwnMarkSmallHeight = 9;
 constexpr float kOwnMarkCardRoom = 100; // the slot body from which the card fits beside the name
+// A clip's next action on its slot (DECISIONS §184): a small tag with the action's icon and its count ("2/4" while it
+// plays) while the name keeps kNextMarkNameRoom; on a narrower slot the icon alone, bare, while the name keeps
+// kNextMarkBareNameRoom; then nothing.
+constexpr float kNextMarkIcon = 9;
+constexpr float kNextMarkBareNameRoom = 18;
+constexpr float kNextMarkPad = 3;
+constexpr float kNextMarkHeight = 14;
+constexpr float kNextMarkNameRoom = 36;
+constexpr float kNextMarkStroke = 1.3f;
+constexpr float kNextMarkFill = 0.14f;        // the tag's tint over the clip colour
+constexpr float kNextMarkFillPlaying = 0.24f; // stronger while the clip counts
+constexpr float kNextMarkHeldAlpha = 0.45f;   // its icon and count while next actions are held
+// A track's "back to timeline" button in the clips panel (DECISIONS §185): its icon, faint while the track already
+// plays the timeline.
+constexpr float kBackIcon = 11;
+constexpr float kBackIdleAlpha = 0.35f;
+constexpr float kPartlyOutline = 1.3f; // the panel's TIMELINE while some tracks play launched clips instead
+// The clips panel is a grid (DECISIONS §188): a slot fills its track's row, cells kSlotGap apart. From
+// kSlotTitleBarFrom tall a slot has a title bar kSlotTitleBar high (launch button and name, as timeline clips have)
+// over its notes; shorter slots keep everything on one line.
+constexpr float kSlotGap = 1;
+constexpr float kSlotTitleBar = 22;
+constexpr float kSlotTitleBarFrom = 52; // a usual (32 px) track's slots stay one line
+constexpr float kSlotTitleBarShade = 0.16f; // the bar's darkening over the clip colour
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
 // down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip.
@@ -200,6 +225,7 @@ constexpr float kLoopStripPanel = 9;
 constexpr float kTimeRulerPanel = 14;
 constexpr float kOverviewPanel = 4;
 constexpr float kSplitter = 6; // hit area; the drawn line is 1 px
+constexpr float kFoldedPaneBar = 22; // what a pane folds to while the other is maximised: its switch (DECISIONS §190)
 constexpr float kEdgeHit = 6;  // resize hot zone at item edges
 constexpr float kKeyboardWidth = 56;
 // A drum track's lane headers stand in for the keys: name, output, mute and solo need the room.

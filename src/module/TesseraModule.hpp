@@ -48,7 +48,9 @@ struct LauncherStatus {
     int queued = kNothingQueued; // kNoSlot means a stop is queued
     double position = NAN;       // clip ticks of the playing clip
     bool overridden = false;     // Arranger mode: the launcher has taken the track over
+    bool onTimeline = false;     // the track plays the timeline now (Timeline mode and not taken over, or sent back)
     double elapsed = NAN;        // clip ticks since the playing clip started, for lanes with their own loop
+    double actionElapsed = NAN;  // ticks counted toward the playing clip's next action; NaN for none
     double queuedClipTime = NAN; // a jump inside the clip waiting for its beat: where it lands, in clip ticks
     // Where each playhead has read the clip to (clip ticks; NaN when it isn't reading), as the engine moves it.
     std::array<double, playheads::kMaxPlayheads> heads;
@@ -221,8 +223,8 @@ class TesseraModule : public rack::engine::Module {
     void cancelClipControlLearn() { controlLearn.reset(); }
     /// The control learned for `action`, if any.
     const clipControl::Binding* clipControlFor(const clipControl::Binding& action) const;
-    /// Arranger mode: every track the launcher took over plays the arrangement again.
-    void backToArrangement() { launch({LaunchEvent::Kind::BackToArrangement}); }
+    /// Arranger mode: the tracks the launcher took over play the arrangement again: only `track` when given, else all.
+    void backToArrangement(TrackId track = TrackId()) { launch({LaunchEvent::Kind::BackToArrangement, track.value}); }
     PlayMode playMode() { return params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher; }
     /// Switches Launcher / Arranger as one undo step.
     void setPlayMode(PlayMode mode);
@@ -309,6 +311,10 @@ class TesseraModule : public rack::engine::Module {
     void selectScene(int scene) { sceneSelected.store(std::max(0, scene), std::memory_order_relaxed); }
     SceneCvMode sceneCvMode() const { return sceneCv.load(); }
     void setSceneCvMode(SceneCvMode mode) { sceneCv.store(mode); }
+    /// The launcher's Next actions switch (docs/DECISIONS.md §184): off holds every clip where it is. Kept in the
+    /// patch, like the other performance switches, not in the song's undo history.
+    bool nextActionsOn() const { return nextActionsArmed.load(std::memory_order_relaxed); }
+    void setNextActionsOn(bool on) { nextActionsArmed.store(on, std::memory_order_relaxed); }
 
     /// Sets a param from the UI with an undo step, like turning the knob by hand.
     void setParamWithUndo(int paramId, float value, const std::string& name);
@@ -778,6 +784,7 @@ class TesseraModule : public rack::engine::Module {
     std::atomic<int> clockDivisionIndex;
     std::atomic<RunInputMode> runMode{RunInputMode::Toggle};
     std::atomic<SceneCvMode> sceneCv{SceneCvMode::TenthVolt};
+    std::atomic<bool> nextActionsArmed{true};
     std::atomic<int> sceneSelected{0}; // written by both threads; the last write wins
     std::atomic<int> stopScene{-1};    // UI thread: see queuedStopScene()
     std::atomic<int> transportRequests{0};
@@ -811,7 +818,9 @@ class TesseraModule : public rack::engine::Module {
         std::atomic<int> queued{kNothingQueued};
         std::atomic<double> position{NAN};
         std::atomic<bool> overridden{false};
+        std::atomic<bool> onTimeline{false};
         std::atomic<double> elapsed{NAN};
+        std::atomic<double> actionElapsed{NAN};
         std::atomic<double> queuedClipTime{NAN};
         std::array<std::atomic<double>, playheads::kMaxPlayheads> heads{};
     };

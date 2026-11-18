@@ -151,7 +151,9 @@ LauncherStatus TesseraModule::launcherStatus(TrackId track) const {
     status.queued = s.queued.load(std::memory_order_relaxed);
     status.position = s.position.load(std::memory_order_relaxed);
     status.overridden = s.overridden.load(std::memory_order_relaxed);
+    status.onTimeline = s.onTimeline.load(std::memory_order_relaxed);
     status.elapsed = s.elapsed.load(std::memory_order_relaxed);
+    status.actionElapsed = s.actionElapsed.load(std::memory_order_relaxed);
     status.queuedClipTime = s.queuedClipTime.load(std::memory_order_relaxed);
     for (size_t k = 0; k < status.heads.size(); k++)
         status.heads[k] = s.heads[k].load(std::memory_order_relaxed);
@@ -1344,9 +1346,11 @@ void TesseraModule::process(const ProcessArgs& args) {
         } else {
             engine.clearKnobOverride();
         }
+        engine.setPickedScene(sceneSelected.load(std::memory_order_relaxed));
         // Before launches, so launches restored with a patch apply to the mode it was saved in.
         engine.setPlayMode(params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher);
         engine.setCapture(&captureEvents, captureArmed.load(std::memory_order_relaxed));
+        engine.setNextActions(nextActionsArmed.load(std::memory_order_relaxed));
     }
     writeTransportOutputs(args);
     handleTransportControls(args, slowTick);
@@ -1437,7 +1441,7 @@ void TesseraModule::process(const ProcessArgs& args) {
 }
 
 void TesseraModule::handleTransportControls(const ProcessArgs& args, bool slowTick) {
-    auto toggle = [this] { engine.isPlaying() ? engine.stop() : engine.play(); };
+    auto toggle = [this] { engine.isPlaying() ? engine.stop() : engine.start(); };
 
     if (slowTick && playButton.process(params[PLAY_PARAM].getValue() > 0.f))
         toggle();
@@ -1459,7 +1463,7 @@ void TesseraModule::handleTransportControls(const ProcessArgs& args, bool slowTi
                 toggle();
         } else if (runInput.isHigh() != wasHigh) {
             // Gate mode reacts to edges only, so the play button still works while a cable is patched.
-            runInput.isHigh() ? engine.play() : engine.stop();
+            runInput.isHigh() ? engine.start() : engine.stop();
         }
     }
 
@@ -1504,11 +1508,11 @@ void TesseraModule::handleUiRequests() {
     if (requests & kRequestReset)
         engine.reset();
     if (requests & kRequestToggle)
-        engine.isPlaying() ? engine.stop() : engine.play();
+        engine.isPlaying() ? engine.stop() : engine.start();
     if (requests & kRequestStop)
         engine.stop();
     if (requests & kRequestPlay)
-        engine.play();
+        engine.start();
     if (requests & kRequestRecord)
         engine.toggleRecord(countInBars.load(std::memory_order_relaxed));
     if (seekPending.load(std::memory_order_relaxed) && seekPending.exchange(false, std::memory_order_acquire))
@@ -1566,7 +1570,9 @@ void TesseraModule::publishLauncherStatus() {
         s.queuedClipTime.store(engine.queuedClipTime(i), std::memory_order_relaxed);
         s.position.store(engine.clipPosition(i), std::memory_order_relaxed);
         s.overridden.store(engine.overridden(i), std::memory_order_relaxed);
+        s.onTimeline.store(engine.followsTimeline(i), std::memory_order_relaxed);
         s.elapsed.store(engine.clipElapsed(i), std::memory_order_relaxed);
+        s.actionElapsed.store(engine.actionElapsed(i), std::memory_order_relaxed);
         for (size_t k = 0; k < s.heads.size(); k++)
             s.heads[k].store(engine.playheadPosition(i, k), std::memory_order_relaxed);
         anyQueued |= engine.queuedSlot(i) != kNothingQueued;
@@ -1810,6 +1816,7 @@ void TesseraModule::onReset(const ResetEvent& e) {
     clockDivisionIndex.store(kDefaultClockDivision);
     runMode.store(RunInputMode::Toggle);
     sceneCv.store(SceneCvMode::TenthVolt);
+    nextActionsArmed.store(true);
     sceneSelected.store(0);
     setRecordSettings(RecordSettings());
     // IDs keep counting up from the old song's, so nothing that still points at it (an editor's selection, an open
@@ -1834,6 +1841,7 @@ json_t* TesseraModule::dataToJson() {
     json_object_set_new(root, "runMode", json_string(runMode.load() == RunInputMode::Gate ? "gate" : "toggle"));
     json_object_set_new(root, "savedId", json_integer(id));
     json_object_set_new(root, "sceneCv", json_string(sceneCv.load() == SceneCvMode::Semitone ? "semitone" : "0.1v"));
+    json_object_set_new(root, "nextActions", json_boolean(nextActionsArmed.load()));
     json_object_set_new(root, "scene", json_integer(selectedScene()));
     // Which clip each track plays, as [trackId, slot] pairs, so a reloaded patch carries on where it was.
     json_t* launcherJ = json_array();
@@ -1932,6 +1940,7 @@ void TesseraModule::dataFromJson(json_t* root) {
     savedId = json::getInt(root, "savedId", -1);
     if (const char* mode = json_string_value(json_object_get(root, "sceneCv")))
         sceneCv.store(std::string(mode) == "semitone" ? SceneCvMode::Semitone : SceneCvMode::TenthVolt);
+    nextActionsArmed.store(!json_is_false(json_object_get(root, "nextActions")));
     selectScene(int(json::getInt(root, "scene", 0)));
 
     // Older patches without a song keep the current one.

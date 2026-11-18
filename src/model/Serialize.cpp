@@ -75,6 +75,11 @@ const char* const kAllocations[] = {"rotate", "reuse", "reset"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
+const char* const kNextActions[] = {"none",  "next",       "previous", "first", "last",    "random",
+                                    "other", "roundRobin", "back",     "stop",  "timeline"};
+static_assert(sizeof(kNextActions) / sizeof(kNextActions[0]) == kNextActionCount, "a name per next action");
+const char* const kNextActionUnits[] = {"loops", "bars"};
+const char* const kNextActionScopes[] = {"track", "block"};
 const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord",    "arpeggiator",
                                     "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads",
                                     "motion", "noteRepeat"};
@@ -1112,6 +1117,32 @@ Track trackFromJson(const json_t* j) {
 
 // ---- Clips --------------------------------------------------------------------------------------------------
 
+namespace {
+
+json_t* nextActionToJson(const NextActionSettings& n) {
+    json_t* j = json_object();
+    setString(j, "action", enumName(n.action, kNextActions));
+    setString(j, "otherwise", enumName(n.otherwise, kNextActions));
+    setInt(j, "chance", n.chance);
+    setInt(j, "count", n.count);
+    setString(j, "unit", enumName(n.unit, kNextActionUnits));
+    setString(j, "scope", enumName(n.scope, kNextActionScopes));
+    return j;
+}
+
+NextActionSettings nextActionFromJson(const json_t* j) {
+    NextActionSettings n;
+    n.action = enumFromName(get(j, "action"), kNextActions, n.action);
+    n.otherwise = enumFromName(get(j, "otherwise"), kNextActions, n.otherwise);
+    n.chance = uint8_t(std::clamp<int64_t>(getInt(j, "chance", n.chance), 0, 100));
+    n.count = uint16_t(std::clamp<int64_t>(getInt(j, "count", n.count), 1, kMaxNextActionCount));
+    n.unit = enumFromName(get(j, "unit"), kNextActionUnits, n.unit);
+    n.scope = enumFromName(get(j, "scope"), kNextActionScopes, n.scope);
+    return n;
+}
+
+} // namespace
+
 json_t* clipToJson(const Clip& c) {
     json_t* j = json_object();
     set(j, "id", idJson(c.id));
@@ -1132,6 +1163,8 @@ json_t* clipToJson(const Clip& c) {
         set(j, "scale", scaleToJson(*c.scaleOverride));
     if (c.launchQuantize)
         setString(j, "launchQuantize", enumName(*c.launchQuantize, kLaunchQuantize));
+    if (c.next != NextActionSettings())
+        set(j, "next", nextActionToJson(c.next));
     if (c.audio)
         set(j, "audio", audioToJson(*c.audio));
     if (c.hasOwnChain) {
@@ -1169,6 +1202,8 @@ Clip clipFromJson(const json_t* j) {
         c.scaleOverride = scaleFromJson(get(j, "scale"));
     if (json_is_string(get(j, "launchQuantize")))
         c.launchQuantize = enumFromName(get(j, "launchQuantize"), kLaunchQuantize, LaunchQuantize::Bar);
+    if (json_is_object(get(j, "next")))
+        c.next = nextActionFromJson(get(j, "next"));
     if (json_is_object(get(j, "audio")))
         c.audio = audioFromJson(get(j, "audio"));
     if (const json_t* own = get(j, "ownChain"); json_is_object(own) && !c.audio) {

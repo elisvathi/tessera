@@ -125,7 +125,8 @@ When a clip lane and a track lane use the same AUTO channel, the lane menu decid
 ## How automation plays
 
 - Track lanes follow the song position in both Plays modes. While the timeline plays, a track taken over by a
-  launched clip pauses its track lanes until **Back to timeline**.
+  launched clip pauses its track lanes until it goes back to the timeline (see
+  [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline)).
 - Stacked timeline clips: for each AUTO channel, the clip on top that has a lane there plays it.
 - A channel with nothing playing holds its last value. Pitch bend and pressure lanes go back to 0 instead, so a track
   never stays bent.

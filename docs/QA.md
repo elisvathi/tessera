@@ -125,7 +125,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Scene triangle: every track switches; tracks with an empty slot in that scene stop. A scene tempo moves
       the BPM knob when the scene starts.
 - [ ] Timeline playing, launch a scene with empty slots (launch quantize 1 bar): until the bar line the scene's stop
-      squares blink yellow and the tracks' timeline lanes dim; then they stop and "Back to timeline" shows.
+      squares blink yellow and the tracks' timeline lanes dim; then they stop and Timeline on
+      the Plays switch shows ↩.
 - [ ] Click a timeline clip that plays its 1-bar loop for 4 bars: the piano roll shows the loop's repeats faded up
       to bar 5, a yellow line there, a yellow bracket under the ruler's loop bar ending at bar 5, and "4 bars on the
       timeline" in the header. Drag the bracket's end: the timeline clip gets longer or shorter (one undo). Clicking a clip in the clips panel shows none of it.
@@ -152,6 +153,43 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       its clip plays.
 - [ ] Plays switch: Clips frames the clips and dims the timeline; Timeline frames the timeline and dims the
       clips, except a clip launched over the timeline, which stays lit. Undo restores the switch.
+- [ ] Next actions (DECISIONS §184): right-click a clip → Next action → Play next. Its slot shows "→ 4"; launched,
+      it counts 1/4 … 4/4, the clip to its right blinks yellow one bar before the end, then starts on the bar line.
+      Round robin on every clip of a row goes round; Play random sometimes repeats a clip, Play other never does.
+- [ ] Next action menu: After (loops / bars), How often 75% with Otherwise, Pick from This block (an empty slot
+      splits the row in two groups that never mix). The inspector's NEXT ACTION rows set the same and its sentence
+      names the next clip. Each change is one undo step; save and reload keeps them.
+- [ ] Launch ▾ → Next actions off: the tags fade, a waiting next action stops blinking, clips keep looping. On again:
+      they move on at the end of a count. Launching a clip by hand always wins over a next action.
+- [ ] A narrow slot shows the action's icon alone; a slot with its own devices or playheads keeps its marks beside
+      the tag.
+- [ ] Back to timeline (DECISIONS §185, §187): timeline playing, launch a clip on two tracks. Each row's ↩ at the
+      clips panel's right edge lights up; it stays in place while the scenes scroll. Click one: it blinks yellow until
+      the next bar, then only that track plays the timeline again. The Plays switch reads "↩ Timeline" (and the
+      panel's TIMELINE is outlined) while any track is away; a click on it, or on the ↩ at the column's top, brings
+      them all back on the next bar and the ▶ returns.
+- [ ] Back to timeline while the clips play: Plays on Clips, clips playing; click one track's ↩. On the next bar its
+      timeline row lights up and plays while the other rows stay dim and their clips play on. Launch a clip on it:
+      it leaves the timeline. Switch Plays to Timeline and back: no track is on the timeline any more.
+- [ ] The clips grid (DECISIONS §188): new tracks are 32 px; slots fill their rows with 1 px lines, one line each
+      (▶, name, notes); make a track about twice as tall: its slots get a title bar over their notes; an automation lane
+      makes a quiet band the column lines cross. A clip with its own devices shows the small device card; hover it
+      for its tooltip.
+- [ ] Panes (DECISIONS §190): the › handle on the clips' right edge (and F2) widens the clips (then ‹ narrows them;
+      no handle when every scene already shows); with few scenes the timeline
+      keeps the rest, with many it folds to a TIMELINE strip that brings it back on a click. Maximize the song pane:
+      the lower pane folds to a bar with Notes · Devices · Mixer; each brings the panes back on that view. Maximize the
+      lower pane: a Clips · Timeline bar at the top. F3 / F4 / F5 show notes / devices / mixer, restoring a folded
+      pane first. Widened past the room, the timeline is one tab (⤢, in the 80 HP editor the full-editor button
+      under it, then ‹ and TIMELINE) that brings it back on a click.
+- [ ] Own devices emptied (DECISIONS §189): give a clip its own devices, delete them one by one on the strip
+      (modulators too): with the last one the card leaves its slot, a toast says it plays the track's devices again,
+      and one undo brings its own chain back.
+- [ ] Clips with nothing launched (DECISIONS §186): from Timeline, switch to Clips: the panel's picked scene starts on
+      the next launch line. Stopped in Clips with every track stopped, press Play (panel, editor, RUN): the picked
+      scene starts with the transport. With clips launched, Play starts just those.
+- [ ] Next action Back to timeline: timeline playing, a launched clip hands its track back after its count; with
+      Plays on Clips it stops its track instead.
 
 ## Arranger
 - [ ] ARRANGE (panel) / the transport Plays switch: the timeline plays; notes start on time. In Launcher

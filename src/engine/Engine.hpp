@@ -36,6 +36,8 @@ enum class PlayMode : uint8_t { Launcher, Arranger };
 /// Launcher slot values: a track with no clip playing, and a track with nothing queued.
 constexpr int kNoSlot = -1;
 constexpr int kNothingQueued = -2;
+/// A queued "back to the timeline": a next action's (docs/DECISIONS.md §184), at the end of its count.
+constexpr int kBackToTimeline = -3;
 
 /// A clip-launcher action (DESIGN.md §7 "Launcher mode", §10).
 struct LaunchEvent {
@@ -43,7 +45,7 @@ struct LaunchEvent {
     /// still queued from before the load (the default song's) can't take tracks off the arrangement.
     enum class Kind : uint8_t { Slot, StopTrack, Scene, StopAll, BackToArrangement, Reset };
     Kind kind = Kind::Slot;
-    uint64_t track = 0;     // TrackId value, for Slot and StopTrack
+    uint64_t track = 0;     // TrackId value, for Slot and StopTrack; for BackToArrangement one track (0: all)
     int index = 0;          // the slot (Slot) or the scene (Scene)
     bool immediate = false; // ignore launch quantize
     bool start = true;      // launching a clip or scene while stopped starts the transport
@@ -163,6 +165,12 @@ class Engine {
     void setClockDivision(Tick ticks) { clockDivision = ticks > 0 ? ticks : 1; }
     /// Switching to Arranger brings every track back to the arrangement.
     void setPlayMode(PlayMode mode);
+    /// The scene the panel has picked (PREV / NEXT / SCENE): what starts when Clips has nothing to play.
+    void setPickedScene(int scene) { pickedScene = scene; }
+    /// The transport's own start (the play button, RUN, the editor's play): while the clips play and none is
+    /// launched, the picked scene starts with it, so play always plays something (docs/DECISIONS.md §186). Other
+    /// starts (a launch, a count-in) call play().
+    void start();
     PlayMode playMode() const { return mode; }
     /// While on, clip starts and stops go to `queue` (which must outlive the engine's use of it).
     void setCapture(CaptureQueue* queue, bool on);
@@ -263,10 +271,23 @@ class Engine {
     }
     /// In Arranger mode: the launcher has taken this track over, so its arrangement is silent.
     bool overridden(size_t i) const { return mode == PlayMode::Arranger && tracks[i].overridden; }
+    /// Whether track `i` plays the timeline now: in Timeline mode unless a launched clip took it over, in Clips mode
+    /// when it was sent back to the timeline (docs/DECISIONS.md §187).
+    bool followsTimeline(size_t i) const { return followsArrangement(tracks[i]); }
     /// Where the playing clip is, in clip ticks. NaN when nothing plays or a one-shot clip has ended.
     double clipPosition(size_t i) const;
     /// Clip ticks played since the playing clip started (not wrapped by its loop). NaN when nothing plays.
     double clipElapsed(size_t i) const { return tracks[i].playing != kNoSlot ? playTick - tracks[i].launchTick : NAN; }
+    /// Ticks the playing clip of track `i` has counted toward its next action (from its launch, or from the last
+    /// roll that kept it playing); NaN when it has none.
+    double actionElapsed(size_t i) const {
+        return tracks[i].playing != kNoSlot && std::isfinite(tracks[i].actionFrom) ? playTick - tracks[i].actionFrom
+                                                                                   : NAN;
+    }
+    /// Next actions on (the default) or held: while held every clip keeps looping, and a next action already
+    /// waiting for its launch line is called off.
+    void setNextActions(bool on);
+    bool nextActions() const { return nextActionsOn; }
     /// Where playhead `head` of track `i` has read its clip to (clip ticks), as its settings and their curves and
     /// modulators moved it; NaN while it isn't reading. For the editor's playhead lines. Audio thread.
     double playheadPosition(size_t i, size_t head) const {
@@ -371,6 +392,15 @@ class Engine {
         double queuedAt = 0;     // playTick when the queued change happens
         double queuedClipTime = NAN; // the queued clip starts from this clip time (a ruler click); NaN = its start
         double launchTick = 0;   // playTick when the playing clip started
+        // Next actions (docs/DECISIONS.md §184): where the playing clip's count started (NaN: it has no next action),
+        // the clip that played before it, whether the queued launch is one a next action picked, and whether this
+        // count's roll came out "keep looping" (the count starts over when it ends).
+        double actionFrom = NAN;
+        ClipId previousClip;
+        bool queuedByAction = false;
+        bool actionKept = false;
+        // Clips mode: the track was sent back to the timeline and plays it while the others play clips.
+        bool onTimeline = false;
         bool overridden = false; // launched or stopped by the launcher since the last "back to arrangement"
         size_t arrangementCursor = 0;
         // Automation per AUTO channel: the smoothed value (0..1), its volts, and where each lane list was.
@@ -556,7 +586,14 @@ class Engine {
     void playSource(const TrackPlayback& track, TrackState& state, double from, double to);
     void playArrangement(const TrackPlayback& track, TrackState& state, double from, double to);
     void fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom);
-    bool followsArrangement(const TrackState& state) const { return mode == PlayMode::Arranger && !state.overridden; }
+    bool followsArrangement(const TrackState& state) const {
+        return mode == PlayMode::Arranger ? !state.overridden : state.onTimeline;
+    }
+    /// Sends a track back to the timeline at play tick `at` (in or just before this sample), in either mode.
+    void toTimeline(const TrackPlayback& track, TrackState& state, double at);
+    /// Sends a track back to the timeline at the next launch line (now while stopped, or with `immediate`), as a
+    /// launch waits for it. Nothing for a track that already plays the timeline with nothing queued.
+    void queueTimeline(const TrackPlayback& track, TrackState& state, bool immediate);
     /// A Replace take is being recorded on this track: the clips it will cut out are not heard.
     bool replacing(const TrackPlayback& track) const { return recordingOn && replaceTakes && track.armed; }
     void backToArrangement(const TrackPlayback& track, TrackState& state);
@@ -569,6 +606,13 @@ class Engine {
     static size_t arrangementIndex(const TrackPlayback& track, double songPos);
     void queueLaunch(const TrackPlayback& track, TrackState& state, int slot, bool immediate);
     void switchTo(const TrackPlayback& track, TrackState& state, int slot, double at);
+    /// When the playing clip's next action is due by play tick `curPlay`: picks where it goes and queues that for the
+    /// end of its count, one launch line ahead, so the editor shows what comes next. Nothing while a launch waits.
+    void decideNextAction(const TrackPlayback& track, TrackState& state, double curPlay);
+    /// The play tick at which the playing clip's next action is picked; INFINITY for none.
+    double nextActionDue(const TrackPlayback& track, const TrackState& state) const;
+    /// A number in [0, 1) for a next action's dice: new on every draw.
+    double drawAction();
     /// Carries out the track's queued launch at play tick `at`, from its queued clip time when it has one.
     void switchQueued(const TrackPlayback& track, TrackState& state, double at);
     /// Carries out every queued launch now (on stop and reset).
@@ -799,6 +843,11 @@ class Engine {
 
     bool playing = false;
     uint32_t roll = 1; // see currentRoll()
+    bool nextActionsOn = true;
+    int pickedScene = 0;
+    /// No track plays or waits for a launched clip.
+    bool nothingLaunched() const;
+    uint64_t actionDraws = 0; // next actions' dice: how many were drawn
     bool resetPending = false;
     double songTick = 0;
     double windowStart = 0; // song tick where the current sample's window begins

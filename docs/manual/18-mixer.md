@@ -9,7 +9,7 @@ play. It appears as soon as the song has an audio track.
 
 The mixer shares the lower pane with the notes (or the audio editor) and the devices. The pane's header starts with
 **Notes · Devices · Mixer** (**Audio · Mixer** when an audio track is selected: it has no devices): click **Mixer** to show
-the mixer there, **Notes** to go back, or press **F4** to switch. Clicking any clip also goes back to it. **Mixer**
+the mixer there and **Notes** to go back, or press **F5** (mixer) and **F3** (notes). Clicking any clip also goes back to it. **Mixer**
 appears once something in the song makes sound.
 
 - It is the same pane: the line between the panes resizes it, its **maximize** button in the top-right corner

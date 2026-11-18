@@ -851,15 +851,16 @@ void drawOwnMark(NVGcontext* vg, float x, float cy, bool lit) {
     draw::roundedRect(vg, Rect(x + 3, cy + 0.8f, 10, 2.2f), 1.1f, ink);
 }
 
-void drawOwnDot(NVGcontext* vg, Vec c, bool lit) {
+void drawOwnMarkSmall(NVGcontext* vg, float x, float cy, bool lit) {
+    namespace m = theme::metrics;
     const theme::OwnMarkColors& o = theme::ownMarkColors();
-    nvgBeginPath(vg);
-    nvgCircle(vg, c.x, c.y, theme::metrics::kOwnMarkDot);
-    nvgFillColor(vg, lit ? o.lit : o.unlit);
-    nvgFill(vg);
-    nvgStrokeColor(vg, lit ? o.litInk : o.edge);
-    nvgStrokeWidth(vg, 1);
-    nvgStroke(vg);
+    Rect card(x, cy - m::kOwnMarkSmallHeight / 2, m::kOwnMarkSmallWidth, m::kOwnMarkSmallHeight);
+    draw::roundedRect(vg, card, 2, lit ? o.lit : o.unlit);
+    if (!lit)
+        draw::roundedRectStroke(vg, card.shrink(Vec(0.5f, 0.5f)), 1.5f, o.edge, 1);
+    NVGcolor ink = lit ? o.litInk : o.unlitInk;
+    draw::roundedRect(vg, Rect(x + 2.2f, cy - 2.4f, 4.5f, 1.7f), 0.85f, ink);
+    draw::roundedRect(vg, Rect(x + 2.2f, cy + 0.6f, 7.5f, 1.7f), 0.85f, ink);
 }
 
 } // namespace tessera::tiles

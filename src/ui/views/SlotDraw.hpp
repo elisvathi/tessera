@@ -14,10 +14,10 @@ struct LauncherStatus;
 /// `hotLaunch` the launch or stop button.
 namespace slotDraw {
 
-/// The launch button: a square at the cell's left.
-inline rack::math::Rect launchRect(const rack::math::Rect& cell) {
-    return rack::math::Rect(cell.pos, rack::math::Vec(cell.size.y, cell.size.y));
-}
+/// The launch button: a square at the cell's left, as tall as the cell; in a tall cell, the size of its title bar.
+rack::math::Rect launchRect(const rack::math::Rect& cell);
+/// Where a slot's own-devices card sits (empty when the clip has no own devices), for its tooltip.
+rack::math::Rect ownMarkRect(rack::math::Rect cell, const Track& track, const Clip& clip);
 
 void drawSlot(NVGcontext* vg, EditorContext& ctx, rack::math::Rect cell, TrackId track, int scene,
               const LauncherStatus& status, bool hovered, bool hotLaunch);
@@ -28,6 +28,13 @@ void drawRing(NVGcontext* vg, rack::math::Vec c, float radius, float progress, N
 void drawNotePreview(NVGcontext* vg, const Clip& clip, const std::vector<DrumLane>* lanes, rack::math::Rect r,
                      NVGcolor color);
 bool blinkOn();
+/// The icon of a next action, `size` pixels square around `c`: an arrow for the actions that walk the slots, a die
+/// for the random ones, a turning arrow for round robin, a bent arrow for back, a square for stop, a return arrow for
+/// back to the timeline (which "back to timeline" buttons draw too). Nothing for None.
+void drawActionIcon(NVGcontext* vg, NextAction action, rack::math::Vec c, float size, NVGcolor color);
+/// What a clip's next action tag says: its count ("4", "8 bars"), or while it plays how far it got ("2/4"); empty for
+/// a clip that plays once. `elapsed` is LauncherStatus::actionElapsed, NaN when the clip isn't counting.
+std::string nextActionCount(const Clip& clip, Tick loopLength, TimeSig ts, double elapsed);
 /// The mark of a clip played by playheads: one short stripe per playhead of `device` (the Playheads device of the
 /// chain the clip plays through), in its colour (hollow when muted), stacked from `topRight` down and leftwards.
 /// Draws nothing for a null `device`.

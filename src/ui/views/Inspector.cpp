@@ -18,6 +18,7 @@
 #include "../editing/ClipActions.hpp"
 #include "../editing/DeviceActions.hpp"
 #include "../editing/KeyActions.hpp"
+#include "../editing/NextActionMenu.hpp"
 #include "../editing/NoteTarget.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
@@ -611,6 +612,35 @@ float Inspector::diceRow(NVGcontext* vg, float y, const Clip& clip) {
     return y + kRowHeight;
 }
 
+float Inspector::nextActionRows(NVGcontext* vg, float y, const Track& t, const Clip& clip) {
+    if (clipActions::slotOf(t, clip.id) < 0)
+        return y;
+    const theme::Palette& c = theme::colors();
+    const NextActionSettings& n = clip.next;
+    using Part = nextActionMenu::Part;
+    y += kSectionGap;
+    y = section(vg, y, "NEXT ACTION");
+    y = settingRow(vg, y, "Do", nextActionMenu::label(n.action), Setting::NextAction, uint64_t(Part::Do));
+    if (n.action == NextAction::None && n.chance >= 100)
+        return y;
+    y = settingRow(vg, y, "After", nextActionMenu::afterLabel(n), Setting::NextAction, uint64_t(Part::After));
+    y = settingRow(vg, y, "How often", nextActionMenu::howOftenLabel(n), Setting::NextAction,
+                   uint64_t(Part::HowOften));
+    if (n.chance < 100)
+        y = settingRow(vg, y, "Otherwise", nextActionMenu::label(n.otherwise), Setting::NextAction,
+                       uint64_t(Part::Otherwise));
+    y = settingRow(vg, y, "Pick from", nextActionMenu::pickFromLabel(n), Setting::NextAction,
+                   uint64_t(Part::PickFrom));
+    std::string text = nextActionMenu::summary(ctx.module()->song(), t, clip);
+    if (text.empty())
+        return y;
+    draw::TextStyle s{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
+    float width = box.size.x - 2 * kPad;
+    float lines = width > 0 ? std::ceil(draw::textWidth(vg, s, text) / width + 0.15f) : 1;
+    draw::textBox(vg, s, kPad, y + 4, width, text);
+    return y + 6 + std::max(lines, 1.f) * theme::metrics::kTextUi * 1.3f;
+}
+
 void Inspector::openSetting(Setting which, uint64_t target) {
     TesseraModule* m = ctx.module();
     if (m && (which == Setting::DiceRoll || which == Setting::DiceFixed || which == Setting::DiceNew)) {
@@ -632,6 +662,14 @@ void Inspector::openSetting(Setting which, uint64_t target) {
         return;
     if (which == Setting::Output && audioActions::outputsFor(m, t->id).empty()) {
         ctx.toast(audioActions::addOutputFor(m, t->id));
+        return;
+    }
+    if (which == Setting::NextAction) {
+        ClipId clip = clipActions::shownClip(ctx, *t);
+        if (!m->song().findClip(clip))
+            return;
+        rack::ui::Menu* menu = rack::createMenu();
+        nextActionMenu::appendItems(menu, ctx, clip, nextActionMenu::Part(target));
         return;
     }
     rack::ui::Menu* menu = rack::createMenu();
@@ -992,6 +1030,8 @@ void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
     if (!st.empty())
         y = row(vg, y, "State", st == "!" ? "Couldn't make the stretched version" : st);
 
+    y = nextActionRows(vg, y, t, *clip);
+
     const ArrangerClip* instance = nullptr;
     if (ctx.state().clipSelection.size() == 1)
         for (const ArrangerClip& i : t.arrangement)
@@ -1147,6 +1187,7 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
                 clip->scaleOverride ? keyActions::keyLabel(song, *clip->scaleOverride)
                                     : "Song (" + keyActions::keyLabel(song, song.scale) + ")");
     y = diceRow(vg, y, *clip);
+    y = nextActionRows(vg, y, *t, *clip);
 
     // The selected arranger instance of this clip: what it changes on top of the clip.
     const ArrangerClip* instance = nullptr;

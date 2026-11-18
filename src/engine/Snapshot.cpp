@@ -417,11 +417,20 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
                     flattenClip(*clip, track, songSwingFor(song, track), song.swingStep, keyIndex(*clip)));
                 if (clip->launchQuantize)
                     flat->launchQuantize = launchQuantizeTicks(*clip->launchQuantize, song.timeSig);
+                if (clip->next.any()) {
+                    flat->next = clip->next;
+                    // A clip that plays once does its next action when it ends, whatever the count.
+                    Tick count = Tick(std::max<uint16_t>(clip->next.count, 1));
+                    flat->nextSpan = !flat->looping                              ? flat->loopLength()
+                                     : clip->next.unit == NextActionUnit::Bars ? count * ticksPerBar(song.timeSig)
+                                                                               : count * flat->loopLength();
+                }
                 if (flat->loopLength() > 0)
                     playback = flat;
                 built[id] = playback;
             }
         }
+        tp->filled.push_back(playback != nullptr);
         tp->slots.push_back(playback);
     }
 

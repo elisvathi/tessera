@@ -3182,3 +3182,132 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   the sources list. Effect loops keep the name of the module they feed.
 - Same day: "N tracks play notes only" in the mixer was drawn over the Master strip's name when the tracks filled
   the width; it now takes only the free room after the last strip (shorter, or hidden, when there is none).
+
+## 184. Next actions: clips that move on by themselves (17 Nov)
+
+- **User request** (GitHub issue #20): after a few loops a clip plays the next one, a random one, and more. The user
+  asked for as much flexibility as we can give. Agreed from a mockup with three boards (slot tag, clip menu,
+  inspector).
+- **Actions**: Keep looping (the default), Play next, Play previous, Play first, Play last, Play random (this clip
+  too), Play other (never this clip), Round robin (next, wrapping to the first), Go back (the clip that played
+  before), Stop. "Next" is the slot to the right: tracks are rows, scenes columns. Next and Previous stop at the ends;
+  Round robin wraps. Play other with no other clip keeps playing.
+- **Settings per clip** (`NextActionSettings`, saved in the clip as `next` only when it differs from the default):
+  After a count of loops (default 4) or bars; How often (a chance, default Always) with an Otherwise action; Pick from
+  the whole track or the clip's block (a run of clips between empty slots). A clip that plays once does its action
+  when it ends, whatever the count. "How often" is not called "Chance": the CLIP section's dice row already is.
+- **Engine**: the count runs from the launch. One launch line before it ends (the clip's own launch quantize, else the
+  song's; at most the whole count), the action is rolled and its target goes into the track's queue as an ordinary
+  launch for the count's end. So the target blinks yellow as any launch does, a random pick shows before it plays,
+  stop and reset carry it out as they do any queued launch, and a launch by hand replaces it. A roll that comes out
+  Keep looping starts a new count at the old one's end. The pick (`pickNextAction`) is pure model code with tests;
+  the dice is the engine's own counter mixed with the play roll, so it allocates nothing.
+- **Next actions switch** in the Launch ▾ menu (beside Record into timeline, and in the song menu when the header has
+  no room): off holds every clip where it is, calls off a next action already waiting, and fades the slot tags. It is
+  a performance switch saved with the patch, like Record into timeline, not an undo step. The mockup drew it as a
+  header pill; the header has no room for a third control, so it joined the menu that holds the other launch switch.
+- **Slot tag**: the action's icon and count at the slot's right ("→ 4", "↻ 8 bars"), counting while it plays ("2/4");
+  the icon alone on a narrow slot, nothing when the name would lose its last 36 px.
+- Not done: scene follow actions (a scene that launches the next scene), which the launcher design (S4) also plans;
+  the timeline ignores next actions; MIDI and DAWproject export don't write them.
+
+## 185. Back to the timeline: per track, from the Plays switch, or as a next action (18 Nov)
+
+- **User report**: after launching a clip over the timeline, getting back took a trip through Clips and back to
+  Timeline. The "Back to timeline" button on the ruler was added before the ruler, so the ruler covered it and took
+  its clicks (since 2.0.0); shown, the user found it ugly and all-or-nothing.
+- **Looked at** the reference app: each track's launcher row ends with a "switch playback to the timeline" button,
+  mirroring its stop button at the row's start, plus one for all tracks at the end of the scene row; both act at once,
+  not on the launch quantize. A clip's next action can also return the track to the timeline.
+- **One track**: a ↩ per track row at the clips panel's right edge, only while the timeline plays (Plays on
+  Timeline). It sits in a fixed column, not after the last scene, because the panel is usually narrower than its
+  scenes and the end of the row would be scrolled away. Lit while the track plays a launched clip; faint (not hidden)
+  while it plays the timeline, so the column never jumps. Acts at once, like the reference.
+- **All tracks**: the user's idea. The Plays switch keeps its job (Clips silences the timeline on tracks with nothing
+  launched; the panel's PLAYS and its CV map use it), and its lit Timeline half, which a click used to ignore, now
+  brings every track back while any is away. The editor's half wears ↩ instead of ▶ then. On the panel the arrow
+  squeezed the word against the pill's edges (the user: "doesn't look that good"), so there TIMELINE is outlined
+  instead of filled: the timeline plays, but not on every track. No second all-tracks button: one control per job.
+  The ruler button is gone.
+- **Next action "Back to timeline"**: queued like any next action (kBackToTimeline in the track's queue), carried out
+  at the end of the count; while Plays is on Clips there is no timeline to go back to, so the track stops.
+
+## 186. Clips with nothing launched start the picked scene (18 Nov)
+
+- **User report**: back on Clips after the timeline, nothing played; Play in Clips did nothing either. Going back to
+  the timeline clears what each track launched, so Clips had nothing to play.
+- **Rule**: while the clips play and no track plays or waits for a launched clip, the scene picked on the panel
+  (PREV / NEXT / SCENE; the first by default) comes in: when the Plays switch moves to Clips (on the launch line while
+  playing, ready to start while stopped), and when the transport's own start runs (the play button, RUN, the
+  editor's play and play-from-here: `Engine::start`). Starts from a launch or a count-in call `play()` and are left
+  alone, so a recording count-in never launches clips by itself. With anything launched, nothing changes.
+
+## 187. Back to the timeline on the launch line, and per track while the clips play (18 Nov)
+
+- **User requests**: "back to timeline" in Clips mode too, per track and for all, in the clip launcher; and it should
+  respect the launch timing "just like the normal clip launcher". (The reference app returns at once; Tessera's
+  launches wait for the launch quantize, so the return does too, for one rule.)
+- **Per track state**: a track can follow the timeline in Clips mode (`onTimeline`), so one track plays the timeline
+  while the others play clips. `followsArrangement` is: Timeline mode and not taken over, or Clips mode and sent back.
+  Launching or stopping the track takes it off; switching the Plays switch starts afresh (Timeline: every track
+  follows; Clips: none does). Reset clears it. The audio player, the piano roll's playhead and the editor's "plays the
+  timeline" checks all read the same state (LauncherStatus::onTimeline).
+- **Timing**: BackToArrangement events queue `kBackToTimeline` at the next line of the song's launch quantize (now
+  while stopped, or with `immediate`), as a stop does; the ↩ blinks yellow while it waits. The timeline restarts from
+  the line itself, so a note right on it plays. Setting the Plays switch to Timeline still switches at once.
+- **Controls**: the ↩ column shows in both modes; a ↩ at its top (in the scene header row) sends every track back.
+  The Timeline half of the Plays switch stays the all-back in Timeline mode (both are the same event). In Clips mode
+  the all-back keeps the switch on Clips: every track follows the timeline on its own until the switch moves.
+- **Display**: in Clips mode the timeline dims row by row, and a track on the timeline keeps its row (and the ruler)
+  lit; its slots step back as in Timeline mode.
+- The next action "Back to timeline" now does the same in Clips mode (it stopped the track before).
+
+## 188. The clips panel as a grid; a title bar in taller slots; the own-devices card at every size (18 Nov)
+
+- **User request**: "why is there a gap between tracks in the clip launcher, can't that be more like a grid?" Rows
+  are track rows (48 px by default) but slots stopped at 30 px; an automation lane left a blank band.
+- **Agreed from mockups** (canvas boards 4 and 5): a slot fills its row, kSlotGap (1 px) from its neighbours, with no
+  height cap. From kSlotTitleBarFrom (52 px) a slot has a title bar kSlotTitleBar (22 px) high with the launch button
+  and the name, and its notes take the full width below, as timeline clips look; shorter slots keep one line. A
+  square button in the corner of a tall slot (board 5, A) was turned down: it left a hole under it.
+- **Default track height 32 px** (was 48): the user showed the look they wanted, one line of slots like the old 30 px
+  ones, as a grid. A 48 px row made 46 px slots whose square launch button squeezed the name. Tracks never resized
+  (old patches too) take the new default; resized ones keep their height. Under 40 px an audio track's header hides
+  its level line, as it did for short tracks before.
+- **Lane rows** keep their height so the clips line up with the timeline, drawn as a quiet band with the column lines
+  running through.
+- **Own-devices mark** (board 6, the user read the old dot as MIDI): the same device card as wide slots, at 12 × 9 px
+  on narrow ones, at the name row's right end (the name gives up its room); a tooltip says what it means, on or off.
+  The dot is gone.
+
+## 189. Emptying a clip's own chain sends it back to the track's devices (18 Nov)
+
+- **User report**: after deleting a clip's devices the own-devices card still showed. Deleting them one by one left
+  an own chain with nothing in it, which plays dry (skips the track's devices): a hidden state.
+- **Rule**: removing or moving away the last device and modulator of a clip's own chain also turns the clip's own
+  chain off (`hasOwnChain` false) in the same undo step, so the clip plays the track's devices and the card goes; a
+  toast says "<clip> plays through the track's devices again". Devices ▸ Delete its own devices did this already.
+  A clip can no longer play dry on purpose through an empty chain; an explicit choice for that can come later.
+
+## 190. Moving between panes: ⟷ for the clips, folded bars, one key per view (18 Nov)
+
+- **User requests**: a button to maximize the clip launcher across (in both editors), used with the pane maximize
+  for a clips-only view; "very simple to navigate between the panes"; Notes and Mixer showed the same key (F4 was one
+  toggle for both). Agreed from mockups (canvas boards 7 to 9).
+- **⟷** (Icon::Widen / Narrow) does what F2 did: the clips take the room their scenes need at their usual column
+  width, and the timeline keeps the rest, because a next action can send a track back to it (the user asked to keep
+  it visible; stretching columns was turned down). With more scenes than fit, the timeline folds to a strip; the
+  strip is drawn plain with the word TIMELINE and brings the timeline back on a click. The button sits beside the
+  song pane's maximize in both editors (the panel editor has no room above the scene buttons; there it sits left
+  of the full-editor button, and the folded strip is wider by that button so nothing covers the clips' ↩ column).
+- **Folded bars**: a maximized pane no longer hides the other one completely. It folds to a kFoldedPaneBar (22 px)
+  bar with its switch: Notes (Audio) · Devices · Mixer at the bottom, Clips · Timeline at the top (Clips brings the
+  song pane back widened), and a restore arrow. Built into PaneStack, so both editors have it.
+- **Revised the same day** (canvas board 10): the corner ⟷ was hard to read and crowded the narrow strip's ruler in
+  the panel editor. It became a handle on the clips' right edge, in the scene buttons' row, half over each side: ›
+  widens, ‹ narrows, in both editors and both states, shown only while widening reveals more scenes (or to narrow
+  back). Folded past the room, the timeline is one tab from top to bottom (PaintedButton): the pane's maximize at its
+  top, the panel editor's full-editor button stacked under it, then ‹ and TIMELINE; a click anywhere brings it back.
+- **Keys**: F2 clips, F3 notes, F4 devices (was F3), F5 mixer: one key per view in screen order. A view key always
+  shows its view, restoring a folded pane first; F2 with the song pane folded brings it back widened. Tab and
+  Shift+Tab are unchanged.

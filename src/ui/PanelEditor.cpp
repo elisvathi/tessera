@@ -209,6 +209,12 @@ void PanelEditor::step() {
     float maximizeRoom = notesOnTop ? 6 + kMaximizeButton + 6 : 3 + kMaximizeButton + 4;
     float x = box.size.x - maximizeRoom - kCornerButton;
     fullEditor->box = rack::math::Rect(x, buttonY, kCornerButton, kCornerButton);
+    if (!notesOnTop && song->timelineFolded()) {
+        // The timeline is a narrow tab: the button goes under the pane's maximise, on the tab.
+        rack::math::Rect max = song->maximizeRect();
+        fullEditor->box = rack::math::Rect(max.getCenter().x - kCornerButton / 2, max.getBottom() + 4, kCornerButton,
+                                           kCornerButton);
+    }
     x = notesOnTop ? x - kCornerGroupGap - transportWidth : 4;
     float transportY = notesOnTop ? buttonY + 1 : (rulerHeight - kTransportButton) / 2;
     for (ToolButton* b : transport) {

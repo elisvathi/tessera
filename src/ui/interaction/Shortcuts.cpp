@@ -110,8 +110,9 @@ std::vector<ActionInfo> buildTable() {
         {Ac::SwitchPane, "View", "Switch pane", {K(GLFW_KEY_TAB)}},
         {Ac::MaximizePane, "View", "Maximize pane", {K(GLFW_KEY_TAB, S)}},
         {Ac::WidenClips, "View", "Widen / narrow the clips beside the timeline", {K(GLFW_KEY_F2)}},
-        {Ac::ToggleDevices, "View", "Devices: above the notes, or in their place in a short pane", {K(GLFW_KEY_F3)}},
-        {Ac::ToggleMixer, "View", "Show the mixer or the notes in the lower pane", {K(GLFW_KEY_F4)}},
+        {Ac::ShowNotes, "View", "Show the notes in the lower pane", {K(GLFW_KEY_F3)}},
+        {Ac::ToggleDevices, "View", "Devices: above the notes, or in their place in a short pane", {K(GLFW_KEY_F4)}},
+        {Ac::ToggleMixer, "View", "Show the mixer in the lower pane", {K(GLFW_KEY_F5)}},
         {Ac::ToggleDrumView, "View", "Drum lanes / keys", {C("g")}, Sc::DetailPane},
 
         {Ac::AddInstrumentTrack, "Tracks", "Add instrument track", {C("t", Ctl)}},
@@ -184,6 +185,8 @@ std::string keyName(const KeyChord& c) {
         return "F3";
     case GLFW_KEY_F4:
         return "F4";
+    case GLFW_KEY_F5:
+        return "F5";
     default:
         return "?";
     }

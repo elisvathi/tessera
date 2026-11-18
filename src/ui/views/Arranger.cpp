@@ -27,28 +27,40 @@ constexpr float kSceneButtonsHeight = 24; // the scene buttons sit at the bottom
 constexpr float kQuantizeWidth = 84;
 constexpr float kNarrowWidth = 600; // narrower song panes fold the clips while the timeline plays
 constexpr float kFoldTabWidth = 14;
-constexpr float kBackWidth = 104;
 constexpr float kFoldedTimeline = 48; // what is left of the timeline while the clips take the width
+constexpr float kEdgeTabWidth = 14;    // the clips' edge handle: widen / narrow (§190)
+constexpr float kEdgeTabHeight = 20;
+constexpr float kTimelineTabArrow = 16; // the folded timeline tab's arrow, this far under the ruler's height
+constexpr float kTimelineTabArrowMin = 66; // and never higher: clear of two stacked buttons
 constexpr float kQuietAlpha = 0.45f;  // the section that doesn't play
+
+/// A chevron pointing left (`left`) or right, about 8 px tall, centred on `c`.
+void drawChevron(NVGcontext* vg, rack::math::Vec c, bool left, NVGcolor color) {
+    float d = left ? 1.f : -1.f;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, c.x + d * 2, c.y - 4);
+    nvgLineTo(vg, c.x - d * 2, c.y);
+    nvgLineTo(vg, c.x + d * 2, c.y + 4);
+    nvgStrokeColor(vg, color);
+    nvgStrokeWidth(vg, 1.5f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgLineJoin(vg, NVG_ROUND);
+    nvgStroke(vg);
+}
 
 } // namespace
 
 // ---- ArrangerView -------------------------------------------------------------------------------------------
+
+bool ArrangerView::timelineFolded() const { return timelineTab->visible; }
+
+rack::math::Rect ArrangerView::maximizeRect() const { return maximizeButton->box; }
 
 ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), source(ctx) {
     headers = new TrackHeaders(ctx, *this);
     addChild(headers);
 
     EditorContext* c = &ctx;
-    ToolButton::Options back;
-    back.text = "Back to timeline";
-    back.tooltip = "Back to timeline: you launched clips while the timeline plays, so those tracks left it. Click to "
-                   "make them play the timeline again";
-    back.action = [c] { c->module()->backToArrangement(); };
-    back.active = [] { return true; };
-    backButton = new ToolButton(back);
-    backButton->visible = false;
-    addChild(backButton);
     ruler = new Ruler(ctx, viewport, source);
     addChild(ruler);
     lanes = new ArrangerLanes(ctx, *this);
@@ -76,6 +88,7 @@ ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), sou
                 if (TesseraModule* m = c->module())
                     m->setRecordArrangement(!m->recordingArrangement());
             }));
+        clipActions::appendNextActionsSwitch(menu, *c);
     };
     quantize.caret = true;
     quantize.activeColor = &theme::Palette::record;
@@ -101,8 +114,34 @@ ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), sou
     foldTab = new ToolButton(fold);
     foldTab->visible = false;
     addChild(foldTab);
+    // Widened with more scenes than fit, the timeline is this tab, top to bottom: a click brings it back.
+    timelineTab = new PaintedButton(withShortcut("Timeline: bring it back beside the clips", Action::WidenClips),
+                                    [c] { c->state().clipsWide = false; },
+                                    [this](NVGcontext* vg, rack::math::Vec size, bool hot) {
+                                        drawTimelineTab(vg, size, hot);
+                                    });
+    timelineTab->visible = false;
+    addChild(timelineTab);
     maximizeButton = makeMaximizeButton(ctx, Pane::Top);
     addChild(maximizeButton);
+
+    // The clips' edge handle (docs/DECISIONS.md §190): › widens the clips, ‹ puts them back. Over everything else.
+    edgeTab = new PaintedButton(
+        withShortcut("Widen the clips across the song pane, or put them back beside the timeline", Action::WidenClips),
+        [c] {
+            c->state().clipsWide = !c->state().clipsWide;
+            c->state().focus = Pane::Top;
+        },
+        [c](NVGcontext* vg, rack::math::Vec size, bool hot) {
+            const theme::Palette& p = theme::colors();
+            rack::math::Rect r(0, 0, size.x, size.y);
+            draw::roundedRect(vg, r, theme::metrics::kRadiusControl, hot ? p.line2 : p.bg2);
+            draw::roundedRectStroke(vg, r.shrink(rack::math::Vec(0.5f, 0.5f)), theme::metrics::kRadiusControl,
+                                    p.line2, 1);
+            drawChevron(vg, r.getCenter(), c->module() && c->state().clipsWide, hot ? p.text0 : p.text1);
+        });
+    edgeTab->visible = false;
+    addChild(edgeTab);
 }
 
 LauncherPanel* ArrangerView::panelView() { return panel->visible ? panel : nullptr; }
@@ -122,23 +161,40 @@ void ArrangerView::layout() {
     float tab = foldTab->visible ? kFoldTabWidth : 0;
     float room = std::max(0.f, box.size.x - headerWidth - tab);
     float most = ctx.state().clipsWide ? room - kFoldedTimeline : room * 0.5f;
-    float wanted = ctx.state().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth;
+    // The saved width is the scenes' room; the back column comes on top, so old patches show the scenes they did.
+    float wanted =
+        ctx.state().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth + panel->backColumn();
+    // Widened, the clips take the room their scenes need and the timeline keeps the rest: a next action can send a
+    // track back to it (docs/DECISIONS.md §190). With more scenes than fit, the timeline folds to its strip.
     float panelWidth = std::max(0.f, std::min({wanted, panel->contentWidth(), most}));
-    if (foldTab->visible && !ctx.clipsOpenNarrow)
+    if (foldTab->visible && !ctx.clipsOpenNarrow && !ctx.state().clipsWide)
         panelWidth = 0;
     panel->visible = panelWidth > 0;
     panel->box = rack::math::Rect(headerWidth, 0, panelWidth, box.size.y);
     panel->rowsTop = rulerHeight;
     panel->headerTop = std::max(0.f, rulerHeight - kSceneButtonsHeight);
     foldTab->box = rack::math::Rect(headerWidth + panelWidth, 0, tab, box.size.y);
-    maximizeButton->box.pos = rack::math::Vec(box.size.x - kMaximizeButton - 3, (rulerHeight - kMaximizeButton) / 2);
     float timeline = headerWidth + panelWidth + tab;
     ruler->box = rack::math::Rect(timeline, 0, box.size.x - timeline, rulerHeight);
+    // Widened past the room, the timeline is a tab from top to bottom; the pane's maximise sits at its top.
+    float stripWidth = box.size.x - timeline;
+    timelineTab->visible = ctx.state().clipsWide && stripWidth <= kFoldedTimeline + 1;
+    timelineTab->box = rack::math::Rect(timeline, 0, stripWidth, box.size.y);
+    maximizeButton->box.pos =
+        timelineTab->visible
+            ? rack::math::Vec(timeline + (stripWidth - kMaximizeButton) / 2, (rulerHeight - kMaximizeButton) / 2)
+            : rack::math::Vec(box.size.x - kMaximizeButton - 3, (rulerHeight - kMaximizeButton) / 2);
+    // The handle sits on the clips' right edge, in the scene buttons' row, half over each side.
+    float tabHeight = std::min(kEdgeTabHeight, rulerHeight - panel->headerTop - 2);
+    // Only while widening shows more than now (or narrowing goes back): with every scene in view it would do nothing.
+    float normalWidth = std::min({ctx.view().launcherPanelWidth + panel->backColumn(), panel->contentWidth(),
+                                  std::max(0.f, room) * 0.5f});
+    bool more = ctx.state().clipsWide || panel->contentWidth() > normalWidth + 1;
+    edgeTab->visible = panel->visible && tabHeight >= 10 && more;
+    edgeTab->box = rack::math::Rect(panel->box.getRight() - kEdgeTabWidth / 2,
+                                    panel->headerTop + (rulerHeight - panel->headerTop - tabHeight) / 2, kEdgeTabWidth,
+                                    tabHeight);
     lanes->box = rack::math::Rect(timeline, rulerHeight, box.size.x - timeline, box.size.y - rulerHeight);
-    // "Back to timeline" sits on the timeline's ruler, which it is about.
-    backButton->visible = m->playMode() == PlayMode::Arranger && m->anyTrackOverridden();
-    backButton->box = rack::math::Rect(timeline + 4, (rulerHeight - kToolSize) / 2,
-                                       std::min(kBackWidth, std::max(0.f, ruler->box.size.x - 40)), kToolSize);
     layoutCorner(rulerHeight);
 }
 
@@ -202,6 +258,7 @@ void ArrangerView::appendSongMenu(rack::ui::Menu* menu) {
             if (TesseraModule* m = c->module())
                 m->setRecordArrangement(!m->recordingArrangement());
         }));
+    clipActions::appendNextActionsSwitch(menu, *c);
 }
 
 void ArrangerView::applyZoomLimits() {
@@ -356,6 +413,28 @@ void ArrangerView::draw(const DrawArgs& args) {
     drawCornerLabels(vg);
 }
 
+void ArrangerView::drawTimelineTab(NVGcontext* vg, rack::math::Vec size, bool hot) {
+    // A plain tab: the timeline squeezed this narrow says nothing; an arrow, the word and a click say enough.
+    const theme::Palette& c = theme::colors();
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, size.x, size.y);
+    nvgFillColor(vg, hot ? c.bg2 : c.bg1);
+    nvgFill(vg);
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, 1, size.y);
+    nvgFillColor(vg, c.line1);
+    nvgFill(vg);
+    // Under the ruler's height, and under the buttons stacked at the tab's top (two in the panel editor).
+    float top = std::max(Ruler::heightFor(source, ctx.surface) + kTimelineTabArrow, kTimelineTabArrowMin);
+    drawChevron(vg, rack::math::Vec(size.x / 2, top), true, hot ? c.text0 : c.text1);
+    nvgSave(vg);
+    nvgTranslate(vg, size.x / 2, top + 50);
+    nvgRotate(vg, -float(M_PI) / 2);
+    draw::TextStyle word{theme::fonts::uiStrong(), 9, hot ? c.text0 : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, word, 0, 0, "TIMELINE");
+    nvgRestore(vg);
+}
+
 void ArrangerView::drawCornerLabels(NVGcontext* vg) {
     const theme::Palette& c = theme::colors();
     if (cornerInset > 0) {
@@ -394,12 +473,34 @@ void ArrangerView::drawPlayingSection(NVGcontext* vg) {
     if (clips && !panel->visible)
         return;
     // The quiet section steps back. The clips dim slot by slot instead (LauncherPanel), so the clips that took
-    // tracks over from the timeline stay lit.
+    // tracks over from the timeline stay lit; on the timeline, the rows of tracks sent back to it stay lit
+    // (docs/DECISIONS.md §187).
     if (clips) {
-        nvgBeginPath(vg);
-        nvgRect(vg, lanes->box.pos.x, ruler->box.pos.y, lanes->box.size.x, box.size.y);
-        nvgFillColor(vg, nvgTransRGBAf(c.bg0, kQuietAlpha));
-        nvgFill(vg);
+        float x = lanes->box.pos.x, w = lanes->box.size.x, lanesTop = lanes->box.pos.y;
+        auto shade = [&](float y0, float y1) {
+            y0 = std::max(y0, ruler->box.pos.y);
+            if (y1 <= y0)
+                return;
+            nvgBeginPath(vg);
+            nvgRect(vg, x, y0, w, y1 - y0);
+            nvgFillColor(vg, nvgTransRGBAf(c.bg0, kQuietAlpha));
+            nvgFill(vg);
+        };
+        bool anyOnTimeline = false;
+        float y = lanesTop;
+        for (size_t i = 0; i < rows.size() && i < tracks.heights().size(); i++) {
+            float top = lanesTop + float(tracks.trackTop(int(i)));
+            float bottom = top + float(tracks.trackHeight(int(i)));
+            const TrackRow& row = rows[i];
+            bool lit = (row.isTrack() || row.isLane()) && row.track.valid() && m->launcherStatus(row.track).onTimeline;
+            anyOnTimeline |= lit;
+            if (!lit)
+                shade(std::max(top, lanesTop), bottom);
+            y = std::max(y, bottom);
+        }
+        shade(std::max(y, lanesTop), box.size.y);
+        if (!anyOnTimeline)
+            shade(ruler->box.pos.y, lanesTop); // the song position matters only to a track that plays the timeline
     }
     rack::math::Rect section =
         clips ? panel->box : rack::math::Rect(lanes->box.pos.x, 0, lanes->box.size.x, box.size.y);

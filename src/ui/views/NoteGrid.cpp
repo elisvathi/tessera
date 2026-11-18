@@ -1168,7 +1168,7 @@ int NoteGrid::updateMotionMoved() {
     LauncherStatus status = m->launcherStatus(track->id);
     if (status.playing >= 0 && status.playing < int(track->slots.size()) && track->slots[size_t(status.playing)].clip)
         sinceClip = status.elapsed;
-    else if (m->playMode() == PlayMode::Arranger && !status.overridden)
+    else if (status.onTimeline)
         if (const ArrangerClip* under = instanceAt(*track, Tick(songTick)))
             sinceClip = songTick - double(under->position);
     motionCurrent.assign(clip->notes.size(), render::MotionMove{});

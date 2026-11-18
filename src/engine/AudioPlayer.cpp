@@ -882,7 +882,7 @@ bool AudioPlayer::steadyAhead(const Engine& engine, const AudioTrackPlay& track,
             std::abs(b.tick - (a.tick + ahead * a.tickRate)) > 1e-3)
             return false;
     }
-    bool launcher = !(engine.playMode() == PlayMode::Arranger && !engine.overridden(size_t(run.engineIndex)));
+    bool launcher = !engine.followsTimeline(size_t(run.engineIndex));
     run.slot = launcher ? engine.playingSlot(size_t(run.engineIndex)) : -1;
     // Each voice's step is already set for this tempo; exact ones step one frame.
     return true;
@@ -907,7 +907,7 @@ int AudioPlayer::wanted(const Engine& engine, const AudioTrackPlay& track, Track
     const std::vector<AudioClipPlay>& clips = snapshot->clips;
     int n = 0;
 
-    if (engine.playMode() == PlayMode::Arranger && !engine.overridden(index)) {
+    if (engine.followsTimeline(index)) {
         const std::vector<AudioInstancePlay>& list = track.instances;
         auto endOf = [&](const AudioInstancePlay& a) {
             return a.position + a.length * clips[size_t(a.clip)].songTicksPerTick(tempo);

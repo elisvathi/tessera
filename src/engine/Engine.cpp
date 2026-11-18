@@ -387,6 +387,24 @@ void Engine::resolveSlots(const TrackPlayback& tp, TrackState& state) {
         if (state.queued == kNoSlot)
             state.queued = kNothingQueued;
     }
+    // A next action set or taken off while the clip plays: it counts from the loop the clip is in now, or the launch
+    // it picked is called off.
+    const ClipPlayback* clip = tp.slot(state.playing);
+    if (clip && clip->nextSpan > 0) {
+        if (!std::isfinite(state.actionFrom)) {
+            double loop = double(clip->loopLength());
+            double played = playTick - state.launchTick;
+            state.actionFrom =
+                clip->looping && loop > 0 ? state.launchTick + std::floor(played / loop) * loop : state.launchTick;
+            state.actionKept = false;
+        }
+    } else {
+        state.actionFrom = NAN;
+        if (state.queuedByAction) {
+            state.queued = kNothingQueued;
+            state.queuedByAction = false;
+        }
+    }
 }
 
 void Engine::seek(double tick) {
@@ -431,12 +449,56 @@ void Engine::setPlayMode(PlayMode m) {
         return;
     wakeAll();
     mode = m;
+    // A track sent back to the timeline in Clips mode: in Timeline mode every track is; back in Clips none is.
+    for (size_t i = 0; i < trackCount; i++)
+        tracks[i].onTimeline = false;
     for (size_t i = 0; i < trackCount; i++) {
         if (m == PlayMode::Arranger)
             backToArrangement(*snapshot->tracks[i], tracks[i]);
         else if (!tracks[i].overridden)
             releaseClipVoices(tracks[i]); // the arrangement goes quiet; launched clips play on
     }
+    // Over to the clips with none launched: the picked scene comes in, on the launch line while playing.
+    if (m == PlayMode::Launcher && snapshot && nothingLaunched())
+        launch({LaunchEvent::Kind::Scene, 0, pickedScene, false, false});
+}
+
+bool Engine::nothingLaunched() const {
+    for (size_t i = 0; i < trackCount; i++)
+        if (tracks[i].playing != kNoSlot || tracks[i].queued != kNothingQueued || tracks[i].onTimeline)
+            return false;
+    return true;
+}
+
+void Engine::toTimeline(const TrackPlayback& tp, TrackState& state, double at) {
+    backToArrangement(tp, state);
+    state.onTimeline = mode == PlayMode::Launcher;
+    // From the launch line itself, so a note right on it still plays.
+    state.arrangementCursor = arrangementIndex(tp, songTickAt(at));
+}
+
+void Engine::queueTimeline(const TrackPlayback& tp, TrackState& state, bool immediate) {
+    if (followsArrangement(state) && state.queued == kNothingQueued)
+        return;
+    double q = double(snapshot->launchQuantize);
+    double wait = q > 0 ? std::ceil(songTick / q) * q - songTick : 0;
+    if (!playing || immediate || wait <= 0) {
+        toTimeline(tp, state, playTick);
+        return;
+    }
+    state.queued = kBackToTimeline;
+    state.queuedByAction = false;
+    state.queuedClip = ClipId();
+    state.queuedAt = playTick + wait;
+    state.queuedClipTime = NAN;
+}
+
+void Engine::start() {
+    if (playing)
+        return;
+    if (mode == PlayMode::Launcher && snapshot && nothingLaunched())
+        launch({LaunchEvent::Kind::Scene, 0, pickedScene, true, false});
+    play();
 }
 
 void Engine::backToArrangement(const TrackPlayback& tp, TrackState& state) {
@@ -447,6 +509,8 @@ void Engine::backToArrangement(const TrackPlayback& tp, TrackState& state) {
     state.playing = kNoSlot;
     state.playingClip = ClipId();
     state.queued = kNothingQueued;
+    state.queuedByAction = false;
+    state.actionFrom = NAN;
     state.overridden = false;
     seekTrack(tp, state);
 }
@@ -918,6 +982,8 @@ void Engine::reset() {
     applyQueued();
     for (TrackState& t : tracks) {
         t.launchTick = 0;
+        if (std::isfinite(t.actionFrom))
+            t.actionFrom = 0;
         releaseAll(t);
     }
     for (std::atomic<int64_t>& step : liveArpSteps)
@@ -968,6 +1034,7 @@ void Engine::launch(const LaunchEvent& e) {
                         double wait = q > 0 ? waitForPhase(e.clipTime - double(clip->loopStart), q) : 0;
                         if (wait > 0) {
                             state.queued = e.index;
+                            state.queuedByAction = false;
                             state.queuedClip = tp.slotClips[size_t(e.index)];
                             state.queuedAt = playTick + wait;
                             state.queuedClipTime = e.clipTime;
@@ -1001,11 +1068,12 @@ void Engine::launch(const LaunchEvent& e) {
                 queueLaunch(tp, state, kNoSlot, e.immediate);
             break;
         case LaunchEvent::Kind::BackToArrangement:
-            if (mode == PlayMode::Arranger)
-                backToArrangement(tp, state);
+            if (e.track == 0 || state.id.value == e.track)
+                queueTimeline(tp, state, e.immediate);
             break;
         case LaunchEvent::Kind::Reset:
             backToArrangement(tp, state);
+            state.onTimeline = false;
             break;
         }
     }
@@ -1039,12 +1107,17 @@ void Engine::queueLaunch(const TrackPlayback& tp, TrackState& state, int slot, b
         return;
     }
     state.queued = slot;
+    state.queuedByAction = false;
     state.queuedClip = slot >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
     state.queuedAt = playTick + wait;
     state.queuedClipTime = NAN;
 }
 
 void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at) {
+    if (state.queued == kBackToTimeline) {
+        toTimeline(tp, state, at);
+        return;
+    }
     double clipTime = state.queuedClipTime;
     int slot = state.queued;
     const ClipPlayback* clip = tp.slot(slot);
@@ -1058,16 +1131,96 @@ void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at)
 
 void Engine::switchTo(const TrackPlayback& tp, TrackState& state, int slot, double at) {
     releaseClipVoices(state);
+    state.onTimeline = false;
     state.queuedClipTime = NAN;
+    ClipId before = state.playingClip;
     state.playing = tp.slot(slot) ? slot : kNoSlot;
     state.playingClip = state.playing >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
+    if (before.valid() && before != state.playingClip)
+        state.previousClip = before;
     const ClipPlayback* launched = tp.slot(state.playing);
     useOwnChain(state, launched ? launched->ownChain : 0);
+    state.actionFrom = launched && launched->nextSpan > 0 ? at : NAN;
+    state.actionKept = false;
     state.queued = kNothingQueued;
+    state.queuedByAction = false;
     state.launchTick = at;
     state.cursor = 0;
     state.overridden = true;
     pushCapture(tp, state, at);
+}
+
+void Engine::setNextActions(bool on) {
+    if (on == nextActionsOn)
+        return;
+    nextActionsOn = on;
+    wakeAll();
+    if (on || !snapshot)
+        return;
+    for (size_t i = 0; i < trackCount; i++) {
+        TrackState& state = tracks[i];
+        if (state.queuedByAction) {
+            state.queued = kNothingQueued;
+            state.queuedByAction = false;
+        }
+    }
+}
+
+double Engine::nextActionDue(const TrackPlayback& tp, const TrackState& state) const {
+    const ClipPlayback* clip = tp.slot(state.playing);
+    if (!clip || clip->nextSpan <= 0 || !std::isfinite(state.actionFrom) || state.queued != kNothingQueued)
+        return INFINITY;
+    double span = double(clip->nextSpan);
+    if (!nextActionsOn || state.actionKept)
+        return state.actionFrom + span; // only the count starts over, at its end
+    // Picked one launch line before it happens, so the clip that comes next blinks as a launch does.
+    double q = double(clip->launchQuantize >= 0 ? clip->launchQuantize : snapshot->launchQuantize);
+    return state.actionFrom + span - std::min(q, span);
+}
+
+double Engine::drawAction() {
+    uint64_t z = ++actionDraws * 0x9E3779B97F4A7C15ull + uint64_t(roll) * 0xD1B54A32D192ED03ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    z ^= z >> 31;
+    return double(z >> 11) * (1.0 / 9007199254740992.0);
+}
+
+void Engine::decideNextAction(const TrackPlayback& tp, TrackState& state, double curPlay) {
+    double due = nextActionDue(tp, state);
+    if (curPlay < due)
+        return;
+    const ClipPlayback& clip = *tp.slot(state.playing);
+    double span = double(clip.nextSpan);
+    if (!nextActionsOn || state.actionKept) {
+        // The count ends with the clip playing on (held clips count on the same way), and the next one starts.
+        state.actionFrom += span * std::floor((curPlay - state.actionFrom) / span);
+        state.actionKept = false;
+        if (!nextActionsOn || curPlay < nextActionDue(tp, state))
+            return;
+    }
+    double fire = state.actionFrom + span;
+    NextAction action = rollNextAction(clip.next, drawAction());
+    int previous = kNoSlot;
+    if (state.previousClip.valid())
+        for (size_t j = 0; j < tp.slotClips.size(); j++)
+            if (tp.slotClips[j] == state.previousClip && tp.slot(int(j))) {
+                previous = int(j);
+                break;
+            }
+    NextActionTarget target = pickNextAction(action, clip.next.scope, tp.filled, state.playing, previous, drawAction());
+    if (target.kind == NextActionTarget::Kind::Keep) {
+        state.actionKept = true;
+        return;
+    }
+    int slot = target.kind == NextActionTarget::Kind::Timeline                    ? kBackToTimeline
+               : target.kind == NextActionTarget::Kind::Launch && tp.slot(target.slot) ? target.slot
+                                                                                       : kNoSlot;
+    state.queued = slot;
+    state.queuedByAction = true;
+    state.queuedClip = slot >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
+    state.queuedAt = fire;
+    state.queuedClipTime = NAN;
 }
 
 double Engine::clipPosition(size_t i) const {
@@ -1294,6 +1447,8 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
         wake = std::min(wake, state.pending[size_t(i)].start);
     if (state.queued != kNothingQueued)
         wake = std::min(wake, state.queuedAt);
+    else if (std::isfinite(state.actionFrom) && !followsArrangement(state))
+        wake = std::min(wake, nextActionDue(track, state));
     if (followsArrangement(state)) {
         if (runs(track) && readByPlayheads(state) && !track.instances.empty()) {
             // Playheads read the timeline's clips ahead: wake to read on (queued notes wake it too).
@@ -1341,6 +1496,8 @@ void Engine::scheduleTrackNow(const TrackPlayback& track, TrackState& state, dou
     state.voices.releaseEndedBefore(curPlay + clockOffset());
     if (state.pendingCount > 0)
         firePending(track, state, curPlay);
+    if (std::isfinite(state.actionFrom) && !followsArrangement(state))
+        decideNextAction(track, state, curPlay);
     double from = prevPlay;
     if (state.queued != kNothingQueued && state.queuedAt < curPlay) {
         double at = std::max(state.queuedAt, prevPlay);

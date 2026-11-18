@@ -91,6 +91,8 @@ struct ClipPlayback {
     Tick loopEnd = 0;
     bool looping = true;
     Tick launchQuantize = -1;         // this clip's own launch grid in ticks; -1 = the song's
+    NextActionSettings next;          // what it does by itself (docs/DECISIONS.md §184)
+    Tick nextSpan = 0;                // ticks it plays before its next action: its loops or bars; 0 = none
     std::vector<NoteEvent> notes;     // sorted by start, all inside [loopStart, loopEnd)
     std::vector<uint32_t> notesByEnd; // indices into `notes` sorted by end, for playheads going backwards
     int8_t lowest = 0, highest = 127; // the clip's pitch range, which playheads invert inside
@@ -182,6 +184,8 @@ struct TrackPlayback {
     std::vector<ClipId> slotClips;
     /// Per slot: an empty slot without a stop button, whose scene leaves the track playing.
     std::vector<bool> keepsPlaying;
+    /// Per slot: whether it holds a clip that plays, for next actions to pick from.
+    std::vector<bool> filled;
     /// The arrangement as it plays, in song ticks, sorted by start (muted instances left out).
     std::vector<NoteEvent> arrangement;
     /// The clips the arrangement uses, to know when to rebuild.
