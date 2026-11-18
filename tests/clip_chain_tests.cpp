@@ -101,6 +101,30 @@ TEST_SUITE("clip chains") {
         CHECK(r.song.tracks[0].modulators[0].routes[0].target.owner == r.arp.value);
     }
 
+    TEST_CASE("deleting the last device and modulator of a clip's own chain sends it back to the track's devices") {
+        Rig r;
+        applyChecked(r.song, playOwnChain(r.song, r.fill, idsFrom(r.song)));
+        std::vector<DeviceId> devices;
+        for (const Device& d : r.clip(r.fill).devices)
+            devices.push_back(d.id);
+        ModulatorId lfo = r.clip(r.fill).modulators.at(0).id;
+        for (DeviceId id : devices)
+            applyChecked(r.song, removeDevice(r.song, id));
+        // A modulator is still there: the chain is its own still (and plays no device).
+        CHECK(r.clip(r.fill).hasOwnChain);
+        Song beforeLast = r.song;
+        applyChecked(r.song, removeModulator(r.song, lfo));
+        CHECK_FALSE(r.clip(r.fill).hasOwnChain);
+        CHECK_FALSE(r.clip(r.fill).usesOwnChain());
+        // One undo brings the chain, and the clip's choice of it, back.
+        CommandPtr again = removeModulator(beforeLast, lfo);
+        Song undone = beforeLast;
+        again->apply(undone);
+        again->revert(undone);
+        CHECK(undone == beforeLast);
+        CHECK(undone.findClip(r.fill)->usesOwnChain());
+    }
+
     TEST_CASE("switching back to the track keeps the clip's chain, and switching again uses it") {
         Rig r;
         applyChecked(r.song, playOwnChain(r.song, r.fill, idsFrom(r.song)));

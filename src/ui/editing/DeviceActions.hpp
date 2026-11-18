@@ -66,6 +66,9 @@ void offerKeepRoll(EditorContext& ctx, std::string text, uint32_t roll, const st
 
 /// A device's menu; `top`, when set, adds items first (the strip's Copy, Paste, Duplicate and Delete).
 void openDeviceMenu(EditorContext& ctx, DeviceId device, std::function<void(rack::ui::Menu*)> top = nullptr);
+/// Performs a device or modulator edit; `done` is its toast. When the edit emptied a clip's own chain, the clip plays
+/// through its track's devices again (docs/DECISIONS.md §189), and the toast says so.
+void performChainEdit(EditorContext& ctx, CommandPtr command, const std::string& done = "");
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
 /// "Drift per pass" on a motion knob: a Steps modulator on its track, set to Per pass and mapped four steps up the
 /// knob, either rising then falling back (`bounce`) or rising then starting again. One undo step.

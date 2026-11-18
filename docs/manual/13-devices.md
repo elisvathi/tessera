@@ -272,6 +272,10 @@ after the switch becomes **CLIP · Chorus chords**. Hover either half to be told
 track's devices"). Click **TRACK** to play through the track's devices again. The clip keeps its own, so you can
 switch back and forth while it plays to compare. Both are undoable.
 
+**Deleting them.** Delete the last of a clip's own devices and modulators, and the clip plays through the track's
+devices again; a short note says so, and one undo brings its own back. Right-click the clip → **Devices** →
+**Delete its own devices** removes them all at once.
+
 **The other chain.** The chain that isn't shown is folded into a dashed block at the end of the strip, listing its
 devices:
 

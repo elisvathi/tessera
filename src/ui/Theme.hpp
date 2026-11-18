@@ -202,7 +202,7 @@ constexpr float kPartlyOutline = 1.3f; // the panel's TIMELINE while some tracks
 // over its notes; shorter slots keep everything on one line.
 constexpr float kSlotGap = 1;
 constexpr float kSlotTitleBar = 22;
-constexpr float kSlotTitleBarFrom = 40;
+constexpr float kSlotTitleBarFrom = 52; // a usual (32 px) track's slots stay one line
 constexpr float kSlotTitleBarShade = 0.16f; // the bar's darkening over the clip colour
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands

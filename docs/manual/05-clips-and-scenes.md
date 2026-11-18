@@ -11,9 +11,10 @@ the scene's ▶ and name on top.
 
 ![Clips playing: the Chorus scene is running](images/clips-playing.png)
 
-The clips form a grid: each slot fills its track's row, so a taller track has taller slots. A slot of a usual or
-taller track has a title bar, as a clip on the timeline does: ▶ and the name on top, its notes in miniature below.
-A very short track keeps everything on one line.
+The clips form a grid: each slot fills its track's row. At the usual height a slot is one line: ▶, the name and
+its notes in miniature. Make a track taller (drag the bottom edge of its header) and its slots grow with it: from
+about twice the usual height they get a title bar, as a clip on the timeline has, with ▶ and the name on top and
+the notes across the whole slot below.
 
 A slot can look like this:
 
@@ -25,7 +26,7 @@ A slot can look like this:
 | Blinking yellow ▶ | Waiting to start at the next launch line. |
 | Red | Recording into this slot. |
 
-![Chorus queued: its triangles blink yellow until the next bar](images/clips-queued.png)
+![Verse queued: its triangles blink yellow until the next launch line](images/clips-queued.png)
 
 **F2** widens the clips to fill most of the song pane, for performing. Press it again to narrow them. You can also
 drag the clips' right edge. **Shift+wheel** scrolls through scenes.

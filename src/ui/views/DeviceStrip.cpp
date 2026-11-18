@@ -496,7 +496,7 @@ class CardDrag : public DragGesture {
         if (copy)
             m->perform(copyDevice(m->song(), id, to, at, m->ids()));
         else
-            m->perform(moveDevice(m->song(), id, to, at));
+            deviceActions::performChainEdit(ctx, moveDevice(m->song(), id, to, at));
     }
     void cancel() override { strip.dropIndex = -1; }
     std::string readout() const override { return copy ? "Copy here" : "Move here"; }
@@ -4247,8 +4247,7 @@ void DeviceStrip::deleteSelection(const char* verb) {
                 add(removeModulator(work, mod.id));
     if (all->empty())
         return;
-    m->perform(std::move(all));
-    ctx.toast(std::string(verb) + " " + items.label);
+    deviceActions::performChainEdit(ctx, std::move(all), std::string(verb) + " " + items.label);
     EditorState& st = ctx.state();
     st.stripDevices.clear();
     st.stripModulators.clear();

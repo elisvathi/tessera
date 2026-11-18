@@ -138,7 +138,7 @@ struct EditorState {
     std::set<uint64_t> foldedMixerGroups; // groups whose tracks' strips are folded in the mixer, session only
     std::set<uint64_t> foldedGroups;                  // by GroupId value
     std::set<uint64_t> openAutomation;                // tracks showing their automation lanes, by TrackId value
-    static constexpr double kDefaultTrackHeight = 48; // for tracks never resized
+    static constexpr double kDefaultTrackHeight = 32; // for tracks never resized: one line of 30 px slots (§188)
     /// How tall a track's row is: what it was dragged to, else the default.
     double trackHeight(TrackId id) const {
         auto it = trackHeights.find(id.value);

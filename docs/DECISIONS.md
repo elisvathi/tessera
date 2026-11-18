@@ -3213,12 +3213,24 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **User request**: "why is there a gap between tracks in the clip launcher, can't that be more like a grid?" Rows
   are track rows (48 px by default) but slots stopped at 30 px; an automation lane left a blank band.
 - **Agreed from mockups** (canvas boards 4 and 5): a slot fills its row, kSlotGap (1 px) from its neighbours, with no
-  height cap. From kSlotTitleBarFrom (40 px) a slot has a title bar kSlotTitleBar (22 px) high with the launch button
+  height cap. From kSlotTitleBarFrom (52 px) a slot has a title bar kSlotTitleBar (22 px) high with the launch button
   and the name, and its notes take the full width below, as timeline clips look; shorter slots keep one line. A
-  square button in the corner of a tall slot (board 5, A) was turned down: it left a hole under it. The launch button
-  is 22 px in the title bar (it was the 30 px slot height).
+  square button in the corner of a tall slot (board 5, A) was turned down: it left a hole under it.
+- **Default track height 32 px** (was 48): the user showed the look they wanted, one line of slots like the old 30 px
+  ones, as a grid. A 48 px row made 46 px slots whose square launch button squeezed the name. Tracks never resized
+  (old patches too) take the new default; resized ones keep their height. Under 40 px an audio track's header hides
+  its level line, as it did for short tracks before.
 - **Lane rows** keep their height so the clips line up with the timeline, drawn as a quiet band with the column lines
   running through.
 - **Own-devices mark** (board 6, the user read the old dot as MIDI): the same device card as wide slots, at 12 × 9 px
   on narrow ones, at the name row's right end (the name gives up its room); a tooltip says what it means, on or off.
   The dot is gone.
+
+## 189. Emptying a clip's own chain sends it back to the track's devices (18 Nov)
+
+- **User report**: after deleting a clip's devices the own-devices card still showed. Deleting them one by one left
+  an own chain with nothing in it, which plays dry (skips the track's devices): a hidden state.
+- **Rule**: removing or moving away the last device and modulator of a clip's own chain also turns the clip's own
+  chain off (`hasOwnChain` false) in the same undo step, so the clip plays the track's devices and the card goes; a
+  toast says "<clip> plays through the track's devices again". Devices ▸ Delete its own devices did this already.
+  A clip can no longer play dry on purpose through an empty chain; an explicit choice for that can come later.

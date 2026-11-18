@@ -171,10 +171,13 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Back to timeline while the clips play: Plays on Clips, clips playing; click one track's ↩. On the next bar its
       timeline row lights up and plays while the other rows stay dim and their clips play on. Launch a clip on it:
       it leaves the timeline. Switch Plays to Timeline and back: no track is on the timeline any more.
-- [ ] The clips grid (DECISIONS §188): slots fill their rows with 1 px lines; a usual track's slots have a title bar
-      (▶ and name) over their notes; make a track taller: its slots grow and show more notes; an automation lane
+- [ ] The clips grid (DECISIONS §188): new tracks are 32 px; slots fill their rows with 1 px lines, one line each
+      (▶, name, notes); make a track about twice as tall: its slots get a title bar over their notes; an automation lane
       makes a quiet band the column lines cross. A clip with its own devices shows the small device card; hover it
       for its tooltip.
+- [ ] Own devices emptied (DECISIONS §189): give a clip its own devices, delete them one by one on the strip
+      (modulators too): with the last one the card leaves its slot, a toast says it plays the track's devices again,
+      and one undo brings its own chain back.
 - [ ] Clips with nothing launched (DECISIONS §186): from Timeline, switch to Clips: the panel's picked scene starts on
       the next launch line. Stopped in Clips with every track stopped, press Play (panel, editor, RUN): the picked
       scene starts with the transport. With clips launched, Play starts just those.

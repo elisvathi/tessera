@@ -67,6 +67,8 @@ class ReplaceChains : public Command {
 CommandPtr addDevice(const Song& song, ChainOwner owner, DeviceType type, int index, const NextId& nextId,
                      DeviceId* added = nullptr);
 /// Removes a device with its modulators, and every route that pointed at them.
+/// Removing (or moving away) the last device and modulator of a clip's own chain sends the clip back to its track's
+/// devices, in the same undo step.
 CommandPtr removeDevice(const Song& song, DeviceId id);
 /// Moves a device to `index` in a chain (the same or another, a track's or a clip's own). Its own modulators move
 /// along; routes that end up out of reach are removed.
