@@ -49,7 +49,7 @@ docs/manual/tools/rack.sh stop              # always stop it when done
 ```sh
 cd docs/manual
 tools/annotate.sh images/editor-overview.png images/editor-overview-numbered.png \
-  860,19,1 486,19,2 1395,19,3 100,420,4 305,420,5 1000,420,6 300,225,7 600,488,8 1200,640,9 1200,960,10 1480,820,11
+  860,19,1 486,19,2 1395,19,3 100,420,4 305,420,5 1000,420,6 300,225,7 600,488,8 1200,640,9 1200,960,10 1480,880,11
 tools/annotate.sh images/tessera-panel.png images/tessera-panel-numbered.png \
   15,165,1 18,272,2 18,340,3 420,268,4 646,290,5 292,322,6 470,342,7 18,393,8 425,404,9
 ```

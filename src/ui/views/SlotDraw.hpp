@@ -29,7 +29,8 @@ void drawNotePreview(NVGcontext* vg, const Clip& clip, const std::vector<DrumLan
                      NVGcolor color);
 bool blinkOn();
 /// The icon of a next action, `size` pixels square around `c`: an arrow for the actions that walk the slots, a die
-/// for the random ones, a turning arrow for round robin, a bent arrow for back, a square for stop. Nothing for None.
+/// for the random ones, a turning arrow for round robin, a bent arrow for back, a square for stop, a return arrow for
+/// back to the timeline (which "back to timeline" buttons draw too). Nothing for None.
 void drawActionIcon(NVGcontext* vg, NextAction action, rack::math::Vec c, float size, NVGcolor color);
 /// What a clip's next action tag says: its count ("4", "8 bars"), or while it plays how far it got ("2/4"); empty for
 /// a clip that plays once. `elapsed` is LauncherStatus::actionElapsed, NaN when the clip isn't counting.

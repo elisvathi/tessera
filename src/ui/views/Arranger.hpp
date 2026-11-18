@@ -76,7 +76,6 @@ class ArrangerView : public EditorPane {
 
     TrackHeaders* headers;
     ToolSwitch toolSwitch;
-    ToolButton* backButton;     // "back to timeline", shown while launched clips have taken tracks over
     ToolButton* quantizeButton; // "Launch 1 bar": launch quantize, and recording the clips into the timeline
     ToolButton* stopAllButton;
     ToolButton* foldTab; // a narrow pane folds the clips while the timeline plays; this opens and closes them

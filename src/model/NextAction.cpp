@@ -48,6 +48,8 @@ NextActionTarget pickNextAction(NextAction action, NextActionScope scope, const 
         return {};
     case NextAction::Stop:
         return stopTrack();
+    case NextAction::Timeline:
+        return {NextActionTarget::Kind::Timeline, -1};
     case NextAction::Next:
     case NextAction::RoundRobin:
         for (int i = current + 1; i <= last; i++)

@@ -325,3 +325,47 @@ TEST_CASE("next actions: set on a clip that already plays, it counts from the lo
     h2.runTo(3 * kBar);
     CHECK(h2.playing() == 0);
 }
+
+TEST_CASE("next actions: back to timeline hands the track back to the timeline, or stops it while the clips play") {
+    ActionHarness h({60, 62});
+    h.clip(0).next.action = NextAction::Timeline;
+    h.clip(0).next.count = 1;
+    h.start();
+    h.engine.setPlayMode(PlayMode::Arranger); // the timeline plays: the track follows it
+    h.engine.launch({LaunchEvent::Kind::Slot, h.song.tracks[0].id.value, 0, true});
+    CHECK(h.engine.overridden(0));
+    h.runTo(kBar - 2);
+    CHECK(h.playing() == 0);
+    h.runTo(kBar + 1);
+    CHECK_FALSE(h.engine.overridden(0));
+    CHECK(h.playing() == kNoSlot);
+
+    ActionHarness clips({60, 62});
+    clips.clip(0).next.action = NextAction::Timeline;
+    clips.clip(0).next.count = 1;
+    clips.start();
+    clips.runTo(kBar + 1);
+    CHECK(clips.playing() == kNoSlot);
+}
+
+TEST_CASE("back to timeline for one track leaves the other tracks on their clips") {
+    ActionHarness h({60});
+    Track second = h.song.tracks[0];
+    second.id = h.song.newId<TrackId>();
+    Clip copy = h.clip(0);
+    copy.id = h.song.newId<ClipId>();
+    second.slots[0].clip = copy.id;
+    h.song.clips.emplace(copy.id, copy);
+    h.song.tracks.push_back(second);
+    h.start();
+    h.engine.setPlayMode(PlayMode::Arranger);
+    for (const Track& t : h.song.tracks)
+        h.engine.launch({LaunchEvent::Kind::Slot, t.id.value, 0, true});
+    CHECK(h.engine.overridden(0));
+    CHECK(h.engine.overridden(1));
+    h.engine.launch({LaunchEvent::Kind::BackToArrangement, h.song.tracks[1].id.value});
+    CHECK(h.engine.overridden(0));
+    CHECK_FALSE(h.engine.overridden(1));
+    h.engine.launch({LaunchEvent::Kind::BackToArrangement});
+    CHECK_FALSE(h.engine.overridden(0));
+}

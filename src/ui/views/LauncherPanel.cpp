@@ -56,10 +56,32 @@ Rect LauncherPanel::cellRect(int row, int scene) {
     return Rect(columnX(scene) + kInset, top + kInset, kSlotWidth - 2 * kInset, std::max(4.f, h));
 }
 
+float LauncherPanel::backColumn() {
+    TesseraModule* m = ctx.module();
+    return m && m->playMode() == PlayMode::Arranger ? kBackColumn : 0;
+}
+
+Rect LauncherPanel::backRect(int row) {
+    Rect cell = cellRect(row, 0);
+    float size = std::min(cell.size.y, kBackColumn - 2 * kInset);
+    return Rect(box.size.x - kEdge - kBackColumn + (kBackColumn - size) / 2, cell.getCenter().y - size / 2, size,
+                size);
+}
+
 LauncherPanel::Hit LauncherPanel::hitTest(Vec pos) {
     Hit hit;
     if (pos.x >= box.size.x - kEdge) {
         hit.part = Hit::Part::Edge;
+        return hit;
+    }
+    if (pos.x >= box.size.x - kEdge - backColumn()) {
+        int row = pos.y >= rowsTop ? owner.tracks.trackAt(pos.y - rowsTop) : -1;
+        if (row >= 0 && row < int(owner.rows.size()) && owner.rows[size_t(row)].kind == TrackRow::Kind::Track &&
+            backRect(row).contains(pos)) {
+            hit.part = Hit::Part::Back;
+            hit.row = row;
+            hit.track = owner.rows[size_t(row)].track;
+        }
         return hit;
     }
     int scene = int(std::floor((pos.x + scrollX) / kSlotWidth));
@@ -272,6 +294,11 @@ void LauncherPanel::click(Vec pos, int button, Modifiers mods) {
             clipActions::insertScene(ctx, sceneCount());
         return;
     }
+    if (h.part == Hit::Part::Back) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && m->launcherStatus(h.track).overridden)
+            m->backToArrangement(h.track);
+        return;
+    }
     if (h.part == Hit::Part::SceneLaunch || h.part == Hit::Part::SceneName) {
         if (button == GLFW_MOUSE_BUTTON_RIGHT) {
             rack::ui::Menu* menu = rack::createMenu();
@@ -353,8 +380,16 @@ void LauncherPanel::wheel(Vec pos, Vec delta, Modifiers mods) {
 }
 
 CursorShape LauncherPanel::hoverCursor(Vec pos, Modifiers mods) {
+    bool wasBack = hover.part == Hit::Part::Back;
     hover = hitTest(pos);
+    if (hover.part == Hit::Part::Back && !wasBack)
+        backTip.enter();
+    else if (hover.part != Hit::Part::Back && wasBack)
+        backTip.leave();
     switch (hover.part) {
+    case Hit::Part::Back:
+        return ctx.module() && ctx.module()->launcherStatus(hover.track).overridden ? CursorShape::Hand
+                                                                                     : CursorShape::Arrow;
     case Hit::Part::Edge:
         return CursorShape::ResizeH;
     case Hit::Part::Launch:
@@ -366,7 +401,24 @@ CursorShape LauncherPanel::hoverCursor(Vec pos, Modifiers mods) {
     }
 }
 
+void LauncherPanel::step() {
+    backTip.step();
+    InteractiveView::step();
+}
+
+void LauncherPanel::drawBackButton(NVGcontext* vg, int row, const LauncherStatus& status) {
+    const theme::Palette& c = theme::colors();
+    Rect r = backRect(row);
+    bool away = status.overridden;
+    bool hot = away && hover.part == Hit::Part::Back && hover.row == row;
+    if (away)
+        draw::roundedRect(vg, r, theme::metrics::kRadiusItem, hot ? c.line2 : c.bg2);
+    NVGcolor ink = hot ? c.text0 : away ? c.text1 : nvgTransRGBAf(c.text2, theme::metrics::kBackIdleAlpha);
+    slotDraw::drawActionIcon(vg, NextAction::Timeline, r.getCenter(), theme::metrics::kBackIcon, ink);
+}
+
 void LauncherPanel::onLeave(const LeaveEvent& e) {
+    backTip.leave();
     hover = Hit();
     InteractiveView::onLeave(e);
 }
@@ -423,7 +475,8 @@ void LauncherPanel::drawView(const DrawArgs& args) {
         return;
     bool quiet = m->playMode() == PlayMode::Arranger;
     nvgSave(vg);
-    nvgScissor(vg, 0, 0, box.size.x - kEdge, box.size.y);
+    float back = backColumn();
+    nvgScissor(vg, 0, 0, box.size.x - kEdge - back, box.size.y);
     drawSceneHeaders(vg);
     nvgIntersectScissor(vg, 0, rowsTop, box.size.x, box.size.y - rowsTop);
     for (size_t row = 0; row < owner.rows.size() && row < owner.tracks.heights().size(); row++) {
@@ -439,6 +492,14 @@ void LauncherPanel::drawView(const DrawArgs& args) {
         if (r.kind != TrackRow::Kind::Track)
             continue;
         LauncherStatus status = m->launcherStatus(r.track);
+        if (back > 0) {
+            // The back column stays put while the scenes scroll, outside the slots' clip.
+            nvgSave(vg);
+            nvgResetScissor(vg);
+            nvgScissor(vg, box.size.x - kEdge - back, rowsTop, back, box.size.y - rowsTop);
+            drawBackButton(vg, int(row), status);
+            nvgRestore(vg);
+        }
         const clipControl::Settings& control = m->clipControlSettings();
         clipControl::Window window = m->clipControlWindow();
         int index = m->song().trackIndex(r.track);

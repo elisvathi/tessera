@@ -75,8 +75,8 @@ const char* const kAllocations[] = {"rotate", "reuse", "reset"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
-const char* const kNextActions[] = {"none",   "next",  "previous",   "first", "last",
-                                    "random", "other", "roundRobin", "back",  "stop"};
+const char* const kNextActions[] = {"none",  "next",       "previous", "first", "last",    "random",
+                                    "other", "roundRobin", "back",     "stop",  "timeline"};
 static_assert(sizeof(kNextActions) / sizeof(kNextActions[0]) == kNextActionCount, "a name per next action");
 const char* const kNextActionUnits[] = {"loops", "bars"};
 const char* const kNextActionScopes[] = {"track", "block"};

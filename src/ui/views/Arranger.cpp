@@ -27,7 +27,6 @@ constexpr float kSceneButtonsHeight = 24; // the scene buttons sit at the bottom
 constexpr float kQuantizeWidth = 84;
 constexpr float kNarrowWidth = 600; // narrower song panes fold the clips while the timeline plays
 constexpr float kFoldTabWidth = 14;
-constexpr float kBackWidth = 104;
 constexpr float kFoldedTimeline = 48; // what is left of the timeline while the clips take the width
 constexpr float kQuietAlpha = 0.45f;  // the section that doesn't play
 
@@ -40,18 +39,8 @@ ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), sou
     addChild(headers);
 
     EditorContext* c = &ctx;
-    ToolButton::Options back;
-    back.text = "Back to timeline";
-    back.tooltip = "Back to timeline: you launched clips while the timeline plays, so those tracks left it. Click to "
-                   "make them play the timeline again";
-    back.action = [c] { c->module()->backToArrangement(); };
-    back.active = [] { return true; };
-    backButton = new ToolButton(back);
-    backButton->visible = false;
     ruler = new Ruler(ctx, viewport, source);
     addChild(ruler);
-    // After the ruler it sits on, or the ruler hides it and takes its clicks.
-    addChild(backButton);
     lanes = new ArrangerLanes(ctx, *this);
     addChild(lanes);
     panel = new LauncherPanel(ctx, *this);
@@ -137,10 +126,6 @@ void ArrangerView::layout() {
     float timeline = headerWidth + panelWidth + tab;
     ruler->box = rack::math::Rect(timeline, 0, box.size.x - timeline, rulerHeight);
     lanes->box = rack::math::Rect(timeline, rulerHeight, box.size.x - timeline, box.size.y - rulerHeight);
-    // "Back to timeline" sits on the timeline's ruler, which it is about.
-    backButton->visible = m->playMode() == PlayMode::Arranger && m->anyTrackOverridden();
-    backButton->box = rack::math::Rect(timeline + 4, (rulerHeight - kToolSize) / 2,
-                                       std::min(kBackWidth, std::max(0.f, ruler->box.size.x - 40)), kToolSize);
     layoutCorner(rulerHeight);
 }
 

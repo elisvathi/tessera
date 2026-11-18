@@ -136,6 +136,7 @@ Right-click a clip → **Next action**, and pick what it does:
 | **Round robin** | The next clip, and after the last one the first again. The track goes round and round. |
 | **Go back** | The clip that played before this one. |
 | **Stop** | The track stops. |
+| **Back to timeline** | The track plays the timeline again. While the clips play (Plays on **Clips**), the track stops. |
 
 In the same menu:
 
@@ -222,6 +223,12 @@ The section that plays is framed in green while the transport runs. The other on
 it.
 
 **Launching over the timeline.** While the timeline plays, you can still launch a clip. That track then leaves the
-timeline and plays the clip. Its timeline lane is dimmed. Click **Back to
-timeline** on the timeline's ruler to bring every track back. Switching the Plays switch to Timeline also brings them
-back.
+timeline and plays the clip. Its timeline lane is dimmed. To bring tracks back to the timeline:
+
+- **One track:** click the ↩ at the right end of its row in the clips panel. While the timeline plays, each track
+  has one there, in a column that stays put while you scroll the scenes. It is lit while the track plays a launched
+  clip, and faint while the track already plays the timeline.
+- **Every track:** **Timeline** on the Plays switch shows a ↩ instead of its ▶ while some tracks play launched
+  clips. Click it to bring them all back. **TIMELINE** on the panel does the same.
+- **By itself:** give a clip the next action **Back to timeline**. See
+  [Next actions](#next-actions-clips-that-move-on-by-themselves).

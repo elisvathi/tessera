@@ -12,7 +12,7 @@ namespace {
 
 constexpr NextAction kActions[] = {NextAction::None, NextAction::Next,   NextAction::Previous, NextAction::First,
                                    NextAction::Last, NextAction::Random, NextAction::Other,    NextAction::RoundRobin,
-                                   NextAction::Back, NextAction::Stop};
+                                   NextAction::Back, NextAction::Stop,   NextAction::Timeline};
 constexpr int kCounts[] = {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 64};
 constexpr int kChances[] = {100, 90, 75, 50, 25, 10};
 
@@ -47,6 +47,8 @@ std::string targetText(const Song& song, const Track& track, int slot, NextActio
         return "the clip that played before";
     case NextAction::Stop:
         return "stops";
+    case NextAction::Timeline:
+        return "back to the timeline";
     default:
         break;
     }
@@ -88,6 +90,8 @@ std::string label(NextAction action) {
         return "Go back";
     case NextAction::Stop:
         return "Stop";
+    case NextAction::Timeline:
+        return "Back to timeline";
     }
     return "";
 }
@@ -114,6 +118,8 @@ std::string hint(NextAction action) {
         return "the clip that played before";
     case NextAction::Stop:
         return "the track goes quiet";
+    case NextAction::Timeline:
+        return "the track plays the timeline again";
     }
     return "";
 }

@@ -191,6 +191,10 @@ constexpr float kNextMarkStroke = 1.3f;
 constexpr float kNextMarkFill = 0.14f;        // the tag's tint over the clip colour
 constexpr float kNextMarkFillPlaying = 0.24f; // stronger while the clip counts
 constexpr float kNextMarkHeldAlpha = 0.45f;   // its icon and count while next actions are held
+// A track's "back to timeline" button in the clips panel (DECISIONS §185): its icon, faint while the track already
+// plays the timeline.
+constexpr float kBackIcon = 11;
+constexpr float kBackIdleAlpha = 0.35f;
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
 // down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip.

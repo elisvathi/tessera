@@ -465,6 +465,8 @@ void Engine::backToArrangement(const TrackPlayback& tp, TrackState& state) {
     state.playing = kNoSlot;
     state.playingClip = ClipId();
     state.queued = kNothingQueued;
+    state.queuedByAction = false;
+    state.actionFrom = NAN;
     state.overridden = false;
     seekTrack(tp, state);
 }
@@ -1021,7 +1023,7 @@ void Engine::launch(const LaunchEvent& e) {
                 queueLaunch(tp, state, kNoSlot, e.immediate);
             break;
         case LaunchEvent::Kind::BackToArrangement:
-            if (mode == PlayMode::Arranger)
+            if (mode == PlayMode::Arranger && (e.track == 0 || state.id.value == e.track))
                 backToArrangement(tp, state);
             break;
         case LaunchEvent::Kind::Reset:
@@ -1066,6 +1068,14 @@ void Engine::queueLaunch(const TrackPlayback& tp, TrackState& state, int slot, b
 }
 
 void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at) {
+    if (state.queued == kBackToTimeline) {
+        // While the clips play there is no timeline to go back to: the track goes quiet.
+        if (mode == PlayMode::Arranger)
+            backToArrangement(tp, state);
+        else
+            switchTo(tp, state, kNoSlot, at);
+        return;
+    }
     double clipTime = state.queuedClipTime;
     int slot = state.queued;
     const ClipPlayback* clip = tp.slot(slot);
@@ -1160,7 +1170,9 @@ void Engine::decideNextAction(const TrackPlayback& tp, TrackState& state, double
         state.actionKept = true;
         return;
     }
-    int slot = target.kind == NextActionTarget::Kind::Launch && tp.slot(target.slot) ? target.slot : kNoSlot;
+    int slot = target.kind == NextActionTarget::Kind::Timeline                    ? kBackToTimeline
+               : target.kind == NextActionTarget::Kind::Launch && tp.slot(target.slot) ? target.slot
+                                                                                       : kNoSlot;
     state.queued = slot;
     state.queuedByAction = true;
     state.queuedClip = slot >= 0 ? tp.slotClips[size_t(slot)] : ClipId();

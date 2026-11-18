@@ -219,8 +219,8 @@ class TesseraModule : public rack::engine::Module {
     void cancelClipControlLearn() { controlLearn.reset(); }
     /// The control learned for `action`, if any.
     const clipControl::Binding* clipControlFor(const clipControl::Binding& action) const;
-    /// Arranger mode: every track the launcher took over plays the arrangement again.
-    void backToArrangement() { launch({LaunchEvent::Kind::BackToArrangement}); }
+    /// Arranger mode: the tracks the launcher took over play the arrangement again: only `track` when given, else all.
+    void backToArrangement(TrackId track = TrackId()) { launch({LaunchEvent::Kind::BackToArrangement, track.value}); }
     PlayMode playMode() { return params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher; }
     /// Switches Launcher / Arranger as one undo step.
     void setPlayMode(PlayMode mode);

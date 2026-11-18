@@ -36,6 +36,8 @@ enum class PlayMode : uint8_t { Launcher, Arranger };
 /// Launcher slot values: a track with no clip playing, and a track with nothing queued.
 constexpr int kNoSlot = -1;
 constexpr int kNothingQueued = -2;
+/// A queued "back to the timeline": a next action's (docs/DECISIONS.md §184), at the end of its count.
+constexpr int kBackToTimeline = -3;
 
 /// A clip-launcher action (DESIGN.md §7 "Launcher mode", §10).
 struct LaunchEvent {
@@ -43,7 +45,7 @@ struct LaunchEvent {
     /// still queued from before the load (the default song's) can't take tracks off the arrangement.
     enum class Kind : uint8_t { Slot, StopTrack, Scene, StopAll, BackToArrangement, Reset };
     Kind kind = Kind::Slot;
-    uint64_t track = 0;     // TrackId value, for Slot and StopTrack
+    uint64_t track = 0;     // TrackId value, for Slot and StopTrack; for BackToArrangement one track (0: all)
     int index = 0;          // the slot (Slot) or the scene (Scene)
     bool immediate = false; // ignore launch quantize
     bool start = true;      // launching a clip or scene while stopped starts the transport

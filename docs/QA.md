@@ -125,7 +125,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Scene triangle: every track switches; tracks with an empty slot in that scene stop. A scene tempo moves
       the BPM knob when the scene starts.
 - [ ] Timeline playing, launch a scene with empty slots (launch quantize 1 bar): until the bar line the scene's stop
-      squares blink yellow and the tracks' timeline lanes dim; then they stop and "Back to timeline" shows.
+      squares blink yellow and the tracks' timeline lanes dim; then they stop and Timeline on
+      the Plays switch shows ↩.
 - [ ] Click a timeline clip that plays its 1-bar loop for 4 bars: the piano roll shows the loop's repeats faded up
       to bar 5, a yellow line there, a yellow bracket under the ruler's loop bar ending at bar 5, and "4 bars on the
       timeline" in the header. Drag the bracket's end: the timeline clip gets longer or shorter (one undo). Clicking a clip in the clips panel shows none of it.
@@ -162,6 +163,12 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       they move on at the end of a count. Launching a clip by hand always wins over a next action.
 - [ ] A narrow slot shows the action's icon alone; a slot with its own devices or playheads keeps its marks beside
       the tag.
+- [ ] Back to timeline (DECISIONS §185): timeline playing, launch a clip on two tracks. Each row's ↩ at the clips
+      panel's right edge lights up; it stays in place while the scenes scroll. Click one: only that track plays the
+      timeline again. The Plays switch reads "↩ Timeline" (and the panel's TIMELINE shows ↩) while any track is away;
+      a click on it brings them all back and the ▶ returns. With Plays on Clips there is no ↩ column.
+- [ ] Next action Back to timeline: timeline playing, a launched clip hands its track back after its count; with
+      Plays on Clips it stops its track instead.
 
 ## Arranger
 - [ ] ARRANGE (panel) / the transport Plays switch: the timeline plays; notes start on time. In Launcher

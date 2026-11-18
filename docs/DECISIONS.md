@@ -3156,3 +3156,22 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   the icon alone on a narrow slot, nothing when the name would lose its last 36 px.
 - Not done: scene follow actions (a scene that launches the next scene), which the launcher design (S4) also plans;
   the timeline ignores next actions; MIDI and DAWproject export don't write them.
+
+## 185. Back to the timeline: per track, from the Plays switch, or as a next action (18 Nov)
+
+- **User report**: after launching a clip over the timeline, getting back took a trip through Clips and back to
+  Timeline. The "Back to timeline" button on the ruler was added before the ruler, so the ruler covered it and took
+  its clicks (since 2.0.0); shown, the user found it ugly and all-or-nothing.
+- **Looked at** the reference app: each track's launcher row ends with a "switch playback to the timeline" button,
+  mirroring its stop button at the row's start, plus one for all tracks at the end of the scene row; both act at once,
+  not on the launch quantize. A clip's next action can also return the track to the timeline.
+- **One track**: a ↩ per track row at the clips panel's right edge, only while the timeline plays (Plays on
+  Timeline). It sits in a fixed column, not after the last scene, because the panel is usually narrower than its
+  scenes and the end of the row would be scrolled away. Lit while the track plays a launched clip; faint (not hidden)
+  while it plays the timeline, so the column never jumps. Acts at once, like the reference.
+- **All tracks**: the user's idea. The Plays switch keeps its job (Clips silences the timeline on tracks with nothing
+  launched; the panel's PLAYS and its CV map use it), and its lit Timeline half, which a click used to ignore, now
+  brings every track back while any is away. It wears ↩ instead of ▶ then, in the editor and on the panel. No second
+  all-tracks button: one control per job. The ruler button is gone.
+- **Next action "Back to timeline"**: queued like any next action (kBackToTimeline in the track's queue), carried out
+  at the end of the count; while Plays is on Clips there is no timeline to go back to, so the track stops.

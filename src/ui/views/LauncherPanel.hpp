@@ -1,10 +1,12 @@
 #pragma once
 
 #include "../interaction/InteractiveView.hpp"
+#include "../widgets/HoverTooltip.hpp"
 
 namespace tessera {
 
 class ArrangerView;
+struct LauncherStatus;
 
 /// The clip launcher inside the arranger, between the track headers and the timeline:
 /// tracks are rows, lined up with the arranger's, and scenes are columns, with each scene's launch button on top.
@@ -23,17 +25,22 @@ class LauncherPanel : public InteractiveView {
     static constexpr float kEdge = 5; // the resize handle at the right edge
 
     static constexpr float kAddSceneWidth = 28;
+    /// While the timeline plays: a column at the right edge, fixed while the scenes scroll, with each track's "back to
+    /// timeline" button (docs/DECISIONS.md §185).
+    static constexpr float kBackColumn = 24;
 
     /// Where the rows start: below the scene headers, level with the arranger's lanes.
     float rowsTop = 40;
     /// Where the scene headers start: below the clips' toolbar.
     float headerTop = 0;
     /// The width that shows every scene, the "+" for a new one and the resize edge.
-    float contentWidth() { return float(sceneCount()) * kSlotWidth + kAddSceneWidth + kEdge; }
+    float contentWidth() { return float(sceneCount()) * kSlotWidth + kAddSceneWidth + backColumn() + kEdge; }
+    /// The back column's width now: kBackColumn while the timeline plays, else 0.
+    float backColumn();
 
     /// What is under a point (panel coordinates).
     struct Hit {
-        enum class Part { None, SceneLaunch, SceneName, AddScene, Launch, Body, Edge } part = Part::None;
+        enum class Part { None, SceneLaunch, SceneName, AddScene, Launch, Body, Edge, Back } part = Part::None;
         int row = -1;
         int scene = -1;
         TrackId track;
@@ -55,9 +62,15 @@ class LauncherPanel : public InteractiveView {
     CursorShape hoverCursor(rack::math::Vec pos, Modifiers mods) override;
     void onLeave(const LeaveEvent& e) override;
     void drawView(const DrawArgs& args) override;
+    void step() override;
 
   private:
     void drawSceneHeaders(NVGcontext* vg);
+    /// A track row's "back to timeline" button in the back column: lit while the track plays a launched clip over
+    /// the timeline, dim while it plays the timeline.
+    void drawBackButton(NVGcontext* vg, int row, const LauncherStatus& status);
+    rack::math::Rect backRect(int row);
+    HoverTooltip backTip{"Back to timeline: this track stops its launched clip and plays the timeline again"};
     rack::math::Rect sceneHeaderRect(int scene);
 
     ArrangerView& owner;

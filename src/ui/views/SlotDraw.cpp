@@ -100,6 +100,14 @@ void drawActionIcon(NVGcontext* vg, NextAction action, Vec c, float size, NVGcol
         line(6, 10);
         break;
     }
+    case NextAction::Timeline: {
+        // A return arrow: down from the right, round the corner and back to the left.
+        move(10, 2.5f), line(10, 5.5f);
+        Vec o = at(7, 5.5f);
+        nvgArc(vg, o.x, o.y, 3 * k, 0, 0.5f * float(M_PI), NVG_CW);
+        line(2.5f, 8.5f), move(5, 6), line(2.5f, 8.5f), line(5, 11);
+        break;
+    }
     case NextAction::Stop: {
         Vec p = at(3, 3);
         nvgRect(vg, p.x, p.y, 6 * k, 6 * k);

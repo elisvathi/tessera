@@ -20,8 +20,9 @@ enum class NextAction : uint8_t {
     RoundRobin, // the next clip, and after the last one the first again
     Back,       // the clip that played before this one; with none the track stops
     Stop,       // the track stops
+    Timeline,   // the track plays the timeline again (while the clips play, it goes quiet as with Stop)
 };
-constexpr int kNextActionCount = 10;
+constexpr int kNextActionCount = 11;
 
 /// What "after" counts: whole loops of the clip, or bars of the song.
 enum class NextActionUnit : uint8_t { Loops, Bars };
@@ -54,7 +55,7 @@ constexpr uint16_t kMaxNextActionCount = 999;
 /// What a next action comes to on a track: keep the clip playing, stop, or launch slot `slot` (which can be the
 /// playing one again: it starts over).
 struct NextActionTarget {
-    enum class Kind : uint8_t { Keep, Stop, Launch } kind = Kind::Keep;
+    enum class Kind : uint8_t { Keep, Stop, Launch, Timeline } kind = Kind::Keep;
     int slot = -1;
 };
 
