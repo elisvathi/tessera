@@ -57,6 +57,8 @@ class ArrangerView : public EditorPane {
 
     /// Room the in-panel editor keeps at the corner's left for its transport buttons.
     float cornerInset = 0;
+    /// Room the in-panel editor keeps at the ruler's right end for its own button, left of the pane's maximise.
+    float cornerRightInset = 0;
 
   private:
     void syncFromState();
@@ -78,6 +80,8 @@ class ArrangerView : public EditorPane {
     ToolSwitch toolSwitch;
     ToolButton* quantizeButton; // "Launch 1 bar": launch quantize, and recording the clips into the timeline
     ToolButton* stopAllButton;
+    ToolButton* widenButton;  // top right of the clips: widen them across the song pane, or narrow them (F2)
+    ToolButton* timelineTab;  // over the timeline's strip while the clips are widened: brings it back
     ToolButton* foldTab; // a narrow pane folds the clips while the timeline plays; this opens and closes them
     ToolButton* maximizeButton;
     float rippleTagX = -1; // where the RIPPLE tag goes, or -1 when there is no room

@@ -8,7 +8,7 @@ switch a device off at any time.
 
 ## The device strip
 
-Click **Devices** at the left of the lower pane's header, between **Notes** and **Mixer** (or press **F3**), to open
+Click **Devices** at the left of the lower pane's header, between **Notes** and **Mixer** (or press **F4**), to open
 the strip above the notes. **Devices** stays lit while the strip is open, and **Notes** too, since the notes still show
 under it. Audio tracks have no note devices, so there **Devices** is greyed.
 

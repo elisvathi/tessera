@@ -48,6 +48,8 @@ enum class Icon {
     FullEditor,
     Maximize,
     Restore,
+    Widen,  // arrows out to the sides: the clips take the song pane's width
+    Narrow, // arrows in to a line: back beside the timeline
     Capture
 };
 

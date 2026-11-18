@@ -309,9 +309,14 @@ void EditorHost::runAction(Action action) {
     case Action::WidenClips:
         if (!arrangerPane())
             return;
-        ctx.state().clipsWide = !ctx.state().clipsWide;
-        if (ctx.state().maximized == Pane::Detail)
+        // With the song pane folded, F2 brings it back showing the clips.
+        if (ctx.state().maximized == Pane::Detail) {
             ctx.state().maximized.reset();
+            ctx.state().clipsWide = true;
+        } else {
+            ctx.state().clipsWide = !ctx.state().clipsWide;
+        }
+        ctx.state().focus = Pane::Top;
         return;
     case Action::MaximizePane:
         if (!arrangerPane())
@@ -324,9 +329,24 @@ void EditorHost::runAction(Action action) {
     case Action::ToggleInspector:
         ctx.state().inspectorOpen = !ctx.state().inspectorOpen;
         return;
-    case Action::ToggleDevices:
-        deviceActions::setStripOpen(ctx, !deviceActions::stripOpen(ctx));
+    case Action::ShowNotes:
+        // A view key always shows its view: a folded lower pane comes back first (docs/DECISIONS.md §190).
+        if (ctx.state().maximized == Pane::Top)
+            ctx.state().maximized.reset();
+        ctx.state().mixerOpen = false;
+        if (ctx.devicesFillPane && ctx.module())
+            deviceActions::setStripOpen(ctx, false);
+        ctx.state().focus = Pane::Detail;
         return;
+    case Action::ToggleDevices: {
+        if (ctx.state().maximized == Pane::Top)
+            ctx.state().maximized.reset();
+        bool showing = !ctx.state().mixerOpen && deviceActions::stripOpen(ctx);
+        ctx.state().mixerOpen = false;
+        deviceActions::setStripOpen(ctx, !showing);
+        ctx.state().focus = Pane::Detail;
+        return;
+    }
     case Action::ToolPointer:
         state.tool = Tool::Pointer;
         return;
@@ -411,10 +431,12 @@ void EditorHost::runAction(Action action) {
         exportMidi::openSong(ctx);
         return;
     case Action::ToggleMixer:
-        // The lower pane shows the notes or the mixer; F4 switches, as the switch in its header does.
+        // Shows the mixer (F5); F3 goes back to the notes. A folded lower pane comes back first.
         if (!ctx.module() || !ctx.module()->makesSound())
             return;
-        ctx.state().mixerOpen = !ctx.state().mixerOpen;
+        if (ctx.state().maximized == Pane::Top)
+            ctx.state().maximized.reset();
+        ctx.state().mixerOpen = true;
         ctx.state().focus = Pane::Detail;
         return;
     case Action::ExportAudio:

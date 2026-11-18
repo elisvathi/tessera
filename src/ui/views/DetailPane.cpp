@@ -39,7 +39,8 @@ DetailPane::DetailPane(EditorContext& ctx) : EditorPane(ctx, Pane::Detail) {
         menu->addChild(rack::createMenuLabel("Show"));
         bool audio = audioTrack();
         menu->addChild(rack::createCheckMenuItem(
-            audio ? "Audio" : "Notes", "", [this, c] { return !showsMixer() && !c->devicesFillPane; },
+            audio ? "Audio" : "Notes", shortcutLabel(Action::ShowNotes),
+            [this, c] { return !showsMixer() && !c->devicesFillPane; },
             [this, c] {
                 c->state().mixerOpen = false;
                 if (shortPane && c->module())
@@ -101,7 +102,7 @@ void DetailPane::setMixer(MixerPane* m) {
         ToolButton::Options o;
         o.text = toMixer ? "Mixer" : "Notes";
         o.tooltip = withShortcut(toMixer ? "Show the mixer in this pane" : "Show the selected clip in this pane",
-                                 Action::ToggleMixer);
+                                 toMixer ? Action::ToggleMixer : Action::ShowNotes);
         o.action = [this, c, toMixer] {
             c->state().mixerOpen = toMixer;
             c->state().focus = Pane::Detail;

@@ -96,8 +96,9 @@ enum class Action {
     SwitchPane,
     MaximizePane,
     WidenClips,
+    ShowNotes,
     ToggleDevices,
-    ToggleMixer,
+    ToggleMixer, // shows the mixer (F5); the name is kept for saved key maps
     ToggleDrumView,
     // Tracks
     AddInstrumentTrack,

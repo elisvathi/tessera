@@ -324,6 +324,34 @@ void ToolButton::drawIcon(NVGcontext* vg, NVGcolor color, rack::math::Vec center
         nvgLineTo(vg, cx - s, cy + s);
         nvgStroke(vg);
         break;
+    case Icon::Widen:
+        // A line across with arrow heads at both ends, pointing out.
+        nvgMoveTo(vg, cx - s, cy);
+        nvgLineTo(vg, cx + s, cy);
+        nvgMoveTo(vg, cx - s * 0.45f, cy - s * 0.55f);
+        nvgLineTo(vg, cx - s, cy);
+        nvgLineTo(vg, cx - s * 0.45f, cy + s * 0.55f);
+        nvgMoveTo(vg, cx + s * 0.45f, cy - s * 0.55f);
+        nvgLineTo(vg, cx + s, cy);
+        nvgLineTo(vg, cx + s * 0.45f, cy + s * 0.55f);
+        nvgStroke(vg);
+        break;
+    case Icon::Narrow:
+        // Two arrows pointing in to an upright line.
+        nvgMoveTo(vg, cx, cy - s);
+        nvgLineTo(vg, cx, cy + s);
+        nvgMoveTo(vg, cx - s, cy);
+        nvgLineTo(vg, cx - s * 0.3f, cy);
+        nvgMoveTo(vg, cx - s * 0.65f, cy - s * 0.4f);
+        nvgLineTo(vg, cx - s * 0.3f, cy);
+        nvgLineTo(vg, cx - s * 0.65f, cy + s * 0.4f);
+        nvgMoveTo(vg, cx + s, cy);
+        nvgLineTo(vg, cx + s * 0.3f, cy);
+        nvgMoveTo(vg, cx + s * 0.65f, cy - s * 0.4f);
+        nvgLineTo(vg, cx + s * 0.3f, cy);
+        nvgLineTo(vg, cx + s * 0.65f, cy + s * 0.4f);
+        nvgStroke(vg);
+        break;
     case Icon::Capture:
         // An arrow down onto a line: keep what was just played.
         nvgMoveTo(vg, cx, cy - s);

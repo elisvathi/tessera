@@ -478,8 +478,9 @@ Shortcuts are active only while the editor overlay is focused. They are defined 
 | | Inspector | I |
 | | Switch focus arranger ↔ detail | Tab |
 | | Maximize focused pane | Shift+Tab or double-click splitter |
-| | Lower pane shows the notes or the mixer | F4, or Notes / Mixer in its header |
-| | Widen / narrow the clips beside the timeline | F2 |
+| | Lower pane shows the notes / devices / the mixer | F3 / F4 / F5, or Notes · Devices · Mixer in its header |
+| | Widen / narrow the clips beside the timeline | F2, or ⟷ beside the song pane's maximize |
+| | A folded pane (the other one maximized) | its bar keeps its switch: a click brings both panes back |
 | Tracks | Add instrument / drum track | Ctrl/Cmd+T, Ctrl/Cmd+Shift+T |
 | | Select next/prev track | Ctrl/Cmd+Up/Down |
 | | Mute / solo selected tracks | M, Alt+S |

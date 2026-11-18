@@ -3234,3 +3234,21 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   chain off (`hasOwnChain` false) in the same undo step, so the clip plays the track's devices and the card goes; a
   toast says "<clip> plays through the track's devices again". Devices ▸ Delete its own devices did this already.
   A clip can no longer play dry on purpose through an empty chain; an explicit choice for that can come later.
+
+## 190. Moving between panes: ⟷ for the clips, folded bars, one key per view (18 Nov)
+
+- **User requests**: a button to maximize the clip launcher across (in both editors), used with the pane maximize
+  for a clips-only view; "very simple to navigate between the panes"; Notes and Mixer showed the same key (F4 was one
+  toggle for both). Agreed from mockups (canvas boards 7 to 9).
+- **⟷** (Icon::Widen / Narrow) does what F2 did: the clips take the room their scenes need at their usual column
+  width, and the timeline keeps the rest, because a next action can send a track back to it (the user asked to keep
+  it visible; stretching columns was turned down). With more scenes than fit, the timeline folds to a strip; the
+  strip is drawn plain with the word TIMELINE and brings the timeline back on a click. The button sits beside the
+  song pane's maximize in both editors (the panel editor has no room above the scene buttons; there it sits left
+  of the full-editor button, and the folded strip is wider by that button so nothing covers the clips' ↩ column).
+- **Folded bars**: a maximized pane no longer hides the other one completely. It folds to a kFoldedPaneBar (22 px)
+  bar with its switch: Notes (Audio) · Devices · Mixer at the bottom, Clips · Timeline at the top (Clips brings the
+  song pane back widened), and a restore arrow. Built into PaneStack, so both editors have it.
+- **Keys**: F2 clips, F3 notes, F4 devices (was F3), F5 mixer: one key per view in screen order. A view key always
+  shows its view, restoring a folded pane first; F2 with the song pane folded brings it back widened. Tab and
+  Shift+Tab are unchanged.

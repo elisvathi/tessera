@@ -58,13 +58,20 @@ more room.
 - **Tab** switches between the song and the lower pane. **Shift+Tab** maximizes the pane under the mouse, or
   restores the panes.
 - Each pane has a **maximize** button in its top-right corner. Double-clicking the line between the panes does the
-  same.
+  same. The other pane then folds to a thin bar that keeps its switch: **Notes · Devices · Mixer** at the bottom, or
+  **Clips · Timeline** at the top. Click one and both panes come back showing it; the arrow at the bar's right
+  restores the panes as they were.
 - The lower pane's header starts with **Notes · Devices · Mixer** (**Audio · Mixer** when an audio track is
   selected, since it has no devices), the same in both windows. The lower pane shows the clip or the [mixer](18-mixer.md), never
-  both: **F4** switches, and clicking any clip goes back to it. **Mixer** appears once something makes sound. In a
+  both, and clicking any clip goes back to it. **Mixer** appears once something makes sound. In a
   narrow pane the switch folds into one button that names what shows.
-- **F2** widens the clips beside the timeline (handy when performing). Press it again to narrow them.
-- **F3** (or **Devices** in the switch) opens the device strip above the notes. In a pane too short for both, the
+- One key per view, in the order they sit: **F2** clips, **F3** notes, **F4** devices, **F5** mixer. A key always
+  shows its view: if its pane is folded, the panes come back first.
+- **F2**, or the **⟷** button beside the song pane's maximize button, widens the clips (handy when performing): they
+  take the room their scenes need, and the timeline keeps the rest, so a track sent back to it still shows. With
+  more scenes than fit, the timeline folds to a strip at the right: click it to bring it back. Press F2 again to
+  narrow the clips. Widened clips and a maximized song pane together fill the editor with the clips.
+- **F4** (or **Devices** in the switch) opens the device strip above the notes. In a pane too short for both, the
   devices take the whole pane instead. See [Devices](13-devices.md).
 
 ## Tools

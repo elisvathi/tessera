@@ -222,6 +222,7 @@ constexpr float kLoopStripPanel = 9;
 constexpr float kTimeRulerPanel = 14;
 constexpr float kOverviewPanel = 4;
 constexpr float kSplitter = 6; // hit area; the drawn line is 1 px
+constexpr float kFoldedPaneBar = 22; // what a pane folds to while the other is maximised: its switch (DECISIONS §190)
 constexpr float kEdgeHit = 6;  // resize hot zone at item edges
 constexpr float kKeyboardWidth = 56;
 // A drum track's lane headers stand in for the keys: name, output, mute and solo need the room.

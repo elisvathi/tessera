@@ -94,6 +94,27 @@ ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), sou
     addChild(foldTab);
     maximizeButton = makeMaximizeButton(ctx, Pane::Top);
     addChild(maximizeButton);
+
+    // The clips' own maximise, across (docs/DECISIONS.md §190): beside the pane's, the same size.
+    ToolButton::Options widen;
+    widen.tooltip = withShortcut("Widen the clips across the song pane, or put them back beside the timeline",
+                                 Action::WidenClips);
+    widen.action = [c] {
+        c->state().clipsWide = !c->state().clipsWide;
+        c->state().focus = Pane::Top;
+    };
+    widen.active = [c] { return c->module() && c->state().clipsWide; };
+    widen.dynamicIcon = [c] { return c->module() && c->state().clipsWide ? Icon::Narrow : Icon::Widen; };
+    widenButton = new ToolButton(widen);
+    widenButton->box.size = rack::math::Vec(kMaximizeButton, kMaximizeButton);
+    addChild(widenButton);
+
+    ToolButton::Options back;
+    back.tooltip = withShortcut("Timeline: bring it back beside the clips", Action::WidenClips);
+    back.action = [c] { c->state().clipsWide = false; };
+    timelineTab = new ToolButton(back);
+    timelineTab->visible = false;
+    addChild(timelineTab);
 }
 
 LauncherPanel* ArrangerView::panelView() { return panel->visible ? panel : nullptr; }
@@ -112,12 +133,16 @@ void ArrangerView::layout() {
     foldTab->visible = narrow && timelinePlays;
     float tab = foldTab->visible ? kFoldTabWidth : 0;
     float room = std::max(0.f, box.size.x - headerWidth - tab);
-    float most = ctx.state().clipsWide ? room - kFoldedTimeline : room * 0.5f;
+    // The folded timeline keeps room for the buttons at its top right (one more in the panel editor).
+    float folded = kFoldedTimeline + cornerRightInset;
+    float most = ctx.state().clipsWide ? room - folded : room * 0.5f;
     // The saved width is the scenes' room; the back column comes on top, so old patches show the scenes they did.
     float wanted =
         ctx.state().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth + panel->backColumn();
+    // Widened, the clips take the room their scenes need and the timeline keeps the rest: a next action can send a
+    // track back to it (docs/DECISIONS.md §190). With more scenes than fit, the timeline folds to its strip.
     float panelWidth = std::max(0.f, std::min({wanted, panel->contentWidth(), most}));
-    if (foldTab->visible && !ctx.clipsOpenNarrow)
+    if (foldTab->visible && !ctx.clipsOpenNarrow && !ctx.state().clipsWide)
         panelWidth = 0;
     panel->visible = panelWidth > 0;
     panel->box = rack::math::Rect(headerWidth, 0, panelWidth, box.size.y);
@@ -125,6 +150,12 @@ void ArrangerView::layout() {
     panel->headerTop = std::max(0.f, rulerHeight - kSceneButtonsHeight);
     foldTab->box = rack::math::Rect(headerWidth + panelWidth, 0, tab, box.size.y);
     maximizeButton->box.pos = rack::math::Vec(box.size.x - kMaximizeButton - 3, (rulerHeight - kMaximizeButton) / 2);
+    // Beside the pane's maximise, in both editors: the panel editor has no room above the scene buttons.
+    widenButton->box.pos = rack::math::Vec(maximizeButton->box.pos.x - kMaximizeButton - 2 - cornerRightInset,
+                                           maximizeButton->box.pos.y);
+    // Widened, the timeline is a strip: the whole strip under the ruler brings it back.
+    timelineTab->visible = ctx.state().clipsWide && lanes->box.size.x <= folded + 1;
+    timelineTab->box = lanes->box;
     float timeline = headerWidth + panelWidth + tab;
     ruler->box = rack::math::Rect(timeline, 0, box.size.x - timeline, rulerHeight);
     lanes->box = rack::math::Rect(timeline, rulerHeight, box.size.x - timeline, box.size.y - rulerHeight);
@@ -358,6 +389,20 @@ void ArrangerView::drawCornerLabels(NVGcontext* vg) {
     if (rippleTagX >= 0) {
         draw::TextStyle tag{theme::fonts::uiStrong(), 9, c.queue, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         draw::text(vg, tag, rippleTagX, toolSwitch.select->box.getCenter().y, "RIPPLE");
+    }
+    if (timelineTab->visible) {
+        // A plain strip: the timeline squeezed this narrow says nothing, the word and a click say enough.
+        rack::math::Rect t = timelineTab->box;
+        nvgBeginPath(vg);
+        nvgRect(vg, t.pos.x, t.pos.y, t.size.x, t.size.y);
+        nvgFillColor(vg, c.bg1);
+        nvgFill(vg);
+        nvgSave(vg);
+        nvgTranslate(vg, t.getCenter().x, t.pos.y + std::min(t.size.y / 2, 60.f));
+        nvgRotate(vg, -float(M_PI) / 2);
+        draw::TextStyle word{theme::fonts::uiStrong(), 9, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+        draw::text(vg, word, 0, 0, "TIMELINE");
+        nvgRestore(vg);
     }
     if (!foldTab->visible)
         return;

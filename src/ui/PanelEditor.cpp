@@ -202,6 +202,7 @@ void PanelEditor::step() {
     detail->reserveHeader(notesOnTop ? groupWidth + 6 : 0);
     ArrangerView* song = top->arranger();
     song->cornerInset = notesOnTop ? 0 : transportWidth + 4;
+    song->cornerRightInset = notesOnTop ? 0 : kCornerButton + 2;
     panes->layout();
     detail->layout();
     float rulerHeight = Ruler::heightFor(song->source, ctx.surface);

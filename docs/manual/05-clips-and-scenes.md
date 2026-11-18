@@ -28,8 +28,9 @@ A slot can look like this:
 
 ![Verse queued: its triangles blink yellow until the next launch line](images/clips-queued.png)
 
-**F2** widens the clips to fill most of the song pane, for performing. Press it again to narrow them. You can also
-drag the clips' right edge. **Shift+wheel** scrolls through scenes.
+**F2** (or **⟷** beside the song pane's maximize button) widens the clips across the song pane, for performing; the
+timeline keeps whatever room the scenes leave. Press it again to narrow them. You can also drag the clips' right
+edge. **Shift+wheel** scrolls through scenes.
 
 ## Making clips
 
