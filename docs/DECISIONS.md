@@ -3249,6 +3249,11 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **Folded bars**: a maximized pane no longer hides the other one completely. It folds to a kFoldedPaneBar (22 px)
   bar with its switch: Notes (Audio) · Devices · Mixer at the bottom, Clips · Timeline at the top (Clips brings the
   song pane back widened), and a restore arrow. Built into PaneStack, so both editors have it.
+- **Revised the same day** (canvas board 10): the corner ⟷ was hard to read and crowded the narrow strip's ruler in
+  the panel editor. It became a handle on the clips' right edge, in the scene buttons' row, half over each side: ›
+  widens, ‹ narrows, in both editors and both states, shown only while widening reveals more scenes (or to narrow
+  back). Folded past the room, the timeline is one tab from top to bottom (PaintedButton): the pane's maximize at its
+  top, the panel editor's full-editor button stacked under it, then ‹ and TIMELINE; a click anywhere brings it back.
 - **Keys**: F2 clips, F3 notes, F4 devices (was F3), F5 mixer: one key per view in screen order. A view key always
   shows its view, restoring a folded pane first; F2 with the song pane folded brings it back widened. Tab and
   Shift+Tab are unchanged.

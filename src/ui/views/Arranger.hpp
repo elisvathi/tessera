@@ -2,6 +2,7 @@
 
 #include "../interaction/TrackRows.hpp"
 #include "../widgets/EditTools.hpp"
+#include "../widgets/PaintedButton.hpp"
 #include "EditorPane.hpp"
 #include "Ruler.hpp"
 #include "Sources.hpp"
@@ -57,8 +58,11 @@ class ArrangerView : public EditorPane {
 
     /// Room the in-panel editor keeps at the corner's left for its transport buttons.
     float cornerInset = 0;
-    /// Room the in-panel editor keeps at the ruler's right end for its own button, left of the pane's maximise.
-    float cornerRightInset = 0;
+    /// Whether the timeline is folded to its tab (the clips widened past the room): the in-panel editor then stacks
+    /// its full-editor button under the pane's maximise, on the tab.
+    bool timelineFolded() const;
+    /// The pane's maximise button, in this view's coordinates.
+    rack::math::Rect maximizeRect() const;
 
   private:
     void syncFromState();
@@ -80,8 +84,10 @@ class ArrangerView : public EditorPane {
     ToolSwitch toolSwitch;
     ToolButton* quantizeButton; // "Launch 1 bar": launch quantize, and recording the clips into the timeline
     ToolButton* stopAllButton;
-    ToolButton* widenButton;  // top right of the clips: widen them across the song pane, or narrow them (F2)
-    ToolButton* timelineTab;  // over the timeline's strip while the clips are widened: brings it back
+    PaintedButton* edgeTab;     // on the clips' right edge: › widens them across the song pane, ‹ narrows (F2)
+    PaintedButton* timelineTab; // the whole timeline strip while the clips are widened past it: brings it back
+    /// Paints the folded timeline tab: an arrow back and the word TIMELINE.
+    void drawTimelineTab(NVGcontext* vg, rack::math::Vec size, bool hot);
     ToolButton* foldTab; // a narrow pane folds the clips while the timeline plays; this opens and closes them
     ToolButton* maximizeButton;
     float rippleTagX = -1; // where the RIPPLE tag goes, or -1 when there is no room

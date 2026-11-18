@@ -175,11 +175,13 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       (▶, name, notes); make a track about twice as tall: its slots get a title bar over their notes; an automation lane
       makes a quiet band the column lines cross. A clip with its own devices shows the small device card; hover it
       for its tooltip.
-- [ ] Panes (DECISIONS §190): ⟷ beside the song pane's ⤢ (and F2) widens the clips; with few scenes the timeline
+- [ ] Panes (DECISIONS §190): the › handle on the clips' right edge (and F2) widens the clips (then ‹ narrows them;
+      no handle when every scene already shows); with few scenes the timeline
       keeps the rest, with many it folds to a TIMELINE strip that brings it back on a click. Maximize the song pane:
       the lower pane folds to a bar with Notes · Devices · Mixer; each brings the panes back on that view. Maximize the
       lower pane: a Clips · Timeline bar at the top. F3 / F4 / F5 show notes / devices / mixer, restoring a folded
-      pane first. In the 80 HP editor ⟷ sits left of the full-editor button and covers nothing when widened.
+      pane first. Widened past the room, the timeline is one tab (⤢, in the 80 HP editor the full-editor button
+      under it, then ‹ and TIMELINE) that brings it back on a click.
 - [ ] Own devices emptied (DECISIONS §189): give a clip its own devices, delete them one by one on the strip
       (modulators too): with the last one the card leaves its slot, a toast says it plays the track's devices again,
       and one undo brings its own chain back.

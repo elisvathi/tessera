@@ -202,7 +202,6 @@ void PanelEditor::step() {
     detail->reserveHeader(notesOnTop ? groupWidth + 6 : 0);
     ArrangerView* song = top->arranger();
     song->cornerInset = notesOnTop ? 0 : transportWidth + 4;
-    song->cornerRightInset = notesOnTop ? 0 : kCornerButton + 2;
     panes->layout();
     detail->layout();
     float rulerHeight = Ruler::heightFor(song->source, ctx.surface);
@@ -210,6 +209,12 @@ void PanelEditor::step() {
     float maximizeRoom = notesOnTop ? 6 + kMaximizeButton + 6 : 3 + kMaximizeButton + 4;
     float x = box.size.x - maximizeRoom - kCornerButton;
     fullEditor->box = rack::math::Rect(x, buttonY, kCornerButton, kCornerButton);
+    if (!notesOnTop && song->timelineFolded()) {
+        // The timeline is a narrow tab: the button goes under the pane's maximise, on the tab.
+        rack::math::Rect max = song->maximizeRect();
+        fullEditor->box = rack::math::Rect(max.getCenter().x - kCornerButton / 2, max.getBottom() + 4, kCornerButton,
+                                           kCornerButton);
+    }
     x = notesOnTop ? x - kCornerGroupGap - transportWidth : 4;
     float transportY = notesOnTop ? buttonY + 1 : (rulerHeight - kTransportButton) / 2;
     for (ToolButton* b : transport) {

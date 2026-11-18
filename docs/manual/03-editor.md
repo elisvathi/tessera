@@ -67,7 +67,8 @@ more room.
   narrow pane the switch folds into one button that names what shows.
 - One key per view, in the order they sit: **F2** clips, **F3** notes, **F4** devices, **F5** mixer. A key always
   shows its view: if its pane is folded, the panes come back first.
-- **F2**, or the **⟷** button beside the song pane's maximize button, widens the clips (handy when performing): they
+- **F2**, or the small **›** handle on the clips' right edge (in the scene buttons' row), widens the clips (handy when
+  performing; the handle then shows **‹** to narrow them again, and it only shows while there are scenes to reveal): they
   take the room their scenes need, and the timeline keeps the rest, so a track sent back to it still shows. With
   more scenes than fit, the timeline folds to a strip at the right: click it to bring it back. Press F2 again to
   narrow the clips. Widened clips and a maximized song pane together fill the editor with the clips.

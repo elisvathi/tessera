@@ -28,11 +28,33 @@ constexpr float kQuantizeWidth = 84;
 constexpr float kNarrowWidth = 600; // narrower song panes fold the clips while the timeline plays
 constexpr float kFoldTabWidth = 14;
 constexpr float kFoldedTimeline = 48; // what is left of the timeline while the clips take the width
+constexpr float kEdgeTabWidth = 14;    // the clips' edge handle: widen / narrow (§190)
+constexpr float kEdgeTabHeight = 20;
+constexpr float kTimelineTabArrow = 16; // the folded timeline tab's arrow, this far under the ruler's height
+constexpr float kTimelineTabArrowMin = 66; // and never higher: clear of two stacked buttons
 constexpr float kQuietAlpha = 0.45f;  // the section that doesn't play
+
+/// A chevron pointing left (`left`) or right, about 8 px tall, centred on `c`.
+void drawChevron(NVGcontext* vg, rack::math::Vec c, bool left, NVGcolor color) {
+    float d = left ? 1.f : -1.f;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, c.x + d * 2, c.y - 4);
+    nvgLineTo(vg, c.x - d * 2, c.y);
+    nvgLineTo(vg, c.x + d * 2, c.y + 4);
+    nvgStrokeColor(vg, color);
+    nvgStrokeWidth(vg, 1.5f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgLineJoin(vg, NVG_ROUND);
+    nvgStroke(vg);
+}
 
 } // namespace
 
 // ---- ArrangerView -------------------------------------------------------------------------------------------
+
+bool ArrangerView::timelineFolded() const { return timelineTab->visible; }
+
+rack::math::Rect ArrangerView::maximizeRect() const { return maximizeButton->box; }
 
 ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), source(ctx) {
     headers = new TrackHeaders(ctx, *this);
@@ -92,29 +114,34 @@ ArrangerView::ArrangerView(EditorContext& ctx) : EditorPane(ctx, Pane::Top), sou
     foldTab = new ToolButton(fold);
     foldTab->visible = false;
     addChild(foldTab);
+    // Widened with more scenes than fit, the timeline is this tab, top to bottom: a click brings it back.
+    timelineTab = new PaintedButton(withShortcut("Timeline: bring it back beside the clips", Action::WidenClips),
+                                    [c] { c->state().clipsWide = false; },
+                                    [this](NVGcontext* vg, rack::math::Vec size, bool hot) {
+                                        drawTimelineTab(vg, size, hot);
+                                    });
+    timelineTab->visible = false;
+    addChild(timelineTab);
     maximizeButton = makeMaximizeButton(ctx, Pane::Top);
     addChild(maximizeButton);
 
-    // The clips' own maximise, across (docs/DECISIONS.md §190): beside the pane's, the same size.
-    ToolButton::Options widen;
-    widen.tooltip = withShortcut("Widen the clips across the song pane, or put them back beside the timeline",
-                                 Action::WidenClips);
-    widen.action = [c] {
-        c->state().clipsWide = !c->state().clipsWide;
-        c->state().focus = Pane::Top;
-    };
-    widen.active = [c] { return c->module() && c->state().clipsWide; };
-    widen.dynamicIcon = [c] { return c->module() && c->state().clipsWide ? Icon::Narrow : Icon::Widen; };
-    widenButton = new ToolButton(widen);
-    widenButton->box.size = rack::math::Vec(kMaximizeButton, kMaximizeButton);
-    addChild(widenButton);
-
-    ToolButton::Options back;
-    back.tooltip = withShortcut("Timeline: bring it back beside the clips", Action::WidenClips);
-    back.action = [c] { c->state().clipsWide = false; };
-    timelineTab = new ToolButton(back);
-    timelineTab->visible = false;
-    addChild(timelineTab);
+    // The clips' edge handle (docs/DECISIONS.md §190): › widens the clips, ‹ puts them back. Over everything else.
+    edgeTab = new PaintedButton(
+        withShortcut("Widen the clips across the song pane, or put them back beside the timeline", Action::WidenClips),
+        [c] {
+            c->state().clipsWide = !c->state().clipsWide;
+            c->state().focus = Pane::Top;
+        },
+        [c](NVGcontext* vg, rack::math::Vec size, bool hot) {
+            const theme::Palette& p = theme::colors();
+            rack::math::Rect r(0, 0, size.x, size.y);
+            draw::roundedRect(vg, r, theme::metrics::kRadiusControl, hot ? p.line2 : p.bg2);
+            draw::roundedRectStroke(vg, r.shrink(rack::math::Vec(0.5f, 0.5f)), theme::metrics::kRadiusControl,
+                                    p.line2, 1);
+            drawChevron(vg, r.getCenter(), c->module() && c->state().clipsWide, hot ? p.text0 : p.text1);
+        });
+    edgeTab->visible = false;
+    addChild(edgeTab);
 }
 
 LauncherPanel* ArrangerView::panelView() { return panel->visible ? panel : nullptr; }
@@ -133,9 +160,7 @@ void ArrangerView::layout() {
     foldTab->visible = narrow && timelinePlays;
     float tab = foldTab->visible ? kFoldTabWidth : 0;
     float room = std::max(0.f, box.size.x - headerWidth - tab);
-    // The folded timeline keeps room for the buttons at its top right (one more in the panel editor).
-    float folded = kFoldedTimeline + cornerRightInset;
-    float most = ctx.state().clipsWide ? room - folded : room * 0.5f;
+    float most = ctx.state().clipsWide ? room - kFoldedTimeline : room * 0.5f;
     // The saved width is the scenes' room; the back column comes on top, so old patches show the scenes they did.
     float wanted =
         ctx.state().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth + panel->backColumn();
@@ -149,15 +174,26 @@ void ArrangerView::layout() {
     panel->rowsTop = rulerHeight;
     panel->headerTop = std::max(0.f, rulerHeight - kSceneButtonsHeight);
     foldTab->box = rack::math::Rect(headerWidth + panelWidth, 0, tab, box.size.y);
-    maximizeButton->box.pos = rack::math::Vec(box.size.x - kMaximizeButton - 3, (rulerHeight - kMaximizeButton) / 2);
-    // Beside the pane's maximise, in both editors: the panel editor has no room above the scene buttons.
-    widenButton->box.pos = rack::math::Vec(maximizeButton->box.pos.x - kMaximizeButton - 2 - cornerRightInset,
-                                           maximizeButton->box.pos.y);
-    // Widened, the timeline is a strip: the whole strip under the ruler brings it back.
-    timelineTab->visible = ctx.state().clipsWide && lanes->box.size.x <= folded + 1;
-    timelineTab->box = lanes->box;
     float timeline = headerWidth + panelWidth + tab;
     ruler->box = rack::math::Rect(timeline, 0, box.size.x - timeline, rulerHeight);
+    // Widened past the room, the timeline is a tab from top to bottom; the pane's maximise sits at its top.
+    float stripWidth = box.size.x - timeline;
+    timelineTab->visible = ctx.state().clipsWide && stripWidth <= kFoldedTimeline + 1;
+    timelineTab->box = rack::math::Rect(timeline, 0, stripWidth, box.size.y);
+    maximizeButton->box.pos =
+        timelineTab->visible
+            ? rack::math::Vec(timeline + (stripWidth - kMaximizeButton) / 2, (rulerHeight - kMaximizeButton) / 2)
+            : rack::math::Vec(box.size.x - kMaximizeButton - 3, (rulerHeight - kMaximizeButton) / 2);
+    // The handle sits on the clips' right edge, in the scene buttons' row, half over each side.
+    float tabHeight = std::min(kEdgeTabHeight, rulerHeight - panel->headerTop - 2);
+    // Only while widening shows more than now (or narrowing goes back): with every scene in view it would do nothing.
+    float normalWidth = std::min({ctx.view().launcherPanelWidth + panel->backColumn(), panel->contentWidth(),
+                                  std::max(0.f, room) * 0.5f});
+    bool more = ctx.state().clipsWide || panel->contentWidth() > normalWidth + 1;
+    edgeTab->visible = panel->visible && tabHeight >= 10 && more;
+    edgeTab->box = rack::math::Rect(panel->box.getRight() - kEdgeTabWidth / 2,
+                                    panel->headerTop + (rulerHeight - panel->headerTop - tabHeight) / 2, kEdgeTabWidth,
+                                    tabHeight);
     lanes->box = rack::math::Rect(timeline, rulerHeight, box.size.x - timeline, box.size.y - rulerHeight);
     layoutCorner(rulerHeight);
 }
@@ -377,6 +413,28 @@ void ArrangerView::draw(const DrawArgs& args) {
     drawCornerLabels(vg);
 }
 
+void ArrangerView::drawTimelineTab(NVGcontext* vg, rack::math::Vec size, bool hot) {
+    // A plain tab: the timeline squeezed this narrow says nothing; an arrow, the word and a click say enough.
+    const theme::Palette& c = theme::colors();
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, size.x, size.y);
+    nvgFillColor(vg, hot ? c.bg2 : c.bg1);
+    nvgFill(vg);
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, 1, size.y);
+    nvgFillColor(vg, c.line1);
+    nvgFill(vg);
+    // Under the ruler's height, and under the buttons stacked at the tab's top (two in the panel editor).
+    float top = std::max(Ruler::heightFor(source, ctx.surface) + kTimelineTabArrow, kTimelineTabArrowMin);
+    drawChevron(vg, rack::math::Vec(size.x / 2, top), true, hot ? c.text0 : c.text1);
+    nvgSave(vg);
+    nvgTranslate(vg, size.x / 2, top + 50);
+    nvgRotate(vg, -float(M_PI) / 2);
+    draw::TextStyle word{theme::fonts::uiStrong(), 9, hot ? c.text0 : c.text1, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    draw::text(vg, word, 0, 0, "TIMELINE");
+    nvgRestore(vg);
+}
+
 void ArrangerView::drawCornerLabels(NVGcontext* vg) {
     const theme::Palette& c = theme::colors();
     if (cornerInset > 0) {
@@ -389,20 +447,6 @@ void ArrangerView::drawCornerLabels(NVGcontext* vg) {
     if (rippleTagX >= 0) {
         draw::TextStyle tag{theme::fonts::uiStrong(), 9, c.queue, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         draw::text(vg, tag, rippleTagX, toolSwitch.select->box.getCenter().y, "RIPPLE");
-    }
-    if (timelineTab->visible) {
-        // A plain strip: the timeline squeezed this narrow says nothing, the word and a click say enough.
-        rack::math::Rect t = timelineTab->box;
-        nvgBeginPath(vg);
-        nvgRect(vg, t.pos.x, t.pos.y, t.size.x, t.size.y);
-        nvgFillColor(vg, c.bg1);
-        nvgFill(vg);
-        nvgSave(vg);
-        nvgTranslate(vg, t.getCenter().x, t.pos.y + std::min(t.size.y / 2, 60.f));
-        nvgRotate(vg, -float(M_PI) / 2);
-        draw::TextStyle word{theme::fonts::uiStrong(), 9, c.text2, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
-        draw::text(vg, word, 0, 0, "TIMELINE");
-        nvgRestore(vg);
     }
     if (!foldTab->visible)
         return;
