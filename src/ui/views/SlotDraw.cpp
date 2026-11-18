@@ -34,6 +34,47 @@ constexpr double kBlinkHz = 2;
 
 bool blinkOn() { return std::fmod(EditorContext::now() * kBlinkHz, 1.0) < 0.5; }
 
+namespace {
+
+/// A cell tall enough for a title bar over its notes.
+bool hasTitleBar(const Rect& cell) { return cell.size.y >= theme::metrics::kSlotTitleBarFrom; }
+
+/// The line with the name and the marks, right of the launch button: the title bar in a tall cell, else the cell.
+Rect nameRow(const Rect& cell) {
+    Rect launch = launchRect(cell);
+    float h = hasTitleBar(cell) ? theme::metrics::kSlotTitleBar : cell.size.y;
+    return Rect(cell.pos.x + launch.size.x, cell.pos.y, cell.size.x - launch.size.x, h);
+}
+
+/// The room the own-devices card takes at the name row's right end, with the playhead stripes right of it; 0 for a
+/// clip without own devices. The full card where the row is wide, its small form elsewhere.
+float ownMarkRoom(const Rect& row, float stripes, bool hasOwn) {
+    namespace m = theme::metrics;
+    if (!hasOwn)
+        return 0;
+    float card = row.size.x - stripes >= m::kOwnMarkCardRoom ? m::kOwnMarkWidth : m::kOwnMarkSmallWidth;
+    return card + 4 + stripes;
+}
+
+} // namespace
+
+Rect launchRect(const Rect& cell) {
+    float size = hasTitleBar(cell) ? theme::metrics::kSlotTitleBar : cell.size.y;
+    return Rect(cell.pos, Vec(size, size));
+}
+
+Rect ownMarkRect(Rect cell, const Track& track, const Clip& clip) {
+    namespace m = theme::metrics;
+    Rect row = nameRow(cell);
+    float stripes = activePlayheads(track, &clip) ? m::kPlayheadMarkWidth + 4 : 0;
+    float room = ownMarkRoom(row, stripes, clip.hasOwnChain);
+    if (room <= 0)
+        return Rect();
+    bool full = room - 4 - stripes >= m::kOwnMarkWidth;
+    Vec size = full ? Vec(m::kOwnMarkWidth, m::kOwnMarkHeight) : Vec(m::kOwnMarkSmallWidth, m::kOwnMarkSmallHeight);
+    return Rect(Vec(row.getRight() - room, row.getCenter().y - size.y / 2), size);
+}
+
 void drawActionIcon(NVGcontext* vg, NextAction action, Vec c, float size, NVGcolor color) {
     if (action == NextAction::None)
         return;
@@ -345,7 +386,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
         nvgCircle(vg, center.x, center.y, 4.5f);
         nvgFillColor(vg, blinkOn() ? c.record : nvgTransRGBAf(c.record, 0.5f));
         nvgFill(vg);
-        Rect body(cell.pos.x + launch.size.x, cell.pos.y, cell.size.x - launch.size.x, cell.size.y);
+        Rect body = nameRow(cell);
         draw::TextStyle text{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.text0,
                              NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
         draw::text(vg, text, body.pos.x + 3, body.getCenter().y,
@@ -372,25 +413,36 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     uint32_t color = clip->shownColor(track->color);
     bool selected = ctx.state().selectedTrack == trackId && clipActions::shownClip(ctx, *track) == clip->id;
     draw::roundedRect(vg, cell, theme::metrics::kRadiusItem, theme::track(color, selected ? 1.f : 0.82f));
+    bool titleBar = hasTitleBar(cell);
+    if (titleBar) {
+        // A title bar over the notes, as timeline clips have.
+        float r = theme::metrics::kRadiusItem;
+        nvgBeginPath(vg);
+        nvgRoundedRectVarying(vg, cell.pos.x, cell.pos.y, cell.size.x, theme::metrics::kSlotTitleBar, r, r, 0, 0);
+        nvgFillColor(vg, nvgTransRGBAf(c.onTile, theme::metrics::kSlotTitleBarShade));
+        nvgFill(vg);
+    }
 
-    Rect body(cell.pos.x + launch.size.x, cell.pos.y, cell.size.x - launch.size.x, cell.size.y);
+    Rect body = nameRow(cell);
     nvgSave(vg);
-    nvgIntersectScissor(vg, body.pos.x, body.pos.y, body.size.x, body.size.y);
+    if (titleBar)
+        nvgIntersectScissor(vg, cell.pos.x, cell.pos.y, cell.size.x, cell.size.y);
+    else
+        nvgIntersectScissor(vg, body.pos.x, body.pos.y, body.size.x, body.size.y);
     draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextRuler, c.onTile,
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-    // A clip with its own devices wears their mark at the right end: filled while it plays through them.
-    // Left of the playhead stripes, when there are any; on a narrow slot its small form, in the corner, so the name
-    // keeps its room.
+    // A clip with its own devices wears their card at the right end, left of the playhead stripes when there are
+    // any: white while it plays through them. A narrow row shows the same card, smaller.
     namespace m = theme::metrics;
     float stripes = activePlayheads(*track, clip) ? m::kPlayheadMarkWidth + 4 : 0;
-    float markRoom =
-        clip->hasOwnChain && body.size.x - stripes >= m::kOwnMarkCardRoom ? m::kOwnMarkWidth + 4 + stripes : 0;
-    if (markRoom > 0)
-        tiles::drawOwnMark(vg, body.getRight() - markRoom, body.getCenter().y, clip->usesOwnChain());
-    else if (clip->hasOwnChain)
-        tiles::drawOwnDot(vg,
-                          Vec(body.getRight() - stripes - m::kOwnMarkDot - 2.5f, body.pos.y + m::kOwnMarkDot + 2.5f),
-                          clip->usesOwnChain());
+    float markRoom = ownMarkRoom(body, stripes, clip->hasOwnChain);
+    if (markRoom > 0) {
+        Rect mark = ownMarkRect(cell, *track, *clip);
+        if (mark.size.x >= m::kOwnMarkWidth)
+            tiles::drawOwnMark(vg, mark.pos.x, body.getCenter().y, clip->usesOwnChain());
+        else
+            tiles::drawOwnMarkSmall(vg, mark.pos.x, body.getCenter().y, clip->usesOwnChain());
+    }
     // The next action's tag, left of those marks: icon and count while the name keeps some room, else the icon alone,
     // small and bare, which most slots have room for.
     float marksRight = markRoom > 0 ? markRoom : stripes;
@@ -436,19 +488,24 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     draw::text(vg, name, body.pos.x + 3, body.getCenter().y, label);
     // The notes (or the waveform) in miniature, in the room the name leaves; with playheads, where they go over one
     // pass of the clip instead (its notes as written aren't what plays).
-    float previewLeft = body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
+    // Under a title bar the notes take the whole width below it; else the room right of the name.
+    float previewLeft = titleBar ? cell.pos.x + 3 : body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
     const std::vector<DrumLane>* lanes = track->type == TrackType::Drum ? &track->drumLanes : nullptr;
-    Rect preview(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3 - markRoom - tagRoom,
-                 body.size.y - 6);
+    Rect preview = titleBar ? Rect(previewLeft, body.getBottom() + 2, cell.size.x - 6,
+                                   cell.getBottom() - body.getBottom() - 4)
+                            : Rect(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3 - markRoom - tagRoom,
+                                   body.size.y - 6);
+    float previewRoom = titleBar ? preview.size.x : body.getRight() - previewLeft;
     const Device* readers = clip->audio ? nullptr : activePlayheads(*track, clip);
     if (clip->audio) {
         audioDraw::ClipState state = audioDraw::stateOf(*ctx.module(), *clip);
         std::string mark = audioDraw::stateText(state);
-        if (!mark.empty() && body.getRight() - previewLeft >= kMinPreviewWidth) {
+        if (!mark.empty() && previewRoom >= kMinPreviewWidth) {
             draw::TextStyle small{theme::fonts::mono(), theme::metrics::kTextRuler - 1,
                                   audioDraw::stateWarns(state) ? c.queue : c.onTile, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
             draw::text(vg, small, body.getRight() - 3, body.getCenter().y, mark);
-            preview.size.x -= draw::textWidth(vg, small, mark) + 4;
+            if (!titleBar)
+                preview.size.x -= draw::textWidth(vg, small, mark) + 4;
         }
         if (preview.size.x >= kMinPreviewWidth && state.source) {
             const AudioContent& a = *clip->audio;
@@ -467,12 +524,12 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
                                      state, c.text0);
     } else if (readers) {
         // Clear of the playhead mark at the right (the own mark's room already is).
-        if (markRoom == 0 && tagRoom == 0)
+        if (!titleBar && markRoom == 0 && tagRoom == 0)
             preview.size.x -= stripes;
         if (preview.size.x >= kMinPreviewWidth)
             drawPlayheadPaths(vg, song, *track, *readers, *clip, preview, preview.pos.x, preview.getRight(), 0,
                               double(clipSpan(*clip, lanes).length()), nvgTransRGBAf(c.onTile, 0.2f), 1);
-    } else if (body.getRight() - previewLeft >= kMinPreviewWidth) {
+    } else if (previewRoom >= kMinPreviewWidth) {
         drawNotePreview(vg, *clip, lanes, preview, nvgTransRGBAf(c.onTile, kPreviewAlpha));
     }
     nvgRestore(vg);

@@ -47,6 +47,7 @@ struct LauncherStatus {
     int queued = kNothingQueued; // kNoSlot means a stop is queued
     double position = NAN;       // clip ticks of the playing clip
     bool overridden = false;     // Arranger mode: the launcher has taken the track over
+    bool onTimeline = false;     // the track plays the timeline now (Timeline mode and not taken over, or sent back)
     double elapsed = NAN;        // clip ticks since the playing clip started, for lanes with their own loop
     double actionElapsed = NAN;  // ticks counted toward the playing clip's next action; NaN for none
     double queuedClipTime = NAN; // a jump inside the clip waiting for its beat: where it lands, in clip ticks
@@ -813,6 +814,7 @@ class TesseraModule : public rack::engine::Module {
         std::atomic<int> queued{kNothingQueued};
         std::atomic<double> position{NAN};
         std::atomic<bool> overridden{false};
+        std::atomic<bool> onTimeline{false};
         std::atomic<double> elapsed{NAN};
         std::atomic<double> actionElapsed{NAN};
         std::atomic<double> queuedClipTime{NAN};

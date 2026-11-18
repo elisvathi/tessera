@@ -449,6 +449,9 @@ void Engine::setPlayMode(PlayMode m) {
         return;
     wakeAll();
     mode = m;
+    // A track sent back to the timeline in Clips mode: in Timeline mode every track is; back in Clips none is.
+    for (size_t i = 0; i < trackCount; i++)
+        tracks[i].onTimeline = false;
     for (size_t i = 0; i < trackCount; i++) {
         if (m == PlayMode::Arranger)
             backToArrangement(*snapshot->tracks[i], tracks[i]);
@@ -462,9 +465,32 @@ void Engine::setPlayMode(PlayMode m) {
 
 bool Engine::nothingLaunched() const {
     for (size_t i = 0; i < trackCount; i++)
-        if (tracks[i].playing != kNoSlot || tracks[i].queued != kNothingQueued)
+        if (tracks[i].playing != kNoSlot || tracks[i].queued != kNothingQueued || tracks[i].onTimeline)
             return false;
     return true;
+}
+
+void Engine::toTimeline(const TrackPlayback& tp, TrackState& state, double at) {
+    backToArrangement(tp, state);
+    state.onTimeline = mode == PlayMode::Launcher;
+    // From the launch line itself, so a note right on it still plays.
+    state.arrangementCursor = arrangementIndex(tp, songTickAt(at));
+}
+
+void Engine::queueTimeline(const TrackPlayback& tp, TrackState& state, bool immediate) {
+    if (followsArrangement(state) && state.queued == kNothingQueued)
+        return;
+    double q = double(snapshot->launchQuantize);
+    double wait = q > 0 ? std::ceil(songTick / q) * q - songTick : 0;
+    if (!playing || immediate || wait <= 0) {
+        toTimeline(tp, state, playTick);
+        return;
+    }
+    state.queued = kBackToTimeline;
+    state.queuedByAction = false;
+    state.queuedClip = ClipId();
+    state.queuedAt = playTick + wait;
+    state.queuedClipTime = NAN;
 }
 
 void Engine::start() {
@@ -1041,11 +1067,12 @@ void Engine::launch(const LaunchEvent& e) {
                 queueLaunch(tp, state, kNoSlot, e.immediate);
             break;
         case LaunchEvent::Kind::BackToArrangement:
-            if (mode == PlayMode::Arranger && (e.track == 0 || state.id.value == e.track))
-                backToArrangement(tp, state);
+            if (e.track == 0 || state.id.value == e.track)
+                queueTimeline(tp, state, e.immediate);
             break;
         case LaunchEvent::Kind::Reset:
             backToArrangement(tp, state);
+            state.onTimeline = false;
             break;
         }
     }
@@ -1087,11 +1114,7 @@ void Engine::queueLaunch(const TrackPlayback& tp, TrackState& state, int slot, b
 
 void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at) {
     if (state.queued == kBackToTimeline) {
-        // While the clips play there is no timeline to go back to: the track goes quiet.
-        if (mode == PlayMode::Arranger)
-            backToArrangement(tp, state);
-        else
-            switchTo(tp, state, kNoSlot, at);
+        toTimeline(tp, state, at);
         return;
     }
     double clipTime = state.queuedClipTime;
@@ -1107,6 +1130,7 @@ void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at)
 
 void Engine::switchTo(const TrackPlayback& tp, TrackState& state, int slot, double at) {
     releaseClipVoices(state);
+    state.onTimeline = false;
     state.queuedClipTime = NAN;
     ClipId before = state.playingClip;
     state.playing = tp.slot(slot) ? slot : kNoSlot;

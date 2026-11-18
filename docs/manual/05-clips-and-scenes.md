@@ -11,6 +11,10 @@ the scene's ▶ and name on top.
 
 ![Clips playing: the Chorus scene is running](images/clips-playing.png)
 
+The clips form a grid: each slot fills its track's row, so a taller track has taller slots. A slot of a usual or
+taller track has a title bar, as a clip on the timeline does: ▶ and the name on top, its notes in miniature below.
+A very short track keeps everything on one line.
+
 A slot can look like this:
 
 | Slot | Meaning |
@@ -21,7 +25,7 @@ A slot can look like this:
 | Blinking yellow ▶ | Waiting to start at the next launch line. |
 | Red | Recording into this slot. |
 
-![Verse queued: its triangles blink yellow until the next bar](images/clips-queued.png)
+![Chorus queued: its triangles blink yellow until the next bar](images/clips-queued.png)
 
 **F2** widens the clips to fill most of the song pane, for performing. Press it again to narrow them. You can also
 drag the clips' right edge. **Shift+wheel** scrolls through scenes.
@@ -86,7 +90,7 @@ Right-click a clip in a slot:
 | **Edit this scene's clips together** | On a note clip: shows the other clips of the scene dimmed in the piano roll, so you can write parts that fit. See [The piano roll](07-piano-roll.md#editing-several-clips-together). |
 | **Rename** | A new name for the clip. Every place that uses the clip shows it. |
 | **Colour** | **Track colour** (the default: it follows the track) or one of 16 colours, for the slot and every copy of the clip on the timeline. Handy to tell takes apart, such as record, overdub and play clips. Notes keep the track's colour. |
-| **Devices** | Whether the clip plays through the track's devices or its own, and deleting its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A slot with its own devices shows a small dot in its top-right corner (a wide slot shows a small device card instead). |
+| **Devices** | Whether the clip plays through the track's devices or its own, and deleting its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A slot with its own devices shows a small device card at the right of its name. Hover it to be told what it means. |
 | **Place on the timeline at the playhead** | Puts a linked copy on the timeline at the playhead. |
 | **Duplicate**, **Delete** | As above. |
 | **Export as MIDI…** | Saves this clip as a MIDI file. |
@@ -138,7 +142,7 @@ Right-click a clip → **Next action**, and pick what it does:
 | **Round robin** | The next clip, and after the last one the first again. The track goes round and round. |
 | **Go back** | The clip that played before this one. |
 | **Stop** | The track stops. |
-| **Back to timeline** | The track plays the timeline again. While the clips play (Plays on **Clips**), the track stops. |
+| **Back to timeline** | The track plays the timeline again, in either Plays mode. |
 
 In the same menu:
 
@@ -226,13 +230,19 @@ The section that plays is framed in green while the transport runs. The other on
 it.
 
 **Launching over the timeline.** While the timeline plays, you can still launch a clip. That track then leaves the
-timeline and plays the clip. Its timeline lane is dimmed. To bring tracks back to the timeline:
+timeline and plays the clip. Its timeline lane is dimmed.
 
-- **One track:** click the ↩ at the right end of its row in the clips panel. While the timeline plays, each track
-  has one there, in a column that stays put while you scroll the scenes. It is lit while the track plays a launched
-  clip, and faint while the track already plays the timeline.
-- **Every track:** **Timeline** on the Plays switch shows a ↩ instead of its ▶ while some tracks play launched
-  clips. Click it to bring them all back. On the panel, **TIMELINE** is only outlined then, not filled: click it
-  to do the same.
+**Back to the timeline.** A track can go back to playing the timeline in either Plays mode. Like a launch, it waits
+for the next launch line (at once while stopped), and its ↩ blinks yellow until then.
+
+- **One track:** click the ↩ at the right end of its row in the clips panel. Each track has one there, in a column
+  that stays put while you scroll the scenes. It is faint when the track already plays the timeline. While the clips
+  play, a track you send back plays the timeline on its own: its timeline row lights up while the rest stay dimmed,
+  and launching a clip on it takes it off the timeline again.
+- **Every track:** click the ↩ at the top of that column. While the timeline plays, **Timeline** on the Plays
+  switch does the same: it shows a ↩ instead of its ▶ while some tracks play launched clips. On the panel,
+  **TIMELINE** is only outlined then, not filled: click it to do the same.
 - **By itself:** give a clip the next action **Back to timeline**. See
   [Next actions](#next-actions-clips-that-move-on-by-themselves).
+
+Switching the Plays switch starts afresh: on Timeline every track plays the timeline, on Clips none does.

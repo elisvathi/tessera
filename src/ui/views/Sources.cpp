@@ -187,7 +187,7 @@ double ClipSource::playhead() {
     if (status.playing >= 0 && status.playing < int(t->slots.size()) && t->slots[size_t(status.playing)].clip == clip)
         return status.position;
     // Arranger mode: where the timeline plays this clip right now.
-    if (m->playMode() == PlayMode::Arranger && !status.overridden) {
+    if (status.onTimeline) {
         double song = m->playheadTicks();
         if (const ArrangerClip* a = instanceOfClipAt(*t, Tick(song), clip))
             if (std::optional<double> u = clipTimeAt(*current(), *a, song, lanes()))
@@ -204,7 +204,7 @@ double ClipSource::pendingSeek() {
     LauncherStatus status = m->launcherStatus(track);
     if (status.queued >= 0 && status.queued < int(t->slots.size()) && t->slots[size_t(status.queued)].clip == clip)
         return status.queuedClipTime;
-    if (m->playMode() == PlayMode::Arranger && !status.overridden) {
+    if (status.onTimeline) {
         double song = m->pendingSeekTicks();
         if (!std::isfinite(song))
             return NAN;
@@ -226,7 +226,7 @@ double ClipSource::elapsed() {
                     track->slots[size_t(status.playing)].clip == clip->id;
     if (launched)
         return status.elapsed;
-    if (m->playMode() == PlayMode::Arranger && !status.overridden) {
+    if (status.onTimeline) {
         // A timeline clip: it starts where it begins the clip, and runs slower when it is stretched.
         double song = m->playheadTicks();
         if (const ArrangerClip* a = instanceOfClipAt(*track, Tick(song), clip->id)) {

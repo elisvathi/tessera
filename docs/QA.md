@@ -163,10 +163,18 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       they move on at the end of a count. Launching a clip by hand always wins over a next action.
 - [ ] A narrow slot shows the action's icon alone; a slot with its own devices or playheads keeps its marks beside
       the tag.
-- [ ] Back to timeline (DECISIONS §185): timeline playing, launch a clip on two tracks. Each row's ↩ at the clips
-      panel's right edge lights up; it stays in place while the scenes scroll. Click one: only that track plays the
-      timeline again. The Plays switch reads "↩ Timeline" (and the panel's TIMELINE is outlined) while any track is away;
-      a click on it brings them all back and the ▶ returns. With Plays on Clips there is no ↩ column.
+- [ ] Back to timeline (DECISIONS §185, §187): timeline playing, launch a clip on two tracks. Each row's ↩ at the
+      clips panel's right edge lights up; it stays in place while the scenes scroll. Click one: it blinks yellow until
+      the next bar, then only that track plays the timeline again. The Plays switch reads "↩ Timeline" (and the
+      panel's TIMELINE is outlined) while any track is away; a click on it, or on the ↩ at the column's top, brings
+      them all back on the next bar and the ▶ returns.
+- [ ] Back to timeline while the clips play: Plays on Clips, clips playing; click one track's ↩. On the next bar its
+      timeline row lights up and plays while the other rows stay dim and their clips play on. Launch a clip on it:
+      it leaves the timeline. Switch Plays to Timeline and back: no track is on the timeline any more.
+- [ ] The clips grid (DECISIONS §188): slots fill their rows with 1 px lines; a usual track's slots have a title bar
+      (▶ and name) over their notes; make a track taller: its slots grow and show more notes; an automation lane
+      makes a quiet band the column lines cross. A clip with its own devices shows the small device card; hover it
+      for its tooltip.
 - [ ] Clips with nothing launched (DECISIONS §186): from Timeline, switch to Clips: the panel's picked scene starts on
       the next launch line. Stopped in Clips with every track stopped, press Play (panel, editor, RUN): the picked
       scene starts with the transport. With clips launched, Play starts just those.

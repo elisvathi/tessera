@@ -151,6 +151,7 @@ LauncherStatus TesseraModule::launcherStatus(TrackId track) const {
     status.queued = s.queued.load(std::memory_order_relaxed);
     status.position = s.position.load(std::memory_order_relaxed);
     status.overridden = s.overridden.load(std::memory_order_relaxed);
+    status.onTimeline = s.onTimeline.load(std::memory_order_relaxed);
     status.elapsed = s.elapsed.load(std::memory_order_relaxed);
     status.actionElapsed = s.actionElapsed.load(std::memory_order_relaxed);
     status.queuedClipTime = s.queuedClipTime.load(std::memory_order_relaxed);
@@ -1566,6 +1567,7 @@ void TesseraModule::publishLauncherStatus() {
         s.queuedClipTime.store(engine.queuedClipTime(i), std::memory_order_relaxed);
         s.position.store(engine.clipPosition(i), std::memory_order_relaxed);
         s.overridden.store(engine.overridden(i), std::memory_order_relaxed);
+        s.onTimeline.store(engine.followsTimeline(i), std::memory_order_relaxed);
         s.elapsed.store(engine.clipElapsed(i), std::memory_order_relaxed);
         s.actionElapsed.store(engine.actionElapsed(i), std::memory_order_relaxed);
         for (size_t k = 0; k < s.heads.size(); k++)

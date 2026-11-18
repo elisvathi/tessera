@@ -21,12 +21,11 @@ class LauncherPanel : public InteractiveView {
     LauncherPanel(EditorContext& ctx, ArrangerView& owner) : InteractiveView(ctx), owner(owner) {}
 
     static constexpr float kSlotWidth = 76;
-    static constexpr float kMaxSlotHeight = 30;
     static constexpr float kEdge = 5; // the resize handle at the right edge
 
     static constexpr float kAddSceneWidth = 28;
-    /// While the timeline plays: a column at the right edge, fixed while the scenes scroll, with each track's "back to
-    /// timeline" button (docs/DECISIONS.md §185).
+    /// A column at the right edge, fixed while the scenes scroll, with each track's "back to timeline" button and one
+    /// for every track at its top (docs/DECISIONS.md §185, §187).
     static constexpr float kBackColumn = 24;
 
     /// Where the rows start: below the scene headers, level with the arranger's lanes.
@@ -35,15 +34,16 @@ class LauncherPanel : public InteractiveView {
     float headerTop = 0;
     /// The width that shows every scene, the "+" for a new one and the resize edge.
     float contentWidth() { return float(sceneCount()) * kSlotWidth + kAddSceneWidth + backColumn() + kEdge; }
-    /// The back column's width now: kBackColumn while the timeline plays, else 0.
+    /// The back column's width: kBackColumn when the panel has a module, else 0.
     float backColumn();
 
     /// What is under a point (panel coordinates).
     struct Hit {
-        enum class Part { None, SceneLaunch, SceneName, AddScene, Launch, Body, Edge, Back } part = Part::None;
+        enum class Part { None, SceneLaunch, SceneName, AddScene, Launch, Body, Edge, Back, BackAll } part = Part::None;
         int row = -1;
         int scene = -1;
         TrackId track;
+        bool ownMark = false; // over a slot's own-devices card (a Body or Launch hit still), for its tooltip
     };
     Hit hitTest(rack::math::Vec pos);
     /// Files dropped on a slot of an audio track go into it and the slots below; anywhere else in the launcher
@@ -66,11 +66,15 @@ class LauncherPanel : public InteractiveView {
 
   private:
     void drawSceneHeaders(NVGcontext* vg);
-    /// A track row's "back to timeline" button in the back column: lit while the track plays a launched clip over
-    /// the timeline, dim while it plays the timeline.
-    void drawBackButton(NVGcontext* vg, int row, const LauncherStatus& status);
+    /// A "back to timeline" button in the back column (`row` -1: the one for every track, in the header): faint when
+    /// nothing would change, plain while it would, filled while a launched clip took the track over from the timeline
+    /// that plays, blinking while it waits for the launch line.
+    void drawBackButton(NVGcontext* vg, rack::math::Rect r, bool faint, bool away, bool waiting, bool hot);
     rack::math::Rect backRect(int row);
-    HoverTooltip backTip{"Back to timeline: this track stops its launched clip and plays the timeline again"};
+    rack::math::Rect backAllRect();
+    /// Whether some track doesn't play the timeline and isn't already on its way back.
+    bool anyTrackAway();
+    HoverTooltip backTip{""};
     rack::math::Rect sceneHeaderRect(int scene);
 
     ArrangerView& owner;

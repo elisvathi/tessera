@@ -771,10 +771,14 @@ TEST_CASE("launching in arranger mode takes the track over until back to arrange
     CHECK(h.engine.overridden(0)); // stopped: the arrangement is silent on this track
     CHECK(h.risingEdges(0, 3 * kPpq * kSamplesPerTick).empty());
 
+    // Back to the timeline waits for the launch line (the next bar), as a launch does.
     h.engine.launch({LaunchEvent::Kind::BackToArrangement});
+    CHECK(h.engine.overridden(0));
+    int64_t nextBar = 4 * kPpq * kSamplesPerTick;
+    std::vector<int64_t> edges = h.risingEdges(0, nextBar);
+    REQUIRE_FALSE(edges.empty());
+    CHECK(edges.back() == nextBar);
     CHECK_FALSE(h.engine.overridden(0));
-    int64_t nextBeat = 4 * kPpq * kSamplesPerTick;
-    CHECK(h.risingEdges(0, nextBeat).back() == nextBeat);
 }
 
 TEST_CASE("a reset clears launches queued before it, so a loaded arranger patch plays every track") {

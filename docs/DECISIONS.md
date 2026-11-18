@@ -3187,3 +3187,38 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   playing, ready to start while stopped), and when the transport's own start runs (the play button, RUN, the
   editor's play and play-from-here: `Engine::start`). Starts from a launch or a count-in call `play()` and are left
   alone, so a recording count-in never launches clips by itself. With anything launched, nothing changes.
+
+## 187. Back to the timeline on the launch line, and per track while the clips play (18 Nov)
+
+- **User requests**: "back to timeline" in Clips mode too, per track and for all, in the clip launcher; and it should
+  respect the launch timing "just like the normal clip launcher". (The reference app returns at once; Tessera's
+  launches wait for the launch quantize, so the return does too, for one rule.)
+- **Per track state**: a track can follow the timeline in Clips mode (`onTimeline`), so one track plays the timeline
+  while the others play clips. `followsArrangement` is: Timeline mode and not taken over, or Clips mode and sent back.
+  Launching or stopping the track takes it off; switching the Plays switch starts afresh (Timeline: every track
+  follows; Clips: none does). Reset clears it. The audio player, the piano roll's playhead and the editor's "plays the
+  timeline" checks all read the same state (LauncherStatus::onTimeline).
+- **Timing**: BackToArrangement events queue `kBackToTimeline` at the next line of the song's launch quantize (now
+  while stopped, or with `immediate`), as a stop does; the ↩ blinks yellow while it waits. The timeline restarts from
+  the line itself, so a note right on it plays. Setting the Plays switch to Timeline still switches at once.
+- **Controls**: the ↩ column shows in both modes; a ↩ at its top (in the scene header row) sends every track back.
+  The Timeline half of the Plays switch stays the all-back in Timeline mode (both are the same event). In Clips mode
+  the all-back keeps the switch on Clips: every track follows the timeline on its own until the switch moves.
+- **Display**: in Clips mode the timeline dims row by row, and a track on the timeline keeps its row (and the ruler)
+  lit; its slots step back as in Timeline mode.
+- The next action "Back to timeline" now does the same in Clips mode (it stopped the track before).
+
+## 188. The clips panel as a grid; a title bar in taller slots; the own-devices card at every size (18 Nov)
+
+- **User request**: "why is there a gap between tracks in the clip launcher, can't that be more like a grid?" Rows
+  are track rows (48 px by default) but slots stopped at 30 px; an automation lane left a blank band.
+- **Agreed from mockups** (canvas boards 4 and 5): a slot fills its row, kSlotGap (1 px) from its neighbours, with no
+  height cap. From kSlotTitleBarFrom (40 px) a slot has a title bar kSlotTitleBar (22 px) high with the launch button
+  and the name, and its notes take the full width below, as timeline clips look; shorter slots keep one line. A
+  square button in the corner of a tall slot (board 5, A) was turned down: it left a hole under it. The launch button
+  is 22 px in the title bar (it was the 30 px slot height).
+- **Lane rows** keep their height so the clips line up with the timeline, drawn as a quiet band with the column lines
+  running through.
+- **Own-devices mark** (board 6, the user read the old dot as MIDI): the same device card as wide slots, at 12 × 9 px
+  on narrow ones, at the name row's right end (the name gives up its room); a tooltip says what it means, on or off.
+  The dot is gone.

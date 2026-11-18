@@ -113,7 +113,9 @@ void ArrangerView::layout() {
     float tab = foldTab->visible ? kFoldTabWidth : 0;
     float room = std::max(0.f, box.size.x - headerWidth - tab);
     float most = ctx.state().clipsWide ? room - kFoldedTimeline : room * 0.5f;
-    float wanted = ctx.state().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth;
+    // The saved width is the scenes' room; the back column comes on top, so old patches show the scenes they did.
+    float wanted =
+        ctx.state().clipsWide ? panel->contentWidth() : ctx.view().launcherPanelWidth + panel->backColumn();
     float panelWidth = std::max(0.f, std::min({wanted, panel->contentWidth(), most}));
     if (foldTab->visible && !ctx.clipsOpenNarrow)
         panelWidth = 0;
@@ -382,12 +384,34 @@ void ArrangerView::drawPlayingSection(NVGcontext* vg) {
     if (clips && !panel->visible)
         return;
     // The quiet section steps back. The clips dim slot by slot instead (LauncherPanel), so the clips that took
-    // tracks over from the timeline stay lit.
+    // tracks over from the timeline stay lit; on the timeline, the rows of tracks sent back to it stay lit
+    // (docs/DECISIONS.md §187).
     if (clips) {
-        nvgBeginPath(vg);
-        nvgRect(vg, lanes->box.pos.x, ruler->box.pos.y, lanes->box.size.x, box.size.y);
-        nvgFillColor(vg, nvgTransRGBAf(c.bg0, kQuietAlpha));
-        nvgFill(vg);
+        float x = lanes->box.pos.x, w = lanes->box.size.x, lanesTop = lanes->box.pos.y;
+        auto shade = [&](float y0, float y1) {
+            y0 = std::max(y0, ruler->box.pos.y);
+            if (y1 <= y0)
+                return;
+            nvgBeginPath(vg);
+            nvgRect(vg, x, y0, w, y1 - y0);
+            nvgFillColor(vg, nvgTransRGBAf(c.bg0, kQuietAlpha));
+            nvgFill(vg);
+        };
+        bool anyOnTimeline = false;
+        float y = lanesTop;
+        for (size_t i = 0; i < rows.size() && i < tracks.heights().size(); i++) {
+            float top = lanesTop + float(tracks.trackTop(int(i)));
+            float bottom = top + float(tracks.trackHeight(int(i)));
+            const TrackRow& row = rows[i];
+            bool lit = (row.isTrack() || row.isLane()) && row.track.valid() && m->launcherStatus(row.track).onTimeline;
+            anyOnTimeline |= lit;
+            if (!lit)
+                shade(std::max(top, lanesTop), bottom);
+            y = std::max(y, bottom);
+        }
+        shade(std::max(y, lanesTop), box.size.y);
+        if (!anyOnTimeline)
+            shade(ruler->box.pos.y, lanesTop); // the song position matters only to a track that plays the timeline
     }
     rack::math::Rect section =
         clips ? panel->box : rack::math::Rect(lanes->box.pos.x, 0, lanes->box.size.x, box.size.y);

@@ -14,10 +14,10 @@ struct LauncherStatus;
 /// `hotLaunch` the launch or stop button.
 namespace slotDraw {
 
-/// The launch button: a square at the cell's left.
-inline rack::math::Rect launchRect(const rack::math::Rect& cell) {
-    return rack::math::Rect(cell.pos, rack::math::Vec(cell.size.y, cell.size.y));
-}
+/// The launch button: a square at the cell's left, as tall as the cell; in a tall cell, the size of its title bar.
+rack::math::Rect launchRect(const rack::math::Rect& cell);
+/// Where a slot's own-devices card sits (empty when the clip has no own devices), for its tooltip.
+rack::math::Rect ownMarkRect(rack::math::Rect cell, const Track& track, const Clip& clip);
 
 void drawSlot(NVGcontext* vg, EditorContext& ctx, rack::math::Rect cell, TrackId track, int scene,
               const LauncherStatus& status, bool hovered, bool hotLaunch);

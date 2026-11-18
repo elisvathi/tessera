@@ -51,20 +51,39 @@ int LauncherPanel::sceneCount() {
 }
 
 Rect LauncherPanel::cellRect(int row, int scene) {
+    // A grid (docs/DECISIONS.md §188): the cell fills its row, kSlotGap from its neighbours and the row's line.
+    float gap = theme::metrics::kSlotGap;
     float top = rowsTop + float(owner.tracks.trackTop(row));
-    float h = std::min(float(owner.tracks.trackHeight(row)) - 2 * kInset, kMaxSlotHeight);
-    return Rect(columnX(scene) + kInset, top + kInset, kSlotWidth - 2 * kInset, std::max(4.f, h));
+    float h = float(owner.tracks.trackHeight(row)) - 2 * gap;
+    return Rect(columnX(scene) + gap, top + gap, kSlotWidth - gap, std::max(4.f, h));
 }
 
-float LauncherPanel::backColumn() {
+float LauncherPanel::backColumn() { return ctx.module() ? kBackColumn : 0; }
+
+Rect LauncherPanel::backAllRect() {
+    Rect header = sceneHeaderRect(0);
+    float size = std::min(header.size.y, kBackColumn - 2 * kInset);
+    return Rect(box.size.x - kEdge - kBackColumn + (kBackColumn - size) / 2, header.getCenter().y - size / 2, size,
+                size);
+}
+
+bool LauncherPanel::anyTrackAway() {
     TesseraModule* m = ctx.module();
-    return m && m->playMode() == PlayMode::Arranger ? kBackColumn : 0;
+    if (!m)
+        return false;
+    for (const Track& t : m->song().tracks) {
+        LauncherStatus st = m->launcherStatus(t.id);
+        if (!st.onTimeline && st.queued != kBackToTimeline)
+            return true;
+    }
+    return false;
 }
 
 Rect LauncherPanel::backRect(int row) {
-    Rect cell = cellRect(row, 0);
-    float size = std::min(cell.size.y, kBackColumn - 2 * kInset);
-    return Rect(box.size.x - kEdge - kBackColumn + (kBackColumn - size) / 2, cell.getCenter().y - size / 2, size,
+    // Level with the slots' launch buttons: in a tall row, with their title bars.
+    Rect launch = slotDraw::launchRect(cellRect(row, 0));
+    float size = std::min(launch.size.y, kBackColumn - 2 * kInset);
+    return Rect(box.size.x - kEdge - kBackColumn + (kBackColumn - size) / 2, launch.getCenter().y - size / 2, size,
                 size);
 }
 
@@ -75,7 +94,12 @@ LauncherPanel::Hit LauncherPanel::hitTest(Vec pos) {
         return hit;
     }
     if (pos.x >= box.size.x - kEdge - backColumn()) {
-        int row = pos.y >= rowsTop ? owner.tracks.trackAt(pos.y - rowsTop) : -1;
+        if (pos.y < rowsTop) {
+            if (backAllRect().contains(pos))
+                hit.part = Hit::Part::BackAll;
+            return hit;
+        }
+        int row = owner.tracks.trackAt(pos.y - rowsTop);
         if (row >= 0 && row < int(owner.rows.size()) && owner.rows[size_t(row)].kind == TrackRow::Kind::Track &&
             backRect(row).contains(pos)) {
             hit.part = Hit::Part::Back;
@@ -111,6 +135,10 @@ LauncherPanel::Hit LauncherPanel::hitTest(Vec pos) {
     hit.row = row;
     hit.track = owner.rows[size_t(row)].track;
     hit.part = slotDraw::launchRect(cell).contains(pos) ? Hit::Part::Launch : Hit::Part::Body;
+    if (TesseraModule* m = ctx.module())
+        if (const Track* t = m->song().findTrack(hit.track))
+            if (const Clip* clip = slotClip(m->song(), *t, scene))
+                hit.ownMark = slotDraw::ownMarkRect(cell, *t, *clip).grow(Vec(2, 2)).contains(pos);
     return hit;
 }
 
@@ -251,7 +279,8 @@ class PanelResizeGesture : public DragGesture {
     }
     void update(Vec pos, Modifiers) override {
         float most = panel.contentWidth();
-        panel.ctx.view().launcherPanelWidth = std::clamp(start + pos.x - press.x, kMinWidth, std::max(kMinWidth, most));
+        panel.ctx.view().launcherPanelWidth =
+            std::clamp(start + pos.x - press.x, kMinWidth, std::max(kMinWidth, most)) - panel.backColumn();
     }
     CursorShape cursor() const override { return CursorShape::ResizeH; }
 
@@ -295,8 +324,13 @@ void LauncherPanel::click(Vec pos, int button, Modifiers mods) {
         return;
     }
     if (h.part == Hit::Part::Back) {
-        if (button == GLFW_MOUSE_BUTTON_LEFT && m->launcherStatus(h.track).overridden)
+        if (button == GLFW_MOUSE_BUTTON_LEFT && !m->launcherStatus(h.track).onTimeline)
             m->backToArrangement(h.track);
+        return;
+    }
+    if (h.part == Hit::Part::BackAll) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && anyTrackAway())
+            m->backToArrangement();
         return;
     }
     if (h.part == Hit::Part::SceneLaunch || h.part == Hit::Part::SceneName) {
@@ -380,16 +414,34 @@ void LauncherPanel::wheel(Vec pos, Vec delta, Modifiers mods) {
 }
 
 CursorShape LauncherPanel::hoverCursor(Vec pos, Modifiers mods) {
-    bool wasBack = hover.part == Hit::Part::Back;
+    Hit was = hover;
     hover = hitTest(pos);
-    if (hover.part == Hit::Part::Back && !wasBack)
-        backTip.enter();
-    else if (hover.part != Hit::Part::Back && wasBack)
+    auto tipped = [](const Hit& h) {
+        return h.part == Hit::Part::Back || h.part == Hit::Part::BackAll || h.ownMark;
+    };
+    bool same = was.part == hover.part && was.row == hover.row && was.scene == hover.scene && was.ownMark == hover.ownMark;
+    if (tipped(was) && (!tipped(hover) || !same))
         backTip.leave();
+    if (tipped(hover) && (!tipped(was) || !same)) {
+        std::string text = "Back to timeline: this track plays the timeline again, from the next launch line";
+        if (hover.part == Hit::Part::BackAll)
+            text = "Every track back to the timeline, from the next launch line";
+        if (hover.ownMark) {
+            const Track* t = ctx.module() ? ctx.module()->song().findTrack(hover.track) : nullptr;
+            const Clip* clip = t ? slotClip(ctx.module()->song(), *t, hover.scene) : nullptr;
+            text = clip && clip->usesOwnChain()
+                       ? "Own devices: this clip plays through its own devices, not the track's"
+                       : "Own devices, switched off: this clip plays through the track's devices for now";
+        }
+        backTip.setText(text);
+        backTip.enter();
+    }
     switch (hover.part) {
     case Hit::Part::Back:
-        return ctx.module() && ctx.module()->launcherStatus(hover.track).overridden ? CursorShape::Hand
-                                                                                     : CursorShape::Arrow;
+        return ctx.module() && !ctx.module()->launcherStatus(hover.track).onTimeline ? CursorShape::Hand
+                                                                                      : CursorShape::Arrow;
+    case Hit::Part::BackAll:
+        return anyTrackAway() ? CursorShape::Hand : CursorShape::Arrow;
     case Hit::Part::Edge:
         return CursorShape::ResizeH;
     case Hit::Part::Launch:
@@ -406,14 +458,16 @@ void LauncherPanel::step() {
     InteractiveView::step();
 }
 
-void LauncherPanel::drawBackButton(NVGcontext* vg, int row, const LauncherStatus& status) {
+void LauncherPanel::drawBackButton(NVGcontext* vg, Rect r, bool faint, bool away, bool waiting, bool hot) {
     const theme::Palette& c = theme::colors();
-    Rect r = backRect(row);
-    bool away = status.overridden;
-    bool hot = away && hover.part == Hit::Part::Back && hover.row == row;
-    if (away)
+    hot = hot && !faint && !waiting;
+    if (away || hot)
         draw::roundedRect(vg, r, theme::metrics::kRadiusItem, hot ? c.line2 : c.bg2);
-    NVGcolor ink = hot ? c.text0 : away ? c.text1 : nvgTransRGBAf(c.text2, theme::metrics::kBackIdleAlpha);
+    NVGcolor ink = waiting ? (slotDraw::blinkOn() ? c.queue : c.text2)
+                   : faint ? nvgTransRGBAf(c.text2, theme::metrics::kBackIdleAlpha)
+                   : hot   ? c.text0
+                   : away  ? c.text1
+                           : c.text2;
     slotDraw::drawActionIcon(vg, NextAction::Timeline, r.getCenter(), theme::metrics::kBackIcon, ink);
 }
 
@@ -473,9 +527,17 @@ void LauncherPanel::drawView(const DrawArgs& args) {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
-    bool quiet = m->playMode() == PlayMode::Arranger;
+    bool timelineMode = m->playMode() == PlayMode::Arranger;
     nvgSave(vg);
     float back = backColumn();
+    if (back > 0) {
+        bool waitingAll = false;
+        for (const Track& t : m->song().tracks)
+            waitingAll |= m->launcherStatus(t.id).queued == kBackToTimeline;
+        bool away = anyTrackAway();
+        drawBackButton(vg, backAllRect(), !away && !waitingAll, timelineMode && m->anyTrackOverridden(),
+                       !away && waitingAll, hover.part == Hit::Part::BackAll);
+    }
     nvgScissor(vg, 0, 0, box.size.x - kEdge - back, box.size.y);
     drawSceneHeaders(vg);
     nvgIntersectScissor(vg, 0, rowsTop, box.size.x, box.size.y - rowsTop);
@@ -489,15 +551,36 @@ void LauncherPanel::drawView(const DrawArgs& args) {
         nvgFillColor(vg, c.line0);
         nvgFill(vg);
         const TrackRow& r = owner.rows[row];
+        if (r.isLane()) {
+            // A lane row keeps its height (the clips line up with the timeline): a quiet band the column lines cross,
+            // so the grid carries on.
+            nvgBeginPath(vg);
+            nvgRect(vg, 0, top, box.size.x, h - 1);
+            nvgFillColor(vg, nvgLerpRGBA(background, c.ground, 0.35f));
+            nvgFill(vg);
+            nvgBeginPath(vg);
+            for (int s = 0; s <= sceneCount(); s++) {
+                float x = columnX(s);
+                if (x < 0 || x > box.size.x)
+                    continue;
+                nvgRect(vg, x, top, theme::metrics::kSlotGap, h - 1);
+            }
+            nvgFillColor(vg, c.line0);
+            nvgFill(vg);
+        }
         if (r.kind != TrackRow::Kind::Track)
             continue;
         LauncherStatus status = m->launcherStatus(r.track);
+        // A track that plays the timeline: its clips step back, except one about to start.
+        bool quiet = timelineMode || status.onTimeline;
         if (back > 0) {
             // The back column stays put while the scenes scroll, outside the slots' clip.
             nvgSave(vg);
             nvgResetScissor(vg);
             nvgScissor(vg, box.size.x - kEdge - back, rowsTop, back, box.size.y - rowsTop);
-            drawBackButton(vg, int(row), status);
+            bool waiting = status.queued == kBackToTimeline;
+            drawBackButton(vg, backRect(int(row)), status.onTimeline && !waiting, status.overridden, waiting,
+                           hover.part == Hit::Part::Back && hover.row == int(row));
             nvgRestore(vg);
         }
         const clipControl::Settings& control = m->clipControlSettings();
@@ -529,8 +612,7 @@ void LauncherPanel::drawView(const DrawArgs& args) {
             // While the timeline plays the clips step back, but a clip that took its track over stays lit.
             if (quiet && status.playing != s && status.queued != s) {
                 nvgBeginPath(vg);
-                nvgRect(vg, cell.pos.x - kInset, cell.pos.y - kInset, cell.size.x + 2 * kInset,
-                        cell.size.y + 2 * kInset);
+                nvgRect(vg, cell.pos.x, cell.pos.y, cell.size.x, cell.size.y);
                 nvgFillColor(vg, nvgTransRGBAf(background, kQuietAlpha));
                 nvgFill(vg);
             }

@@ -326,7 +326,7 @@ TEST_CASE("next actions: set on a clip that already plays, it counts from the lo
     CHECK(h2.playing() == 0);
 }
 
-TEST_CASE("next actions: back to timeline hands the track back to the timeline, or stops it while the clips play") {
+TEST_CASE("next actions: back to timeline hands the track back to the timeline, in either mode") {
     ActionHarness h({60, 62});
     h.clip(0).next.action = NextAction::Timeline;
     h.clip(0).next.count = 1;
@@ -346,6 +346,7 @@ TEST_CASE("next actions: back to timeline hands the track back to the timeline, 
     clips.start();
     clips.runTo(kBar + 1);
     CHECK(clips.playing() == kNoSlot);
+    CHECK(clips.engine.followsTimeline(0));
 }
 
 TEST_CASE("back to timeline for one track leaves the other tracks on their clips") {
@@ -363,11 +364,55 @@ TEST_CASE("back to timeline for one track leaves the other tracks on their clips
         h.engine.launch({LaunchEvent::Kind::Slot, t.id.value, 0, true});
     CHECK(h.engine.overridden(0));
     CHECK(h.engine.overridden(1));
-    h.engine.launch({LaunchEvent::Kind::BackToArrangement, h.song.tracks[1].id.value});
+    h.engine.launch({LaunchEvent::Kind::BackToArrangement, h.song.tracks[1].id.value, 0, true});
     CHECK(h.engine.overridden(0));
     CHECK_FALSE(h.engine.overridden(1));
-    h.engine.launch({LaunchEvent::Kind::BackToArrangement});
+    h.engine.launch({LaunchEvent::Kind::BackToArrangement, 0, 0, true});
     CHECK_FALSE(h.engine.overridden(0));
+}
+
+TEST_CASE("back to timeline waits for the launch line, as a launch does") {
+    ActionHarness h({60, 62});
+    h.start();
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.launch({LaunchEvent::Kind::Slot, h.song.tracks[0].id.value, 0, true});
+    h.runTo(kBar / 3);
+    h.engine.launch({LaunchEvent::Kind::BackToArrangement, h.song.tracks[0].id.value});
+    CHECK(h.queued() == kBackToTimeline);
+    CHECK(h.engine.overridden(0));
+    h.runTo(kBar - 1);
+    CHECK(h.engine.overridden(0));
+    h.runTo(kBar);
+    CHECK_FALSE(h.engine.overridden(0));
+    CHECK(h.queued() == kNothingQueued);
+}
+
+TEST_CASE("in Clips mode one track can go back to the timeline while the others play clips") {
+    ActionHarness h({60});
+    Track second = h.song.tracks[0];
+    second.id = h.song.newId<TrackId>();
+    Clip copy = h.clip(0);
+    copy.id = h.song.newId<ClipId>();
+    second.slots[0].clip = copy.id;
+    h.song.clips.emplace(copy.id, copy);
+    h.song.tracks.push_back(second);
+    h.start();
+    h.engine.launch({LaunchEvent::Kind::Slot, h.song.tracks[1].id.value, 0, true});
+    h.runTo(10);
+    h.engine.launch({LaunchEvent::Kind::BackToArrangement, h.song.tracks[0].id.value});
+    h.runTo(kBar);
+    CHECK(h.engine.followsTimeline(0));
+    CHECK_FALSE(h.engine.followsTimeline(1));
+    CHECK(h.engine.playingSlot(1) == 0);
+    // Launching a clip on it takes it off the timeline again; so does switching the mode.
+    h.engine.launch({LaunchEvent::Kind::Slot, h.song.tracks[0].id.value, 0, true});
+    CHECK_FALSE(h.engine.followsTimeline(0));
+    h.engine.launch({LaunchEvent::Kind::BackToArrangement, 0, 0, true});
+    CHECK(h.engine.followsTimeline(0));
+    CHECK(h.engine.followsTimeline(1));
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.setPlayMode(PlayMode::Launcher);
+    CHECK_FALSE(h.engine.followsTimeline(0));
 }
 
 TEST_CASE("play with nothing launched starts the picked scene while the clips play; the timeline mode is left alone") {

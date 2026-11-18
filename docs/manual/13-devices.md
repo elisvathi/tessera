@@ -283,7 +283,8 @@ devices:
 **The mark.** A timeline tile of a clip with its own devices shows a tiny device card, with two tags on it, in its
 title bar. It is light while the clip plays through them, and dark with a light outline while the clip keeps them but
 plays the track's. A
-launcher slot is narrower, so it shows the same mark as a small dot in its top-right corner: light, or a light ring.
+launcher slot shows the same card, smaller on a narrow slot, at the right of the clip's name. Hover it for a reminder
+of what it means.
 The notes header adds "own devices" to the clip's name.
 
 ![The mark on slots and timeline tiles: Chorus chords plays its own devices (light), Verse chords keeps its own off (outlined)](images/clip-mark.png)

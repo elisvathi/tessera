@@ -26,7 +26,9 @@ float drawValue(NVGcontext* vg, float x, float cy, const std::string& label, flo
 /// the track's for now.
 void drawOwnMark(NVGcontext* vg, float x, float cy, bool lit);
 /// The same mark's small form, a dot of radius kOwnMarkDot centred on `c`, for a slot too narrow for the card.
-void drawOwnDot(NVGcontext* vg, rack::math::Vec c, bool lit);
+/// The own-devices card at its small size (kOwnMarkSmallWidth), for slots too narrow for the full card: the same
+/// picture, so it reads the same. Its left edge at `x`, centred on `cy`.
+void drawOwnMarkSmall(NVGcontext* vg, float x, float cy, bool lit);
 
 /// A small drawing of a playhead direction (0..3) or step order (4..7) for the Direction panel, in `r`.
 void drawDirectionIcon(NVGcontext* vg, rack::math::Rect r, int value, NVGcolor color);

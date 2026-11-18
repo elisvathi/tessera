@@ -534,7 +534,7 @@ double CurveView::sinceClipStart() {
     LauncherStatus status = m->launcherStatus(track->id);
     if (status.playing >= 0 && std::isfinite(status.elapsed))
         return status.elapsed;
-    if (m->playMode() == PlayMode::Arranger && !status.overridden)
+    if (status.onTimeline)
         if (const ArrangerClip* a = instanceAt(*track, Tick(song)); a && !a->muted)
             return song - double(a->position);
     return NAN;

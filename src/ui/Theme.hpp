@@ -177,7 +177,8 @@ constexpr float kLevelLineMinBody = 10;
 constexpr float kLevelLineHit = 3;
 constexpr float kOwnMarkWidth = 16; // the device-card mark of a clip with its own devices
 constexpr float kOwnMarkHeight = 12;
-constexpr float kOwnMarkDot = 3.5f;     // its small form, on a slot too narrow for the card and the name
+constexpr float kOwnMarkSmallWidth = 12; // its small form, on a slot too narrow for the card beside the name
+constexpr float kOwnMarkSmallHeight = 9;
 constexpr float kOwnMarkCardRoom = 100; // the slot body from which the card fits beside the name
 // A clip's next action on its slot (DECISIONS §184): a small tag with the action's icon and its count ("2/4" while it
 // plays) while the name keeps kNextMarkNameRoom; on a narrower slot the icon alone, bare, while the name keeps
@@ -196,6 +197,13 @@ constexpr float kNextMarkHeldAlpha = 0.45f;   // its icon and count while next a
 constexpr float kBackIcon = 11;
 constexpr float kBackIdleAlpha = 0.35f;
 constexpr float kPartlyOutline = 1.3f; // the panel's TIMELINE while some tracks play launched clips instead
+// The clips panel is a grid (DECISIONS §188): a slot fills its track's row, cells kSlotGap apart. From
+// kSlotTitleBarFrom tall a slot has a title bar kSlotTitleBar high (launch button and name, as timeline clips have)
+// over its notes; shorter slots keep everything on one line.
+constexpr float kSlotGap = 1;
+constexpr float kSlotTitleBar = 22;
+constexpr float kSlotTitleBarFrom = 40;
+constexpr float kSlotTitleBarShade = 0.16f; // the bar's darkening over the clip colour
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
 // down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip.

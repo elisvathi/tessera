@@ -270,6 +270,9 @@ class Engine {
     }
     /// In Arranger mode: the launcher has taken this track over, so its arrangement is silent.
     bool overridden(size_t i) const { return mode == PlayMode::Arranger && tracks[i].overridden; }
+    /// Whether track `i` plays the timeline now: in Timeline mode unless a launched clip took it over, in Clips mode
+    /// when it was sent back to the timeline (docs/DECISIONS.md §187).
+    bool followsTimeline(size_t i) const { return followsArrangement(tracks[i]); }
     /// Where the playing clip is, in clip ticks. NaN when nothing plays or a one-shot clip has ended.
     double clipPosition(size_t i) const;
     /// Clip ticks played since the playing clip started (not wrapped by its loop). NaN when nothing plays.
@@ -395,6 +398,8 @@ class Engine {
         ClipId previousClip;
         bool queuedByAction = false;
         bool actionKept = false;
+        // Clips mode: the track was sent back to the timeline and plays it while the others play clips.
+        bool onTimeline = false;
         bool overridden = false; // launched or stopped by the launcher since the last "back to arrangement"
         size_t arrangementCursor = 0;
         // Automation per AUTO channel: the smoothed value (0..1), its volts, and where each lane list was.
@@ -580,7 +585,14 @@ class Engine {
     void playSource(const TrackPlayback& track, TrackState& state, double from, double to);
     void playArrangement(const TrackPlayback& track, TrackState& state, double from, double to);
     void fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom);
-    bool followsArrangement(const TrackState& state) const { return mode == PlayMode::Arranger && !state.overridden; }
+    bool followsArrangement(const TrackState& state) const {
+        return mode == PlayMode::Arranger ? !state.overridden : state.onTimeline;
+    }
+    /// Sends a track back to the timeline at play tick `at` (in or just before this sample), in either mode.
+    void toTimeline(const TrackPlayback& track, TrackState& state, double at);
+    /// Sends a track back to the timeline at the next launch line (now while stopped, or with `immediate`), as a
+    /// launch waits for it. Nothing for a track that already plays the timeline with nothing queued.
+    void queueTimeline(const TrackPlayback& track, TrackState& state, bool immediate);
     /// A Replace take is being recorded on this track: the clips it will cut out are not heard.
     bool replacing(const TrackPlayback& track) const { return recordingOn && replaceTakes && track.armed; }
     void backToArrangement(const TrackPlayback& track, TrackState& state);
