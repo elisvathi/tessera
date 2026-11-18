@@ -369,3 +369,43 @@ TEST_CASE("back to timeline for one track leaves the other tracks on their clips
     h.engine.launch({LaunchEvent::Kind::BackToArrangement});
     CHECK_FALSE(h.engine.overridden(0));
 }
+
+TEST_CASE("play with nothing launched starts the picked scene while the clips play; the timeline mode is left alone") {
+    ActionHarness h({60, 62});
+    h.slots.sync(h.song);
+    h.snapshot = buildSnapshot(h.song, h.slots);
+    h.engine.setSampleRate(kSampleRate);
+    h.engine.setTempo(kBpm);
+    h.engine.setSnapshot(h.snapshot.get());
+    h.engine.setPickedScene(1);
+    h.engine.start();
+    CHECK(h.engine.isPlaying());
+    CHECK(h.playing() == 1);
+
+    // Something launched already: play starts just that.
+    h.engine.stop();
+    h.engine.launch({LaunchEvent::Kind::Slot, h.song.tracks[0].id.value, 0, true, false});
+    h.engine.start();
+    CHECK(h.playing() == 0);
+
+    // While the timeline plays, play starts the timeline only.
+    ActionHarness t({60, 62});
+    t.slots.sync(t.song);
+    t.snapshot = buildSnapshot(t.song, t.slots);
+    t.engine.setSnapshot(t.snapshot.get());
+    t.engine.setPlayMode(PlayMode::Arranger);
+    t.engine.start();
+    CHECK(t.playing() == kNoSlot);
+}
+
+TEST_CASE("over to the clips with nothing launched, the picked scene comes in on the launch line") {
+    ActionHarness h({60, 62});
+    h.start();
+    h.engine.setPlayMode(PlayMode::Arranger); // every track back on the timeline: nothing launched
+    h.runTo(kBar / 2);
+    h.engine.setPickedScene(1);
+    h.engine.setPlayMode(PlayMode::Launcher);
+    CHECK(h.queued() == 1);
+    h.runTo(kBar);
+    CHECK(h.playing() == 1);
+}

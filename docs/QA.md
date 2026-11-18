@@ -165,8 +165,11 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       the tag.
 - [ ] Back to timeline (DECISIONS §185): timeline playing, launch a clip on two tracks. Each row's ↩ at the clips
       panel's right edge lights up; it stays in place while the scenes scroll. Click one: only that track plays the
-      timeline again. The Plays switch reads "↩ Timeline" (and the panel's TIMELINE shows ↩) while any track is away;
+      timeline again. The Plays switch reads "↩ Timeline" (and the panel's TIMELINE is outlined) while any track is away;
       a click on it brings them all back and the ▶ returns. With Plays on Clips there is no ↩ column.
+- [ ] Clips with nothing launched (DECISIONS §186): from Timeline, switch to Clips: the panel's picked scene starts on
+      the next launch line. Stopped in Clips with every track stopped, press Play (panel, editor, RUN): the picked
+      scene starts with the transport. With clips launched, Play starts just those.
 - [ ] Next action Back to timeline: timeline playing, a launched clip hands its track back after its count; with
       Plays on Clips it stops its track instead.
 

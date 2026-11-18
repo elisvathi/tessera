@@ -1342,6 +1342,7 @@ void TesseraModule::process(const ProcessArgs& args) {
         } else {
             engine.clearKnobOverride();
         }
+        engine.setPickedScene(sceneSelected.load(std::memory_order_relaxed));
         // Before launches, so launches restored with a patch apply to the mode it was saved in.
         engine.setPlayMode(params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher);
         engine.setCapture(&captureEvents, captureArmed.load(std::memory_order_relaxed));
@@ -1436,7 +1437,7 @@ void TesseraModule::process(const ProcessArgs& args) {
 }
 
 void TesseraModule::handleTransportControls(const ProcessArgs& args, bool slowTick) {
-    auto toggle = [this] { engine.isPlaying() ? engine.stop() : engine.play(); };
+    auto toggle = [this] { engine.isPlaying() ? engine.stop() : engine.start(); };
 
     if (slowTick && playButton.process(params[PLAY_PARAM].getValue() > 0.f))
         toggle();
@@ -1458,7 +1459,7 @@ void TesseraModule::handleTransportControls(const ProcessArgs& args, bool slowTi
                 toggle();
         } else if (runInput.isHigh() != wasHigh) {
             // Gate mode reacts to edges only, so the play button still works while a cable is patched.
-            runInput.isHigh() ? engine.play() : engine.stop();
+            runInput.isHigh() ? engine.start() : engine.stop();
         }
     }
 
@@ -1503,11 +1504,11 @@ void TesseraModule::handleUiRequests() {
     if (requests & kRequestReset)
         engine.reset();
     if (requests & kRequestToggle)
-        engine.isPlaying() ? engine.stop() : engine.play();
+        engine.isPlaying() ? engine.stop() : engine.start();
     if (requests & kRequestStop)
         engine.stop();
     if (requests & kRequestPlay)
-        engine.play();
+        engine.start();
     if (requests & kRequestRecord)
         engine.toggleRecord(countInBars.load(std::memory_order_relaxed));
     if (seekPending.load(std::memory_order_relaxed) && seekPending.exchange(false, std::memory_order_acquire))

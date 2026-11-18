@@ -3171,7 +3171,19 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   while it plays the timeline, so the column never jumps. Acts at once, like the reference.
 - **All tracks**: the user's idea. The Plays switch keeps its job (Clips silences the timeline on tracks with nothing
   launched; the panel's PLAYS and its CV map use it), and its lit Timeline half, which a click used to ignore, now
-  brings every track back while any is away. It wears ↩ instead of ▶ then, in the editor and on the panel. No second
-  all-tracks button: one control per job. The ruler button is gone.
+  brings every track back while any is away. The editor's half wears ↩ instead of ▶ then. On the panel the arrow
+  squeezed the word against the pill's edges (the user: "doesn't look that good"), so there TIMELINE is outlined
+  instead of filled: the timeline plays, but not on every track. No second all-tracks button: one control per job.
+  The ruler button is gone.
 - **Next action "Back to timeline"**: queued like any next action (kBackToTimeline in the track's queue), carried out
   at the end of the count; while Plays is on Clips there is no timeline to go back to, so the track stops.
+
+## 186. Clips with nothing launched start the picked scene (18 Nov)
+
+- **User report**: back on Clips after the timeline, nothing played; Play in Clips did nothing either. Going back to
+  the timeline clears what each track launched, so Clips had nothing to play.
+- **Rule**: while the clips play and no track plays or waits for a launched clip, the scene picked on the panel
+  (PREV / NEXT / SCENE; the first by default) comes in: when the Plays switch moves to Clips (on the launch line while
+  playing, ready to start while stopped), and when the transport's own start runs (the play button, RUN, the
+  editor's play and play-from-here: `Engine::start`). Starts from a launch or a count-in call `play()` and are left
+  alone, so a recording count-in never launches clips by itself. With anything launched, nothing changes.

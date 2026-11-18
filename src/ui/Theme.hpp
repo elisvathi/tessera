@@ -195,6 +195,7 @@ constexpr float kNextMarkHeldAlpha = 0.45f;   // its icon and count while next a
 // plays the timeline.
 constexpr float kBackIcon = 11;
 constexpr float kBackIdleAlpha = 0.35f;
+constexpr float kPartlyOutline = 1.3f; // the panel's TIMELINE while some tracks play launched clips instead
 // A clip its playheads play draws one band per playhead instead of its notes, a block wherever the playhead is over a
 // note, sampled every kPlayheadPathStep pixels: with lines between the bands from kPlayheadBand tall each, thin bands
 // down to kPlayheadThinBand, and below that every playhead's blocks laid over the whole clip.

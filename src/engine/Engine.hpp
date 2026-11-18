@@ -164,6 +164,12 @@ class Engine {
     void setClockDivision(Tick ticks) { clockDivision = ticks > 0 ? ticks : 1; }
     /// Switching to Arranger brings every track back to the arrangement.
     void setPlayMode(PlayMode mode);
+    /// The scene the panel has picked (PREV / NEXT / SCENE): what starts when Clips has nothing to play.
+    void setPickedScene(int scene) { pickedScene = scene; }
+    /// The transport's own start (the play button, RUN, the editor's play): while the clips play and none is
+    /// launched, the picked scene starts with it, so play always plays something (docs/DECISIONS.md §186). Other
+    /// starts (a launch, a count-in) call play().
+    void start();
     PlayMode playMode() const { return mode; }
     /// While on, clip starts and stops go to `queue` (which must outlive the engine's use of it).
     void setCapture(CaptureQueue* queue, bool on);
@@ -825,6 +831,9 @@ class Engine {
     bool playing = false;
     uint32_t roll = 1; // see currentRoll()
     bool nextActionsOn = true;
+    int pickedScene = 0;
+    /// No track plays or waits for a launched clip.
+    bool nothingLaunched() const;
     uint64_t actionDraws = 0; // next actions' dice: how many were drawn
     bool resetPending = false;
     double songTick = 0;

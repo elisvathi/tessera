@@ -55,7 +55,9 @@ Chooses what the tracks play:
 
 - **CLIPS:** each track plays the clip you launched on it.
 - **TIMELINE:** each track plays the song as laid out on the timeline. When you launch clips over the timeline,
-  TIMELINE shows a ↩: click it to bring those tracks back to the timeline.
+  TIMELINE is only outlined, not filled: click it to bring those tracks back to the timeline.
+
+Switching to CLIPS, or pressing **PLAY** in CLIPS, with no clip launched starts the scene shown on the display.
 
 The same switch is in the editor's transport bar. See [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline).
 

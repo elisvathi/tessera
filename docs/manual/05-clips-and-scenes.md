@@ -45,7 +45,9 @@ drag the clips' right edge. **Shift+wheel** scrolls through scenes.
 - Only one clip plays per track. Launching another one replaces it at the launch line.
 - A clip with looping off plays once, then the track stops.
 
-When you press play later, the clips that were playing start again.
+When you press play later, the clips that were playing start again. If no clip is launched at all, play starts the
+scene picked on the panel (the first scene, unless you pick another with **PREV** and **NEXT**), so play always
+plays something.
 
 ## Launch quantize: when clips start
 
@@ -216,7 +218,8 @@ The controller settings are saved with the patch (not in project files: the devi
 
 The **Plays** switch in the transport bar (and **PLAYS** on the panel) decides what the tracks play:
 
-- **Clips**: each track plays the clip you launched. The timeline is silent.
+- **Clips**: each track plays the clip you launched. The timeline is silent. Switching to Clips with no clip
+  launched starts the scene picked on the panel (on the launch line while playing).
 - **Timeline**: each track plays the timeline from left to right.
 
 The section that plays is framed in green while the transport runs. The other one is dimmed, but you can still edit
@@ -229,6 +232,7 @@ timeline and plays the clip. Its timeline lane is dimmed. To bring tracks back t
   has one there, in a column that stays put while you scroll the scenes. It is lit while the track plays a launched
   clip, and faint while the track already plays the timeline.
 - **Every track:** **Timeline** on the Plays switch shows a ↩ instead of its ▶ while some tracks play launched
-  clips. Click it to bring them all back. **TIMELINE** on the panel does the same.
+  clips. Click it to bring them all back. On the panel, **TIMELINE** is only outlined then, not filled: click it
+  to do the same.
 - **By itself:** give a clip the next action **Back to timeline**. See
   [Next actions](#next-actions-clips-that-move-on-by-themselves).

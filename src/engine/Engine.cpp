@@ -455,6 +455,24 @@ void Engine::setPlayMode(PlayMode m) {
         else if (!tracks[i].overridden)
             releaseClipVoices(tracks[i]); // the arrangement goes quiet; launched clips play on
     }
+    // Over to the clips with none launched: the picked scene comes in, on the launch line while playing.
+    if (m == PlayMode::Launcher && snapshot && nothingLaunched())
+        launch({LaunchEvent::Kind::Scene, 0, pickedScene, false, false});
+}
+
+bool Engine::nothingLaunched() const {
+    for (size_t i = 0; i < trackCount; i++)
+        if (tracks[i].playing != kNoSlot || tracks[i].queued != kNothingQueued)
+            return false;
+    return true;
+}
+
+void Engine::start() {
+    if (playing)
+        return;
+    if (mode == PlayMode::Launcher && snapshot && nothingLaunched())
+        launch({LaunchEvent::Kind::Scene, 0, pickedScene, true, false});
+    play();
 }
 
 void Engine::backToArrangement(const TrackPlayback& tp, TrackState& state) {

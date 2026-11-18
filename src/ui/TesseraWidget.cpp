@@ -7,7 +7,6 @@
 #include "ModuleUndo.hpp"
 #include "PanelEditor.hpp"
 #include "TesseraDisplay.hpp"
-#include "views/SlotDraw.hpp"
 #include "Theme.hpp"
 #include "editing/AudioActions.hpp"
 #include "editing/ProjectFile.hpp"
@@ -136,7 +135,8 @@ struct MainMeter : rack::widget::Widget {
 
 /// PLAYS: what the tracks play, the clips or the timeline. One switch with two halves; the lit half plays, and a
 /// click on a half picks it. Same param as the editor's Plays switch. While clips launched over the timeline have
-/// taken tracks over, TIMELINE wears a return arrow, and a click on it brings them all back (docs/DECISIONS.md §185).
+/// taken tracks over, TIMELINE is only outlined (not every track plays it), and a click on it brings them all back
+/// (docs/DECISIONS.md §185); the panel has no room for the editor's return arrow beside the word.
 struct PlaysSwitch : rack::app::Switch {
     static constexpr float kWidthMm = 24;
     static constexpr float kHeightMm = 6.5f;
@@ -204,18 +204,16 @@ struct PlaysSwitch : rack::app::Switch {
             if (on != lit)
                 continue;
             Rect r = i == 0 ? Rect(2, 2, first, box.size.y - 4) : Rect(split, 2, inner - first, box.size.y - 4);
-            if (on)
-                draw::roundedRect(vg, r, theme::metrics::kRadiusControl, c.play);
-            style.color = on ? c.ink : c.text2;
             TesseraModule* m = module();
-            if (on && i == 1 && m && m->anyTrackOverridden()) {
-                // Tracks left the timeline for launched clips: the arrow says a click brings them back.
-                float icon = theme::metrics::kPanelLabel;
-                float x = r.getCenter().x - (icon + 2 + widths[1]) / 2;
-                slotDraw::drawActionIcon(vg, NextAction::Timeline, Vec(x + icon / 2, r.getCenter().y), icon,
-                                         style.color);
-                draw::text(vg, style, x + icon + 2 + widths[1] / 2, r.getCenter().y + 0.5f, labels[i]);
-                continue;
+            bool partly = on && i == 1 && m && m->anyTrackOverridden();
+            if (partly) {
+                draw::roundedRectStroke(vg, r.shrink(Vec(0.5f, 0.5f)), theme::metrics::kRadiusControl, c.play,
+                                        theme::metrics::kPartlyOutline);
+                style.color = c.play;
+            } else {
+                if (on)
+                    draw::roundedRect(vg, r, theme::metrics::kRadiusControl, c.play);
+                style.color = on ? c.ink : c.text2;
             }
             draw::text(vg, style, r.getCenter().x, r.getCenter().y + 0.5f, labels[i]);
         }
