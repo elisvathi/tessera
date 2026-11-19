@@ -32,6 +32,8 @@ const char* allocationName(VoiceAllocation a) {
         return "Reuse";
     case VoiceAllocation::Reset:
         return "Reset";
+    case VoiceAllocation::Channel:
+        return "Channel";
     case VoiceAllocation::Rotate:
     default:
         return "Rotate";
@@ -483,7 +485,8 @@ void appendVoicesItems(rack::ui::Menu* menu, EditorContext& ctx, const std::vect
             static const Choice choices[] = {
                 {VoiceAllocation::Rotate, "next free voice: release tails ring out"},
                 {VoiceAllocation::Reuse, "each pitch keeps its voice"},
-                {VoiceAllocation::Reset, "lowest free voice; chords low to high"}};
+                {VoiceAllocation::Reset, "lowest free voice; chords low to high"},
+                {VoiceAllocation::Channel, "note channel N plays on poly channel N"}};
             for (const Choice& ch : choices) {
                 VoiceAllocation a = ch.a;
                 sub->addChild(rack::createCheckMenuItem(

@@ -115,6 +115,8 @@ struct Song {
     /// its playheads (muted ones too, so muting moves nothing), in playhead order, each up to 16 (its Auto count, or
     /// the fixed count); else one block of voicesOf. At most kMaxTrackVoices in all.
     std::vector<VoiceBlock> voiceBlocks(const Track& track) const;
+    /// The highest note channel any of the track's clips uses (at least 1): Channel allocation sends that many.
+    int highestNoteChannel(const Track& track) const;
     /// The most notes the track's clips ever play at once (at least 1), before its devices.
     int mostNotesAtOnce(const Track& track) const;
     /// The most notes that reach a device at once, for an Arpeggiator's Pattern rows: the most the clips feeding its

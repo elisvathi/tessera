@@ -82,7 +82,8 @@ inline BarBeatTick toBarBeatTick(Tick t, TimeSig ts) {
 enum class VoiceAllocation : uint8_t {
     Rotate, // the next free voice after the last one used
     Reuse,  // the voice that played this pitch last, even while it still sounds
-    Reset   // the lowest free voice; notes starting together go low to high
+    Reset,  // the lowest free voice; notes starting together go low to high
+    Channel // note channel N plays on voice N (wrapping past the voice count)
 };
 
 } // namespace tessera

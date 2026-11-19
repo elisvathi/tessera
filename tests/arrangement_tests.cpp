@@ -464,6 +464,20 @@ TEST_CASE("stacked clips: placing over another clip keeps both, and both play") 
     CHECK(arr[0].length == kBeat);
 }
 
+TEST_CASE("Channel allocation: automatic voices reach the highest note channel (issue #13)") {
+    Fixture f;
+    Track& t = *f.song.findTrack(f.t0);
+    t.polyphony = kAutoVoices;
+    for (ClipSlot& s : t.slots)
+        s.clip.reset();
+    f.add(f.t0, 0, 2 * kBeat);
+    for (Note& n : f.song.clips[f.clip].notes)
+        n.channel = 9;
+    int alone = f.song.voicesOf(t);
+    t.allocation = VoiceAllocation::Channel;
+    CHECK(f.song.voicesOf(t) == std::max(alone, 9));
+}
+
 TEST_CASE("stacked clips: automatic voices add up while clips overlap") {
     Fixture f;
     f.song.findTrack(f.t0)->polyphony = kAutoVoices;

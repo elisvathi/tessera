@@ -226,6 +226,10 @@ std::vector<Song::VoiceBlock> Song::voiceBlocks(const Track& track) const {
         addClip(a.clip);
     if (blocks.empty())
         blocks.push_back({0, 1});
+    if (track.allocation == VoiceAllocation::Channel && track.polyphony == kAutoVoices)
+        for (VoiceBlock& b : blocks)
+            if (b.part == 0)
+                b.size = std::max(b.size, highestNoteChannel(track));
     // Each up to 16. Past the track's room the biggest give a voice at a time (the last first), so every channel
     // keeps voices of its own and none has to share another's.
     int total = 0;
@@ -240,6 +244,21 @@ std::vector<Song::VoiceBlock> Song::voiceBlocks(const Track& track) const {
         total--;
     }
     return blocks;
+}
+
+int Song::highestNoteChannel(const Track& track) const {
+    int highest = 1;
+    auto add = [&](ClipId id) {
+        if (const Clip* clip = findClip(id))
+            for (const Note& n : clip->notes)
+                highest = std::max(highest, int(n.channel));
+    };
+    for (const ClipSlot& s : track.slots)
+        if (s.clip)
+            add(*s.clip);
+    for (const ArrangerClip& a : track.arrangement)
+        add(a.clip);
+    return highest;
 }
 
 int Song::mostNotesAtOnce(const Track& track) const {

@@ -199,6 +199,16 @@ TEST_CASE("VoiceAllocator: Reset takes the lowest free voice, and a strummed cho
     CHECK(v.noteOn(60, 1, 0.5f, 10, 5, 0, 0, 0) == 0);
 }
 
+TEST_CASE("VoiceAllocator: Channel plays note channel N on voice N (issue #13)") {
+    VoiceAllocator v;
+    v.setPolyphony(4);
+    v.setAllocation(VoiceAllocation::Channel);
+    CHECK(v.noteOn(60, 1, 0.5f, 10, 1, 3) == 2);
+    CHECK(v.noteOn(62, 1, 0.5f, 10, 2, 1) == 0);
+    CHECK(v.noteOn(64, 1, 0.5f, 10, 3, 3) == 2); // its channel's voice even while it sounds
+    CHECK(v.noteOn(65, 1, 0.5f, 10, 4, 6) == 1); // past the voice count it wraps
+}
+
 TEST_CASE("VoiceAllocator: Rotate starts again from the first voice when play starts") {
     VoiceAllocator v;
     v.setPolyphony(4);

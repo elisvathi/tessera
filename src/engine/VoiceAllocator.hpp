@@ -9,7 +9,7 @@
 
 namespace tessera {
 
-/// Assigns notes to a track's voices, as its allocation says (Rotate, Reuse or Reset), stealing the oldest note
+/// Assigns notes to a track's voices, as its allocation says (Rotate, Reuse, Reset or Channel), stealing the oldest note
 /// when all voices are busy. A tied note takes over the voice of the note it continues, with no new gate. The voices
 /// come in blocks, one per channel (a Playheads device gives each playhead channel its own, in playhead order), and a
 /// note only ever takes a voice in its channel's block, so one busy channel can't cut another's notes. A track
@@ -141,7 +141,7 @@ class VoiceAllocator {
     int noteOn(int8_t pitch, float velocity, float releaseVelocity, double endTick, uint32_t id = 0, uint8_t part = 0,
                double startTick = 0, int lowerLater = 0) {
         int b = blockFor(part);
-        int v = pickVoice(b, pitch, lowerLater);
+        int v = pickVoice(b, pitch, lowerLater, part);
         Voice& voice = voices[v];
         if (gate(v)) {
             // Reused while sounding: the gate drops now and rises again after the gap.
@@ -299,9 +299,11 @@ class VoiceAllocator {
 
     /// The voice in block `b` for a new note of `pitch`, by the allocation: Rotate takes the next free one after
     /// the last used (a playhead channel's first free one), Reuse the one that played this pitch last (else as Rotate), Reset the lowest free one past
-    /// `skip` others; when none is free, the oldest.
-    int pickVoice(int b, int8_t pitch, int skip) const {
+    /// `skip` others, Channel the voice of note channel `part` in the shared block; when none is free, the oldest.
+    int pickVoice(int b, int8_t pitch, int skip, uint8_t part) const {
         const Block& block = blocks[b];
+        if (allocation == VoiceAllocation::Channel && part >= 1 && block.part == 0)
+            return block.start + (part - 1) % block.size;
         if (allocation == VoiceAllocation::Reuse)
             for (int v = block.start; v < block.start + block.size; v++)
                 if (voices[v].startOrder > 0 && voices[v].pitch == pitch)
