@@ -49,6 +49,52 @@ void addToCurve(std::vector<ExprPoint>& curve, double start, double length, doub
     curve = std::move(out);
 }
 
+/// When the pitch curves of `a` and `b` meet at the joint (as "untie, keep the glide" leaves them), turns that bend
+/// back into the glide of the new tie `b` and drops it from the curves, so the glide and the curves never both move
+/// the pitch.
+void takeBackGlide(Note& a, Note& b) {
+    if (b.glideBefore > 0 || b.glideAfter > 0 || a.pitch == b.pitch || a.pitchExpr.empty() || b.pitchExpr.empty())
+        return;
+    float atJoint = float(a.pitch) + expressionAt(a.pitchExpr, 1.f, 0);
+    if (std::abs(atJoint - (float(b.pitch) + expressionAt(b.pitchExpr, 0.f, 0))) > 1e-3f)
+        return;
+    auto flat = [](const ExprPoint& p) { return std::abs(p.value) < 1e-4f; };
+    float fromPos = 0, toPos = 1;
+    for (const ExprPoint& p : a.pitchExpr)
+        if (flat(p) && p.pos < 1.f)
+            fromPos = p.pos;
+    for (auto it = b.pitchExpr.rbegin(); it != b.pitchExpr.rend(); ++it)
+        if (flat(*it) && it->pos > 0.f)
+            toPos = it->pos;
+    Tick from = a.start + Tick(std::llround(fromPos * double(a.length)));
+    Tick to = b.start + Tick(std::llround(toPos * double(b.length)));
+    Glide g{from, b.start, to, a.pitch, b.pitch, 0};
+    // Solve the shape from where the line crosses the joint: shaped() grows with the shape at any inner x.
+    double x = double(b.start - from) / double(std::max<Tick>(1, to - from));
+    double y = (double(atJoint) - a.pitch) / double(b.pitch - a.pitch);
+    if (x > 0 && x < 1) {
+        float lo = -1, hi = 1;
+        bool rising = shaped(1, x) > shaped(-1, x);
+        for (int k = 0; k < 30; k++) {
+            float mid = (lo + hi) / 2;
+            ((shaped(mid, x) < y) == rising ? lo : hi) = mid;
+        }
+        g.shape = (lo + hi) / 2;
+    }
+    a.pitchExpr.erase(std::remove_if(a.pitchExpr.begin(), a.pitchExpr.end(),
+                                     [&](const ExprPoint& p) { return p.pos > fromPos + 1e-6f; }),
+                      a.pitchExpr.end());
+    b.pitchExpr.erase(std::remove_if(b.pitchExpr.begin(), b.pitchExpr.end(),
+                                     [&](const ExprPoint& p) { return p.pos < toPos - 1e-6f; }),
+                      b.pitchExpr.end());
+    for (Note* n : {&a, &b})
+        if (std::all_of(n->pitchExpr.begin(), n->pitchExpr.end(), flat))
+            n->pitchExpr.clear();
+    b.glideBefore = b.start - from;
+    b.glideAfter = to - b.start;
+    b.glideShape = g.shape;
+}
+
 } // namespace
 
 void addGlide(std::vector<ExprPoint>& first, double firstStart, double firstLength, std::vector<ExprPoint>& second,
@@ -155,6 +201,7 @@ NoteList tie(const NoteList& notes, const IdSet& ids, IdSet* tiedIds) {
         if (a.length != oldLength)
             expr::keepInTime(a, oldStart, oldLength);
         b.tied = true;
+        takeBackGlide(a, b);
         taken[size_t(best)] = 1;
         if (tiedIds)
             tiedIds->insert(b.id);

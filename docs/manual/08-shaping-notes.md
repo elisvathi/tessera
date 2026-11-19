@@ -135,6 +135,7 @@ moves on, as when you play legato on a mono synth. The pitch can jump, or glide 
 | Bend the glide | Drag its hollow middle handle up or down (a slow or fast start). |
 | Remove the glide | Right-click the tie → **No glide (jump)**. |
 | Untie | Press **J** again: the glide stays, written into the two notes' own pitch curves, and the second note starts again. Right-click the tie → **Untie, remove the glide** drops the glide too. |
+| Tie again | When the two notes' pitch curves still meet at the joint, tying them turns those curves back into the tie's glide, so only one thing moves the pitch. |
 
 - A tie is drawn as a dot on the joint, with a straight line for a jump or the glide's curve. Two notes of the same
   pitch show a small arc: they play as one long note.

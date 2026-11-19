@@ -125,6 +125,23 @@ TEST_CASE("Ties: untie keeps the glide as the notes' own pitch curves, or drops 
     CHECK(byId(dropped, 2).pitchExpr.empty());
 }
 
+TEST_CASE("Ties: tying again turns a kept glide back into the tie's glide (issue #22)") {
+    for (float shape : {0.f, 0.5f}) {
+        NoteList notes = {note(1, 0, Q, 48), note(2, Q, Q, 52, true)};
+        notes[1].glideBefore = Q / 2;
+        notes[1].glideAfter = Q / 4;
+        notes[1].glideShape = shape;
+        NoteList again = tie(untie(notes, {NoteId(2)}, true), {NoteId(2)});
+        const Note& b = byId(again, 2);
+        CHECK(b.tied);
+        CHECK(byId(again, 1).pitchExpr.empty());
+        CHECK(b.pitchExpr.empty());
+        CHECK(b.glideBefore == Q / 2);
+        CHECK(b.glideAfter == Q / 4);
+        CHECK(b.glideShape == doctest::Approx(shape).epsilon(0.01));
+    }
+}
+
 TEST_CASE("Ties: a tie and its glide are saved and loaded") {
     Note n = note(7, Q, Q, 52, true);
     n.glideBefore = 120;
