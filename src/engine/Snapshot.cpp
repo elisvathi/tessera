@@ -63,8 +63,8 @@ NoteEvent noteEvent(const Note& note, const Track& track, Tick end, bool continu
 std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& lanes) {
     std::vector<LanePlayback> out;
     for (const AutomationEnvelope& l : lanes) {
-        // Send lanes play in the audio player, beside the sends they move.
-        if (l.mute || l.paramTarget.valid() || l.drive == LaneDrive::Send)
+        // Send lanes, and the levels and pans of a track's parts, play in the audio player beside what they move.
+        if (l.mute || l.paramTarget.valid() || l.drive == LaneDrive::Send || l.part != 0)
             continue;
         LanePlayback p;
         p.output = l.drive == LaneDrive::Pitch      ? kPitchLaneSlot

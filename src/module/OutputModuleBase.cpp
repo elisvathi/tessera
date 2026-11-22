@@ -34,11 +34,41 @@ void OutputModuleBase::process(const ProcessArgs& args) {
         bus.markProcessed(args.frame);
 }
 
+void OutputModuleBase::readPartLanes(const OutputBus* b) {
+    autoInput = autoPanL = autoPanR = NAN;
+    autoSourceL.fill(NAN);
+    autoSourceR.fill(NAN);
+    int slot = busSlot.load(std::memory_order_relaxed);
+    if (!b || slot < 0)
+        return;
+    const PartLevels& parts = b->partLevels();
+    float db, pan;
+    if (audioPorts.inL >= 0 && parts.get(slot, SendFrom::input(id).key(), db, pan)) {
+        if (!std::isnan(db) && !levelHeld.load(std::memory_order_relaxed))
+            autoInput = inputOn.load(std::memory_order_relaxed) ? dbToGain(db) : 0.f;
+        if (!std::isnan(pan) && !panHeld.load(std::memory_order_relaxed))
+            balanceGains(pan, autoPanL, autoPanR);
+    }
+    for (int k = 0; k < audioPorts.sourceCount && k < kDrumInputs; k++) {
+        size_t i = size_t(k);
+        if (sourceHeld[i].load(std::memory_order_relaxed) || !parts.get(slot, SendFrom::ofLane(k).key(), db, pan))
+            continue;
+        float l, r;
+        balanceGains(std::isnan(pan) ? sourcePan[i].load(std::memory_order_relaxed) : pan, l, r);
+        float g = dbToGain(std::isnan(db) ? sourceDb[i].load(std::memory_order_relaxed) : db);
+        autoSourceL[i] = l * g;
+        autoSourceR[i] = r * g;
+    }
+}
+
 void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b, TrackId track) {
     bool on = b && audioOn.load(std::memory_order_relaxed);
-    // The source Level and Use, ramped over about 5 ms so a change never clicks.
+    if (args.frame % 32 == 0)
+        readPartLanes(b);
+    // The source Level and Use, ramped over about 5 ms so a change never clicks; a lane on the Level sets it.
     float follow = std::min(1.f, args.sampleTime / 0.005f);
-    inputGain += (inputTarget.load(std::memory_order_relaxed) - inputGain) * follow;
+    float wantInput = std::isnan(autoInput) ? inputTarget.load(std::memory_order_relaxed) : autoInput;
+    inputGain += (wantInput - inputGain) * follow;
     wetGain += (wetTarget.load(std::memory_order_relaxed) - wetGain) * follow;
     dryGain += (dryTarget.load(std::memory_order_relaxed) - dryGain) * follow;
     if (args.frame % 32 == 0) {
@@ -70,8 +100,10 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         sourcesFresh = false;
         for (int k = 0; k < audioPorts.sourceCount; k++) {
             size_t i = size_t(k);
-            sourceGainL[i] += (sourceTargetL[i].load(std::memory_order_relaxed) - sourceGainL[i]) * follow;
-            sourceGainR[i] += (sourceTargetR[i].load(std::memory_order_relaxed) - sourceGainR[i]) * follow;
+            float wantL = std::isnan(autoSourceL[i]) ? sourceTargetL[i].load(std::memory_order_relaxed) : autoSourceL[i];
+            float wantR = std::isnan(autoSourceR[i]) ? sourceTargetR[i].load(std::memory_order_relaxed) : autoSourceR[i];
+            sourceGainL[i] += (wantL - sourceGainL[i]) * follow;
+            sourceGainR[i] += (wantR - sourceGainR[i]) * follow;
             rack::engine::Input& in = inputs[size_t(audioPorts.sourceFirst + k)];
             if (!in.isConnected())
                 continue;
@@ -121,8 +153,10 @@ void OutputModuleBase::processAudio(const ProcessArgs& args, const OutputBus* b,
         l = r;
     int slot = returnSlot.load(std::memory_order_relaxed);
     if (on && slot >= 0 && (hasL || hasR)) {
-        float gl = l * inputGain * wetGain * inputPanL.load(std::memory_order_relaxed);
-        float gr = r * inputGain * wetGain * inputPanR.load(std::memory_order_relaxed);
+        float panL = std::isnan(autoPanL) ? inputPanL.load(std::memory_order_relaxed) : autoPanL;
+        float panR = std::isnan(autoPanR) ? inputPanR.load(std::memory_order_relaxed) : autoPanR;
+        float gl = l * inputGain * wetGain * panL;
+        float gr = r * inputGain * wetGain * panR;
         inputPeak = std::max(inputPeak, std::max(std::fabs(gl), std::fabs(gr)));
         ReturnFrame back;
         back.l = gl;
@@ -322,6 +356,9 @@ void OutputModuleBase::refreshBinding() {
     bool loop = isLoop();
     loopOn.store(loop, std::memory_order_relaxed);
     float amount = heldMix ? *heldMix : mix;
+    levelHeld.store(heldLevelDb.has_value(), std::memory_order_relaxed);
+    panHeld.store(heldPan.has_value(), std::memory_order_relaxed);
+    inputOn.store(loop ? setting.use : setting.use && !countedOnce && heardBySolo, std::memory_order_relaxed);
     if (loop) {
         inputTarget.store(setting.use ? dbToGain(levelDb) : 0.f, std::memory_order_relaxed);
         wetTarget.store(loopWet(amount), std::memory_order_relaxed);
@@ -337,8 +374,12 @@ void OutputModuleBase::refreshBinding() {
         const Track* t = src ? src->song().findTrack(bindingData.track) : nullptr;
         for (int k = 0; k < audioPorts.sourceCount && k < kDrumInputs; k++) {
             Channel c = t ? t->drumInputs[size_t(k)] : Channel{};
-            if (std::optional<Channel> held = src ? src->drumInputHold(bindingData.track, k) : std::nullopt)
+            std::optional<Channel> held = src ? src->drumInputHold(bindingData.track, k) : std::nullopt;
+            if (held)
                 c = *held;
+            sourceHeld[size_t(k)].store(held.has_value(), std::memory_order_relaxed);
+            sourceDb[size_t(k)].store(c.volumeDb, std::memory_order_relaxed);
+            sourcePan[size_t(k)].store(c.pan, std::memory_order_relaxed);
             float l, r;
             balanceGains(c.pan, l, r);
             float g = dbToGain(c.volumeDb);

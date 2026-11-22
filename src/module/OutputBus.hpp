@@ -55,6 +55,8 @@ class OutputBus {
 
     /// The return bus travels with the output bus: same owner, same lifetime, same handoff to output modules.
     ReturnBus& returns() const { return returnBus; }
+    /// Lanes on the tracks' parts, as the audio player last played them (written by Tessera's audio thread).
+    PartLevels& partLevels() const { return parts; }
 
   private:
     std::array<std::array<TrackFrame, kMaxTracks>, 2> buffers{};
@@ -63,6 +65,7 @@ class OutputBus {
     std::atomic<int64_t> audioWritten[2] = {{INT64_MIN}, {INT64_MIN}};
     // Written by output modules through a const bus: the only part of it they write, each to its own slot.
     mutable ReturnBus returnBus;
+    mutable PartLevels parts;
 };
 
 } // namespace tessera

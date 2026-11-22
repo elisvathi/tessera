@@ -640,8 +640,8 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       T and D sizes; Direction's step sizes 1/32 … 2 bars; More › Length › Fixed length 1/64 … 2 bars; Path cycle
       1/4 bar … 64 bars. A song saved before keeps its Rate, Piece, lanes and curves on them (a curve two choices up
       from 2x still reaches 4x).
-- [ ] More › each setting's list ends with Draw a curve for it and Automate or modulate…; the curve opens in the lower
-      pane, and the item reads "~" once a curve moves it. The chip menu's Switch it on and off in time… opens On's curve.
+- [ ] More › each setting's list (On's too) ends with Draw a curve and Modulate, automate…; the curve opens in the lower
+      pane, and the item reads "~" once a curve moves it. The chip menu's On › Draw a curve opens On's curve.
 - [ ] Right-click the shown playhead's segment on the ruler: Move it in time with a curve… / Resize it in time with a
       curve… open curves on Region start and length; Follow the clip's loop puts the segment back on the loop.
 - [ ] Click a Curve modulator's row: only the lower pane opens (no popover); click again: the note lane comes back.

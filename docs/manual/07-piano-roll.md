@@ -76,6 +76,8 @@ If you draw past the end of a looping clip, the clip grows to hold the new notes
 - Where two notes touch, each side of the seam grabs its own note's edge.
 - **Alt+Shift+drag an edge** stretches the whole selection in time.
 - A note dropped on another note of the same pitch trims it, or replaces it when it covers it fully.
+- Pasted and duplicated notes land on top of what is there and remove nothing: drag them away and the notes under
+  them are still there.
 
 ### The transform box
 

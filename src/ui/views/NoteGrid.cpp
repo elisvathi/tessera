@@ -2180,8 +2180,8 @@ void NoteGrid::drawTimelineRepeats(NVGcontext* vg) {
         Tick length = clip->loopEnd - clip->loopStart;
         float row = float(owner.pitch.rowHeight());
         float radius = std::min(theme::metrics::kRadiusItem, row / 3);
-        NVGcolor color = nvgTransRGBAf(theme::track(track->color), 0.35f);
-        // The repeats are the same notes: they can't be edited, so they are drawn like ghosts.
+        // The repeats are the same notes: they can't be edited, so they are drawn like ghosts, each in its channel's
+        // colour as the notes themselves are.
         for (int pass = 1;; pass++) {
             double shift = double(pass) * double(length);
             double from = double(clip->loopStart) + shift;
@@ -2200,7 +2200,8 @@ void NoteGrid::drawTimelineRepeats(NVGcontext* vg) {
                 float y = float(owner.pitch.pitchToY(n.pitch));
                 if (x1 < 0 || x0 > box.size.x || y + row < 0 || y > box.size.y)
                     continue;
-                draw::roundedRect(vg, Rect(x0, y + 0.5f, std::max(2.f, x1 - x0 - 1), row - 1), radius, color);
+                draw::roundedRect(vg, Rect(x0, y + 0.5f, std::max(2.f, x1 - x0 - 1), row - 1), radius,
+                                  nvgTransRGBAf(theme::track(channelColor(track->color, n.channel)), 0.35f));
             }
         }
     }

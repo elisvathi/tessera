@@ -85,7 +85,7 @@ Right-click the lane header.
 | **Slew** | Smooths jumps, from Off to 100 ms. |
 | **Mute** | The lane stops sending. |
 | **Records from**, **Learn**, **AUTO REC channel**, **Record mode**, **Don't record this lane** | See [Recording automation](#recording-automation). |
-| **Thin**, **Quantize times to the beat**, **Invert**, **Reverse**, **Randomize (±10%)**, **Clear** | Act on the selected points, or all of them. |
+| **Simplify (fewer points, same shape)**, **Quantize times to the beat**, **Invert**, **Reverse**, **Randomize (±10%)**, **Clear** | Act on the selected points, or all of them. Simplify removes points that barely change the line (a recorded lane often has hundreds), so it is easier to edit and the line looks the same. |
 | **Stamp a shape** | Pick a shape: Sine, Triangle, Saw up, Saw down, Square, Random steps, Smooth random, Exp rise or Exp fall. Then drag across the lane: one cycle per grid step, and dragging up or down sets the depth. |
 | **Map another knob: touch it in the rack** | See below. |
 | **Delete lane** | Removes the lane. |

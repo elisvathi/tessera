@@ -11,6 +11,7 @@ namespace tessera {
 enum class Action {
     // Transport
     PlayStop,
+    Stop,
     PlayFromMouse,
     Record,
     CaptureMidi,

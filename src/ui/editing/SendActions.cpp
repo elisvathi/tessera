@@ -15,22 +15,23 @@ namespace tessera::sendActions {
 
 namespace {
 
-/// Adds a lane that moves the send from `from` to `to` (or opens the one there is), at the send's level now.
-void automate(EditorContext& ctx, TrackId from, TrackId to) {
+/// Adds a lane that moves the send from `part` of `from` to `to` (or opens the one there is), at the send's level now.
+void automate(EditorContext& ctx, TrackId from, TrackId to, SendFrom part) {
     TesseraModule* m = ctx.module();
     const Track* t = m ? m->song().findTrack(from) : nullptr;
     const Track* target = m ? m->song().findTrack(to) : nullptr;
-    const Send* send = m ? findSend(m->song(), from, to) : nullptr;
+    const Send* send = m ? findSend(m->song(), from, to, part) : nullptr;
     if (!t || !target || !send)
         return;
     ctx.state().openAutomation.insert(from.value);
     for (const AutomationEnvelope& l : t->automation)
-        if (l.drive == LaneDrive::Send && l.sendTo == to)
+        if (l.drive == LaneDrive::Send && l.sendTo == to && l.part == part.key())
             return;
     AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), 0, target->color);
-    lane.name = "Send to " + target->name;
+    lane.name = part.whole() ? "Send to " + target->name : partName(*m, *t, part) + " \xE2\x86\x92 " + target->name;
     lane.drive = LaneDrive::Send;
     lane.sendTo = to;
+    lane.part = part.key();
     lane.rangeMin = 0;
     lane.rangeMax = 1;
     lane.points = {{0, faderPosOfDb(send->db)}};
@@ -288,8 +289,9 @@ void appendSendItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId from, Tra
     };
     menu->addChild(rack::createMenuLabel(part.whole() ? "Send to " + target->name
                                                       : senderName(*m, *sender, part) + " to " + target->name));
+    menu->addChild(
+        rack::createMenuItem("Automate in the timeline", "", [c, from, to, part] { automate(*c, from, to, part); }));
     if (part.whole()) {
-        menu->addChild(rack::createMenuItem("Automate in the timeline", "", [c, from, to] { automate(*c, from, to); }));
         menu->addChild(rack::createCheckMenuItem(
             "Before the fader", "", [pre = now.preFader] { return pre; },
             [m, from, now, with] { m->perform(setSend(m->song(), from, with(now.db, true), "Send before the fader")); }));

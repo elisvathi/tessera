@@ -39,7 +39,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
     snap.masterMixGain = song.master.mix.use ? dbToGain(song.master.mix.db) : 0.f;
     snap.masterId = song.master.id.value;
     for (const AutomationEnvelope& l : song.master.automation)
-        if (l.drive == LaneDrive::Volume && !l.mute && !l.points.empty())
+        if (l.drive == LaneDrive::Volume && l.part == 0 && !l.mute && !l.points.empty())
             snap.masterLane = l.points;
     for (const MixPlan::Return& r : plan.returns)
         if (r.track == song.master.id) {
@@ -220,8 +220,13 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         tp.volume = dbToGain(t.channel.volumeDb);
         bool othersSoloed = !t.clips.solo &&
                             std::find(plan.inputSolo.begin(), plan.inputSolo.end(), t.id) != plan.inputSolo.end();
-        tp.clipsGain = t.clips.use && !othersSoloed ? dbToGain(t.clips.db) : 0.f;
+        tp.clipsOn = t.clips.use && !othersSoloed;
+        tp.clipsGain = tp.clipsOn ? dbToGain(t.clips.db) : 0.f;
         tp.clipsPan = t.clips.pan;
+        for (const AutomationEnvelope& l : t.automation)
+            if ((l.drive == LaneDrive::Volume || l.drive == LaneDrive::Pan) && l.part != 0 && !l.mute &&
+                !l.points.empty() && tp.partLanes.size() < size_t(2 * PartLevels::kPerSlot))
+                tp.partLanes.push_back({l.part, l.drive == LaneDrive::Pan, l.points});
         tp.pan = t.channel.pan;
         tp.audible = tp.own = tp.sending = !t.mute;
         tp.rollIn = t.type == TrackType::Audio && t.recordInput == RecordInput::RollIn;
@@ -323,11 +328,10 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
                     play.clips = clips;
                     play.slot = slot;
                     play.fromKey = send.from.key();
-                    // Only a whole track's send has a Send lane in the timeline.
-                    if (send.from.whole())
-                        for (const AutomationEnvelope& l : t->automation)
-                            if (l.drive == LaneDrive::Send && l.sendTo == send.to && !l.mute && !l.points.empty())
-                                play.lane = l.points;
+                    for (const AutomationEnvelope& l : t->automation)
+                        if (l.drive == LaneDrive::Send && l.sendTo == send.to && l.part == play.fromKey &&
+                            !l.mute && !l.points.empty())
+                            play.lane = l.points;
                     snap.tracks[i].sends.push_back(std::move(play));
                 }
         }

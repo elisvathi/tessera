@@ -167,6 +167,8 @@ json_t* automationToJson(const AutomationEnvelope& a) {
         setString(j, "drive", enumName(a.drive, kLaneDrives));
     if (a.sendTo.valid())
         set(j, "sendTo", idJson(a.sendTo));
+    if (a.part != 0)
+        setInt(j, "part", int64_t(a.part));
     if (a.midi.valid()) {
         json_t* midi = json_array();
         json_array_append_new(midi, json_string(enumName(a.midi.kind, kMidiControls)));
@@ -215,6 +217,7 @@ AutomationEnvelope automationFromJson(const json_t* j) {
     a.drive = enumFromName(get(j, "drive"), kLaneDrives, a.drive);
     if (get(j, "sendTo"))
         a.sendTo = readId<TrackId>(get(j, "sendTo"));
+    a.part = uint64_t(std::max<int64_t>(0, getInt(j, "part", 0)));
     if (const json_t* midi = get(j, "midi"); json_is_array(midi)) {
         a.midi.kind = enumFromName(json_array_get(midi, 0), kMidiControls, a.midi.kind);
         a.midi.cc = uint8_t(std::clamp<int64_t>(intAt(midi, 1, 0), 0, 127));

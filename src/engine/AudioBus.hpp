@@ -26,6 +26,50 @@ struct ReturnFrame {
     int delay = 0; // an effect loop's round trip in samples, so the dry sound waits for the wet one
 };
 
+/// Where Volume and Pan lanes on a track's parts (a drum lane IN, a Track Out's IN, the clips) have them now, per
+/// track slot. The audio player writes it once a block; output modules read their own part's entry and play it in
+/// place of their saved level. Each value is its own atomic, so a reader never sees a torn number; a block's mix of
+/// old and new entries lasts one block at most.
+class PartLevels {
+  public:
+    static constexpr int kPerSlot = 12;
+
+    /// Writer (audio player): entry `i` of `slot` says part `key` sits at `db` and `pan` (NAN: no lane on it).
+    /// Key 0 clears it.
+    void set(int slot, int i, uint64_t key, float db, float pan) {
+        if (slot < 0 || slot >= kMaxTracks || i < 0 || i >= kPerSlot)
+            return;
+        Entry& e = entries[size_t(slot)][size_t(i)];
+        e.db.store(db, std::memory_order_relaxed);
+        e.pan.store(pan, std::memory_order_relaxed);
+        e.key.store(key, std::memory_order_release);
+    }
+    /// Reader: where part `key` of the track in `slot` is now; false when no lane moves it. `db` and `pan` come back
+    /// NAN for whichever has no lane.
+    bool get(int slot, uint64_t key, float& db, float& pan) const {
+        if (slot < 0 || slot >= kMaxTracks || key == 0)
+            return false;
+        for (const Entry& e : entries[size_t(slot)]) {
+            uint64_t k = e.key.load(std::memory_order_acquire);
+            if (k == 0)
+                return false; // entries fill from the front: a slot without lanes costs one load
+            if (k == key) {
+                db = e.db.load(std::memory_order_relaxed);
+                pan = e.pan.load(std::memory_order_relaxed);
+                return true;
+            }
+        }
+        return false;
+    }
+
+  private:
+    struct Entry {
+        std::atomic<uint64_t> key{0};
+        std::atomic<float> db{NAN}, pan{NAN};
+    };
+    std::array<std::array<Entry, kPerSlot>, kMaxTracks> entries{};
+};
+
 /// The way back: what output modules' IN jacks receive, to Tessera (§8.3 "the return bus"), and the way out to each
 /// of them: the sound of its track up to its place in the track's chain, for its OUT. Pure C++.
 ///

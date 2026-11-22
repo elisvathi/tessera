@@ -535,7 +535,7 @@ void TrackHeaders::drawLevelLine(NVGcontext* vg, const Track& t, int row, float 
     // A lane on the fader or pan: a ring in its colour (§7.3).
     auto laneColor = [&](LaneDrive drive) -> std::optional<NVGcolor> {
         for (const AutomationEnvelope& l : t.automation)
-            if (l.drive == drive && !l.mute)
+            if (l.drive == drive && l.part == 0 && !l.mute)
                 return theme::track(l.color ? l.color : t.color);
         return std::nullopt;
     };

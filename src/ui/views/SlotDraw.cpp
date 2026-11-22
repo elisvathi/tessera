@@ -36,13 +36,13 @@ bool blinkOn() { return std::fmod(EditorContext::now() * kBlinkHz, 1.0) < 0.5; }
 
 namespace {
 
-/// A cell tall enough for a title bar over its notes.
-bool hasTitleBar(const Rect& cell) { return cell.size.y >= theme::metrics::kSlotTitleBarFrom; }
+/// A cell tall enough for a name row over its notes.
+bool hasNameRow(const Rect& cell) { return cell.size.y >= theme::metrics::kSlotNameRowFrom; }
 
-/// The line with the name and the marks, right of the launch button: the title bar in a tall cell, else the cell.
+/// The line with the name and the marks, right of the launch strip: the top row of a tall cell, else the cell.
 Rect nameRow(const Rect& cell) {
     Rect launch = launchRect(cell);
-    float h = hasTitleBar(cell) ? theme::metrics::kSlotTitleBar : cell.size.y;
+    float h = hasNameRow(cell) ? theme::metrics::kSlotNameRow : cell.size.y;
     return Rect(cell.pos.x + launch.size.x, cell.pos.y, cell.size.x - launch.size.x, h);
 }
 
@@ -59,8 +59,7 @@ float ownMarkRoom(const Rect& row, float stripes, bool hasOwn) {
 } // namespace
 
 Rect launchRect(const Rect& cell) {
-    float size = hasTitleBar(cell) ? theme::metrics::kSlotTitleBar : cell.size.y;
-    return Rect(cell.pos, Vec(size, size));
+    return Rect(cell.pos, Vec(std::min(cell.size.y, theme::metrics::kSlotLaunchWidth), cell.size.y));
 }
 
 Rect ownMarkRect(Rect cell, const Track& track, const Clip& clip) {
@@ -413,15 +412,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     uint32_t color = clip->shownColor(track->color);
     bool selected = ctx.state().selectedTrack == trackId && clipActions::shownClip(ctx, *track) == clip->id;
     draw::roundedRect(vg, cell, theme::metrics::kRadiusItem, theme::track(color, selected ? 1.f : 0.82f));
-    bool titleBar = hasTitleBar(cell);
-    if (titleBar) {
-        // A title bar over the notes, as timeline clips have.
-        float r = theme::metrics::kRadiusItem;
-        nvgBeginPath(vg);
-        nvgRoundedRectVarying(vg, cell.pos.x, cell.pos.y, cell.size.x, theme::metrics::kSlotTitleBar, r, r, 0, 0);
-        nvgFillColor(vg, nvgTransRGBAf(c.onTile, theme::metrics::kSlotTitleBarShade));
-        nvgFill(vg);
-    }
+    bool titleBar = hasNameRow(cell);
 
     Rect body = nameRow(cell);
     nvgSave(vg);
@@ -488,10 +479,10 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     draw::text(vg, name, body.pos.x + 3, body.getCenter().y, label);
     // The notes (or the waveform) in miniature, in the room the name leaves; with playheads, where they go over one
     // pass of the clip instead (its notes as written aren't what plays).
-    // Under a title bar the notes take the whole width below it; else the room right of the name.
-    float previewLeft = titleBar ? cell.pos.x + 3 : body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
+    // Under a name row the notes take the width right of the launch strip; else the room right of the name.
+    float previewLeft = titleBar ? body.pos.x + 3 : body.pos.x + 3 + draw::textWidth(vg, name, label) + kTextPad;
     const std::vector<DrumLane>* lanes = track->type == TrackType::Drum ? &track->drumLanes : nullptr;
-    Rect preview = titleBar ? Rect(previewLeft, body.getBottom() + 2, cell.size.x - 6,
+    Rect preview = titleBar ? Rect(previewLeft, body.getBottom() + 2, body.size.x - 6,
                                    cell.getBottom() - body.getBottom() - 4)
                             : Rect(previewLeft, body.pos.y + 3, body.getRight() - previewLeft - 3 - markRoom - tagRoom,
                                    body.size.y - 6);
@@ -535,7 +526,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
     nvgRestore(vg);
     drawPlayheadMark(vg, activePlayheads(*track, clip), Vec(body.getRight() - 4, body.pos.y + 4), body.size.y - 8);
 
-    // The launch button: a darker square with the triangle, a ring while playing.
+    // The launch button: a darker strip with the triangle in its middle, a ring while playing.
     draw::roundedRect(vg, launch, theme::metrics::kRadiusItem, nvgTransRGBAf(c.onTile, hotLaunch ? 0.55f : 0.4f));
     NVGcolor triangle = c.text0;
     if (queued)
@@ -549,7 +540,7 @@ void drawSlot(NVGcontext* vg, EditorContext& ctx, Rect cell, TrackId trackId, in
         Tick end = span.looping ? span.end : clip->playEnd();
         float progress = end > start ? float((status->position - double(start)) / double(end - start)) : 0;
         NVGcolor ring = stopQueued ? (blinkOn() ? c.queue : c.play) : c.play;
-        drawRing(vg, center, launch.size.y * 0.5f - 2.5f, progress, ring);
+        drawRing(vg, center, std::min(launch.size.x, launch.size.y) * 0.5f - 2.5f, progress, ring);
     }
     if (take) // overdubbing this clip
         draw::roundedRectStroke(vg, cell, theme::metrics::kRadiusItem, c.record, 2);

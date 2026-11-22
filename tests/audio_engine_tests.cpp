@@ -539,6 +539,63 @@ TEST_CASE("OUT carries a track's clips before its fader; what comes back on IN j
     CHECK(master->l == doctest::Approx(left).epsilon(1e-3));
 }
 
+TEST_CASE("lanes on a track's parts: the clips' Level plays here, a drum lane's goes out for its module") {
+    Rig rig(4.0, dc);
+    AutomationEnvelope clips;
+    clips.id = rig.song.newId<AutomationId>();
+    clips.drive = LaneDrive::Volume;
+    clips.part = SendFrom::clips().key();
+    clips.points = {{0, faderPosOfDb(-6.0206f)}};
+    AutomationEnvelope kick = clips;
+    kick.id = rig.song.newId<AutomationId>();
+    kick.drive = LaneDrive::Pan;
+    kick.part = SendFrom::ofLane(0).key();
+    kick.points = {{0, 0.25f}};
+    rig.audioTrack().automation = {clips, kick};
+    MixPlan plan;
+    plan.busSlots = {{rig.track, 5}};
+    rig.slots.sync(rig.song);
+    rig.notes = buildSnapshot(rig.song, rig.slots);
+    rig.engine->setSnapshot(rig.notes.get());
+    // Neither lane moves the track's own fader or pan in the engine.
+    for (const auto& t : rig.notes->tracks)
+        if (t->id == rig.track)
+            CHECK(t->lanes.empty());
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    CHECK(rig.audio->tracks[0].partLanes.size() == 2);
+    rig.player->setSnapshot(rig.audio.get());
+    OutputBus bus;
+    rig.engine->play();
+    float left = 0, right = 0;
+    for (int64_t n = 0; n < 4800; n++) {
+        rig.engine->setPlayMode(rig.mode);
+        rig.engine->process(rig.frames.data(), rig.events);
+        AudioPlayer::Rack rack{&bus.returns(), bus.beginAudioWrite(n), n};
+        rack.parts = &bus.partLevels();
+        rig.player->process(*rig.engine, left, right, rack);
+        bus.publishAudio(n);
+    }
+    CHECK(left == doctest::Approx(kVolts * 0.5).epsilon(1e-3)); // the clips at -6 dB
+    float db = 0, pan = 0;
+    REQUIRE(bus.partLevels().get(5, SendFrom::ofLane(0).key(), db, pan));
+    CHECK(std::isnan(db)); // no lane on its level: the module keeps its own
+    CHECK(pan == doctest::Approx(-0.5f));
+    CHECK_FALSE(bus.partLevels().get(5, SendFrom::ofLane(1).key(), db, pan));
+    // The lanes go: the next snapshot clears what they left in the table.
+    rig.audioTrack().automation.clear();
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    for (int64_t n = 4800; n < 4900; n++) {
+        rig.engine->process(rig.frames.data(), rig.events);
+        AudioPlayer::Rack rack{&bus.returns(), bus.beginAudioWrite(n), n};
+        rack.parts = &bus.partLevels();
+        rig.player->process(*rig.engine, left, right, rack);
+    }
+    CHECK_FALSE(bus.partLevels().get(5, SendFrom::ofLane(0).key(), db, pan));
+}
+
 namespace {
 
 /// A note track whose chain runs Track Outs at return slots `order`, played for 2000 samples. Slot 0 adds a click at

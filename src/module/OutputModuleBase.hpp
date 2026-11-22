@@ -125,6 +125,9 @@ class OutputModuleBase : public rack::engine::Module {
     void setSourceSetting(SourceLevel level);
     /// Plays a Level at once while the sources list drags it, before the drag is committed; nullopt ends it.
     void holdSourceLevel(std::optional<float> db) { heldLevelDb = db; }
+    /// What a mixer drag holds on its Level (dB) and pan, if one does.
+    std::optional<float> heldSourceLevel() const { return heldLevelDb; }
+    std::optional<float> heldSourcePan() const { return heldPan; }
     /// Plays a pan at once while a mixer strip drags it, before the drag is committed; nullopt ends it.
     void holdSourcePan(std::optional<float> pan);
     /// False while another input of its track is soloed. UI thread.
@@ -163,6 +166,8 @@ class OutputModuleBase : public rack::engine::Module {
 
   private:
     void processAudio(const ProcessArgs& args, const OutputBus* b, TrackId track);
+    /// Reads the lanes on its Level, pan and drum lanes from the bus into the auto* values (audio thread).
+    void readPartLanes(const OutputBus* b);
     void releaseReturn();
 
     const std::optional<TrackType> accepted;
@@ -216,6 +221,14 @@ class OutputModuleBase : public rack::engine::Module {
     float dryGain = 1, wetGain = 1;
     float inputPeak = 0;
     std::atomic<float> inputMeter{0};
+    // Lanes on this module's Level and pan, or on its drum lanes (PartLevels). Set on the UI thread: whether its
+    // sound is on at all, and which controls a mixer drag holds (a drag wins over a lane). Read every 32 samples on
+    // the audio thread into the auto* values, NAN where no lane plays.
+    std::atomic<bool> inputOn{true}, levelHeld{false}, panHeld{false};
+    std::array<std::atomic<bool>, kMaxSources> sourceHeld{};
+    std::array<std::atomic<float>, kMaxSources> sourceDb{}, sourcePan{};
+    float autoInput = NAN, autoPanL = NAN, autoPanR = NAN;
+    std::array<float, kMaxSources> autoSourceL{}, autoSourceR{};
 };
 
 } // namespace tessera

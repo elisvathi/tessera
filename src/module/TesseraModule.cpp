@@ -944,6 +944,27 @@ void TesseraModule::learnMovedControl() {
     perform(replaceLane(songData, owner, next, "Record " + midiControlName(control)));
 }
 
+bool TesseraModule::readPartSource(TrackId track, uint64_t part, bool pan, float& value) const {
+    std::optional<float> held;
+    for (int k = 0; k < kDrumInputs && !held; k++)
+        if (part == SendFrom::ofLane(k).key())
+            if (std::optional<Channel> c = drumInputHold(track, k))
+                held = pan ? c->pan : c->volumeDb;
+    if (!held && part == SendFrom::clips().key() && !pan) {
+        float gain;
+        if (player->heldClips(track.value, gain))
+            held = gainToDb(gain);
+    }
+    if (!held)
+        for (OutputModuleBase* o : sourceModules(track))
+            if (part == SendFrom::input(o->id).key())
+                held = pan ? o->heldSourcePan() : o->heldSourceLevel();
+    if (!held)
+        return false;
+    value = pan ? (*held + 1) / 2 : faderPosOfDb(*held);
+    return true;
+}
+
 bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& value) const {
     if (lane.drive == LaneDrive::Send) {
         // A send knob or a Show sends fader, only while the mouse drags it.
@@ -951,7 +972,7 @@ bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& 
             for (const AutomationEnvelope& l : t.automation)
                 if (l.id == lane.id) {
                     float gain;
-                    if (!player->heldSend(t.id.value, lane.sendTo.value, gain))
+                    if (!player->heldSend(t.id.value, lane.sendTo.value, gain, lane.part))
                         return false;
                     value = faderPosOfDb(gainToDb(gain));
                     return true;
@@ -967,7 +988,11 @@ bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& 
                 if (l.id == lane.id)
                     track = t.id;
         float held;
-        if (!track.valid() || !player->held(track.value, pan, held))
+        if (!track.valid())
+            return false;
+        if (lane.part != 0)
+            return readPartSource(track, lane.part, pan, value);
+        if (!player->held(track.value, pan, held))
             return false;
         value = pan ? (held + 1) / 2 : faderPosOfDb(gainToDb(held));
         return true;
@@ -1382,6 +1407,7 @@ void TesseraModule::process(const ProcessArgs& args) {
     float mainL = 0, mainR = 0;
     if (player->active()) {
         AudioPlayer::Rack rack{&bus->returns(), bus->beginAudioWrite(args.frame), args.frame};
+        rack.parts = &bus->partLevels();
         // A poly cable is summed to stereo; each side follows the other when only one is patched, as on Track Out.
         bool hasL = inputs[ROLL_IN_L_INPUT].isConnected(), hasR = inputs[ROLL_IN_R_INPUT].isConnected();
         float inL = hasL ? inputs[ROLL_IN_L_INPUT].getVoltageSum() : 0.f;

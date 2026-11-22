@@ -211,6 +211,9 @@ class MixerPane : public InteractiveView {
     std::vector<int> patchedLanes(const Track& t) const;
     /// The part of its track a strip sends from: the whole track, a lane, the clips or one input (DECISIONS §175).
     static SendFrom partOf(const Strip& s);
+    /// Where a lane on a drum lane's or an input's level and pan has it now (NAN for whichever has none); false when
+    /// no lane plays on it.
+    bool partAutomated(const Strip& s, float& db, float& pan) const;
     /// Whether a strip can have sends: a track's strip, a drum lane's, or a track's clips or input that adds sound.
     bool canSend(const Strip& s) const;
     /// Whether a track's strip shows FROM rows: it receives sends, or it has an effect patched to it.

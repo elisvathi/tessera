@@ -43,6 +43,7 @@ class AudioPlayer {
         AudioOutFrame* out = nullptr;
         int64_t frame = 0;
         float rollInL = 0, rollInR = 0; // Roll's own IN jacks, in volts
+        PartLevels* parts = nullptr;    // where lanes on the tracks' parts are published for the output modules
     };
 
     /// The longest round trip an effect loop's dry sound can wait for, in samples (DECISIONS §153).
@@ -190,6 +191,8 @@ class AudioPlayer {
     /// The fader (`pan` false, as a gain) or pan a drag holds on `track` now, for recording it into its lane. UI
     /// thread.
     bool held(uint64_t track, bool pan, float& value) const;
+    /// The clips' Level a mixer drag on the track's Clips strip holds now, as a gain; false when none does.
+    bool heldClips(uint64_t track, float& gain) const;
 
     /// Whether a fader (`pan` false) or pan lane moves track `track` (its index in the snapshot) now, and to what:
     /// dB for the fader, -1..1 for pan. The mixer and the headers show it and ring the control (§7.3).
@@ -254,6 +257,8 @@ class AudioPlayer {
         std::array<float, kMaxSendsPerTrack> sendGain{}, sendStep{};
         std::array<size_t, kMaxSendsPerTrack> sendCursor{};
         std::array<float, kMaxSendsPerTrack> sendPeak{};
+        std::array<size_t, 2 * PartLevels::kPerSlot> partLaneCursor{};
+        int partEntries = 0; // PartLevels entries it filled last block, cleared when its lanes go
         float outPeak = 0;
         // This sample's signals, for the taps.
         float inL = 0, inR = 0, soundL = 0, soundR = 0, stemL = 0, stemR = 0;
@@ -310,7 +315,13 @@ class AudioPlayer {
     /// The gain of instance `a` at `songTick` from its fades, crossfades and safety fades; `seam` is its loop seam's
     /// dip.
     float envelopeOf(const AudioInstancePlay& a, double songTick, double ticksPerClip, float seam) const;
-    void startBlock(const Engine& engine);
+    void startBlock(const Engine& engine, PartLevels* parts);
+    bool partsStale = true; // the snapshot changed since the part lanes were last published
+    std::array<bool, kMaxTracks> partSlotUsed{}; // slots with entries in PartLevels, to clear when their lanes go
+    /// Plays the lanes on a track's parts for this block: the clips' Level and pan into `clips` and `clipsPan`, and
+    /// every part's values into `parts` (when set) for the output modules.
+    void playPartLanes(const AudioTrackPlay& t, TrackRun& run, double song, PartLevels* parts, float& clips,
+                       float& clipsPan);
     /// Runs a track's (or the master's) Track Outs in order on its sound `l`, `r`: what an adding one brings in joins
     /// it (and `inL`, `inR`, what recording takes); an effect loop (`loops`) gets the sound so far on its OUT, and its
     /// return is blended in by its Mix, against the dry sound delayed by the loop's round trip.

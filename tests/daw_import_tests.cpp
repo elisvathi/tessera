@@ -233,6 +233,41 @@ TEST_CASE("dawproject import: note clips with their curves, lanes and loop, on t
     CHECK(song.master.automation[0].drive == LaneDrive::Volume);
 }
 
+TEST_CASE("dawproject import: a clip that plays another clip's content by reference keeps its notes") {
+    const char* project = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Transport><Tempo unit="bpm" value="120.0" id="id0"/></Transport>
+  <Structure>
+    <Track contentType="notes" id="t1" name="Keys"><Channel role="regular" id="c1"/></Track>
+  </Structure>
+  <Arrangement id="a">
+    <Lanes timeUnit="beats" id="l0">
+      <Lanes track="t1" id="l1">
+        <Clips id="cs">
+          <Clip time="0.0" duration="4.0" playStart="0.0" name="A">
+            <Notes id="n1"><Note time="0.0" duration="1.0" key="60" vel="0.8" channel="0"/></Notes>
+          </Clip>
+          <Clip time="4.0" duration="4.0" playStart="0.0" name="A" reference="n1"/>
+          <Clip time="8.0" duration="4.0" playStart="0.0" name="Loop" reference="cs"/>
+        </Clips>
+      </Lanes>
+    </Lanes>
+  </Arrangement>
+</Project>)";
+    // The last clip names the timeline it sits in: reading it must not go round forever.
+    std::string text = project;
+    dawImport::Imported in;
+    std::string error;
+    REQUIRE_MESSAGE(dawImport::readProject(text, "", 1, in, &error), error);
+    const Track& keys = trackNamed(in.song, "Keys");
+    REQUIRE(keys.arrangement.size() >= 2);
+    const Clip* copy = in.song.findClip(keys.arrangement[1].clip);
+    REQUIRE(copy);
+    CHECK(keys.arrangement[1].position == 4 * kPpq);
+    REQUIRE(copy->notes.size() == 1);
+    CHECK(copy->notes[0].pitch == 60);
+}
+
 TEST_CASE("dawproject import: an audio clip plays its file at the tempo its warps say") {
     dawImport::Imported in = readTestProject();
     const Song& song = in.song;

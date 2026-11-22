@@ -10,6 +10,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Key | What it does |
 |---|---|
 | Space | Play / stop |
+| Enter | Stop; press it again while stopped to go back to the start (as the **■** button does) |
 | Shift+Space | Play from the mouse (or the selection's start) |
 | R | Record |
 | Ctrl+Shift+R | Capture what you just played as a clip |
@@ -128,7 +129,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | W E T Y U O P | Black keys |
 | Z / X | Octave down / up |
 | C / V | Softer / louder |
-| Other letters, digits, punctuation | Nothing: no shortcut fires while you play. Space, Escape, the arrows and Ctrl/Alt shortcuts still work. |
+| Other letters, digits, punctuation | Nothing: no shortcut fires while you play. Space, Enter, Escape, the arrows and Ctrl/Alt shortcuts still work. |
 
 ## While step input is on (Ctrl+R)
 

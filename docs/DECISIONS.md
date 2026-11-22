@@ -3311,3 +3311,27 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **Keys**: F2 clips, F3 notes, F4 devices (was F3), F5 mixer: one key per view in screen order. A view key always
   shows its view, restoring a folded pane first; F2 with the song pane folded brings it back widened. Tab and
   Shift+Tab are unchanged.
+
+## 191. Release bug batch: paste keeps notes, part lanes, one look per setting menu (23 Nov)
+
+- **Paste and Duplicate remove nothing** (Trello: "I lose the original notes, VERY BAD"). The overlap rule (EDITOR_UX
+  §4.3) still applies to a note dropped by a drag, but pasted or duplicated notes sit on top of what is there, so
+  dragging them away leaves the notes under them.
+- **A Curve modulator opens its settings column too**, beside its section like every modulator, as well as its drawing
+  in the lower pane; a second click closes both. This undoes "A Curve modulator opens no popover" from §132: that
+  complaint was about a floating dialog, and settings now open inline (D6), so the Curve gets the same amounts, Map to
+  knobs and CV out as the others (Trello: "I don't see the same options for the curve").
+- **Clips slots: the launch button is a strip down the slot's left side** (canvas board 5, option B), at most
+  kSlotLaunchWidth wide, square in a short slot. From kSlotNameRowFrom tall the name sits at the top, right of the
+  strip, and the notes fill the room below. Revises the title bar of §188.
+- **Everything in the mixer can be automated** except groups (a lane belongs to a track). A Volume, Pan or Send lane
+  has a `part` (SendFrom::key()): 0 for the whole track, else a drum lane, an input or the clips. The engine never
+  plays part lanes as the track's fader; the audio player evaluates them once a block, plays the clips' own, and
+  publishes the others in PartLevels on the output bus, which each output module reads every 32 samples in place of
+  its saved level (a mixer drag still wins). Cost: one atomic load per lookup for a slot without lanes; slots are
+  cleared only on a snapshot swap.
+- **Playhead On is a setting like the others**: in the chip menu it is a submenu (Off / On, then Draw a curve and
+  Modulate, automate…), and every playhead setting submenu uses the tags' two words. "Switch it on and off in time"
+  is gone (the user: "that language should be unified").
+- **Enter is Stop** (stopped: back to the start), as the ■ button.
+- **DAWproject clips that `reference` another clip's timeline** are read through it (a real project had 38).

@@ -1069,7 +1069,7 @@ void AutomationEditor::appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, 
         menu->addChild(rack::createMenuItem(
             name, "", edit(name, [f, targets](AutomationEnvelope& l) { l.points = f(l.points, targets(l)); })));
     };
-    function("Thin", [](const Points& p, const Selection&) { return autoEdits::thin(p, 0.01f); });
+    function("Simplify (fewer points, same shape)", [](const Points& p, const Selection&) { return autoEdits::thin(p, 0.01f); });
     function("Quantize times to the beat",
              [](const Points& p, const Selection& s) { return autoEdits::quantizeTimes(p, s, kPpq / 4); });
     function("Invert", [](const Points& p, const Selection& s) { return autoEdits::invert(p, s); });

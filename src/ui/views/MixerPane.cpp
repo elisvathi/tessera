@@ -578,6 +578,9 @@ float MixerPane::shownVolume(const Strip& s) const {
         auto held = heldLanes.find({s.track.value, s.lane});
         if (held != heldLanes.end())
             return held->second.volumeDb;
+        float db, pan;
+        if (partAutomated(s, db, pan) && !std::isnan(db))
+            return db;
         const Track* t = m->song().findTrack(s.track);
         if (s.isInput())
             return sources::inputLevel(ctx, s.track, s.inputModule).db;
@@ -601,6 +604,13 @@ float MixerPane::shownVolume(const Strip& s) const {
     return t ? t->channel.volumeDb : 0;
 }
 
+bool MixerPane::partAutomated(const Strip& s, float& db, float& pan) const {
+    TesseraModule* m = ctx.module();
+    if (!m || !m->outputBus() || s.master || s.group.valid())
+        return false;
+    return m->outputBus()->partLevels().get(m->busSlotOf(s.track), partOf(s).key(), db, pan);
+}
+
 float MixerPane::shownPan(const Strip& s) const {
     if (s.group.valid()) {
         auto it = held.find(s.group.value);
@@ -613,6 +623,9 @@ float MixerPane::shownPan(const Strip& s) const {
         auto held = heldLanes.find({s.track.value, s.lane});
         if (held != heldLanes.end())
             return held->second.pan;
+        float db, pan;
+        if (partAutomated(s, db, pan) && !std::isnan(pan))
+            return pan;
         const Track* t = ctx.module()->song().findTrack(s.track);
         if (s.isInput())
             return sources::inputLevel(ctx, s.track, s.inputModule).pan;
@@ -681,15 +694,17 @@ bool MixerPane::showsFrom(const Track& t) const {
 float MixerPane::capPos(const Strip& s) const { return faderPos(shownVolume(s)); }
 
 std::optional<NVGcolor> MixerPane::laneColor(const Strip& s, bool pan) const {
-    if (s.isInput())
+    if (s.group.valid() || s.loop)
         return std::nullopt;
-    // The ring shows whenever the track has the lane, playing or not: the control belongs to it.
+    // The ring shows whenever the track (or its part: a drum lane, an input) has the lane, playing or not: the
+    // control belongs to it.
     const Song& song = ctx.module()->song();
     const Track* t = s.master ? nullptr : song.findTrack(s.track);
     if (!t && !s.master)
         return std::nullopt;
+    uint64_t part = s.master ? 0 : partOf(s).key();
     for (const AutomationEnvelope& l : t ? t->automation : song.master.automation)
-        if (l.drive == (pan ? LaneDrive::Pan : LaneDrive::Volume) && !l.mute)
+        if (l.drive == (pan ? LaneDrive::Pan : LaneDrive::Volume) && l.part == part && !l.mute)
             return theme::track(l.color ? l.color : t ? t->color : theme::kMasterColor);
     return std::nullopt;
 }
@@ -1248,9 +1263,13 @@ void MixerPane::openTyping(const Strip& s) {
     if (s.lane >= 0) {
         Strip lane = s;
         float pan = shownPan(s);
-        typingMenu(ctx, laneName(s) + " volume (dB)", shownVolume(s), [this, lane, pan](float db) {
-            setLane(lane, {db, pan}, laneName(lane) + " volume " + audioDraw::dbText(db));
-        });
+        EditorContext* c = &ctx;
+        TrackId track = s.track;
+        SendFrom part = partOf(s);
+        typingMenu(
+            ctx, laneName(s) + " volume (dB)", shownVolume(s),
+            [this, lane, pan](float db) { setLane(lane, {db, pan}, laneName(lane) + " volume " + audioDraw::dbText(db)); },
+            [c, track, part] { trackActions::automateMix(*c, track, false, part); });
         return;
     }
     if (s.group.valid()) {
@@ -1499,6 +1518,11 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
             rack::ui::Menu* menu = rack::createMenu();
             Strip lane = *s;
             float volume = shownVolume(*s);
+            EditorContext* c = &ctx;
+            TrackId track = s->track;
+            SendFrom part = partOf(*s);
+            menu->addChild(rack::createMenuItem("Automate in the timeline", "",
+                                                [c, track, part] { trackActions::automateMix(*c, track, true, part); }));
             menu->addChild(rack::createMenuLabel(laneName(lane) + " pan"));
             menu->addChild(rack::createMenuItem("Centre", "double-click", [this, lane, volume] {
                 setLane(lane, {volume, 0}, laneName(lane) + " pan centre");
@@ -1541,11 +1565,29 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
             size_t undoFrom = APP->history->actions.size();
             SourceLevel next = sources::inputLevel(ctx, s->track, s->inputModule);
             next.solo = !next.solo;
+            // Shift+click works as on a track: this input alone, and its track alone.
+            if (mods.shift) {
+                std::vector<int64_t> others;
+                const Track* t = m->song().findTrack(s->track);
+                if (t && t->type == TrackType::Audio)
+                    others.push_back(-1);
+                for (OutputModuleBase* o : m->sourceModules(s->track))
+                    others.push_back(o->id);
+                for (int64_t other : others) {
+                    SourceLevel level = sources::inputLevel(ctx, s->track, other);
+                    if (other != s->inputModule && level.solo) {
+                        level.solo = false;
+                        sources::commitInput(ctx, s->track, other, level, "Unsolo input");
+                    }
+                }
+            }
             sources::commitInput(ctx, s->track, s->inputModule, next, next.solo ? "Solo input" : "Unsolo input");
             // Hearing one input alone means hearing its track too; the last input to let go lets the track go.
             const Track* soloed = m->song().findTrack(s->track);
             bool wanted = sources::anyInputSolo(ctx, s->track);
-            if (soloed && soloed->solo != wanted)
+            if (mods.shift && wanted)
+                trackActions::soloOnly(ctx, s->track);
+            else if (soloed && soloed->solo != wanted)
                 trackActions::toggleSolo(ctx, s->track, true);
             joinUndoSteps(undoFrom, next.solo ? "Solo input" : "Unsolo input");
             break;
@@ -1839,10 +1881,10 @@ void MixerPane::drawSends(NVGcontext* vg, const Strip& s) {
         float pos = faderPos(db);
         bool held = heldSends.count({row.track.value, row.from.key(), row.to.value}) > 0;
         bool active = held || int(k) == hovered;
-        bool lane = row.from.whole() &&
-                    std::any_of(sender->automation.begin(), sender->automation.end(), [&](const AutomationEnvelope& l) {
-                        return l.drive == LaneDrive::Send && l.sendTo == row.to && !l.mute;
-                    });
+        bool lane =
+            std::any_of(sender->automation.begin(), sender->automation.end(), [&](const AutomationEnvelope& l) {
+                return l.drive == LaneDrive::Send && l.sendTo == row.to && l.part == row.from.key() && !l.mute;
+            });
         if (sendDots) {
             nvgBeginPath(vg);
             nvgCircle(vg, r.getCenter().x, r.getCenter().y, r.size.x / 2);

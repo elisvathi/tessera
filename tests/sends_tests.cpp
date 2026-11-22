@@ -101,6 +101,31 @@ TEST_CASE("a Send lane names the track it sends to, and saves") {
     CHECK(back.tracks[0].automation[0].drive == LaneDrive::Send);
 }
 
+TEST_CASE("a lane on a drum lane's send, or on its level, keeps its part when saved") {
+    Song song = fourTracks();
+    TrackId lead = idAt(song, 2);
+    AutomationEnvelope send;
+    send.id = song.newId<AutomationId>();
+    send.drive = LaneDrive::Send;
+    send.sendTo = lead;
+    send.part = SendFrom::ofLane(1).key();
+    send.points = {{0, 0.5f}};
+    AutomationEnvelope level = send;
+    level.id = song.newId<AutomationId>();
+    level.drive = LaneDrive::Volume;
+    level.sendTo = TrackId();
+    song.tracks[3].automation = {send, level};
+    json::Ref j(songToJson(song));
+    Song back = songFromJson(j.get(), Song::kSchemaVersion);
+    REQUIRE(back.tracks[3].automation.size() == 2);
+    CHECK(back.tracks[3].automation[0].part == SendFrom::ofLane(1).key());
+    CHECK(back.tracks[3].automation[1].part == SendFrom::ofLane(1).key());
+    // The part's level lane is not the track's fader lane.
+    AutomationEnvelope fader = level;
+    fader.part = 0;
+    CHECK_FALSE(sameTarget(fader, level));
+}
+
 TEST_CASE("a drum lane, the clips or an input sends on its own, beside the track's own send, and saves") {
     Song song = fourTracks();
     TrackId drums = idAt(song, 3), lead = idAt(song, 2), bass = idAt(song, 0);

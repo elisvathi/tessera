@@ -877,7 +877,7 @@ void normalize(Song& song) {
     // The master plays only a Volume lane.
     auto& masterLanes = song.master.automation;
     masterLanes.erase(std::remove_if(masterLanes.begin(), masterLanes.end(),
-                                     [](const AutomationEnvelope& l) { return l.drive != LaneDrive::Volume; }),
+                                     [](const AutomationEnvelope& l) { return l.drive != LaneDrive::Volume || l.part != 0; }),
                       masterLanes.end());
     if (masterLanes.size() > 1)
         masterLanes.resize(1);

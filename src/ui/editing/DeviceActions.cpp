@@ -297,11 +297,10 @@ void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device,
         }
         mod->perform(std::move(command));
         setStripOpen(*c, true);
-        // A Curve opens in the lower pane only; the others open their settings.
+        // Every modulator opens its settings; a Curve also opens its drawing in the lower pane.
+        c->state().openModulator = added.value;
         if (type == ModulatorType::Curve)
             showCurve(*c, added);
-        else
-            c->state().openModulator = added.value;
     };
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
 }
@@ -382,10 +381,9 @@ void openModulatorBrowserAt(EditorContext& ctx, ModulatorPlace place) {
             c->state().deviceModsOpen[place.device.value] = true;
         else
             c->state().trackModsOpen = true;
+        c->state().openModulator = added.value;
         if (type == ModulatorType::Curve)
             showCurve(*c, added);
-        else
-            c->state().openModulator = added.value;
     };
     openSearchList(itemsOf<ModulatorType>(kModulatorTypeCount, pick), options);
 }
@@ -557,21 +555,17 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
                         run([&](const Song& s, TesseraModule*) { return setPlayheadChannel(s, id, ch); });
                     }));
         }));
-    bool on = playheads::isOn(*p), solo = p->solo;
-    menu->addChild(rack::createCheckMenuItem(
-        "On", "Shift+M", [on] { return on; },
-        [run, id, on] { run([&](const Song& s, TesseraModule*) { return setPlayheadOn(s, id, !on); }); }));
+    bool solo = p->solo;
     menu->addChild(rack::createCheckMenuItem(
         "Solo", "", [solo] { return solo; },
         [run, id, solo] { run([&](const Song& s, TesseraModule*) { return setPlayheadSolo(s, id, !solo); }); }));
+    // On and the rarer settings, each its own choice list, with the same Draw a curve and Modulate, automate… as
+    // the settings' tags on the card.
     using namespace playheads::knob;
-    ParamRef onRef{ParamRef::Kind::Playhead, id.value, uint16_t(kOn)};
-    menu->addChild(rack::createMenuItem("Switch it on and off in time…", "", [c, onRef] { showCurveFor(*c, onRef); }));
-    // The rarer settings, each its own choice list, with its curve and its lanes like the card's settings.
     menu->addChild(new rack::ui::MenuSeparator);
-    for (int k : {kNotes, kOnJump, kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
+    for (int k : {kOn, kNotes, kOnJump, kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
         const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
-        float now = playheadValue(*p, k);
+        float now = k == kOn ? (playheads::isOn(*p) ? 1.f : 0.f) : playheadValue(*p, k);
         std::vector<std::string> choices =
             info.kind == devices::ParamInfo::Kind::Toggle ? std::vector<std::string>{"Off", "On"} : info.choices;
         ParamRef ref{ParamRef::Kind::Playhead, id.value, uint16_t(k)};
@@ -580,14 +574,17 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
         menu->addChild(rack::createSubmenuItem(info.name, curved ? shown + " ~" : shown, [=](rack::ui::Menu* sub) {
             for (int i = 0; i < int(choices.size()); i++)
                 sub->addChild(rack::createCheckMenuItem(
-                    choices[size_t(i)], "", [now, i] { return int(now) == i; },
-                    [c, id, k, i, name = std::string(info.name)] {
-                        setPlayheadValues(*c, id, {{k, float(i)}}, "Set " + name);
+                    choices[size_t(i)], k == kOn ? "Shift+M" : "", [now, i] { return int(now) == i; },
+                    [c, run, id, k, i, name = std::string(info.name)] {
+                        if (k == kOn)
+                            run([&](const Song& s, TesseraModule*) { return setPlayheadOn(s, id, i == 1); });
+                        else
+                            setPlayheadValues(*c, id, {{k, float(i)}}, "Set " + name);
                     }));
             sub->addChild(new rack::ui::MenuSeparator);
-            sub->addChild(rack::createMenuItem(curved ? "Show its curve" : "Draw a curve for it", "",
+            sub->addChild(rack::createMenuItem(curved ? "Show its curve" : "Draw a curve", "",
                                                [c, ref] { showCurveFor(*c, ref); }));
-            sub->addChild(rack::createMenuItem("Automate or modulate…", "", [c, ref] { openKnobMenu(*c, ref); }));
+            sub->addChild(rack::createMenuItem("Modulate, automate…", "", [c, ref] { openKnobMenu(*c, ref); }));
         }));
     }
     menu->addChild(

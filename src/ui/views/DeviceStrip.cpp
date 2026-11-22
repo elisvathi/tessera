@@ -1067,8 +1067,6 @@ void DeviceStrip::layoutParts() {
     ModulatorPlace openPlace;
     const Modulator* openMod =
         st.openModulator ? findModulator(song, ModulatorId(st.openModulator), &openPlace) : nullptr;
-    if (openMod && openMod->type == ModulatorType::Curve)
-        openMod = nullptr; // a Curve draws in the lower pane instead
     bool narrow = box.size.x < kNarrowStrip;
     ChainOwner owner = deviceActions::shownChain(ctx);
     const Clip* clip = deviceActions::shownNoteClip(ctx);
@@ -1554,7 +1552,7 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
         const Modulator* om = ctx.state().openModulator
                                   ? findModulator(ctx.module()->song(), ModulatorId(ctx.state().openModulator), &place)
                                   : nullptr;
-        if (om && om->type != ModulatorType::Curve && place.level == ModLevel::Device && place.device == d.id) {
+        if (om && place.level == ModLevel::Device && place.device == d.id) {
             parts.push_back({Kind::Settings, Rect(x, top, kSettingsWidth, kCardHeight), index, -1, om->id.value});
             x += kSettingsWidth;
         }
@@ -2275,14 +2273,15 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         selectInStrip(Kind::ModulatorRow, hit->id, hit->section, mods);
         if (mods.ctrl || mods.shift)
             break; // adding to the selection leaves the settings as they are
-        // A Curve is edited in the lower pane, under the notes it moves, with what it moves in the pane's header: it
-        // opens no popover (Trello: the dialog and the pane opened together). A second click puts the notes back.
+        // A Curve opens the same settings beside its section as every modulator, and its drawing in the lower pane
+        // under the notes it moves; a second click closes both (DECISIONS §191).
         const Modulator* mod = findModulator(m->song(), ModulatorId(hit->id));
         if (mod && mod->type == ModulatorType::Curve) {
-            ctx.state().openModulator = 0;
-            if (deviceActions::curveShown(ctx, mod->id))
+            bool open = ctx.state().openModulator == hit->id || deviceActions::curveShown(ctx, mod->id);
+            ctx.state().openModulator = open ? 0 : hit->id;
+            if (open && deviceActions::curveShown(ctx, mod->id))
                 ctx.state().lowerLane = 0;
-            else
+            else if (!open)
                 deviceActions::showCurve(ctx, mod->id);
             break;
         }
@@ -4335,7 +4334,7 @@ std::string DeviceStrip::placeName(const ModulatorPlace& place) {
 void DeviceStrip::appendEditItems(rack::ui::Menu* menu, int pasteIndex, bool full, std::optional<ModulatorPlace> into) {
     std::weak_ptr<DeviceStrip*> weak = self;
     Copied items = gatherSelection();
-    if (!items.empty() && full)
+    if (!items.empty())
         menu->addChild(rack::createMenuItem("Cut " + items.label, shortcutLabel(Action::Cut), [weak] {
             if (auto s = weak.lock())
                 (*s)->cutSelection();

@@ -91,6 +91,7 @@ class Reader {
             }
         }
         out.tempo = tempo;
+        indexIds(project);
         collectTargets(project);
         if (const Node* structure = project.child("Structure"))
             for (const Node& t : structure->children)
@@ -111,6 +112,16 @@ class Reader {
     }
 
   private:
+    static constexpr int kMaxReferenceDepth = 8;
+
+    /// Remembers every element that has an `id`, so a clip that plays another clip's content by `reference` finds it.
+    void indexIds(const Node& n) {
+        if (const std::string* id = n.attr("id"))
+            byId.emplace(*id, &n);
+        for (const Node& child : n.children)
+            indexIds(child);
+    }
+
     // ---- Structure ----------------------------------------------------------------------------------------------
 
     /// Notes every parameter that some automation targets, so a send at -inf that moves isn't dropped.
@@ -498,7 +509,18 @@ class Reader {
     /// Reads a clip's content (its nested timelines) into `c`: times in beats from the clip's own start, shifted by
     /// `offset`; notes only where they start inside [from, to).
     void contentOf(const Node& n, bool seconds, double offset, double from, double to, Content& c) {
-        for (const Node& child : n.children) {
+        std::vector<const Node*> parts;
+        for (const Node& child : n.children)
+            parts.push_back(&child);
+        // A clip can play another clip's content: `reference` names that timeline instead of holding a copy. The
+        // depth limit stops a file whose references go round in a circle.
+        const std::string* ref = n.attr("reference");
+        auto target = ref ? byId.find(*ref) : byId.end();
+        if (target != byId.end() && referenceDepth < kMaxReferenceDepth)
+            parts.push_back(target->second);
+        referenceDepth++;
+        for (const Node* part : parts) {
+            const Node& child = *part;
             if (child.name == "Notes") {
                 notesOf(child, seconds, offset, from, to, c);
             } else if (child.name == "Lanes") {
@@ -543,6 +565,7 @@ class Reader {
                 c.audioOffset = offset;
             }
         }
+        referenceDepth--;
     }
 
     /// The placeholder source for a file, one per path.
@@ -863,6 +886,8 @@ class Reader {
     Song& song;
     double tempo = 120;
     std::map<std::string, TrackId> tracks, channels;
+    std::map<std::string, const Node*> byId;
+    int referenceDepth = 0;
     std::map<std::string, Param> params;
     std::set<std::string> targeted;
     std::string masterChannel;

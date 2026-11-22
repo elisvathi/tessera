@@ -1267,7 +1267,8 @@ bool PianoRollView::editAction(Action action) {
         Tick offset = edits::duplicateOffset(before, ids, grid, timeSig());
         IdSet added;
         NoteList after = edits::duplicate(before, ids, offset, [this] { return newNoteId(); }, &added);
-        commit("Duplicate " + countNotes(ids.size()), before, edits::resolveOverlaps(after, added), added);
+        // Like paste, a copy lands on top of what is there and removes nothing (DECISIONS §191).
+        commit("Duplicate " + countNotes(ids.size()), before, after, added);
         return true;
     }
     case Action::TransposeUp:
@@ -1367,7 +1368,8 @@ void PianoRollView::paste(bool atMouse) {
     after.insert(after.end(), pasted.begin(), pasted.end());
     std::sort(after.begin(), after.end(), noteOrder);
     IdSet ids = edits::idsOf(pasted);
-    commit("Paste " + countNotes(pasted.size()), before, edits::resolveOverlaps(after, ids), ids);
+    // Pasted notes sit on top and remove nothing: moving them away must leave the notes under them (§191).
+    commit("Paste " + countNotes(pasted.size()), before, after, ids);
 }
 
 void PianoRollView::cycleSelection(Action action) {

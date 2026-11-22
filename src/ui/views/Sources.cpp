@@ -421,9 +421,9 @@ void ClipSource::openPlayheadSegmentMenu(uint64_t id) {
     };
     curveItem("Move it in time with a curve…", "Show the curve moving it", start);
     curveItem("Resize it in time with a curve…", "Show the curve resizing it", length);
-    menu->addChild(rack::createMenuItem("Automate or modulate its start…", "",
+    menu->addChild(rack::createMenuItem("Modulate, automate its start…", "",
                                         [c, start] { deviceActions::openKnobMenu(*c, start); }));
-    menu->addChild(rack::createMenuItem("Automate or modulate its length…", "",
+    menu->addChild(rack::createMenuItem("Modulate, automate its length…", "",
                                         [c, length] { deviceActions::openKnobMenu(*c, length); }));
     menu->addChild(new rack::ui::MenuSeparator);
     PlayheadId playhead(id);

@@ -514,6 +514,9 @@ class TesseraModule : public rack::engine::Module {
     /// Armed lanes record their source while the transport records; a loop wrap or stop ends the pass.
     void recordAutomation();
     bool readAutomationSource(const AutomationEnvelope& lane, float& value) const;
+    /// What a mixer drag holds on one part of a track (a drum lane, an input, the clips), as a lane value; false when
+    /// nothing holds it.
+    bool readPartSource(TrackId track, uint64_t part, bool pan, float& value) const;
     bool holds(const ParamRef& ref) const; // the mouse holds this knob (holdKnob)
     /// The knob, device knob and AUTO REC lanes an armed track records: its own, and the playing clip's device
     /// knob lanes. None when the track isn't armed or a lane is marked "don't record".

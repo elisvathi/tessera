@@ -5,6 +5,7 @@
 #include "../widgets/MenuTextField.hpp"
 #include "AudioActions.hpp"
 #include "BounceActions.hpp"
+#include "Sources.hpp"
 
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -320,7 +321,7 @@ void appendAddLaneItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track,
     }));
 }
 
-void automateMix(EditorContext& ctx, TrackId track, bool pan) {
+void automateMix(EditorContext& ctx, TrackId track, bool pan, SendFrom part) {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
@@ -329,18 +330,31 @@ void automateMix(EditorContext& ctx, TrackId track, bool pan) {
     bool master = track == song.master.id;
     if (!t && !(master && !pan))
         return;
+    if (master && !part.whole())
+        return;
     LaneDrive drive = pan ? LaneDrive::Pan : LaneDrive::Volume;
     ctx.state().openAutomation.insert(track.value);
     for (const AutomationEnvelope& l : *lanesOf(song, LaneOwner::ofTrack(track)))
-        if (l.drive == drive)
+        if (l.drive == drive && l.part == part.key())
             return;
     AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), 0, t ? t->color : theme::kMasterColor);
-    lane.name = pan ? "Pan" : "Volume";
+    std::string what = pan ? "Pan" : "Volume";
+    lane.name = part.whole() ? what : sendActions::partName(*m, *t, part) + " " + (pan ? "pan" : "volume");
     lane.drive = drive;
+    lane.part = part.key();
     lane.rangeMin = 0;
     lane.rangeMax = 1;
-    float volumeDb = t ? t->channel.volumeDb : song.master.volumeDb;
-    lane.points = {{0, pan ? (t->channel.pan + 1) / 2 : faderPosOfDb(volumeDb)}};
+    // It starts where the control is now, so adding it changes nothing until points are drawn.
+    Channel now = t ? t->channel : Channel{song.master.volumeDb, 0};
+    if (t && part.kind == SendFrom::Kind::Lane && part.lane >= 0 && part.lane < kDrumInputs)
+        now = t->drumInputs[size_t(part.lane)];
+    else if (t && part.kind == SendFrom::Kind::Clips)
+        now = {t->clips.db, t->clips.pan};
+    else if (t && part.kind == SendFrom::Kind::Input) {
+        SourceLevel level = sources::inputLevel(ctx, track, part.module);
+        now = {level.db, level.pan};
+    }
+    lane.points = {{0, pan ? (now.pan + 1) / 2 : faderPosOfDb(now.volumeDb)}};
     m->perform(addLane(song, LaneOwner::ofTrack(track), lane));
 }
 
@@ -601,6 +615,20 @@ void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vecto
 void toggleSolo(EditorContext& ctx, TrackId clicked, bool additive) {
     TesseraModule* m = ctx.module();
     m->perform(soloCommand(m->song(), targets(ctx, clicked), additive));
+}
+
+void soloOnly(EditorContext& ctx, TrackId track) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    const Track* t = song.findTrack(track);
+    if (!t)
+        return;
+    auto compound = std::make_unique<CompoundCommand>("Solo only " + t->name);
+    for (const Track& other : song.tracks)
+        if (other.solo != (other.id == track))
+            compound->add(setTrackField(song, other.id, &Track::solo, other.id == track, "Solo"));
+    if (!compound->empty())
+        m->perform(std::move(compound));
 }
 
 void rename(EditorContext& ctx, TrackId id, const std::string& name) {

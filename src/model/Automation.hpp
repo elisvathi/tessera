@@ -84,6 +84,9 @@ struct AutomationEnvelope {
     int recInput = -1;     // the AUTO REC channel a CV lane records, 0..7; -1 = its own AUTO channel
     bool noRecord = false; // "Don't record this lane": takes leave it as it is
     TrackId sendTo;        // a Send lane: the level of the track's send to this track, as a fader position
+    /// The part of the track a Volume, Pan or Send lane moves (SendFrom::key()): a drum lane, an input or the clips,
+    /// or 0 for the whole track. A Send lane's part is the one that sends.
+    uint64_t part = 0;
 
     bool operator==(const AutomationEnvelope& o) const {
         return id == o.id && name == o.name && color == o.color && outputIndex == o.outputIndex &&
@@ -91,7 +94,7 @@ struct AutomationEnvelope {
                slewMs == o.slewMs && combine == o.combine && source == o.source && recInput == o.recInput &&
                recordMode == o.recordMode && targets == o.targets && points == o.points &&
                paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && noRecord == o.noRecord &&
-               sendTo == o.sendTo;
+               sendTo == o.sendTo && part == o.part;
     }
 };
 
@@ -106,7 +109,9 @@ inline bool sameTarget(const AutomationEnvelope& a, const AutomationEnvelope& b)
     if (a.drive != b.drive)
         return false;
     if (a.drive == LaneDrive::Send)
-        return a.sendTo == b.sendTo;
+        return a.sendTo == b.sendTo && a.part == b.part;
+    if (a.drive == LaneDrive::Volume || a.drive == LaneDrive::Pan)
+        return a.part == b.part;
     return a.drive != LaneDrive::Auto || a.outputIndex == b.outputIndex;
 }
 

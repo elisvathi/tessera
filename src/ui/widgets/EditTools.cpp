@@ -262,7 +262,7 @@ std::vector<ToolButton*> makeTransportButtons(EditorContext& ctx) {
     out.push_back(new ToolButton(play));
 
     // Stop while playing stops; stop while stopped returns to the start.
-    out.push_back(new ToolButton(options(Icon::Stop, withShortcut("Stop", Action::PlayStop), [c] {
+    out.push_back(new ToolButton(options(Icon::Stop, withShortcut("Stop (again: back to the start)", Action::Stop), [c] {
         c->module()->requestTransport(c->module()->playing() ? kRequestStop : kRequestReset);
     })));
 

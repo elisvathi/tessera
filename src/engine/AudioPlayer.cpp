@@ -140,6 +140,15 @@ bool AudioPlayer::heldSend(uint64_t track, uint64_t to, float& gain, uint64_t fr
     return false;
 }
 
+bool AudioPlayer::heldClips(uint64_t track, float& gain) const {
+    for (const Hold& h : holds)
+        if (h.track.load(std::memory_order_acquire) == track && (h.parts.load(std::memory_order_relaxed) & kHoldClips)) {
+            gain = h.clips.load(std::memory_order_relaxed);
+            return true;
+        }
+    return false;
+}
+
 bool AudioPlayer::held(uint64_t track, bool pan, float& value) const {
     for (const Hold& h : holds)
         if (h.track.load(std::memory_order_acquire) == track) {
@@ -161,6 +170,7 @@ void AudioPlayer::setSnapshot(const AudioSnapshot* next) {
     if (next == snapshot)
         return;
     previewFind = true;
+    partsStale = true;
     // Each track keeps its voices and its ramping gains, found again by ID: tracks may have moved.
     static_assert(kMaxTracks * 2 <= 256, "ghost runs fit");
     size_t oldCount = snapshot ? snapshot->tracks.size() + ghosts : ghosts;
@@ -223,6 +233,47 @@ void AudioPlayer::setSnapshot(const AudioSnapshot* next) {
     snapshot = next;
 }
 
+void AudioPlayer::playPartLanes(const AudioTrackPlay& t, TrackRun& run, double song, PartLevels* parts,
+                                 float& clips, float& clipsPan) {
+    std::array<uint64_t, PartLevels::kPerSlot> keys{};
+    std::array<float, PartLevels::kPerSlot> dbs, pans;
+    dbs.fill(NAN);
+    pans.fill(NAN);
+    int n = 0;
+    for (size_t k = 0; k < t.partLanes.size() && k < run.partLaneCursor.size(); k++) {
+        const PartLanePlay& lane = t.partLanes[k];
+        int at = 0;
+        while (at < n && keys[size_t(at)] != lane.key)
+            at++;
+        if (at == n) {
+            if (n == PartLevels::kPerSlot)
+                continue;
+            keys[size_t(n++)] = lane.key;
+        }
+        float v = evaluateAt(lane.points, song, run.partLaneCursor[k], 0);
+        if (lane.pan)
+            pans[size_t(at)] = std::clamp(v * 2 - 1, -1.f, 1.f);
+        else
+            dbs[size_t(at)] = faderDbOfPos(v);
+    }
+    // The clips' lanes play here; the drum lanes' and inputs' play in their output modules, which read the table.
+    for (int e = 0; e < n; e++)
+        if (keys[size_t(e)] == SendFrom::clips().key()) {
+            if (!std::isnan(dbs[size_t(e)]) && t.clipsOn)
+                clips = dbToGain(dbs[size_t(e)]);
+            if (!std::isnan(pans[size_t(e)]))
+                clipsPan = pans[size_t(e)];
+        }
+    if (parts && t.busSlot >= 0 && t.busSlot < kMaxTracks) {
+        partSlotUsed[size_t(t.busSlot)] = partSlotUsed[size_t(t.busSlot)] || n > 0;
+        for (int e = 0; e < n; e++)
+            parts->set(t.busSlot, e, keys[size_t(e)], dbs[size_t(e)], pans[size_t(e)]);
+        for (int e = n; e < run.partEntries; e++)
+            parts->set(t.busSlot, e, 0, NAN, NAN);
+    }
+    run.partEntries = n;
+}
+
 void AudioPlayer::retire(Voice& v, float samples) {
     if (!v.on || v.leaving)
         return;
@@ -232,7 +283,27 @@ void AudioPlayer::retire(Voice& v, float samples) {
     v.fadeStep = -v.fade / std::max(1.f, samples);
 }
 
-void AudioPlayer::startBlock(const Engine& engine) {
+void AudioPlayer::startBlock(const Engine& engine, PartLevels* parts) {
+    // A new snapshot: tracks may have gone, lost their lanes or moved to another slot. Clear every slot nobody fills
+    // now, and have the others clear their whole row as they write it. Only on a swap, so it costs nothing playing.
+    if (partsStale && parts) {
+        partsStale = false;
+        std::array<bool, kMaxTracks> filled{};
+        size_t n = snapshot ? std::min<size_t>(snapshot->tracks.size(), kMaxTracks) : 0;
+        for (size_t i = 0; i < n; i++) {
+            const AudioTrackPlay& t = snapshot->tracks[i];
+            if (!t.partLanes.empty() && t.busSlot >= 0 && t.busSlot < kMaxTracks) {
+                filled[size_t(t.busSlot)] = true;
+                runs[i].partEntries = PartLevels::kPerSlot;
+            }
+        }
+        for (int s = 0; s < kMaxTracks; s++)
+            if (!filled[size_t(s)] && partSlotUsed[size_t(s)]) {
+                for (int e = 0; e < PartLevels::kPerSlot; e++)
+                    parts->set(s, e, 0, NAN, NAN);
+                partSlotUsed[size_t(s)] = false;
+            }
+    }
     bool anyHold = false;
     for (const Hold& h : holds)
         anyHold |= h.track.load(std::memory_order_relaxed) != 0;
@@ -289,10 +360,13 @@ void AudioPlayer::startBlock(const Engine& engine) {
         }
         autoFlags[i].store(automated, std::memory_order_relaxed);
         float clips = t.clipsGain;
+        float clipsPanNow = t.clipsPan;
+        if (!t.partLanes.empty() || found.partEntries > 0)
+            playPartLanes(t, found, engine.position(), parts, clips, clipsPanNow);
         held(t.id.value, volume, pan, clips);
         float clipsPan = clipsPanTrack.load(std::memory_order_acquire) == t.id.value
                              ? clipsPanValue.load(std::memory_order_relaxed)
-                             : t.clipsPan;
+                             : clipsPanNow;
         balanceGains(clipsPan, runs[i].clipsPanL, runs[i].clipsPanR);
         float l = 0, r = 0;
         balanceGains(pan, l, r);
@@ -468,7 +542,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right) { pro
 void AudioPlayer::process(const Engine& engine, float& left, float& right, const Rack& rack) {
     left = right = 0;
     if (blockPos == 0)
-        startBlock(engine);
+        startBlock(engine, rack.parts);
 
     bool playing = engine.isPlaying();
     if (blockPos == 0)

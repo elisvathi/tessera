@@ -272,6 +272,9 @@ void EditorHost::runAction(Action action) {
     case Action::PlayStop:
         m->requestTransport(kRequestToggle);
         return;
+    case Action::Stop:
+        m->requestTransport(m->playing() ? kRequestStop : kRequestReset);
+        return;
     case Action::Record:
         m->toggleRecord();
         return;

@@ -25,6 +25,7 @@ std::vector<ActionInfo> buildTable() {
     // Conflicts in EDITOR_UX §7 are resolved here; see docs/DECISIONS.md §12.
     return {
         {Ac::PlayStop, "Transport", "Play / stop", {K(GLFW_KEY_SPACE)}},
+        {Ac::Stop, "Transport", "Stop (again: back to the start)", {K(GLFW_KEY_ENTER), K(GLFW_KEY_KP_ENTER)}},
         {Ac::PlayFromMouse, "Transport", "Play from mouse / selection start", {K(GLFW_KEY_SPACE, S)}},
         {Ac::Record, "Transport", "Record (right-click the button for settings)", {C("r")}},
         {Ac::CaptureMidi, "Transport", "Capture what was just played as a clip", {C("r", Ctl | S)}},
@@ -149,6 +150,10 @@ std::string keyName(const KeyChord& c) {
     switch (c.key) {
     case GLFW_KEY_SPACE:
         return "Space";
+    case GLFW_KEY_ENTER:
+        return "Enter";
+    case GLFW_KEY_KP_ENTER:
+        return "Num Enter";
     case GLFW_KEY_DELETE:
         return "Delete";
     case GLFW_KEY_BACKSPACE:

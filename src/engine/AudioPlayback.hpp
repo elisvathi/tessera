@@ -121,6 +121,14 @@ struct SendPlay {
     uint64_t fromKey = 0; // SendFrom::key(), for a drag that holds this send
 };
 
+/// A Volume or Pan lane on one part of a track (a drum lane IN, a Track Out's IN, the clips), as fader positions or
+/// pan (0..1) over song ticks.
+struct PartLanePlay {
+    uint64_t key = 0; // SendFrom::key() of the part
+    bool pan = false;
+    std::vector<AutoPoint> points;
+};
+
 /// One track that makes sound: an audio track's clips, and for any track the return slots its output modules' IN
 /// jacks fill, with its mixer strip.
 struct AudioTrackPlay {
@@ -133,6 +141,8 @@ struct AudioTrackPlay {
     std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
     float clipsPan = 0;                        // the clips' own place left and right, as an input of the track
     float clipsGain = 1;                       // the clips as a source (§7.8): their Level, 0 when not in use
+    bool clipsOn = true;                       // the clips in use and not soloed away, so a lane can set their Level
+    std::vector<PartLanePlay> partLanes;       // lanes on its parts' levels and pans, at most PartLevels::kPerSlot
     float volume = 1;                          // the fader as a gain
     float pan = 0;
     bool audible = true; // heard: its fader output reaches the master (mute and solo applied)

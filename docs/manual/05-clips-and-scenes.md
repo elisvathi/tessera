@@ -12,9 +12,9 @@ the scene's ▶ and name on top.
 ![Clips playing: the Chorus scene is running](images/clips-playing.png)
 
 The clips form a grid: each slot fills its track's row. At the usual height a slot is one line: ▶, the name and
-its notes in miniature. Make a track taller (drag the bottom edge of its header) and its slots grow with it: from
-about twice the usual height they get a title bar, as a clip on the timeline has, with ▶ and the name on top and
-the notes across the whole slot below.
+its notes in miniature. The ▶ is a strip down the slot's whole left side, so it is an easy target at any height.
+Make a track taller (drag the bottom edge of its header) and its slots grow with it: from about twice the usual
+height the name sits on its own line at the top, right of the strip, and the notes fill the room below it.
 
 A slot can look like this:
 
