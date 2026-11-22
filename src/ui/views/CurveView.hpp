@@ -20,13 +20,12 @@ class TesseraModule;
 /// and points snap to them; the dashed line is the knob as set, which the curve adds to. Across is the curve's own
 /// time, zoomed and scrolled on its own. A header holds Length, ready shapes and Remove; under it, a ruler with the
 /// segment that plays (drag its grips or the bar). A point is a Step (a square: holds until the next point) or a
-/// Ramp (a circle: glides to it); right-click a point to switch. With no modulator yet (EditorContext::curveTarget),
-/// the first point or shape adds one.
+/// Ramp (a circle: glides to it); right-click a point to switch.
 class CurveView : public InteractiveView {
   public:
     CurveView(EditorContext& ctx, PianoRollView& owner) : InteractiveView(ctx), owner(owner) {}
 
-    /// Whether there is a curve, or a setting waiting for one, to show (the lower pane shows this view only then).
+    /// Whether there is a curve to show (the lower pane shows this view only then).
     bool hasCurve();
     /// The name the lower pane's button shows ("Melody Rate").
     std::string title();
@@ -156,7 +155,6 @@ class CurveView : public InteractiveView {
     PianoRollView& owner;
     float low = 0, high = 1; // the drawn values shown, bottom to top
     uint64_t fittedModulator = 0;
-    ParamRef fittedTarget;
     bool fitted = false;
 };
 

@@ -188,7 +188,7 @@ TEST_SUITE("clip chains") {
         CHECK(addRoute(r.song, r.lfo, toOwn) != nullptr);
         // Drawing a curve on a clip's device makes a modulator of the clip.
         ModulatorId curve;
-        applyChecked(r.song, animateWithCurve(r.song, ChainOwner(r.fill), toOwn.target, "Fill Gate", CurveDrawing(),
+        applyChecked(r.song, animateWithCurve(r.song, clipPlace, toOwn.target, "Fill Gate", CurveDrawing(),
                                               idsFrom(r.song), &curve));
         ModulatorPlace where;
         REQUIRE(findModulator(r.song, curve, &where));

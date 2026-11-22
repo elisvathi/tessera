@@ -243,7 +243,7 @@ ParamRef CurveView::target() {
         int r = mods::drawnRoute(*mod);
         return r >= 0 ? mod->routes[size_t(r)].target : ParamRef();
     }
-    return ctx.state().curveTarget;
+    return ParamRef();
 }
 
 const devices::ParamInfo* CurveView::targetInfo(float* base, float* amount) {
@@ -272,14 +272,11 @@ bool CurveView::stepped() {
     return info && discrete(*info) && std::fabs(amount) > 1e-4f;
 }
 
-bool CurveView::hasCurve() { return modulator() || (ctx.state().curveTarget.valid() && targetInfo()); }
+bool CurveView::hasCurve() { return modulator() != nullptr; }
 
 std::string CurveView::title() {
-    if (const Modulator* mod = modulator())
-        return mod->name;
-    TesseraModule* m = ctx.module();
-    return m && ctx.state().curveTarget.valid() ? deviceActions::paramName(m->song(), ctx.state().curveTarget)
-                                                : "Curve";
+    const Modulator* mod = modulator();
+    return mod ? mod->name : "Curve";
 }
 
 double CurveView::spanStart() {
@@ -295,49 +292,13 @@ CurveDrawing CurveView::shown() {
         return *preview;
     if (const Modulator* mod = modulator())
         return {mod->length, mod->points, mod->segmentStart, mod->segmentEnd};
-    // A new curve is as long as the clip (whole bars), so it first sits under the notes.
-    Tick bar = std::max<Tick>(1, ticksPerBar(owner.timeSig()));
-    const Clip* clip = owner.clip();
-    Tick span = clip ? std::max<Tick>(kPpq, clip->playEnd() - clip->playStart()) : bar;
-    Tick length = std::max<Tick>(1, (span + bar - 1) / bar) * bar;
-    return {length, {}, 0, length};
+    return {};
 }
 
 void CurveView::commit(CurveDrawing drawing) {
     TesseraModule* m = ctx.module();
-    if (!m)
-        return;
-    if (const Modulator* mod = modulator()) {
+    if (const Modulator* mod = m ? modulator() : nullptr)
         m->perform(setCurve(m->song(), mod->id, std::move(drawing)));
-        return;
-    }
-    const Track* t = owner.track();
-    ParamRef ref = ctx.state().curveTarget;
-    if (!t || !ref.valid())
-        return;
-    // Named after what it moves: "Melody Rate", "Echo Time".
-    std::string name = deviceActions::paramName(m->song(), ref);
-    for (size_t at = name.find(" · "); at != std::string::npos; at = name.find(" · "))
-        name.replace(at, std::string(" · ").size(), " ");
-    if (ref.kind == ParamRef::Kind::Playhead)
-        if (const Playhead* p = findPlayhead(m->song(), PlayheadId(ref.owner)))
-            if (const devices::ParamInfo* info = devices::playheadParamInfo(ref.param))
-                name = p->name + " " + info->name;
-    ModulatorId added;
-    // A setting in a clip's own chain gets a curve of the clip's, which travels with it.
-    ChainOwner owner = ownerOf(m->song(), ref);
-    if (!owner.isClip())
-        owner = ChainOwner(t->id);
-    CommandPtr add = animateWithCurve(m->song(), owner, ref, name, std::move(drawing), m->ids(), &added);
-    if (!add) {
-        ctx.toast(owner.isClip() ? "This clip has no room for another modulator"
-                                 : "This track has no room for another modulator");
-        return;
-    }
-    m->perform(std::move(add));
-    deviceActions::showCurve(ctx, added);
-    // The new modulator is the same curve: keep the view where it is.
-    fittedModulator = added.value;
 }
 
 float CurveView::xOf(double t) { return left + float(time.tickToX(t)); }
@@ -490,12 +451,11 @@ void CurveView::step() {
     time.setViewWidth(width);
     time.setZoomLimits(width / (double(kMaxCurveLength) * 1.1), width / double(kPpq / 4));
     time.setContentEnd(double(std::max(d.length, d.segmentEnd)) * 1.1 + double(ticksPerBar(owner.timeSig())));
-    // A different curve (or a new setting waiting for one) opens lined up under the notes.
+    // A different curve opens lined up under the notes.
     uint64_t id = modulator() ? modulator()->id.value : 0;
-    ParamRef ref = target();
     size_t count = d.points.size();
     picked.erase(std::remove_if(picked.begin(), picked.end(), [count](size_t i) { return i >= count; }), picked.end());
-    if (hasCurve() && visible && (!fitted || id != fittedModulator || !(ref == fittedTarget))) {
+    if (hasCurve() && visible && (!fitted || id != fittedModulator)) {
         if (fitted && id != fittedModulator && fittedModulator != 0)
             picked.clear();
         // A curve already open in the other editor stays where it was; a new one lines up under the notes.
@@ -505,7 +465,6 @@ void CurveView::step() {
             fit();
         fitted = true;
         fittedModulator = id;
-        fittedTarget = ref;
     }
     if (ctx.module() && visible && id != 0) {
         EditorState& state = ctx.state();

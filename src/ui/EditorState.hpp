@@ -67,7 +67,7 @@ struct ArrangerRange {
 /// sizing one window's panes never moves the other. Everything else is shared (EditorState).
 /// EditorState's lowerLane value for the playheads' time map (docs/design/PLAYHEADS.md §3.3); no lane ID is this.
 constexpr uint64_t kTimeMapLane = ~uint64_t(0);
-/// EditorState's lowerLane value for a Curve modulator's shape (EditorContext::curveModulator, curveTarget).
+/// EditorState's lowerLane value for a Curve modulator's shape (EditorState::curveModulator).
 constexpr uint64_t kCurveLane = ~uint64_t(0) - 1;
 
 struct ViewState {
@@ -163,9 +163,7 @@ struct EditorState {
     uint64_t selectedDevice = 0;   // DeviceId of the selected card (Delete removes it)
     uint64_t stripOpenedFor = 0;   // TrackId whose empty device strip was opened by hand
     uint64_t selectedPlayhead = 0; // PlayheadId shown on the Playheads card, the ruler and the lower pane
-    // The Curve modulator the lower pane shows; when 0, the setting it would move once a point is drawn. Session only.
-    uint64_t curveModulator = 0;
-    ParamRef curveTarget;
+    uint64_t curveModulator = 0; // the Curve modulator the lower pane shows. Session only.
     TrackId curveOpenedOn; // the track selected when the curve pane opened
 
     /// Closes the curve pane when another track was selected since it opened: a curve belongs to the track you opened

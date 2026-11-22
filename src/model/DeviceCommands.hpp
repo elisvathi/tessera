@@ -177,11 +177,12 @@ struct CurveDrawing {
 void tidyCurve(CurveDrawing& d);
 /// A Curve modulator's drawing (tidied first).
 CommandPtr setCurve(const Song& song, ModulatorId id, CurveDrawing drawing);
-/// Starts moving `target` with a drawn shape, in one undo step: a new Curve modulator of `owner` (a track, or a
-/// clip's own chain; named after the setting), turning the target all the way, so a point's height is the setting's
-/// own value. Null when there is no room for another modulator there.
-CommandPtr animateWithCurve(const Song& song, ChainOwner owner, const ParamRef& target, const std::string& name,
-                            CurveDrawing drawing, const NextId& nextId, ModulatorId* added = nullptr);
+/// Starts moving `target` with a drawn shape, in one undo step: a new Curve modulator at `place`, named `name` (what it
+/// moves), turning the target all the way, so a point's height is the setting's own value. Without `drawing` it gets
+/// a new Curve's usual shape. Null when there is no room there or the target is out of its reach.
+CommandPtr animateWithCurve(const Song& song, const ModulatorPlace& place, const ParamRef& target,
+                            const std::string& name, std::optional<CurveDrawing> drawing, const NextId& nextId,
+                            ModulatorId* added = nullptr);
 
 /// Adds a route. Null when the target is out of reach, the modulator has kMaxRoutes routes, the knob already
 /// takes kMaxModulationsPerKnob modulations, or the modulator already reaches that target.

@@ -280,10 +280,17 @@ void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device,
         if (!mod || scope < 0 || scope >= int(places.size()))
             return;
         ModulatorId added;
-        CommandPtr command = addModulator(mod->song(), places[size_t(scope)], type, mod->ids(), &added);
+        const ModulatorPlace& place = places[size_t(scope)];
+        // A Curve for a setting turns it all the way, so a point's height is the setting's own value, and is named
+        // after it.
+        bool curve = type == ModulatorType::Curve && target.valid();
+        CommandPtr command =
+            curve ? animateWithCurve(mod->song(), place, target, curveName(mod->song(), target), std::nullopt,
+                                     mod->ids(), &added)
+                  : addModulator(mod->song(), place, type, mod->ids(), &added);
         if (!command)
             return;
-        if (target.valid()) {
+        if (target.valid() && !curve) {
             // Made and connected as one undo step, each part on the song the part before left.
             Song work = mod->song();
             command->apply(work);
@@ -497,7 +504,6 @@ void showCurve(EditorContext& ctx, ModulatorId id) {
     if (ctx.devicesFillPane)
         setStripOpen(ctx, false);
     ctx.state().curveModulator = id.value;
-    ctx.state().curveTarget = ParamRef();
     ctx.state().curveOpenedOn = ctx.state().selectedTrack;
     ctx.state().lowerLane = kCurveLane;
 }
@@ -518,14 +524,15 @@ ModulatorId curveOn(const Song& song, const ParamRef& target) {
     return found;
 }
 
-void showCurveFor(EditorContext& ctx, const ParamRef& target) {
-    TesseraModule* m = moduleOf(ctx);
-    if (const devices::ParamInfo* p = m ? infoOf(m->song(), target) : nullptr; p && !p->movable())
-        return; // a set is only picked by hand
-    ModulatorId id = m ? curveOn(m->song(), target) : ModulatorId();
-    showCurve(ctx, id);
-    if (!id.valid())
-        ctx.state().curveTarget = target;
+std::string curveName(const Song& song, const ParamRef& target) {
+    std::string name = paramName(song, target);
+    for (size_t at = name.find(" · "); at != std::string::npos; at = name.find(" · "))
+        name.replace(at, std::string(" · ").size(), " ");
+    if (target.kind == ParamRef::Kind::Playhead)
+        if (const Playhead* p = findPlayhead(song, PlayheadId(target.owner)))
+            if (const devices::ParamInfo* info = devices::playheadParamInfo(target.param))
+                name = p->name + " " + info->name;
+    return name;
 }
 
 void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
@@ -559,8 +566,8 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
     menu->addChild(rack::createCheckMenuItem(
         "Solo", "", [solo] { return solo; },
         [run, id, solo] { run([&](const Song& s, TesseraModule*) { return setPlayheadSolo(s, id, !solo); }); }));
-    // On and the rarer settings, each its own choice list, with the same Draw a curve and Modulate, automate… as
-    // the settings' tags on the card.
+    // On and the rarer settings, each its own choice list, with the same Modulate, automate… as the settings' tags on
+    // the card.
     using namespace playheads::knob;
     menu->addChild(new rack::ui::MenuSeparator);
     for (int k : {kOn, kNotes, kOnJump, kInvert, kLength, kFixedLength, kPath, kPathCycle}) {
@@ -582,8 +589,6 @@ void openPlayheadMenu(EditorContext& ctx, PlayheadId id) {
                             setPlayheadValues(*c, id, {{k, float(i)}}, "Set " + name);
                     }));
             sub->addChild(new rack::ui::MenuSeparator);
-            sub->addChild(rack::createMenuItem(curved ? "Show its curve" : "Draw a curve", "",
-                                               [c, ref] { showCurveFor(*c, ref); }));
             sub->addChild(rack::createMenuItem("Modulate, automate…", "", [c, ref] { openKnobMenu(*c, ref); }));
         }));
     }

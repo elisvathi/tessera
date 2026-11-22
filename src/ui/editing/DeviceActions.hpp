@@ -96,9 +96,8 @@ void drawCurveIcon(NVGcontext* vg, rack::math::Rect r, int index, NVGcolor color
 void showCurve(EditorContext& ctx, ModulatorId id);
 /// Whether the lower pane shows Curve modulator `id` now.
 bool curveShown(EditorContext& ctx, ModulatorId id);
-/// Shows the Curve modulator moving `target` in the lower pane; with none yet, an empty curve for it: the first point
-/// drawn adds the modulator.
-void showCurveFor(EditorContext& ctx, const ParamRef& target);
+/// The name a new Curve modulator on `target` gets: what it moves, such as "Echo Time" or "Melody Rate".
+std::string curveName(const Song& song, const ParamRef& target);
 /// The first Curve modulator turning `target`, or an invalid ID.
 ModulatorId curveOn(const Song& song, const ParamRef& target);
 

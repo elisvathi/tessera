@@ -414,13 +414,7 @@ void ClipSource::openPlayheadSegmentMenu(uint64_t id) {
     ParamRef length{ParamRef::Kind::Playhead, id, uint16_t(kRegionLength)};
     rack::ui::Menu* menu = rack::createMenu();
     menu->addChild(rack::createMenuLabel(p->name + "'s segment"));
-    // A curve on its start moves the segment as the song plays; one on its length makes it longer or shorter.
-    auto curveItem = [&](const char* draw, const char* show, const ParamRef& ref) {
-        bool has = deviceActions::curveOn(m->song(), ref).valid();
-        menu->addChild(rack::createMenuItem(has ? show : draw, "", [c, ref] { deviceActions::showCurveFor(*c, ref); }));
-    };
-    curveItem("Move it in time with a curve…", "Show the curve moving it", start);
-    curveItem("Resize it in time with a curve…", "Show the curve resizing it", length);
+    // A modulator on its start moves the segment as the song plays; one on its length makes it longer or shorter.
     menu->addChild(rack::createMenuItem("Modulate, automate its start…", "",
                                         [c, start] { deviceActions::openKnobMenu(*c, start); }));
     menu->addChild(rack::createMenuItem("Modulate, automate its length…", "",

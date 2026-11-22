@@ -38,7 +38,7 @@ device you add starts working on the notes that come next.
 **A short pane.** When the pane is too short for one row of cards and the notes together (the editor in the module
 panel, for example), the devices take the whole pane. **Devices** then switches: click it to see the devices, and click **Notes**, or
 **Devices** again, to go back to the notes. In a narrow pane the three fold into one button that names what shows
-("Notes ▾"): click it to pick another. Picking **Draw a curve** on a tag, or clicking a Curve modulator, switches to the notes by itself, since the
+("Notes ▾"): click it to pick another. Clicking a Curve modulator switches to the notes by itself, since the
 curve is drawn in the notes' lower pane; the pane's maximize button gives it more room.
 
 ## Adding devices
@@ -136,7 +136,7 @@ Octaves, gate and velocity are set per step there, so the card's **Oct**, **Gate
   each other: a 12-step Vel row over 16 note steps makes a line that only repeats every 3 bars.
 - **While it plays**, each row outlines the step it is on.
 - **Every step can be automated and modulated.** Right-click a Vel, Gate, Oct or Move cell for the same menu a
-  setting has: type a value, reset it, **Modulate with**, **Draw a curve**, **Automate in the timeline** or **in this
+  setting has: type a value, reset it, **Modulate with**, **Automate in the timeline** or **in this
   clip**. Lanes name it "Step 5 velocity" and so on.
 - **A whole row at once.** Each value row also has one setting that adds to every one of its steps: turn the wheel
   over the row's name, or right-click the name to type it, modulate it or automate it ("Move, every step"). While
@@ -244,8 +244,7 @@ Click or right-click a tag to open its panel: the setting's name, a box to type 
 - **Hover** a choice to see it in the picture; nothing changes until you click it. **Esc** or a click outside closes
   the panel and leaves the setting as it was.
 - **Back to …** sets the default.
-- **Draw a curve** opens a curve for the setting in the lower pane (see [Curves](#playheads) below), and
-  **Modulate, automate…** has **Modulate with ▸**, **Remove modulation ▸**, **Automate in the timeline** and
+- **Modulate, automate…** has **Modulate with ▸**, **Remove modulation ▸**, **Automate in the timeline** and
   **Automate in this clip**. **Modulate with ▸** lists the modulators that can reach the setting; pick one and it
   moves the setting by +50%. **A new modulator…** at its end makes a new one that moves the setting by +50%. On a
   device's setting the new modulator lives on that device unless you pick another chip. The chips only offer places a
@@ -351,7 +350,7 @@ repeats):
 
 | Setting | What it does |
 |---|---|
-| **On** | Whether it plays: the dot on its chip. Right-click the chip › **On**: like every setting it has **Draw a curve**, so the playhead can come in and drop out as the song plays (see **Curves** below), and **Modulate, automate…** for a lane or a modulator (a Random, a Steps pattern) that switches it. |
+| **On** | Whether it plays: the dot on its chip. Right-click the chip › **On**: like every setting it has **Modulate, automate…**, for a lane or a modulator that switches it (a Curve to bring the playhead in and drop it out as the song plays, see **Curves** below, or a Random or Steps). |
 | **Rate** | Speed against the song, from 1/32x to 32x, each speed with its opposite: halves and doubles, thirds (1/3x, 2/3x, 4/3x, 3x…), 1/24x and 24x, dotted speeds (3/8x and 8/3x, 3/4x, 3/2x) and fives (4/5x, 5/4x). |
 | **Direction** | Forward, Backward, Ping-pong (turns at the ends) or Freeze (stands still); or read the segment's steps in another order: **Outside in** (first, last, second, second-last…), **Inside out**, **Odd then even** or **Shuffle** (a new order each pass), with the step size (1/32 to 4 bars, triplets and dotted too). |
 | **Speed curve** | Makes the playhead speed up and slow down as it goes, then catch up: over each **Over** length it follows the curve, and at the end of that length it is back where a steady playhead would be (see [Bending the speed](#bending-the-speed)). **Straight** keeps a steady speed. |
@@ -360,7 +359,7 @@ repeats):
 | **Piece** | The size of the piece it plays again: Off, or 1/64 up to 8 bars, with triplet (T) and dotted (D) sizes between. With **Times**, it plays each piece that many times, then moves on one piece: Piece 1/4, Times 2 plays beat 1, 1, 2, 2, 3, 3… |
 | **Times** | How many times each piece plays, 2 to 16. |
 | **Curve** | How the repeats are spaced in time (see [Spacing the repeats](#spacing-the-repeats)). **Straight** spaces them evenly. |
-| **Rarer settings** | Right-click a playhead's chip: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed, 1/64 to 4 bars, triplets and dotted too), Path (from the settings, or drawn in the time map), and rename, channel, solo, duplicate, delete. Each of these settings' lists (and On's) ends with **Draw a curve** and **Modulate, automate…**, the same two links as a setting's tag, so the rarer settings can move in time too. |
+| **Rarer settings** | Right-click a playhead's chip: Notes (all, or only the **Lowest** or **Highest** of the notes that start together: a bass and a melody out of one piano roll, one playhead on Lowest with a Transpose of −2 octaves in its own chain, one on Highest), On a jump, Invert (mirrors its notes inside the clip's range, in the key), note Length (follows the playhead, the default: a note sounds while the playhead is on it, so at ½× it lasts twice as long; or as written; or fixed, 1/64 to 4 bars, triplets and dotted too), Path (from the settings, or drawn in the time map), and rename, channel, solo, duplicate, delete. Each of these settings' lists (and On's) ends with **Modulate, automate…**, the same link as a setting's tag, so the rarer settings can move in time too. |
 
 Pitch and loudness aren't playhead settings: put a **Transpose** (octaves, key steps) or a **Velocity** device in the
 playhead's own chain, like any other note change. Songs made when a playhead had its own Octave, Steps and Velocity
@@ -377,8 +376,8 @@ sit anywhere on it, past the clip's end too, and plays the notes written there (
 silent). So with playheads on, the clip's loop doesn't decide what plays: the loop bar is hidden, the inspector's
 **Loop** reads **Playheads decide**, and the loop only sets where a new segment starts out. For a round, give the
 second playhead an **Offset** of +1/4, or move its segment a beat later. The other playheads' segments show as thin lines in their colours.
-Right-click the segment to move it or resize it as the song plays (**Move it in time with a curve…**, **Resize it in
-time with a curve…**), to automate or modulate its start or length, or to make it **Follow the clip's loop** again.
+Right-click the segment to move it or resize it as the song plays (**Modulate, automate its start…** or **its
+length…**), or to make it **Follow the clip's loop** again.
 
 **A clip played by playheads looks different.** Its written notes aren't what plays, so on the timeline and in its
 launcher slot it doesn't show them. It shows one band per playhead instead, in the playhead's colour, with a block
@@ -388,15 +387,15 @@ playheads' blocks share the clip. An off playhead's band is faint. One small str
 end (hollow when it is off), and the piano roll's title adds "read by 3 playheads". The bands follow the settings as
 you set them; curves on them play but aren't drawn there.
 
-**Curves.** Any setting can move by itself, on this card or any device card. Click a setting's tag and pick **Draw a
-curve** in its panel: a curve for it opens in the piano roll's lower pane. On this card that is Direction, Rate,
+**Curves.** Any setting can move by itself, on this card or any device card. Click a setting's tag, pick **Modulate,
+automate…** › **Modulate with** › **A new modulator…** and pick **Curve**: its drawing opens in the piano roll's lower
+pane. On this card that is Direction, Rate,
 Speed curve, Over, Offset, Piece, Times and Curve (On, and the rarer settings, from a chip's right-click menu, and the segment, from its
 right-click menu): a curve on On can bring the
 playhead in for bars 5 to 8 only, one on Direction can turn it round in bar 2, one on Piece can start repeating halfway
 through. On has two rows: the curve on its top row leaves it on, a step down to the row below turns it off. (The step
-orders in the Direction panel, such as Outside in, stay as you pick them.) Click to add a point: that makes a
-**Curve** modulator on the track (see [Modulators](#modulators)), named after the playhead and the setting, such as
-"Bass Rate".
+orders in the Direction panel, such as Outside in, stay as you pick them.) A Curve is a modulator like the others
+(see [Modulators](#modulators)).
 
 - **Up and down are the setting's own values.** For Octaves or Key steps each row is one value, labelled with what
   plays, and points snap to the rows (hold **Alt** to place them between rows). The rows cover everything the setting
@@ -561,8 +560,8 @@ add more notes later, select them and click **+ Selected** on the card; to take 
 on the track can join the same Motion device.
 
 **Its settings.** **Pitch** (steps, in the key unless **In key** is off), **Time** (a delay in 1/16 steps), **Length**
-and **Velocity**. To make them change, click a tag and pick **Draw a curve**: its curve opens in the lower pane (see
-[Modulators](#modulators)). For one value each pass of the clip ("up one step a pass for four passes, then back"),
+and **Velocity**. To make them change, click a tag and pick **Modulate, automate…**: a **Curve** modulator draws how one changes over
+time (see [Modulators](#modulators)). For one value each pass of the clip ("up one step a pass for four passes, then back"),
 click a tag, then **Modulate, automate…** › **Drift per pass**: a **Steps** modulator set to **Per pass**, one step each pass. Any modulator
 or automation lane can move these settings too.
 

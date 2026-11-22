@@ -247,7 +247,6 @@ void EditorState::closeCurveIfTrackChanged() {
         return;
     lowerLane = 0;
     curveModulator = 0;
-    curveTarget = ParamRef();
     curveOpenedOn = TrackId();
 }
 
@@ -264,7 +263,6 @@ void EditorState::forgetSong() {
     openAutomation.clear();
     lowerLane = 0;
     curveModulator = 0;
-    curveTarget = ParamRef();
     curveOpenedOn = TrackId();
     openModulator = selectedDevice = stripOpenedFor = selectedPlayhead = 0;
     songModsOpen = trackModsOpen = false;

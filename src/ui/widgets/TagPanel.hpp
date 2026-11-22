@@ -38,7 +38,7 @@ struct TagPanelSpec {
     /// the panel, so a second click there soon after closes it and calls `reset` (back to the default).
     rack::math::Rect tagBox;
     std::function<void()> reset;
-    /// Links along the bottom: "Draw a curve", "Modulate, automate…". Each closes the panel first.
+    /// Links along the bottom, such as "Modulate, automate…". Each closes the panel first.
     std::vector<std::pair<std::string, std::function<void()>>> links;
 };
 

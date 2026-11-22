@@ -951,37 +951,34 @@ CommandPtr setCurve(const Song& song, ModulatorId id, CurveDrawing drawing) {
     });
 }
 
-CommandPtr animateWithCurve(const Song& song, ChainOwner owner, const ParamRef& target, const std::string& name,
-                            CurveDrawing drawing, const NextId& nextId, ModulatorId* added) {
-    tidyCurve(drawing);
-    const std::vector<Modulator>* existing = modulatorsOf(song, owner);
-    if (!existing || existing->size() >= size_t(kMaxTrackModulators))
+CommandPtr animateWithCurve(const Song& song, const ModulatorPlace& place, const ParamRef& target,
+                            const std::string& name, std::optional<CurveDrawing> drawing, const NextId& nextId,
+                            ModulatorId* added) {
+    Song probe = chainsOf(song);
+    std::vector<Modulator>* list = modulatorsAt(probe, place);
+    if (!list || list->size() >= limitAt(place.level))
         return nullptr;
     ModulatorId id(nextId());
     Modulation route;
     route.kind = Modulation::Kind::Param;
     route.target = target;
     route.amount = 1;
-    ModulatorPlace place;
-    place.level = owner.isClip() ? ModLevel::Clip : ModLevel::Track;
-    place.track = owner.isClip() ? trackUsing(song, owner.clip) : owner.track;
-    place.clip = owner.clip;
     if (!reachable(song, place, id, route))
         return nullptr;
+    Modulator m = devices::makeModulator(ModulatorType::Curve, id);
+    m.name = freeName(*list, name);
+    if (drawing) {
+        tidyCurve(*drawing);
+        m.length = drawing->length;
+        m.points = drawing->points;
+        m.segmentStart = drawing->segmentStart;
+        m.segmentEnd = drawing->segmentEnd;
+    }
+    m.routes.push_back(route);
     if (added)
         *added = id;
     return chainEdit(song, "Animate " + name, [&](Song& work) {
-        std::vector<Modulator>* list = modulatorsOf(work, owner);
-        if (!list)
-            return false;
-        Modulator m = devices::makeModulator(ModulatorType::Curve, id);
-        m.name = freeName(*list, name);
-        m.length = drawing.length;
-        m.points = drawing.points;
-        m.segmentStart = drawing.segmentStart;
-        m.segmentEnd = drawing.segmentEnd;
-        m.routes.push_back(route);
-        list->push_back(m);
+        modulatorsAt(work, place)->push_back(m);
         return true;
     });
 }

@@ -934,6 +934,18 @@ TEST_CASE("the playhead settings fit their limit") {
 
 #include "../src/model/Modulators.hpp"
 
+namespace {
+
+/// A track's own modulator section, where a curve drawn for one of its settings lives.
+tessera::ModulatorPlace trackPlace(tessera::TrackId track) {
+    tessera::ModulatorPlace place;
+    place.level = tessera::ModLevel::Track;
+    place.track = track;
+    return place;
+}
+
+} // namespace
+
 TEST_CASE("a Curve plays its segment round and round from when it started, around no change") {
     Modulator m = devices::makeModulator(ModulatorType::Curve, ModulatorId(1));
     m.length = 4 * kPpq;
@@ -973,8 +985,8 @@ TEST_CASE("Curve modulators are drawn and added with undo, and survive saving") 
     ParamRef octave{ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kDirection)};
     ModulatorId added;
     applyUndoable(song,
-                  animateWithCurve(song, song.tracks[0].id, octave, "1 Direction",
-                                   {4 * kPpq, {{0, 0.5f, CurveType::Hold, 0}}, 0, 4 * kPpq}, idsOf(song), &added));
+                  animateWithCurve(song, trackPlace(song.tracks[0].id), octave, "1 Direction",
+                                   CurveDrawing{4 * kPpq, {{0, 0.5f, CurveType::Hold, 0}}, 0, 4 * kPpq}, idsOf(song), &added));
     REQUIRE(song.tracks[0].modulators.size() == 1);
     const Modulator& m = song.tracks[0].modulators[0];
     CHECK(m.id == added);
@@ -1123,9 +1135,9 @@ TEST_CASE("MIDI export plays a synced Curve modulator on a playhead setting") {
     // Bar 1 as set, bar 2 an octave up, repeating every two bars.
     applyUndoable(song,
                   animateWithCurve(
-                      song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)},
-                      "Octave",
-                      {8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, 0.5625f, CurveType::Hold, 0}}, 0, 8 * kPpq},
+                      song, trackPlace(song.tracks[0].id),
+                      {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOctave)}, "Octave",
+                      CurveDrawing{8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, 0.5625f, CurveType::Hold, 0}}, 0, 8 * kPpq},
                       idsOf(song)));
     std::vector<int> pitches;
     for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
@@ -1159,8 +1171,8 @@ TEST_CASE("MIDI export plays a playhead's On as the engine does, cutting its not
     // On as set for beat 1, then off: a whole row down.
     applyUndoable(
         song, animateWithCurve(
-                  song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOn)}, "On",
-                  {4 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {960, 0, CurveType::Hold, 0}}, 0, 4 * kPpq}, idsOf(song)));
+                  song, trackPlace(song.tracks[0].id), {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kOn)},
+                  "On", CurveDrawing{4 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {960, 0, CurveType::Hold, 0}}, 0, 4 * kPpq}, idsOf(song)));
     std::vector<render::ExportNote> notes = render::trackNotes(song, song.tracks[0].id, render::Options(), {});
     REQUIRE(notes.size() == 1); // the note in beat 2 falls where it is off
     CHECK(notes[0].pitch == 60);
@@ -1324,9 +1336,9 @@ TEST_CASE("a curve can turn a playhead's Repeat and Direction, as it does its Ra
         const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
         // A point's height adds to the setting: 0.5 leaves it as set.
         float up = 0.5f + devices::normalize(info, bar2Value) / 2;
-        applyUndoable(song, animateWithCurve(song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(k)},
+        applyUndoable(song, animateWithCurve(song, trackPlace(song.tracks[0].id), {ParamRef::Kind::Playhead, id.value, uint16_t(k)},
                                              info.name,
-                                             {8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}},
+                                             CurveDrawing{8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}},
                                               0, 8 * kPpq},
                                              idsOf(song)));
         std::vector<int> pitches;
@@ -1467,8 +1479,8 @@ TEST_CASE("MIDI export keeps a playhead's place when a curve changes its Rate, a
     applyUndoable(
         song,
         animateWithCurve(
-            song, song.tracks[0].id, {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kRate)}, "Rate",
-            {8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {2 * kPpq, up, CurveType::Hold, 0}}, 0, 8 * kPpq}, idsOf(song)));
+            song, trackPlace(song.tracks[0].id), {ParamRef::Kind::Playhead, id.value, uint16_t(playheads::knob::kRate)},
+            "Rate", CurveDrawing{8 * kPpq, {{0, 0.5f, CurveType::Hold, 0}, {2 * kPpq, up, CurveType::Hold, 0}}, 0, 8 * kPpq}, idsOf(song)));
     std::vector<std::pair<Tick, int>> got;
     for (const render::ExportNote& e : render::trackNotes(song, song.tracks[0].id, render::Options(), {}))
         got.push_back({e.start, e.pitch});

@@ -640,11 +640,12 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
       T and D sizes; Direction's step sizes 1/32 … 2 bars; More › Length › Fixed length 1/64 … 2 bars; Path cycle
       1/4 bar … 64 bars. A song saved before keeps its Rate, Piece, lanes and curves on them (a curve two choices up
       from 2x still reaches 4x).
-- [ ] More › each setting's list (On's too) ends with Draw a curve and Modulate, automate…; the curve opens in the lower
-      pane, and the item reads "~" once a curve moves it. The chip menu's On › Draw a curve opens On's curve.
-- [ ] Right-click the shown playhead's segment on the ruler: Move it in time with a curve… / Resize it in time with a
-      curve… open curves on Region start and length; Follow the clip's loop puts the segment back on the loop.
-- [ ] Click a Curve modulator's row: only the lower pane opens (no popover); click again: the note lane comes back.
+- [ ] More › each setting's list (On's too) ends with Modulate, automate…; with a new Curve modulator on it the curve
+      opens in the lower pane, and the item reads "~" once a curve moves it.
+- [ ] Right-click the shown playhead's segment on the ruler: Modulate, automate its start… / its length… open the
+      knob menu for Region start and length; Follow the clip's loop puts the segment back on the loop.
+- [ ] Click a Curve modulator's row: its settings open beside its section and its drawing in the lower pane; click
+      again: both close and the note lane comes back.
       The pane's top row shows Moves ▾ with what it moves; its menu removes a setting, starts mapping (Map to more
       knobs), and opens CV out…. A new Curve from + Add opens the pane only. Other modulators still open their popover.
 - [ ] Timeline on a track with playheads: each clip shows one band per playhead, with a block wherever it
@@ -848,7 +849,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 - [ ] Launch the two clips in turn: each plays through its own choice; no note hangs when switching or stopping.
 - [ ] Timeline: the clip with its own devices plays through them where its tiles are, the other through the track's.
 - [ ] Play a key on the armed track while the clip with its own devices plays: the key goes through the track's chain.
-- [ ] Draw a curve on the clip's own Arpeggiator Gate: the curve is listed as the clip's ("clip"). Copy the clip to
+- [ ] Put a Curve modulator on the clip's own Arpeggiator Gate: the curve is listed as the clip's ("clip"). Copy the clip to
       another track: its devices and curve come along and still play.
 - [ ] A clip's menu › **Devices** › **Use its devices for the whole track**: the track's devices become the clip's; the
       clip switches to the track's. **Delete its own devices**: the mark goes.

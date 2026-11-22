@@ -1940,7 +1940,6 @@ void DeviceStrip::openPanel(const TagRef& t) {
         };
     }
     ParamRef ref = t.ref;
-    spec.links.push_back({"Draw a curve", [c, ref] { deviceActions::showCurveFor(*c, ref); }});
     spec.links.push_back({"Modulate, automate…", [c, ref] { deviceActions::openKnobMenu(*c, ref); }});
     openTagPanel(std::move(spec));
 }

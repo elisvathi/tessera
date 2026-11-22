@@ -3333,5 +3333,9 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **Playhead On is a setting like the others**: in the chip menu it is a submenu (Off / On, then Draw a curve and
   Modulate, automate…), and every playhead setting submenu uses the tags' two words. "Switch it on and off in time"
   is gone (the user: "that language should be unified").
+- **No "Draw a curve" anywhere** (the user: "remove completely… we already have modulators"). A setting moves only
+  through **Modulate, automate…**; a Curve is a modulator picked like the others. Picking Curve under Modulate with ›
+  A new modulator… makes it turn the setting all the way and names it after the setting (animateWithCurve, now for
+  any modulator section). The lower pane's "empty curve waiting for a first point" state is gone with it.
 - **Enter is Stop** (stopped: back to the start), as the ■ button.
 - **DAWproject clips that `reference` another clip's timeline** are read through it (a real project had 38).

@@ -127,8 +127,8 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Recording a lane (the old lane arm) | Arm the track; the lane menu's **Records from** picks the source |
 | Automating a rack knob | **Add automation lane → Automate a knob: touch it in the rack** |
 | A sustain, mod wheel or other CC lane | **Add automation lane → MIDI control** |
-| A playhead coming in and dropping out | A chip's right-click menu → **On** → **Draw a curve** (or **Modulate, automate…**) |
-| A curve, a modulation or a lane on a device setting | Click its tag: **Draw a curve** and **Modulate, automate…** in its panel |
+| A playhead coming in and dropping out | A chip's right-click menu → **On** → **Modulate, automate…** (a Curve modulator) |
+| A curve, a modulation or a lane on a device setting | Click its tag: **Modulate, automate…** in its panel |
 | How far a lane or modulator moves a setting | The thin bar under its tag; hover the tag for the values |
 | A playhead's rarer settings (Notes, Invert, Length, Path…) | Right-click its chip on the Playheads card |
 | Devices in the small editor | **Devices** in the **Notes · Devices · Mixer** switch at the left of the lower pane's header, as in the full editor |
