@@ -159,6 +159,11 @@ class TrackHeaders : public InteractiveView {
     void toggleMix(TrackId track, SendFrom part);
     /// A click on a mix row: an input's M or S, or the right-click menu (a send's items, or a part's Send to).
     void clickMix(const TrackRow& row, const Hit& hit, int button, Modifiers mods);
+    /// How loud a part of a track is now, in volts, as its mixer strip's meter reads it (the whole track for
+    /// `part` whole).
+    float partLevel(TrackId track, SendFrom part);
+    /// A mix row's meter, in volts: its part's level, or for a send its sender's scaled by the send.
+    float mixLevel(const TrackRow& row);
     /// Opens the name field over a part row: a drum lane's name, or an input's (the clips have none).
     void startMixRename(int row);
     /// The tooltip for a part of a mix row, or for a track's mix fold.

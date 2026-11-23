@@ -272,7 +272,10 @@ and drops its pan knob (still in the mixer); widen the column to get it back.
 Drag a level sideways or a pan knob up and down; **Shift** or **Ctrl** for fine steps. **Double-click** for 0 dB or
 centre. Right-click a send for its menu (automate it, type a level, before or after the fader, remove), or a part
 for **Automate its level** or **Automate its pan in the timeline**, to reset it, or to send it to another track. A
-level or pan that a lane moves wears a ring in the lane's colour and follows the lane as it plays. Every change is one undo step. The rows are 24 px tall and keep that height.
+level or pan that a lane moves wears a ring in the lane's colour and follows the lane as it plays.
+
+Each row's level bar is also its meter, as on the track's own: a part glows with what it plays, the same reading as
+its mixer strip; a send glows with what it sends (its track or part, scaled by the send). Every change is one undo step. The rows are 24 px tall and keep that height.
 
 ## Automating the fader and pan
 

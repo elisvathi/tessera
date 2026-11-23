@@ -3444,3 +3444,6 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **User**: no automation in a part row's right-click menu. A part's menu now has Automate its level / its pan in the
   timeline (the part lanes of §191); a part's or send's row follows its lane while it plays and wears the lane's ring,
   as the mixer strip does.
+- **User**: meters on every header row, without much cost. A part row reads the meter its mixer strip reads (lane IN
+  and input meters the audio thread keeps anyway); a send row shows its sender's (or part's) level times the send's
+  gain, worked out on the UI thread, so the audio thread does no new work. An estimate for a send, not a measurement.

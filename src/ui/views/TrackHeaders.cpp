@@ -6,6 +6,7 @@
 
 #include "../../model/Sends.hpp"
 #include "../../model/TrackCommands.hpp"
+#include "../../module/OutputModuleBase.hpp"
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
@@ -1764,7 +1765,7 @@ void TrackHeaders::drawMixRow(NVGcontext* vg, int index, float top, float h) {
     };
     if (g.level.size.x > 0) {
         Rect bar(g.level.pos.x, cy - kLevelBarH / 2, g.level.size.x, kLevelBarH);
-        drawLevelBar(vg, bar, 0, value.volumeDb, nvgTransRGBAf(color, 0.4f), nvgTransRGBAf(color, 0.95f));
+        drawLevelBar(vg, bar, mixLevel(row), value.volumeDb, nvgTransRGBAf(color, 0.4f), nvgTransRGBAf(color, 0.95f));
         if (std::optional<NVGcolor> ring = laneRing(part ? LaneDrive::Volume : LaneDrive::Send))
             draw::roundedRectStroke(vg, bar.grow(Vec(2, 3)), 3, *ring, 1.f);
     }
@@ -1966,6 +1967,51 @@ void TrackHeaders::startMixRename(int index) {
                       std::max(g.name.size.x, g.level.getRight() - g.name.pos.x) + 4, g.name.size.y + 2);
     addChild(field);
     field->focus();
+}
+
+float TrackHeaders::partLevel(TrackId track, SendFrom part) {
+    TesseraModule* m = ctx.module();
+    const AudioPlayer& player = m->audioPlayer();
+    int index = m->soundIndex(track);
+    float level = 0;
+    switch (part.kind) {
+    case SendFrom::Kind::Track:
+        if (index >= 0)
+            level = std::max(player.level(index, 0), player.level(index, 1));
+        break;
+    case SendFrom::Kind::Clips:
+        // The sound before the chain, which the clips' Level already scaled, as on the mixer's Clips strip.
+        if (index >= 0)
+            level = player.outLevel(index);
+        break;
+    case SendFrom::Kind::Input:
+        for (OutputModuleBase* o : audioActions::outputsFor(m, track))
+            if (o->id == part.module)
+                level = o->inputLevel();
+        break;
+    case SendFrom::Kind::Lane:
+        for (OutputModuleBase* o : Registry::get().outputsOf(m->id))
+            if (o->boundTrack() == track)
+                level = std::max(level, o->sourceLevel(part.lane));
+        break;
+    }
+    return level;
+}
+
+float TrackHeaders::mixLevel(const TrackRow& row) {
+    if (row.mix == TrackRow::Mix::Part)
+        return partLevel(row.track, row.from);
+    // A send: what its sender (or part) plays, scaled by the send, worked out here so the audio pays nothing.
+    TrackId from, to;
+    sendOf(row, from, to);
+    const Send* send = findSend(ctx.module()->song(), from, to, row.from);
+    if (!send)
+        return 0;
+    TesseraModule* m = ctx.module();
+    int index = m->soundIndex(from);
+    float source = send->preFader && row.from.whole() && index >= 0 ? m->audioPlayer().outLevel(index)
+                                                                    : partLevel(from, row.from);
+    return source * dbToGain(mixValue(row).volumeDb);
 }
 
 } // namespace tessera
