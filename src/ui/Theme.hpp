@@ -216,6 +216,11 @@ constexpr float kPlayheadThinBand = 3;
 constexpr float kPlayheadPathStep = 2;
 constexpr float kSegmentGrip = 6; // the solid grips at the ends of the selected playhead's segment
 constexpr float kLevelLineMinHeight = 40; // shorter rows have no room for the second line
+constexpr float kFromLineHeight = 14;     // the line under a track's name saying where its notes come from
+/// How tall a track row must be for that line: under the name, or under the level line when it has one.
+constexpr float kRowFromMinHeight(bool levelLine) {
+    return levelLine ? kLevelLineMinHeight + kFromLineHeight : 30 + kFromLineHeight;
+}
 constexpr float kSegmentRow = 16; // the piano roll ruler's row of playhead segments, when the track has playheads
 constexpr float kBranchCap = 3;   // the coloured cap on a device in a playhead's own chain
 constexpr float kTimeRuler = 20;

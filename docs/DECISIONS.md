@@ -3416,3 +3416,14 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   fader is a Mix, not a level.
 - The dots sit three to a line, at most two lines, so a big kit's fold leaves the track name its room in a narrow
   column; the names of the rows under a track line up past the widest fold among its parts.
+
+## 198. A track says where its notes or sound come from, in words (23 Nov)
+
+- **User** (Trello): "If a track has input from another track there should be some kind of visibility in the track."
+  Agreed from canvas board 6, option A, after "icons only" was turned down: small grey words with an arrow in the
+  source's colour, "← Bass" for a track whose Input is another track's notes, "← 2 sends (Drums, Keys)" for one that
+  receives sends. A click opens the menu that sets it (Input, then who sends).
+- The default header column (190 px) leaves no room for words after a name, so a track that plays another track's
+  notes opens one line taller (like the level line rule: unless the user set its height) and the words get a line of
+  their own, under the name or under the level line. Receiving tracks don't grow: their sends already show as mix
+  rows and dots (§197); their words show only where there is room.

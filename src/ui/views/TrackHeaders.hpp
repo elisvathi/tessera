@@ -75,7 +75,8 @@ class TrackHeaders : public InteractiveView {
         MixLevel,    // a mix row's level: a part's, or a send's
         MixPan,      // a part's pan
         MixMute,     // an input's M
-        MixSolo      // an input's S
+        MixSolo,     // an input's S
+        From         // the words that say where the track's notes or sound come from: opens the menu that sets it
     };
     struct Hit {
         int row = -1;
@@ -159,6 +160,14 @@ class TrackHeaders : public InteractiveView {
     void clickMix(const TrackRow& row, const Hit& hit, int button, Modifiers mods);
     /// The tooltip for a part of a mix row, or for a track's mix fold.
     std::string mixTip(const TrackRow& row, Part part);
+
+    /// Where a track's notes or sound come from, in words (docs/DECISIONS.md §198): "Bass" for a track that plays
+    /// another's notes, "2 sends (Drums, Keys)" for one that receives; both joined. Empty when neither. `color` is
+    /// the source track's colour, or none for sends only.
+    std::string fromWords(const Track& t, std::optional<NVGcolor>& color);
+    /// Where those words sit: under the name in a tall row without a level line, else after the name, shortened
+    /// before the name is. `nameWidth` gets how wide the name may be drawn. An empty rect when there is no room.
+    rack::math::Rect fromRect(int row, float top, float height, float* nameWidth = nullptr);
 
     ArrangerView& owner;
     Hit hover;

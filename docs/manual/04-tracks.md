@@ -25,6 +25,10 @@ Each track has a header row on the left:
   rows under the track to mix them without opening the mixer. One dot per row it would open. See
   [The mixer](18-mixer.md#parts-and-sends-in-the-track-rows).
 - **The name.** Double-click it to rename. Enter keeps the new name, Esc cancels.
+- **Where it comes from**, in small grey words with an arrow in the source's colour: **← Bass** on a track that plays
+  Bass's notes (its **Input**), **← 2 sends (Drums, Keys)** on a track others send sound to. A track that plays
+  another track's notes opens tall enough to show this on a line of its own; in a row you made short, the words sit
+  after the name and go first when there is no room. Click them for the menu that sets it.
 - **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Click it
   to add a Track Out (a Drum Out for a drum track) bound to this track, in the first free space right of Roll.
   The track menu has the same command, **Add a Track Out for this track**, for any track. Both are one undo step.
@@ -154,6 +158,7 @@ A track can play notes from somewhere else, all the time, without being armed. S
 The notes go through this track's own devices. So one melody can drive a second track that adds a chord, or an
 arpeggio, with its own synth. The track's own clips keep playing too.
 
+- The track's header says where its notes come from: **← Arp** under its name, the arrow in Arp's colour.
 - A muted track still feeds the tracks that listen to it, like a MIDI send.
 - Tracks that already listen to this one are greyed out in the menu, so you can't make a loop.
 - If the source track is deleted, the menu shows **Missing track** and nothing plays until you undo.

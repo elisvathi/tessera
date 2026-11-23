@@ -309,8 +309,13 @@ void ArrangerView::syncFromState() {
             int stacks = arrange::stackOf(lanes->committed(), row.track, t && t->type == TrackType::Audio).rows;
             // A track with a level line opens tall enough to show it. A height the user set stays.
             double shown = state.trackHeight(row.track);
-            if (t && ctx.module()->soundIndex(t->id) >= 0 && !state.trackHeights.count(t->id.value))
+            bool level = t && ctx.module()->soundIndex(t->id) >= 0;
+            if (level && !state.trackHeights.count(t->id.value))
                 shown = std::max(shown, double(theme::metrics::kLevelLineMinHeight));
+            // A track that plays another track's notes opens tall enough to say so under its name (§198).
+            bool listens = t && (t->listen == ListenSource::TrackAfter || t->listen == ListenSource::TrackBefore);
+            if (listens && !state.trackHeights.count(t->id.value))
+                shown = std::max(shown, double(theme::metrics::kRowFromMinHeight(level)));
             heights.push_back(std::max(shown, stacks > 1 ? stacks * kMinStackRow : 0.0));
             break;
         }

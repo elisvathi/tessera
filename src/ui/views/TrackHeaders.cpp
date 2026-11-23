@@ -59,6 +59,7 @@ constexpr float kLevelBarH = 6;
 constexpr float kLevelHitH = 12;
 constexpr float kPanSize = 16;
 constexpr float kDbTextWidth = 44;
+constexpr float kMinFromWidth = 34;   // narrower than this, the words go rather than squeeze the name
 constexpr float kMixIndent = 14; // a part's sends sit this much further in than the part
 constexpr float kMixArrow = 11;  // a mix fold's arrow, before its dots
 constexpr float kMixDot = 4;     // one dot per row a mix fold hides, three to a line, two lines at most
@@ -397,6 +398,8 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
         hit.part = Part::Mute;
     else if (soloRect(top, h).contains(pos))
         hit.part = Part::Solo;
+    else if (fromRect(hit.row, top, h).contains(pos))
+        hit.part = Part::From;
     else if (nameRect(hit.row).contains(pos))
         hit.part = Part::Name;
     else
@@ -726,7 +729,8 @@ std::unique_ptr<DragGesture> TrackHeaders::startGesture(Vec pos, int button, Mod
         return nullptr;
     if (hit.row < 0 || hit.part == Part::Fold || hit.part == Part::Arm || hit.part == Part::Mute ||
         hit.part == Part::Solo || hit.part == Part::Automation || hit.part == Part::Output ||
-        hit.part == Part::MixFold || hit.part == Part::MixMute || hit.part == Part::MixSolo)
+        hit.part == Part::MixFold || hit.part == Part::MixMute || hit.part == Part::MixSolo ||
+        hit.part == Part::From)
         return nullptr;
     const TrackRow& row = owner.rows[size_t(hit.row)];
     if (row.kind == TrackRow::Kind::Mix) {
@@ -882,6 +886,23 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return;
     switch (hit.part) {
+    case Part::From: {
+        // The menu that sets it: the track's Input, then who sends to it.
+        TesseraModule* m = ctx.module();
+        const Track* t = m->song().findTrack(row.track);
+        if (!t)
+            break;
+        rack::ui::Menu* menu = rack::createMenu();
+        bool listens = t->listen == ListenSource::TrackAfter || t->listen == ListenSource::TrackBefore;
+        if (listens || sendersTo(m->song(), t->id).empty())
+            trackActions::appendInputItems(menu, ctx, t->id);
+        if (!sendersTo(m->song(), t->id).empty()) {
+            if (listens)
+                menu->addChild(new rack::ui::MenuSeparator);
+            sendActions::appendReceivedItems(menu, ctx, t->id);
+        }
+        break;
+    }
     case Part::Fold: {
         std::set<uint64_t>& folded = ctx.state().foldedGroups;
         if (!folded.erase(row.group.value))
@@ -997,7 +1018,8 @@ CursorShape TrackHeaders::hoverCursor(Vec pos, Modifiers mods) {
         }
     }
     if (hover.part == Part::AddRow || hover.part == Part::AddLane || hover.part == Part::Output ||
-        hover.part == Part::MixFold || hover.part == Part::MixMute || hover.part == Part::MixSolo)
+        hover.part == Part::MixFold || hover.part == Part::MixMute || hover.part == Part::MixSolo ||
+        hover.part == Part::From)
         return CursorShape::Hand;
     if (hover.part == Part::Level || hover.part == Part::MasterLevel || hover.part == Part::MixLevel)
         return CursorShape::ResizeH;
@@ -1024,6 +1046,12 @@ std::string TrackHeaders::tipFor(const Hit& hit) {
     if (!t)
         return "";
     switch (hit.part) {
+    case Part::From: {
+        std::optional<NVGcolor> color;
+        bool listens = t->listen == ListenSource::TrackAfter || t->listen == ListenSource::TrackBefore;
+        return std::string(listens ? "Plays another track's notes besides its clips" : "Gets sound sent from other tracks") +
+               ": " + fromWords(*t, color) + ". Click to change";
+    }
     case Part::Arm:
         return t->armed ? "Armed: records when the transport records. Click to disarm" : "Arm for recording";
     case Part::Automation:
@@ -1433,7 +1461,23 @@ void TrackHeaders::drawTrackRow(NVGcontext* vg, int index, float top, float h) {
     draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextUi, focus ? c.text0 : c.text1,
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     Rect nameBox = nameRect(index);
-    draw::text(vg, name, nameBox.pos.x, y, draw::ellipsize(vg, name, t.name, nameBox.size.x));
+    float nameW = nameBox.size.x;
+    Rect from = fromRect(index, top, h, &nameW);
+    draw::text(vg, name, nameBox.pos.x, y, draw::ellipsize(vg, name, t.name, nameW));
+    if (from.size.x > 0) {
+        std::optional<NVGcolor> source;
+        std::string words = fromWords(t, source);
+        bool hot = hovered && hover.part == Part::From;
+        draw::TextStyle arrowStyle{theme::fonts::uiStrong(), theme::metrics::kTextRuler, source ? *source : c.text2,
+                                   NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        draw::TextStyle wordStyle{theme::fonts::ui(), theme::metrics::kTextRuler, hot ? c.text0 : c.text2,
+                                  NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        const char* arrow = "\xE2\x86\x90";
+        float aw = draw::textWidth(vg, arrowStyle, arrow) + 3;
+        float cy = from.getCenter().y;
+        draw::text(vg, arrowStyle, from.pos.x, cy, arrow);
+        draw::text(vg, wordStyle, from.pos.x + aw, cy, draw::ellipsize(vg, wordStyle, words, from.size.x - aw));
+    }
 
     nvgBeginPath(vg);
     nvgRect(vg, 0, top + h - 1, box.size.x, 1);
@@ -1736,6 +1780,68 @@ std::string TrackHeaders::mixTip(const TrackRow& row, Part part) {
         return row.mix == TrackRow::Mix::Part ? "Right-click: reset, or send this part to another track"
                                               : "Right-click for the send's menu";
     }
+}
+
+std::string TrackHeaders::fromWords(const Track& t, std::optional<NVGcolor>& color) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    std::vector<std::string> parts;
+    if (t.listen == ListenSource::TrackAfter || t.listen == ListenSource::TrackBefore) {
+        const Track* from = song.findTrack(t.listenTrack);
+        parts.push_back(from ? from->name : "Missing track");
+        if (from)
+            color = theme::track(from->color);
+    }
+    std::vector<TrackId> senders = sendersTo(song, t.id);
+    if (senders.size() == 1) {
+        const Track* from = song.findTrack(senders[0]);
+        parts.push_back(from ? from->name : "a track");
+        if (from && parts.size() == 1)
+            color = theme::track(from->color);
+    } else if (senders.size() > 1) {
+        std::string names;
+        for (TrackId id : senders)
+            if (const Track* from = song.findTrack(id))
+                names += (names.empty() ? "" : ", ") + from->name;
+        parts.push_back(std::to_string(senders.size()) + " sends (" + names + ")");
+    }
+    std::string out;
+    for (const std::string& p : parts)
+        out += (out.empty() ? "" : " \xC2\xB7 ") + p;
+    return out;
+}
+
+Rect TrackHeaders::fromRect(int index, float top, float h, float* nameWidth) {
+    const TrackRow& r = owner.rows[size_t(index)];
+    Rect name = nameRect(index);
+    if (nameWidth)
+        *nameWidth = name.size.x;
+    if (r.kind != TrackRow::Kind::Track || !ctx.module())
+        return Rect();
+    const Track* t = ctx.module()->song().findTrack(r.track);
+    std::optional<NVGcolor> color;
+    std::string words = t ? fromWords(*t, color) : std::string();
+    NVGcontext* vg = APP->window->vg;
+    if (words.empty() || !vg)
+        return Rect();
+    draw::TextStyle wordStyle{theme::fonts::ui(), theme::metrics::kTextRuler, theme::colors().text2};
+    float wordsW = draw::textWidth(vg, wordStyle, words) + 12;
+    // On a line of its own when the row is tall enough: under the name, or under the level line.
+    bool level = levelRect(*t, index, top, h).size.x > 0;
+    if (h >= theme::metrics::kRowFromMinHeight(level)) {
+        float y = level ? top + theme::metrics::kLevelLineMinHeight - 3 : name.getBottom();
+        return Rect(name.pos.x, y, std::min(wordsW, box.size.x - kPad - name.pos.x), theme::metrics::kFromLineHeight);
+    }
+    // After the name: the words shorten first, then go, before the name does.
+    draw::TextStyle nameStyle{theme::fonts::uiStrong(), theme::metrics::kTextUi, theme::colors().text0};
+    float nameW = std::min(name.size.x, draw::textWidth(vg, nameStyle, t->name));
+    float room = name.size.x - nameW - 8;
+    if (room < kMinFromWidth)
+        return Rect();
+    if (nameWidth)
+        *nameWidth = nameW + 2;
+    float w = std::min(wordsW, room);
+    return Rect(name.getRight() - room, name.pos.y, w, name.size.y);
 }
 
 } // namespace tessera
