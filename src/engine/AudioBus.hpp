@@ -105,6 +105,25 @@ class ReturnBus {
         e.track = track.value;
         e.back = back;
         e.sample.store(frame, std::memory_order_release);
+        // Sound on a slot its track is listening to: raise its flag (only when it isn't up, so a module playing
+        // a sound doesn't write the shared line on every sample).
+        if ((std::abs(back.l) > kLoudVolts || std::abs(back.r) > kLoudVolts) &&
+            !loud[size_t(slot)].load(std::memory_order_relaxed))
+            loud[size_t(slot)].store(true, std::memory_order_release);
+    }
+
+    // Tessera (audio thread): a resting track listens to its slots through these flags, which sit together in one
+    // cache line, instead of reading each slot's entry on every sample.
+    /// Below this (volts, 80 dB under 10 V) a slot's sound counts as silence.
+    static constexpr float kLoudVolts = 1e-3f;
+    /// Starts listening to `slot`: its flag goes down until something louder than silence is written there.
+    void listen(int slot) {
+        if (slot >= 0 && slot < kSlots)
+            loud[size_t(slot)].store(false, std::memory_order_relaxed);
+    }
+    /// Whether something louder than silence was written to `slot` since listen().
+    bool heard(int slot) const {
+        return slot >= 0 && slot < kSlots && loud[size_t(slot)].load(std::memory_order_acquire);
     }
     /// What Tessera sent to slot `slot`'s OUT at sample `frame - 1`. False, with silence, when nothing did.
     bool readOut(int64_t frame, int slot, TrackId track, float& l, float& r) const {
@@ -175,6 +194,7 @@ class ReturnBus {
     std::array<std::array<Entry, kSlots>, 2> buffers{};
     std::array<std::array<OutEntry, kSlots>, 2> outs{};
     std::array<bool, kSlots> used{};
+    std::array<std::atomic<bool>, kSlots> loud{};
 };
 
 } // namespace tessera

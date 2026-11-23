@@ -350,6 +350,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         h.toMaster = tp.toMaster;
         h.hearRollIn = tp.hearRollIn;
         h.rollIn = tp.rollIn;
+        h.listens = !tp.sources.empty() || !tp.returns.empty();
         bool loop = std::any_of(tp.loops.begin(), tp.loops.end(), [](uint8_t l) { return l != 0; });
         h.inlined = !loop && tp.sources.size() <= size_t(MixHot::kInline) && tp.returns.size() <= size_t(MixHot::kInline);
         if (h.inlined) {

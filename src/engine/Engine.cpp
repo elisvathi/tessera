@@ -197,6 +197,10 @@ void Engine::setSnapshot(const Snapshot* s) {
     // Tracks moved to new indices: wakeAll() above brought every voice clock to now (new tracks start there).
     clockOf.fill(clockAt);
     assignChains();
+    anyCvOut = false;
+    for (size_t i = 0; i < trackCount; i++)
+        anyCvOut = anyCvOut || movesWhileStopped(tracks[i]);
+    knobSetsLeft = true;
     for (size_t i = 0; i < trackCount; i++) {
         if (!s->tracks[i]->audible) {
             releaseAll(tracks[i]);
@@ -1270,12 +1274,19 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
     // Modulation runs at control rate, before the notes of this sample read the knobs it sets.
     uint64_t sample = sampleCount++;
     clockAt = sample;
+    bool forced = controlNow;
     bool controlTick = (sample & (kControlBlock - 1)) == 0 || controlNow;
     controlNow = false;
     if (controlTick) {
         advanceKnobLanes();
-        advanceModulation();
+        // Settled while stopped, with no modulator sending CV out, modulators only feed the strip's live graphs
+        // and the knobs live notes would read (a live note wakes everything): an eighth of the rate does.
+        bool slowMods = !playing && quietTicks >= kSettleTicks && !anyCvOut;
+        if (!slowMods || (sample & (8 * kControlBlock - 1)) == 0)
+            advanceModulation();
+        quietTicks = playing || forced ? 0 : std::min(quietTicks + 1, kSettleTicks);
     }
+    bool settled = !playing && quietTicks >= kSettleTicks;
 
     if (playing && std::isfinite(pendingSeekTo) && playTick >= pendingSeekAt - 1e-9)
         seek(pendingSeekTo);
@@ -1324,11 +1335,12 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
             e.kind = RecordEvent::Kind::LoopWrap;
             pushRecord(e);
         }
-    } else {
-        // Stopped: live notes still go through the chains, and the notes they made still end.
+    } else if (controlTick || sample >= earliestIdleEnd) {
+        // Stopped: live notes still go through the chains, and the notes they made still end. While every track is
+        // idle (earliestIdleEnd; a live note or any change wakes them all) there is nothing to visit.
         for (size_t i = 0; i < trackCount; i++) {
-            if (!controlTick && sample < idleUntil[i])
-                continue; // no chain message or note end is due (idleUntilControl)
+            if (sample < idleUntil[i] && (!controlTick || idleUntil[i] == kAsleep))
+                continue; // no chain message or note end is due (idleUntilControl), or it sleeps until woken
             catchUp(i, sample);
             TrackState& state = tracks[i];
             if (chainDue(state) < freeTick)
@@ -1363,8 +1375,8 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
     // Automation runs at control rate too: CV curves don't need every sample, and it is the costliest part.
     bool anyAwake = controlTick || sample >= earliestIdleEnd;
     for (size_t i = 0; anyAwake && i < trackCount; i++) {
-        if (!controlTick && sample < idleUntil[i])
-            continue; // its outputs can't change before the next control tick
+        if (sample < idleUntil[i] && (!controlTick || idleUntil[i] == kAsleep))
+            continue; // its outputs can't change before the next control tick, or it sleeps until woken
         catchUp(i, sample);
         TrackState& state = tracks[i];
         // The track's playback data is only looked at when there is work: a control tick or a changed frame.
@@ -1391,7 +1403,12 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         state.voices.advance();
         state.drums.advance();
         clockOf[i] = sample + 1;
-        idleUntil[i] = idleUntilControl(state, sample) ? (sample | (kControlBlock - 1)) + 1 : 0;
+        if (!idleUntilControl(state, sample))
+            idleUntil[i] = 0;
+        else if (settled && !movesWhileStopped(state))
+            idleUntil[i] = kAsleep;
+        else
+            idleUntil[i] = (sample | (kControlBlock - 1)) + 1;
     }
     if (anyAwake) {
         earliestIdleEnd = ~uint64_t(0);
@@ -1399,6 +1416,10 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
             earliestIdleEnd = std::min(earliestIdleEnd, idleUntil[i]);
     }
     clockAt = sample + 1; // events until the next process() happen at the next sample
+}
+
+bool Engine::movesWhileStopped(const TrackState& state) const {
+    return state.chainInfo && !state.chainInfo->autoRoutes.empty();
 }
 
 bool Engine::idleUntilControl(const TrackState& state, uint64_t sample) const {
@@ -2682,6 +2703,10 @@ void Engine::advanceKnobLanes() {
     knobLanesOn = false;
     if (!snapshot)
         return;
+    // Stopped, knob lanes set nothing: once every track's count is back to 0 there is nothing to visit.
+    if (!playing && !knobSetsLeft)
+        return;
+    knobSetsLeft = playing;
     // Lanes are read for where the song will be at the end of this block, so a note on a lane's point already
     // plays with the point's value (notes read the knobs set at the block's start).
     double ahead = ticksPerSample * kControlBlock;

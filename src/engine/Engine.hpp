@@ -838,6 +838,15 @@ class Engine {
     std::array<uint64_t, kMaxTracks> clockOf{};
     uint64_t clockAt = 0; // the sample events happen at: the one being processed, or else the next one
     bool controlNow = true;
+    // Stopped, a track's lanes hold still: once the slews have had time to arrive (kSettleTicks control ticks with no
+    // wake-up), tracks whose outputs nothing else moves sleep until something wakes them (wakeAll()).
+    static constexpr int kSettleTicks = 256; // about 170 ms at 48 kHz, past the longest slew (100 ms)
+    static constexpr uint64_t kAsleep = ~uint64_t(0);
+    int quietTicks = 0;
+    bool knobSetsLeft = true; // a track may still hold knob sets from playing: cleared by one stopped pass
+    bool anyCvOut = false;    // some track's modulators send CV out (set with the snapshot)
+    /// Whether a stopped track's automation still has to run at each control tick: a modulator sends CV out on it.
+    bool movesWhileStopped(const TrackState& state) const;
     bool loopOn = false;
     Tick clockDivision = kPpq / 4;
 

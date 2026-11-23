@@ -3369,3 +3369,24 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - Agreed from canvas board 4: drag a row (a Macro by its colour dot) to another section to move it, keeping its ID;
   Ctrl+drag copies, with a green "+ Copy" on the dragged row. The section under the pointer lights up; amber with a
   count when moves would go out of reach (modulatorLanding). A copied Curve keeps only moves to things copied with it.
+
+## 195. Idle costs next to nothing: sleeping tracks, listening rests, quiet flags (23 Nov)
+
+- **User**: "Performance on idle is not tolerable." Measured with cycle counters inside Roll and Rack's meters on a
+  real patch (9 tracks back on Track Out IN, effect loops, a Track Out on the master).
+- **Engine**: stopped, a track's lanes hold still, so once nothing has woken it for kSettleTicks control ticks (past
+  the longest slew) a track whose modulators send no CV out sleeps (idleUntil = kAsleep) until wakeAll(). Knob lanes
+  are skipped while stopped, and settled modulators run at an eighth of the control rate (their graphs and the knobs
+  live notes read; a live note wakes everything).
+- **Mixer**: a track rests once its whole sound (clips, INs, what is sent to it) has been under kQuietVolts (1 mV,
+  80 dB under 10 V; synths leave a noise floor of a fraction of that) for a block, longer than its delay
+  compensation or an effect loop's round trip. Resting, it listens: output modules raise a per-slot "loud" flag on the
+  return bus when they write sound, the flags share one cache line, and a resting track wakes on the sample they rise.
+  A send counts as feeding its receiver only while it carries sound. With every track resting the track loop is
+  skipped; the master's chain rests the same way; stopped with no INs at all, whole samples are skipped inside a
+  block. A resting track's delay line is marked empty instead of written, and its OUT frame written only until both
+  halves of the double buffer hold silence.
+- **Module**: launcher status publishes at 256 samples (about 190 Hz), the MIDI queue is only asked while a device is
+  picked, and the scene, launch and reset jacks are only read with a cable.
+- **Result**: the patch's Roll went from about 6.2% to 2.3% of a sample stopped, and 7.3% to about 5% playing (Rack's
+  meter, five readings each); about the level of a Drum Out on the same machine.

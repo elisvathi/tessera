@@ -22,6 +22,9 @@ class AudioPlayer {
   public:
     static constexpr int kVoicesPerTrack = 6;
     static constexpr int kBlock = 32;
+    /// Below this (in volts, 80 dB under a full 10 V) a track's sound counts as silence, so it can rest. Synths often
+    /// leave a noise floor of a fraction of a millivolt while they don't play; it would keep every track awake.
+    static constexpr float kQuietVolts = ReturnBus::kLoudVolts;
     static constexpr double kEdgeFadeSeconds = 0.002;
     static constexpr double kSeamFadeSeconds = 0.005;
     static constexpr double kRenderFadeSeconds = 0.010;
@@ -265,7 +268,10 @@ class AudioPlayer {
         bool fresh = true;    // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
         bool steady = false;  // its voices step on unchanged for the rest of this block
         bool resting = false; // silent and nothing starts in this block: only silence is written (see process())
-        bool fed = false;     // another track sends to it, so it can't rest
+        bool fed = false;     // another track sends to it
+        bool fedNow = false;  // a sender ran this block (a resting sender sends nothing), so it can't rest
+        int quiet = 0;        // samples in a row its sound (clips, INs, what is sent to it) was silence (up to kMaxDelay)
+        uint8_t restWrites = 0; // silent OUT frames written since it rested: two fill both halves of the double buffer
         // Read every sample only by tracks that send.
         std::array<float, kMaxSendsPerTrack> sendGain{}, sendStep{};
         std::array<float, kMaxSendsPerTrack> sendPeak{};
@@ -276,6 +282,7 @@ class AudioPlayer {
         std::array<size_t, kMaxSendsPerTrack> sendCursor{};
         std::array<size_t, 2 * PartLevels::kPerSlot> partLaneCursor{};
         int partEntries = 0; // PartLevels entries it filled last block, cleared when its lanes go
+        size_t metered = 0;  // sends whose meters it updated last block
     };
 
     /// What should play on `track` at song tick `t`, with the launched clip `elapsed` ticks in. With `peek` it only
@@ -325,6 +332,20 @@ class AudioPlayer {
     float envelopeOf(const AudioInstancePlay& a, double songTick, double ticksPerClip, float seam) const;
     void startBlock(const Engine& engine, PartLevels* parts);
     bool partsStale = true; // the snapshot changed since the part lanes were last published
+    int restStreak = 0;     // samples in a row every track rested (up to 2): then a stopped player has nothing to do
+    bool idleBlock = false; // the rest of this block is silence (see process())
+    // Every track rested last sample; the slots the listening ones listen to.
+    bool allRested = false;
+    std::array<int16_t, ReturnBus::kSlots> listened{};
+    int listenedCount = 0;
+    /// Adds a resting track's slots to `listened`.
+    void remember(const AudioTrackPlay& t);
+    // The master's chain, resting like a track while it and its modules' returns are silent.
+    bool masterResting = false;
+    int masterQuiet = 0;
+    uint8_t masterWrites = 0;
+    double fallRate = 0;    // the sample rate meterFall was worked out for
+    float meterFall = 1;    // how far a meter falls in a block: 20 dB a second
     // Samples each bus slot's delay line holds since it was last written without a gap: a longer delay reads silence
     // until it fills, as the lines are only written while some track needs one.
     std::array<int, kMaxTracks> lineFill{};

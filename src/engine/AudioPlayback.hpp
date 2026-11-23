@@ -167,6 +167,7 @@ struct alignas(64) MixHot {
     uint8_t sources = 0, returns = 0, sends = 0;
     bool hasClips = false, toMaster = true, hearRollIn = false, rollIn = false;
     bool inlined = true; // its sources and returns fit here and none is an effect loop; else read its full entry
+    bool listens = false; // it has lane INs or Track Out INs: resting, it still reads them
     int16_t source[kInline]{}, ret[kInline]{};
 };
 

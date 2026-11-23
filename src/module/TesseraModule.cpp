@@ -26,7 +26,7 @@ constexpr float kBeatFlashSeconds = 0.05f;
 constexpr float kGateLow = 0.1f;
 constexpr float kGateHigh = 1.f;
 // Launcher state for the UI doesn't need every sample.
-constexpr uint32_t kLauncherStatusDivision = 32;
+constexpr uint32_t kLauncherStatusDivision = 256; // about 190 times a second at 48 kHz: the screen needs no more
 constexpr uint32_t kSlowTickSamples = 32; // samples between rounds of settings, buttons and lights
 constexpr uint32_t kMapDivision = 16;     // mapped knobs follow automation at a 16th of the sample rate
 // Rack knob mappings of modulators are told apart from lanes' by this bit (IDs never reach it).
@@ -228,8 +228,9 @@ void TesseraModule::readRecordInputs(const ProcessArgs& args) {
         midiReaderMpe = mpe;
     }
     rack::midi::Message& msg = midiMessage;
-    std::array<MidiEvent, MidiReader::kMaxEvents> events;
-    while (midiIn.tryPop(&msg, args.frame)) {
+    // No device picked, nothing can arrive: the queue (which takes a lock) isn't asked.
+    while (midiIn.device && midiIn.tryPop(&msg, args.frame)) {
+        std::array<MidiEvent, MidiReader::kMaxEvents> events;
         int n = midiReader.read(msg.bytes.data(), int(msg.bytes.size()), events);
         for (int i = 0; i < n; i++)
             playMidiEvent(events[size_t(i)]);
@@ -1475,7 +1476,8 @@ void TesseraModule::handleTransportControls(const ProcessArgs& args, bool slowTi
         engine.toggleRecord(countInBars.load(std::memory_order_relaxed));
 
     bool resetNow = slowTick && resetButton.process(params[RESET_PARAM].getValue() > 0.f);
-    resetNow |= resetInput.process(inputs[RESET_INPUT].getVoltage(), kGateLow, kGateHigh);
+    if (inputs[RESET_INPUT].isConnected())
+        resetNow |= resetInput.process(inputs[RESET_INPUT].getVoltage(), kGateLow, kGateHigh);
     if (resetNow) {
         engine.reset();
         clockSync.resetPhase();
@@ -1560,13 +1562,16 @@ void TesseraModule::handleUiRequests() {
 }
 
 void TesseraModule::handleSceneControls(bool slowTick) {
+    bool scenePatched = inputs[SCENE_INPUT].isConnected(), launchPatched = inputs[LAUNCH_INPUT].isConnected();
+    if (!slowTick && !scenePatched && !launchPatched)
+        return; // without cables nothing here can change between the rounds of buttons
     int count = std::max(1, engine.sceneCount());
     int scene = std::min(sceneSelected.load(std::memory_order_relaxed), count - 1);
     if (slowTick && scenePrevButton.process(params[SCENE_PREV_PARAM].getValue() > 0.f))
         scene = std::max(0, scene - 1);
     if (slowTick && sceneNextButton.process(params[SCENE_NEXT_PARAM].getValue() > 0.f))
         scene = std::min(count - 1, scene + 1);
-    if (inputs[SCENE_INPUT].isConnected()) {
+    if (scenePatched) {
         float v = inputs[SCENE_INPUT].getVoltage();
         float perScene = sceneCv.load(std::memory_order_relaxed) == SceneCvMode::Semitone ? 1.f / 12.f : 0.1f;
         scene = rack::math::clamp(int(std::round(v / perScene)), 0, count - 1);
@@ -1576,7 +1581,8 @@ void TesseraModule::handleSceneControls(bool slowTick) {
         uiSceneCount.store(count, std::memory_order_relaxed);
 
     bool launchNow = slowTick && sceneLaunchButton.process(params[SCENE_LAUNCH_PARAM].getValue() > 0.f);
-    launchNow |= launchInput.process(inputs[LAUNCH_INPUT].getVoltage(), kGateLow, kGateHigh);
+    if (launchPatched)
+        launchNow |= launchInput.process(inputs[LAUNCH_INPUT].getVoltage(), kGateLow, kGateHigh);
     if (launchNow)
         engine.launch({LaunchEvent::Kind::Scene, 0, scene});
     if (slowTick && stopAllButton.process(params[STOP_ALL_PARAM].getValue() > 0.f))

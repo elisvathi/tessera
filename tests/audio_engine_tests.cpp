@@ -13,6 +13,7 @@
 #include "../src/module/OutputBus.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -971,6 +972,79 @@ TEST_CASE("performance: playing and mixing audio tracks stays inside its budget 
 #endif
 }
 
+TEST_CASE("a track coming back on IN rests through silence and wakes on the sample sound returns") {
+    Rig rig(1.0, dc);
+    Track synth;
+    synth.id = rig.song.newId<TrackId>();
+    synth.type = TrackType::Instrument;
+    rig.song.tracks.push_back(synth);
+    MixPlan plan;
+    plan.busSlots = {{synth.id, 3}};
+    MixPlan::Return r;
+    r.track = synth.id;
+    r.slot = 4;
+    plan.returns = {r};
+    rig.slots.sync(rig.song);
+    rig.notes = buildSnapshot(rig.song, rig.slots);
+    rig.engine->setSnapshot(rig.notes.get());
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    OutputBus bus;
+    std::vector<float> out;
+    for (int64_t n = 0; n < 2000; n++) {
+        // Silence for 1000 samples, then 1 V back on IN.
+        bus.returns().write(n, 4, synth.id, n >= 1000 ? 1.f : 0.f, n >= 1000 ? 1.f : 0.f);
+        rig.engine->process(bus.beginWrite(n), rig.events);
+        bus.publish(n);
+        AudioPlayer::Rack rack{&bus.returns(), bus.beginAudioWrite(n), n};
+        float left = 0, right = 0;
+        rig.player->process(*rig.engine, left, right, rack);
+        out.push_back(left);
+    }
+    // What a module writes at sample n is read at n + 1: silence through 1000, then the full volt at once.
+    CHECK(out[1000] == 0.f);
+    CHECK(out[1001] == doctest::Approx(1.f).epsilon(1e-3));
+    CHECK(out[1500] == doctest::Approx(1.f).epsilon(1e-3));
+}
+
+TEST_CASE("performance: a real song from TESSERA_IDLE_SONG, stopped, costs next to nothing") {
+    // A Roll's song (its "song" object from a patch), stopped, with nothing patched: what idling costs. The best of
+    // five runs, so a busy machine doesn't count.
+    const char* path = std::getenv("TESSERA_IDLE_SONG");
+    if (!path)
+        return;
+    json_error_t error;
+    json::Ref j(json_load_file(path, 0, &error));
+    REQUIRE(j.get());
+    Rig rig(1.0, dc);
+    rig.song = songFromJson(j.get(), 12);
+    rig.rebuild();
+    OutputBus bus;
+    double bestEngine = INFINITY, bestPlayer = INFINITY;
+    int64_t n = 0;
+    for (int round = 0; round < 5; round++) {
+        double engineNs = 0, playerNs = 0;
+        float left = 0, right = 0;
+        for (int k = 0; k < 48000; k++, n++) {
+            auto a = std::chrono::steady_clock::now();
+            rig.engine->process(bus.beginWrite(n), rig.events);
+            bus.publish(n);
+            auto b = std::chrono::steady_clock::now();
+            AudioPlayer::Rack rack{&bus.returns(), bus.beginAudioWrite(n), n};
+            rack.parts = &bus.partLevels();
+            rig.player->process(*rig.engine, left, right, rack);
+            auto c = std::chrono::steady_clock::now();
+            engineNs += std::chrono::duration<double, std::nano>(b - a).count();
+            playerNs += std::chrono::duration<double, std::nano>(c - b).count();
+        }
+        bestEngine = std::min(bestEngine, engineNs / 48000);
+        bestPlayer = std::min(bestPlayer, playerNs / 48000);
+    }
+    MESSAGE(rig.song.tracks.size() << " tracks stopped: engine " << bestEngine << " ns a sample, player " << bestPlayer
+                                   << " ns (a clock reading costs about 20)");
+}
+
 TEST_CASE("performance: mixing what comes back on Track Out IN stays cheap with other modules in between") {
     // Nine note tracks that come back on a Track Out's IN and a drum track with six lane INs, as in a patch that mixes
     // its synths through Tessera. Between two samples Rack runs every other module, which pushes Tessera's state out
@@ -1412,4 +1486,3 @@ TEST_CASE("a silent audio track keeps its fader moving while it rests") {
         CHECK(rig.step() == 0.f);
     CHECK(rig.player->level(0, 0) == 0.f);
 }
-

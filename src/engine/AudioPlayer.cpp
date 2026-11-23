@@ -171,6 +171,11 @@ void AudioPlayer::setSnapshot(const AudioSnapshot* next) {
         return;
     previewFind = true;
     partsStale = true;
+    idleBlock = false; // the new tracks are looked at from the next sample
+    restStreak = 0;
+    allRested = false;
+    masterResting = false;
+    masterQuiet = 0;
     if (!next || !next->anyDelay)
         lineFill.fill(0);
     // Each track keeps its voices and its ramping gains, found again by ID: tracks may have moved.
@@ -327,7 +332,7 @@ void AudioPlayer::startBlock(const Engine& engine, PartLevels* parts) {
     };
     size_t count = snapshot ? std::min<size_t>(snapshot->tracks.size(), kMaxTracks) : 0;
     for (size_t i = 0; i < count; i++)
-        runs[i].fed = false;
+        runs[i].fed = runs[i].fedNow = false;
     for (size_t i = 0; i < count; i++)
         for (const SendPlay& s : snapshot->tracks[i].sends)
             if (s.to >= 0 && s.to < int(kMaxTracks))
@@ -540,10 +545,27 @@ inline void AudioPlayer::runChain(const std::vector<int>& stages, const std::vec
     }
 }
 
+void AudioPlayer::remember(const AudioTrackPlay& t) {
+    for (const std::vector<int>* list : {&t.sources, &t.returns})
+        for (int slot : *list)
+            if (listenedCount < int(listened.size()))
+                listened[size_t(listenedCount++)] = int16_t(slot);
+}
+
 void AudioPlayer::process(const Engine& engine, float& left, float& right) { process(engine, left, right, Rack()); }
 
 void AudioPlayer::process(const Engine& engine, float& left, float& right, const Rack& rack) {
     left = right = 0;
+    // Idle (stopped, every track resting, no preview, tap or measurement): the samples inside a block are silence,
+    // and the double-buffered OUT frames already hold it. A block's first and last samples still run in full, so a
+    // change is seen within a block and the meters keep falling.
+    if (idleBlock && blockPos != 0 && blockPos != kBlock - 1 && !engine.isPlaying() &&
+        !anyTap.load(std::memory_order_relaxed) && !measuring.load(std::memory_order_relaxed)) {
+        blockPos++;
+        delayPos = (delayPos + 1) % size_t(kMaxDelay);
+        loopPos = (loopPos + 1) % size_t(kMaxLoopDelay);
+        return;
+    }
     if (blockPos == 0)
         startBlock(engine, rack.parts);
 
@@ -572,32 +594,77 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         blockSteady = false;
     bool any = false;
     float masterL = 0, masterR = 0;
-    for (size_t i = 0; i < count + ghosts; i++) {
+    // Stopped with every track resting, nothing on the master's chain and nothing previewing: after two samples of
+    // silence both halves of the double-buffered OUT frames hold it, so until the next block there is nothing to do.
+    bool idle = !playing && blockPos != 0 && undisturbed && restStreak >= 2 && ghosts == 0 && previewTrackIndex < 0 &&
+                snapshot && snapshot->masterReturns.empty();
+    // Stopped with every track resting, some of them listening to their INs: unless one of the listened slots heard
+    // something, every track would only rest again, so the loop is skipped (the flags sit in one cache line).
+    bool allQuiet = !idle && !playing && blockPos != 0 && undisturbed && allRested && ghosts == 0 &&
+                    previewTrackIndex < 0 && rack.returns;
+    for (int k = 0; allQuiet && k < listenedCount; k++)
+        allQuiet = !rack.returns->heard(listened[size_t(k)]);
+    bool everyRest = true, everyRested = true;
+    if (!allQuiet && !idle)
+        listenedCount = 0; // gathered again by the tracks that rest this sample
+    for (size_t i = 0; i < (idle || allQuiet ? 0 : count + ghosts); i++) {
         TrackRun& run = runs[i];
         if (run.resting) {
-            if (undisturbed && int(i) != previewTrackIndex &&
-                (run.engineIndex < 0 || engine.playingSlot(size_t(run.engineIndex)) == run.slot)) {
-                // Silence still goes out: OUT and the delay line would otherwise repeat an old sample.
-                const MixHot& tp = snapshot->hot[i];
-                if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks) {
-                    if (rack.out)
-                        rack.out[tp.busSlot] = {tp.id, 0.f, 0.f};
-                    if (float* mem = snapshot->anyDelay ? delays.load(std::memory_order_acquire) : nullptr) {
-                        float* line = mem + size_t(tp.busSlot) * 2 * kMaxDelay;
-                        line[delayPos * 2] = 0;
-                        line[delayPos * 2 + 1] = 0;
-                        lineFill[size_t(tp.busSlot)] = std::min(lineFill[size_t(tp.busSlot)] + 1, kMaxDelay);
-                    }
+            // A resting track still listens: what comes back on its INs, and what other tracks send it, wakes it on
+            // the sample it arrives.
+            const MixHot& hot = snapshot->hot[i];
+            bool heard = std::abs(sendBus[i][0]) > kQuietVolts || std::abs(sendBus[i][1]) > kQuietVolts;
+            if (rack.returns && hot.listens) {
+                everyRest = false; // it has to keep listening, so the player is never idle
+                if (hot.inlined) {
+                    for (int k = 0; k < hot.sources && !heard; k++)
+                        heard = rack.returns->heard(hot.source[k]);
+                    for (int k = 0; k < hot.returns && !heard; k++)
+                        heard = rack.returns->heard(hot.ret[k]);
+                } else {
+                    // An effect loop sends nothing while it rests (its module's OUT reads silence without a fresh
+                    // frame); what comes back, a tail or an effect that sounds by itself, wakes it.
+                    const AudioTrackPlay& full = snapshot->tracks[i];
+                    for (int slot : full.sources)
+                        heard = heard || rack.returns->heard(slot);
+                    for (int slot : full.returns)
+                        heard = heard || rack.returns->heard(slot);
                 }
+            }
+            if (!heard && undisturbed && int(i) != previewTrackIndex &&
+                (!playing || run.engineIndex < 0 || engine.playingSlot(size_t(run.engineIndex)) == run.slot)) {
+                // Silence goes out on OUT until both halves of its double buffer hold it. Its delay line is marked
+                // empty rather than filled: woken, it plays silence until the line fills again, which is what it held.
+                sendBus[i] = {0.f, 0.f};
+                const MixHot& tp = hot;
+                if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks) {
+                    if (rack.out && run.restWrites < 2) {
+                        rack.out[tp.busSlot] = {tp.id, 0.f, 0.f};
+                        run.restWrites++;
+                    }
+                    if (snapshot->anyDelay)
+                        lineFill[size_t(tp.busSlot)] = 0;
+                }
+                if (hot.listens)
+                    remember(snapshot->tracks[i]);
                 continue;
             }
             run.resting = false;
+            run.restWrites = 0;
+            // Its loops' dry lines held nothing new while it rested: what they held is silence by now.
+            if (!hot.inlined)
+                for (int slot : snapshot->tracks[i].returns)
+                    if (slot >= 0 && slot < ReturnBus::kSlots)
+                        loopLines[size_t(slot)].fill(0.f);
+            if (heard)
+                run.quiet = 0; // sound arrived; a wake-up to look again at a block's start keeps the count
             // Its gains are already at the end of this block; the samples left in it must not ramp them further.
             if (blockPos != 0) {
                 run.stepL = run.stepR = run.outStep = run.heardStep = run.heardOwnStep = run.clipsStep = 0;
                 run.sendStep = {};
             }
         }
+        everyRest = everyRested = false;
         int wantedNow = 0;
         bool quick =
             steady && run.steady &&
@@ -721,6 +788,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             }
             run.inL = tp.rollIn ? rack.rollInL : srcL + inL;
             run.inR = tp.rollIn ? rack.rollInR : srcR + inR;
+            bool silent = std::abs(sl) <= kQuietVolts && std::abs(sr) <= kQuietVolts;
+            run.quiet = silent ? std::min(run.quiet + 1, int(kMaxDelay)) : 0;
             run.soundL = sl;
             run.soundR = sr;
             run.gainL += run.stepL;
@@ -749,6 +818,8 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                     xl = (s.preFader ? sl : postL) * g;
                     xr = (s.preFader ? sr : postR) * g;
                 }
+                if (std::abs(xl) > kQuietVolts || std::abs(xr) > kQuietVolts)
+                    runs[size_t(s.to)].fedNow = true; // a silent send leaves the receiver free to rest
                 sendBus[size_t(s.to)][0] += xl;
                 sendBus[size_t(s.to)][1] += xr;
                 run.sendPeak[k] = std::max(run.sendPeak[k], std::max(std::abs(xl), std::abs(xr)));
@@ -791,6 +862,14 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             // Resting skips the ramps, so its gains go straight to where this block ends.
             float rest = float(kBlock - 1);
             run.resting = true;
+            // From now on it hears its INs through their flags.
+            if (rack.returns) {
+                const AudioTrackPlay& full = snapshot->tracks[i];
+                for (int slot : full.sources)
+                    rack.returns->listen(slot);
+                for (int slot : full.returns)
+                    rack.returns->listen(slot);
+            }
             run.gainL += run.stepL * rest;
             run.gainR += run.stepR * rest;
             run.outGain += run.outStep * rest;
@@ -809,9 +888,15 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             masterR += sr;
         }
     }
+    if (!idle && !allQuiet) {
+        restStreak = everyRest ? std::min(restStreak + 1, 2) : 0;
+        allRested = everyRested;
+    }
+    idleBlock = !playing && restStreak >= 2 && ghosts == 0 && previewTrackIndex < 0 && snapshot &&
+                snapshot->masterReturns.empty();
     // Each group strip: its tracks' sum through its fader and pan, into the master.
     size_t groupCount = snapshot ? std::min<size_t>(snapshot->groups.size(), kMaxTracks) : 0;
-    for (size_t g = 0; g < groupCount; g++) {
+    for (size_t g = 0; g < (idle ? 0 : groupCount); g++) {
         GroupRun& gr = groupRuns[g];
         gr.gainL += gr.stepL;
         gr.gainR += gr.stepR;
@@ -829,11 +914,42 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
     masterR *= mixGain;
     if (snapshot) {
         TrackId master(snapshot->masterId);
-        if (rack.out)
-            rack.out[kMaxTracks] = {master.value, masterL, masterR};
-        masterOutPeak = std::max(masterOutPeak, std::max(std::abs(masterL), std::abs(masterR)));
-        float inL = 0, inR = 0;
-        runChain(snapshot->masterReturns, snapshot->masterLoops, master, rack, masterL, masterR, inL, inR);
+        // The master's chain rests too once what goes in and what its modules send back have been silence for a
+        // block: it then only listens to their flags, like a resting track.
+        bool chain = !snapshot->masterReturns.empty();
+        if (chain && masterResting) {
+            bool heard = std::abs(masterL) > kQuietVolts || std::abs(masterR) > kQuietVolts || playing;
+            for (int slot : snapshot->masterReturns)
+                heard = heard || (rack.returns && rack.returns->heard(slot));
+            if (heard) {
+                masterResting = false;
+                masterQuiet = 0;
+                masterWrites = 0;
+                for (int slot : snapshot->masterReturns)
+                    if (slot >= 0 && slot < ReturnBus::kSlots)
+                        loopLines[size_t(slot)].fill(0.f);
+            }
+        }
+        if (chain && masterResting) {
+            if (rack.out && masterWrites < 2) {
+                rack.out[kMaxTracks] = {master.value, 0.f, 0.f};
+                masterWrites++;
+            }
+            masterL = masterR = 0;
+        } else {
+            if (rack.out)
+                rack.out[kMaxTracks] = {master.value, masterL, masterR};
+            masterOutPeak = std::max(masterOutPeak, std::max(std::abs(masterL), std::abs(masterR)));
+            float inL = 0, inR = 0;
+            runChain(snapshot->masterReturns, snapshot->masterLoops, master, rack, masterL, masterR, inL, inR);
+            bool silent = std::abs(masterL) <= kQuietVolts && std::abs(masterR) <= kQuietVolts;
+            masterQuiet = silent ? std::min(masterQuiet + 1, kBlock + kMaxLoopDelay) : 0;
+            if (chain && !playing && masterQuiet >= kBlock + kMaxLoopDelay && rack.returns) {
+                masterResting = true;
+                for (int slot : snapshot->masterReturns)
+                    rack.returns->listen(slot);
+            }
+        }
     }
     masterGain += masterStep;
     left = masterL * masterGain;
@@ -861,7 +977,11 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
     if (++blockPos == kBlock) {
         blockPos = 0;
         // Meters fall 20 dB a second.
-        float fall = float(std::pow(10.0, -20.0 / 20.0 * kBlock / sampleRate));
+        if (fallRate != sampleRate) {
+            fallRate = sampleRate;
+            meterFall = float(std::pow(10.0, -20.0 / 20.0 * kBlock / sampleRate));
+        }
+        float fall = meterFall;
         for (size_t i = 0; i < count; i++) {
             TrackRun& run = runs[i];
             std::array<std::atomic<float>, 2>& m = meters[i];
@@ -869,7 +989,12 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             m[1].store(std::max(run.peakR, m[1].load(std::memory_order_relaxed) * fall), std::memory_order_relaxed);
             outMeters[i].store(std::max(run.outPeak, outMeters[i].load(std::memory_order_relaxed) * fall),
                                std::memory_order_relaxed);
-            for (size_t k = 0; k < size_t(kMaxSendsPerTrack); k++) {
+            // Only the sends it has; the meters of sends that went read nothing.
+            size_t sends = snapshot->hot[i].sends;
+            for (size_t k = sends; k < run.metered; k++)
+                sendMeters[i][k].store(0, std::memory_order_relaxed);
+            run.metered = sends;
+            for (size_t k = 0; k < sends; k++) {
                 sendMeters[i][k].store(
                     std::max(run.sendPeak[k], sendMeters[i][k].load(std::memory_order_relaxed) * fall),
                     std::memory_order_relaxed);
@@ -946,8 +1071,17 @@ double AudioPlayer::engineElapsed(const Engine& engine, const TrackRun& run) con
 
 bool AudioPlayer::canRest(const Engine& engine, const AudioTrackPlay& track, TrackRun& run, int wantedNow, bool playing,
                           double song) {
-    if (wantedNow != 0 || run.fed || track.delay != 0 || !track.sources.empty() || !track.returns.empty() ||
-        track.hearRollIn || track.rollIn)
+    // A track with INs rests once they have brought silence for a whole block (it keeps listening while it rests);
+    // one that is sent to, while a sender still runs. An effect loop never rests: it always sends its sound out.
+    bool listens = !track.sources.empty() || !track.returns.empty();
+    // A track that waits for a later one (delay compensation) rests once its delay line holds only silence, and one
+    // with an effect loop once the loop's round trip has passed in silence too.
+    int roundTrip = 0;
+    for (size_t k = 0; k < track.loops.size(); k++)
+        if (track.loops[k])
+            roundTrip = kMaxLoopDelay;
+    if (wantedNow != 0 || (run.fed && run.fedNow) || (track.delay != 0 && run.quiet <= track.delay) ||
+        (listens && run.quiet < std::max(kBlock, roundTrip + 1)) || track.hearRollIn || track.rollIn)
         return false;
     for (const Voice& v : run.voices)
         if (v.on)

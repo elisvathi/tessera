@@ -1151,3 +1151,31 @@ TEST_CASE("a jump on a playing clip's ruler waits for the same point in the song
     CHECK(h.engine.queuedSlot(0) == kNothingQueued);
     CHECK(h.engine.clipPosition(0) == doctest::Approx(7 * kPpq + 11.0 / kSamplesPerTick));
 }
+
+TEST_CASE("a stopped engine sleeps once its lanes settle, and a seek wakes it to the lane's new value") {
+    Song song = songWith({}, 4 * kPpq, 1);
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.outputIndex = 0;
+    lane.rangeMin = 0;
+    lane.rangeMax = 10;
+    lane.points = {{0, 0.2f, CurveType::Hold, 0}, {4 * kPpq, 0.8f, CurveType::Hold, 0}};
+    song.tracks[0].automation.push_back(lane);
+    Harness h(std::move(song));
+    h.engine.stop();
+    // Two frame buffers taken in turn, as the output bus does, so idle tracks can sleep.
+    std::array<std::array<TrackFrame, kMaxTracks>, 2> buffers{};
+    int64_t n = 0;
+    auto run = [&](int samples) {
+        for (int k = 0; k < samples; k++, n++)
+            h.engine.process(buffers[size_t(n & 1)].data(), h.events);
+    };
+    auto volts = [&] { return buffers[size_t((n - 1) & 1)][size_t(h.slots.slotOf(h.song.tracks[0].id))].automation[0]; };
+    run(48000); // a second: far past the settling time
+    CHECK(volts() == doctest::Approx(2.f));
+    h.engine.seek(double(4 * kPpq + 10));
+    run(4800);
+    CHECK(volts() == doctest::Approx(8.f));
+    run(48000);
+    CHECK(volts() == doctest::Approx(8.f));
+}
