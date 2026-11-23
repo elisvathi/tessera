@@ -19,7 +19,9 @@ A track and a clip can each have up to 8 lanes.
 
 ## Adding a track lane
 
-1. Click the lanes arrow (▸) in the track header, or choose **Show automation lanes** in the track menu.
+1. Click the arrow (▸) after the track's number, or choose **Show lanes, parts and sends** in the track menu. The
+   track's own lanes come first. A lane that moves a part's level or pan sits under that part, and a send's lane
+   under that send.
 2. Click **+ Add automation lane** under the track (or **Add automation lane** in the track menu) and choose:
    - **Empty lane (draw it)**: takes the first free AUTO channel.
    - **Automate a knob: touch it in the rack**: see [Turning knobs without cables](#turning-knobs-without-cables).

@@ -45,8 +45,6 @@ constexpr float kButtonHCompact = 14;
 constexpr float kButtonGapCompact = 2;
 constexpr float kArmWidth = 16;
 constexpr float kArmWidthCompact = 13;
-constexpr float kArrowWidth = 12;
-constexpr float kArrowWidthCompact = 10;
 constexpr float kTileWidth = 18;
 constexpr float kTileWidthCompact = 16;
 constexpr float kNameGap = 6;
@@ -248,16 +246,10 @@ Rect TrackHeaders::muteRect(float top, float h) {
     return Rect(s.pos.x - gap - s.size.x, s.pos.y, s.size.x, s.size.y);
 }
 
-Rect TrackHeaders::automationRect(float top, float h) {
-    Rect m = muteRect(top, h);
-    float w = compact() ? kArrowWidthCompact : kArrowWidth;
-    return Rect(m.pos.x - (compact() ? kButtonGapCompact : kButtonGap) - w, m.pos.y, w, m.size.y);
-}
-
 Rect TrackHeaders::armRect(float top, float h) {
-    Rect a = automationRect(top, h);
+    Rect m = muteRect(top, h);
     float w = compact() ? kArmWidthCompact : kArmWidth;
-    return Rect(a.pos.x - w, a.pos.y, w, a.size.y);
+    return Rect(m.pos.x - (compact() ? kButtonGapCompact : kButtonGap) - w, m.pos.y, w, m.size.y);
 }
 
 Rect TrackHeaders::outputRect(float top, float h) {
@@ -398,8 +390,6 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
         hit.part = Part::Level;
     else if (level && panRect(*level, hit.row, top, h).grow(Vec(2, 2)).contains(pos))
         hit.part = Part::Pan;
-    else if (automationRect(top, h).contains(pos))
-        hit.part = Part::Automation;
     else if (armRect(top, h).contains(pos))
         hit.part = Part::Arm;
     else if (const Track* t = ctx.module() ? ctx.module()->song().findTrack(row.track) : nullptr;
@@ -939,12 +929,6 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
             folded.insert(row.group.value);
         break;
     }
-    case Part::Automation: {
-        std::set<uint64_t>& open = ctx.state().openAutomation;
-        if (!open.erase(row.track.value))
-            open.insert(row.track.value);
-        break;
-    }
     case Part::Arm:
         trackActions::toggleArm(ctx, row.track, mods.ctrl);
         break;
@@ -1336,7 +1320,8 @@ void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
     if (!lane || (!track && row.track != m->song().master.id))
         return;
     bool hovered = hover.row == index && !hasGesture();
-    float indent = indentOf(row) + kIndent;
+    // Lanes of a part or a send sit one step in, under the row they move.
+    float indent = indentOf(row) + kIndent + float(std::max(0, row.depth - 1)) * kMixIndent;
     nvgBeginPath(vg);
     nvgRect(vg, 0, top, box.size.x, h);
     nvgFillColor(vg, nvgLerpRGBA(c.bg1, c.bg0, hovered ? 0.3f : 0.5f));
@@ -1472,7 +1457,7 @@ void TrackHeaders::drawTrackRow(NVGcontext* vg, int index, float top, float h) {
     if (missingOutput(t))
         drawMissingOutput(vg, outputRect(top, h), hovered && hover.part == Part::Output, c.queue);
 
-    // Arm and the lanes arrow are always there but small and dim until they are on.
+    // Arm is always there but small and dim until it is on.
     Rect arm = armRect(top, h);
     bool armHover = hovered && hover.part == Part::Arm;
     if (armHover)
@@ -1487,13 +1472,6 @@ void TrackHeaders::drawTrackRow(NVGcontext* vg, int index, float top, float h) {
         nvgStrokeWidth(vg, 1.2f);
         nvgStroke(vg);
     }
-    Rect lanes = automationRect(top, h);
-    bool lanesOpen = ctx.state().openAutomation.count(t.id.value) > 0;
-    bool lanesHover = hovered && hover.part == Part::Automation;
-    if (lanesHover)
-        draw::roundedRect(vg, lanes, 3, c.line0);
-    NVGcolor arrow = lanesHover ? c.text0 : !t.automation.empty() ? c.text1 : nvgTransRGBAf(c.text2, 0.55f);
-    drawFoldArrow(vg, lanes.getCenter().x - (lanesOpen ? 3 : 2), lanes.getCenter().y, !lanesOpen, arrow);
 
     drawLevelLine(vg, t, index, top, h);
     drawSmallButton(vg, muteRect(top, h), "M", t.mute, hovered && hover.part == Part::Mute, c.queue);
@@ -1552,9 +1530,8 @@ Rect TrackHeaders::trackMixFold(int row, float top, float h) {
     const TrackRow& r = owner.rows[size_t(row)];
     if (r.kind != TrackRow::Kind::Track)
         return Rect();
+    // Always there, as "+ Add automation lane" is under it even when nothing else is (§201).
     std::vector<TrackId> dots = mixDots(r);
-    if (dots.empty())
-        return Rect();
     float x = indentOf(r) + (compact() ? kTileWidthCompact : kTileWidth) + 4;
     return Rect(x, lineY(top, h) - 8, mixFoldWidth(dots.size()), 16);
 }
@@ -1702,7 +1679,9 @@ void TrackHeaders::drawMixFold(NVGcontext* vg, Rect r, bool open, const std::vec
     if (hot)
         draw::roundedRect(vg, r, 3, c.line0);
     float cy = r.getCenter().y;
-    drawFoldArrow(vg, r.pos.x + (open ? 2 : 3), cy, !open, hot ? c.text0 : c.text1);
+    // Dim while nothing is under it but the add-lane row.
+    NVGcolor arrow = hot ? c.text0 : dots.empty() ? nvgTransRGBAf(c.text2, 0.55f) : c.text1;
+    drawFoldArrow(vg, r.pos.x + (open ? 2 : 3), cy, !open, arrow);
     const Song& song = ctx.module()->song();
     bool more = dots.size() > size_t(kMixDotsShown);
     size_t shown = std::min(dots.size(), size_t(kMixDotsShown));
@@ -1851,7 +1830,7 @@ std::string TrackHeaders::mixTip(const TrackRow& row, Part part) {
         return "";
     if (part == Part::MixFold) {
         bool open = ctx.state().openMix.count({row.track.value, row.kind == TrackRow::Kind::Mix ? row.from.key() : 0});
-        std::string what = row.kind == TrackRow::Kind::Mix ? "its sends" : "its parts and sends";
+        std::string what = row.kind == TrackRow::Kind::Mix ? "its lanes and sends" : "its lanes, parts and sends";
         return (open ? "Fold " : "Show ") + what + " (a dot per row)" +
                (row.kind == TrackRow::Kind::Mix ? "" : ". The mixer folds with it");
     }

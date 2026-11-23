@@ -88,7 +88,6 @@ class TrackHeaders : public InteractiveView {
     float indentOf(const TrackRow& row) const;
     /// Narrow columns (the in-panel editor) use smaller buttons so the name keeps its room.
     bool compact() const;
-    rack::math::Rect automationRect(float top, float height);
     /// The amber "no output module" mark, left of arm.
     rack::math::Rect outputRect(float top, float height);
     /// Whether a track shows that mark: it has notes but no output module plays them. An empty track has

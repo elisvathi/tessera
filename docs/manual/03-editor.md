@@ -32,8 +32,8 @@ There is also a smaller editor inside the panel itself. See [The editor inside t
 2. **Plays switch.** What the tracks play: the **Clips** you launch or the **Timeline**. The half that plays is
    lit. See [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline).
 3. **Undo and redo**, **follow the playhead**, **show the inspector**, and **close**.
-4. **Track headers.** One row per track: number and colour, name, arm for recording, automation lanes arrow, mute
-   (M) and solo (S). See [Tracks](04-tracks.md).
+4. **Track headers.** One row per track: number and colour, the arrow that opens its lanes, parts and sends, name,
+   arm for recording, mute (M) and solo (S). See [Tracks](04-tracks.md).
 5. **Clips.** Each column is a scene, each row a track. Click ▶ in a slot to launch that clip. See
    [Clips and scenes](05-clips-and-scenes.md).
 6. **Timeline.** The song from left to right, with the ruler, markers and the loop on top. See

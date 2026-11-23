@@ -42,16 +42,18 @@ struct MixRowsSpec {
     std::set<std::pair<uint64_t, uint64_t>> open;
 };
 
-/// The rows a fold would open: under a track (`part` whole) its parts, its own sends and the sends it receives;
-/// under a part its sends. Each entry is the track whose colour that row's dot wears: the track itself for a part,
-/// the receiver for a send, the sender for a received send.
+/// The rows a fold would open: under a track (`part` whole) its own lanes, its parts, its own sends and the sends it
+/// receives; under a part its lanes and its sends. Each entry is the track whose colour that row's dot wears: the
+/// track itself for a lane or a part, the receiver for a send, the sender for a received send.
 std::vector<TrackId> mixChildren(const Song& song, const MixRowsSpec& spec, TrackId track, SendFrom part = {});
 
-/// A group's header comes right before its first track. Empty groups go last. Tracks in `openAutomation` are
-/// followed by their automation lanes and an add-lane row. With `master`, the Master row comes last, followed by its
-/// lanes when the master is in `openAutomation` (no add-lane row: its one lane is added from its level bar).
-/// With `mix`, an open track is followed by its mix rows (before its lanes): each part, with its sends under it when
-/// that part is open, then the track's own sends, then the sends it receives.
+/// A group's header comes right before its first track. Empty groups go last. With `master`, the Master row comes
+/// last, followed by its lanes when the master is in `openAutomation` (no add-lane row: its one lane is added from its
+/// level bar).
+/// A track is open when `mix` has (track, 0), or, without `mix`, when it is in `openAutomation`. An open track is
+/// followed by its own lanes, then each part, with the part's lanes and sends under it when that part is open, then
+/// the track's own sends, then the sends it receives, then an add-lane row (docs/DECISIONS.md §201). A Send lane sits
+/// right under its send's row; a lane whose part or send went sits with the track's own lanes.
 std::vector<TrackRow> buildTrackRows(const Song& song, const std::set<uint64_t>& foldedGroups,
                                      const std::set<uint64_t>& openAutomation = {}, bool master = false,
                                      const MixRowsSpec* mix = nullptr);

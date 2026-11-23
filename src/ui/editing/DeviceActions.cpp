@@ -1147,7 +1147,8 @@ void showLane(EditorContext& ctx, LaneOwner owner, AutomationId lane) {
     if (owner.track.valid()) {
         if (ctx.state().maximized == Pane::Detail)
             ctx.state().maximized.reset();
-        ctx.state().openAutomation.insert(owner.track.value);
+        const AutomationEnvelope* l = findLane(m->song(), owner, lane);
+        ctx.state().showLaneRows(owner.track.value, owner.track == m->song().master.id, l ? l->part : 0);
         return;
     }
     TrackId track = clipActions::trackOf(m->song(), owner.clip);

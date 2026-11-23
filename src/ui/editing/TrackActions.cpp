@@ -228,7 +228,7 @@ AutomationId addAutomationLane(EditorContext& ctx, TrackId track) {
         return AutomationId(); // all 8 AUTO channels have a lane
     AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
     m->perform(addLane(m->song(), LaneOwner::ofTrack(track), lane));
-    ctx.state().openAutomation.insert(track.value);
+    ctx.state().showLaneRows(track.value, false);
     return lane.id;
 }
 
@@ -259,7 +259,7 @@ void addMidiLane(EditorContext& ctx, TrackId track, LaneOwner owner, MidiControl
         if (owner.clip.valid())
             ctx.state().lowerLane = id.value;
         else
-            ctx.state().openAutomation.insert(track.value);
+            ctx.state().showLaneRows(track.value, false);
     };
     for (const AutomationEnvelope& l : *lanes)
         if (l.midi == control) {
@@ -333,7 +333,7 @@ void automateMix(EditorContext& ctx, TrackId track, bool pan, SendFrom part) {
     if (master && !part.whole())
         return;
     LaneDrive drive = pan ? LaneDrive::Pan : LaneDrive::Volume;
-    ctx.state().openAutomation.insert(track.value);
+    ctx.state().showLaneRows(track.value, master, part.key());
     for (const AutomationEnvelope& l : *lanesOf(song, LaneOwner::ofTrack(track)))
         if (l.drive == drive && l.part == part.key())
             return;
@@ -694,11 +694,12 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     TrackId first = ids.front();
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createCheckMenuItem(
-        "Show automation lanes", "", [c, first] { return c->state().openAutomation.count(first.value) > 0; },
+        "Show lanes, parts and sends", "",
+        [c, first] { return c->state().openMix.count({first.value, 0}) > 0; },
         [c, first] {
-            std::set<uint64_t>& open = c->state().openAutomation;
-            if (!open.erase(first.value))
-                open.insert(first.value);
+            std::set<std::pair<uint64_t, uint64_t>>& open = c->state().openMix;
+            if (!open.erase({first.value, 0}))
+                open.insert({first.value, 0});
         }));
     menu->addChild(rack::createSubmenuItem("Add automation lane", "", [c, first](rack::ui::Menu* sub) {
         appendAddLaneItems(sub, *c, first, LaneOwner::ofTrack(first));

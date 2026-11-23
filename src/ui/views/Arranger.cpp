@@ -282,6 +282,15 @@ void ArrangerView::syncFromState() {
             if (!parts.empty())
                 mix.parts[t.id.value] = std::move(parts);
         }
+    // A patch saved before §201 kept tracks' lanes open in openAutomation: they open the track's one arrow now.
+    for (auto it = state.openAutomation.begin(); it != state.openAutomation.end();) {
+        if (*it == song.master.id.value) {
+            ++it;
+            continue;
+        }
+        state.openMix.insert({*it, 0});
+        it = state.openAutomation.erase(it);
+    }
     mix.open = state.openMix;
     rows = buildTrackRows(song, state.foldedGroups, state.openAutomation, headers->showsMaster(), &mix);
     std::vector<double> heights;

@@ -21,8 +21,10 @@ A new song has three instrument tracks and one drum track.
 Each track has a header row on the left:
 
 - **The colour tile** with the track number. A drum track also shows a small drum.
-- **The mix arrow** (▸ and small dots), on a track that makes sound and has parts, sends or sends coming in: opens
-  rows under the track to mix them without opening the mixer. One dot per row it would open. See
+- **The arrow** (▸ after the number): opens everything under the track, in one place. First the track's own
+  automation lanes, then its parts (each drum lane or input), then its sends, the sends it receives, and
+  **+ Add automation lane**. A part has its own arrow for its lanes and sends. Next to each arrow, one dot per row it
+  would open. The arrow is dim while there is nothing under it but **+ Add automation lane**. See
   [The mixer](18-mixer.md#parts-and-sends-in-the-track-rows).
 - **The name.** Double-click it to rename. Enter keeps the new name, Esc cancels.
 - **Where it comes from**, in small grey words with an arrow in the source's colour: **← Bass** on a track that plays
@@ -34,7 +36,6 @@ Each track has a header row on the left:
   The track menu has the same command, **Add a Track Out for this track**, for any track. Both are one undo step.
   Once the track has one, the menu offers **Show Track Out in the rack** and **Add another Track Out** instead.
 - **Arm** (the ring): arms the track for recording. It turns red while armed. See [Recording](11-recording.md).
-- **The lanes arrow** (▸): shows the track's automation lanes under it. It is dim until the track has lanes.
 - **M** mutes the track. **S** solos it.
 - **The level line** (audio tracks): a second line with the volume, its dB value and a pan knob. See
   [The mixer](18-mixer.md#levels-in-the-track-rows).
@@ -107,7 +108,8 @@ adding tracks last.
 | **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and with playheads each channel gets its own voices (more for one faster than 1x). Or pick a fixed number from 1 to 16 (with playheads, for each channel: the menu then reads, for example, **4 per channel (12)**, with the total the track sends). **1** makes the track mono: keys you play overlapping sound legato and record as [ties](08-shaping-notes.md#ties-and-glides). **Allocation** (at the bottom of the menu) decides which channel a new note takes: **Rotate** (the default) takes the next free one, so release tails ring out; **Reuse** puts each pitch back on the channel it played on last; **Reset** takes the lowest free one, and notes that start together (even strummed) go low to high, so channel 1 is always the bass of a chord; **Channel** plays each note channel on the poly channel of the same number (note channel 3 on poly channel 3), so one Track Out sends a separate line per channel, and **Auto** sends as many channels as the highest note channel the track uses. Every pass of a loop lands its notes on the same channels, a tied note keeps its channel, and a playhead's notes take its own first free voice under Rotate, so a one-note line sends one channel. |
 | **Input** | Note and drum tracks. What the track plays besides its clips. See below. |
 | **Recording ▸** | **Armed for recording**, **Record from**, **MIDI channel** and **Monitor while armed**. See [Recording](11-recording.md); for audio tracks, [Audio](17-audio.md#recording-audio). It says **Armed** on the right while the track is armed. |
-| **Show automation lanes / Add automation lane** | See [Automation](12-automation.md). |
+| **Show lanes, parts and sends** | Opens the track's arrow, as above. |
+| **Add automation lane** | See [Automation](12-automation.md). |
 | **Show Track Out in the rack / Add a Track Out for this track** | See above. |
 | **Sends** | Tracks that make sound: where the track goes after its fader (**To the Master** or **Only its sends**), its sends with their levels, and **Send to ▸**. See [The mixer](18-mixer.md#sending-to-other-tracks). |
 | **Bounce audio to a new track…** | Records what the track sounds like onto a new audio track. Shown when the track makes sound. See [Audio](17-audio.md). |

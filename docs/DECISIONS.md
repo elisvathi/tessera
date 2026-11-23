@@ -3460,3 +3460,16 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   launcher slot or a 100% tile, get a copy (as Make unique makes), one per scale. Copies are taken before any clip is
   scaled. The three real songs that had scales now play note for note as on main.
 
+## 201. One arrow per track: lanes, parts and sends in one tree (23 Nov)
+
+- **User**: "when i expand a track for subtrack i should be able to view automations in the same view (because right
+  now is confusing with two different expansions)". Agreed with my suggestion: one arrow, lanes under what they move.
+- The arrow after the track number (the mix fold of §197, still shared with the mixer) opens, in order: the track's
+  own lanes, each part (behind its own arrow: the part's Volume and Pan lanes, then its sends, each send with its
+  Send lane right under it), the track's sends (each with its Send lane), the sends it receives, "+ Add automation
+  lane". A lane whose part or send went sits with the track's own lanes, so nothing hides.
+- The lanes arrow between Arm and M is gone; Arm moves next to M. The track's arrow is always drawn, dim while only
+  the add-lane row is under it. Dots count lanes too.
+- Every way of making or showing a lane opens the track, and the part when the lane is a part's
+  (EditorState::showLaneRows). The track menu's "Show automation lanes" is "Show lanes, parts and sends".
+- The Master row keeps its own lanes button. A patch saved with a track's lanes open opens that track once.

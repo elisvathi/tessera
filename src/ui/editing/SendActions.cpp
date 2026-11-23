@@ -23,7 +23,7 @@ void automate(EditorContext& ctx, TrackId from, TrackId to, SendFrom part) {
     const Send* send = m ? findSend(m->song(), from, to, part) : nullptr;
     if (!t || !target || !send)
         return;
-    ctx.state().openAutomation.insert(from.value);
+    ctx.state().showLaneRows(from.value, false, part.key());
     for (const AutomationEnvelope& l : t->automation)
         if (l.drive == LaneDrive::Send && l.sendTo == to && l.part == part.key())
             return;

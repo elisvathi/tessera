@@ -33,7 +33,7 @@ its tracks.
 
 The small arrow left of a parent's name folds what it holds, and unfolds it again: pointing down while open, right
 while folded. A folded group shows only its own strip. A track's input and lane strips start folded, and its arrow is
-the same one as the mix arrow in its track row: opening one opens the other.
+the same one as the arrow in its track row: opening one opens the other.
 
 ## A strip
 
@@ -253,15 +253,18 @@ Rows too short for a second line don't show it; make the row taller (drag its bo
 
 ## Parts and sends in the track rows
 
-A track's mix arrow (▸ before its name) opens small rows under it, so you can mix a kit or a send without opening
-the mixer. Next to the arrow, one dot per row it would open: parts in the track's colour, sends in the colour of the
-track they go to. Everything starts folded.
+A track's arrow (▸ before its name) opens small rows under it, so you can mix a kit or a send without opening the
+mixer. The same arrow shows the track's automation lanes, above its parts. Next to the arrow, one dot per row it would
+open: lanes and parts in the track's colour, sends in the colour of the track they go to. Everything starts folded,
+and the mixer's strips fold with it.
 
 - **A part**: each drum lane with a cable on its Drum Out IN, or each input of a track with two or more (**Clips**,
   **IN 1**, **IN 2**). It has a level bar and a pan knob, the same as its strip in the mixer. An input also has **M**
   and **S**.
 - **A send**: "→ Reverb", with its level. The track's own sends sit at the parts' level. A part's sends sit under
   that part, one step further in, behind its own arrow: Snare's "→ Reverb" opens under Snare.
+- **Lanes**: a part's level or pan lane sits under the part, behind the part's arrow; a send's lane sits right under
+  the send. **Automate its level in the timeline** opens the part so you see the new lane.
 - **A send coming in**: a track that others send to (a reverb) lists them, "← Drums", "← Drums · Snare", each with
   the level of that send. It is the same send, seen from the other end.
 

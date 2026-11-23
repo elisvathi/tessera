@@ -137,10 +137,24 @@ struct EditorState {
     std::set<uint64_t> foldedInputs;                  // the master's input strips folded in the mixer, session only
     std::set<uint64_t> foldedMixerGroups; // groups whose tracks' strips are folded in the mixer, session only
     std::set<uint64_t> foldedGroups;                  // by GroupId value
-    std::set<uint64_t> openAutomation;                // tracks showing their automation lanes, by TrackId value
-    // Open mix folds (docs/DECISIONS.md §197): (TrackId value, part key), key 0 = the track's parts and sends, shared
-    // by the track headers and the mixer. Everything starts folded.
+    // The Master row showing its lanes, by TrackId value. Tracks open with openMix (§201); a track ID here comes from
+    // a patch saved before, and moves to openMix the first time the rows are laid out.
+    std::set<uint64_t> openAutomation;
+    // Open folds of the rows under tracks (docs/DECISIONS.md §197, §201): (TrackId value, part key), key 0 = the
+    // track's own arrow (its lanes, parts, sends and what it receives), shared by the track headers and the mixer.
+    // Everything starts folded.
     std::set<std::pair<uint64_t, uint64_t>> openMix;
+    /// Opens the rows under a track so one of its lanes shows: the track's arrow, and the arrow of `part` (a
+    /// SendFrom key) when the lane belongs to a part. The master's lanes have their own fold.
+    void showLaneRows(uint64_t track, bool master, uint64_t part = 0) {
+        if (master) {
+            openAutomation.insert(track);
+            return;
+        }
+        openMix.insert({track, 0});
+        if (part != 0)
+            openMix.insert({track, part});
+    }
     static constexpr double kDefaultTrackHeight = 32; // for tracks never resized: one line of 30 px slots (§188)
     /// How tall a track's row is: what it was dragged to, else the default.
     double trackHeight(TrackId id) const {
