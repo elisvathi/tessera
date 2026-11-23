@@ -77,6 +77,7 @@ class DeviceStrip : public InteractiveView {
             ModulatorMap,
             Card,
             CardHeader,
+            CardFold, // the arrow before a card's power dot: folds the whole device to a rail, or opens it
             Power,
             Menu,
             Dot,
@@ -201,6 +202,13 @@ class DeviceStrip : public InteractiveView {
     void layoutParts();
     /// A device's card at `x` with its top at `top`, in `tint`. Returns its right edge.
     float layoutCard(const Device& d, int index, float x, float top, NVGcolor tint);
+    /// A folded card: one rail with its fold arrow, power dot, name and a dot per modulator at its foot, and the open
+    /// modulator's settings beside it. Returns its right edge.
+    float layoutFoldedCard(const Device& d, int index, float x, float top);
+    /// Whether the device's card is folded to a rail.
+    bool cardFolded(DeviceId id) const;
+    /// Folds a card to a rail or opens it again; folding it closes its modulator's open settings.
+    void toggleCardFold(DeviceId id);
     /// The tiles of a card, with their tags, from `x`; `tagOwner` is what the tags' settings belong to.
     float layoutTiles(const Device& d, int index, float x, float top, ParamRef::Kind kind, uint64_t owner,
                       const tags::Values& values, NVGcolor tint, float minWidth);

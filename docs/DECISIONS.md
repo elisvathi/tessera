@@ -3390,3 +3390,13 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   picked, and the scene, launch and reset jacks are only read with a cable.
 - **Result**: the patch's Roll went from about 6.2% to 2.3% of a sample stopped, and 7.3% to about 5% playing (Rack's
   meter, five readings each); about the level of a Drum Out on the same machine.
+
+## 196. A device card folds to a rail; both folds are saved (23 Nov)
+
+- Agreed from canvas board 3: two folds, each with its own arrow. The arrow before a card's power dot folds the whole
+  device to a 30 px rail (arrow, power dot, name up the rail, a dot per modulator at its foot; a dot opens that
+  modulator's settings beside the rail). The arrow at the top of the DEVICE section folds only the modulators, as
+  before. Opening the card brings the section back as it was.
+- Both are view settings, not song data, so they never land in undo; unlike the other strip folds they are saved with
+  the patch (EditorState foldedDevices, deviceModsOpen), because a long chain is folded on purpose and should stay so.
+- Folding a card closes its open modulator's settings, the same as folding a section.

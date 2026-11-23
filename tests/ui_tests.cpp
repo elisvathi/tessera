@@ -35,13 +35,16 @@ TEST_CASE("an older patch's open state comes from its surfaces") {
     CHECK(s.lowerLane == 7);
 }
 
-TEST_CASE("zoom, scroll, heights and open lanes are one state and survive a save") {
+TEST_CASE("zoom, scroll, heights, open lanes and folded cards are one state and survive a save") {
     EditorState s;
     s.detail = {480, 0.4};
     s.pitch = {30, 18};
     s.trackScroll = 72;
     s.trackHeights[3] = 90;
     s.openAutomation.insert(3);
+    s.foldedDevices.insert(11);
+    s.deviceModsOpen[12] = false;
+    s.deviceModsOpen[13] = true;
     json::Ref saved(s.toJson());
     EditorState back = EditorState::fromJson(saved.get());
     CHECK(back.detail == s.detail);
@@ -50,6 +53,8 @@ TEST_CASE("zoom, scroll, heights and open lanes are one state and survive a save
     CHECK(back.trackHeight(TrackId(3)) == 90);
     CHECK(back.trackHeight(TrackId(4)) == EditorState::kDefaultTrackHeight);
     CHECK(back.openAutomation.count(3) == 1);
+    CHECK(back.foldedDevices == std::set<uint64_t>{11});
+    CHECK(back.deviceModsOpen == std::map<uint64_t, bool>{{12, false}, {13, true}});
 }
 
 TEST_CASE("an older patch's views come from the full editor's") {

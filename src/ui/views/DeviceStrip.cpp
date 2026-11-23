@@ -218,6 +218,23 @@ StripClipboard& stripClipboard() {
     return clipboard;
 }
 
+/// A fold arrow: a small triangle centred on `m`, pointing left (fold) or right (open).
+void drawFoldArrow(NVGcontext* vg, Vec m, bool left, NVGcolor color) {
+    nvgBeginPath(vg);
+    if (left) {
+        nvgMoveTo(vg, m.x + 2, m.y - 3.5f);
+        nvgLineTo(vg, m.x - 2.5f, m.y);
+        nvgLineTo(vg, m.x + 2, m.y + 3.5f);
+    } else {
+        nvgMoveTo(vg, m.x - 2, m.y - 3.5f);
+        nvgLineTo(vg, m.x + 2.5f, m.y);
+        nvgLineTo(vg, m.x - 2, m.y + 3.5f);
+    }
+    nvgClosePath(vg);
+    nvgFillColor(vg, color);
+    nvgFill(vg);
+}
+
 /// Whether a modulator is a Macro: its row is a fader.
 bool isMacro(const Modulator& m) { return m.type == ModulatorType::Macro; }
 ParamRef macroRef(const Modulator& m) { return {ParamRef::Kind::Modulator, m.id.value, 0}; }
@@ -234,6 +251,8 @@ constexpr float kMotionLeave = 64; // its "− Selected"
 constexpr float kMotionCount = 52; // and its "6 notes"
 constexpr float kTagPad = 8;
 constexpr float kStubWidth = 160;   // the folded chain at its end
+constexpr float kCardFold = 16;     // the fold arrow before a card's power dot
+constexpr float kFoldedNameRoom = 110; // a folded card's top: its arrow, dot and name, above its modulators' dots
 
 bool drawMappingBanner(NVGcontext* vg, EditorContext& ctx, float x, float y, float height, float maxWidth);
 
@@ -1574,7 +1593,60 @@ std::optional<Rect> DeviceStrip::settingsRect() const {
     return std::nullopt;
 }
 
+bool DeviceStrip::cardFolded(DeviceId id) const { return ctx.state().foldedDevices.count(id.value) > 0; }
+
+void DeviceStrip::toggleCardFold(DeviceId id) {
+    EditorState& st = ctx.state();
+    if (st.foldedDevices.erase(id.value))
+        return;
+    st.foldedDevices.insert(id.value);
+    ModulatorPlace place;
+    if (st.openModulator && ctx.module() &&
+        findModulator(ctx.module()->song(), ModulatorId(st.openModulator), &place) &&
+        place.level == ModLevel::Device && place.device == id)
+        st.openModulator = 0;
+}
+
+float DeviceStrip::layoutFoldedCard(const Device& d, int index, float x, float top) {
+    uint64_t key = deviceSection(d.id);
+    sectionPlaces[key] = {ModLevel::Device, TrackId(), d.id, ClipId()};
+    auto push = [&](Part p) {
+        p.device = index;
+        parts.push_back(p);
+    };
+    push({Kind::CardFold, Rect(x + 4, top + 5, kRail - 8, 18), index, -1, d.id.value});
+    push({Kind::Power, Rect(x + 6, top + 26, 18, 18), index, -1, d.id.value});
+    // The modulators' dots at its foot, as many as fit under the name's room.
+    float tall = 0;
+    for (const Modulator& m : d.modulators)
+        tall += (isMacro(m) ? 30 : 14) + 6;
+    float y = std::max(top + kFoldedNameRoom, top + kCardHeight - 6 - tall);
+    for (const Modulator& m : d.modulators) {
+        float h = isMacro(m) ? 30 : 14;
+        if (y + h > top + kCardHeight - 6)
+            break;
+        Part dot{Kind::ModulatorRow, Rect(x + 8, y, 14, h), index, 1, m.id.value};
+        dot.section = key;
+        push(dot);
+        y += h + 6;
+    }
+    float right = x + kRail;
+    ModulatorPlace place;
+    const Modulator* om = ctx.state().openModulator
+                              ? findModulator(ctx.module()->song(), ModulatorId(ctx.state().openModulator), &place)
+                              : nullptr;
+    if (om && place.level == ModLevel::Device && place.device == d.id) {
+        push({Kind::Settings, Rect(right, top, kSettingsWidth, kCardHeight), index, -1, om->id.value});
+        right += kSettingsWidth;
+    }
+    push({Kind::CardHeader, Rect(x, top, kRail, kCardHeight), index, -1, d.id.value});
+    push({Kind::Card, Rect(x, top, right - x, kCardHeight), index, -1, d.id.value});
+    return right;
+}
+
 float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NVGcolor tint) {
+    if (cardFolded(d.id))
+        return layoutFoldedCard(d, index, x, top);
     NVGcontext* vg = APP->window->vg;
     const theme::Palette& c = theme::colors();
     float mid = top + kHeaderMid;
@@ -1604,8 +1676,9 @@ float DeviceStrip::layoutCard(const Device& d, int index, float x, float top, NV
     draw::TextStyle nameStyle{theme::fonts::uiStrong(), 13, c.text0};
     float nameW = vg ? draw::textWidth(vg, nameStyle, nameOf(d)) : 80;
     float left = x + mx::kDeviceCardPad;
-    parts.push_back({Kind::Power, Rect(left, mid - 9, 18, 18), index, -1, d.id.value});
-    float hx = left + 18 + 8 + nameW + 8;
+    parts.push_back({Kind::CardFold, Rect(left - 6, mid - 9, kCardFold, 18), index, -1, d.id.value});
+    parts.push_back({Kind::Power, Rect(left - 6 + kCardFold, mid - 9, 18, 18), index, -1, d.id.value});
+    float hx = left - 6 + kCardFold + 18 + 8 + nameW + 8;
     const Playhead* shown = d.type == DeviceType::Playheads ? shownPlayhead(d) : nullptr;
     if (d.type == DeviceType::Playheads) {
         // The playheads, as chips after the card's name. A chip's dot turns it on or off; its name shows it.
@@ -2155,6 +2228,7 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
         switch (hit->kind) {
         case Kind::Card:
         case Kind::CardHeader:
+        case Kind::CardFold:
         case Kind::Power:
         case Kind::Menu:
         case Kind::Tile:
@@ -2278,6 +2352,9 @@ void DeviceStrip::click(Vec pos, int button, Modifiers mods) {
             m->perform(setDeviceVariation(m->song(), d->id, next));
         break;
     }
+    case Kind::CardFold:
+        toggleCardFold(DeviceId(hit->id));
+        break;
     case Kind::ModFold: {
         EditorState& st = ctx.state();
         ModLevel level = ModLevel(hit->param);
@@ -2906,12 +2983,18 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
         draw::roundedRect(vg, r, radius, nvgTransRGBAf(c.select, 0.06f));
 
     float mid = r.pos.y + kHeaderMid;
+    bool folded = cardFolded(d.id);
     for (size_t i = 0; i < parts.size(); i++) {
         const Part& p = parts[i];
         if (p.device != index)
             continue;
         bool hot = int(i) == hovered;
         switch (p.kind) {
+        case Kind::CardFold:
+            if (hot)
+                draw::roundedRect(vg, p.rect, 3, c.bg2);
+            drawFoldArrow(vg, p.rect.getCenter(), !folded, hot ? c.text0 : c.text1);
+            break;
         case Kind::Power: {
             // A dot in the card's colour with a soft ring; hollow when bypassed.
             Vec m = p.rect.getCenter();
@@ -2936,8 +3019,21 @@ void DeviceStrip::drawCard(NVGcontext* vg, const Part& cardPart) {
                 nvgStrokeWidth(vg, 1.5f);
                 nvgStroke(vg);
             }
-            // The device's name after it.
+            // The device's name after it, or on a folded card up the rail under it.
             draw::TextStyle name{theme::fonts::uiStrong(), 13, d.on ? c.text0 : c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+            if (folded) {
+                float start = p.rect.getBottom() + 8, end = r.getBottom() - 8;
+                for (const Part& q : parts)
+                    if (q.device == index && q.kind == Kind::ModulatorRow)
+                        end = std::min(end, q.rect.pos.y - 8);
+                name.align = NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE;
+                nvgSave(vg);
+                nvgTranslate(vg, m.x, start);
+                nvgRotate(vg, float(-M_PI / 2));
+                draw::text(vg, name, 0, 0, draw::ellipsize(vg, name, nameOf(d), std::max(0.f, end - start)));
+                nvgRestore(vg);
+                break;
+            }
             float nx = p.rect.getRight() + 8;
             if (d.type == DeviceType::Motion) {
                 // Its colour, the one its notes' corners wear.
@@ -3071,6 +3167,8 @@ void DeviceStrip::updateTip() {
     }
     if (hovered >= 0 && size_t(hovered) < parts.size() && ctx.module() && !hasGesture()) {
         const Part& p = parts[size_t(hovered)];
+        if (p.kind == Kind::CardFold)
+            want = cardFolded(DeviceId(p.id)) ? "Open the device" : "Fold the device to a narrow rail";
         if (p.kind == Kind::PatternReset)
             want = "Starts the line again from a plain rising arpeggio: notes 1 2 3 4, every row back to its default";
         if (p.kind == Kind::PatternGrid && !APP->scene->getFirstDescendantOfType<rack::ui::MenuOverlay>()) {
@@ -3474,21 +3572,7 @@ void DeviceStrip::drawSections(NVGcontext* vg, bool fixed) {
     draw::TextStyle name{theme::fonts::ui(), theme::metrics::kTextUi, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle value{theme::fonts::mono(), 10.5f, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
     draw::TextStyle hint{theme::fonts::ui(), 10.5f, c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
-    auto arrow = [&](Vec m, bool left, NVGcolor color) {
-        nvgBeginPath(vg);
-        if (left) {
-            nvgMoveTo(vg, m.x + 2, m.y - 3.5f);
-            nvgLineTo(vg, m.x - 2.5f, m.y);
-            nvgLineTo(vg, m.x + 2, m.y + 3.5f);
-        } else {
-            nvgMoveTo(vg, m.x - 2, m.y - 3.5f);
-            nvgLineTo(vg, m.x + 2.5f, m.y);
-            nvgLineTo(vg, m.x - 2, m.y + 3.5f);
-        }
-        nvgClosePath(vg);
-        nvgFillColor(vg, color);
-        nvgFill(vg);
-    };
+    auto arrow = [&](Vec m, bool left, NVGcolor color) { drawFoldArrow(vg, m, left, color); };
     std::map<uint64_t, bool> sectionOpen;
     for (const Part& p : parts)
         if (p.kind == Kind::ModSection && p.fixed == fixed)

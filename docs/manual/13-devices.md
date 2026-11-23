@@ -175,7 +175,11 @@ time.
 
 ## Using a device card
 
-- **Power dot** (top left): bypass the device. The dot turns hollow, the pictures fade, and the notes pass through
+- **Fold arrow** (top left, before the power dot): fold the whole device to a thin rail, to make room in a long
+  chain. The rail keeps the arrow, the power dot, the device's name up the rail and a dot per modulator at its foot.
+  Click a dot to open that modulator's settings beside the rail; click the arrow to open the card again. The card's
+  DEVICE section comes back as it was, open or folded. Folds are saved with the patch.
+- **Power dot**: bypass the device. The dot turns hollow, the pictures fade, and the notes pass through
   unchanged.
 - **⋯ menu**: rename, duplicate, delete, reset its settings, affect drum lanes, add a modulator to this device.
 - **The dice**, on devices that play by chance (Random, Humanize, Velocity with Random above 0%, and the Arpeggiator
@@ -611,8 +615,9 @@ add a modulator, which opens it.
 Each folded strip has an icon at its top: SONG shows clips spread over time, TRACK a lane, CLIP a block with notes.
 The TRACK | CLIP switch shows the same icons. When the pane is tall enough, the names show under the icons too. In a
 short pane only the icons show, the dots get smaller and sit in rows, and in the shortest pane the **+** goes: open
-the strip to add a modulator there. A card's DEVICE section starts folded until the device has modulators. Opening a section makes room for it:
-the cards move right and the strip scrolls, but a device never gets narrower.
+the strip to add a modulator there. A card's DEVICE section starts folded until the device has modulators, and
+remembers its fold with the patch. Opening a section makes room for it: the cards move right and the strip scrolls,
+but a device never gets narrower. To fold the whole card, modulators included, use the arrow in the card's header.
 
 ![The modulator browser](images/modulator-browser.png)
 

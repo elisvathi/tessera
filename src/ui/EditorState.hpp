@@ -155,7 +155,8 @@ struct EditorState {
     // folded; a device's section starts open when it has modulators; `deviceModsOpen` holds the ones set by hand.
     bool songModsOpen = false, trackModsOpen = false;
     bool songModsOpenNarrow = false, trackModsOpenNarrow = false; // the same in a narrow strip
-    std::map<uint64_t, bool> deviceModsOpen;
+    std::map<uint64_t, bool> deviceModsOpen;  // saved with the patch, like `foldedDevices`
+    std::set<uint64_t> foldedDevices;         // cards folded to a rail, by DeviceId value (docs/DECISIONS.md §196)
     // What is selected in the strip, to copy, paste, duplicate or delete (docs/DECISIONS.md §163): cards (DeviceIds),
     // modulator rows (ModulatorIds) and whole sections (the strip's section keys).
     std::vector<uint64_t> stripDevices, stripModulators, stripSections;
