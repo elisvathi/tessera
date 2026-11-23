@@ -200,6 +200,7 @@ void Engine::setSnapshot(const Snapshot* s) {
     anyCvOut = false;
     for (size_t i = 0; i < trackCount; i++)
         anyCvOut = anyCvOut || movesWhileStopped(tracks[i]);
+    anyCvOut = anyCvOut || s->turnsRackKnobs;
     knobSetsLeft = true;
     for (size_t i = 0; i < trackCount; i++) {
         if (!s->tracks[i]->audible) {
@@ -1282,8 +1283,12 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         // Settled while stopped, with no modulator sending CV out, modulators only feed the strip's live graphs
         // and the knobs live notes would read (a live note wakes everything): an eighth of the rate does.
         bool slowMods = !playing && quietTicks >= kSettleTicks && !anyCvOut;
-        if (!slowMods || (sample & (8 * kControlBlock - 1)) == 0)
+        if (!slowMods || (sample & (8 * kControlBlock - 1)) == 0) {
             advanceModulation();
+            skippedMods = 0;
+        } else {
+            skippedMods++;
+        }
         quietTicks = playing || forced ? 0 : std::min(quietTicks + 1, kSettleTicks);
     }
     bool settled = !playing && quietTicks >= kSettleTicks;
@@ -2522,7 +2527,8 @@ void Engine::advanceModulation() {
         return;
     mods::Clock clock;
     clock.songTick = songTick;
-    clock.seconds = double(kControlBlock) / sampleRate;
+    // Slowed while stopped, a modulator still moves by the time that passed, so a free LFO keeps its speed.
+    clock.seconds = double(kControlBlock) * double(1 + skippedMods) / sampleRate;
     clock.timeSig = s.timeSig;
     clock.ticksPerSecond = bpm * kPpq / 60.0;
     for (const ModulatorPlayback& m : s.modulators) {

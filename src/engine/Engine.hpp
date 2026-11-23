@@ -844,7 +844,8 @@ class Engine {
     static constexpr uint64_t kAsleep = ~uint64_t(0);
     int quietTicks = 0;
     bool knobSetsLeft = true; // a track may still hold knob sets from playing: cleared by one stopped pass
-    bool anyCvOut = false;    // some track's modulators send CV out (set with the snapshot)
+    bool anyCvOut = false;    // some modulator sends CV out or turns a Rack knob (set with the snapshot)
+    int skippedMods = 0;      // control ticks the slowed modulators skipped since they last ran
     /// Whether a stopped track's automation still has to run at each control tick: a modulator sends CV out on it.
     bool movesWhileStopped(const TrackState& state) const;
     bool loopOn = false;

@@ -379,6 +379,7 @@ struct Snapshot {
     std::vector<ChainPlayback> chains;
     size_t trackChains = 0;
     std::vector<ModulatorPlayback> modulators;
+    bool turnsRackKnobs = false; // some modulator turns another Rack module's knob, so it keeps moving while stopped
     std::vector<KnobModulation> modulated; // knobs that modulators move
     std::vector<int> laneKnobs;            // knobs that knob lanes turn, sorted
     std::vector<std::pair<uint64_t, int>> arpSlots; // each Arpeggiator's device ID value and its report slot

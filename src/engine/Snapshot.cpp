@@ -661,6 +661,9 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         mp.segmentStart = m.segmentStart;
         mp.segmentEnd = m.segmentEnd;
         snap.modulators.push_back(mp);
+        snap.turnsRackKnobs = snap.turnsRackKnobs || std::any_of(m.routes.begin(), m.routes.end(), [](const Modulation& r) {
+                                  return r.kind == Modulation::Kind::RackKnob;
+                              });
         // A clip's modulators (and its devices' own) restart with the notes that go through its chain.
         ChainPlayback* own = place.clip.valid() ? const_cast<ChainPlayback*>(snap.ownChainOf(place.clip.value)) : nullptr;
         if (own)

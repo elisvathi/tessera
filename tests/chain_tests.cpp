@@ -2739,6 +2739,48 @@ TEST_CASE("the piano roll reads a Motion's Curve from when its timeline clip sta
     CHECK(render::motionMoveAt(song, song.tracks[0], clip, 0, 1, clipStart + 5 * kPpq, 5 * kPpq).pitch == 62);
 }
 
+TEST_CASE("a free LFO keeps its speed while a stopped engine slows its modulators, and turns Rack knobs smoothly") {
+    // Two seconds stopped: far past the settling time, after which modulators that feed only the screen run at an
+    // eighth of the control rate.
+    auto run = [](bool rackKnob, bool play, std::vector<float>& outs) {
+        Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+        Modulator lfo = devices::makeModulator(ModulatorType::Lfo, song.newId<ModulatorId>());
+        lfo.params = knobsOf(ModulatorType::Lfo, {{mods::knob::kSync, 0}, {mods::knob::kRate, 1}});
+        if (rackKnob) {
+            Modulation route;
+            route.kind = Modulation::Kind::RackKnob;
+            route.knob.moduleId = 1;
+            route.amount = 1;
+            lfo.routes.push_back(route);
+        }
+        song.modulators.push_back(lfo);
+        Harness h(song, play);
+        int slot = h.builder.modulatorSlots().slotOf(lfo.id);
+        h.runTo(int64_t(2 * kSampleRate));
+        for (int k = 0; k < int(kSampleRate / 10); k++) {
+            h.step();
+            outs.push_back(h.engine.modulatorOutput(slot));
+        }
+    };
+    std::vector<float> slowed, knob, playing;
+    run(false, false, slowed);
+    run(true, false, knob);
+    run(false, true, playing); // playing, modulators never slow down
+    // A free LFO doesn't follow the transport: stopped, it is where it is while playing (within the eighth-rate step).
+    CHECK(slowed.front() == doctest::Approx(playing.front()).scale(1).epsilon(0.05));
+    CHECK(knob.front() == doctest::Approx(playing.front()).scale(1).epsilon(0.01));
+    auto changes = [](const std::vector<float>& v) {
+        int n = 0;
+        for (size_t k = 1; k < v.size(); k++)
+            n += v[k] != v[k - 1];
+        return n;
+    };
+    // A tenth of a second: 150 control blocks. Turning a Rack knob, it steps on every one; for the screen alone,
+    // on every eighth.
+    CHECK(changes(knob) >= 140);
+    CHECK(changes(slowed) <= 20);
+}
+
 namespace {
 /// Rising edges of `pitch` on any voice over `samples`.
 int countStarts(Harness& h, int pitch, int64_t samples) {

@@ -3390,6 +3390,9 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   picked, and the scene, launch and reset jacks are only read with a cable.
 - **Result**: the patch's Roll went from about 6.2% to 2.3% of a sample stopped, and 7.3% to about 5% playing (Rack's
   meter, five readings each); about the level of a Drum Out on the same machine.
+- **Fixed after review**: slowed modulators move by the time that passed (a free LFO, an envelope and a Note
+  follower ran 8 times slower while stopped), and a modulator that turns another module's knob keeps the full rate,
+  like one that sends CV out (DEVICES.md §3), so the mapped knob moves as smoothly as before.
 
 ## 196. A device card folds to a rail; both folds are saved (23 Nov)
 
