@@ -827,6 +827,76 @@ TEST_CASE("a copied modulator pastes into any section: a device's, the song's, a
                                 ModulatorPlace{ModLevel::Device, TrackId(), echo, ClipId()}));
 }
 
+TEST_CASE("a dragged modulator moves to another section with its ID, losing only moves out of reach") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId arp, echo;
+    addDevice(song, ChainOwner(track), DeviceType::Arpeggiator, -1, next, &arp)->apply(song);
+    addDevice(song, ChainOwner(track), DeviceType::Echo, -1, next, &echo)->apply(song);
+    ModulatorId lfo;
+    addModulator(song, {ModLevel::Track, track, DeviceId(), ClipId()}, ModulatorType::Lfo, next, &lfo)->apply(song);
+    addRoute(song, lfo, toKnob(arp, chain::knob::kGate))->apply(song);
+    addRoute(song, lfo, toKnob(echo, chain::knob::kDecay))->apply(song);
+    ModulatorPlace intoArp{ModLevel::Device, TrackId(), arp, ClipId()};
+
+    // Hovering the arpeggiator's section warns that the move on the echo will go.
+    ModulatorLanding landing = modulatorLanding(song, lfo, intoArp);
+    CHECK(landing.room);
+    CHECK_FALSE(landing.same);
+    CHECK(landing.lost == 1);
+    CHECK(modulatorLanding(song, lfo, {ModLevel::Track, track, DeviceId(), ClipId()}).same);
+    CHECK(modulatorLanding(song, lfo, songLevel()).lost == 0);
+
+    int dropped = -1;
+    CommandPtr move = moveModulator(song, lfo, intoArp, &dropped);
+    REQUIRE(move);
+    move->apply(song);
+    CHECK(dropped == 1);
+    CHECK(song.findTrack(track)->modulators.empty());
+    const Device& a = *findDevice(song, arp);
+    REQUIRE(a.modulators.size() == 1);
+    CHECK(a.modulators[0].id == lfo); // the same modulator, so lanes on its settings still find it
+    REQUIRE(a.modulators[0].routes.size() == 1);
+    CHECK(a.modulators[0].routes[0].target.owner == arp.value);
+    move->revert(song);
+    REQUIRE(song.findTrack(track)->modulators.size() == 1);
+    CHECK(song.findTrack(track)->modulators[0].routes.size() == 2);
+    CHECK_FALSE(moveModulator(song, lfo, {ModLevel::Track, track, DeviceId(), ClipId()})); // already there
+}
+
+TEST_CASE("a copied Curve keeps its drawing but not what it moves, unless that was copied too") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId echo;
+    addDevice(song, ChainOwner(track), DeviceType::Echo, -1, next, &echo)->apply(song);
+    ModulatorPlace onTrack{ModLevel::Track, track, DeviceId(), ClipId()};
+    ParamRef decay{ParamRef::Kind::Device, echo.value, uint16_t(chain::knob::kDecay)};
+    ModulatorId curve;
+    animateWithCurve(song, onTrack, decay, "Echo Decay", std::nullopt, next, &curve)->apply(song);
+    std::vector<Modulator> copied = {*findModulator(song, curve)};
+    CommandPtr paste = pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, nullptr, onTrack);
+    REQUIRE(paste);
+    paste->apply(song);
+    const Track& t = *song.findTrack(track);
+    REQUIRE(t.modulators.size() == 2);
+    CHECK(t.modulators[1].points == t.modulators[0].points);
+    CHECK(t.modulators[1].routes.empty());
+    CHECK(t.modulators[0].routes.size() == 1);
+    // Copied with the device it moves, it moves the copy.
+    Device withCurve = *findDevice(song, echo);
+    withCurve.modulators = {*findModulator(song, curve)};
+    withCurve.modulators[0].routes[0].target.owner = echo.value;
+    CommandPtr both = pasteChainItems(song, ChainOwner(track), -1, {withCurve}, {}, {}, next, nullptr);
+    REQUIRE(both);
+    both->apply(song);
+    const Device& copy = song.findTrack(track)->devices.back();
+    REQUIRE(copy.modulators.size() == 1);
+    REQUIRE(copy.modulators[0].routes.size() == 1);
+    CHECK(copy.modulators[0].routes[0].target.owner == copy.id.value);
+}
+
 TEST_CASE("an arpeggiator's own Pattern line saves with the song, and the dice writes lines") {
     Song song = makeDefaultSong();
     TrackId track = song.tracks[0].id;

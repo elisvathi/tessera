@@ -511,6 +511,50 @@ class CardDrag : public DragGesture {
     bool copy = false;
 };
 
+/// Dragging a modulator row (or a dot on a folded rail) to another section moves it there; Ctrl copies it. The
+/// sections it could land in light up and say what would happen, before the button is let go (§194).
+class ModulatorDrag : public DragGesture {
+  public:
+    ModulatorDrag(DeviceStrip& strip, EditorContext& ctx, ModulatorId id) : strip(strip), ctx(ctx), id(id) {}
+    void update(Vec pos, Modifiers mods) override {
+        TesseraModule* m = ctx.module();
+        DeviceStrip::ModulatorDragShown shown;
+        shown.id = id.value;
+        shown.pos = pos;
+        shown.copy = mods.ctrl; // let go of Ctrl mid-drag and it is a move again
+        shown.section = strip.sectionUnder(pos);
+        if (std::optional<ModulatorPlace> place = strip.placeOfSection(shown.section); m && place)
+            shown.landing = modulatorLanding(m->song(), id, *place);
+        strip.modulatorDrag = shown;
+    }
+    void commit() override {
+        std::optional<DeviceStrip::ModulatorDragShown> shown = strip.modulatorDrag;
+        strip.modulatorDrag.reset();
+        if (shown)
+            strip.dropModulator(*shown);
+    }
+    void cancel() override { strip.modulatorDrag.reset(); }
+    std::string readout() const override {
+        const std::optional<DeviceStrip::ModulatorDragShown>& s = strip.modulatorDrag;
+        if (!s || !s->section)
+            return s && s->copy ? "Copy: drop it on a section" : "Move: drop it on a section";
+        if (!s->landing.room)
+            return "That section is full";
+        if (s->landing.same && !s->copy)
+            return "Already here";
+        if (s->landing.lost > 0)
+            return std::to_string(s->landing.lost) + (s->landing.lost == 1 ? " move" : " moves") +
+                   " can't reach from here and will go";
+        return s->copy ? "Copy here" : "Move here";
+    }
+    CursorShape cursor() const override { return CursorShape::Move; }
+
+  private:
+    DeviceStrip& strip;
+    EditorContext& ctx;
+    ModulatorId id;
+};
+
 /// Dragging in a Pattern value row. The first move decides what the drag does: up or down sets the pressed step
 /// (and plays it); sideways on Gate makes that step longer or shorter (its bar grows to the right); sideways on the
 /// other rows paints the pressed value over the steps passed, which up and down then move together. A click without
@@ -1979,11 +2023,26 @@ std::unique_ptr<DragGesture> DeviceStrip::startGesture(Vec pos, int button, Modi
         return std::make_unique<ClickOrDrag>(std::make_unique<TagDrag>(*this, ctx, t, pos), pos,
                                              [this, t] { openPanel(t); });
     }
-    case Kind::ModulatorRow: {
+    case Kind::ModulatorRow:
+    case Kind::Dot: {
         const Modulator* mod = findModulator(m->song(), ModulatorId(p.id));
-        if (!mod || !isMacro(*mod) || ctx.mappingModulator)
+        if (!mod || ctx.mappingModulator)
             return nullptr;
-        bool upright = p.param != 0;
+        // A Macro's row is a fader: only its colour dot at the left end drags it to another section, and its upright
+        // fader on a folded rail never does. Any other row (and a dot on a folded rail) drags from anywhere; a click
+        // without a drag still opens it.
+        bool upright = p.kind == Kind::ModulatorRow && p.param != 0;
+        bool byDot = !upright && (p.kind == Kind::Dot || pos.x < p.rect.pos.x + 18);
+        if (!isMacro(*mod) || byDot) {
+            std::weak_ptr<DeviceStrip*> weak = self;
+            ModulatorId id = mod->id;
+            return std::make_unique<ClickOrDrag>(std::make_unique<ModulatorDrag>(*this, ctx, id), pos, [weak, pos] {
+                if (auto s = weak.lock())
+                    (*s)->click(pos, GLFW_MOUSE_BUTTON_LEFT, Modifiers::fromGlfw(APP->window->getMods()));
+            });
+        }
+        if (p.kind == Kind::Dot)
+            return nullptr;
         uint64_t id = p.id, section = p.section;
         std::weak_ptr<DeviceStrip*> weak = self;
         return std::make_unique<ClickOrDrag>(
@@ -4227,6 +4286,93 @@ void DeviceStrip::pasteItems(const Copied& items, int index, const char* verb, s
                            : ""));
 }
 
+void DeviceStrip::drawModulatorDrag(NVGcontext* vg, const ModulatorDragShown& drag) {
+    const theme::Palette& c = theme::colors();
+    TesseraModule* m = ctx.module();
+    const Modulator* mod = m ? findModulator(m->song(), ModulatorId(drag.id)) : nullptr;
+    if (!mod)
+        return;
+    nvgSave(vg);
+    nvgIntersectScissor(vg, 0, 0, box.size.x, box.size.y);
+    // A move leaves a dashed outline where the row was; a copy leaves the original as it is.
+    if (!drag.copy)
+        for (const Part& p : parts)
+            if ((p.kind == Kind::ModulatorRow || p.kind == Kind::Dot) && p.id == drag.id) {
+                nvgBeginPath(vg);
+                nvgRect(vg, p.rect.pos.x, p.rect.pos.y, p.rect.size.x, p.rect.size.y);
+                nvgFillColor(vg, nvgTransRGBAf(c.bg0, 0.6f));
+                nvgFill(vg);
+                draw::roundedRectStroke(vg, p.rect, 3, c.line2, 1);
+            }
+    // The section under the pointer: lit where it can take it, amber where moves would go, faint when full.
+    bool warn = drag.landing.lost > 0;
+    for (const Part& p : parts) {
+        if (p.kind != Kind::ModSection || p.section != drag.section || !drag.section)
+            continue;
+        NVGcolor edge = !drag.landing.room ? c.line2 : warn ? c.queue : c.accent;
+        draw::roundedRect(vg, p.rect, 6, nvgTransRGBAf(edge, 0.10f));
+        draw::roundedRectStroke(vg, p.rect, 6, edge, 1.5f);
+    }
+    // The row under the pointer, with a green "+ Copy" while Ctrl copies it.
+    draw::TextStyle name{theme::fonts::uiStrong(), 12, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::TextStyle badge{theme::fonts::uiStrong(), 10, c.ink, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    float textW = draw::textWidth(vg, name, mod->name);
+    float badgeW = drag.copy ? draw::textWidth(vg, badge, "+ Copy") + 12 : 0;
+    Rect ghost(drag.pos.x + 10, drag.pos.y - 11, 22 + textW + (badgeW > 0 ? badgeW + 6 : 0) + 8, 22);
+    ghost.pos.x = std::min(ghost.pos.x, box.size.x - ghost.size.x - 2);
+    ghost.pos.y = std::clamp(ghost.pos.y, 2.f, box.size.y - ghost.size.y - 2);
+    draw::roundedRect(vg, ghost, 5, c.bg2);
+    draw::roundedRectStroke(vg, ghost, 5, drag.copy ? c.play : c.accent, 1);
+    nvgBeginPath(vg);
+    nvgCircle(vg, ghost.pos.x + 11, ghost.getCenter().y, 4);
+    nvgFillColor(vg, deviceActions::colorOf(mod->id));
+    nvgFill(vg);
+    draw::text(vg, name, ghost.pos.x + 20, ghost.getCenter().y, mod->name);
+    if (badgeW > 0) {
+        Rect b(ghost.pos.x + 20 + textW + 6, ghost.getCenter().y - 7, badgeW, 14);
+        draw::roundedRect(vg, b, 7, c.play);
+        draw::text(vg, badge, b.getCenter().x, b.getCenter().y, "+ Copy");
+    }
+    nvgRestore(vg);
+}
+
+uint64_t DeviceStrip::sectionUnder(Vec pos) const {
+    for (const Part& p : parts)
+        if (p.kind == Kind::ModSection && p.rect.contains(pos))
+            return p.section;
+    return 0;
+}
+
+void DeviceStrip::dropModulator(const ModulatorDragShown& drag) {
+    TesseraModule* m = ctx.module();
+    auto place = sectionPlaces.find(drag.section);
+    const Modulator* mod = m ? findModulator(m->song(), ModulatorId(drag.id)) : nullptr;
+    if (!mod || place == sectionPlaces.end())
+        return;
+    if (!drag.landing.room) {
+        ctx.toast(placeName(place->second) + " has no room for another modulator");
+        return;
+    }
+    if (drag.copy) {
+        Copied items;
+        items.modulators = {*mod};
+        items.label = mod->name;
+        pasteItems(items, -1, "Copied", place->second);
+        return;
+    }
+    if (drag.landing.same)
+        return;
+    int dropped = 0;
+    std::string name = mod->name;
+    if (CommandPtr move = moveModulator(m->song(), mod->id, place->second, &dropped)) {
+        deviceActions::performChainEdit(ctx, std::move(move), "Move " + name);
+        ctx.toast("Moved " + name + " to " + placeName(place->second) +
+                  (dropped > 0 ? " · " + std::to_string(dropped) + (dropped == 1 ? " move" : " moves") +
+                                     " out of reach removed (Ctrl+Z brings them back)"
+                               : ""));
+    }
+}
+
 void DeviceStrip::deleteSelection(const char* verb) {
     TesseraModule* m = ctx.module();
     if (!m)
@@ -4443,6 +4589,8 @@ void DeviceStrip::drawForeground(const DrawArgs& args) {
         }
     }
     nvgRestore(vg);
+    if (modulatorDrag)
+        drawModulatorDrag(vg, *modulatorDrag);
     // Under the strip when the pane has room there; otherwise over the top of the cards.
     float bannerY = roomBelow >= 28 ? box.size.y + 4 : 2;
     drawMappingBanner(vg, ctx, chainLeft, bannerY, 20, box.size.x - chainLeft - 8);

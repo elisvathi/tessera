@@ -478,9 +478,27 @@ CommandPtr pasteChainItems(const Song& song, ChainOwner to, int index, std::vect
     // The devices and their section's modulators renew together, so moves from one to the other follow the copies.
     ChainRemap remap, songRemap;
     renewIds(devices, modulators, nextId, remap);
-    retargetRoutes(devices, modulators, remap);
     std::vector<Device> none;
     renewIds(none, songModulators, nextId, songRemap);
+    // A copied Curve keeps its drawing but not what it moves, unless that was copied with it: kept, it would move the
+    // same setting twice (§194).
+    auto curveKeepsOnlyCopies = [](Modulator& m, const ChainRemap& copied) {
+        if (m.type != ModulatorType::Curve)
+            return;
+        m.routes.erase(std::remove_if(m.routes.begin(), m.routes.end(),
+                                      [&](const Modulation& r) {
+                                          return r.kind == Modulation::Kind::Param && !copied.count(r.target.owner);
+                                      }),
+                       m.routes.end());
+    };
+    for (Device& d : devices)
+        for (Modulator& m : d.modulators)
+            curveKeepsOnlyCopies(m, remap);
+    for (Modulator& m : modulators)
+        curveKeepsOnlyCopies(m, remap);
+    for (Modulator& m : songModulators)
+        curveKeepsOnlyCopies(m, songRemap);
+    retargetRoutes(devices, modulators, remap);
     retargetRoutes(none, songModulators, songRemap);
     auto countRoutes = [&](const Song& s) {
         int n = 0;
@@ -521,6 +539,54 @@ CommandPtr pasteChainItems(const Song& song, ChainOwner to, int index, std::vect
         return any;
     });
     return command;
+}
+
+ModulatorLanding modulatorLanding(const Song& song, ModulatorId id, ModulatorPlace to) {
+    ModulatorLanding out;
+    ModulatorPlace from;
+    const Modulator* m = findModulator(song, id, &from);
+    if (!m)
+        return out;
+    if (to.level == ModLevel::Device)
+        to.clip = ownerOf(song, to.device).clip;
+    out.same = from.level == to.level && from.track == to.track && from.device == to.device && from.clip == to.clip;
+    Song probe = chainsOf(song);
+    std::vector<Modulator>* list = modulatorsAt(probe, to);
+    out.room = list && (out.same || list->size() < limitAt(to.level));
+    for (const Modulation& r : m->routes)
+        if (!reachable(song, to, id, r))
+            out.lost++;
+    return out;
+}
+
+CommandPtr moveModulator(const Song& song, ModulatorId id, ModulatorPlace to, int* dropped) {
+    ModulatorLanding landing = modulatorLanding(song, id, to);
+    if (!landing.room || landing.same)
+        return nullptr;
+    if (to.level == ModLevel::Device)
+        to.clip = ownerOf(song, to.device).clip;
+    ModulatorPlace from;
+    Modulator moved = *findModulator(song, id, &from);
+    moved.routes.erase(std::remove_if(moved.routes.begin(), moved.routes.end(),
+                                      [&](const Modulation& r) { return !reachable(song, to, id, r); }),
+                       moved.routes.end());
+    if (dropped)
+        *dropped = landing.lost;
+    return chainEdit(song, "Move " + moved.name, [&](Song& work) {
+        std::vector<Modulator>* source = modulatorsAt(work, from);
+        std::vector<Modulator>* target = modulatorsAt(work, to);
+        if (!source || !target)
+            return false;
+        source->erase(std::remove_if(source->begin(), source->end(), [&](const Modulator& m) { return m.id == id; }),
+                      source->end());
+        // It keeps its name unless the section already has one by that name.
+        if (std::any_of(target->begin(), target->end(), [&](const Modulator& m) { return m.name == moved.name; }))
+            moved.name = freeName(*target, baseName(moved.name));
+        target->push_back(moved);
+        pruneRoutes(work); // moves of other modulators that turned its settings, if they can't reach it there
+        dropEmptiedChains(song, work);
+        return true;
+    });
 }
 
 CommandPtr setDeviceOn(const Song& song, DeviceId id, bool on) {

@@ -3363,3 +3363,9 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   saved pattern by name (lanes, modulators and curves on it too).
 - The patterns that keep an order share one function, chain::arpOrderIndex, with the card's picture, so the picture
   always draws what plays.
+
+## 194. Modulators move by drag, copy with Ctrl (23 Nov)
+
+- Agreed from canvas board 4: drag a row (a Macro by its colour dot) to another section to move it, keeping its ID;
+  Ctrl+drag copies, with a green "+ Copy" on the dragged row. The section under the pointer lights up; amber with a
+  count when moves would go out of reach (modulatorLanding). A copied Curve keeps only moves to things copied with it.

@@ -84,6 +84,18 @@ CommandPtr copyDevice(const Song& song, DeviceId id, ChainOwner to, int index, c
 /// a track's, a clip's or a device's (§182). All get new IDs, and names not yet used there; moves between pasted
 /// things follow the copies; moves now out of reach go, counted in `dropped`. What doesn't fit (kMaxDevices, a
 /// second Playheads, full sections) is left out. Null when nothing was pasted.
+/// How a dragged modulator would land at `to`: whether there is room, and how many of its moves can't reach a
+/// setting from there (they are dropped by a move, and by a copy).
+struct ModulatorLanding {
+    bool room = false;
+    bool same = false; // `to` is where it already lives
+    int lost = 0;
+};
+ModulatorLanding modulatorLanding(const Song& song, ModulatorId id, ModulatorPlace to);
+/// Moves a modulator to another section (docs/DECISIONS.md §194), keeping its ID, so lanes and moves that turn its
+/// own settings keep working. Its moves that can't reach their setting from there go, counted in `dropped`. Null
+/// when it is already there or the section is full.
+CommandPtr moveModulator(const Song& song, ModulatorId id, ModulatorPlace to, int* dropped = nullptr);
 CommandPtr pasteChainItems(const Song& song, ChainOwner to, int index, std::vector<Device> devices,
                            std::vector<Modulator> modulators, std::vector<Modulator> songModulators,
                            const NextId& nextId, int* dropped = nullptr,

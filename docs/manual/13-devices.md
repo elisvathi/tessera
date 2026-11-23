@@ -646,6 +646,12 @@ never covers the notes:
 The **MOVES** list in the column shows every setting the modulator moves, with its amount and a **×** to remove it.
 Right-click a row to rename or remove the modulator.
 
+**Moving and copying.** Drag a modulator row (or a dot on a folded rail) onto another section to move it there; hold
+**Ctrl** to copy it instead (the dragged row shows a green **+ Copy**). A Macro drags by its colour dot. The section
+under the pointer lights up and says what will happen: a full section says so, and if some of what it moves can't be
+reached from there, the section turns amber and the readout says how many moves will go (Ctrl+Z brings them back). A
+copied Curve keeps its drawing but not what it moves, so one setting is never moved twice.
+
 **A Macro's row is a fader.** Drag it sideways to set it (Shift for fine steps), scroll over it for 1% steps (Ctrl:
 finer), double-click to set it back. Click it without dragging to open its settings. In a folded section, drag its
 small upright fader up or down. While the track is armed and recording, a drag records into the Macro's lane.

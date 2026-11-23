@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../model/DeviceCommands.hpp"
 #include "../../model/DeviceLookup.hpp"
 #include "../editing/DeviceActions.hpp"
 #include "../interaction/DeviceTags.hpp"
@@ -126,6 +127,27 @@ class DeviceStrip : public InteractiveView {
     std::optional<std::pair<uint64_t, int>> directionPreview; // a playhead's Direction tag (its 0..7 value)
     std::optional<std::pair<uint64_t, uint16_t>> channelPreview; // a Note Filter's channels being typed
     int dropIndex = -1;                                          // where a dragged card would land
+    /// A modulator being dragged to another section: which, where the pointer is, whether Ctrl copies it, and the
+    /// section under the pointer (its key, 0 for none) with how it would land there.
+    struct ModulatorDragShown {
+        uint64_t id = 0;
+        rack::math::Vec pos;
+        bool copy = false;
+        uint64_t section = 0;
+        ModulatorLanding landing;
+    };
+    std::optional<ModulatorDragShown> modulatorDrag;
+    /// Ends a modulator drag at the section under the pointer: moves it there, or copies it with `copy`.
+    void dropModulator(const ModulatorDragShown& drag);
+    /// The section whose box holds `pos`, as its key; 0 when none.
+    uint64_t sectionUnder(rack::math::Vec pos) const;
+    /// Where the modulators of the section with key `key` live, if it was laid out this frame.
+    std::optional<ModulatorPlace> placeOfSection(uint64_t key) const {
+        auto it = sectionPlaces.find(key);
+        return it != sectionPlaces.end() ? std::optional<ModulatorPlace>(it->second) : std::nullopt;
+    }
+    /// Draws a modulator drag: the row left behind, the section under the pointer and what lands there, the row.
+    void drawModulatorDrag(NVGcontext* vg, const ModulatorDragShown& drag);
     /// A Pattern drag on the Arpeggiator `patternPreviewDevice`: the step settings it sets (knob -> display value)
     /// and a row length it sets (row -1: the notes; 0..3: Vel, Gate, Oct, Semi).
     std::map<int, float> stepPreview;
