@@ -76,6 +76,7 @@ class TrackHeaders : public InteractiveView {
         MixPan,      // a part's pan
         MixMute,     // an input's M
         MixSolo,     // an input's S
+        WidthEdge,   // the column's right edge: drag to widen the headers
         From         // the words that say where the track's notes or sound come from: opens the menu that sets it
     };
     struct Hit {
@@ -158,6 +159,8 @@ class TrackHeaders : public InteractiveView {
     void toggleMix(TrackId track, SendFrom part);
     /// A click on a mix row: an input's M or S, or the right-click menu (a send's items, or a part's Send to).
     void clickMix(const TrackRow& row, const Hit& hit, int button, Modifiers mods);
+    /// Opens the name field over a part row: a drum lane's name, or an input's (the clips have none).
+    void startMixRename(int row);
     /// The tooltip for a part of a mix row, or for a track's mix fold.
     std::string mixTip(const TrackRow& row, Part part);
 

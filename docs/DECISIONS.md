@@ -3427,3 +3427,17 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   notes opens one line taller (like the level line rule: unless the user set its height) and the words get a line of
   their own, under the name or under the level line. Receiving tracks don't grow: their sends already show as mix
   rows and dots (§197); their words show only where there is room.
+
+## 199. Header column width, renaming parts, inputs named after what feeds them (23 Nov)
+
+- **User**: no fader on part rows in the in-panel editor; the headers should resize sideways; parts should be
+  renameable and named automatically; input names didn't say which device feeds them.
+- A part row keeps its level first: in a narrow column the pan goes (it stays in the mixer), then the name shortens
+  to 26 px; the level stays at least 36 px.
+- The column's right edge drags its width (100 to 400 px, ViewState::headerWidth, per editor, saved); double-click
+  goes back to the usual width.
+- A drum lane's or an input's name is edited in place (double-click, or Rename… in its menu), through the same
+  commands as the piano roll lane and the mixer strip.
+- An input with no name given is named after the module whose cable goes into its IN (sources::patchedFrom), else IN;
+  an unnamed drum lane after the module patched into its lane IN. The name follows the cable, so swapping a synth
+  renames it; a typed name stays.

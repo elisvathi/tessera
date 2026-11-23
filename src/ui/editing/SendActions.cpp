@@ -85,11 +85,19 @@ std::string partName(const TesseraModule& m, const Track& t, SendFrom part) {
     switch (part.kind) {
     case SendFrom::Kind::Clips:
         return "Clips";
-    case SendFrom::Kind::Lane:
+    case SendFrom::Kind::Lane: {
         for (const DrumLane& l : t.drumLanes)
             if (l.outputIndex == part.lane && !l.name.empty())
                 return l.name;
+        // An unnamed lane: the module patched into its IN on the Drum Out.
+        for (OutputModuleBase* o : Registry::get().outputsOf(m.id))
+            if (o->boundTrack() == t.id && o->sourcePatched(part.lane)) {
+                std::string from = sources::patchedFrom(o, o->sourcePort(part.lane));
+                if (!from.empty())
+                    return from;
+            }
         return "Lane " + std::to_string(part.lane + 1);
+    }
     case SendFrom::Kind::Input: {
         // Numbered as the strips are: "IN" alone, "IN 1", "IN 2" with more.
         int adds = 0, number = 0;

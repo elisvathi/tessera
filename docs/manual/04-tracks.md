@@ -88,6 +88,9 @@ it plays again. Clips that only that track used are deleted with it; clips share
 - Drag the bottom edge of a header to make the row taller or shorter. **Alt**+drag resizes every track.
 - Double-click the bottom edge to switch between short and tall.
 - **Shift+F** fits all tracks in the pane.
+- Drag the right edge of the headers to make the whole column wider or narrower, for longer names, dB values and
+  where a track comes from. Double-click that edge for the usual width. Each editor (the full one and the in-panel
+  one) keeps its own width, saved with the patch.
 
 ## The track menu
 

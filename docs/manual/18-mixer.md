@@ -80,7 +80,8 @@ When you patch a second source, a message says so: "Lead has 2 sources now. Both
 one** to switch the others off.
 
 With two or more sources, each gets its own narrow strip next to the track's strip: **Clips** on an audio track, and
-**IN** (or **IN 1**, **IN 2**) for each Track Out. Each has a fader, pan, **M**, **S** and a meter. The track's own strip is
+one for each Track Out, named after the module patched into its IN ("Plaits", "FM-OP"), or **IN** (**IN 1**, **IN 2**)
+when nothing is. A drum lane without a name is named the same way. Each has a fader, pan, **M**, **S** and a meter. The track's own strip is
 the master amount for all of them. The arrow left of the track's name folds the strips away.
 
 - **M** silences that input, without pulling a cable. Everything after it in the track's chain hears it go too: to
@@ -88,7 +89,7 @@ the master amount for all of them. The arrow left of the track's name folds the 
 - **S** plays that input alone, and solos its track too. **Shift+click** works as on a track: only this input of the track, and only this track.
 - Right-click an **IN** strip's name for **Rename…** and **Show this module in the rack**. Give each input a name
   ("Synth", "Vocal mic"): the strip, the sends' **FROM** rows and the track's source list then use it. The Track Out's
-  own right-click menu has the same name under **Input name**. Clear the name to go back to **IN**.
+  own right-click menu has the same name under **Input name**. Clear the name to go back to the module's name.
 - **Counted once**: when one cable feeds the INs of two Track Outs on the same track, the second adds nothing.
 
 A Track Out's **Use** and **Level** are kept in the module and also sit in its right-click menu, under **As a source
@@ -263,6 +264,10 @@ track they go to. Everything starts folded.
   that part, one step further in, behind its own arrow: Snare's "→ Reverb" opens under Snare.
 - **A send coming in**: a track that others send to (a reverb) lists them, "← Drums", "← Drums · Snare", each with
   the level of that send. It is the same send, seen from the other end.
+
+Double-click a drum lane's or an input's name (or right-click it, **Rename…**) to rename it; the piano roll's lane
+and the mixer strip take the new name too. In a narrow column, such as the in-panel editor, a part keeps its level
+and drops its pan knob (still in the mixer); widen the column to get it back.
 
 Drag a level sideways or a pan knob up and down; **Shift** or **Ctrl** for fine steps. **Double-click** for 0 dB or
 centre. Right-click a send for its menu (type a level, before or after the fader, remove), or a part to reset it or

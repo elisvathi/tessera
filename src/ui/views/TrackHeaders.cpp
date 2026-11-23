@@ -11,6 +11,7 @@
 #include "../Theme.hpp"
 #include "../editing/AudioActions.hpp"
 #include "../editing/DeviceActions.hpp"
+#include "../editing/DrumActions.hpp"
 #include "../editing/SendActions.hpp"
 #include "../editing/Sources.hpp"
 #include "../editing/TrackActions.hpp"
@@ -60,6 +61,10 @@ constexpr float kLevelHitH = 12;
 constexpr float kPanSize = 16;
 constexpr float kDbTextWidth = 44;
 constexpr float kMinFromWidth = 34;   // narrower than this, the words go rather than squeeze the name
+constexpr float kMixMinName = 26;  // a mix row's name, shortest
+constexpr float kMixMinLevel = 36; // a mix row's level, shortest before the pan goes
+constexpr float kWidthEdge = 4;    // the column's right edge: drag to widen it
+constexpr float kMinHeaderWidth = 100, kMaxHeaderWidth = 400;
 constexpr float kMixIndent = 14; // a part's sends sit this much further in than the part
 constexpr float kMixArrow = 11;  // a mix fold's arrow, before its dots
 constexpr float kMixDot = 4;     // one dot per row a mix fold hides, three to a line, two lines at most
@@ -337,6 +342,10 @@ void TrackHeaders::openAddMenu() {
 
 TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
     Hit hit;
+    if (pos.x >= box.size.x - kWidthEdge) {
+        hit.part = Part::WidthEdge;
+        return hit;
+    }
     hit.row = owner.tracks.trackAt(pos.y);
     if (hit.row < 0 || hit.row >= int(owner.rows.size())) {
         // Below the tracks: the add row, then empty space (both offer to add a track).
@@ -368,6 +377,7 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
                    : g.pan.grow(Vec(2, 2)).contains(pos)   ? Part::MixPan
                    : g.mute.contains(pos)                  ? Part::MixMute
                    : g.solo.contains(pos)                  ? Part::MixSolo
+                   : g.name.contains(pos)                  ? Part::Name
                                                            : Part::Body;
         return hit;
     }
@@ -546,6 +556,23 @@ void drawPanKnob(NVGcontext* vg, Rect box, float pan, std::optional<NVGcolor> ri
     }
 }
 
+/// Drags the column's right edge: the headers get wider or narrower, saved with the editor's view.
+class HeaderWidthGesture : public DragGesture {
+  public:
+    HeaderWidthGesture(EditorContext& ctx, Vec press) : ctx(ctx), press(press), start(ctx.view().headerWidth) {}
+    void update(Vec pos, Modifiers mods) override {
+        ctx.view().headerWidth = std::clamp(start + (pos.x - press.x), kMinHeaderWidth, kMaxHeaderWidth);
+    }
+    void cancel() override { ctx.view().headerWidth = start; }
+    std::string readout() const override { return std::to_string(int(ctx.view().headerWidth)) + " px"; }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
+
+  private:
+    EditorContext& ctx;
+    Vec press;
+    float start;
+};
+
 /// Whether two mix rows are the same row.
 bool sameMixRow(const TrackRow& a, const TrackRow& b) {
     return a.track == b.track && a.mix == b.mix && a.from == b.from && a.other == b.other;
@@ -720,6 +747,8 @@ std::unique_ptr<DragGesture> TrackHeaders::startGesture(Vec pos, int button, Mod
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return nullptr;
     Hit hit = hitTest(pos);
+    if (hit.part == Part::WidthEdge)
+        return std::make_unique<HeaderWidthGesture>(ctx, pos);
     if (hit.part == Part::MasterLevel) {
         // Like a track's level bar: a click in place does nothing, so the bar never jumps.
         auto inner = std::make_unique<LevelGesture>(ctx, ctx.module()->song().master.id, masterLevelRect().size.x, pos);
@@ -934,6 +963,10 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
 
 void TrackHeaders::doubleClick(Vec pos, Modifiers mods) {
     Hit hit = hitTest(pos);
+    if (hit.part == Part::WidthEdge) {
+        ctx.view().headerWidth = ctx.surface == Surface::Panel ? ViewState::compact().headerWidth : ViewState().headerWidth;
+        return;
+    }
     if (hit.part == Part::MasterLevel) {
         TesseraModule* m = ctx.module();
         if (m->song().master.volumeDb != 0)
@@ -948,6 +981,10 @@ void TrackHeaders::doubleClick(Vec pos, Modifiers mods) {
     if (hit.row < 0)
         return;
     const TrackRow& row = owner.rows[size_t(hit.row)];
+    if (row.kind == TrackRow::Kind::Mix && (hit.part == Part::Name || hit.part == Part::Body)) {
+        startMixRename(hit.row);
+        return;
+    }
     if (row.kind == TrackRow::Kind::Mix && (hit.part == Part::MixLevel || hit.part == Part::MixPan)) {
         Channel value = mixValue(row);
         bool pan = hit.part == Part::MixPan;
@@ -1021,7 +1058,8 @@ CursorShape TrackHeaders::hoverCursor(Vec pos, Modifiers mods) {
         hover.part == Part::MixFold || hover.part == Part::MixMute || hover.part == Part::MixSolo ||
         hover.part == Part::From)
         return CursorShape::Hand;
-    if (hover.part == Part::Level || hover.part == Part::MasterLevel || hover.part == Part::MixLevel)
+    if (hover.part == Part::Level || hover.part == Part::MasterLevel || hover.part == Part::MixLevel ||
+        hover.part == Part::WidthEdge)
         return CursorShape::ResizeH;
     if (hover.part == Part::Pan || hover.part == Part::MixPan)
         return CursorShape::ResizeV;
@@ -1029,6 +1067,8 @@ CursorShape TrackHeaders::hoverCursor(Vec pos, Modifiers mods) {
 }
 
 std::string TrackHeaders::tipFor(const Hit& hit) {
+    if (hit.part == Part::WidthEdge)
+        return "Drag to make the track headers wider or narrower; double-click for the usual width";
     if (hit.part == Part::MasterLevel && ctx.module())
         return "Master " + audioDraw::dbText(ctx.module()->song().master.volumeDb) +
                ". Drag sideways; double-click: 0 dB; right-click to automate";
@@ -1545,12 +1585,15 @@ TrackHeaders::MixGeometry TrackHeaders::mixGeometry(int index, float top, float 
         g.mute = muteRect(top, h);
         right = g.mute.pos.x - 6;
     }
-    if (part) {
+    // The level comes first: in a narrow column (the in-panel editor) the pan goes, then the name shortens, before
+    // the level gets too short to drag. The pan stays in the mixer.
+    if (part && right - kPanSize - 4 - nameX >= kMixMinName + 6 + kMixMinLevel) {
         g.pan = Rect(right - kPanSize, cy - kPanSize / 2, kPanSize, kPanSize);
         right = g.pan.pos.x - 4;
     }
     float room = right - nameX;
-    float nameW = std::clamp(room * (part ? 0.42f : 0.58f), 30.f, part ? 110.f : 150.f);
+    float nameW = std::clamp(room * (part ? 0.42f : 0.58f), kMixMinName, part ? 110.f : 150.f);
+    nameW = std::max(std::min(nameW, room - 6 - kMixMinLevel), std::min(kMixMinName, room));
     g.name = Rect(nameX, cy - 8, std::max(0.f, nameW), 16);
     float levelX = nameX + nameW + 6;
     bool dbRoom = right - levelX >= kDbTextWidth + 40;
@@ -1731,6 +1774,10 @@ void TrackHeaders::clickMix(const TrackRow& row, const Hit& hit, int button, Mod
         menu->addChild(rack::createMenuLabel(sendActions::senderName(*m, *t, row.from)));
         TrackRow r = row;
         TrackHeaders* self = this;
+        if (row.from.kind == SendFrom::Kind::Lane || row.from.kind == SendFrom::Kind::Input) {
+            int index = hit.row;
+            menu->addChild(rack::createMenuItem("Rename…", "double-click", [self, index] { self->startMixRename(index); }));
+        }
         menu->addChild(rack::createMenuItem("Reset to 0 dB", "double-click the level", [self, r] {
             Channel value = self->mixValue(r);
             value.volumeDb = 0;
@@ -1777,8 +1824,11 @@ std::string TrackHeaders::mixTip(const TrackRow& row, Part part) {
     case Part::MixSolo:
         return "Solo this input (Shift+click: only this one)";
     default:
-        return row.mix == TrackRow::Mix::Part ? "Right-click: reset, or send this part to another track"
-                                              : "Right-click for the send's menu";
+        return row.mix == TrackRow::Mix::Part
+                   ? (row.from.kind == SendFrom::Kind::Clips ? "Right-click: reset, or send this part to another track"
+                                                             : "Double-click to rename. Right-click: reset, or send "
+                                                               "this part to another track")
+                   : "Right-click for the send's menu";
     }
 }
 
@@ -1842,6 +1892,38 @@ Rect TrackHeaders::fromRect(int index, float top, float h, float* nameWidth) {
         *nameWidth = nameW + 2;
     float w = std::min(wordsW, room);
     return Rect(name.getRight() - room, name.pos.y, w, name.size.y);
+}
+
+void TrackHeaders::startMixRename(int index) {
+    if (index < 0 || index >= int(owner.rows.size()))
+        return;
+    const TrackRow row = owner.rows[size_t(index)];
+    if (row.kind != TrackRow::Kind::Mix || row.mix != TrackRow::Mix::Part ||
+        (row.from.kind != SendFrom::Kind::Lane && row.from.kind != SendFrom::Kind::Input))
+        return;
+    float top = float(owner.tracks.trackTop(index)), h = float(owner.tracks.trackHeight(index));
+    MixGeometry g = mixGeometry(index, top, h);
+    EditorContext* c = &ctx;
+    auto* field = new InlineTextField(mixName(row), [c, row](const std::string& name) {
+        TesseraModule* m = c->module();
+        const Track* t = m ? m->song().findTrack(row.track) : nullptr;
+        if (!t)
+            return;
+        if (row.from.kind == SendFrom::Kind::Input) {
+            sources::renameInput(sources::moduleById(row.from.module), name);
+            return;
+        }
+        for (size_t k = 0; k < t->drumLanes.size(); k++)
+            if (t->drumLanes[k].outputIndex == row.from.lane) {
+                drumActions::editLane(*c, row.track, int(k), [name](DrumLane& d) { d.name = name; }, "Rename lane");
+                return;
+            }
+    });
+    // Room to type: the name and the level after it.
+    field->box = Rect(g.name.pos.x - 2, g.name.pos.y - 1,
+                      std::max(g.name.size.x, g.level.getRight() - g.name.pos.x) + 4, g.name.size.y + 2);
+    addChild(field);
+    field->focus();
 }
 
 } // namespace tessera

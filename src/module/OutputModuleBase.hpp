@@ -112,6 +112,11 @@ class OutputModuleBase : public rack::engine::Module {
     /// and pan (volts, a peak falling 20 dB a second), for the mixer's lane strips. UI thread.
     int sourceCount() const { return audioPorts.sourceCount; }
     bool sourcePatched(int k) const;
+    /// The port ID of source input `k` (a Drum Out lane IN), or -1.
+    int sourcePort(int k) const { return k >= 0 && k < audioPorts.sourceCount ? audioPorts.sourceFirst + k : -1; }
+    /// The port IDs of its audio IN (left, right), -1 when it has none.
+    int inPortL() const { return audioPorts.inL; }
+    int inPortR() const { return audioPorts.inR; }
     float sourceLevel(int k) const;
     static constexpr int kMaxSources = 8;
     TrackId boundTrack() const { return bindingData.track; }

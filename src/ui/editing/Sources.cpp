@@ -429,9 +429,24 @@ std::string chainLabel(OutputModuleBase* module, const std::string& fallback) {
     return "FX";
 }
 
+std::string patchedFrom(const OutputModuleBase* module, int port) {
+    if (!module || port < 0)
+        return "";
+    for (int64_t cableId : APP->engine->getCableIds())
+        if (rack::engine::Cable* c = APP->engine->getCable(cableId))
+            if (c->inputModule == module && c->inputId == port && c->outputModule && c->outputModule->model)
+                return c->outputModule->model->name;
+    return "";
+}
+
 std::string inputLabel(const OutputModuleBase* module, int number, int count) {
     if (module && !module->inputName().empty())
         return module->inputName();
+    std::string from = patchedFrom(module, module ? module->inPortL() : -1);
+    if (from.empty())
+        from = patchedFrom(module, module ? module->inPortR() : -1);
+    if (!from.empty())
+        return from;
     return count > 1 ? "IN " + std::to_string(number) : "IN";
 }
 
@@ -447,7 +462,7 @@ void renameInput(OutputModuleBase* module, const std::string& name) {
 void appendInputNameItem(rack::ui::Menu* menu, OutputModuleBase* module) {
     if (!module || module->isLoop())
         return;
-    menu->addChild(rack::createMenuLabel("Input name (empty: IN)"));
+    menu->addChild(rack::createMenuLabel("Input name (empty: what is patched into IN)"));
     int64_t id = module->id;
     menu->addChild(new MenuTextField(module->inputName(), [id](const std::string& text) {
         if (OutputModuleBase* o = moduleById(id); o && text != o->inputName())
