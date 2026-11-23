@@ -139,6 +139,7 @@ struct AudioTrackPlay {
     std::vector<uint8_t> loops; // per entry of `returns`: 1 for an effect loop (its OUT has a cable)
     std::vector<AudioInstancePlay> instances; // sorted by position
     std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
+    bool hasClips = false;                     // any audio clip, on the timeline or in a slot: else no voices start
     float clipsPan = 0;                        // the clips' own place left and right, as an input of the track
     float clipsGain = 1;                       // the clips as a source (§7.8): their Level, 0 when not in use
     bool clipsOn = true;                       // the clips in use and not soloed away, so a lane can set their Level
@@ -156,6 +157,19 @@ struct AudioTrackPlay {
     int group = -1; // its group strip (index into AudioSnapshot::groups), which it goes through to the master
 };
 
+/// What the mix reads of one track on every sample, in one cache line, parallel to AudioSnapshot::tracks. Between two
+/// of Tessera's samples Rack runs every other module, so the track's full entry and the lists it points to would be
+/// fetched from memory again each sample; this keeps that to one line in the common case.
+struct alignas(64) MixHot {
+    static constexpr int kInline = 8;
+    uint64_t id = 0;
+    int32_t busSlot = -1, delay = 0, group = -1;
+    uint8_t sources = 0, returns = 0, sends = 0;
+    bool hasClips = false, toMaster = true, hearRollIn = false, rollIn = false;
+    bool inlined = true; // its sources and returns fit here and none is an effect loop; else read its full entry
+    int16_t source[kInline]{}, ret[kInline]{};
+};
+
 /// A group's strip: its tracks are summed into it, then its fader and pan, then the master.
 struct GroupPlay {
     uint64_t id = 0; // GroupId value
@@ -168,6 +182,7 @@ struct AudioSnapshot {
     uint64_t generation = 0;
     std::vector<AudioClipPlay> clips;
     std::vector<AudioTrackPlay> tracks;
+    std::vector<MixHot> hot; // one per entry of `tracks`
     std::vector<GroupPlay> groups;
     float masterVolume = 1;
     float masterMixGain = 1; // the mix as a source of the master (§7.8)
@@ -176,6 +191,7 @@ struct AudioSnapshot {
     std::vector<AutoPoint> masterLane;
     std::vector<int> masterReturns;   // the master's chain: its output modules' return slots, in order
     std::vector<uint8_t> masterLoops; // per entry of `masterReturns`: 1 for an effect loop
+    bool anyDelay = false;            // some track waits for another (§3.5): only then are the delay lines written
     /// Every buffer the clips point at, and recently dropped ones kept a little longer so a fade-out that started
     /// before this snapshot can finish reading them.
     std::vector<std::shared_ptr<const AudioBuffer>> buffers;

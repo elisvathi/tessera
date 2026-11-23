@@ -971,6 +971,76 @@ TEST_CASE("performance: playing and mixing audio tracks stays inside its budget 
 #endif
 }
 
+TEST_CASE("performance: mixing what comes back on Track Out IN stays cheap with other modules in between") {
+    // Nine note tracks that come back on a Track Out's IN and a drum track with six lane INs, as in a patch that mixes
+    // its synths through Tessera. Between two samples Rack runs every other module, which pushes Tessera's state out
+    // of the cache: a 4 MB sweep plays that part, and its own time is taken off.
+    Rig rig(4.0, dc);
+    MixPlan plan;
+    int slot = 0;
+    std::vector<std::pair<TrackId, int>> feeds;
+    for (int t = 0; t < 10; t++) {
+        Track nt;
+        nt.id = rig.song.newId<TrackId>();
+        nt.name = "Synth " + std::to_string(t);
+        nt.type = t == 9 ? TrackType::Drum : TrackType::Instrument;
+        rig.song.tracks.push_back(nt);
+        plan.busSlots.push_back({nt.id, t + 1});
+        for (int k = 0; k < (t == 9 ? 6 : 1); k++) {
+            MixPlan::Return r;
+            r.track = nt.id;
+            r.slot = slot;
+            r.source = t == 9;
+            r.lane = t == 9 ? k : -1;
+            plan.returns.push_back(r);
+            feeds.push_back({nt.id, slot++});
+        }
+    }
+    rig.slots.sync(rig.song);
+    rig.notes = buildSnapshot(rig.song, rig.slots);
+    rig.engine->setSnapshot(rig.notes.get());
+    rig.old.push_back(std::move(rig.audio));
+    rig.audio = buildAudioSnapshot(rig.song, rig.buffers, kRate, rig.tempo, {}, plan).snapshot;
+    rig.player->setSnapshot(rig.audio.get());
+    OutputBus bus;
+    std::vector<uint8_t> others(4 << 20, 1);
+    auto sweep = [&] {
+        for (size_t k = 0; k < others.size(); k += 64)
+            others[k]++;
+    };
+    // Only the mix is timed; an empty timing is taken off, so the clock's own cost doesn't count.
+    auto run = [&](bool playing, bool mix) {
+        playing ? rig.engine->play() : rig.engine->stop();
+        float left = 0, right = 0;
+        double total = 0;
+        for (int64_t n = 0; n < 24000; n++) {
+            for (const auto& [track, s] : feeds)
+                bus.returns().write(n, s, track, 0.1f, 0.1f);
+            sweep();
+            auto start = std::chrono::steady_clock::now();
+            if (mix) {
+                rig.engine->process(bus.beginWrite(n), rig.events);
+                bus.publish(n);
+                AudioPlayer::Rack rack{&bus.returns(), bus.beginAudioWrite(n), n};
+                rack.parts = &bus.partLevels();
+                rig.player->process(*rig.engine, left, right, rack);
+            }
+            total += std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
+        }
+        return total / 24000;
+    };
+    double clock = run(false, false);
+    double stopped = run(false, true) - clock, playing = run(true, true) - clock;
+    MESSAGE("10 tracks coming back on IN, cache swept between samples: " << stopped << " ns a sample stopped, "
+                                                                          << playing << " playing");
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
+    // Measured on 23 Nov (-O2): about 1000 ns stopped, 1600 before the mix's per-track state was packed.
+    CHECK(stopped < 1500);
+#else
+    CHECK(stopped < 200000);
+#endif
+}
+
 TEST_CASE("a drum lane or an input sends alone, after its own level, whatever the track's fader") {
     Song song = makeDefaultSong();
     FakeBuffers buffers;
@@ -1342,3 +1412,4 @@ TEST_CASE("a silent audio track keeps its fader moving while it rests") {
         CHECK(rig.step() == 0.f);
     CHECK(rig.player->level(0, 0) == 0.f);
 }
+

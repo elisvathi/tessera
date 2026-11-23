@@ -3339,3 +3339,17 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
   any modulator section). The lower pane's "empty curve waiting for a first point" state is gone with it.
 - **Enter is Stop** (stopped: back to the start), as the ■ button.
 - **DAWproject clips that `reference` another clip's timeline** are read through it (a real project had 38).
+
+## 192. The mix's per-sample work packed for a busy rack (23 Nov)
+
+- **Measured with Rack's meters** on a real patch (9 tracks back on Track Out IN, a drum track's lane INs, synths
+  and a reverb between them): Roll 7.2% stopped, 9.0% playing; timers inside it put 1,250 ns of each sample (of
+  20,833 at 48 kHz) in the audio player while stopped. Alone (the same song, no output modules) it was 1.8%.
+- **Why**: between two of Tessera's samples Rack runs every other module, so the player's state is fetched from
+  memory again each sample. A warm cache halves the cost (benchmark: "mixing what comes back on Track Out IN").
+- **What changed**: each track's per-sample state comes first in TrackRun (two cache lines), the snapshot carries
+  one MixHot line per track with its slots inline, a track without audio clips skips the clip work and its six
+  voice records (an `anyVoice` flag), and the delay lines are written only while some track needs a delay.
+- **Result**: about 6.2% stopped and 7.3% playing on the same patch (averages of five meter readings on a loaded
+  machine); the benchmark went from about 1,600 to 1,000 ns a sample. Further gains need the player's state laid
+  out by field across tracks; left for after the release.

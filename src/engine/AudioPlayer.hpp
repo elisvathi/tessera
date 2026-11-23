@@ -241,11 +241,10 @@ class AudioPlayer {
         float gain = 1; // the part's own gain: unlike the envelope, a steady value says nothing about fades
     };
 
+    /// One track's running state. What every sample reads comes first, packed into a couple of cache lines: between
+    /// two of Tessera's samples Rack runs every other module, which pushes most of this out of the cache, so each line
+    /// touched per sample costs a trip to memory. Block-rate and clip-only state comes after.
     struct TrackRun {
-        std::array<Voice, kVoicesPerTrack> voices{};
-        size_t cursor = 0; // first timeline instance that may play
-        size_t partCursor = 0; // where the last look-up of a clip's parts ended, the likely answer for the next
-        int engineIndex = -1;
         float gainL = 0, gainR = 0, stepL = 0, stepR = 0; // fader and pan, ramping
         float outGain = 0, outStep = 0;     // OUT: the clips while the track is heard, ramping to 0 when muted (§4.5)
         float clipsGain = 1, clipsStep = 0; // the clips' source Level
@@ -254,20 +253,29 @@ class AudioPlayer {
         // mute never multiplies two ramps into a click.
         float heardGain = 0, heardStep = 0;
         float heardOwnGain = 0, heardOwnStep = 0;
-        std::array<float, kMaxSendsPerTrack> sendGain{}, sendStep{};
-        std::array<size_t, kMaxSendsPerTrack> sendCursor{};
-        std::array<float, kMaxSendsPerTrack> sendPeak{};
-        std::array<size_t, 2 * PartLevels::kPerSlot> partLaneCursor{};
-        int partEntries = 0; // PartLevels entries it filled last block, cleared when its lanes go
         float outPeak = 0;
+        float peakL = 0, peakR = 0;
         // This sample's signals, for the taps.
         float inL = 0, inR = 0, soundL = 0, soundR = 0, stemL = 0, stemR = 0;
+        int engineIndex = -1;
+        int slot = -1; // the launched slot a steady block plays, or -1 on the timeline
+        // False only when no voice is on: set when one starts, worked out again each block. Checking six voices every
+        // sample means six cache lines another module's sample has likely pushed out.
+        bool anyVoice = false;
         bool fresh = true;    // a track just seen starts at its fader: nothing of it plays yet, so nothing to ramp
         bool steady = false;  // its voices step on unchanged for the rest of this block
         bool resting = false; // silent and nothing starts in this block: only silence is written (see process())
         bool fed = false;     // another track sends to it, so it can't rest
-        int slot = -1;        // the launched slot a steady block plays, or -1 on the timeline
-        float peakL = 0, peakR = 0;
+        // Read every sample only by tracks that send.
+        std::array<float, kMaxSendsPerTrack> sendGain{}, sendStep{};
+        std::array<float, kMaxSendsPerTrack> sendPeak{};
+        // Read only while voices play, or once a block.
+        std::array<Voice, kVoicesPerTrack> voices{};
+        size_t cursor = 0;     // first timeline instance that may play
+        size_t partCursor = 0; // where the last look-up of a clip's parts ended, the likely answer for the next
+        std::array<size_t, kMaxSendsPerTrack> sendCursor{};
+        std::array<size_t, 2 * PartLevels::kPerSlot> partLaneCursor{};
+        int partEntries = 0; // PartLevels entries it filled last block, cleared when its lanes go
     };
 
     /// What should play on `track` at song tick `t`, with the launched clip `elapsed` ticks in. With `peek` it only
@@ -317,6 +325,9 @@ class AudioPlayer {
     float envelopeOf(const AudioInstancePlay& a, double songTick, double ticksPerClip, float seam) const;
     void startBlock(const Engine& engine, PartLevels* parts);
     bool partsStale = true; // the snapshot changed since the part lanes were last published
+    // Samples each bus slot's delay line holds since it was last written without a gap: a longer delay reads silence
+    // until it fills, as the lines are only written while some track needs one.
+    std::array<int, kMaxTracks> lineFill{};
     std::array<bool, kMaxTracks> partSlotUsed{}; // slots with entries in PartLevels, to clear when their lanes go
     /// Plays the lanes on a track's parts for this block: the clips' Level and pan into `clips` and `clipsPan`, and
     /// every part's values into `parts` (when set) for the output modules.

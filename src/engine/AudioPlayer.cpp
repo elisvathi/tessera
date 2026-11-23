@@ -171,6 +171,8 @@ void AudioPlayer::setSnapshot(const AudioSnapshot* next) {
         return;
     previewFind = true;
     partsStale = true;
+    if (!next || !next->anyDelay)
+        lineFill.fill(0);
     // Each track keeps its voices and its ramping gains, found again by ID: tracks may have moved.
     static_assert(kMaxTracks * 2 <= 256, "ghost runs fit");
     size_t oldCount = snapshot ? snapshot->tracks.size() + ghosts : ghosts;
@@ -205,6 +207,7 @@ void AudioPlayer::setSnapshot(const AudioSnapshot* next) {
     }
     for (size_t j = 0; j < newCount + ghostCount; j++) {
         TrackRun& run = spare[j];
+        run.anyVoice = true; // worked out again at the next block
         for (Voice& v : run.voices) {
             if (!v.on)
                 continue;
@@ -575,14 +578,15 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             if (undisturbed && int(i) != previewTrackIndex &&
                 (run.engineIndex < 0 || engine.playingSlot(size_t(run.engineIndex)) == run.slot)) {
                 // Silence still goes out: OUT and the delay line would otherwise repeat an old sample.
-                const AudioTrackPlay& tp = snapshot->tracks[i];
+                const MixHot& tp = snapshot->hot[i];
                 if (tp.busSlot >= 0 && tp.busSlot < kMaxTracks) {
                     if (rack.out)
-                        rack.out[tp.busSlot] = {tp.id.value, 0.f, 0.f};
-                    if (float* mem = delays.load(std::memory_order_acquire)) {
+                        rack.out[tp.busSlot] = {tp.id, 0.f, 0.f};
+                    if (float* mem = snapshot->anyDelay ? delays.load(std::memory_order_acquire) : nullptr) {
                         float* line = mem + size_t(tp.busSlot) * 2 * kMaxDelay;
                         line[delayPos * 2] = 0;
                         line[delayPos * 2 + 1] = 0;
+                        lineFill[size_t(tp.busSlot)] = std::min(lineFill[size_t(tp.busSlot)] + 1, kMaxDelay);
                     }
                 }
                 continue;
@@ -598,15 +602,21 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         bool quick =
             steady && run.steady &&
             (run.slot < 0 || (run.engineIndex >= 0 && engine.playingSlot(size_t(run.engineIndex)) == run.slot));
+        // A track without audio clips (its sound comes back from its Track Outs) starts no voices: it skips the clip
+        // work once its last voice has gone.
+        bool clipless = i < count && !snapshot->hot[i].hasClips && int(i) != previewTrackIndex;
         if (quick) {
-            for (Voice& v : run.voices)
-                if (v.on)
-                    advance(v);
+            if (run.anyVoice)
+                for (Voice& v : run.voices)
+                    if (v.on)
+                        advance(v);
+        } else if (clipless && !run.anyVoice) {
+            run.steady = false;
         } else {
             run.steady = false;
             std::array<Wanted, 2> want;
             int n = 0;
-            if (i < count && playing) {
+            if (i < count && playing && !clipless) {
                 n = wanted(engine, snapshot->tracks[i], run, want, song, engineElapsed(engine, run), false);
                 if (blockPos == 0)
                     run.steady = steadyAhead(engine, snapshot->tracks[i], run, want, n, song);
@@ -618,10 +628,14 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         }
 
         float sl = 0, sr = 0;
-        for (Voice& v : run.voices) {
+        bool voiceOn = false;
+        Voice* voicesEnd = run.voices.data() + (run.anyVoice ? run.voices.size() : 0);
+        for (Voice* vp = run.voices.data(); vp != voicesEnd; ++vp) {
+            Voice& v = *vp;
             if (!v.on)
                 continue;
             any = true;
+            voiceOn = true;
             // Leaving voices keep their own pace; the others were placed for this sample by follow().
             if (!quick && v.leaving && !v.advanced)
                 advance(v);
@@ -647,23 +661,31 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                     v = Voice{};
             }
         }
+        if (blockPos == 0)
+            run.anyVoice = voiceOn;
         float meterL = NAN, meterR = NAN; // what its meter shows, when that isn't what it adds to the master
         if (i < count) {
-            const AudioTrackPlay& tp = snapshot->tracks[i];
+            const MixHot& tp = snapshot->hot[i];
+            TrackId id(tp.id);
             run.clipsGain += run.clipsStep;
             sl *= run.clipsGain * run.clipsPanL;
             sr *= run.clipsGain * run.clipsPanR;
             float clipsL = sl, clipsR = sr;
             // The track's own sources (a Drum Out's lane INs) join its clips.
             float srcL = 0, srcR = 0;
-            if (rack.returns)
-                for (int slot : tp.sources) {
-                    float rl, rr;
-                    if (rack.returns->read(rack.frame, slot, tp.id, rl, rr)) {
-                        srcL += rl;
-                        srcR += rr;
-                    }
+            auto addSource = [&](int slot) {
+                float rl, rr;
+                if (rack.returns->read(rack.frame, slot, id, rl, rr)) {
+                    srcL += rl;
+                    srcR += rr;
                 }
+            };
+            if (rack.returns && tp.inlined)
+                for (int k = 0; k < tp.sources; k++)
+                    addSource(tp.source[k]);
+            else if (rack.returns)
+                for (int slot : snapshot->tracks[i].sources)
+                    addSource(slot);
             // A muted (or soloed-away) track's own sound stops; what other tracks send to it keeps coming, so an
             // effect's tail is ready on unmute (§4.5).
             run.outGain += run.outStep;
@@ -677,12 +699,26 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                 sr += rack.rollInR;
             }
             if (rack.out && tp.busSlot >= 0 && tp.busSlot < kMaxTracks)
-                rack.out[tp.busSlot] = {tp.id.value, sl, sr};
+                rack.out[tp.busSlot] = {tp.id, sl, sr};
             // Then its Track Outs in order: each adds what its IN brings, or, as an effect loop, sends the sound so far
             // to its OUT and blends in what comes back (DECISIONS §153).
             run.outPeak = std::max(run.outPeak, std::max(std::abs(sl), std::abs(sr)));
             float inL = 0, inR = 0;
-            runChain(tp.returns, tp.loops, tp.id, rack, sl, sr, inL, inR);
+            if (tp.inlined) {
+                // Plain inputs only (no effect loop): each adds what its IN brings.
+                for (int k = 0; k < tp.returns && rack.returns; k++) {
+                    float rl, rr;
+                    if (rack.returns->read(rack.frame, tp.ret[k], id, rl, rr)) {
+                        sl += rl;
+                        sr += rr;
+                        inL += rl;
+                        inR += rr;
+                    }
+                }
+            } else {
+                const AudioTrackPlay& full = snapshot->tracks[i];
+                runChain(full.returns, full.loops, id, rack, sl, sr, inL, inR);
+            }
             run.inL = tp.rollIn ? rack.rollInL : srcL + inL;
             run.inR = tp.rollIn ? rack.rollInR : srcR + inR;
             run.soundL = sl;
@@ -691,9 +727,9 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             run.gainR += run.stepR;
             float postL = sl * run.gainL, postR = sr * run.gainR;
             // Sends go to tracks later in the order, so they reach those tracks' OUT this same sample.
-            size_t sendCount = std::min<size_t>(tp.sends.size(), kMaxSendsPerTrack);
+            size_t sendCount = tp.sends;
             for (size_t k = 0; k < sendCount; k++) {
-                const SendPlay& s = tp.sends[k];
+                const SendPlay& s = snapshot->tracks[i].sends[k];
                 run.sendGain[k] += run.sendStep[k];
                 if (s.to < 0 || s.to >= int(kMaxTracks))
                     continue;
@@ -706,7 +742,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
                     // A lane IN or one input: what it adds to the track, read again from its return slot.
                     float rl = 0, rr = 0;
                     if (rack.returns && s.slot >= 0)
-                        rack.returns->read(rack.frame, s.slot, tp.id, rl, rr);
+                        rack.returns->read(rack.frame, s.slot, id, rl, rr);
                     xl = rl * g;
                     xr = rr * g;
                 } else {
@@ -731,16 +767,19 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
         }
         // Delay compensation: this track waits for the latest one (by its bus slot, which never moves).
         if (i < count) {
-            const AudioTrackPlay& tp = snapshot->tracks[i];
-            float* mem = delays.load(std::memory_order_acquire);
+            const MixHot& tp = snapshot->hot[i];
+            float* mem = snapshot->anyDelay ? delays.load(std::memory_order_acquire) : nullptr;
             if (mem && tp.busSlot >= 0 && tp.busSlot < kMaxTracks) {
                 float* line = mem + size_t(tp.busSlot) * 2 * kMaxDelay;
                 line[delayPos * 2] = sl;
                 line[delayPos * 2 + 1] = sr;
+                int& filled = lineFill[size_t(tp.busSlot)];
+                filled = std::min(filled + 1, kMaxDelay);
                 if (tp.delay > 0) {
                     size_t r = (delayPos + size_t(kMaxDelay) - size_t(tp.delay)) % size_t(kMaxDelay);
-                    sl = line[r * 2];
-                    sr = line[r * 2 + 1];
+                    bool ready = filled > tp.delay;
+                    sl = ready ? line[r * 2] : 0.f;
+                    sr = ready ? line[r * 2 + 1] : 0.f;
                 }
             }
         }
@@ -761,7 +800,7 @@ void AudioPlayer::process(const Engine& engine, float& left, float& right, const
             for (size_t k = 0; k < size_t(kMaxSendsPerTrack); k++)
                 run.sendGain[k] += run.sendStep[k] * rest;
         }
-        int group = i < count ? snapshot->tracks[i].group : -1;
+        int group = i < count ? snapshot->hot[i].group : -1;
         if (group >= 0 && group < int(kMaxTracks)) {
             groupRuns[size_t(group)].busL += sl;
             groupRuns[size_t(group)].busR += sr;
@@ -1190,6 +1229,7 @@ void AudioPlayer::startVoice(TrackRun& run, const Wanted& w, float fadeSeconds) 
     Voice& v = *slot;
     v = Voice{};
     v.on = true;
+    run.anyVoice = true;
     v.key = w.key;
     v.clip = w.clip;
     v.clipId = c.clip;

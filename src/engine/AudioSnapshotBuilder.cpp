@@ -260,6 +260,7 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         }
         std::stable_sort(tp.instances.begin(), tp.instances.end(),
                          [](const AudioInstancePlay& x, const AudioInstancePlay& y) { return x.position < y.position; });
+        tp.hasClips = !tp.instances.empty() || std::any_of(tp.slots.begin(), tp.slots.end(), [](int c) { return c >= 0; });
         // Where neighbours overlap, the overlap is their crossfade (§4.3).
         auto endOf = [&](const AudioInstancePlay& x) {
             return x.position + x.length * snap.clips[size_t(x.clip)].songTicksPerTick(tempo);
@@ -301,8 +302,10 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
         if (const Track* t = song.findTrack(tp.id))
             latest = std::max(latest, latency(*t));
     for (AudioTrackPlay& tp : snap.tracks)
-        if (const Track* t = song.findTrack(tp.id))
+        if (const Track* t = song.findTrack(tp.id)) {
             tp.delay = std::min(latest - latency(*t), AudioPlayer::kMaxDelay - 1);
+            snap.anyDelay = snap.anyDelay || tp.delay > 0;
+        }
     // Each send by the index of its receiving track, which comes later in the order.
     for (size_t i = 0; i < snap.tracks.size(); i++) {
         const Track* t = song.findTrack(snap.tracks[i].id);
@@ -335,6 +338,29 @@ AudioBuild buildAudioSnapshot(const Song& song, AudioBuffers& buffers, double en
                     snap.tracks[i].sends.push_back(std::move(play));
                 }
         }
+    }
+    for (const AudioTrackPlay& tp : snap.tracks) {
+        MixHot h;
+        h.id = tp.id.value;
+        h.busSlot = tp.busSlot;
+        h.delay = tp.delay;
+        h.group = tp.group;
+        h.sends = uint8_t(std::min<size_t>(tp.sends.size(), kMaxSendsPerTrack));
+        h.hasClips = tp.hasClips;
+        h.toMaster = tp.toMaster;
+        h.hearRollIn = tp.hearRollIn;
+        h.rollIn = tp.rollIn;
+        bool loop = std::any_of(tp.loops.begin(), tp.loops.end(), [](uint8_t l) { return l != 0; });
+        h.inlined = !loop && tp.sources.size() <= size_t(MixHot::kInline) && tp.returns.size() <= size_t(MixHot::kInline);
+        if (h.inlined) {
+            h.sources = uint8_t(tp.sources.size());
+            h.returns = uint8_t(tp.returns.size());
+            for (size_t k = 0; k < tp.sources.size(); k++)
+                h.source[k] = int16_t(tp.sources[k]);
+            for (size_t k = 0; k < tp.returns.size(); k++)
+                h.ret[k] = int16_t(tp.returns[k]);
+        }
+        snap.hot.push_back(h);
     }
     return out;
 }
