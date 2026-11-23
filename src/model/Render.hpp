@@ -139,7 +139,13 @@ std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& 
 /// Where note `index` of `clip` moves when its Motion device reads it on `pass` at `songTick`, its curves read
 /// there (playheads may read a note at any moment). `sinceClip` is how long the track's clip has played (launched,
 /// or the timeline clip under the song), which Curves count from as the engine does; NaN counts from the song's start.
+/// With `laneTick`, the knob lanes on the Motion's settings set them first, read at that song tick as the engine
+/// reads them when the note plays.
 MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
-                        double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN());
+                        double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN(),
+                        double laneTick = std::numeric_limits<double>::quiet_NaN());
+/// Whether an automation lane on `track` or in one of its clips sets a setting of Motion device `motion`. Such a
+/// move follows the song's position, not only the pass, so the piano roll works it out where each note plays.
+bool motionHasLanes(const Song& song, const Track& track, DeviceId motion);
 
 } // namespace tessera::render

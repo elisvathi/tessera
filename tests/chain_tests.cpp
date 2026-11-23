@@ -2781,6 +2781,31 @@ TEST_CASE("a free LFO keeps its speed while a stopped engine slows its modulator
     CHECK(changes(slowed) <= 20);
 }
 
+TEST_CASE("the piano roll moves a Motion's note by a track automation lane on its settings, read where it plays") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = motion.id;
+    const devices::ParamInfo& pitch = devices::motionInfo().params[chain::knob::kMotionPitch];
+    // The lane holds the pitch still for bar 1 and moves it up two semitones from bar 2 of the song.
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.paramTarget = ParamRef{ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
+    lane.points = {{0, devices::normalize(pitch, 0), CurveType::Hold, 0},
+                   {4 * kPpq, devices::normalize(pitch, 2), CurveType::Hold, 0}};
+    song.tracks[0].automation.push_back(lane);
+    Track& track = song.tracks[0];
+
+    CHECK(render::motionHasLanes(song, track, motion.id));
+    CHECK(!render::motionHasLanes(song, track, DeviceId(motion.id.value + 1000)));
+    // Without the lane's song tick the picture is the knobs as set; with it, the lane's value where the note plays.
+    CHECK(render::motionMoveAt(song, track, clip, 0, 0, 0).pitch == 60);
+    CHECK(render::motionMoveAt(song, track, clip, 0, 0, 0, NAN, 0).pitch == 60);
+    CHECK(render::motionMoveAt(song, track, clip, 0, 1, 4 * kPpq, NAN, 4 * kPpq).pitch == 62);
+    song.tracks[0].automation[0].mute = true;
+    CHECK(!render::motionHasLanes(song, song.tracks[0], motion.id));
+}
+
 namespace {
 /// Rising edges of `pitch` on any voice over `samples`.
 int countStarts(Harness& h, int pitch, int64_t samples) {

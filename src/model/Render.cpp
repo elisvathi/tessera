@@ -1540,7 +1540,7 @@ Scale keyOf(const Song& song, const Clip& clip) {
 } // namespace
 
 MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
-                        double songTick, double sinceClip) {
+                        double songTick, double sinceClip, double laneTick) {
     if (index >= clip.notes.size())
         return {};
     const Note& n = clip.notes[index];
@@ -1550,11 +1550,31 @@ MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, 
             motion = d;
     if (!motion || n.muted)
         return {};
-    MovedBy moved = movedAt(song, track, *motion, pass, songTick, sinceClip);
+    std::vector<float> knobs = motion->params;
+    if (std::isfinite(laneTick))
+        applyLanes(song, track, ParamRef::Kind::Device, motion->id.value, laneTick, knobs);
+    MovedBy moved = movedFrom(song, track, *motion, std::move(knobs), pass, songTick, sinceClip);
     int pitch = n.pitch;
     if (moved.steps != 0)
         pitch = moved.inKey ? keyOf(song, clip).stepBy(pitch, moved.steps) : pitch + moved.steps;
     return {std::clamp(pitch, 0, 127), moved.delay, std::max(0.01, moved.lengthScale)};
+}
+
+bool motionHasLanes(const Song& song, const Track& track, DeviceId motion) {
+    auto sets = [&](const std::vector<AutomationEnvelope>& lanes) {
+        return std::any_of(lanes.begin(), lanes.end(), [&](const AutomationEnvelope& l) {
+            return !l.mute && l.paramTarget.kind == ParamRef::Kind::Device && l.paramTarget.owner == motion.value;
+        });
+    };
+    if (sets(track.automation))
+        return true;
+    for (const ArrangerClip& a : track.arrangement)
+        if (const Clip* c = song.findClip(a.clip); c && sets(c->automation))
+            return true;
+    for (const ClipSlot& s : track.slots)
+        if (const Clip* c = s.clip ? song.findClip(*s.clip) : nullptr; c && sets(c->automation))
+            return true;
+    return false;
 }
 
 std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& track, const Clip& clip) {

@@ -216,6 +216,13 @@ class NoteGrid : public TimelineView {
     std::pair<uint64_t, uint64_t> motionFor{~uint64_t(0), 0};
     std::vector<render::MotionMove> motionCurrent;
     std::set<uint64_t> motionNow;
+    // Motion devices with an automation lane on a setting (render::motionHasLanes), found with motionMoves: their
+    // notes move with the song's position, so they are worked out where they play rather than taken from the passes.
+    std::set<uint64_t> motionLaned;
+    /// The song tick where `n` of `clip` plays in `pass`: in the launched clip, the timeline clip under the song, or
+    /// else the first timeline clip that plays it. Where a Motion's automation lanes are read for that note.
+    double noteSongTick(const Track& track, const Clip& clip, const Note& n, int pass, double songTick,
+                        double elapsed, bool launched) const;
     std::vector<CurveStrip> strips; // from the last stripAt, which points into it
     std::vector<std::pair<rack::math::Rect, ClipId>> layerChips;
     rack::math::Rect layerClose;

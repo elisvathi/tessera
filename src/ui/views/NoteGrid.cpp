@@ -1151,6 +1151,11 @@ int NoteGrid::updateMotionMoved() {
     if (key != motionFor) {
         motionMoves = render::motionMoves(m->song(), *track, *clip);
         motionFor = key;
+        motionLaned.clear();
+        for (const Note& n : clip->notes)
+            if (n.motion.valid() && !motionLaned.count(n.motion.value) &&
+                render::motionHasLanes(m->song(), *track, n.motion))
+                motionLaned.insert(n.motion.value);
     }
     // While it plays, the pass it is on; stopped, the first, which plays next.
     int pass = 0;
@@ -1171,13 +1176,28 @@ int NoteGrid::updateMotionMoved() {
     else if (status.onTimeline)
         if (const ArrangerClip* under = instanceAt(*track, Tick(songTick)))
             sinceClip = songTick - double(under->position);
+    bool launched = status.playing >= 0 && status.playing < int(track->slots.size()) &&
+                    track->slots[size_t(status.playing)].clip == clip->id;
+    double loop = std::max(1.0, double(span.length()));
     motionCurrent.assign(clip->notes.size(), render::MotionMove{});
     for (size_t i = 0; i < clip->notes.size() && i < motionMoves.size(); i++) {
         const std::vector<render::MotionMove>& list = motionMoves[i];
         if (list.empty())
             continue;
-        render::MotionMove now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick, sinceClip)
-                                         : list[size_t(pass) % list.size()];
+        const Note& n = clip->notes[i];
+        render::MotionMove now;
+        if (motionLaned.count(n.motion.value)) {
+            // Lanes follow the song: read them where this pass plays the note (playheads read it now), and the
+            // Motion's curves as the cached passes read them.
+            double at = anyTime ? songTick : noteSongTick(*track, *clip, n, pass, songTick, elapsed, launched);
+            size_t k = size_t(pass) % list.size();
+            now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick, sinceClip, at)
+                          : render::motionMoveAt(m->song(), *track, *clip, i, int64_t(k),
+                                                 double(k) * loop + double(n.start - span.start), NAN, at);
+        } else {
+            now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick, sinceClip)
+                          : list[size_t(pass) % list.size()];
+        }
         motionCurrent[i] = now;
         bool moves =
             now.pitch != clip->notes[i].pitch || std::abs(now.delay) > 0.5 || std::abs(now.lengthScale - 1) > 1e-3;
@@ -1185,6 +1205,24 @@ int NoteGrid::updateMotionMoved() {
             motionNow.insert(clip->notes[i].id.value);
     }
     return pass;
+}
+
+double NoteGrid::noteSongTick(const Track& track, const Clip& clip, const Note& n, int pass, double songTick,
+                              double elapsed, bool launched) const {
+    ClipSpan span = clipSpan(clip);
+    double offset = double(n.start - span.start);
+    if (launched && std::isfinite(elapsed)) {
+        double loop = std::max(1.0, double(span.length()));
+        return songTick - (elapsed - double(pass) * loop) + offset;
+    }
+    if (const ArrangerClip* under = instanceAt(track, Tick(songTick)); under && under->clip == clip.id)
+        if (std::optional<double> t = songTickAt(clip, *under, double(n.start), songTick))
+            return *t;
+    for (const ArrangerClip& a : track.arrangement)
+        if (a.clip == clip.id)
+            if (std::optional<double> t = songTickAt(clip, a, double(n.start), double(a.position)))
+                return *t;
+    return songTick + offset;
 }
 
 void NoteGrid::drawMotionGhosts(NVGcontext* vg) {
