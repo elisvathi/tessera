@@ -1613,17 +1613,38 @@ Channel TrackHeaders::mixValue(const TrackRow& row) {
     if (row.mix != TrackRow::Mix::Part) {
         TrackId from, to;
         sendOf(row, from, to);
-        const Send* send = findSend(song, from, to, row.from);
-        return {send ? send->db : kSilentDb, 0};
+        const Track* sender = song.findTrack(from);
+        if (!sender)
+            return {kSilentDb, 0};
+        for (size_t k = 0; k < sender->sends.size(); k++)
+            if (sender->sends[k].to == to && sender->sends[k].from == row.from) {
+                // A Send lane playing moves the send with it, as in the mixer.
+                float db;
+                if (m->audioPlayer().sendAutomated(m->soundIndex(from), int(k), db))
+                    return {db, 0};
+                return {sender->sends[k].db, 0};
+            }
+        return {kSilentDb, 0};
     }
+    // A lane on the part's level or pan, while it plays.
+    float autoDb = NAN, autoPan = NAN;
+    if (m->outputBus())
+        m->outputBus()->partLevels().get(m->busSlotOf(row.track), row.from.key(), autoDb, autoPan);
+    auto automated = [&](Channel c) {
+        if (!std::isnan(autoDb))
+            c.volumeDb = autoDb;
+        if (!std::isnan(autoPan))
+            c.pan = autoPan;
+        return c;
+    };
     if (row.from.kind == SendFrom::Kind::Lane) {
         const Track* t = song.findTrack(row.track);
-        return t && row.from.lane >= 0 && row.from.lane < kDrumInputs ? t->drumInputs[size_t(row.from.lane)]
-                                                                      : Channel();
+        return automated(t && row.from.lane >= 0 && row.from.lane < kDrumInputs ? t->drumInputs[size_t(row.from.lane)]
+                                                                                : Channel());
     }
     SourceLevel level =
         sources::inputLevel(ctx, row.track, row.from.kind == SendFrom::Kind::Input ? row.from.module : -1);
-    return {level.db, level.pan};
+    return automated({level.db, level.pan});
 }
 
 std::string TrackHeaders::mixName(const TrackRow& row) {
@@ -1729,9 +1750,23 @@ void TrackHeaders::drawMixRow(NVGcontext* vg, int index, float top, float h) {
                          part ? c.text1 : c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::text(vg, name, g.name.pos.x, cy, draw::ellipsize(vg, name, mixName(row), g.name.size.x));
     Channel value = mixValue(row);
+    // A lane on the level or pan: a ring in its colour, as on the track's own (§7.3).
+    auto laneRing = [&](LaneDrive drive) -> std::optional<NVGcolor> {
+        TrackId from, to;
+        sendOf(row, from, to);
+        const Track* owner = m->song().findTrack(part ? row.track : from);
+        if (!owner)
+            return std::nullopt;
+        for (const AutomationEnvelope& l : owner->automation)
+            if (l.drive == drive && l.part == row.from.key() && !l.mute && (drive != LaneDrive::Send || l.sendTo == to))
+                return theme::track(l.color ? l.color : owner->color);
+        return std::nullopt;
+    };
     if (g.level.size.x > 0) {
         Rect bar(g.level.pos.x, cy - kLevelBarH / 2, g.level.size.x, kLevelBarH);
         drawLevelBar(vg, bar, 0, value.volumeDb, nvgTransRGBAf(color, 0.4f), nvgTransRGBAf(color, 0.95f));
+        if (std::optional<NVGcolor> ring = laneRing(part ? LaneDrive::Volume : LaneDrive::Send))
+            draw::roundedRectStroke(vg, bar.grow(Vec(2, 3)), 3, *ring, 1.f);
     }
     if (g.dbRight > 0) {
         draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1,
@@ -1739,7 +1774,7 @@ void TrackHeaders::drawMixRow(NVGcontext* vg, int index, float top, float h) {
         draw::text(vg, mono, g.dbRight, cy, audioDraw::dbText(value.volumeDb));
     }
     if (g.pan.size.x > 0)
-        drawPanKnob(vg, g.pan, value.pan, std::nullopt);
+        drawPanKnob(vg, g.pan, value.pan, laneRing(LaneDrive::Pan));
     if (g.mute.size.x > 0) {
         SourceLevel level =
             sources::inputLevel(ctx, row.track, row.from.kind == SendFrom::Kind::Input ? row.from.module : -1);
@@ -1778,6 +1813,13 @@ void TrackHeaders::clickMix(const TrackRow& row, const Hit& hit, int button, Mod
             int index = hit.row;
             menu->addChild(rack::createMenuItem("Rename…", "double-click", [self, index] { self->startMixRename(index); }));
         }
+        EditorContext* c = &ctx;
+        TrackId track = row.track;
+        SendFrom part = row.from;
+        menu->addChild(rack::createMenuItem("Automate its level in the timeline", "",
+                                            [c, track, part] { trackActions::automateMix(*c, track, false, part); }));
+        menu->addChild(rack::createMenuItem("Automate its pan in the timeline", "",
+                                            [c, track, part] { trackActions::automateMix(*c, track, true, part); }));
         menu->addChild(rack::createMenuItem("Reset to 0 dB", "double-click the level", [self, r] {
             Channel value = self->mixValue(r);
             value.volumeDb = 0;

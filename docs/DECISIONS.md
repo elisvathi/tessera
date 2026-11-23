@@ -3441,3 +3441,6 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - An input with no name given is named after the module whose cable goes into its IN (sources::patchedFrom), else IN;
   an unnamed drum lane after the module patched into its lane IN. The name follows the cable, so swapping a synth
   renames it; a typed name stays.
+- **User**: no automation in a part row's right-click menu. A part's menu now has Automate its level / its pan in the
+  timeline (the part lanes of §191); a part's or send's row follows its lane while it plays and wears the lane's ring,
+  as the mixer strip does.
