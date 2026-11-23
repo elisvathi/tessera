@@ -3450,3 +3450,13 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **User**: meters on every header row, without much cost. A part row reads the meter its mixer strip reads (lane IN
   and input meters the audio thread keeps anyway); a send row shows its sender's (or part's) level times the send's
   gain, worked out on the UI thread, so the audio thread does no new work. An estimate for a send, not a measurement.
+
+## 200. Old tile velocity scales go into the notes (23 Nov)
+
+- **Found** replaying songs saved by 2.0.0-2.0.10 in main's engine and this branch's: tiles with a velocity scale
+  (§160 dropped it, and "velScale" was ignored) played louder or softer than before. **User** agreed to convert them.
+- On load, each scale is multiplied into the velocities of the notes the tile plays (clamped to 0..1, as main did).
+  The clip itself takes it when no use plays the clip at 100%; tiles with another scale, or sharing the clip with a
+  launcher slot or a 100% tile, get a copy (as Make unique makes), one per scale. Copies are taken before any clip is
+  scaled. The three real songs that had scales now play note for note as on main.
+

@@ -53,7 +53,7 @@ Hover a clip's edges and body. The mouse cursor shows what a drag will do.
 | **Alt + body** | Slips the notes inside the tile, without moving the tile. |
 | **Alt + right edge** | Time-stretches the tile. The readout shows the factor (×2, ×0.5…). |
 | **Title bar** | Moves the clip, like its body: along the track or to another track. |
-| **Level line** (audio clips) | The clip's gain: see [Audio](17-audio.md). Note clips have no level line; change their notes' velocity in the piano roll, or with a **Velocity** device. |
+| **Level line** (audio clips) | The clip's gain: see [Audio](17-audio.md). Note clips have no level line; change their notes' velocity in the piano roll, or with a **Velocity** device. A song from before Tessera 2.0.12 whose tiles had a velocity keeps its sound: the velocity is written into the notes, and a tile that played a shared clip differently gets its own copy of it. |
 
 With the keys: **Shift+Alt+Left / Right** makes the selection shorter or longer by one grid step. **Up / Down**
 transposes the selected tiles. Transpose and stretch change only that tile, not the clip. On a track with

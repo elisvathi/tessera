@@ -1977,6 +1977,67 @@ void applyOldTakeChoices(Song& s, const json_t* tracksJ) {
             playOldTake(*c, take);
 }
 
+/// Songs saved before 15 Nov 2026 could give a timeline tile a velocity scale ("velScale"), which no longer exists
+/// (DECISIONS §160). Its notes keep sounding as they did: each scale is multiplied into the velocities of the notes,
+/// in the clip itself when every use of it had that scale, else in a copy for the tiles that had it.
+void applyOldVelocityScales(Song& s, const json_t* tracksJ) {
+    std::map<uint64_t, float> scaleOf; // tile ID -> its scale, only where it wasn't 100%
+    forEach(tracksJ, [&](const json_t* tj) {
+        forEach(get(tj, "arrangement"), [&](const json_t* aj) {
+            float scale = getFloat(aj, "velScale", 1);
+            if (std::isfinite(scale) && std::abs(scale - 1) > 1e-4f)
+                scaleOf[readId<ArrangementId>(get(aj, "id")).value] = std::max(0.f, scale);
+        });
+    });
+    if (scaleOf.empty())
+        return;
+    auto tileScale = [&](const ArrangerClip& a) {
+        auto it = scaleOf.find(a.id.value);
+        return it == scaleOf.end() ? 1.f : it->second;
+    };
+    // Each clip's uses, by scale: a launcher slot plays the clip as it is.
+    std::map<ClipId, std::map<float, int>> uses;
+    for (const Track& t : s.tracks) {
+        for (const ClipSlot& slot : t.slots)
+            if (slot.clip)
+                uses[*slot.clip][1.f]++;
+        for (const ArrangerClip& a : t.arrangement)
+            uses[a.clip][tileScale(a)]++;
+    }
+    auto scaleNotes = [](Clip& c, float scale) {
+        for (Note& n : c.notes)
+            n.velocity = std::clamp(n.velocity * scale, 0.f, 1.f);
+    };
+    NextId nextId = [&] { return s.nextId++; };
+    std::map<std::pair<ClipId, float>, ClipId> copies;
+    std::map<ClipId, float> ownScale; // clips whose own notes take a scale
+    for (Track& t : s.tracks)
+        for (ArrangerClip& a : t.arrangement) {
+            float scale = tileScale(a);
+            Clip* source = s.findClip(a.clip);
+            if (scale == 1.f || !source || source->notes.empty())
+                continue;
+            // No use plays the clip as it is: the first scale met goes into the clip itself, so it doesn't stay
+            // behind unused; other scales get copies.
+            const std::map<float, int>& byScale = uses[a.clip];
+            if (!byScale.count(1.f) && !ownScale.count(a.clip))
+                ownScale[a.clip] = scale;
+            if (auto own = ownScale.find(a.clip); own != ownScale.end() && own->second == scale)
+                continue; // scaled below, once every copy was taken from the notes as they were
+            auto [made, isNew] = copies.emplace(std::make_pair(a.clip, scale), ClipId());
+            if (isNew) {
+                Clip copy = copyClip(*source, nextId);
+                scaleNotes(copy, scale);
+                made->second = copy.id;
+                s.clips.emplace(copy.id, std::move(copy));
+            }
+            a.clip = made->second;
+        }
+    for (const auto& [clip, scale] : ownScale)
+        if (Clip* c = s.findClip(clip))
+            scaleNotes(*c, scale);
+}
+
 } // namespace
 
 Song songFromJson(const json_t* songJ, int schemaVersion) {
@@ -2017,6 +2078,7 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
     });
     forEach(get(j, "tracks"), [&](const json_t* tj) { s.tracks.push_back(trackFromJson(tj)); });
     applyOldTakeChoices(s, get(j, "tracks"));
+    applyOldVelocityScales(s, get(j, "tracks"));
     motionGroupsToDevices(get(j, "clips"), s);
     forEach(get(j, "groups"), [&](const json_t* gj) {
         TrackGroup g;
