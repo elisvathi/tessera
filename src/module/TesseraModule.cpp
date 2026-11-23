@@ -1290,11 +1290,13 @@ float TesseraModule::knobBase(const ParamRef& ref) const {
     return snap->knobs[size_t(k)];
 }
 
-float TesseraModule::liveKnob(const ParamRef& ref) const {
+float TesseraModule::liveKnob(const ParamRef& ref) const { return knobNow(ref).value_or(0.f); }
+
+std::optional<float> TesseraModule::knobNow(const ParamRef& ref) const {
     const Snapshot* snap = snapshots.latest();
     int k = snap ? snap->knobIndex(ref) : -1;
     if (k < 0)
-        return 0;
+        return std::nullopt;
     bool moving = holds(ref);
     for (const KnobModulation& km : snap->modulated)
         moving |= km.knob == k;

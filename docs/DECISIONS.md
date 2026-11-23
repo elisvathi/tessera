@@ -3473,3 +3473,18 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - Every way of making or showing a lane opens the track, and the part when the lane is a part's
   (EditorState::showLaneRows). The track menu's "Show automation lanes" is "Show lanes, parts and sends".
 - The Master row keeps its own lanes button. A patch saved with a track's lanes open opens that track once.
+
+## 202. A Motion's moved notes show whatever moves its settings (23 Nov)
+
+- **User**: a lane on a Motion setting, then an LFO on it, moved the sound but not the note in the piano roll;
+  "this should be generalized. I don't want to go back to this issue".
+- One model function draws every moved note, render::motionMoveLive, mirroring Engine::motionKnob: the Motion's knob
+  (lanes, every modulator except "Per pass" ones) plus its "Per pass" modulators at the note's pass, through the Motion
+  in the chain the clip plays through (its own chain while it plays one).
+- When playheads may read the note at any moment, the knob is the engine's own right now (TesseraModule::knobNow), so
+  anything that moves it shows. Otherwise it is worked out for when the note plays: track lanes at the song tick,
+  the clip's own lanes at the note's place, and modulators that depend on the song alone (Curve, synced LFO not
+  restarting per note, Steps, Ramp, Random with the engine's roll, Macro) read then with their settings as the engine
+  holds them now; the others (free LFO, LFO restarting per note, Envelope, Note) give their output now.
+- A new modulator type must be sorted into one of those groups in movesWithSong / mods::perPass; the test "the piano
+  roll moves a Motion's note as the engine does, whatever moves its settings" walks through every type.

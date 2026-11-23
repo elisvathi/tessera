@@ -1540,7 +1540,7 @@ Scale keyOf(const Song& song, const Clip& clip) {
 } // namespace
 
 MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
-                        double songTick, double sinceClip, double laneTick) {
+                        double songTick, double sinceClip) {
     if (index >= clip.notes.size())
         return {};
     const Note& n = clip.notes[index];
@@ -1550,31 +1550,139 @@ MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, 
             motion = d;
     if (!motion || n.muted)
         return {};
-    std::vector<float> knobs = motion->params;
-    if (std::isfinite(laneTick))
-        applyLanes(song, track, ParamRef::Kind::Device, motion->id.value, laneTick, knobs);
-    MovedBy moved = movedFrom(song, track, *motion, std::move(knobs), pass, songTick, sinceClip);
+    MovedBy moved = movedAt(song, track, *motion, pass, songTick, sinceClip);
     int pitch = n.pitch;
     if (moved.steps != 0)
         pitch = moved.inKey ? keyOf(song, clip).stepBy(pitch, moved.steps) : pitch + moved.steps;
     return {std::clamp(pitch, 0, 127), moved.delay, std::max(0.01, moved.lengthScale)};
 }
 
-bool motionHasLanes(const Song& song, const Track& track, DeviceId motion) {
-    auto sets = [&](const std::vector<AutomationEnvelope>& lanes) {
-        return std::any_of(lanes.begin(), lanes.end(), [&](const AutomationEnvelope& l) {
-            return !l.mute && l.paramTarget.kind == ParamRef::Kind::Device && l.paramTarget.owner == motion.value;
-        });
+namespace {
+
+/// Motion device `id` in `devices`, or in a playhead's own devices among them; nullptr when it isn't there.
+const Device* findMotion(const std::vector<Device>& devices, DeviceId id) {
+    for (const Device& d : devices) {
+        if (d.type == DeviceType::Motion && d.id == id)
+            return &d;
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                if (b.type == DeviceType::Motion && b.id == id)
+                    return &b;
+    }
+    return nullptr;
+}
+
+/// Calls `visit(modulator, song level)` for every modulator that may reach a device of `track` or `clip`: the song's,
+/// the track's and the clip's own, and those of every device in either chain (playheads' own devices too).
+template <typename Visit> void forEachReachingModulator(const Song& song, const Track& track, const Clip& clip, Visit visit) {
+    for (const Modulator& m : song.modulators)
+        visit(m, true);
+    auto chain = [&](const std::vector<Modulator>& own, const std::vector<Device>& devices) {
+        for (const Modulator& m : own)
+            visit(m, false);
+        for (const Device& d : devices) {
+            for (const Modulator& m : d.modulators)
+                visit(m, false);
+            for (const Playhead& p : d.playheads)
+                for (const Device& b : p.branch)
+                    for (const Modulator& m : b.modulators)
+                        visit(m, false);
+        }
     };
-    if (sets(track.automation))
-        return true;
-    for (const ArrangerClip& a : track.arrangement)
-        if (const Clip* c = song.findClip(a.clip); c && sets(c->automation))
-            return true;
-    for (const ClipSlot& s : track.slots)
-        if (const Clip* c = s.clip ? song.findClip(*s.clip) : nullptr; c && sets(c->automation))
-            return true;
-    return false;
+    chain(track.modulators, track.devices);
+    chain(clip.modulators, clip.devices);
+}
+
+} // namespace
+
+MotionMove motionMoveLive(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass, double at,
+                          double sinceClip, const EngineNow& engine, bool now) {
+    if (index >= clip.notes.size())
+        return {};
+    const Note& n = clip.notes[index];
+    const Device* motion = n.muted ? nullptr : findMotion(clip.usesOwnChain() ? clip.devices : track.devices, n.motion);
+    if (!motion)
+        return {};
+    uint64_t owner = motion->id.value;
+    size_t count = motion->params.size();
+    auto routes = [&](const Modulator& m, auto add) {
+        for (const Modulation& r : m.routes)
+            if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device && r.target.owner == owner &&
+                r.target.param < count)
+                add(r.target.param, r.amount);
+    };
+    // A modulator's settings as they are now: another modulator or a lane may be moving them.
+    auto settingsOf = [&](const Modulator& m) {
+        std::vector<float> settings = m.params;
+        if (engine.knob)
+            for (size_t k = 0; k < settings.size(); k++)
+                settings[k] = engine.knob(ParamRef{ParamRef::Kind::Modulator, m.id.value, uint16_t(k)}).value_or(m.params[k]);
+        return settings;
+    };
+    std::vector<float> knobs = motion->params;
+    if (now && engine.knob) {
+        for (size_t p = 0; p < count; p++)
+            knobs[p] = engine.knob(ParamRef{ParamRef::Kind::Device, owner, uint16_t(p)}).value_or(knobs[p]);
+    } else {
+        // Lanes: the track's in song time, the clip's own in clip time, where the note is.
+        std::vector<char> setByLane(count, 0);
+        auto lane = [&](const AutomationEnvelope& l, double t, bool modulate) {
+            if (l.mute || l.paramTarget.kind != ParamRef::Kind::Device || l.paramTarget.owner != owner ||
+                l.paramTarget.param >= count)
+                return;
+            size_t p = l.paramTarget.param;
+            float v = evaluate(l, t);
+            knobs[p] = modulate && setByLane[p] ? std::clamp(knobs[p] + v - 0.5f, 0.f, 1.f) : v;
+            if (!modulate)
+                setByLane[p] = 1;
+        };
+        for (const AutomationEnvelope& l : track.automation)
+            lane(l, at, false);
+        for (const AutomationEnvelope& l : clip.automation)
+            lane(l, double(n.start), l.combine == CombineMode::Modulate);
+        forEachReachingModulator(song, track, clip, [&](const Modulator& m, bool songLevel) {
+            if (mods::perPass(m.type, m.params.data()))
+                return;
+            float v = 0;
+            if (movesWithSong(m)) {
+                std::vector<float> settings = settingsOf(m);
+                mods::State state;
+                mods::Clock clock;
+                clock.songTick = at;
+                clock.sinceClip = songLevel ? std::numeric_limits<double>::quiet_NaN() : sinceClip;
+                clock.timeSig = song.timeSig;
+                clock.seed = variationSeed(m.variation, engine.roll, m.id.value);
+                mods::Drawn drawn = mods::drawnOf(m);
+                v = mods::evaluate(m.type, m.id.value, settings.data(), state, clock, m.steps.data(),
+                                   int(m.steps.size()), &drawn);
+            } else if (engine.output) {
+                v = engine.output(m.id);
+            }
+            routes(m, [&](size_t p, float amount) { knobs[p] += amount * v; });
+        });
+        for (float& k : knobs)
+            k = std::clamp(k, 0.f, 1.f);
+    }
+    // "Per pass" modulators step with the note's pass, on top, as the engine adds them (Engine::motionKnob).
+    forEachReachingModulator(song, track, clip, [&](const Modulator& m, bool) {
+        if (!mods::perPass(m.type, m.params.data()))
+            return;
+        mods::Drawn drawn = mods::drawnOf(m);
+        std::vector<float> settings = settingsOf(m);
+        float v = mods::passValue(m.type, m.id.value, settings.data(), pass, song.timeSig, m.steps.data(),
+                                  int(m.steps.size()), &drawn);
+        routes(m, [&](size_t p, float amount) { knobs[p] += amount * v; });
+    });
+    auto value = [&](int k) {
+        return devices::display(devices::motionInfo().params[size_t(k)], std::clamp(knobs[size_t(k)], 0.f, 1.f));
+    };
+    int steps = int(std::lround(value(chain::knob::kMotionPitch)));
+    int pitch = n.pitch;
+    if (steps != 0)
+        pitch = value(chain::knob::kMotionInKey) > 0.5f ? keyOf(song, clip).stepBy(pitch, steps) : pitch + steps;
+    double delay = double(value(chain::knob::kMotionTime)) * double(kPpq / 4);
+    double lengthScale = 1 + double(value(chain::knob::kMotionLength)) / 100;
+    return {std::clamp(pitch, 0, 127), delay, std::max(0.01, lengthScale)};
 }
 
 std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& track, const Clip& clip) {

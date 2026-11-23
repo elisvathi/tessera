@@ -579,9 +579,11 @@ or automation lane can move these settings too.
 **Seeing it.** A note a Motion moves shows where it plays, in the Motion's colour: the written note turns see-through
 with a dashed outline, a thin line runs from its middle (a dot) to the middle of the note where it sounds, and that
 note says what changed ("+7 st", "+2 steps", or both). It sits at the new pitch, starts later by the Time setting and
-is as long as Length makes it. With curves on its settings it follows them: with playheads (which can read the note at
-any moment) it is where the curves are right now, moving as the song plays; without, it is the pass playing now (the
-first one when stopped). When the note moves out of view, a marker at the top or bottom edge
+is as long as Length makes it. With curves, other modulators or automation lanes on its settings it follows them:
+with playheads (which can read the note at any moment) it is where they are right now, moving as the song plays;
+without, it is where they will be when the note plays in the pass playing now (the first one when stopped). A
+modulator that runs on its own clock (an LFO not synced to the song, an Envelope, a Note follower) can't be worked out
+ahead: the moved note shows its value right now, and moves with it. When the note moves out of view, a marker at the top or bottom edge
 of its column says how far ("▼ −7 st").
 
 **Where it sits.** A new Motion device goes before the Playheads device, the only place in front of it:

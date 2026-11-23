@@ -6,6 +6,8 @@
 #include <jansson.h>
 
 #include <array>
+#include <functional>
+#include <optional>
 #include <limits>
 #include <map>
 #include <string>
@@ -139,13 +141,27 @@ std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& 
 /// Where note `index` of `clip` moves when its Motion device reads it on `pass` at `songTick`, its curves read
 /// there (playheads may read a note at any moment). `sinceClip` is how long the track's clip has played (launched,
 /// or the timeline clip under the song), which Curves count from as the engine does; NaN counts from the song's start.
-/// With `laneTick`, the knob lanes on the Motion's settings set them first, read at that song tick as the engine
-/// reads them when the note plays.
 MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
-                        double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN(),
-                        double laneTick = std::numeric_limits<double>::quiet_NaN());
-/// Whether an automation lane on `track` or in one of its clips sets a setting of Motion device `motion`. Such a
-/// move follows the song's position, not only the pass, so the piano roll works it out where each note plays.
-bool motionHasLanes(const Song& song, const Track& track, DeviceId motion);
+                        double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN());
+/// What the engine holds right now, for the piano roll's pictures of moved notes. Any part may be left empty.
+struct EngineNow {
+    /// A knob (a device's or a modulator's setting) as the engine plays it now: its lanes, a knob held by the mouse,
+    /// and every modulator on it except a Motion's "Per pass" ones. Nothing when the engine doesn't know it yet: its
+    /// saved value stands in.
+    std::function<std::optional<float>(const ParamRef&)> knob;
+    /// A modulator's output now.
+    std::function<float(ModulatorId)> output;
+    /// The engine's roll, which modulators on "New every play" draw their random values from.
+    uint32_t roll = 0;
+};
+/// Where note `index` of `clip` moves on `pass`, as the engine moves it, through the Motion device in the chain the
+/// clip plays through (its own while it plays one, else its track's). With `now` (playheads may read the note at any
+/// moment) the Motion's knobs are the engine's own right now. Otherwise they are worked out for when the note plays,
+/// at song tick `at`, `sinceClip` ticks into its clip: lanes, and modulators that depend on the song alone (Curves,
+/// synced LFOs, Steps, Ramps, Random, Macros), are read then; the others (a free LFO, one restarting on each note, an
+/// Envelope, a Note follower) can't be known ahead and give what they give now. "Per pass" modulators step with the
+/// pass either way.
+MotionMove motionMoveLive(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass, double at,
+                          double sinceClip, const EngineNow& engine = {}, bool now = false);
 
 } // namespace tessera::render

@@ -1142,29 +1142,16 @@ int NoteGrid::updateMotionMoved() {
     const Track* track = owner.track();
     motionNow.clear();
     motionCurrent.clear();
-    if (!m || !clip || !track || track->type == TrackType::Drum) {
-        motionMoves.clear();
-        motionFor = {~uint64_t(0), 0};
+    if (!m || !clip || !track || track->type == TrackType::Drum)
         return 0;
-    }
-    std::pair<uint64_t, uint64_t> key{m->songRevision(), clip->id.value};
-    if (key != motionFor) {
-        motionMoves = render::motionMoves(m->song(), *track, *clip);
-        motionFor = key;
-        motionLaned.clear();
-        for (const Note& n : clip->notes)
-            if (n.motion.valid() && !motionLaned.count(n.motion.value) &&
-                render::motionHasLanes(m->song(), *track, n.motion))
-                motionLaned.insert(n.motion.value);
-    }
     // While it plays, the pass it is on; stopped, the first, which plays next.
     int pass = 0;
     double elapsed = m->playing() ? owner.source.elapsed() : NAN;
     ClipSpan span = clipSpan(*clip);
     if (std::isfinite(elapsed) && span.length() > 0)
         pass = int(std::max(0.0, std::floor(elapsed / double(span.length()))));
-    // Playheads may read a note at any moment, so it moves to wherever the Motion's curves are now; a clip that
-    // plays straight meets each note at its own place on each pass.
+    // Playheads may read a note at any moment, so it moves to wherever its Motion is now; a clip that plays straight
+    // meets each note at its own place on each pass.
     bool anyTime = activePlayheads(*track, clip) != nullptr;
     double songTick = m->playheadTicks();
     // Curves count from when the track's clip started, as the engine counts them: a launched clip's own time, or
@@ -1178,31 +1165,24 @@ int NoteGrid::updateMotionMoved() {
             sinceClip = songTick - double(under->position);
     bool launched = status.playing >= 0 && status.playing < int(track->slots.size()) &&
                     track->slots[size_t(status.playing)].clip == clip->id;
-    double loop = std::max(1.0, double(span.length()));
+    // Every way a Motion's settings can move goes through the one model function, as the engine moves them
+    // (render::motionMoveLive): lanes, every modulator type, the clip's own chain, the roll.
+    render::EngineNow engine;
+    engine.knob = [m](const ParamRef& ref) { return m->knobNow(ref); };
+    engine.output = [m](ModulatorId id) { return m->modulatorOutput(id); };
+    engine.roll = m->currentRoll();
     motionCurrent.assign(clip->notes.size(), render::MotionMove{});
-    for (size_t i = 0; i < clip->notes.size() && i < motionMoves.size(); i++) {
-        const std::vector<render::MotionMove>& list = motionMoves[i];
-        if (list.empty())
-            continue;
+    for (size_t i = 0; i < clip->notes.size(); i++) {
         const Note& n = clip->notes[i];
-        render::MotionMove now;
-        if (motionLaned.count(n.motion.value)) {
-            // Lanes follow the song: read them where this pass plays the note (playheads read it now), and the
-            // Motion's curves as the cached passes read them.
-            double at = anyTime ? songTick : noteSongTick(*track, *clip, n, pass, songTick, elapsed, launched);
-            size_t k = size_t(pass) % list.size();
-            now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick, sinceClip, at)
-                          : render::motionMoveAt(m->song(), *track, *clip, i, int64_t(k),
-                                                 double(k) * loop + double(n.start - span.start), NAN, at);
-        } else {
-            now = anyTime ? render::motionMoveAt(m->song(), *track, *clip, i, pass, songTick, sinceClip)
-                          : list[size_t(pass) % list.size()];
-        }
+        if (!n.motion.valid())
+            continue;
+        double at = anyTime ? songTick : noteSongTick(*track, *clip, n, pass, songTick, elapsed, launched);
+        double since = std::isfinite(sinceClip) ? at - (songTick - sinceClip) : NAN;
+        render::MotionMove now = render::motionMoveLive(m->song(), *track, *clip, i, pass, at, since, engine, anyTime);
         motionCurrent[i] = now;
-        bool moves =
-            now.pitch != clip->notes[i].pitch || std::abs(now.delay) > 0.5 || std::abs(now.lengthScale - 1) > 1e-3;
+        bool moves = now.pitch != n.pitch || std::abs(now.delay) > 0.5 || std::abs(now.lengthScale - 1) > 1e-3;
         if (now.pitch >= 0 && moves)
-            motionNow.insert(clip->notes[i].id.value);
+            motionNow.insert(n.id.value);
     }
     return pass;
 }

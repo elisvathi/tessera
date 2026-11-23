@@ -290,6 +290,8 @@ class TesseraModule : public rack::engine::Module {
     void releaseKnob() { heldKnobKey.store(0, std::memory_order_release); }
     /// A knob's value as it plays now (normalized): with modulation, or as held. Otherwise its saved value.
     float liveKnob(const ParamRef& ref) const;
+    /// The same, or nothing when the engine's knob table doesn't hold `ref` (yet).
+    std::optional<float> knobNow(const ParamRef& ref) const;
     /// A knob's base as it plays now: what its lane sets while the song plays, else its saved value.
     float knobBase(const ParamRef& ref) const;
     /// Whether a lane turns this knob (playing or not).
@@ -299,6 +301,8 @@ class TesseraModule : public rack::engine::Module {
     const AutomationEnvelope* recordingKnobLane(const ParamRef& ref) const;
     /// A modulator's output now: -1..1 when bipolar, else 0..1.
     float modulatorOutput(ModulatorId id) const;
+    /// The engine's roll: what modulators and devices on "New every play" draw their random values from this play.
+    uint32_t currentRoll() const { return engine.currentRoll(); }
     /// The step the Arpeggiator `id` played last, counted from where its pattern started; -1 while it plays nothing.
     int64_t arpStep(DeviceId id) const;
     /// How many notes the Arpeggiator `id` holds while it plays; 0 when it plays nothing.

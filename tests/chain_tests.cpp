@@ -2781,29 +2781,139 @@ TEST_CASE("a free LFO keeps its speed while a stopped engine slows its modulator
     CHECK(changes(slowed) <= 20);
 }
 
-TEST_CASE("the piano roll moves a Motion's note by a track automation lane on its settings, read where it plays") {
+TEST_CASE("the piano roll moves a Motion's note as the engine does, whatever moves its settings") {
     Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
-    Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    Device& added = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    DeviceId id = added.id;
     Clip& clip = song.clips.begin()->second;
-    clip.notes[0].motion = motion.id;
+    clip.notes[0].motion = id;
     const devices::ParamInfo& pitch = devices::motionInfo().params[chain::knob::kMotionPitch];
-    // The lane holds the pitch still for bar 1 and moves it up two semitones from bar 2 of the song.
-    AutomationEnvelope lane;
-    lane.id = song.newId<AutomationId>();
-    lane.paramTarget = ParamRef{ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
-    lane.points = {{0, devices::normalize(pitch, 0), CurveType::Hold, 0},
-                   {4 * kPpq, devices::normalize(pitch, 2), CurveType::Hold, 0}};
-    song.tracks[0].automation.push_back(lane);
-    Track& track = song.tracks[0];
+    float semitone = devices::normalize(pitch, 1) - devices::normalize(pitch, 0);
+    ParamRef pitchKnob{ParamRef::Kind::Device, id.value, uint16_t(chain::knob::kMotionPitch)};
+    // The pitch a Motion pitch knob at `knob` (normalized) plays the note at.
+    auto pitchFor = [&](float knob) {
+        return 60 + int(std::lround(devices::display(pitch, std::clamp(knob, 0.f, 1.f))));
+    };
+    const double tick = 1.5 * kPpq, sinceClip = 300;
+    const int64_t pass = 2;
+    render::EngineNow engine;
+    engine.output = [](ModulatorId) { return 0.37f; }; // what a modulator that runs on its own clock gives now
+    engine.roll = 5;
+    auto moved = [&](bool now = false) {
+        return render::motionMoveLive(song, song.tracks[0], clip, 0, pass, tick, sinceClip, engine, now).pitch;
+    };
+    auto routed = [&](Modulator m, float amount) {
+        Modulation route;
+        route.target = pitchKnob;
+        route.amount = amount;
+        m.routes = {route};
+        return m;
+    };
+    CHECK(moved() == 60);
 
-    CHECK(render::motionHasLanes(song, track, motion.id));
-    CHECK(!render::motionHasLanes(song, track, DeviceId(motion.id.value + 1000)));
-    // Without the lane's song tick the picture is the knobs as set; with it, the lane's value where the note plays.
-    CHECK(render::motionMoveAt(song, track, clip, 0, 0, 0).pitch == 60);
-    CHECK(render::motionMoveAt(song, track, clip, 0, 0, 0, NAN, 0).pitch == 60);
-    CHECK(render::motionMoveAt(song, track, clip, 0, 1, 4 * kPpq, NAN, 4 * kPpq).pitch == 62);
-    song.tracks[0].automation[0].mute = true;
-    CHECK(!render::motionHasLanes(song, song.tracks[0], motion.id));
+    SUBCASE("every modulator type, worked out ahead when it depends on the song alone, else as it is now") {
+        for (int t = 0; t < kModulatorTypeCount; t++)
+            for (int flip = 0; flip < 2; flip++) {
+                auto type = ModulatorType(t);
+                Modulator m = devices::makeModulator(type, song.newId<ModulatorId>());
+                // The second round flips the switch that changes how it is worked out.
+                int sw = type == ModulatorType::Lfo     ? int(mods::knob::kSync)
+                         : type == ModulatorType::Steps ? int(mods::knob::kStepPerPass)
+                         : type == ModulatorType::Ramp  ? int(mods::knob::kRampPerPass)
+                                                        : -1;
+                if (flip && sw < 0)
+                    continue;
+                if (flip)
+                    m.params[size_t(sw)] = 1 - m.params[size_t(sw)];
+                if (type == ModulatorType::Steps)
+                    m.steps = {0.1f, 0.9f, 0.3f, 0.7f};
+                m = routed(m, 0.3f);
+                song.tracks[0].modulators = {m};
+                CAPTURE(t);
+                CAPTURE(flip);
+                auto shown = [&](int k) {
+                    return devices::display(devices::modulatorInfo(type).params[size_t(k)], m.params[size_t(k)]);
+                };
+                bool perPass = mods::perPass(type, m.params.data());
+                bool songAlone = type == ModulatorType::Curve || type == ModulatorType::Random ||
+                                 type == ModulatorType::Macro ||
+                                 (type == ModulatorType::Lfo && shown(mods::knob::kSync) > 0.5f &&
+                                  shown(mods::knob::kRestart) < 1.5f) ||
+                                 ((type == ModulatorType::Steps || type == ModulatorType::Ramp) && !perPass);
+                mods::Drawn drawn = mods::drawnOf(m);
+                float v;
+                if (perPass) {
+                    v = mods::passValue(type, m.id.value, m.params.data(), pass, song.timeSig, m.steps.data(),
+                                        int(m.steps.size()), &drawn);
+                } else if (songAlone) {
+                    mods::State state;
+                    mods::Clock clock;
+                    clock.songTick = tick;
+                    clock.sinceClip = sinceClip;
+                    clock.timeSig = song.timeSig;
+                    clock.seed = variationSeed(m.variation, engine.roll, m.id.value);
+                    v = mods::evaluate(type, m.id.value, m.params.data(), state, clock, m.steps.data(),
+                                       int(m.steps.size()), &drawn);
+                } else {
+                    v = 0.37f;
+                }
+                CHECK(moved() == pitchFor(0.5f + 0.3f * v));
+            }
+    }
+    SUBCASE("lanes: the track's at the song tick, the clip's own at the note's place in the clip") {
+        AutomationEnvelope lane;
+        lane.id = song.newId<AutomationId>();
+        lane.paramTarget = pitchKnob;
+        lane.points = {{0, devices::normalize(pitch, 0), CurveType::Hold, 0},
+                       {kPpq, devices::normalize(pitch, 2), CurveType::Hold, 0}};
+        song.tracks[0].automation.push_back(lane);
+        CHECK(moved() == 62);
+        lane.points = {{0, devices::normalize(pitch, -3), CurveType::Hold, 0}};
+        clip.automation.push_back(lane); // the clip's own lane sets it last
+        CHECK(moved() == 57);
+    }
+    SUBCASE("a modulator's own settings as the engine moves them now") {
+        Modulator macro = routed(devices::makeModulator(ModulatorType::Macro, song.newId<ModulatorId>()), 4 * semitone);
+        song.tracks[0].modulators = {macro};
+        ModulatorId macroId = macro.id;
+        engine.knob = [&](const ParamRef& r) -> std::optional<float> {
+            if (r.kind == ParamRef::Kind::Modulator && r.owner == macroId.value)
+                return 1.f; // something turns the Macro all the way up
+            return std::nullopt;
+        };
+        CHECK(moved() == 64);
+    }
+    SUBCASE("read now, the engine's own knobs, with Per pass on top") {
+        engine.knob = [&](const ParamRef& r) -> std::optional<float> {
+            if (r == pitchKnob)
+                return devices::normalize(pitch, 5);
+            return std::nullopt;
+        };
+        Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+        steps.params = knobsOf(ModulatorType::Steps,
+                               {{mods::knob::kStepCount, 3}, {mods::knob::kStepBipolar, 1}, {mods::knob::kStepPerPass, 1}});
+        steps.steps = {0.5f, 0.5f + semitone / 2, 0.5f + semitone};
+        song.tracks[0].modulators = {routed(steps, 1)};
+        CHECK(moved(true) == 65 + 2); // pass 2: the third step
+    }
+    SUBCASE("a clip playing its own chain moves with the Motion there, not the track's") {
+        Device own = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+        own.params[chain::knob::kMotionInKey] = 0;
+        own.params[chain::knob::kMotionPitch] = devices::normalize(pitch, 7);
+        clip.hasOwnChain = clip.playsOwnChain = true;
+        clip.devices = {own};
+        CHECK(moved() == -1); // its notes' Motion is the track's, which doesn't play them now
+        clip.notes[0].motion = own.id;
+        CHECK(moved() == 67);
+        Modulator lfo = devices::makeModulator(ModulatorType::Lfo, song.newId<ModulatorId>());
+        lfo.params[mods::knob::kSync] = 0;
+        Modulation route;
+        route.target = ParamRef{ParamRef::Kind::Device, own.id.value, uint16_t(chain::knob::kMotionPitch)};
+        route.amount = semitone / 0.37f;
+        lfo.routes = {route};
+        clip.modulators = {lfo};
+        CHECK(moved() == 68); // the clip's own free LFO, as it is now
+    }
 }
 
 namespace {
