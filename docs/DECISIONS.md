@@ -3400,3 +3400,19 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - Both are view settings, not song data, so they never land in undo; unlike the other strip folds they are saved with
   the patch (EditorState foldedDevices, deviceModsOpen), because a long chain is folded on purpose and should stay so.
 - Folding a card closes its open modulator's settings, the same as folding a section.
+
+## 197. Parts, sends and receives as rows under a track (23 Nov)
+
+- **User** (Trello): "sub-tracks in the main track header, so the user can mix them without opening the mixer". Agreed
+  from canvas board 5: a track opens to its parts (the mixer's lane and input strips), its own sends and the sends it
+  receives; a part with sends has its own arrow and opens to them one step further in. 24 px rows. No counts in
+  words: a dot per row the fold would open, in that row's colour.
+- The rows are TrackRow::Kind::Mix, built by buildTrackRows from a MixRowsSpec (the parts per track, from
+  sendActions::sendingParts, and the open folds), so they scroll and line up with the arranger like lane rows.
+- **One fold for the headers and the mixer**: EditorState::openMix, (track, part key), saved with the patch. The
+  mixer's track strips now start folded too (they started open); the master keeps its own fold.
+- A part has the same controls as its mixer strip: level and pan, and M and S on an input (drum lanes have none).
+  Input solo moved into sources::toggleInputSolo so both places behave the same. Effect loops stay in the mixer: their
+  fader is a Mix, not a level.
+- The dots sit three to a line, at most two lines, so a big kit's fold leaves the track name its room in a narrow
+  column; the names of the rows under a track line up past the widest fold among its parts.

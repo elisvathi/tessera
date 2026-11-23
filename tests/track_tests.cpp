@@ -318,3 +318,51 @@ TEST_CASE("auto voices follow the most notes a track's clips play at once") {
     track.polyphony = 5;
     CHECK(song.voicesOf(track) == 5);
 }
+
+TEST_CASE("mix rows: a track opens to its parts, its sends and what it receives; a part opens to its sends") {
+    Song song = fourTracks();
+    TrackId a = song.tracks[0].id, b = song.tracks[1].id, d = song.tracks[3].id;
+    song.tracks[0].sends.push_back({d, -12, false, SendFrom::ofLane(1)}); // A's lane 1 → D
+    song.tracks[0].sends.push_back({d, -6, false, {}});                    // A as a whole → D
+    song.tracks[1].sends.push_back({d, -9, false, {}});                    // B → D
+    MixRowsSpec spec;
+    spec.parts[a.value] = {SendFrom::ofLane(0), SendFrom::ofLane(1)};
+
+    // Folded: just the four tracks, and the folds know what they hide (for their dots).
+    CHECK(buildTrackRows(song, {}, {}, false, &spec).size() == 4);
+    CHECK(mixChildren(song, spec, a) == std::vector<TrackId>{a, a, d});
+    CHECK(mixChildren(song, spec, a, SendFrom::ofLane(1)) == std::vector<TrackId>{d});
+    CHECK(mixChildren(song, spec, d) == std::vector<TrackId>{a, a, b});
+
+    // A open: lane 0, lane 1 (folded), then A's own send.
+    spec.open.insert({a.value, 0});
+    auto rows = buildTrackRows(song, {}, {}, false, &spec);
+    REQUIRE(rows.size() == 7);
+    CHECK(rows[1].kind == TrackRow::Kind::Mix);
+    CHECK(rows[1].mix == TrackRow::Mix::Part);
+    CHECK(rows[1].from == SendFrom::ofLane(0));
+    CHECK(rows[1].depth == 1);
+    CHECK(rows[2].from == SendFrom::ofLane(1));
+    CHECK(rows[3].mix == TrackRow::Mix::Send);
+    CHECK(rows[3].from.whole());
+    CHECK(rows[3].other == d);
+    CHECK(rows[3].isLane());
+
+    // Lane 1 open: its send one step further in, right under it.
+    spec.open.insert({a.value, SendFrom::ofLane(1).key()});
+    rows = buildTrackRows(song, {}, {}, false, &spec);
+    REQUIRE(rows.size() == 8);
+    CHECK(rows[3].mix == TrackRow::Mix::Send);
+    CHECK(rows[3].from == SendFrom::ofLane(1));
+    CHECK(rows[3].depth == 2);
+
+    // D open: one row per send it receives, from whole tracks and parts.
+    spec.open.insert({d.value, 0});
+    rows = buildTrackRows(song, {}, {}, false, &spec);
+    REQUIRE(rows.size() == 11);
+    CHECK(rows[8].mix == TrackRow::Mix::Receive);
+    CHECK(rows[8].track == d);
+    CHECK(rows[8].other == a);
+    CHECK(rows[8].from == SendFrom::ofLane(1));
+    CHECK(rows[10].other == b);
+}

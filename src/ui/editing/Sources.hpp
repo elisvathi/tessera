@@ -54,6 +54,9 @@ void previewInput(EditorContext& ctx, TrackId track, int64_t module, float db, f
 void endInputPreview(EditorContext& ctx, TrackId track, int64_t module);
 /// Whether any input of `track` is soloed.
 bool anyInputSolo(EditorContext& ctx, TrackId track);
+/// Solos or unsolos one input of `track` (`only`: Shift+click, this input alone and its track alone), as one undo
+/// step. Hearing one input alone means hearing its track too; the last input to let go lets the track go.
+void toggleInputSolo(EditorContext& ctx, TrackId track, int64_t module, bool only);
 
 /// Use and a Level slider for one output module, for its own right-click menu (one value shown in two places); an
 /// effect loop gets a Mix slider in place of the Level.

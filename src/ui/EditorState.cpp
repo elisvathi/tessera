@@ -61,6 +61,10 @@ void viewsToJson(const EditorState& s, json_t* j) {
     for (uint64_t id : s.foldedDevices)
         json_array_append_new(devices, json_integer(static_cast<json_int_t>(id)));
     set(j, "foldedDevices", devices);
+    json_t* mix = json_array();
+    for (const auto& [track, part] : s.openMix)
+        json_array_append_new(mix, json_pack("[II]", static_cast<json_int_t>(track), static_cast<json_int_t>(part)));
+    set(j, "openMix", mix);
     json_t* mods = json_array();
     for (const auto& [id, isOpen] : s.deviceModsOpen)
         json_array_append_new(mods, json_pack("[Ib]", static_cast<json_int_t>(id), isOpen));
@@ -111,6 +115,11 @@ void viewsFromJson(const json_t* j, EditorState& s) {
     forEach(get(j, "foldedDevices"), [&](const json_t* d) {
         if (asInt(d, 0) > 0)
             s.foldedDevices.insert(uint64_t(asInt(d, 0)));
+    });
+    forEach(get(j, "openMix"), [&](const json_t* p) {
+        int64_t track = intAt(p, 0, 0), part = intAt(p, 1, -1);
+        if (track > 0 && part >= 0)
+            s.openMix.insert({uint64_t(track), uint64_t(part)});
     });
     forEach(get(j, "deviceModsOpen"), [&](const json_t* p) {
         int64_t id = intAt(p, 0, 0);
@@ -278,6 +287,7 @@ void EditorState::forgetSong() {
     foldedInputs.clear();
     foldedMixerGroups.clear();
     openAutomation.clear();
+    openMix.clear();
     lowerLane = 0;
     curveModulator = 0;
     curveOpenedOn = TrackId();

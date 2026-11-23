@@ -4,6 +4,7 @@
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
 #include "../editing/RecordActions.hpp"
+#include "../editing/SendActions.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../widgets/CachedLayer.hpp"
 #include "../widgets/Draw.hpp"
@@ -273,7 +274,16 @@ void ArrangerView::applyZoomLimits() {
 void ArrangerView::syncFromState() {
     EditorState& state = ctx.state();
     const Song& song = ctx.module()->song();
-    rows = buildTrackRows(song, state.foldedGroups, state.openAutomation, headers->showsMaster());
+    // Only tracks that make sound have parts: they are what the mixer shows strips for.
+    mix.parts.clear();
+    for (const Track& t : song.tracks)
+        if (ctx.module()->soundIndex(t.id) >= 0 || t.type == TrackType::Audio) {
+            std::vector<SendFrom> parts = sendActions::sendingParts(*ctx.module(), t);
+            if (!parts.empty())
+                mix.parts[t.id.value] = std::move(parts);
+        }
+    mix.open = state.openMix;
+    rows = buildTrackRows(song, state.foldedGroups, state.openAutomation, headers->showsMaster(), &mix);
     std::vector<double> heights;
     heights.reserve(rows.size());
     for (const TrackRow& row : rows) {
@@ -286,6 +296,9 @@ void ArrangerView::syncFromState() {
             break;
         case TrackRow::Kind::AddLane:
             heights.push_back(kAddLaneRowHeight);
+            break;
+        case TrackRow::Kind::Mix:
+            heights.push_back(kMixRowHeight);
             break;
         case TrackRow::Kind::Master:
             heights.push_back(TrackHeaders::kMasterRowHeight + 6);

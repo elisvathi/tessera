@@ -134,10 +134,13 @@ struct EditorState {
     uint64_t curveTimeFor = 0;                        // the ModulatorId `curveTime` belongs to
     std::map<uint64_t, double> trackHeights;          // by TrackId value
     std::map<uint64_t, double> laneHeights;           // by AutomationId value
-    std::set<uint64_t> foldedInputs;                  // tracks whose input strips are folded in the mixer, session only
+    std::set<uint64_t> foldedInputs;                  // the master's input strips folded in the mixer, session only
     std::set<uint64_t> foldedMixerGroups; // groups whose tracks' strips are folded in the mixer, session only
     std::set<uint64_t> foldedGroups;                  // by GroupId value
     std::set<uint64_t> openAutomation;                // tracks showing their automation lanes, by TrackId value
+    // Open mix folds (docs/DECISIONS.md §197): (TrackId value, part key), key 0 = the track's parts and sends, shared
+    // by the track headers and the mixer. Everything starts folded.
+    std::set<std::pair<uint64_t, uint64_t>> openMix;
     static constexpr double kDefaultTrackHeight = 32; // for tracks never resized: one line of 30 px slots (§188)
     /// How tall a track's row is: what it was dragged to, else the default.
     double trackHeight(TrackId id) const {

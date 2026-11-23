@@ -149,20 +149,6 @@ void typingMenu(EditorContext& ctx, const std::string& title, float now, std::fu
 
 /// Drags a fader: relative, so a click never jumps it. Shift or Ctrl/Cmd for fine; a soft detent at 0 dB that Alt
 /// skips. On a selected strip with others selected, every selected strip moves by the same dB (§7.3).
-/// Makes the undo steps pushed since there were `from` of them a single step, for a click that changes two things.
-void joinUndoSteps(size_t from, const std::string& name) {
-    rack::history::State* history = APP->history;
-    if (history->actions.size() < from + 2 || history->actionIndex != int(history->actions.size()))
-        return;
-    auto* joined = new rack::history::ComplexAction;
-    joined->name = name;
-    for (size_t i = from; i < history->actions.size(); i++)
-        joined->push(history->actions[i]);
-    history->actions.resize(from);
-    history->actionIndex = int(from);
-    history->push(joined);
-}
-
 /// What a narrow strip is called in readouts and undo steps.
 std::string laneName(const MixerPane::Strip& s) {
     return !s.label.empty() ? s.label : "Lane " + std::to_string(s.lane + 1);
@@ -965,7 +951,7 @@ void MixerPane::layout() {
         strips.push_back(s);
         size_t parent = strips.size() - 1;
         x += stripWidth + kGap;
-        bool open = !ctx.state().foldedInputs.count(t.id.value);
+        bool open = ctx.state().openMix.count({t.id.value, 0}) > 0;
         // A track with two or more inputs: a narrow strip for each, after the track's, unless folded. A drum track's
         // lanes come first: they are its sound before its chain.
         auto addInputs = [&] {
@@ -1376,6 +1362,13 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
     Hit h = hitTest(pos);
     const Strip* s = h.strip >= 0 ? &strips[size_t(h.strip)] : nullptr;
     if (s && h.part == Part::Fold && button == GLFW_MOUSE_BUTTON_LEFT) {
+        // A track's fold is the same one as in the track headers (docs/DECISIONS.md §197).
+        if (!s->group.valid() && !s->master) {
+            std::set<std::pair<uint64_t, uint64_t>>& open = ctx.state().openMix;
+            if (!open.erase({s->track.value, 0}))
+                open.insert({s->track.value, 0});
+            return;
+        }
         std::set<uint64_t>& folded = s->group.valid() ? ctx.state().foldedMixerGroups : ctx.state().foldedInputs;
         uint64_t key = s->group.valid() ? s->group.value : s->master ? m->song().master.id.value : s->track.value;
         if (!folded.erase(key))
@@ -1562,34 +1555,7 @@ void MixerPane::click(Vec pos, int button, Modifiers mods) {
         break;
     case Part::Solo:
         if (s->isInput()) {
-            size_t undoFrom = APP->history->actions.size();
-            SourceLevel next = sources::inputLevel(ctx, s->track, s->inputModule);
-            next.solo = !next.solo;
-            // Shift+click works as on a track: this input alone, and its track alone.
-            if (mods.shift) {
-                std::vector<int64_t> others;
-                const Track* t = m->song().findTrack(s->track);
-                if (t && t->type == TrackType::Audio)
-                    others.push_back(-1);
-                for (OutputModuleBase* o : m->sourceModules(s->track))
-                    others.push_back(o->id);
-                for (int64_t other : others) {
-                    SourceLevel level = sources::inputLevel(ctx, s->track, other);
-                    if (other != s->inputModule && level.solo) {
-                        level.solo = false;
-                        sources::commitInput(ctx, s->track, other, level, "Unsolo input");
-                    }
-                }
-            }
-            sources::commitInput(ctx, s->track, s->inputModule, next, next.solo ? "Solo input" : "Unsolo input");
-            // Hearing one input alone means hearing its track too; the last input to let go lets the track go.
-            const Track* soloed = m->song().findTrack(s->track);
-            bool wanted = sources::anyInputSolo(ctx, s->track);
-            if (mods.shift && wanted)
-                trackActions::soloOnly(ctx, s->track);
-            else if (soloed && soloed->solo != wanted)
-                trackActions::toggleSolo(ctx, s->track, true);
-            joinUndoSteps(undoFrom, next.solo ? "Solo input" : "Unsolo input");
+            sources::toggleInputSolo(ctx, s->track, s->inputModule, mods.shift);
             break;
         }
         trackActions::toggleSolo(ctx, s->track, !mods.shift);
@@ -2445,7 +2411,7 @@ void MixerPane::drawView(const DrawArgs& args) {
             continue;
         bool open = s.group.valid() ? !ctx.state().foldedMixerGroups.count(s.group.value)
                     : s.master      ? !ctx.state().foldedInputs.count(ctx.module()->song().master.id.value)
-                                    : !ctx.state().foldedInputs.count(s.track.value);
+                                    : ctx.state().openMix.count({s.track.value, 0}) > 0;
         Vec cc = s.fold.getCenter();
         nvgBeginPath(vg);
         if (open) {

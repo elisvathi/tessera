@@ -21,6 +21,9 @@ A new song has three instrument tracks and one drum track.
 Each track has a header row on the left:
 
 - **The colour tile** with the track number. A drum track also shows a small drum.
+- **The mix arrow** (▸ and small dots), on a track that makes sound and has parts, sends or sends coming in: opens
+  rows under the track to mix them without opening the mixer. One dot per row it would open. See
+  [The mixer](18-mixer.md#parts-and-sends-in-the-track-rows).
 - **The name.** Double-click it to rename. Enter keeps the new name, Esc cancels.
 - **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Click it
   to add a Track Out (a Drum Out for a drum track) bound to this track, in the first free space right of Roll.

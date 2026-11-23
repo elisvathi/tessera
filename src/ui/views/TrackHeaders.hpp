@@ -5,6 +5,8 @@
 #include "../interaction/TrackRows.hpp"
 #include "../widgets/HoverTooltip.hpp"
 
+#include <optional>
+
 namespace tessera {
 
 class ArrangerView;
@@ -67,8 +69,13 @@ class TrackHeaders : public InteractiveView {
         AddLane,
         Level, // an audio track's level bar: its fader and meter in one (docs/design/AUDIO_MIXER.md §7.5)
         Pan,
-        Master,     // the Master row, outside its level bar
-        MasterLevel // the Master row's level bar
+        Master,      // the Master row, outside its level bar
+        MasterLevel, // the Master row's level bar
+        MixFold,     // a track's or a part's fold for its mix rows, with a dot per row it hides
+        MixLevel,    // a mix row's level: a part's, or a send's
+        MixPan,      // a part's pan
+        MixMute,     // an input's M
+        MixSolo      // an input's S
     };
     struct Hit {
         int row = -1;
@@ -111,6 +118,47 @@ class TrackHeaders : public InteractiveView {
 
     /// The tooltip for the part under the mouse, or "" for none.
     std::string tipFor(const Hit& hit);
+
+    // Mix rows (docs/DECISIONS.md §197): a track's parts, its sends and the sends it receives, under it.
+  public:
+    /// Where a mix row's parts are. Empty rects for what the row doesn't have.
+    struct MixGeometry {
+        rack::math::Rect fold, name, level, pan, mute, solo;
+        float dbRight = 0; // where the dB text ends, 0 when there is no room for it
+    };
+    /// A level and pan being dragged on a mix row, shown until the drag ends.
+    struct MixHold {
+        TrackRow row;
+        Channel value;
+    };
+    std::optional<MixHold> mixHold;
+    /// A mix row's level (dB) and pan as shown: the drag's, else the song's or its module's.
+    Channel mixValue(const TrackRow& row);
+    /// The sending track, the receiving track and the part of a send or received-send row.
+    static void sendOf(const TrackRow& row, TrackId& from, TrackId& to);
+    /// Sets a mix row's level and pan as one undo step.
+    void commitMix(const TrackRow& row, Channel value, const std::string& name);
+
+  private:
+    MixGeometry mixGeometry(int row, float top, float height);
+    /// The fold of a track row with mix rows to show, or an empty rect.
+    rack::math::Rect trackMixFold(int row, float top, float height);
+    /// The rows a track's or part's fold hides, as the colours of their dots.
+    std::vector<TrackId> mixDots(const TrackRow& row);
+    /// Draws a fold arrow and its dots in `r`.
+    void drawMixFold(NVGcontext* vg, rack::math::Rect r, bool open, const std::vector<TrackId>& dots, bool hot);
+    void drawMixRow(NVGcontext* vg, int row, float top, float height);
+    /// What a mix row is called: the part's name, "→ Reverb", "← Drums · Snare".
+    std::string mixName(const TrackRow& row);
+    /// The track whose colour a mix row wears: its own for a part, the receiver's for a send, the sender's for a
+    /// received send.
+    TrackId mixColorTrack(const TrackRow& row);
+    /// Opens or folds a track's mix rows (`part` whole) or a part's sends.
+    void toggleMix(TrackId track, SendFrom part);
+    /// A click on a mix row: an input's M or S, or the right-click menu (a send's items, or a part's Send to).
+    void clickMix(const TrackRow& row, const Hit& hit, int button, Modifiers mods);
+    /// The tooltip for a part of a mix row, or for a track's mix fold.
+    std::string mixTip(const TrackRow& row, Part part);
 
     ArrangerView& owner;
     Hit hover;

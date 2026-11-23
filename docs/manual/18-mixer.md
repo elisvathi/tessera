@@ -32,7 +32,8 @@ parent's colour holds them together: filled behind a track and its input or lane
 its tracks.
 
 The small arrow left of a parent's name folds what it holds, and unfolds it again: pointing down while open, right
-while folded. A folded group shows only its own strip.
+while folded. A folded group shows only its own strip. A track's input and lane strips start folded, and its arrow is
+the same one as the mix arrow in its track row: opening one opens the other.
 
 ## A strip
 
@@ -248,6 +249,24 @@ and a small pan knob.
 - **Scroll** over the bar to move 0.5 dB at a time.
 
 Rows too short for a second line don't show it; make the row taller (drag its bottom edge) to see it.
+
+## Parts and sends in the track rows
+
+A track's mix arrow (▸ before its name) opens small rows under it, so you can mix a kit or a send without opening
+the mixer. Next to the arrow, one dot per row it would open: parts in the track's colour, sends in the colour of the
+track they go to. Everything starts folded.
+
+- **A part**: each drum lane with a cable on its Drum Out IN, or each input of a track with two or more (**Clips**,
+  **IN 1**, **IN 2**). It has a level bar and a pan knob, the same as its strip in the mixer. An input also has **M**
+  and **S**.
+- **A send**: "→ Reverb", with its level. The track's own sends sit at the parts' level. A part's sends sit under
+  that part, one step further in, behind its own arrow: Snare's "→ Reverb" opens under Snare.
+- **A send coming in**: a track that others send to (a reverb) lists them, "← Drums", "← Drums · Snare", each with
+  the level of that send. It is the same send, seen from the other end.
+
+Drag a level sideways or a pan knob up and down; **Shift** or **Ctrl** for fine steps. **Double-click** for 0 dB or
+centre. Right-click a send for its menu (type a level, before or after the fader, remove), or a part to reset it or
+send it to another track. Every change is one undo step. The rows are 24 px tall and keep that height.
 
 ## Automating the fader and pan
 

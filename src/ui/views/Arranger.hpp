@@ -32,6 +32,8 @@ class ArrangerView : public EditorPane {
     TrackAxis tracks; // one entry per row
     ArrangerSource source;
     std::vector<TrackRow> rows; // rebuilt every frame from the song and the folded groups
+    MixRowsSpec mix;            // the tracks' parts and open mix folds the rows were built with
+    static constexpr double kMixRowHeight = 24;
 
     static constexpr double kGroupRowHeight = 26;
     static constexpr double kMinStackRow = 28; // a track with stacked clips grows so each sub-row keeps this

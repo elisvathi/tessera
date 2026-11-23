@@ -9,6 +9,7 @@
 #include "../views/AudioClipDraw.hpp"
 #include "../widgets/MenuTextField.hpp"
 #include "AudioActions.hpp"
+#include "TrackActions.hpp"
 
 #include <history.hpp>
 
@@ -488,6 +489,54 @@ bool anyInputSolo(EditorContext& ctx, TrackId track) {
         if (o->sourceSetting().solo)
             return true;
     return false;
+}
+
+namespace {
+
+/// Makes the undo steps pushed since there were `from` of them a single step, for a click that changes two things.
+void joinUndoSteps(size_t from, const std::string& name) {
+    rack::history::State* history = APP->history;
+    if (history->actions.size() < from + 2 || history->actionIndex != int(history->actions.size()))
+        return;
+    auto* joined = new rack::history::ComplexAction;
+    joined->name = name;
+    for (size_t i = from; i < history->actions.size(); i++)
+        joined->push(history->actions[i]);
+    history->actions.resize(from);
+    history->actionIndex = int(from);
+    history->push(joined);
+}
+
+} // namespace
+
+void toggleInputSolo(EditorContext& ctx, TrackId track, int64_t module, bool only) {
+    TesseraModule* m = ctx.module();
+    size_t undoFrom = APP->history->actions.size();
+    SourceLevel next = inputLevel(ctx, track, module);
+    next.solo = !next.solo;
+    if (only) {
+        std::vector<int64_t> others;
+        const Track* t = m->song().findTrack(track);
+        if (t && t->type == TrackType::Audio)
+            others.push_back(-1);
+        for (OutputModuleBase* o : m->sourceModules(track))
+            others.push_back(o->id);
+        for (int64_t other : others) {
+            SourceLevel level = inputLevel(ctx, track, other);
+            if (other != module && level.solo) {
+                level.solo = false;
+                commitInput(ctx, track, other, level, "Unsolo input");
+            }
+        }
+    }
+    commitInput(ctx, track, module, next, next.solo ? "Solo input" : "Unsolo input");
+    const Track* soloed = m->song().findTrack(track);
+    bool wanted = anyInputSolo(ctx, track);
+    if (only && wanted)
+        trackActions::soloOnly(ctx, track);
+    else if (soloed && soloed->solo != wanted)
+        trackActions::toggleSolo(ctx, track, true);
+    joinUndoSteps(undoFrom, next.solo ? "Solo input" : "Unsolo input");
 }
 
 } // namespace tessera::sources
