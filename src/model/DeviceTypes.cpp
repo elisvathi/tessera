@@ -110,8 +110,9 @@ std::vector<TypeInfo> buildDevices() {
     t[size_t(DeviceType::Arpeggiator)] = {
         "Arpeggiator",
         {choice("Pattern",
-                {"Up", "Down", "Up-down", "Up-down full", "Down-up", "Down-up full", "Converge", "Diverge", "As played",
-                 "Random", "Walk", "Shuffled", "Pattern", "Chord"},
+                {"Up", "Down", "Up-down", "Up & down", "Down-up", "Down & up", "Converge", "Diverge",
+                 "Converge & diverge", "Thumb up", "Thumb up-down", "Pinky up", "Pinky up-down", "As played", "Random",
+                 "Random other", "Random once", "Shuffle", "Walk", "Pattern", "Chord"},
                 0),
          choice("Rate", rates(), rateAt("1/16")), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
          number("Swing", 0, 100, 0, "%"), choice("Velocity", {"As played", "Fixed", "Accent"}, 0),

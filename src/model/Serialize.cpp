@@ -1696,12 +1696,20 @@ void growPlayheadChoices(Song& s) {
     growChoices(s, settings);
 }
 
-/// Before schema 9 the Arpeggiator had seven patterns; the longer list keeps related patterns together.
-void growArpPatterns(Song& s) {
-    static const std::vector<GrownChoice> grown = {
+/// Before schema 9 the Arpeggiator had seven patterns, before 16 fourteen; the longer list keeps related patterns
+/// together. Schema 9 to 15's list is given with today's names for the three renamed since (Up-down full, Down-up
+/// full, Shuffled), so each finds itself in today's list.
+void growArpPatterns(Song& s, int schemaVersion) {
+    static const std::vector<GrownChoice> before9 = {
         {chain::knob::kPattern,
          {"Up", "Down", "Up-down", "Down-up", "Random", "As played", "Chord"},
          devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(chain::knob::kPattern)].choices}};
+    static const std::vector<GrownChoice> before16 = {
+        {chain::knob::kPattern,
+         {"Up", "Down", "Up-down", "Up & down", "Down-up", "Down & up", "Converge", "Diverge", "As played", "Random",
+          "Walk", "Random once", "Pattern", "Chord"},
+         devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(chain::knob::kPattern)].choices}};
+    const std::vector<GrownChoice>& grown = schemaVersion < 9 ? before9 : before16;
     std::vector<GrownSettings> settings;
     auto add = [&](Device& d) {
         if (d.type == DeviceType::Arpeggiator)
@@ -2050,8 +2058,8 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
         narrowTransposeSemitones(s);
     if (schemaVersion < 8)
         growPlayheadChoices(s);
-    if (schemaVersion < 9)
-        growArpPatterns(s);
+    if (schemaVersion < 16)
+        growArpPatterns(s, schemaVersion);
     if (schemaVersion < 10)
         channelsToSets(s);
     // Songs before 8 already found their playhead choices by name in today's lists.

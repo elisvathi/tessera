@@ -542,6 +542,29 @@ TEST_CASE("songs from before devices load with empty chains") {
     }
 }
 
+TEST_CASE("an Arpeggiator keeps its pattern when the pattern list grows (schema 16)") {
+    Song song = makeDefaultSong();
+    addDemoClip(song);
+    DeviceId shuffled = addDeviceTo(song, 0, DeviceType::Arpeggiator);
+    DeviceId played = addDeviceTo(song, 0, DeviceType::Arpeggiator);
+    DeviceId chord = addDeviceTo(song, 0, DeviceType::Arpeggiator);
+    // Schema 15 saved the choice as 0..1 of its 14 places: Shuffled was the 12th, As played the 9th, Chord the last.
+    song.tracks[0].devices[0].params[chain::knob::kPattern] = 11.f / 13;
+    song.tracks[0].devices[1].params[chain::knob::kPattern] = 8.f / 13;
+    song.tracks[0].devices[2].params[chain::knob::kPattern] = 1;
+    json::Ref j(songToJson(song));
+    Song loaded = songFromJson(j.get(), 15);
+    const devices::ParamInfo& info = devices::deviceInfo(DeviceType::Arpeggiator).params[chain::knob::kPattern];
+    auto patternOf = [&](DeviceId id) {
+        const Device* d = findDevice(loaded, id);
+        REQUIRE(d);
+        return chain::ArpPattern(int(std::lround(devices::display(info, d->params[chain::knob::kPattern]))));
+    };
+    CHECK(patternOf(shuffled) == chain::ArpPattern::RandomOnce);
+    CHECK(patternOf(played) == chain::ArpPattern::AsPlayed);
+    CHECK(patternOf(chord) == chain::ArpPattern::Chord);
+}
+
 TEST_CASE("a Note Filter's one channel becomes a set of channels in older songs") {
     Song song = makeDefaultSong();
     addDemoClip(song);

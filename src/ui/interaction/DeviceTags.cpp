@@ -252,37 +252,21 @@ std::string number0(double v) {
 
 int arpStep(int pattern, int n, int k) {
     using P = chain::ArpPattern;
-    auto tri = [&](int i, bool full) {
-        int per = full ? 2 * n : std::max(1, 2 * n - 2), j = i % per;
-        return j < n ? j : (full ? 2 * n - 1 - j : 2 * n - 2 - j);
-    };
-    std::vector<int> conv;
-    for (int a = 0, b = n - 1; a <= b; a++, b--) {
-        conv.push_back(a);
-        if (a != b)
-            conv.push_back(b);
-    }
+    if (int fixed = chain::arpOrderIndex(P(pattern), n, uint64_t(k)); fixed >= 0)
+        return fixed;
     switch (P(pattern)) {
-    case P::Down:
-        return n - 1 - k % n;
-    case P::UpDown:
-        return tri(k, false);
-    case P::UpDownFull:
-        return tri(k, true);
-    case P::DownUp:
-        return n - 1 - tri(k, false);
-    case P::DownUpFull:
-        return n - 1 - tri(k, true);
-    case P::Converge:
-        return conv[size_t(k % n)];
-    case P::Diverge:
-        return conv[size_t(n - 1 - k % n)];
-    case P::AsPlayed: {
-        static const int kPlayed[] = {1, 0, 2, 1, 0, 2};
-        return kPlayed[k % 6] % n;
-    }
     case P::Random:
         return std::min(n - 1, int(kRnd[(k * 7) % 20] * float(n)));
+    case P::RandomOther: {
+        int last = -1, pick = 0;
+        for (int i = 0; i <= k; i++) {
+            pick = std::min(n - 1, int(kRnd[(i * 7) % 20] * float(n)));
+            if (n > 1 && pick == last)
+                pick = (pick + 1) % n;
+            last = pick;
+        }
+        return pick;
+    }
     case P::Walk: {
         int p = 0;
         for (int i = 0; i < k; i++) {
@@ -291,10 +275,14 @@ int arpStep(int pattern, int n, int k) {
         }
         return p;
     }
-    case P::Shuffled: {
+    case P::RandomOnce:
+    case P::Shuffle: {
+        // Random once keeps one order; Shuffle draws a new one each round.
+        int round = P(pattern) == P::Shuffle ? k / std::max(1, n) : 0;
         std::vector<int> order(static_cast<size_t>(n));
         std::iota(order.begin(), order.end(), 0);
-        std::stable_sort(order.begin(), order.end(), [](int u, int w) { return kRnd[u % 20] < kRnd[w % 20]; });
+        std::stable_sort(order.begin(), order.end(),
+                         [round](int u, int w) { return kRnd[(u + 3 * round) % 20] < kRnd[(w + 3 * round) % 20]; });
         return order[size_t(k % n)];
     }
     case P::Pattern:

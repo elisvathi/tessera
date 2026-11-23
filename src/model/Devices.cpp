@@ -601,6 +601,69 @@ constexpr uint64_t kPatternSteps = 16; // how long the line a Pattern arpeggio m
 
 } // namespace
 
+int arpOrderIndex(ArpPattern pattern, int count, uint64_t into) {
+    if (count <= 0)
+        return -1;
+    auto at = [](uint64_t k, int period) { return int(k % uint64_t(std::max(1, period))); };
+    auto outsideIn = [count](int k) { return k % 2 == 0 ? k / 2 : count - 1 - k / 2; };
+    // Up through `n` places and back without playing the ends twice: 0 1 2 1, 0 1 2 1…
+    auto bounce = [](int k, int n) {
+        int period = n > 1 ? 2 * n - 2 : 1;
+        int j = k % period;
+        return j < n ? j : period - j;
+    };
+    switch (pattern) {
+    case ArpPattern::Up:
+    case ArpPattern::AsPlayed:
+        return at(into, count);
+    case ArpPattern::Down:
+        return count - 1 - at(into, count);
+    case ArpPattern::UpDown:
+    case ArpPattern::DownUp: {
+        int i = bounce(at(into, count > 1 ? 2 * count - 2 : 1), count);
+        return pattern == ArpPattern::DownUp ? count - 1 - i : i;
+    }
+    case ArpPattern::UpAndDown:
+    case ArpPattern::DownAndUp: {
+        // Up and back, each end played twice: a round is twice the notes long, so four notes fill eight steps.
+        int j = at(into, 2 * count);
+        int i = j < count ? j : 2 * count - 1 - j;
+        return pattern == ArpPattern::DownAndUp ? count - 1 - i : i;
+    }
+    case ArpPattern::Converge:
+        return outsideIn(at(into, count));
+    case ArpPattern::Diverge: {
+        // From the middle out; with an even count the lower middle note first.
+        int step = at(into, count);
+        if (count % 2 == 1)
+            return step == 0 ? count / 2 : count / 2 + (step % 2 == 1 ? -(step + 1) / 2 : step / 2);
+        return step % 2 == 0 ? count / 2 - 1 - step / 2 : count / 2 + step / 2;
+    }
+    case ArpPattern::ConvergeDiverge:
+        return outsideIn(bounce(at(into, count > 1 ? 2 * count - 2 : 1), count));
+    case ArpPattern::ThumbUp:
+    case ArpPattern::ThumbUpDown:
+    case ArpPattern::PinkyUp:
+    case ArpPattern::PinkyUpDown: {
+        // Every other step is the thumb (the lowest note) or the pinky (the highest); the steps between go through
+        // the rest, up, or up and back down.
+        if (count == 1)
+            return 0;
+        bool thumb = pattern == ArpPattern::ThumbUp || pattern == ArpPattern::ThumbUpDown;
+        bool upDown = pattern == ArpPattern::ThumbUpDown || pattern == ArpPattern::PinkyUpDown;
+        int others = count - 1;
+        int round = upDown && others > 1 ? 2 * others - 2 : others;
+        int j = at(into, 2 * round);
+        if (j % 2 == (thumb ? 0 : 1))
+            return thumb ? 0 : count - 1;
+        int i = upDown ? bounce(j / 2, others) : j / 2;
+        return thumb ? 1 + i : i;
+    }
+    default:
+        return -1;
+    }
+}
+
 void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
     int stage = m.stage;
     DeviceState& s = states[size_t(stage)];
@@ -718,32 +781,6 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
             play(h, p);
         }
         break;
-    case ArpPattern::Down: {
-        auto [h, p] = at(count - 1 - step);
-        play(h, p);
-        break;
-    }
-    case ArpPattern::UpDown:
-    case ArpPattern::DownUp: {
-        // Up and back without repeating the ends.
-        int period = count > 1 ? 2 * count - 2 : 1;
-        int j = int(into % uint64_t(period));
-        int index = j < count ? j : period - j;
-        if (pattern == ArpPattern::DownUp)
-            index = count - 1 - index;
-        auto [h, p] = at(index);
-        play(h, p);
-        break;
-    }
-    case ArpPattern::UpDownFull:
-    case ArpPattern::DownUpFull: {
-        // Up and back, each end played twice: a round is twice the notes long, so four notes fill eight steps.
-        int j = int(into % uint64_t(2 * count));
-        int index = j < count ? j : 2 * count - 1 - j;
-        auto [h, p] = at(pattern == ArpPattern::DownUpFull ? count - 1 - index : index);
-        play(h, p);
-        break;
-    }
     case ArpPattern::Walk: {
         // From the lowest note: half the time on to the next, a quarter the same again, a quarter back one, wrapping
         // round at the ends.
@@ -806,24 +843,15 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         play(h, p);
         break;
     }
-    case ArpPattern::Converge: {
-        auto [h, p] = at(step % 2 == 0 ? step / 2 : count - 1 - step / 2);
-        play(h, p);
-        break;
-    }
-    case ArpPattern::Diverge: {
-        // From the middle out; with an even count the lower middle note first.
-        int index;
-        if (count % 2 == 1)
-            index = step == 0 ? count / 2 : count / 2 + (step % 2 == 1 ? -(step + 1) / 2 : step / 2);
-        else
-            index = step % 2 == 0 ? count / 2 - 1 - step / 2 : count / 2 + step / 2;
-        auto [h, p] = at(index);
-        play(h, p);
-        break;
-    }
-    case ArpPattern::Shuffled: {
+    case ArpPattern::RandomOnce: {
         auto [h, p] = at(shuffledIndex(step, count, heldSeed()));
+        play(h, p);
+        break;
+    }
+    case ArpPattern::Shuffle: {
+        // Each note once per round, mixed again for every round.
+        uint64_t round = into / uint64_t(std::max(1, count));
+        auto [h, p] = at(shuffledIndex(step, count, heldSeed() + mixed(round + 1)));
         play(h, p);
         break;
     }
@@ -834,10 +862,24 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         play(h, p);
         break;
     }
-    case ArpPattern::Up:
-    case ArpPattern::AsPlayed:
+    case ArpPattern::RandomOther: {
+        // Any note but the one just played.
+        double r = operators::random(variationSeed(d.variation, c.roll, d.id), d.id, int64_t(s.steps),
+                                     uint64_t(std::llround(t)), 0x5C1Du);
+        int pick = std::min(count - 1, int(r * count));
+        if (count > 1 && into > 0 && s.lastPick >= 0 && s.lastPick < count) {
+            pick = std::min(count - 2, int(r * (count - 1)));
+            if (pick >= s.lastPick)
+                pick++;
+        }
+        s.lastPick = pick;
+        auto [h, p] = at(pick);
+        play(h, p);
+        break;
+    }
     default: {
-        auto [h, p] = at(step);
+        int index = arpOrderIndex(pattern, count, into);
+        auto [h, p] = at(index >= 0 ? index : step);
         play(h, p);
         break;
     }

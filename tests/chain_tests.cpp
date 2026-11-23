@@ -838,8 +838,8 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(run(float(chain::ArpPattern::Up), 2) == std::vector<int>{60, 64, 67, 72, 76, 79, 60, 64});
         CHECK(run(float(chain::ArpPattern::Chord), 1).size() == 24);
         // The ends twice at each turn: a round of 6 with three notes.
-        CHECK(run(float(chain::ArpPattern::UpDownFull), 1) == std::vector<int>{60, 64, 67, 67, 64, 60, 60, 64});
-        CHECK(run(float(chain::ArpPattern::DownUpFull), 1) == std::vector<int>{67, 64, 60, 60, 64, 67, 67, 64});
+        CHECK(run(float(chain::ArpPattern::UpAndDown), 1) == std::vector<int>{60, 64, 67, 67, 64, 60, 60, 64});
+        CHECK(run(float(chain::ArpPattern::DownAndUp), 1) == std::vector<int>{67, 64, 60, 60, 64, 67, 67, 64});
         // Outside in: C G E; over two octaves the whole run, C G' E E' G C'.
         CHECK(run(float(chain::ArpPattern::Converge), 1) == std::vector<int>{60, 67, 64, 60, 67, 64, 60, 67});
         CHECK(run(float(chain::ArpPattern::Converge), 2) == std::vector<int>{60, 79, 64, 76, 67, 72, 60, 79});
@@ -847,11 +847,29 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(run(float(chain::ArpPattern::Diverge), 1) == std::vector<int>{64, 60, 67, 64, 60, 67, 64, 60});
         CHECK(run(float(chain::ArpPattern::Diverge), 2) == std::vector<int>{67, 72, 64, 76, 60, 79, 67, 72});
         // Each note once per round, the same order every round and every time.
-        std::vector<int> shuffled = run(float(chain::ArpPattern::Shuffled), 1);
+        std::vector<int> shuffled = run(float(chain::ArpPattern::RandomOnce), 1);
         REQUIRE(shuffled.size() == 8);
         CHECK(std::multiset<int>(shuffled.begin(), shuffled.begin() + 3) == std::multiset<int>{60, 64, 67});
         CHECK(std::equal(shuffled.begin(), shuffled.begin() + 5, shuffled.begin() + 3));
-        CHECK(run(float(chain::ArpPattern::Shuffled), 1) == shuffled);
+        CHECK(run(float(chain::ArpPattern::RandomOnce), 1) == shuffled);
+        // In to the middle and out again: C G E G, C G E G.
+        CHECK(run(float(chain::ArpPattern::ConvergeDiverge), 1) == std::vector<int>{60, 67, 64, 67, 60, 67, 64, 67});
+        // The thumb (lowest) between the others: C E C G, and up-down the same with three notes.
+        CHECK(run(float(chain::ArpPattern::ThumbUp), 1) == std::vector<int>{60, 64, 60, 67, 60, 64, 60, 67});
+        CHECK(run(float(chain::ArpPattern::ThumbUpDown), 2) == std::vector<int>{60, 64, 60, 67, 60, 72, 60, 76});
+        // The pinky (highest) after the others: C G E G.
+        CHECK(run(float(chain::ArpPattern::PinkyUp), 1) == std::vector<int>{60, 67, 64, 67, 60, 67, 64, 67});
+        CHECK(run(float(chain::ArpPattern::PinkyUpDown), 2) == std::vector<int>{60, 79, 64, 79, 67, 79, 72, 79});
+        // Random other never plays the same note twice in a row.
+        std::vector<int> other = run(float(chain::ArpPattern::RandomOther), 1);
+        REQUIRE(other.size() == 8);
+        for (size_t i = 1; i < other.size(); i++)
+            CHECK(other[i] != other[i - 1]);
+        // Shuffle: each note once in every round of three, each round mixed on its own.
+        std::vector<int> shuffle = run(float(chain::ArpPattern::Shuffle), 1);
+        REQUIRE(shuffle.size() == 8);
+        CHECK(std::multiset<int>(shuffle.begin(), shuffle.begin() + 3) == std::multiset<int>{60, 64, 67});
+        CHECK(std::multiset<int>(shuffle.begin() + 3, shuffle.begin() + 6) == std::multiset<int>{60, 64, 67});
         // Walk starts on the lowest note and moves at most one note a step, the same path every time.
         std::vector<int> walk = run(float(chain::ArpPattern::Walk), 2);
         const std::vector<int> run6 = {60, 64, 67, 72, 76, 79};
@@ -871,7 +889,7 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(line == run(float(chain::ArpPattern::Pattern), 1));
         for (int p : line)
             CHECK((p == 60 || p == 64 || p == 67));
-        std::vector<int> wide = run(float(chain::ArpPattern::Shuffled), 4);
+        std::vector<int> wide = run(float(chain::ArpPattern::RandomOnce), 4);
         CHECK(std::set<int>(wide.begin(), wide.end()).size() == 8); // no repeats inside a round of 12
     }
     SUBCASE("Pattern with its own line: notes, a chord step, a rest, an octave, and a row past the held notes") {

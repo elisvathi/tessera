@@ -68,23 +68,34 @@ constexpr int arpLaneShift(ArpLane l) { return knob::kArpRowShift + int(l); }
 enum class KeyFrom : uint8_t { Clip, Song, Fixed };
 enum class OffKey : uint8_t { Nearest, Up, Down, Drop };
 enum class LengthMode : uint8_t { Scale, Fixed, Legato };
-/// The Arpeggiator's patterns, in the order of its Pattern list (saved songs before schema 9 had fewer).
+/// The Arpeggiator's patterns, in the order of its Pattern list (saved songs before schema 16 had them in another
+/// order; growArpPatterns finds each by name).
 enum class ArpPattern : uint8_t {
     Up,
     Down,
-    UpDown,     // the top and bottom notes once at each turn
-    UpDownFull, // the top and bottom notes twice at each turn
+    UpDown,    // the top and bottom notes once at each turn
+    UpAndDown, // the top and bottom notes twice at each turn
     DownUp,
-    DownUpFull,
-    Converge, // lowest, highest, second lowest, second highest… meeting in the middle
-    Diverge,  // the middle first, then out, the lower of each pair first
+    DownAndUp,
+    Converge,         // lowest, highest, second lowest, second highest… meeting in the middle
+    Diverge,          // the middle first, then out, the lower of each pair first
+    ConvergeDiverge,  // in to the middle, then out again, the ends once
+    ThumbUp,          // the lowest note between each of the others, going up
+    ThumbUpDown,      // the same, up then down
+    PinkyUp,          // the highest note after each of the others, going up
+    PinkyUpDown,      // the same, up then down
     AsPlayed,
     Random,
-    Walk,     // mostly on to the next note, sometimes the same or back one; one path for each set of held notes
-    Shuffled, // each note once per round, in an order of its own for each set of held notes
-    Pattern,  // a 16-step line made from the held notes, the lowest note twice as often; one per set of held notes
+    RandomOther, // any note but the one just played
+    RandomOnce,  // each note once per round, in an order of its own for each set of held notes, kept
+    Shuffle,     // each note once per round, mixed again every round
+    Walk,        // mostly on to the next note, sometimes the same or back one; one path for each set of held notes
+    Pattern,     // a 16-step line made from the held notes, the lowest note twice as often; one per set of held notes
     Chord
 };
+/// Which of `count` notes (0 = lowest) a pattern that keeps its order plays `into` steps after it started; -1 for the
+/// patterns that choose for themselves (random ones, Walk, Pattern, Chord). The card's picture draws with it too.
+int arpOrderIndex(ArpPattern pattern, int count, uint64_t into);
 enum class ArpVelocity : uint8_t { AsPlayed, Fixed, Accent };
 
 constexpr uint32_t kLiveNote = 0x80000000u; // IDs of notes played live carry this bit
@@ -263,6 +274,7 @@ class Chain {
         uint64_t patternStart = 0; // the arpeggiator step its pattern last started again on
         uint32_t stepArrivals = 0; // `arrivals` at its last step: notes arriving after it are new
         int walk = 0;              // where a Walk pattern is in its list of notes
+        int lastPick = -1;         // the note a Random other pattern played last, so the next is another
         int64_t played = -1;       // an arpeggiator's last step since its pattern started; -1 before the first
     };
 

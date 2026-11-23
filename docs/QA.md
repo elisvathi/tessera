@@ -811,7 +811,7 @@ Run before each milestone commit. Items marked *(later)* become testable in the 
 
 ## Arpeggiator patterns, 12 Nov
 
-- [ ] Hold C E G on an Arpeggiator: Up-down full plays C E G G E C; Converge C G E; Diverge E C G; Shuffled each note once per round, the same order every round; Down-up full G E C C E G; Walk wanders from C, the same path each time you hold the chord; Pattern a 16-step line that changes when you change the notes.
+- [ ] Hold C E G on an Arpeggiator: Up & down plays C E G G E C; Converge C G E; Diverge E C G; Converge & diverge C G E G; Thumb up C E C G; Pinky up C G E G; Random other never the same note twice in a row; Random once each note once per round, the same order every round; Shuffle a new order each round; Down & up G E C C E G; Walk wanders from C, the same path each time you hold the chord; Pattern a 16-step line that changes when you change the notes.
 - [ ] Two chords back to back (or with Hold): the second starts from its lowest note. Move one inner voice: the pattern carries on.
 - [ ] A song saved by 2.0.9 with an Arpeggiator on Random, Chord or As played opens with the same pattern.
 

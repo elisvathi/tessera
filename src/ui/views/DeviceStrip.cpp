@@ -193,8 +193,8 @@ bool rollsDice(const Device& d) {
         return valueOf(d, knob::kRandom) > 0;
     case DeviceType::Arpeggiator: {
         ArpPattern p = ArpPattern(int(std::lround(valueOf(d, knob::kPattern))));
-        return p == ArpPattern::Random || p == ArpPattern::Walk || p == ArpPattern::Shuffled ||
-               p == ArpPattern::Pattern;
+        return p == ArpPattern::Random || p == ArpPattern::RandomOther || p == ArpPattern::RandomOnce ||
+               p == ArpPattern::Shuffle || p == ArpPattern::Walk || p == ArpPattern::Pattern;
     }
     default:
         return false;

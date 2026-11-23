@@ -3353,3 +3353,13 @@ Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "T
 - **Result**: about 6.2% stopped and 7.3% playing on the same patch (averages of five meter readings on a loaded
   machine); the benchmark went from about 1,600 to 1,000 ns a sample. Further gains need the player's state laid
   out by field across tracks; left for after the release.
+
+## 193. Seven more Arpeggiator patterns, related ones side by side (23 Nov)
+
+- **User request** (a list of patterns from another program): added Converge & diverge, Thumb up, Thumb up-down,
+  Pinky up, Pinky up-down, Random other and Shuffle; renamed Up-down full / Down-up full to **Up & down** / **Down &
+  up**, and Shuffled to **Random once** (it keeps one order per set of notes; Shuffle mixes again every round).
+- The order keeps related patterns together, so the list was reordered: schema 16, and growArpPatterns finds each
+  saved pattern by name (lanes, modulators and curves on it too).
+- The patterns that keep an order share one function, chain::arpOrderIndex, with the card's picture, so the picture
+  always draws what plays.
