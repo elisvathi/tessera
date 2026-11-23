@@ -369,7 +369,7 @@ void appendHitOperators(rack::ui::Menu* menu, NoteTarget& hits) {
         }
     }));
     menu->addChild(rack::createSubmenuItem("Repeats", "", [=](rack::ui::Menu* sub) {
-        for (int count : {0, 2, 3, 4, 6, 8}) {
+        for (int count : {0, 2, 3, 4, 5, 6, 7, 8}) {
             sub->addChild(
                 rack::createCheckMenuItem(count == 0 ? "Off" : std::to_string(count) + " hits", "",
                                           all([count](const Note& n) { return n.ops.repeats == count; }),

@@ -66,7 +66,7 @@ editing**. Each drag is one undo step.
 
 Right-click a hit for its menu. It acts on the selected hits (a hit outside the selection becomes the selection).
 Besides the piano roll's note items, it has **Velocity**, **Chance**, **Repeats**, **Only when…** and **Every …
-passes**. These are the operators of [Shaping notes](08-shaping-notes.md#operators-notes-that-change-from-pass-to-pass).
+passes**. **Repeats** offers 2 to 8 hits; the inspector goes up to 16. These are the operators of [Shaping notes](08-shaping-notes.md#operators-notes-that-change-from-pass-to-pass).
 With hits selected, the inspector edits them too.
 
 ## Pitch, timbre and pressure
