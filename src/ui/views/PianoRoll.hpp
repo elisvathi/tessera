@@ -24,8 +24,12 @@ class DrumLaneHeaders;
 class NoteValueLane;
 class ExpressionLane;
 class ClipLaneView;
+class TimeMapView;
+class CurveView;
 class ToolButton;
 class LaneTabs;
+class AudioEditor;
+class AudioHeader;
 
 /// The detail pane: the piano roll for the selected track's clip (EDITOR_UX §4). On a drum track it is the drum
 /// editor (EDITOR_UX §5): lane headers stand in for the keys, one row per lane in the lanes' order.
@@ -38,8 +42,12 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// Room the in-panel editor's "Full editor" button takes at the header's right end while this pane is on top.
     float headerReserve = 0;
+    /// Room kept free at the left end of the header, for the pane's Notes · Devices · Mixer switch.
+    float headerLeft = 0;
 
     bool handleAction(Action action) override;
+    /// Remembers whether a press at `pos` landed in the curve pane, so Delete acts on its points and not on the notes.
+    void notePress(rack::math::Vec pos);
     void layout() override;
     void step() override;
     void draw(const DrawArgs& args) override;
@@ -49,6 +57,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ClipSource source;
     /// The last click was in the automation lane, so editing keys act on its points rather than on notes.
     bool automationFocus = false;
+    /// The last press was in the Curve modulator's pane.
+    bool curvePaneFocus = false;
     /// Notes whose velocity tag stays visible: the ones a velocity drag is changing.
     edits::IdSet velocityShown;
     /// Curve points picked in the grid (Bend tool, or a timbre / pressure strip): dragging one moves them all,
@@ -95,6 +105,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
     // ---- Editing ----
 
     /// Records `before` -> `after` as one undo step named `name`. Only the notes that differ are stored.
+    /// The Tie key: ties the selected notes, or unties them (keeping their glides) when they all are tied.
+    void toggleTie();
     void commit(const std::string& name, const edits::NoteList& before, const edits::NoteList& after,
                 std::optional<edits::IdSet> selectAfter = std::nullopt) override;
     /// The grid step for snapping at the current zoom (0 when snapping is off).
@@ -120,6 +132,9 @@ class PianoRollView : public EditorPane, public NoteTarget {
     bool keyActive();
     bool highlightKey();
     bool snapToKey();
+    /// Whether a key held on a live input (MIDI, REC CV, the computer keyboard) plays `pitch` here: as it came in
+    /// on a drum track, where it picks the lane, else as the song's key may have snapped it.
+    bool inputHeld(int pitch);
     /// Moves a pitch by grid rows (positive = down): key steps with scale snap (unless `chromatic`), shown rows
     /// when folded, else semitones.
     int stepPitch(int pitchValue, int rows, bool chromatic);
@@ -153,6 +168,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
 
     /// Creates an empty clip on the selected track (the "double-click to create" empty state).
     void createClip();
+    /// The shown clip is an audio clip: the audio editor takes the notes' place under the same header (§6.4).
+    bool audioMode();
 
   private:
     void applyZoomLimits();
@@ -184,6 +201,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
     NoteValueLane* values;
     ExpressionLane* expression;
     ClipLaneView* clipLane;
+    TimeMapView* timeMap;
+    CurveView* curveView;
     ToolButton* lowerButton; // the lower lane's label, which picks what it shows: a note value, a curve, automation
     ToolButton* clipChip;    // "BASS · Verse · 8 bars ▾": the clip's menu (rename, length, loop, files)
     ToolSwitch tools;
@@ -196,7 +215,8 @@ class PianoRollView : public EditorPane, public NoteTarget {
     ToolButton* overflowButton;                     // a narrow header: Notes and View in one "⋯"
     ToolButton* hearButton;                         // hear notes while editing: on screen, since it is switched often
     ToolButton* maximizeButton;
-    ToolButton* devicesToggle;
+    AudioEditor* audioEditor;
+    std::shared_ptr<AudioHeader> audioHeader;
     float toolbarLeft = 0;
 
     StepInput stepper;

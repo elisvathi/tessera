@@ -5,6 +5,7 @@
 #include "../../model/DeviceTypes.hpp"
 #include "../EditorContext.hpp"
 
+#include <functional>
 #include <string>
 
 /// The device strip's menus and edits (docs/DEVICES.md §1.1), shared by the strip and the modulator popover.
@@ -16,6 +17,14 @@ const Track* track(EditorContext& ctx);
 /// Whether the device strip shows open. A track without devices keeps it closed, so a new track's notes
 /// get the room, unless the strip was opened by hand while that track was selected.
 bool stripOpen(EditorContext& ctx);
+/// The note clip shown for the selected track (the piano roll's), or null.
+const Clip* shownNoteClip(EditorContext& ctx);
+/// The chain the device strip shows and edits: the shown clip's own while it plays through it (unless the track's was
+/// opened from it), else the track's.
+ChainOwner shownChain(EditorContext& ctx);
+/// The devices and modulators of that chain (empty when there is none).
+const std::vector<Device>& shownDevices(EditorContext& ctx);
+const std::vector<Modulator>& shownModulators(EditorContext& ctx);
 /// Opens or closes the device strip for the selected track (the Devices button, F3, the closed bar).
 void setStripOpen(EditorContext& ctx, bool open);
 
@@ -33,14 +42,79 @@ NVGcolor colorOf(ModulatorId id);
 NVGcolor laneColor(const Song& song, const FoundLane& lane);
 
 /// The searchable list of devices; the pick goes in at `index` of the track's chain (-1 = the end).
-void openDeviceBrowser(EditorContext& ctx, TrackId track, int index);
+void openDeviceBrowser(EditorContext& ctx, ChainOwner owner, int index);
+/// The device list, adding the picked device to a playhead's branch at `index` (-1 = the end).
+void openBranchBrowser(EditorContext& ctx, PlayheadId playhead, int index);
 /// The searchable list of modulators, with chips for where the new one lives (song, this track, a device).
-/// `device` lights that device's chip first.
-void openModulatorBrowser(EditorContext& ctx, TrackId track, DeviceId device = DeviceId());
+/// `device` lights that device's chip first. With a valid `target` (a knob's "Modulate with › A new modulator…"),
+/// only the places that can reach it are offered, and the new modulator moves it at +50% in the same undo step.
+void openModulatorBrowser(EditorContext& ctx, ChainOwner owner, DeviceId device = DeviceId(),
+                          const ParamRef& target = ParamRef());
 
-void openDeviceMenu(EditorContext& ctx, DeviceId device);
+/// The searchable list of modulators, adding the picked one at `place`: the section whose + was pressed decides where
+/// it lives, so the list has no chips (docs/DECISIONS.md §163).
+void openModulatorBrowserAt(EditorContext& ctx, ModulatorPlace place);
+
+/// A field to type a dice number (1 to 999) for device `device`, or modulator `modulator` when it is set; it keeps the
+/// switch on Same every time with that number.
+void openVariationTyping(EditorContext& ctx, DeviceId device, ModulatorId modulator, int32_t now);
+/// A fresh roll for a bake or an export: what is on "New every play" plays on new numbers.
+uint32_t freshRoll();
+/// The message after a bake or export on roll `roll`: with Keep it when anything on `tracks` (or a song modulator)
+/// was on "New every play", which fixes those switches to what was baked.
+void offerKeepRoll(EditorContext& ctx, std::string text, uint32_t roll, const std::vector<TrackId>& tracks);
+
+/// A device's menu; `top`, when set, adds items first (the strip's Copy, Paste, Duplicate and Delete).
+void openDeviceMenu(EditorContext& ctx, DeviceId device, std::function<void(rack::ui::Menu*)> top = nullptr);
+/// Performs a device or modulator edit; `done` is its toast. When the edit emptied a clip's own chain, the clip plays
+/// through its track's devices again (docs/DECISIONS.md §189), and the toast says so.
+void performChainEdit(EditorContext& ctx, CommandPtr command, const std::string& done = "");
 void openKnobMenu(EditorContext& ctx, const ParamRef& ref);
-void openModulatorMenu(EditorContext& ctx, ModulatorId id);
+/// "Drift per pass" on a motion knob: a Steps modulator on its track, set to Per pass and mapped four steps up the
+/// knob, either rising then falling back (`bounce`) or rising then starting again. One undo step.
+void addDrift(EditorContext& ctx, const ParamRef& ref, bool bounce);
+void openModulatorMenu(EditorContext& ctx, ModulatorId id, std::function<void(rack::ui::Menu*)> top = nullptr);
+/// A new Motion device on the selected track (before its Playheads) with `notes` of `clip` joining it, as one undo
+/// step; the strip opens on it.
+void newMotion(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes);
+/// Which Motion device `notes` of `clip` move with: the track's Motion devices (`current` ticked), a new one, or
+/// none (the inspector's MOTION line, a note's right-click menu).
+void openMotionMenu(EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes, DeviceId current);
+/// The same choices, added to `menu` (a note's Motion › submenu).
+void appendMotionItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip, const std::vector<NoteId>& notes,
+                       DeviceId current);
+/// A playhead's menu: rename, channel, on, solo, its rarer settings (Notes, On a jump, Length, Path...), duplicate,
+/// delete.
+void openPlayheadMenu(EditorContext& ctx, PlayheadId id);
+/// The merged Direction dropdown (direction, or a step order with its step size), as one undo step.
+void openDirectionMenu(EditorContext& ctx, PlayheadId id);
+/// What the Direction dropdown shows for a playhead ("Forward", "Outside in").
+std::string directionText(const Playhead& p);
+/// Draws Curve `index`'s shape in `r`: across is time through one repeat group, up how far the playhead has got.
+void drawCurveIcon(NVGcontext* vg, rack::math::Rect r, int index, NVGcolor color, float width);
+/// Shows a Curve modulator's shape in the piano roll's lower pane.
+void showCurve(EditorContext& ctx, ModulatorId id);
+/// Whether the lower pane shows Curve modulator `id` now.
+bool curveShown(EditorContext& ctx, ModulatorId id);
+/// The name a new Curve modulator on `target` gets: what it moves, such as "Echo Time" or "Melody Rate".
+std::string curveName(const Song& song, const ParamRef& target);
+/// The first Curve modulator turning `target`, or an invalid ID.
+ModulatorId curveOn(const Song& song, const ParamRef& target);
+
+/// The selected track's Playheads device when it has one (on or off), else nullptr.
+const Device* playheadsDevice(EditorContext& ctx);
+/// The playhead the editor shows (the Playheads card, the ruler's segment, the lower pane's curves): the one last
+/// picked on the selected track, else its first. nullptr when the track has no playheads.
+const Playhead* shownPlayhead(EditorContext& ctx);
+/// Sets several of a playhead's settings (in their display units) as one undo step. Each change is made on the song as
+/// the ones before left it: setting commands replace the whole chain.
+void setPlayheadValues(EditorContext& ctx, PlayheadId id, const std::vector<std::pair<int, float>>& values,
+                       const std::string& name);
+/// Turns the shown playhead off or on (Shift+M, the dot on its chip): its On setting. `solo` solos it instead
+/// (Alt-click).
+void togglePlayheadOn(EditorContext& ctx, bool solo = false);
+/// Whether a playhead plays now: its On as a curve or a lane has it while the song plays, else as set.
+bool playheadPlaysNow(EditorContext& ctx, const Playhead& p);
 /// A choice knob's choices, the current one ticked.
 void openChoiceMenu(EditorContext& ctx, const ParamRef& ref);
 /// Type a value in the knob's units ("75", "1/16" for choices by name).

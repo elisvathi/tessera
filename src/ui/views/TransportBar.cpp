@@ -1,5 +1,6 @@
 #include "TransportBar.hpp"
 
+#include "../editing/ClipControlMenu.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ExportMidi.hpp"
@@ -12,6 +13,7 @@
 #include "../widgets/HoverTooltip.hpp"
 #include "../widgets/MenuTextField.hpp"
 #include "../widgets/ToolButton.hpp"
+#include "SlotDraw.hpp"
 #include "TimelineDraw.hpp"
 
 namespace tessera {
@@ -120,6 +122,8 @@ class BpmField : public rack::widget::OpaqueWidget {
 
 /// What plays: the clips you launch, or the timeline. One switch, two halves; the lit half is what you hear (jade
 /// while the transport runs). The same setting as PLAYS on the panel, so its undo, CV mapping and patches agree.
+/// While clips launched over the timeline have taken tracks over, Timeline wears a return arrow, and a click on it
+/// brings them all back (docs/DECISIONS.md §185).
 class PlaysSwitch : public rack::widget::OpaqueWidget {
   public:
     static constexpr float kCaption = 40;
@@ -128,7 +132,8 @@ class PlaysSwitch : public rack::widget::OpaqueWidget {
 
     explicit PlaysSwitch(EditorContext& ctx)
         : ctx(ctx), tip("What plays: the clips you launch, or the timeline (PLAYS on the panel). A clip launched "
-                        "while the timeline plays takes only its own track over") {}
+                        "while the timeline plays takes only its own track over; Timeline then shows a return "
+                        "arrow: click it to bring every track back to the timeline") {}
 
     void draw(const DrawArgs& args) override {
         TesseraModule* m = ctx.module();
@@ -142,6 +147,7 @@ class PlaysSwitch : public rack::widget::OpaqueWidget {
         rack::math::Rect well(kCaption, 0, box.size.x - kCaption, box.size.y);
         draw::roundedRect(vg, well, theme::metrics::kRadiusControl + 1, theme::recessed(c, c.bg1, 0.25f));
         bool timeline = m->playMode() == PlayMode::Arranger;
+        bool tracksAway = timeline && m->anyTrackOverridden();
         for (int i = 0; i < 2; i++) {
             bool on = (i == 1) == timeline;
             rack::math::Rect half(kCaption + 2 + i * kHalf, 2, kHalf, box.size.y - 4);
@@ -153,7 +159,11 @@ class PlaysSwitch : public rack::widget::OpaqueWidget {
             const char* text = i == 0 ? "Clips" : "Timeline";
             float tw = draw::textWidth(vg, word, text);
             float x = half.pos.x + (half.size.x - tw - (on ? 12 : 0)) / 2;
-            if (on) {
+            if (on && i == 1 && tracksAway) {
+                // Tracks left the timeline for launched clips: a click brings them back.
+                slotDraw::drawActionIcon(vg, NextAction::Timeline, rack::math::Vec(x + 4, half.getCenter().y), 9, fg);
+                x += 12;
+            } else if (on) {
                 // A play triangle on the half that plays.
                 float cy = half.getCenter().y;
                 nvgBeginPath(vg);
@@ -192,6 +202,8 @@ class PlaysSwitch : public rack::widget::OpaqueWidget {
         PlayMode mode = half == 1 ? PlayMode::Arranger : PlayMode::Launcher;
         if (mode != m->playMode())
             m->setPlayMode(mode);
+        else if (mode == PlayMode::Arranger && m->anyTrackOverridden())
+            m->backToArrangement();
     }
 
   private:
@@ -245,6 +257,9 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
                                 projectFile::appendFileMenu(
                                     menu, m, [c] { return c; }, [c](const std::string& text, bool) { c->toast(text); });
                                 menu->addChild(new rack::ui::MenuSeparator);
+                                menu->addChild(rack::createSubmenuItem(
+                                    "Clip control", clipControl::layoutName(m->clipControlSettings().layout),
+                                    [m](rack::ui::Menu* sub) { clipControlMenu::append(sub, m); }));
                                 menu->addChild(rack::createSubmenuItem(
                                     "Colour scheme", "", [](rack::ui::Menu* sub) { theme::appendSchemeMenu(sub); }));
                                 appendEditorSizeItem(menu, m);
@@ -368,8 +383,8 @@ TransportBar::TransportBar(EditorContext& ctx, std::function<void()> onClose) : 
     right.push_back(button(options(Icon::Close, "", withShortcut("Close editor", Action::Close), onClose)));
 
     auto inspector = options(Icon::Inspector, "", withShortcut("Inspector", Action::ToggleInspector),
-                             [c] { c->view().inspectorOpen = !c->view().inspectorOpen; });
-    inspector.active = [c] { return c->module() && c->view().inspectorOpen; };
+                             [c] { c->state().inspectorOpen = !c->state().inspectorOpen; });
+    inspector.active = [c] { return c->module() && c->state().inspectorOpen; };
     right.push_back(button(inspector));
 
     // A small on/off icon: whether to follow is often toggled, how (page or scroll) is set once in View.

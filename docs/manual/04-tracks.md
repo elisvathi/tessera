@@ -3,12 +3,14 @@
 A track is one part of your song: a bass line, chords, a lead, drums. Each track has its own clips, its own notes
 and its own output module. A song has 1 to 64 tracks.
 
-## Two kinds of track
+## Three kinds of track
 
 - **Instrument tracks** play notes with pitch. Each plays through a **Track Out**. A track can play up to 16 notes
   at once.
 - **Drum tracks** play drum sounds. Each sound is a "lane" with its own trigger output. They play through a
   **Drum Out**. Drum tracks open in the drum editor. See [Drums](09-drums.md).
+- **Audio tracks** play audio files: loops, hits, recordings. They play out of **MAIN L** and **MAIN R** on the
+  Tessera panel, through the mixer. Dropping a file makes one. See [Audio](17-audio.md).
 
 A new song has three instrument tracks and one drum track.
 
@@ -19,12 +21,24 @@ A new song has three instrument tracks and one drum track.
 Each track has a header row on the left:
 
 - **The colour tile** with the track number. A drum track also shows a small drum.
+- **The arrow** (▸ after the number): opens everything under the track, in one place. First the track's own
+  automation lanes, then its parts (each drum lane or input), then its sends, the sends it receives, and
+  **+ Add automation lane**. A part has its own arrow for its lanes and sends. Next to each arrow, one dot per row it
+  would open. The arrow is dim while there is nothing under it but **+ Add automation lane**. See
+  [The mixer](18-mixer.md#parts-and-sends-in-the-track-rows).
 - **The name.** Double-click it to rename. Enter keeps the new name, Esc cancels.
-- **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Add a
-  Track Out (or Drum Out) and pick this track.
+- **Where it comes from**, in small grey words with an arrow in the source's colour: **← Bass** on a track that plays
+  Bass's notes (its **Input**), **← 2 sends (Drums, Keys)** on a track others send sound to. A track that plays
+  another track's notes opens tall enough to show this on a line of its own; in a row you made short, the words sit
+  after the name and go first when there is no room. Click them for the menu that sets it.
+- **An amber jack** appears left of the arm button when the track has notes but no output module plays it. Click it
+  to add a Track Out (a Drum Out for a drum track) bound to this track, in the first free space right of Roll.
+  The track menu has the same command, **Add a Track Out for this track**, for any track. Both are one undo step.
+  Once the track has one, the menu offers **Show Track Out in the rack** and **Add another Track Out** instead.
 - **Arm** (the ring): arms the track for recording. It turns red while armed. See [Recording](11-recording.md).
-- **The lanes arrow** (▸): shows the track's automation lanes under it. It is dim until the track has lanes.
 - **M** mutes the track. **S** solos it.
+- **The level line** (audio tracks): a second line with the volume, its dB value and a pan knob. See
+  [The mixer](18-mixer.md#levels-in-the-track-rows).
 
 Click a header to select the track. The piano roll then shows its clip.
 
@@ -34,6 +48,7 @@ Click a header to select the track. The piano roll then shows its clip.
 |---|---|
 | Add an instrument track | **Ctrl+T**, or **+ Add track** under the last track |
 | Add a drum track | **Ctrl+Shift+T** (with the mouse over the song pane), or **+ Add track → Drum** |
+| Add an audio track | **+ Add track → Audio track**, or drop an audio file (see [Audio](17-audio.md)) |
 | Add a track at a spot | Right-click empty space in the headers or the timeline |
 | Add an instrument track quickly | Double-click empty header space |
 | Duplicate a track | **Ctrl+D** after clicking its header, or the track menu. The copy gets its own clips. |
@@ -41,7 +56,7 @@ Click a header to select the track. The piano roll then shows its clip.
 
 New tracks go right after the selected one.
 
-When you delete a track, an output module that played it shows **Track missing** and goes quiet. Undo the delete and
+When you delete a track, an output module that played it shows **Track deleted** and goes quiet. Undo the delete and
 it plays again. Clips that only that track used are deleted with it; clips shared with other tracks stay.
 
 ## Selecting several tracks
@@ -74,6 +89,9 @@ it plays again. Clips that only that track used are deleted with it; clips share
 - Drag the bottom edge of a header to make the row taller or shorter. **Alt**+drag resizes every track.
 - Double-click the bottom edge to switch between short and tall.
 - **Shift+F** fits all tracks in the pane.
+- Drag the right edge of the headers to make the whole column wider or narrower, for longer names, dB values and
+  where a track comes from. Double-click that edge for the usual width. Each editor (the full one and the in-panel
+  one) keeps its own width, saved with the patch.
 
 ## The track menu
 
@@ -81,21 +99,59 @@ Right-click a track header for its menu.
 
 ![The track menu, with the Input submenu open](images/track-menu.png)
 
+The menu starts with the track itself, then how it plays and records, its lanes, where its sound goes, grouping, and
+adding tracks last.
+
 | Item | What it does |
 |---|---|
-| **Add instrument track / Add drum track** | Adds a track after this one. |
-| **Duplicate / Delete / Rename** | As above. |
-| **Colour** | One of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
-| **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3. Or pick a fixed number from 1 to 16. |
-| **Show automation lanes / Add automation lane** | See [Automation](12-automation.md). |
-| **Input** | What the track plays besides its clips. See below. |
-| **Armed for recording, Record from, MIDI channel, Monitor while armed** | See [Recording](11-recording.md). |
+| **Rename / Colour / Duplicate / Delete** | As above. **Colour** is one of 16 track colours. Clips and notes take the track's colour, unless a clip has a colour of its own (right-click the clip, **Colour**). |
+| **Voices** | How many poly channels the Track Out sends. **Auto** (the default) sends as many as the track ever plays at once: a part with 3-note chords sends 3, an Echo adds room for each repeat, and with playheads each channel gets its own voices (more for one faster than 1x). Or pick a fixed number from 1 to 16 (with playheads, for each channel: the menu then reads, for example, **4 per channel (12)**, with the total the track sends). **1** makes the track mono: keys you play overlapping sound legato and record as [ties](08-shaping-notes.md#ties-and-glides). **Allocation** (at the bottom of the menu) decides which channel a new note takes: **Rotate** (the default) takes the next free one, so release tails ring out; **Reuse** puts each pitch back on the channel it played on last; **Reset** takes the lowest free one, and notes that start together (even strummed) go low to high, so channel 1 is always the bass of a chord; **Channel** plays each note channel on the poly channel of the same number (note channel 3 on poly channel 3), so one Track Out sends a separate line per channel, and **Auto** sends as many channels as the highest note channel the track uses. Every pass of a loop lands its notes on the same channels, a tied note keeps its channel, and a playhead's notes take its own first free voice under Rotate, so a one-note line sends one channel. |
+| **Input** | Note and drum tracks. What the track plays besides its clips. See below. |
+| **Recording ▸** | **Armed for recording**, **Record from**, **MIDI channel** and **Monitor while armed**. See [Recording](11-recording.md); for audio tracks, [Audio](17-audio.md#recording-audio). It says **Armed** on the right while the track is armed. |
+| **Show lanes, parts and sends** | Opens the track's arrow, as above. |
+| **Add automation lane** | See [Automation](12-automation.md). |
+| **Show Track Out in the rack / Add a Track Out for this track** | See above. |
+| **Sends** | Tracks that make sound: where the track goes after its fader (**To the Master** or **Only its sends**), its sends with their levels, and **Send to ▸**. See [The mixer](18-mixer.md#sending-to-other-tracks). |
+| **Bounce audio to a new track…** | Records what the track sounds like onto a new audio track. Shown when the track makes sound. See [Audio](17-audio.md). |
+| **Bounce notes to a new track…** | Note and drum tracks. Makes a new track from the notes, at once. See below. |
+| **Import audio file…** | Audio tracks. Puts a file on this track. See [Audio](17-audio.md). |
+| **Link identical clips** | Shown when timeline clips on this track play exactly the same thing: they become linked. |
 | **Group** | Groups the selected tracks. |
+| **Add track ▸** | **Instrument track**, **Drum track** or **Audio track**, added after this one. |
 
 Voices, Input and the recording settings are also in the inspector's **TRACK** section when no notes are selected.
-The inspector's **Output** row says which output module plays the track, or "None" with a hint.
+The inspector's **Output** row names the output module that plays the track (**Track Out**, or **Track Out + 1
+more**); click it to show the module in the rack or add another. A track with none shows **+ Add Track Out** (**+ Add
+Drum Out** on a drum track): click it to add one, bound to the track, right of Roll.
+
+## Bounce notes to a new track
+
+Right-click a note or drum track, a clip on the timeline or a clip in the clips panel, and choose **Bounce notes to a
+new track…**. It takes no time and nothing has to play. **Ctrl+B** opens this on a track that makes no sound.
+
+- **Length**: the selected clips, the selected area or the whole track. Clips you didn't select stay out.
+- **Notes**: **As it plays** has the devices and playheads applied. **As written** is the clip's own notes.
+- **Playheads**: all of them, each on its own channel on the one new track, or just one.
+
+**As it plays** gives you what recording the track's pitch, gate and velocity would give. A track whose **Input** plays
+another track's notes has those in its bounce too, through its own devices, even when that track is muted (see
+[A track that plays another track](#a-track-that-plays-another-track-input)); **Whole track** then runs over that
+track's clips as well. **As written** stays the track's own clips.
+Devices and clips on **New** (their dice) roll fresh for the bounce; its message offers **Keep it**. Curves and lanes that turn a
+device, a Motion device or a playhead setting are in the notes, at the moment each note plays.
+
+The rest of the track's signals come along too. Each note keeps its own bend, timbre and pressure curves. AUTO jacks come
+across to the new track, one per jack, with the clip's own lanes and any curves sent to the jack combined in. Pitch bend
+and pressure lanes come across too.
+
+The result is one clip on a new track under the original, with no devices, in one undo step. A clip from the clips
+panel lands in the same scene on the new track. To bounce what a track sounds like, choose **Bounce audio to a new
+track…** (see [Audio](17-audio.md)).
 
 ## A track that plays another track (Input)
+
+This is for note and drum tracks, and it only lists those: audio tracks have no notes to give or take, so an audio
+track has no **Input** item.
 
 A track can play notes from somewhere else, all the time, without being armed. Set this in **Input**:
 
@@ -107,6 +163,7 @@ A track can play notes from somewhere else, all the time, without being armed. S
 The notes go through this track's own devices. So one melody can drive a second track that adds a chord, or an
 arpeggio, with its own synth. The track's own clips keep playing too.
 
+- The track's header says where its notes come from: **← Arp** under its name, the arrow in Arp's colour.
 - A muted track still feeds the tracks that listen to it, like a MIDI send.
 - Tracks that already listen to this one are greyed out in the menu, so you can't make a loop.
 - If the source track is deleted, the menu shows **Missing track** and nothing plays until you undo.

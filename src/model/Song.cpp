@@ -2,8 +2,10 @@
 
 #include "Chord.hpp"
 #include "DeviceLookup.hpp"
+#include "Sends.hpp"
 #include "DeviceTypes.hpp"
 #include "Devices.hpp"
+#include "Playheads.hpp"
 
 #include "Arrangement.hpp"
 
@@ -47,6 +49,21 @@ Clip* Song::findClip(ClipId id) {
 
 const Clip* Song::findClip(ClipId id) const { return const_cast<Song*>(this)->findClip(id); }
 
+const AudioSource* Song::findSource(AudioSourceId id) const {
+    auto it = std::lower_bound(audioSources.begin(), audioSources.end(), id,
+                               [](const AudioSource& s, AudioSourceId v) { return s.id < v; });
+    return it != audioSources.end() && it->id == id ? &*it : nullptr;
+}
+
+const AudioSource* Song::sourceOf(const Clip& clip) const {
+    return clip.audio ? findSource(clip.audio->source) : nullptr;
+}
+
+bool hasAudio(const Song& song) {
+    return std::any_of(song.tracks.begin(), song.tracks.end(),
+                       [](const Track& t) { return t.type == TrackType::Audio; });
+}
+
 const Clip* Song::activeClip(const Track& track) const {
     for (const ClipSlot& slot : track.slots)
         if (slot.clip)
@@ -67,10 +84,22 @@ int Song::clipUses(ClipId clip) const {
 
 namespace {
 
-/// How many voices the track's devices need for `voices` notes at once: chords multiply them, echoes and longer
-/// notes overlap them, an arpeggiator plays one step at a time (all of them at once in its Chord pattern).
-int voicesThroughChain(const Track& track, int voices) {
-    for (const Device& d : track.devices) {
+/// How many times more a playhead's notes overlap than as written: one faster than 1x reaches the next note
+/// sooner, but plays notes as long as written (or fixed).
+int playheadOverlap(const Playhead& p) {
+    const devices::ParamInfo& rate = devices::playheadInfo().params[playheads::knob::kRate];
+    const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
+    double speed = playheads::playheadRate(int(std::lround(devices::display(rate, p.params[playheads::knob::kRate]))));
+    bool follows = playheads::LengthMode(std::lround(devices::display(length, p.params[playheads::knob::kLength]))) ==
+                   playheads::LengthMode::FollowsPlayhead;
+    return follows ? 1 : std::max(1, int(std::ceil(speed - 1e-6)));
+}
+
+/// How many voices `chain` needs for `voices` notes at once: chords multiply them, echoes and longer notes overlap
+/// them, an arpeggiator plays one step at a time (all of them at once in its Chord pattern or a Pattern line's "all"
+/// steps), and each playhead plays its own notes through its own branch.
+int voicesThrough(const std::vector<Device>& chain, int voices) {
+    for (const Device& d : chain) {
         if (!d.on)
             continue;
         auto shown = [&d](int k) {
@@ -84,16 +113,45 @@ int voicesThroughChain(const Track& track, int voices) {
             voices *= std::max(1, chordSize(shapes[size_t(shape)].shape));
             break;
         }
-        case DeviceType::Arpeggiator:
-            if (chain::ArpPattern(int(shown(chain::knob::kPattern))) == chain::ArpPattern::Chord)
+        case DeviceType::Arpeggiator: {
+            auto pattern = chain::ArpPattern(int(shown(chain::knob::kPattern)));
+            // A Pattern line's step plays as many held notes as it lights (each note once).
+            bool ownLine = pattern == chain::ArpPattern::Pattern && !d.line.empty();
+            int most = 0;
+            if (ownLine)
+                for (uint8_t step : d.line)
+                    most = std::max(most, __builtin_popcount(step));
+            // A note longer than its step still sounds when the next one starts. A line's steps each have a gate.
+            bool overlaps = shown(chain::knob::kGate) > 100;
+            if (ownLine) {
+                overlaps = false;
+                int steps = std::clamp(int(shown(chain::arpLaneSteps(chain::ArpLane::Gate))), 1, 16);
+                for (int k = 0; k < steps; k++)
+                    overlaps |= shown(chain::arpLaneFirst(chain::ArpLane::Gate) + k) > 100;
+            }
+            if (pattern == chain::ArpPattern::Chord)
                 voices *= std::max(1, int(shown(chain::knob::kArpOctaves)));
+            else if (most > 1)
+                voices = std::min(voices, most) * (overlaps ? 2 : 1);
             else
-                voices = shown(chain::knob::kGate) > 100 ? 2 : 1;
+                voices = overlaps ? 2 : 1;
             break;
-        case DeviceType::Echo:
+        }
+        case DeviceType::Echo: // the note and each of its repeats can sound together
+            voices *= 1 + std::max(0, int(std::lround(shown(chain::knob::kRepeats))));
+            break;
         case DeviceType::NoteLength:
             voices *= 2;
             break;
+        case DeviceType::Playheads: {
+            // Off ones too: a curve or a lane may turn one on while the song plays, and switching one on or off
+            // never moves the others' voices.
+            int total = 0;
+            for (const Playhead& p : d.playheads)
+                total += voicesThrough(p.branch, voices * playheadOverlap(p));
+            voices = std::max(1, total);
+            break;
+        }
         default:
             break;
         }
@@ -104,9 +162,106 @@ int voicesThroughChain(const Track& track, int voices) {
 
 } // namespace
 
+namespace {
+
+/// The voice blocks one chain (a track's or a clip's own) needs for `notes` notes at once before its devices: one
+/// block for every voice, or with a Playheads device one per channel of its playheads.
+std::vector<Song::VoiceBlock> chainBlocks(const std::vector<Device>& chain, int notes, int polyphony, bool drum) {
+    const Device* heads = drum ? nullptr : activePlayheads(chain);
+    if (!heads)
+        return {{0, std::clamp(polyphony != kAutoVoices ? polyphony : voicesThrough(chain, notes), 1, kMaxVoices)}};
+    auto at = std::find_if(chain.begin(), chain.end(), [&](const Device& d) { return &d == heads; });
+    std::vector<Device> before(chain.begin(), at), after(at + 1, chain.end());
+    int base = voicesThrough(before, notes);
+    std::vector<Song::VoiceBlock> blocks;
+    // Muted playheads keep their voices: muting or unmuting one (live, Shift+M) then moves no other playhead's
+    // voices, and the voice count going out stays the same.
+    for (const Playhead& p : heads->playheads) {
+        int size = polyphony != kAutoVoices ? polyphony
+                                            : voicesThrough(after, voicesThrough(p.branch, base * playheadOverlap(p)));
+        auto same =
+            std::find_if(blocks.begin(), blocks.end(), [&](const Song::VoiceBlock& b) { return b.part == p.channel; });
+        // Playheads sharing a channel share its voices: Auto adds up what each needs; a fixed count is per channel.
+        if (same != blocks.end())
+            same->size = polyphony != kAutoVoices ? size : same->size + size;
+        else
+            blocks.push_back({p.channel, size});
+    }
+    return blocks;
+}
+
+} // namespace
+
 int Song::voicesOf(const Track& track) const {
-    if (track.polyphony != kAutoVoices)
-        return std::clamp(track.polyphony, 1, kMaxVoices);
+    int total = 0;
+    for (const VoiceBlock& b : voiceBlocks(track))
+        total += b.size;
+    return total;
+}
+
+std::vector<Song::VoiceBlock> Song::voiceBlocks(const Track& track) const {
+    bool drum = track.type == TrackType::Drum;
+    std::vector<VoiceBlock> blocks =
+        chainBlocks(track.devices, std::min(mostNotesAtOnce(track), kMaxVoices), track.polyphony, drum);
+    // Clips with their own chain play on the same voices: each channel gets as many as the most any chain needs.
+    std::vector<ClipId> seen;
+    auto addClip = [&](ClipId id) {
+        const Clip* clip = findClip(id);
+        if (!clip || !clip->usesOwnChain() || std::find(seen.begin(), seen.end(), id) != seen.end())
+            return;
+        seen.push_back(id);
+        int notes = std::min(clip->maxSimultaneousNotes(), kMaxVoices);
+        for (const VoiceBlock& b : chainBlocks(clip->devices, notes, track.polyphony, drum)) {
+            auto same = std::find_if(blocks.begin(), blocks.end(), [&](const VoiceBlock& o) { return o.part == b.part; });
+            if (same != blocks.end())
+                same->size = std::max(same->size, b.size);
+            else
+                blocks.push_back(b);
+        }
+    };
+    for (const ClipSlot& s : track.slots)
+        if (s.clip)
+            addClip(*s.clip);
+    for (const ArrangerClip& a : track.arrangement)
+        addClip(a.clip);
+    if (blocks.empty())
+        blocks.push_back({0, 1});
+    if (track.allocation == VoiceAllocation::Channel && track.polyphony == kAutoVoices)
+        for (VoiceBlock& b : blocks)
+            if (b.part == 0)
+                b.size = std::max(b.size, highestNoteChannel(track));
+    // Each up to 16. Past the track's room the biggest give a voice at a time (the last first), so every channel
+    // keeps voices of its own and none has to share another's.
+    int total = 0;
+    for (VoiceBlock& b : blocks) {
+        b.size = std::clamp(b.size, 1, kMaxVoices);
+        total += b.size;
+    }
+    while (total > kMaxTrackVoices) {
+        auto biggest = std::max_element(blocks.rbegin(), blocks.rend(),
+                                        [](const VoiceBlock& a, const VoiceBlock& b) { return a.size < b.size; });
+        biggest->size--;
+        total--;
+    }
+    return blocks;
+}
+
+int Song::highestNoteChannel(const Track& track) const {
+    int highest = 1;
+    auto add = [&](ClipId id) {
+        if (const Clip* clip = findClip(id))
+            for (const Note& n : clip->notes)
+                highest = std::max(highest, int(n.channel));
+    };
+    for (const ClipSlot& s : track.slots)
+        if (s.clip)
+            add(*s.clip);
+    for (const ArrangerClip& a : track.arrangement)
+        add(a.clip);
+    return highest;
+}
+
+int Song::mostNotesAtOnce(const Track& track) const {
     int most = 1;
     auto add = [&](ClipId id) {
         if (const Clip* clip = findClip(id))
@@ -129,7 +284,12 @@ int Song::voicesOf(const Track& track) const {
         sounding += n;
         most = std::max(most, sounding);
     }
-    return std::clamp(voicesThroughChain(track, std::min(most, kMaxVoices)), 1, kMaxVoices);
+    return most;
+}
+
+int Song::notesInto(const Track& track, const Clip* ownClip, const std::vector<Device>& before) const {
+    int notes = ownClip ? ownClip->maxSimultaneousNotes() : mostNotesAtOnce(track);
+    return voicesThrough(before, std::clamp(notes, 1, kMaxVoices));
 }
 
 bool Song::anySolo() const {
@@ -208,6 +368,10 @@ void normalizeAutomation(std::vector<AutomationEnvelope>& lanes, IdRepair& ids) 
     }
 }
 
+void normalizeParams(std::vector<float>& params, const std::vector<devices::ParamInfo>& table);
+
+void normalizeFade(Fade& fade, Tick most);
+
 void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
     if (clip.length < 1)
         clip.length = ticksPerBar(ts);
@@ -232,6 +396,85 @@ void normalizeClip(Clip& clip, TimeSig ts, IdRepair& ids) {
     normalizeAutomation(clip.automation, ids);
     if (clip.scaleOverride)
         clampValue<int8_t>(clip.scaleOverride->root, 0, 11);
+    if (clip.audio) {
+        AudioContent& a = *clip.audio;
+        clip.notes.clear();
+        a.sourceStart = std::max<int64_t>(0, a.sourceStart);
+        a.sourceTempo = std::isfinite(a.sourceTempo) ? std::clamp(a.sourceTempo, kMinClipTempo, kMaxClipTempo) : 120;
+        a.gainDb = std::isfinite(a.gainDb) ? std::clamp(a.gainDb, kSilentDb, kMaxClipGainDb) : 0.f;
+        clampValue<int8_t>(a.semitones, -24, 24);
+        a.cents = std::isfinite(a.cents) ? std::clamp(a.cents, -50.f, 50.f) : 0.f;
+        // Warp markers keep both their ticks and their frames rising: anything else would play backwards.
+        auto cleanWarps = [](std::vector<WarpMarker>& warps) {
+            std::stable_sort(warps.begin(), warps.end(),
+                             [](const WarpMarker& x, const WarpMarker& y) { return x.tick < y.tick; });
+            std::vector<WarpMarker> kept;
+            for (const WarpMarker& m : warps)
+                if (std::isfinite(m.tick) && m.frame >= 0 &&
+                    (kept.empty() || (m.tick > kept.back().tick && m.frame > kept.back().frame)))
+                    kept.push_back(m);
+            warps = kept;
+        };
+        cleanWarps(a.warps);
+        for (AudioTake& t : a.takes)
+            cleanWarps(t.warps);
+        // Parts stay inside the clip and in order; a part with no length would never play.
+        std::vector<AudioRegion> parts;
+        for (AudioRegion r : a.regions) {
+            r.start = std::clamp<Tick>(r.start, 0, clip.length);
+            r.length = std::clamp<Tick>(r.length, 0, clip.length - r.start);
+            if (r.length <= 0)
+                continue;
+            ids.fix(r.id);
+            r.sourceFrame = std::max<int64_t>(0, r.sourceFrame);
+            r.take = r.take >= int(a.takes.size()) ? -1 : std::max(-1, r.take);
+            r.gainDb = std::isfinite(r.gainDb) ? std::clamp(r.gainDb, kSilentDb, kMaxClipGainDb) : 0.f;
+            normalizeFade(r.fadeIn, r.length);
+            normalizeFade(r.fadeOut, r.length);
+            parts.push_back(r);
+        }
+        std::stable_sort(parts.begin(), parts.end(),
+                         [](const AudioRegion& x, const AudioRegion& y) { return x.start < y.start; });
+        a.regions = parts;
+        if (!a.regions.empty())
+            a.reverse = false;
+    }
+}
+
+void normalizeFade(Fade& fade, Tick most) {
+    fade.length = std::clamp<Tick>(fade.length, 0, most);
+    fade.curve = std::isfinite(fade.curve) ? std::clamp(fade.curve, -1.f, 1.f) : 0.f;
+}
+
+void normalizeSourceLevel(SourceLevel& l) {
+    l.db = std::isfinite(l.db) ? std::clamp(l.db, kSilentDb, kMaxFaderDb) : 0.f;
+}
+
+void normalizeChannel(Channel& c) {
+    c.volumeDb = std::isfinite(c.volumeDb) ? std::clamp(c.volumeDb, kSilentDb, kMaxFaderDb) : 0.f;
+    c.pan = std::isfinite(c.pan) ? std::clamp(c.pan, -1.f, 1.f) : 0.f;
+}
+
+void normalizeSources(Song& song, IdRepair& ids) {
+    std::vector<AudioSource>& list = song.audioSources;
+    std::stable_sort(list.begin(), list.end(), [](const AudioSource& a, const AudioSource& b) { return a.id < b.id; });
+    // Clips point at sources by ID, so a source without a valid, unique ID can't be reached: it goes.
+    list.erase(std::remove_if(list.begin(), list.end(), [](const AudioSource& s) { return !s.id.valid(); }),
+               list.end());
+    list.erase(std::unique(list.begin(), list.end(),
+                           [](const AudioSource& a, const AudioSource& b) { return a.id == b.id; }),
+               list.end());
+    for (AudioSource& s : list) {
+        ids.claim(s.id.value);
+        clampValue(s.channels, 1, 2);
+        s.fileChannels = std::max(s.fileChannels, s.channels);
+        if (!(s.sampleRate >= 1000 && s.sampleRate <= 768000))
+            s.sampleRate = 48000;
+        s.frames = std::max<int64_t>(0, s.frames);
+        s.tempo = std::isfinite(s.tempo) && s.tempo > 0 ? std::clamp(s.tempo, kMinClipTempo, kMaxClipTempo) : 0;
+        if (!(std::isfinite(s.volts) && s.volts > 0))
+            s.volts = kImportVolts;
+    }
 }
 
 void normalizeParams(std::vector<float>& params, const std::vector<devices::ParamInfo>& table) {
@@ -254,6 +497,25 @@ void normalizeModulators(std::vector<Modulator>& mods, size_t limit, IdRepair& i
             m.steps.resize(kMaxSteps);
         for (float& v : m.steps)
             v = std::isfinite(v) ? std::clamp(v, 0.f, 1.f) : 0.f;
+        if (m.type == ModulatorType::Curve) {
+            m.length = m.length > 0 ? std::clamp<Tick>(m.length, kPpq / 4, kMaxCurveLength) : 4 * kPpq;
+            for (AutoPoint& pt : m.points) {
+                pt.value = std::isfinite(pt.value) ? std::clamp(pt.value, 0.f, 1.f) : 0.5f;
+                clampValue(pt.tension, -1.f, 1.f);
+                pt.t = std::clamp<Tick>(pt.t, 0, kMaxCurveLength);
+            }
+            std::stable_sort(m.points.begin(), m.points.end(),
+                             [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+            // A segment that isn't one (none saved) plays the whole drawing.
+            if (m.segmentEnd <= m.segmentStart || m.segmentEnd > m.length || m.segmentStart < 0) {
+                m.segmentStart = 0;
+                m.segmentEnd = m.length;
+            }
+        } else {
+            m.length = 0;
+            m.points.clear();
+            m.segmentStart = m.segmentEnd = 0;
+        }
         if (m.routes.size() > size_t(kMaxRoutes))
             m.routes.resize(kMaxRoutes);
         for (Modulation& r : m.routes)
@@ -261,16 +523,74 @@ void normalizeModulators(std::vector<Modulator>& mods, size_t limit, IdRepair& i
     }
 }
 
-void normalizeDevices(Track& track, IdRepair& ids) {
-    if (track.devices.size() > size_t(kMaxDevices))
-        track.devices.resize(kMaxDevices);
-    for (Device& d : track.devices) {
+/// A Playheads device reads the clip, so it comes first and there is at most one (docs/design/PLAYHEADS.md §4.6).
+/// Only Motion devices may come before it: they move the notes it reads.
+void placePlayheads(std::vector<Device>& chain) {
+    auto isPlayheads = [](const Device& d) { return d.type == DeviceType::Playheads; };
+    auto first = std::find_if(chain.begin(), chain.end(), isPlayheads);
+    if (first == chain.end())
+        return;
+    size_t was = size_t(first - chain.begin());
+    Device keep = *first;
+    chain.erase(std::remove_if(chain.begin(), chain.end(), isPlayheads), chain.end());
+    // Where it was, unless a device other than Motion came before it.
+    size_t at = 0;
+    while (at < was && chain[at].type == DeviceType::Motion)
+        at++;
+    chain.insert(chain.begin() + long(at), keep);
+}
+
+/// `room`: how many more devices the track may hold; branch devices count toward it.
+void normalizePlayheads(Device& d, IdRepair& ids, int& room) {
+    if (d.type != DeviceType::Playheads) {
+        d.playheads.clear();
+        return;
+    }
+    if (d.playheads.size() > size_t(playheads::kMaxPlayheads))
+        d.playheads.resize(playheads::kMaxPlayheads);
+    for (Playhead& p : d.playheads) {
+        ids.fix(p.id);
+        normalizeParams(p.params, devices::playheadInfo().params);
+        clampValue<uint8_t>(p.channel, 0, 16);
+        p.color %= 16;
+        for (AutoPoint& pt : p.path) {
+            clampValue(pt.value, 0.f, 1.f);
+            clampValue(pt.tension, -1.f, 1.f);
+            pt.t = std::max<Tick>(0, pt.t);
+        }
+        std::stable_sort(p.path.begin(), p.path.end(),
+                         [](const AutoPoint& a, const AutoPoint& b) { return a.t < b.t; });
+        p.branch.erase(std::remove_if(p.branch.begin(), p.branch.end(),
+                                      [](const Device& b) { return b.type == DeviceType::Playheads; }),
+                       p.branch.end());
+        size_t keep = size_t(std::clamp(std::min(room, kMaxBranchDevices), 0, int(p.branch.size())));
+        p.branch.resize(keep);
+        room -= int(keep);
+        for (Device& b : p.branch) {
+            ids.fix(b.id);
+            b.type = DeviceType(std::clamp(int(b.type), 0, kDeviceTypeCount - 1));
+            normalizeParams(b.params, devices::deviceInfo(b.type).params);
+            b.modulators.clear(); // branch devices have no modulators of their own (yet)
+            b.playheads.clear();
+        }
+    }
+}
+
+/// A chain (a track's, or a clip's own) and the modulators that go with it.
+void normalizeDevices(std::vector<Device>& chain, std::vector<Modulator>& modulators, IdRepair& ids) {
+    if (chain.size() > size_t(kMaxDevices))
+        chain.resize(kMaxDevices);
+    placePlayheads(chain);
+    int room = kMaxDevices - int(chain.size());
+    for (Device& d : chain) {
         ids.fix(d.id);
         d.type = DeviceType(std::clamp(int(d.type), 0, kDeviceTypeCount - 1));
         normalizeParams(d.params, devices::deviceInfo(d.type).params);
         normalizeModulators(d.modulators, kMaxDeviceModulators, ids);
+        normalizePlayheads(d, ids, room);
+        d.color = d.type == DeviceType::Motion ? uint8_t(d.color % 16) : 0;
     }
-    normalizeModulators(track.modulators, kMaxTrackModulators, ids);
+    normalizeModulators(modulators, kMaxTrackModulators, ids);
 }
 
 /// A knob takes at most kMaxModulationsPerKnob routes; later ones (in song order) go.
@@ -311,28 +631,51 @@ void normalizeTrack(Track& track, const Song& song, IdRepair& ids) {
         clampValue(lane.chokeGroup, 0, kMaxChokeGroups);
     }
 
+    if (track.type == TrackType::Audio)
+        track.drumLanes.clear();
+    normalizeChannel(track.channel);
+    normalizeSourceLevel(track.clips);
+    clampValue(track.latencySamples, 0, 96000);
+    for (Channel& c : track.drumInputs)
+        normalizeChannel(c);
+
+    // A clip's kind must match its track: audio clips only on audio tracks, note clips only elsewhere.
+    bool audioTrack = track.type == TrackType::Audio;
+    auto fits = [&](ClipId id) {
+        const Clip* c = song.findClip(id);
+        return c && c->isAudio() == audioTrack;
+    };
     track.slots.resize(song.scenes.size());
     for (ClipSlot& slot : track.slots)
-        if (slot.clip && !song.findClip(*slot.clip))
+        if (slot.clip && !fits(*slot.clip))
             slot.clip.reset();
 
     auto& arr = track.arrangement;
-    arr.erase(std::remove_if(arr.begin(), arr.end(), [&](const ArrangerClip& a) { return !song.findClip(a.clip); }),
+    arr.erase(std::remove_if(arr.begin(), arr.end(), [&](const ArrangerClip& a) { return !fits(a.clip); }),
               arr.end());
     for (ArrangerClip& a : arr) {
         ids.fix(a.id);
         a.position = std::max<Tick>(0, a.position);
         a.length = std::max<Tick>(1, a.length);
         a.offset = std::max<Tick>(0, a.offset);
-        a.velocityScale = std::max(0.f, a.velocityScale);
         a.stretch = a.stretch > 0 ? std::clamp(a.stretch, kMinStretch, kMaxStretch) : 1.f;
+        if (audioTrack) {
+            // Pitch, gain and speed of audio live on the clip; audio tracks never stack.
+            a.transpose = 0;
+            a.stretch = 1;
+            a.layer = 0;
+            normalizeFade(a.fadeIn, a.length);
+            normalizeFade(a.fadeOut, a.length - a.fadeIn.length);
+        } else {
+            a.fadeIn = a.fadeOut = Fade{};
+        }
     }
     std::stable_sort(arr.begin(), arr.end(), [](const ArrangerClip& a, const ArrangerClip& b) {
         return a.position != b.position ? a.position < b.position : a.id.value < b.id.value;
     });
 
     normalizeAutomation(track.automation, ids);
-    normalizeDevices(track, ids);
+    normalizeDevices(track.devices, track.modulators, ids);
 }
 
 /// Raises nextId above every ID in the song, before any repair hands out new ones.
@@ -359,9 +702,93 @@ void seeAllIds(Song& song, IdRepair& ids) {
             ids.see(d.id.value);
     for (const Marker& m : song.markers)
         ids.see(m.id.value);
+    for (const AudioSource& s : song.audioSources)
+        ids.see(s.id.value);
+    ids.see(song.master.id.value);
 }
 
 } // namespace
+
+/// Octave, Steps and Velocity left the playhead (30 Oct) for devices in its own chain, where every other note change
+/// lives. A playhead that still sets them, or has curves or lanes on them, gets a Transpose (and a Velocity) device
+/// at the start of its chain; curves and lanes on Octave and Steps move to the Transpose's knobs (same ranges).
+void movePlayheadNoteSettings(Song& song) {
+    namespace pk = playheads::knob;
+    const auto& info = devices::playheadInfo();
+    const auto& transposeInfo = devices::deviceInfo(DeviceType::Transpose).params;
+    const auto& velocityInfo = devices::deviceInfo(DeviceType::Velocity).params;
+    auto targets = [&](const ParamRef& ref, uint64_t owner, int k) {
+        return ref.kind == ParamRef::Kind::Playhead && ref.owner == owner && ref.param == k;
+    };
+    for (Track& t : song.tracks)
+        for (Device& d : t.devices)
+            for (Playhead& p : d.playheads) {
+                auto shown = [&](int k) { return devices::display(info.params[size_t(k)], p.params[size_t(k)]); };
+                bool driven = false;
+                forEachModulator(song, [&](Modulator& m, const ModulatorPlace&) {
+                    for (const Modulation& r : m.routes)
+                        driven = driven || targets(r.target, p.id.value, pk::kOctave) ||
+                                 targets(r.target, p.id.value, pk::kKeySteps);
+                });
+                auto lanesOf = [&](const std::function<void(AutomationEnvelope&)>& f) {
+                    for (AutomationEnvelope& lane : t.automation)
+                        f(lane);
+                    for (auto& [key, clip] : song.clips)
+                        for (AutomationEnvelope& lane : clip.automation)
+                            f(lane);
+                };
+                lanesOf([&](AutomationEnvelope& lane) {
+                    driven = driven || targets(lane.paramTarget, p.id.value, pk::kOctave) ||
+                             targets(lane.paramTarget, p.id.value, pk::kKeySteps);
+                });
+                float octave = shown(pk::kOctave), steps = shown(pk::kKeySteps), velocity = shown(pk::kVelocity);
+                std::vector<Device> front;
+                if (octave != 0 || steps != 0 || driven) {
+                    Device transpose = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+                    transpose.params[chain::knob::kOctaves] =
+                        devices::normalize(transposeInfo[chain::knob::kOctaves], octave);
+                    transpose.params[chain::knob::kKeySteps] =
+                        devices::normalize(transposeInfo[chain::knob::kKeySteps], steps);
+                    auto retarget = [&](ParamRef& ref) {
+                        if (targets(ref, p.id.value, pk::kOctave))
+                            ref = {ParamRef::Kind::Device, transpose.id.value, uint16_t(chain::knob::kOctaves)};
+                        else if (targets(ref, p.id.value, pk::kKeySteps))
+                            ref = {ParamRef::Kind::Device, transpose.id.value, uint16_t(chain::knob::kKeySteps)};
+                    };
+                    forEachModulator(song, [&](Modulator& m, const ModulatorPlace&) {
+                        for (Modulation& r : m.routes)
+                            retarget(r.target);
+                    });
+                    lanesOf([&](AutomationEnvelope& lane) { retarget(lane.paramTarget); });
+                    front.push_back(transpose);
+                }
+                if (velocity != 0) {
+                    // The nearest the Velocity device comes to "this much louder or softer".
+                    Device v = devices::makeDevice(DeviceType::Velocity, song.newId<DeviceId>());
+                    if (velocity > 0)
+                        v.params[chain::knob::kMin] = devices::normalize(velocityInfo[chain::knob::kMin], velocity);
+                    else
+                        v.params[chain::knob::kMax] =
+                            devices::normalize(velocityInfo[chain::knob::kMax], 100 + velocity);
+                    front.push_back(v);
+                }
+                for (int k : {pk::kOctave, pk::kKeySteps, pk::kVelocity})
+                    p.params[size_t(k)] = devices::defaultNormalized(info.params[size_t(k)]);
+                // A velocity curve has nowhere to go: the Velocity device has no "louder by" knob.
+                forEachModulator(song, [&](Modulator& m, const ModulatorPlace&) {
+                    m.routes.erase(std::remove_if(m.routes.begin(), m.routes.end(),
+                                                  [&](const Modulation& r) {
+                                                      return targets(r.target, p.id.value, pk::kVelocity);
+                                                  }),
+                                   m.routes.end());
+                });
+                if (front.empty())
+                    continue;
+                p.branch.insert(p.branch.begin(), front.begin(), front.end());
+                if (p.branch.size() > size_t(kMaxBranchDevices))
+                    p.branch.resize(kMaxBranchDevices);
+            }
+}
 
 void normalize(Song& song) {
     IdRepair ids(song);
@@ -378,10 +805,18 @@ void normalize(Song& song) {
     if (song.loopEnd <= song.loopStart)
         song.loopEnd = song.loopStart + ticksPerBar(song.timeSig);
 
+    normalizeSources(song, ids);
     for (auto& [key, clip] : song.clips) {
         clip.id = key; // the pool key is the truth, and keys are already unique
         ids.claim(key.value);
         normalizeClip(clip, song.timeSig, ids);
+        // A clip's own chain; audio clips have none, and a clip without one has nothing in it.
+        if (clip.isAudio() || !clip.hasOwnChain) {
+            clip.hasOwnChain = clip.playsOwnChain = false;
+            clip.devices.clear();
+            clip.modulators.clear();
+        }
+        normalizeDevices(clip.devices, clip.modulators, ids);
     }
 
     // Scenes and slots must line up: grow the scene list to the longest slot list.
@@ -400,17 +835,53 @@ void normalize(Song& song) {
 
     for (TrackGroup& g : song.groups) {
         ids.fix(g.id);
+        normalizeChannel(g.channel);
         g.tracks.erase(
             std::remove_if(g.tracks.begin(), g.tracks.end(), [&](TrackId id) { return !song.findTrack(id); }),
             g.tracks.end());
     }
     normalizeModulators(song.modulators, kMaxSongModulators, ids);
+    // A note moves with a Motion device that exists; one whose device is gone stays still.
+    std::set<uint64_t> motions;
+    auto motionsIn = [&](const std::vector<Device>& chain) {
+        for (const Device& d : chain) {
+            if (d.type == DeviceType::Motion)
+                motions.insert(d.id.value);
+            for (const Playhead& p : d.playheads)
+                for (const Device& b : p.branch)
+                    if (b.type == DeviceType::Motion)
+                        motions.insert(b.id.value);
+        }
+    };
+    for (const Track& t : song.tracks)
+        motionsIn(t.devices);
+    for (const auto& [key, clip] : song.clips)
+        motionsIn(clip.devices);
+    for (auto& [key, clip] : song.clips)
+        for (Note& n : clip.notes)
+            if (n.motion.valid() && !motions.count(n.motion.value))
+                n.motion = DeviceId();
+    movePlayheadNoteSettings(song);
     pruneRoutes(song);
     limitModulationsPerKnob(song);
     for (Marker& m : song.markers) {
         ids.fix(m.id);
         m.position = std::max<Tick>(0, m.position);
     }
+    ids.fix(song.master.id);
+    song.master.volumeDb = std::isfinite(song.master.volumeDb)
+                               ? std::clamp(song.master.volumeDb, kSilentDb, kMaxFaderDb)
+                               : 0.f;
+    normalizeSourceLevel(song.master.mix);
+    normalizeSends(song);
+    // The master plays only a Volume lane.
+    auto& masterLanes = song.master.automation;
+    masterLanes.erase(std::remove_if(masterLanes.begin(), masterLanes.end(),
+                                     [](const AutomationEnvelope& l) { return l.drive != LaneDrive::Volume || l.part != 0; }),
+                      masterLanes.end());
+    if (masterLanes.size() > 1)
+        masterLanes.resize(1);
+    normalizeAutomation(masterLanes, ids);
     std::stable_sort(song.markers.begin(), song.markers.end(),
                      [](const Marker& a, const Marker& b) { return a.position < b.position; });
 }
@@ -505,6 +976,7 @@ Song makeDefaultSong() {
     song.tracks.push_back(makeTrack(song, TrackType::Instrument, "Track 2"));
     song.tracks.push_back(makeTrack(song, TrackType::Instrument, "Track 3"));
     song.tracks.push_back(makeTrack(song, TrackType::Drum, "Drums"));
+    song.master.id = song.newId<TrackId>();
     return song;
 }
 

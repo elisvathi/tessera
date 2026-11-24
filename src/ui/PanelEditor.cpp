@@ -1,5 +1,7 @@
 #include "PanelEditor.hpp"
 
+#include "views/MixerPane.hpp"
+
 #include <set>
 
 #include "../module/TesseraModule.hpp"
@@ -26,7 +28,7 @@ class PanelWidthChange : public rack::history::ModuleAction {
   public:
     PanelWidthChange(int64_t id, int oldHp, int newHp) : oldHp(oldHp), newHp(newHp) {
         moduleId = id;
-        name = newHp > oldHp ? "widen Tessera" : "narrow Tessera";
+        name = newHp > oldHp ? "widen Roll" : "narrow Roll";
     }
     void undo() override { set(oldHp); }
     void redo() override { set(newHp); }
@@ -74,7 +76,7 @@ void resizeTesseraPanel(rack::app::ModuleWidget* mw, int hp, int oldHp, bool beg
     if (hp == oldHp)
         return;
     auto* action = new rack::history::ComplexAction;
-    action->name = hp > oldHp ? "widen Tessera" : "narrow Tessera";
+    action->name = hp > oldHp ? "widen Roll" : "narrow Roll";
     action->push(new PanelWidthChange(m->id, oldHp, hp));
     if (rack::history::ComplexAction* moves = rack->getModuleDragAction()) {
         // Take over the neighbour moves so they undo together with the width.
@@ -144,6 +146,8 @@ PanelEditor::PanelEditor(int64_t moduleId, std::function<void()> openFullEditor)
     top = new TopPane(ctx);
     detail = new DetailPane(ctx);
     panes = new PaneStack(ctx, top, detail, kMinPaneHeight, [this] { runAction(Action::MaximizePane); });
+    mixer = new MixerPane(ctx, true);
+    detail->setMixer(mixer);
     addChild(panes);
     // "Full editor" belongs to the whole editor, not a pane: it stays in the top-right corner whichever pane is
     // maximized, next to that pane's own maximize / restore button.
@@ -169,7 +173,7 @@ PanelEditor::~PanelEditor() {
 }
 
 EditorPane* PanelEditor::focusedPane() {
-    if (ctx.view().focus == Pane::Top && top->visible)
+    if (ctx.state().focus == Pane::Top && top->visible)
         return top;
     return detail->visible ? static_cast<EditorPane*>(detail) : top;
 }
@@ -192,7 +196,7 @@ void PanelEditor::step() {
     panes->box = rack::math::Rect(rack::math::Vec(), box.size);
     // Full editor sits left of the top pane's maximize button. The transport sits top-left, above the track names,
     // where the eye starts. With the notes maximized both move into the notes header (which keeps the room free).
-    bool notesOnTop = ctx.view().maximized == Pane::Detail;
+    bool notesOnTop = ctx.state().maximized == Pane::Detail;
     float transportWidth = float(transport.size()) * (kTransportButton + 2) - 2;
     float groupWidth = kCornerButton + kCornerGroupGap + transportWidth;
     detail->reserveHeader(notesOnTop ? groupWidth + 6 : 0);
@@ -205,6 +209,12 @@ void PanelEditor::step() {
     float maximizeRoom = notesOnTop ? 6 + kMaximizeButton + 6 : 3 + kMaximizeButton + 4;
     float x = box.size.x - maximizeRoom - kCornerButton;
     fullEditor->box = rack::math::Rect(x, buttonY, kCornerButton, kCornerButton);
+    if (!notesOnTop && song->timelineFolded()) {
+        // The timeline is a narrow tab: the button goes under the pane's maximise, on the tab.
+        rack::math::Rect max = song->maximizeRect();
+        fullEditor->box = rack::math::Rect(max.getCenter().x - kCornerButton / 2, max.getBottom() + 4, kCornerButton,
+                                           kCornerButton);
+    }
     x = notesOnTop ? x - kCornerGroupGap - transportWidth : 4;
     float transportY = notesOnTop ? buttonY + 1 : (rulerHeight - kTransportButton) / 2;
     for (ToolButton* b : transport) {

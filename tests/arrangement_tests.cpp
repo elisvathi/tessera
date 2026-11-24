@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include "../src/model/ArrangementEdits.hpp"
+#include "../src/model/LauncherCommands.hpp"
 
 #include <algorithm>
 
@@ -142,13 +143,12 @@ TEST_CASE("offset, stretch, transpose and velocity scale shape what an instance 
     ArrangerClip slow = instance(song, c.id, 0, 2 * kBeat);
     slow.stretch = 2;
     slow.transpose = 12;
-    slow.velocityScale = 0.5f;
     notes = render(c, slow);
     REQUIRE(notes.size() == 2);
     CHECK(notes[0].end == 480);
     CHECK(notes[1].start == kBeat);
     CHECK(notes[0].pitch == 72);
-    CHECK(notes[0].velocity == doctest::Approx(0.4f));
+    CHECK(notes[0].velocity == doctest::Approx(0.8f));
 }
 
 TEST_CASE("a non-looping clip plays once, then the instance is silent") {
@@ -299,6 +299,34 @@ TEST_CASE("duplicates are linked; deleting the last use of a clip removes it unt
     CHECK(f.song.findClip(f.clip) != nullptr);
 }
 
+TEST_CASE("link identical clips makes copies with the same content share one clip") {
+    Fixture f;
+    f.add(f.t0, 0, kBeat);
+    ArrangementId b = f.add(f.t0, 2 * kBeat, kBeat);
+    Clip copy = copyClip(*f.song.findClip(f.clip), f.next());
+    copy.name = "Another name";
+    ClipId copied = copy.id;
+    f.perform(std::make_unique<AddClip>(std::move(copy)));
+    Layout l = layoutOf(f.song);
+    for (Placed& p : l)
+        if (p.clip.id == b)
+            p.clip.clip = copied;
+    f.perform(replaceArrangement(f.song, "Own clip", layoutOf(f.song), l));
+    auto heard = played(f.song, f.t0);
+
+    SUBCASE("a changed copy stays apart") {
+        f.song.findClip(copied)->notes[0].pitch++;
+        CHECK_FALSE(linkIdenticalClips(f.song, f.t0));
+    }
+    SUBCASE("copies that match are linked") {
+        f.perform(linkIdenticalClips(f.song, f.t0));
+        CHECK(f.song.clipUses(f.clip) == 2);
+        CHECK(f.song.findClip(copied) == nullptr);
+        CHECK(played(f.song, f.t0) == heard);
+        CHECK_FALSE(linkIdenticalClips(f.song, f.t0));
+    }
+}
+
 TEST_CASE("glue bakes several instances into one clip that plays the same") {
     Fixture f;
     ArrangementId a = f.add(f.t0, 0, kBeat + kBeat / 2);
@@ -434,6 +462,20 @@ TEST_CASE("stacked clips: placing over another clip keeps both, and both play") 
     const auto& arr = g.song.findTrack(g.t0)->arrangement;
     REQUIRE(arr.size() == 2);
     CHECK(arr[0].length == kBeat);
+}
+
+TEST_CASE("Channel allocation: automatic voices reach the highest note channel (issue #13)") {
+    Fixture f;
+    Track& t = *f.song.findTrack(f.t0);
+    t.polyphony = kAutoVoices;
+    for (ClipSlot& s : t.slots)
+        s.clip.reset();
+    f.add(f.t0, 0, 2 * kBeat);
+    for (Note& n : f.song.clips[f.clip].notes)
+        n.channel = 9;
+    int alone = f.song.voicesOf(t);
+    t.allocation = VoiceAllocation::Channel;
+    CHECK(f.song.voicesOf(t) == std::max(alone, 9));
 }
 
 TEST_CASE("stacked clips: automatic voices add up while clips overlap") {

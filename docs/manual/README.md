@@ -25,6 +25,8 @@ patch.
 14. [Files, export and import](14-files.md): projects, MIDI files and DAWproject.
 15. [Keyboard shortcuts](15-shortcuts.md): every key in one place.
 16. [Problems and answers](16-troubleshooting.md): what to check when something doesn't work.
+17. [Audio](17-audio.md): audio tracks, dropping files, tempo and stretching.
+18. [The mixer](18-mixer.md): faders, pan, meters and the Master.
 
 ## Words used in this manual
 

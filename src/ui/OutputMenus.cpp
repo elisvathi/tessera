@@ -1,5 +1,6 @@
 #include "OutputMenus.hpp"
 
+#include "../model/DeviceLookup.hpp"
 #include "../module/Registry.hpp"
 #include "../module/TesseraModule.hpp"
 #include "ModuleUndo.hpp"
@@ -41,6 +42,34 @@ class TrackMenuItem : public rack::ui::MenuItem {
 
 } // namespace
 
+std::string channelPlayers(OutputModuleBase* m, int channel) {
+    TesseraModule* src = m->source();
+    if (!src || m->status() != BindingStatus::Bound)
+        return "";
+    const Track* track = src->song().findTrack(m->binding().track);
+    const Device* device = track ? activePlayheads(*track) : nullptr;
+    if (!device)
+        return "";
+    std::string names;
+    for (const Playhead& p : device->playheads)
+        if (p.channel == channel)
+            names += (names.empty() ? "" : ", ") + p.name;
+    return names.empty() ? "nothing" : names;
+}
+
+void appendChannelMenu(rack::ui::Menu* menu, OutputModuleBase* m) {
+    auto pick = [m](int channel) {
+        withModuleUndo(m, "change output channel", [&] { m->setPart(channel); });
+    };
+    menu->addChild(rack::createCheckMenuItem(
+        "All", "", [m] { return m->part() == 0; }, [pick] { pick(0); }));
+    for (int c = 1; c <= 16; c++) {
+        std::string players = channelPlayers(m, c);
+        menu->addChild(rack::createCheckMenuItem(
+            "Channel " + std::to_string(c), players, [m, c] { return m->part() == c; }, [pick, c] { pick(c); }));
+    }
+}
+
 void appendSourceMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what) {
     std::vector<TesseraModule*> sources = Registry::get().sources();
     if (sources.empty()) {
@@ -64,6 +93,21 @@ void appendSourceMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::stri
                 withModuleUndo(m, "change " + what + " source", [&] { m->bind(*s, track); });
             }));
     }
+}
+
+std::string boundTrackLabel(OutputModuleBase* m) {
+    TesseraModule* src = m->source();
+    if (!src)
+        return "";
+    if (m->binding().followSelected)
+        return "Follows selected";
+    const Song& song = src->song();
+    if (m->binding().track == song.master.id)
+        return "Master";
+    for (size_t i = 0; i < song.tracks.size(); i++)
+        if (song.tracks[i].id == m->binding().track)
+            return std::to_string(i + 1) + " " + song.tracks[i].name;
+    return "";
 }
 
 void appendTrackMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::string& what) {
@@ -94,6 +138,21 @@ void appendTrackMenu(rack::ui::Menu* menu, OutputModuleBase* m, const std::strin
                     m->bind(*s, id);
                 });
         }));
+    }
+    // The master, last (§8.1): OUT is the master mix, IN is mixed into it.
+    if (m->canBindMaster()) {
+        TrackId master = song.master.id;
+        bool checked = m->binding().track == master;
+        menu->addChild(rack::createCheckMenuItem(
+            "Master", "", [checked] { return checked; },
+            [m, sourceId, master, what] {
+                TesseraModule* s = Registry::get().findSource(sourceId);
+                if (s)
+                    withModuleUndo(m, "change " + what + " track", [&] {
+                        m->setFollowSelected(false);
+                        m->bind(*s, master);
+                    });
+            }));
     }
 }
 

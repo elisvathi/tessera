@@ -8,7 +8,8 @@ The editor is where you write music. This chapter shows its parts, how to move a
 - The editor covers the whole Rack window. While it is open, the rack behind it doesn't react to the mouse or keys.
   **Ctrl+S** still saves the patch.
 - Click **×** in the top-right corner to close it, or press **Esc**. Esc first cancels a drag, then clears the
-  selection; once nothing is left to cancel, it closes the editor.
+  selection; once nothing is left to cancel, it says "Press Esc again to close the editor", and a second Esc within
+  a moment closes it.
 
 There is also a smaller editor inside the panel itself. See [The editor inside the panel](#the-editor-inside-the-panel).
 
@@ -31,15 +32,15 @@ There is also a smaller editor inside the panel itself. See [The editor inside t
 2. **Plays switch.** What the tracks play: the **Clips** you launch or the **Timeline**. The half that plays is
    lit. See [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline).
 3. **Undo and redo**, **follow the playhead**, **show the inspector**, and **close**.
-4. **Track headers.** One row per track: number and colour, name, arm for recording, automation lanes arrow, mute
-   (M) and solo (S). See [Tracks](04-tracks.md).
+4. **Track headers.** One row per track: number and colour, the arrow that opens its lanes, parts and sends, name,
+   arm for recording, mute (M) and solo (S). See [Tracks](04-tracks.md).
 5. **Clips.** Each column is a scene, each row a track. Click ▶ in a slot to launch that clip. See
    [Clips and scenes](05-clips-and-scenes.md).
 6. **Timeline.** The song from left to right, with the ruler, markers and the loop on top. See
    [The timeline](06-timeline.md).
 7. **Automation lane.** A curve that moves a voltage over time. It opens under its track. See
    [Automation](12-automation.md).
-8. **Notes header.** The clip's name and length, the **Devices** button, the tool switch, **Snap**, the key, the
+8. **Notes header.** The **Notes · Devices · Mixer** switch, the clip's name and length, the tool switch, **Snap**, the key, the
    **Notes ▾** and **View ▾** menus, the speaker (hear notes while editing) and the maximize button.
 9. **Piano roll.** The notes of the selected clip. On a drum track it is the drum editor, with lanes instead of
    keys. See [The piano roll](07-piano-roll.md) and [Drums](09-drums.md).
@@ -54,11 +55,25 @@ more room.
 - **Keys act on the pane under the mouse.** Over the notes, Ctrl+A selects all notes. Over the song pane, it
   selects all clips or tracks. A thin ring shows which pane has the keys.
 - With the mouse outside both panes (on the transport or the inspector), the pane you clicked last keeps the keys.
-- **Tab** switches the pane. **Shift+Tab** maximizes the pane under the mouse, or restores both.
+- **Tab** switches between the song and the lower pane. **Shift+Tab** maximizes the pane under the mouse, or
+  restores the panes.
 - Each pane has a **maximize** button in its top-right corner. Double-clicking the line between the panes does the
-  same.
-- **F2** widens the clips beside the timeline (handy when performing). Press it again to narrow them.
-- **F3** opens the device strip above the notes. See [Devices](13-devices.md).
+  same. The other pane then folds to a thin bar that keeps its switch: **Notes · Devices · Mixer** at the bottom, or
+  **Clips · Timeline** at the top. Click one and both panes come back showing it; the arrow at the bar's right
+  restores the panes as they were.
+- The lower pane's header starts with **Notes · Devices · Mixer** (**Audio · Mixer** when an audio track is
+  selected, since it has no devices), the same in both windows. The lower pane shows the clip or the [mixer](18-mixer.md), never
+  both, and clicking any clip goes back to it. **Mixer** appears once something makes sound. In a
+  narrow pane the switch folds into one button that names what shows.
+- One key per view, in the order they sit: **F2** clips, **F3** notes, **F4** devices, **F5** mixer. A key always
+  shows its view: if its pane is folded, the panes come back first.
+- **F2**, or the small **›** handle on the clips' right edge (in the scene buttons' row), widens the clips (handy when
+  performing; the handle then shows **‹** to narrow them again, and it only shows while there are scenes to reveal): they
+  take the room their scenes need, and the timeline keeps the rest, so a track sent back to it still shows. With
+  more scenes than fit, the timeline folds to a strip at the right: click it to bring it back. Press F2 again to
+  narrow the clips. Widened clips and a maximized song pane together fill the editor with the clips.
+- **F4** (or **Devices** in the switch) opens the device strip above the notes. In a pane too short for both, the
+  devices take the whole pane instead. See [Devices](13-devices.md).
 
 ## Tools
 
@@ -118,7 +133,10 @@ While you drag a note or clip near the edge, the view scrolls by itself.
   **Ctrl+L** sets the loop around what is selected.
 - **Markers** (Intro, Verse, Chorus above) sit in the top row. Double-click the row to add one (or press
   **Ctrl+M**), drag a marker to move it, click it to jump there. Double-click a marker to rename it. Right-click it
-  to rename it, give it a colour or delete it.
+  to rename it, give it a colour, delete it, or **Loop this section** (from it to the next marker).
+- **Right-click** the time row, the loop strip or an empty spot in the marker row for a menu with **Play from here**,
+  **Add marker here**, **Loop** on or off, and, when there are markers, **Loop this section** (from the marker before
+  the spot to the one after it).
 - The **overview bar** shows the whole song in small. Drag its window to scroll, drag the window's ends to zoom,
   click to jump, double-click to fit.
 
@@ -126,7 +144,8 @@ While you drag a note or clip near the edge, the view scrolls by itself.
 
 The follow button in the transport bar (or **Ctrl+F**) keeps the playhead in view while playing. Pick how it moves
 in the notes header's **View ▾** menu: **Page by page** or **Scroll smoothly**. Following pauses while you drag or
-right after you scroll, then comes back.
+right after you scroll, then comes back. While a clip plays through [playheads](13-devices.md#playheads), the notes view never follows:
+each playhead reads its own part of the clip, so there is no one place to follow.
 
 ## Mouse keys that work everywhere
 
@@ -162,12 +181,16 @@ Every button shows a tooltip after half a second, with its key in brackets.
 
 Roll's panel can grow wider to hold a small editor right in the rack. Drag the panel's right edge, or right-click
 the panel and choose **Panel editor → 48, 80 or 120 HP**. Modules to the right move out of the way. Narrow it below
-about 36 HP and it folds back to 24 HP. One undo restores the width and the neighbours.
+about 40 HP and it folds back to 30 HP. One undo restores the width and the neighbours.
 
 ![The editor inside an 80 HP panel](images/panel-editor.png)
 
 - It shows the same song and the same editing tools as the full editor, just smaller. Edits in one show at once in
-  the other. Each keeps its own zoom.
+  the other, and so does what you see: what is open, which pane is maximized, zoom and scroll, track heights and open automation lanes.
+  Close the full editor and the panel editor is where you left off. Only the header, clips, mixer, curve pane and
+  device strip sizes stay separate, since the windows differ.
+- The lower pane is short there, so the devices take its place instead of sitting above the notes: switch with
+  **Notes · Devices · Mixer** at the left of its header, as in the full editor.
 - Play, stop, record and loop sit at the top left. **Full editor** (a window with an arrow) and **maximize** sit at
   the top right.
 - When the song pane is narrower than 600 px and the timeline plays, the clips fold into a **CLIPS** tab. Click it to

@@ -10,7 +10,7 @@ The inspector is the panel on the right of the editor. Press **I** to show or hi
 - **NOTES**: the selected notes (or **NOTE** for one).
 - **TRACK**: the selected track's name, **Voices**, **Input**, **Recording** and **Output**.
 - **CLIP**: the clip's name, length, loop and key.
-- **INSTANCE**: a selected timeline clip's start, length, offset, transpose, velocity, stretch and mute.
+- **INSTANCE**: a selected timeline clip's start, length, offset, transpose, stretch and mute.
 
 ![The inspector with five notes selected and the velocity chart open](images/inspector-notes.png)
 
@@ -32,6 +32,9 @@ and a tick marks each note.
 **Start** is written as the ruler writes it: bar.beat.sixteenth (1.4.1). **Length** is in bars and beats.
 **Micro-timing** moves a note a little early or late (up to half a sixteenth) while it stays on the grid in the
 editor.
+
+Under the fields, **Tie to the note before** ties the selected notes (see [Ties and glides](#ties-and-glides)). On
+tied notes it reads **Tied: no new gate**, and two more fields appear: **Glide before** and **Glide after**.
 
 ### The chart: Mean, Spread and Chaos
 
@@ -62,8 +65,15 @@ it.
 | **Only when…** | The note plays only on a condition: **First pass**, **Not first**, **After played** (the note before it played), **After silent** (the note before it didn't play), **Fill**, **Not fill**. Fill follows the panel's **FILL** button, the **FILL** input, or the **F1** key. |
 | **Every … passes** | The note plays only on some passes of a cycle. A row of 16 bars shows the passes: click a bar to play or skip that pass, click a grey bar to make the cycle longer, right-click to end the cycle there. For example, a cycle of 4 with pass 4 on plays the note only every fourth loop. |
 
-Random choices are repeatable: a loop plays the same way each time you play the song, and the same way in a MIDI
-export.
+**The dice.** Each clip decides its chance, velocity spread and timing spread with a dice of its own, in the
+inspector's CLIP section, on the **Chance** row: a dice button and a two-part switch.
+
+- **New** (where a new clip starts): the choices are made again on every play and every pass of the song loop.
+- **17**, or any number from 1 to 999: the same choices every time, so a loop you like stays. Click the number half to
+  switch to it; the dice rolls another number and keeps it.
+
+A bake or export of a clip on **New** makes fresh choices; its message offers **Keep it**, which sets the clip's
+switch to the number it used, so you hear what you baked.
 
 ### Badges
 
@@ -109,6 +119,36 @@ Choose **Timbre** or **Pressure** in the lower lane's menu, and select some note
 them, four rows tall: 0% at the bottom, 100% at the top. Press near a curve to add a point, drag points and arch
 handles the same way as bends. With several notes selected, each gets its point at the same beat, so they swell
 together.
+
+## Ties and glides
+
+A tie joins a note to the one before it. The gate stays high, so the envelope does not start again: the pitch just
+moves on, as when you play legato on a mono synth. The pitch can jump, or glide from one note to the other.
+
+![Ties: A1 glides into C2, C2 is tied on at the same pitch, and E2 jumps to D2](images/ties.png)
+
+| To do this | Do this |
+|---|---|
+| Tie notes | Select them and press **J** (or right-click → **Tie to the note before**). One note ties to the note before it; several tie to one another, so a selection becomes one line. Notes up to a 1/16 apart close up; a note that overlaps the next is trimmed. |
+| Make a glide | Drag the dot on the joint sideways. The glide opens evenly on both sides. |
+| Set where the glide starts and ends | Select the tie. Drag the handle at the start (inside the first note) or at the end (inside the second). They snap to the grid; hold **Alt** for any place. |
+| Bend the glide | Drag its hollow middle handle up or down (a slow or fast start). |
+| Remove the glide | Right-click the tie → **No glide (jump)**. |
+| Untie | Press **J** again: the glide stays, written into the two notes' own pitch curves, and the second note starts again. Right-click the tie → **Untie, remove the glide** drops the glide too. |
+| Tie again | When the two notes' pitch curves still meet at the joint, tying them turns those curves back into the tie's glide, so only one thing moves the pitch. |
+
+- A tie is drawn as a dot on the joint, with a straight line for a jump or the glide's curve. Two notes of the same
+  pitch show a small arc: they play as one long note.
+- In a chord, each tied note continues the note before it nearest in pitch, so a chord can glide into the next.
+- A tied note needs a note on its channel that ends where it starts (or overlaps it). If you drag them apart, the
+  tie shows as an empty dot and the note plays as a normal note again.
+- While tied, the glide belongs to the tie: move or transpose either note and the line stays joined. Each note's own
+  bend plays on top of it.
+- Several selected tied notes change their glides together. **Glide before** and **Glide after** in the inspector
+  type the same values in.
+- Ties carry on round a clip's loop (the last note into the first). Stop, a loop of the song, and switching clips
+  end the note.
+- Drum tracks have no ties.
 
 ## Transforms
 

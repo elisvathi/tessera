@@ -10,6 +10,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Key | What it does |
 |---|---|
 | Space | Play / stop |
+| Enter | Stop; press it again while stopped to go back to the start (as the **■** button does) |
 | Shift+Space | Play from the mouse (or the selection's start) |
 | R | Record |
 | Ctrl+Shift+R | Capture what you just played as a clip |
@@ -50,6 +51,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Ctrl+I | Invert the selection |
 | Ctrl+E | Split |
 | Ctrl+J | Glue |
+| J | Tie the selected notes; again: untie, keeping the glide (*notes pane*) |
 | Ctrl+U | Make unique |
 | Q | Quantize |
 | Shift+Q | Quantize… (settings) |
@@ -64,6 +66,10 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Alt+Left / Right / Up / Down | Select the next note in that direction |
 | Ctrl+Shift+T | Transform box on / off (*notes pane*) |
 | Ctrl+Shift+Delete | Delete time: the range closes up (*song pane*) |
+| Shift+Delete | Delete parts of an audio clip and close the gap (*audio editor*) |
+| Alt+T | Show or hide an audio clip's takes (*audio editor*) |
+| Q / Shift+Q | Quantize hits with warp markers / its settings (*audio editor, or selected audio clips*) |
+| Up / Down | The selected parts of an audio clip use the take above or below (*audio editor, takes showing*) |
 | Ctrl+Shift+I | Insert silence as long as the range (*song pane*) |
 
 ## View
@@ -83,10 +89,14 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Ctrl+4 | Snap on / off |
 | Ctrl+Shift+F | Fold to the key's rows (*notes pane*) |
 | I | Inspector |
-| Tab | Switch pane |
-| Shift+Tab | Maximize the pane, or restore both |
+| Tab | Switch pane (song, lower pane) |
+| Shift+Tab | Maximize the pane, or restore the panes |
 | F2 | Widen / narrow the clips beside the timeline |
-| F3 | Device strip above the notes |
+| F3 | Show the notes in the lower pane |
+| F4 | Devices: above the notes, or in their place in a short pane |
+| F5 | Show the mixer in the lower pane |
+| Ctrl+B | Bounce the selected track to a new track |
+| Ctrl+Alt+E | Export audio |
 | G | Drum lanes / keys (*notes pane*) |
 
 ## Tracks
@@ -99,6 +109,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Ctrl+Down / Ctrl+Up | Select the next / previous track |
 | M | Mute the selected tracks |
 | Alt+S | Solo the selected tracks |
+| Shift+M | Turn the shown playhead off or on (*piano roll*) |
 | Ctrl+M | Add a marker |
 
 ## General
@@ -107,7 +118,8 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 |---|---|
 | ? (Shift+/) | Shortcut help |
 | Ctrl+Shift+E | Export MIDI… |
-| Esc | Cancel a drag, clear the selection, then close the editor |
+| Ctrl+Shift+O | Import audio… |
+| Esc | Cancel a drag, clear the selection; then Esc twice closes the editor |
 
 ## While keyboard play is on (Ctrl+K)
 
@@ -117,6 +129,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | W E T Y U O P | Black keys |
 | Z / X | Octave down / up |
 | C / V | Softer / louder |
+| Other letters, digits, punctuation | Nothing: no shortcut fires while you play. Space, Enter, Escape, the arrows and Ctrl/Alt shortcuts still work. |
 
 ## While step input is on (Ctrl+R)
 
@@ -135,7 +148,7 @@ Keys act on the pane under the mouse. Keys marked *song pane* or *notes pane* on
 | Alt while dragging | No snapping |
 | Shift while dragging | One direction only, or fine values |
 | Ctrl+drag | Copy what you drag |
-| Ctrl+Alt+drag a timeline clip | Independent (unlinked) copy |
+| Ctrl+Alt+drag a timeline clip | Linked copy |
 | Ctrl+drag from empty space | Selection box, with any tool |
 | Shift+click / Ctrl+click | Add to / toggle in the selection |
 | Alt+drag a note or a clip's body | Note: velocity. Timeline clip: slip the content. |

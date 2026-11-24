@@ -1,6 +1,8 @@
 #include "DeviceTypes.hpp"
 
 #include "Chord.hpp"
+#include "Lengths.hpp"
+#include "Playheads.hpp"
 #include "Scale.hpp"
 
 #include <algorithm>
@@ -26,13 +28,13 @@ ParamInfo choice(const char* name, std::vector<std::string> choices, int def) {
     return {name, K::Choice, 0, float(choices.size() - 1), float(def), "", std::move(choices)};
 }
 ParamInfo toggle(const char* name, bool def) { return {name, K::Toggle, 0, 1, def ? 1.f : 0.f, "", {}}; }
+ParamInfo mask(const char* name) { return {name, K::Mask, 0, 65535, 0, "", {}}; }
 
-const std::vector<std::string> kRateNames = {"8 bars", "4 bars", "2 bars", "1 bar", "1/2",   "1/4",
-                                             "1/8",    "1/16",   "1/32",   "1/64",  "1/2 T", "1/4 T",
-                                             "1/8 T",  "1/16 T", "1/4 D",  "1/8 D", "1/16 D"};
-constexpr int kRateQuarter = 5, kRateEighth = 6, kRateSixteenth = 7, kRateBar = 3;
-
-std::vector<std::string> rates() { return kRateNames; }
+/// Note devices' lengths and rates, and modulators' synced rates, from the one scale (Lengths.hpp), short to long.
+std::vector<std::string> rates() { return lengths::names(lengths::noteValues()); }
+std::vector<std::string> slowRates() { return lengths::names(lengths::slowValues()); }
+/// The place of a length in rates() or slowRates() (the same up to 8 bars).
+int rateAt(const char* name) { return playheads::choiceIndex(rates(), name); }
 
 std::vector<std::string> noteNames() { return {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}; }
 
@@ -50,6 +52,41 @@ std::vector<std::string> chordNames() {
     return out;
 }
 
+/// "Step 5 velocity" and the like, for the Arpeggiator's 64 step settings: built once and never changed, so the
+/// names its ParamInfos point at stay put.
+const std::vector<std::string>& arpStepNames() {
+    static const std::vector<std::string> names = [] {
+        std::vector<std::string> out;
+        for (const char* what : {"velocity", "gate", "octave", "move"})
+            for (int k = 1; k <= 16; k++)
+                out.push_back("Step " + std::to_string(k) + " " + what);
+        return out;
+    }();
+    return names;
+}
+
+/// The Arpeggiator's Pattern line settings after its first seven: the Move row's unit, the four rows' lengths, then
+/// each row's 16 steps.
+void addArpLineParams(std::vector<ParamInfo>& params) {
+    params.push_back(choice("Move by", {"Semitones", "Key steps", "Chord notes"}, 0));
+    for (const char* row : {"Velocity steps", "Gate steps", "Octave steps", "Move steps"})
+        params.push_back(integer(row, 1, 16, 16));
+    const std::vector<std::string>& names = arpStepNames();
+    for (int k = 0; k < 16; k++)
+        params.push_back(number(names[size_t(k)].c_str(), 0, 100, 100, "%"));
+    for (int k = 0; k < 16; k++)
+        params.push_back(number(names[size_t(16 + k)].c_str(), 5, 200, 50, "%"));
+    for (int k = 0; k < 16; k++)
+        params.push_back(integer(names[size_t(32 + k)].c_str(), -3, 3, 0, "oct"));
+    for (int k = 0; k < 16; k++)
+        params.push_back(integer(names[size_t(48 + k)].c_str(), -12, 12, 0));
+    // Each row's whole-row setting, added to every step (the engine clamps the sum to the step's range).
+    params.push_back(number("Velocity, every step", -100, 100, 0, "%"));
+    params.push_back(number("Gate, every step", -200, 200, 0, "%"));
+    params.push_back(integer("Octave, every step", -3, 3, 0, "oct"));
+    params.push_back(integer("Move, every step", -12, 12, 0));
+}
+
 std::vector<TypeInfo> buildDevices() {
     std::vector<TypeInfo> t(kDeviceTypeCount);
     t[size_t(DeviceType::Transpose)] = {"Transpose",
@@ -65,19 +102,27 @@ std::vector<TypeInfo> buildDevices() {
     t[size_t(DeviceType::NoteLength)] = {
         "Note Length",
         {choice("Mode", {"Scale", "Fixed", "Legato"}, 0), exponential("Scale", 5, 400, 100, "%"),
-         choice("Length", rates(), kRateSixteenth), number("Overlap", 0, 100, 0, "% of 1/16")}};
+         choice("Length", rates(), rateAt("1/16")), number("Overlap", 0, 100, 0, "% of 1/16")}};
     t[size_t(DeviceType::Chord)] = {"Chord",
                                     {choice("Chord", chordNames(), 0), toggle("In key", true),
                                      integer("Inversion", -3, 3, 0), choice("Voicing", {"Close", "Open", "Drop 2"}, 0),
                                      number("Strum", 0, 100, 0, "% of 1/16")}};
     t[size_t(DeviceType::Arpeggiator)] = {
         "Arpeggiator",
-        {choice("Pattern", {"Up", "Down", "Up-down", "Down-up", "Random", "As played", "Chord"}, 0),
-         choice("Rate", rates(), kRateSixteenth), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
+        {choice("Pattern",
+                {"Up", "Down", "Up-down", "Up & down", "Down-up", "Down & up", "Converge", "Diverge",
+                 "Converge & diverge", "Thumb up", "Thumb up-down", "Pinky up", "Pinky up-down", "As played", "Random",
+                 "Random other", "Random once", "Shuffle", "Walk", "Pattern", "Chord"},
+                0),
+         choice("Rate", rates(), rateAt("1/16")), number("Gate", 5, 200, 80, "%"), integer("Octaves", 1, 4, 1),
          number("Swing", 0, 100, 0, "%"), choice("Velocity", {"As played", "Fixed", "Accent"}, 0),
          toggle("Hold", false)}};
+    addArpLineParams(t[size_t(DeviceType::Arpeggiator)].params);
+    t[size_t(DeviceType::NoteRepeat)] = {
+        "Note Repeat",
+        {choice("Rate", rates(), rateAt("1/16")), number("Gate", 5, 100, 50, "%"), number("Decay", 0, 100, 0, "%")}};
     t[size_t(DeviceType::Echo)] = {"Echo",
-                                   {choice("Time", rates(), kRateEighth), integer("Repeats", 1, 16, 3),
+                                   {choice("Time", rates(), rateAt("1/8")), integer("Repeats", 1, 16, 3),
                                     number("Decay", 0, 100, 30, "%"), integer("Pitch", -12, 12, 0, "st"),
                                     number("Gate", 5, 100, 50, "%")}};
     t[size_t(DeviceType::Random)] = {
@@ -90,8 +135,15 @@ std::vector<TypeInfo> buildDevices() {
         "Note Filter",
         {integer("Lowest", 0, 127, 0), integer("Highest", 0, 127, 127), number("Min velocity", 0, 100, 0, "%"),
          number("Max velocity", 0, 100, 100, "%"), integer("Every", 1, 16, 1), integer("Offset", 0, 15, 0),
-         choice("Channel",
-                {"Any", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"}, 0)}};
+         mask("Channels")}};
+    t[size_t(DeviceType::Playheads)] = {"Playheads",
+                                        {choice("Restart", {"Clip start", "Every N bars"}, 0),
+                                         integer("Restart bars", 1, 64, 4, "bars"),
+                                         choice("Same note", {"Play each", "Play once"}, 1)}};
+    t[size_t(DeviceType::Motion)] = {"Motion",
+                                     {integer("Pitch", -24, 24, 0, "steps"), integer("Time", 0, 16, 0, "steps"),
+                                      number("Length", -90, 400, 0, "%"), number("Velocity", -100, 100, 0, "%"),
+                                      toggle("In key", true)}};
     auto about = [&t](DeviceType type, const char* group, const char* description, const char* keywords) {
         TypeInfo& info = t[size_t(type)];
         info.group = group;
@@ -104,6 +156,8 @@ std::vector<TypeInfo> buildDevices() {
     about(DeviceType::Chord, "Pitch", "turns each note into a chord", "harmony triad stack voicing");
     about(DeviceType::Arpeggiator, "Rhythm", "plays held notes one at a time", "arp pattern sequence");
     about(DeviceType::Echo, "Rhythm", "repeats notes, fading out", "delay repeat feedback");
+    about(DeviceType::NoteRepeat, "Rhythm", "plays every note again while it lasts, chords too",
+          "repeat retrigger ratchet stutter roll");
     about(DeviceType::NoteLength, "Rhythm", "shorter, longer or legato notes", "gate legato duration staccato");
     about(DeviceType::Velocity, "Feel", "softer, harder, or within a range", "dynamics accent compress loudness");
     about(DeviceType::Humanize, "Feel", "loosens timing, velocity and length a little on every pass",
@@ -112,6 +166,10 @@ std::vector<TypeInfo> buildDevices() {
           "swing shuffle groove triplet feel");
     about(DeviceType::Random, "Feel", "changes pitches and drops notes on every pass", "variation chance random drop");
     about(DeviceType::NoteFilter, "Feel", "lets only some notes through", "filter range every skip thin channel part");
+    about(DeviceType::Playheads, "Source", "reads the clip with several playheads",
+          "playhead canon reverse speed time bend");
+    about(DeviceType::Motion, "Source", "moves chosen notes a little on every pass: drift, evolve",
+          "motion drift evolve move notes per pass");
     return t;
 }
 
@@ -120,25 +178,34 @@ std::vector<TypeInfo> buildModulators() {
     t[size_t(ModulatorType::Lfo)] = {
         "LFO",
         {choice("Shape", {"Sine", "Triangle", "Saw up", "Saw down", "Square", "Sample & hold", "Smooth random"}, 0),
-         toggle("Sync", true), exponential("Rate", 0.01f, 50, 1, "Hz"), choice("Synced rate", rates(), kRateBar),
-         number("Phase", 0, 360, 0, "°"), toggle("Bipolar", true),
+         toggle("Sync", true), exponential("Rate", 0.01f, 50, 1, "Hz"),
+         choice("Synced rate", slowRates(), rateAt("1 bar")), number("Phase", 0, 360, 0, "°"), toggle("Bipolar", true),
          choice("Restart", {"Free", "Each bar", "Each note"}, 0)}};
     t[size_t(ModulatorType::Envelope)] = {
         "Envelope",
         {exponential("Attack", 1, 10000, 5, "ms"), exponential("Decay", 1, 10000, 200, "ms"),
          number("Sustain", 0, 100, 60, "%"), exponential("Release", 1, 10000, 300, "ms")}};
     t[size_t(ModulatorType::Steps)] = {"Steps",
-                                       {integer("Steps", 1, kMaxSteps, 8), choice("Rate", rates(), kRateSixteenth),
-                                        number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false)}};
+                                       {integer("Steps", 1, kMaxSteps, 8), choice("Rate", slowRates(), rateAt("1/16")),
+                                        number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false),
+                                        toggle("Per pass", false)}};
     t[size_t(ModulatorType::Random)] = {
-        "Random", {choice("Rate", rates(), kRateQuarter), number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false)}};
+        "Random",
+        {choice("Rate", slowRates(), rateAt("1/4")), number("Smooth", 0, 100, 0, "%"), toggle("Bipolar", false)}};
     t[size_t(ModulatorType::Ramp)] = {"Ramp",
                                       {integer("Length", 1, 64, 8, "bars"), choice("Direction", {"Rise", "Fall"}, 0),
-                                       choice("Then", {"Hold", "Loop"}, 0), number("Curve", -100, 100, 0, "%")}};
+                                       choice("Then", {"Hold", "Loop"}, 0), number("Curve", -100, 100, 0, "%"),
+                                       toggle("Per pass", false)}};
     t[size_t(ModulatorType::Macro)] = {"Macro", {number("Value", 0, 100, 0, "%")}};
     t[size_t(ModulatorType::Note)] = {"Note",
                                       {choice("Follows", {"Velocity", "Pitch", "Release", "Timbre", "Pressure"}, 0),
                                        exponential("Smooth", 1, 2000, 1, "ms")}};
+    t[size_t(ModulatorType::Curve)] = {"Curve",
+                                       // Kept so saved knobs keep their places; none is read or shown: a curve
+                                       // plays its segment from when its track's clip started.
+                                       {toggle("Sync", true), exponential("Rate", 0.01f, 20, 0.5f, "Hz"),
+                                        choice("Restart", {"Free", "Each bar", "Each note"}, 0),
+                                        choice("Counts in", {"Time", "Passes"}, 0)}};
     auto about = [&t](ModulatorType type, const char* group, const char* description, const char* keywords) {
         TypeInfo& info = t[size_t(type)];
         info.group = group;
@@ -147,12 +214,46 @@ std::vector<TypeInfo> buildModulators() {
     };
     about(ModulatorType::Lfo, "Motion", "a wave that keeps moving: sine, saw, square…", "oscillator wobble sweep");
     about(ModulatorType::Steps, "Motion", "a pattern of values you draw", "sequence step pattern");
+    about(ModulatorType::Curve, "Motion", "a shape you draw, of any length; a part of it plays and repeats",
+          "draw shape curve lfo");
     about(ModulatorType::Random, "Motion", "a new random value at a steady rate", "noise sample hold chaos");
     about(ModulatorType::Ramp, "Motion", "rises or falls over several bars: builds, fades", "build riser fade");
     about(ModulatorType::Envelope, "Notes", "rises and falls with each note", "adsr attack decay");
     about(ModulatorType::Note, "Notes", "follows the last note's velocity, pitch…", "key track velocity follow");
     about(ModulatorType::Macro, "Hand", "one knob that turns many", "control knob master");
     return t;
+}
+
+TypeInfo buildPlayhead() {
+    using namespace playheads;
+    return {"Playhead",
+            {choice("Rate", playheads::rateNames(), choiceIndex(playheads::rateNames(), "1x")),
+             choice("Direction", {"Forward", "Backward", "Ping-pong", "Freeze"}, 0),
+             integer("Start", 0, 256, 0, "steps"),
+             integer("Region start", 0, kMaxRegionSteps, 0, "steps"),
+             integer("Region length", 0, kMaxRegionSteps, 0, "steps"),
+             choice("Piece", repeatNames(), 0),
+             integer("Times", 2, 16, 2),
+             choice("Curve", curveNames(), 0),
+             number("Bend amount", 0, 100, 50, "%"),
+             choice("Bend cycle", cycleNames(), 2),
+             integer("Old offset", -16, 16, 0, "steps"),
+             choice("Length", {"As written", "Follows playhead", "Fixed"}, 1),
+             choice("Fixed length", fixedLengthNames(), choiceIndex(fixedLengthNames(), "1/16")),
+             choice("Path", {"From settings", "Drawn"}, 0),
+             choice("Path cycle", pathCycleNames(), choiceIndex(pathCycleNames(), "1 bar")),
+             integer("Octave", -4, 4, 0, "oct"),
+             integer("Steps", -14, 14, 0, "steps"),
+             choice("Notes", {"All", "Lowest", "Highest"}, 0),
+             toggle("Invert", false),
+             number("Velocity", -100, 100, 0, "%"),
+             choice("Order", {"In order", "Outside in", "Inside out", "Odd then even", "Shuffle"}, 0),
+             choice("Order step", orderStepNames(), choiceIndex(orderStepNames(), "1/8")),
+             choice("On a jump", {"Retrigger", "Let ring"}, 0),
+             toggle("On", true),
+             choice("Offset", playheads::offsetNames(), choiceIndex(playheads::offsetNames(), "0")),
+             choice("Speed curve", curveNames(), 0),
+             choice("Speed over", speedOverNames(), choiceIndex(speedOverNames(), "1 bar"))}};
 }
 
 const std::vector<TypeInfo>& deviceTable() {
@@ -175,6 +276,18 @@ const TypeInfo& modulatorInfo(ModulatorType type) {
     return modulatorTable()[size_t(std::clamp(int(type), 0, kModulatorTypeCount - 1))];
 }
 
+const TypeInfo& playheadInfo() {
+    static const TypeInfo info = buildPlayhead();
+    return info;
+}
+
+const TypeInfo& motionInfo() { return deviceInfo(DeviceType::Motion); }
+
+const ParamInfo* playheadParamInfo(int param) {
+    const TypeInfo& t = playheadInfo();
+    return param >= 0 && param < int(t.params.size()) ? &t.params[size_t(param)] : nullptr;
+}
+
 const ParamInfo* paramInfo(DeviceType type, int param) {
     const TypeInfo& t = deviceInfo(type);
     return param >= 0 && param < int(t.params.size()) ? &t.params[size_t(param)] : nullptr;
@@ -190,6 +303,7 @@ float display(const ParamInfo& p, float n) {
     switch (p.kind) {
     case K::Integer:
     case K::Choice:
+    case K::Mask:
         return std::round(p.min + n * (p.max - p.min));
     case K::Toggle:
         return n >= 0.5f ? 1.f : 0.f;
@@ -213,6 +327,7 @@ float normalize(const ParamInfo& p, float v) {
         break;
     case K::Integer:
     case K::Choice:
+    case K::Mask:
         n = (std::round(v) - p.min) / (p.max - p.min);
         break;
     case K::Number:
@@ -235,6 +350,16 @@ std::string format(const ParamInfo& p, float n) {
     }
     case K::Toggle:
         return v > 0.5f ? "On" : "Off";
+    case K::Mask: {
+        int bits = int(v);
+        if (bits == 0)
+            return "Any";
+        std::string out;
+        for (int k = 0; k < 16; k++)
+            if (bits & (1 << k))
+                out += (out.empty() ? "" : ", ") + std::to_string(k + 1);
+        return out;
+    }
     case K::Integer:
         snprintf(text, sizeof(text), p.min < 0 ? "%+.0f%s%s" : "%.0f%s%s", double(v), p.unit[0] ? " " : "", p.unit);
         return text;
@@ -260,6 +385,17 @@ Device makeDevice(DeviceType type, DeviceId id) {
     return d;
 }
 
+Playhead makePlayhead(PlayheadId id, int index) {
+    Playhead p;
+    p.id = id;
+    p.name = "Playhead " + std::to_string(index + 1);
+    p.color = uint8_t(index % 16);
+    p.channel = uint8_t(index % 16 + 1);
+    for (const ParamInfo& info : playheadInfo().params)
+        p.params.push_back(defaultNormalized(info));
+    return p;
+}
+
 Modulator makeModulator(ModulatorType type, ModulatorId id) {
     Modulator m;
     m.id = id;
@@ -269,20 +405,37 @@ Modulator makeModulator(ModulatorType type, ModulatorId id) {
         m.params.push_back(defaultNormalized(p));
     if (type == ModulatorType::Steps)
         m.steps = {1, 0.25f, 0.75f, 0.5f, 1, 0, 0.6f, 0.3f};
+    if (type == ModulatorType::Curve) {
+        // One bar, up and down around "no change".
+        Tick bar = 4 * kPpq;
+        m.length = bar;
+        m.points = {{0, 0.5f, CurveType::Linear, 0},
+                    {bar / 4, 1, CurveType::Linear, 0},
+                    {bar * 3 / 4, 0, CurveType::Linear, 0},
+                    {bar, 0.5f, CurveType::Linear, 0}};
+        m.segmentEnd = bar;
+    }
     return m;
 }
 
-const std::vector<std::string>& rateNames() { return kRateNames; }
+const std::vector<std::string>& rateNames() {
+    static const std::vector<std::string> names = rates();
+    return names;
+}
 
 Tick rateTicks(int index, TimeSig ts) {
-    static const double kQuarters[] = {0,      0,       0,       0,       2,       1,   0.5,  0.25, 0.125,
-                                       0.0625, 4.0 / 3, 2.0 / 3, 1.0 / 3, 1.0 / 6, 1.5, 0.75, 0.375};
-    index = std::clamp(index, 0, int(kRateNames.size()) - 1);
-    if (index <= kRateBar) {
-        static const int kBars[] = {8, 4, 2, 1};
-        return ticksPerBar(ts) * kBars[index];
-    }
-    return std::max<Tick>(1, Tick(std::llround(kQuarters[index] * double(kPpq))));
+    return std::max<Tick>(1, Tick(std::llround(lengths::ticksAt(lengths::noteValues(), index, ts))));
+}
+
+const std::vector<std::string>& slowRateNames() {
+    static const std::vector<std::string> names = slowRates();
+    return names;
+}
+
+int rateIndex(const std::string& name) { return playheads::choiceIndex(slowRateNames(), name); }
+
+Tick slowRateTicks(int index, TimeSig ts) {
+    return std::max<Tick>(1, Tick(std::llround(lengths::ticksAt(lengths::slowValues(), index, ts))));
 }
 
 } // namespace tessera::devices

@@ -1,9 +1,12 @@
 #include "doctest.h"
 
+#include "../src/engine/HeldInput.hpp"
+#include "../src/engine/Metronome.hpp"
 #include "../src/engine/Recorder.hpp"
 #include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
+#include "../src/model/Ties.hpp"
 #include "../src/model/Transforms.hpp"
 
 #include <cmath>
@@ -246,7 +249,7 @@ TEST_CASE("a note-off reaches the tracks its note-on went to, even after disarmi
     CHECK_FALSE(rig.gate(0));
 }
 
-TEST_CASE("a legato pitch change on REC CV retriggers the monitor at the new pitch (issue #12)") {
+TEST_CASE("a legato pitch change on REC CV plays legato on a one-voice track, with no new gate (issue #12)") {
     Song song = recordSong();
     song.tracks[0].polyphony = 1;
     EngineRig rig(song);
@@ -261,9 +264,34 @@ TEST_CASE("a legato pitch change on REC CV retriggers the monitor at the new pit
         rig.run(1);
         dropped |= !rig.gate(0);
     }
-    CHECK(dropped);
-    CHECK(rig.gate(0));
+    CHECK_FALSE(dropped);
     CHECK(f.voct[0] == doctest::Approx(7.f / 12.f));
+    rig.engine.liveNote({LiveSource::Cv, 0, 67, 0.5f, false});
+    rig.run(1);
+    CHECK_FALSE(rig.gate(0)); // releasing the key still ends it
+}
+
+TEST_CASE("a MIDI key pressed while another is held plays legato on a one-voice track") {
+    Song song = recordSong();
+    song.tracks[0].polyphony = 1;
+    EngineRig rig(song);
+    const TrackFrame& f = rig.frames[size_t(rig.slots.slotOf(rig.song.tracks[0].id))];
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0.8f, true});
+    rig.run(100);
+    rig.engine.liveNote({LiveSource::Midi, 0, 64, 0.8f, true});
+    bool dropped = false;
+    for (int i = 0; i < 200; i++) {
+        rig.run(1);
+        dropped |= !rig.gate(0);
+    }
+    CHECK_FALSE(dropped);
+    CHECK(f.voct[0] == doctest::Approx(4.f / 12.f));
+    rig.engine.liveNote({LiveSource::Midi, 0, 60, 0, false}); // the first key, already handed over
+    rig.run(1);
+    CHECK(rig.gate(0));
+    rig.engine.liveNote({LiveSource::Midi, 0, 64, 0, false});
+    rig.run(1);
+    CHECK_FALSE(rig.gate(0));
 }
 
 TEST_CASE("live notes can snap to the song key") {
@@ -1080,6 +1108,41 @@ TEST_CASE("lane record state: the track arm decides, then the lane's source") {
     CHECK(laneOutputLabel(makeMidiLane(AutomationId(1), {MidiControl::Kind::PitchBend, 0}, 0, 0)) == "V/OCT");
 }
 
+TEST_CASE("a fader or pan lane records on an armed track: its source is the track's own control") {
+    Song song = recordSong();
+    AutomationEnvelope fader = makeLane(song.newId<AutomationId>(), 0, 0);
+    fader.drive = LaneDrive::Volume;
+    AutomationEnvelope pan = fader;
+    pan.id = song.newId<AutomationId>();
+    pan.drive = LaneDrive::Pan;
+    LaneOwner armed = LaneOwner::ofTrack(song.tracks[0].id), idle = LaneOwner::ofTrack(song.tracks[1].id);
+    CHECK(laneRecordState(song, armed, fader, 0, nullptr) == LaneRecordState::Records);
+    CHECK(laneRecordState(song, armed, pan, 0, nullptr) == LaneRecordState::Records);
+    CHECK(laneRecordState(song, idle, fader, 0, nullptr) == LaneRecordState::Off);
+    fader.noRecord = true;
+    CHECK(laneRecordState(song, armed, fader, 0, nullptr) == LaneRecordState::Kept);
+}
+
+TEST_CASE("a fader moved while recording writes its lane, and the lane keeps its curve elsewhere") {
+    Song song = recordSong();
+    AutomationEnvelope fader = makeLane(song.newId<AutomationId>(), 0, 0);
+    fader.drive = LaneDrive::Volume;
+    fader.points = {{0, 0.75f, CurveType::Linear, 0}};
+    song.tracks[0].automation.push_back(fader);
+    FakeHost host(song);
+    host.mode = PlayMode::Arranger;
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(laneReading(t, t.automation[0], kPpq, 0.75f, 0));
+    rec.handle(laneReading(t, t.automation[0], kPpq + kPpq / 2, 0.5f, 0.1));
+    rec.handle(laneReading(t, t.automation[0], 2 * kPpq, 0.4f, 0.2));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
+    const AutomationEnvelope& lane = host.song_.tracks[0].automation[0];
+    CHECK(evaluate(lane, 0) == doctest::Approx(0.75f));
+    CHECK(evaluate(lane, 2 * kPpq) == doctest::Approx(0.4f).epsilon(0.01));
+}
+
 TEST_CASE("capture keeps what the keys played and the controls moved during the phrase") {
     Song song = recordSong();
     addTrackMidiLane(song, cc(1), 0);
@@ -1445,4 +1508,127 @@ TEST_CASE("recorder: a take of only a track lane's control makes no clip") {
     rec.handle(punch(RecordEvent::Kind::PunchOut, kBar, kBar));
     CHECK(!slotClip(host.song_, 0, 0));
     CHECK(host.song_.tracks[0].automation[0].points.size() == 2);
+}
+
+TEST_CASE("the metronome clicks on a trigger, louder at first, higher on the bar, and dies away") {
+    Metronome click;
+    CHECK(click.next(48000) == 0);
+    click.trigger(true);
+    float peak = 0;
+    for (int i = 0; i < 200; i++)
+        peak = std::max(peak, std::abs(click.next(48000)));
+    CHECK(peak > 5.f);
+    for (int i = 0; i < 4800; i++)
+        click.next(48000);
+    CHECK(std::abs(click.next(48000)) < 1e-3f);
+    RecordSettings s;
+    s.metronome = MetronomeMode::Recording;
+    s.metronomeDb = -6;
+    json::Ref j(s.toJson());
+    CHECK(RecordSettings::fromJson(j.get()) == s);
+}
+
+TEST_CASE("a one-voice track records keys played overlapping as ties, and keys played apart as notes") {
+    Song song = recordSong();
+    song.tracks[0].polyphony = 1;
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    rec.handle(note(t, 64, true, 400, 400)); // 60 still held: legato
+    rec.handle(note(t, 60, false, 500, 500));
+    rec.handle(note(t, 64, false, 900, 900));
+    rec.handle(note(t, 67, true, 1000, 1000)); // played apart
+    rec.handle(note(t, 67, false, 1200, 1200));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 1300, 1300, false));
+    const Clip* clip = slotClip(host.song_, 0, 0);
+    REQUIRE(clip);
+    REQUIRE(clip->notes.size() == 3);
+    CHECK(clip->notes[0].end() == 400);
+    CHECK_FALSE(clip->notes[0].tied);
+    CHECK(clip->notes[1].tied);
+    CHECK(clip->notes[1].length == 500);
+    CHECK_FALSE(clip->notes[2].tied);
+}
+
+TEST_CASE("recorded ties meet the note they continue, whatever the ticks round to (issue #12)") {
+    Song song = recordSong();
+    song.tracks[0].polyphony = 1;
+    FakeHost host(song);
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0.4, 0.4));
+    rec.handle(note(t, 60, true, 10.4, 10.4));
+    rec.handle(note(t, 64, true, 20.6, 20.6)); // keys overlapping: 60 ends where 64 starts
+    rec.handle(note(t, 60, false, 30.0, 30.0));
+    rec.handle(note(t, 64, false, 40.4, 40.4)); // CV legato: an off and an on in the same sample
+    rec.handle(note(t, 67, true, 40.4, 40.4));
+    rec.handle(note(t, 67, false, 90.0, 90.0));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 100, 100, false));
+    const Clip* clip = slotClip(host.song_, 0, 0);
+    REQUIRE(clip);
+    REQUIRE(clip->notes.size() == 3);
+    CHECK(clip->notes[1].tied);
+    CHECK(clip->notes[2].tied);
+    CHECK(clip->notes[0].end() == clip->notes[1].start);
+    CHECK(clip->notes[1].end() == clip->notes[2].start);
+    std::vector<int> partners = ties::partners(clip->notes);
+    CHECK(partners[1] == 0);
+    CHECK(partners[2] == 1);
+}
+
+TEST_CASE("a poly track records overlapping keys as a chord, as before") {
+    FakeHost host(recordSong());
+    Recorder rec(host);
+    const Track& t = host.song_.tracks[0];
+    rec.handle(punch(RecordEvent::Kind::PunchIn, 0, 0));
+    rec.handle(note(t, 60, true, 0, 0));
+    rec.handle(note(t, 64, true, 400, 400));
+    rec.handle(note(t, 60, false, 500, 500));
+    rec.handle(note(t, 64, false, 900, 900));
+    rec.handle(punch(RecordEvent::Kind::PunchOut, 1000, 1000, false));
+    const Clip* clip = slotClip(host.song_, 0, 0);
+    REQUIRE(clip);
+    REQUIRE(clip->notes.size() == 2);
+    CHECK(clip->notes[0].end() == 500);
+    CHECK_FALSE(clip->notes[1].tied);
+}
+
+TEST_CASE("every live note's capture copy carries the pitch it came in on, and held input counts it") {
+    Song song = recordSong();
+    song.scale = ScaleRef{0, "major"};
+    EngineRig rig(song);
+    rig.engine.setLiveToKey(true);
+    rig.engine.liveNote({LiveSource::Midi, 0, 61, 0.8f, true}); // C# snaps into C major
+    HeldInput held;
+    for (const RecordEvent& e : rig.drain())
+        if (e.kind == RecordEvent::Kind::Note && e.track == 0) {
+            CHECK(e.inPitch == 61);
+            CHECK(e.pitch != 61);
+            held.note(e.pitch, e.inPitch, e.on);
+        }
+    CHECK(held.any());
+    CHECK(held.cameIn(61));
+    CHECK_FALSE(held.plays(61));
+    rig.engine.liveNote({LiveSource::Midi, 0, 61, 0, false});
+    for (const RecordEvent& e : rig.drain())
+        if (e.kind == RecordEvent::Kind::Note && e.track == 0)
+            held.note(e.pitch, e.inPitch, e.on);
+    CHECK_FALSE(held.any());
+    CHECK_FALSE(held.cameIn(61));
+}
+
+TEST_CASE("held input keeps a key lit until every input holding it lets go, and ignores stray releases") {
+    HeldInput held;
+    held.note(60, 60, false);
+    CHECK_FALSE(held.any());
+    held.note(60, 60, true);
+    held.note(60, 60, true); // the same key on MIDI and on REC CV
+    held.note(60, 60, false);
+    CHECK(held.plays(60));
+    held.note(60, 60, false);
+    CHECK_FALSE(held.plays(60));
+    held.note(200, -1, true);
+    CHECK_FALSE(held.any());
 }

@@ -3,6 +3,7 @@
 #include "Song.hpp"
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 /// How a clip instance on the arranger timeline plays: where its content starts (offset), how it repeats
@@ -45,6 +46,10 @@ struct ClipSpan {
     double patternTime(double u) const;
 };
 ClipSpan clipSpan(const Clip& clip, const std::vector<DrumLane>* lanes = nullptr);
+/// Where a playhead without a segment of its own reads, as {start, length}: a looping clip's span; a clip that doesn't
+/// loop, its loop range (a clip without a loop plays to its last note, but the segment mustn't move when a note is
+/// drawn past it); with no loop range either, up to its last note.
+std::pair<Tick, Tick> playheadSpan(const Clip& clip, const std::vector<DrumLane>* lanes = nullptr);
 
 /// Brings an offset into the range the clip can play from: [0, loop end) for looping clips (wrapping), and
 /// [0, length] for the others.

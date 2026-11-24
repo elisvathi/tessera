@@ -66,7 +66,7 @@ CommandPtr recordArrangement(const Song& song, const std::vector<CapturedSegment
     }
     if (added.empty())
         return nullptr;
-    return replaceArrangement(song, "Record to arrangement", before, after);
+    return replaceArrangement(song, "Record to the timeline", before, after);
 }
 
 } // namespace tessera

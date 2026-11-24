@@ -1,4 +1,10 @@
 #include "EditorHost.hpp"
+#include "../module/OutputModuleBase.hpp"
+#include "editing/BounceActions.hpp"
+#include "editing/ExportAudio.hpp"
+#include "editing/Sources.hpp"
+
+#include "editing/AudioActions.hpp"
 
 #include "../module/TesseraModule.hpp"
 #include "Theme.hpp"
@@ -120,8 +126,12 @@ bool EditorHost::handleKey(const rack::widget::Widget::KeyBaseEvent& e) {
     // Keys act on the pane under the mouse, in both editors (Trello, 14 Oct): with focus left on the last
     // clicked pane, Ctrl+A then Ctrl+D over the notes selected and copied every track.
     if (EditorPane* hovered = paneUnderMouse())
-        ctx.view().focus = hovered->pane();
-    Scope scope = ctx.view().focus == Pane::Top && arrangerPane() ? Scope::TopPane : Scope::DetailPane;
+        ctx.state().focus = hovered->pane();
+    // The mixer has no keys of its own yet: while the lower pane shows it, only the keys that work everywhere act.
+    bool mixerShown = ctx.module() && ctx.module()->makesSound() && ctx.state().mixerOpen;
+    Scope scope = ctx.state().focus == Pane::Top && arrangerPane()  ? Scope::TopPane
+                  : ctx.state().focus == Pane::Detail && mixerShown ? Scope::Everywhere
+                                                                   : Scope::DetailPane;
     std::optional<Action> action = findAction({e.key, e.keyName, mods}, scope);
     if (!action)
         return false;
@@ -164,6 +174,45 @@ void EditorHost::showNotices() {
     TesseraModule* m = ctx.module();
     if (!m)
         return;
+    // A bounce in progress offers Stop, which keeps what was played. An export offers Cancel.
+    std::string status = m->captureStatus();
+    if (!status.empty() && m->bouncing())
+        ctx.toast(status, "Stop", [m] { m->stopBounce(); });
+    else if (!status.empty())
+        ctx.toast(status, "Cancel", [m] { m->cancelCapture(); });
+    else if (!m->takeProblem.empty()) {
+        ctx.toast(m->takeProblem);
+        m->takeProblem.clear();
+    } else if (!m->fileMessage.empty()) {
+        ctx.toast(m->fileMessage);
+        m->fileMessage.clear();
+    } else if (!m->exportResult.empty()) {
+        if (m->bounceRoll) {
+            std::vector<TrackId> fed = {m->bounceTrack};
+            deviceActions::offerKeepRoll(ctx, m->exportResult, m->bounceRoll, fed);
+            m->bounceRoll = 0;
+        } else {
+            ctx.toast(m->exportResult);
+        }
+        m->exportResult.clear();
+    }
+    // A new second source plays at once, mixed with the first (§7.8).
+    const TesseraModule::NewSource& news = m->newSource();
+    bool freshSource = noticesSeen && news.serial != sourceNewsSeen;
+    sourceNewsSeen = news.serial;
+    if (freshSource)
+        if (const Track* t = m->song().findTrack(news.track); t || news.track == m->song().master.id) {
+            std::string name = t ? t->name : "Master";
+            TrackId track = news.track;
+            int64_t newest = news.module;
+            ctx.toast(name + " has " + std::to_string(news.count) + " sources now. " +
+                          (news.count == 2 ? "Both play" : "All play"),
+                      "Use only the new one", [m, track, newest] {
+                          for (const sources::Row& r : sources::rowsOf(*m, track))
+                              if (!r.countedOnce && (!r.module || r.module->id != newest) && r.level.use)
+                                  sources::set(*m, track, r, {r.level.db, false}, "Use only the new source");
+                      });
+        }
     const TesseraModule::UnlinkedControls& u = m->unlinkedControls();
     // An editor opened after a report doesn't bring up the old news.
     bool fresh = noticesSeen && u.serial != unlinkedSeen;
@@ -223,6 +272,9 @@ void EditorHost::runAction(Action action) {
     case Action::PlayStop:
         m->requestTransport(kRequestToggle);
         return;
+    case Action::Stop:
+        m->requestTransport(m->playing() ? kRequestStop : kRequestReset);
+        return;
     case Action::Record:
         m->toggleRecord();
         return;
@@ -249,34 +301,55 @@ void EditorHost::runAction(Action action) {
     case Action::Redo:
         APP->history->redo();
         return;
-    case Action::SwitchPane:
+    case Action::SwitchPane: {
         if (!arrangerPane())
             return;
-        view.focus = view.focus == Pane::Top ? Pane::Detail : Pane::Top;
-        if (view.maximized)
-            view.maximized = view.focus;
+        ctx.state().focus = ctx.state().focus == Pane::Top ? Pane::Detail : Pane::Top;
+        if (ctx.state().maximized)
+            ctx.state().maximized = ctx.state().focus;
         return;
+    }
     case Action::WidenClips:
         if (!arrangerPane())
             return;
-        view.clipsWide = !view.clipsWide;
-        if (view.maximized == Pane::Detail)
-            view.maximized.reset();
+        // With the song pane folded, F2 brings it back showing the clips.
+        if (ctx.state().maximized == Pane::Detail) {
+            ctx.state().maximized.reset();
+            ctx.state().clipsWide = true;
+        } else {
+            ctx.state().clipsWide = !ctx.state().clipsWide;
+        }
+        ctx.state().focus = Pane::Top;
         return;
     case Action::MaximizePane:
         if (!arrangerPane())
             return;
-        if (view.maximized)
-            view.maximized.reset();
+        if (ctx.state().maximized)
+            ctx.state().maximized.reset();
         else
-            view.maximized = view.focus;
+            ctx.state().maximized = ctx.state().focus;
         return;
     case Action::ToggleInspector:
-        view.inspectorOpen = !view.inspectorOpen;
+        ctx.state().inspectorOpen = !ctx.state().inspectorOpen;
         return;
-    case Action::ToggleDevices:
-        deviceActions::setStripOpen(ctx, !deviceActions::stripOpen(ctx));
+    case Action::ShowNotes:
+        // A view key always shows its view: a folded lower pane comes back first (docs/DECISIONS.md §190).
+        if (ctx.state().maximized == Pane::Top)
+            ctx.state().maximized.reset();
+        ctx.state().mixerOpen = false;
+        if (ctx.devicesFillPane && ctx.module())
+            deviceActions::setStripOpen(ctx, false);
+        ctx.state().focus = Pane::Detail;
         return;
+    case Action::ToggleDevices: {
+        if (ctx.state().maximized == Pane::Top)
+            ctx.state().maximized.reset();
+        bool showing = !ctx.state().mixerOpen && deviceActions::stripOpen(ctx);
+        ctx.state().mixerOpen = false;
+        deviceActions::setStripOpen(ctx, !showing);
+        ctx.state().focus = Pane::Detail;
+        return;
+    }
     case Action::ToolPointer:
         state.tool = Tool::Pointer;
         return;
@@ -336,6 +409,9 @@ void EditorHost::runAction(Action action) {
         if (state.selectedTrack.valid())
             trackActions::toggleSolo(ctx, state.selectedTrack, true);
         return;
+    case Action::MutePlayhead:
+        deviceActions::togglePlayheadOn(ctx);
+        return;
     case Action::AddInstrumentTrack:
         trackActions::add(ctx, TrackType::Instrument);
         return;
@@ -357,6 +433,24 @@ void EditorHost::runAction(Action action) {
     case Action::ExportMidi:
         exportMidi::openSong(ctx);
         return;
+    case Action::ToggleMixer:
+        // Shows the mixer (F5); F3 goes back to the notes. A folded lower pane comes back first.
+        if (!ctx.module() || !ctx.module()->makesSound())
+            return;
+        if (ctx.state().maximized == Pane::Top)
+            ctx.state().maximized.reset();
+        ctx.state().mixerOpen = true;
+        ctx.state().focus = Pane::Detail;
+        return;
+    case Action::ExportAudio:
+        exportAudio::openDialog(ctx);
+        return;
+    case Action::Bounce:
+        bounceActions::openDialog(ctx, ctx.state().selectedTrack);
+        return;
+    case Action::ImportAudio:
+        audioActions::importDialog(ctx);
+        return;
     case Action::KeyboardPlay:
         state.keyboardPlay = !state.keyboardPlay;
         if (!state.keyboardPlay)
@@ -365,7 +459,7 @@ void EditorHost::runAction(Action action) {
     case Action::StepInput:
         state.stepInput = !state.stepInput;
         if (state.stepInput)
-            view.focus = Pane::Detail;
+            ctx.state().focus = Pane::Detail;
         return;
     case Action::Close:
         // First Esc cancels a drag, then leaves a hit's zoomed curve, then step input or keyboard play, then disarms
@@ -376,9 +470,14 @@ void EditorHost::runAction(Action action) {
         else if (state.curveFocusNote.valid()) {
             state.curveFocusNote = NoteId();
             state.curveFocusClip = ClipId();
-        } else if (ctx.mappingModulator || ctx.openModulator) {
+        } else if (ctx.mappingModulator || ctx.state().openModulator) {
             ctx.mappingModulator = 0;
-            ctx.openModulator = 0;
+            ctx.state().openModulator = 0;
+        } else if (state.stripSelected()) {
+            state.stripDevices.clear();
+            state.stripModulators.clear();
+            state.stripSections.clear();
+            state.selectedDevice = 0;
         } else if (state.stepInput || state.keyboardPlay) {
             state.stepInput = false;
             state.keyboardPlay = false;
@@ -459,7 +558,8 @@ void EditorHost::drawHelp(NVGcontext* vg, rack::math::Vec bounds) {
         {"One axis, or fine values", "Shift + drag"},
         {"Duplicate what you drag", "Ctrl/Cmd + drag"},
         {"Add to / toggle in the selection", "Shift / Ctrl/Cmd + click"},
-        {"Velocity of a note or clip", "Alt + drag its body"},
+        {"Velocity of a note", "Alt + drag it"},
+        {"Audio clip gain back to 0 dB", "Double-click its level line"},
         {"Open, or create", "Double-click"},
         {"Cancel a drag", "Esc"},
     };

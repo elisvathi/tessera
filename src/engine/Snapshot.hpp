@@ -2,9 +2,12 @@
 
 #include "../model/Commands.hpp"
 #include "../model/Device.hpp"
+#include "../model/Modulators.hpp"
 #include "../model/NoteOperators.hpp"
+#include "../model/Playheads.hpp"
 #include "../model/Scale.hpp"
 #include "../model/Song.hpp"
+#include "VoiceAllocator.hpp"
 
 #include <array>
 #include <cmath>
@@ -28,16 +31,31 @@ struct NoteEvent {
     int32_t pass = -1;           // arrangement notes: which time through their clip; -1 = worked out live
     uint8_t key = 0;             // the key it was written in: 0 = the song's, k = TrackPlayback::keys[k - 1]
     uint8_t channel = 1;         // the note's channel, 1..16
+    uint8_t role = 3;            // lowest and/or highest of the notes starting with it (playheads::kLowestNote...)
+    bool tied = false;           // continues the note before it (docs/design/TIES_VOICES.md)
+    // Notes starting with it (within kTogether) that are lower and start later: a strummed chord's notes take
+    // channels low to high under Reset allocation, so this note leaves that many free channels below it.
+    uint8_t lowerLater = 0;
 };
 
 /// What a note with operators, micro-timing or expression curves needs at playback (EDITOR_UX §4.5-4.6).
 /// Its event was moved earlier by its micro-timing and by `early`, the room timing spread needs; the engine adds
 /// `early` back plus a random spread, so it only ever delays.
 struct NoteExtras {
+    /// The glide a tied note after this one starts while this one still plays, in its written ticks: it leaves
+    /// this note's pitch `before` ticks ahead of the joint (`joint` ticks after this note starts) and arrives
+    /// `semis` away `after` ticks past it.
+    struct GlideOut {
+        double joint = 0, before = 0, after = 0;
+        float semis = 0, shape = 0;
+        bool moves() const { return before > 0 && semis != 0; }
+    };
     Note note;
     uint64_t clip = 0; // ClipId value, for the randomness
     double early = 0;
     double stretch = 1; // played ticks per written tick (a timeline clip's stretch): curves span the written note
+    int32_t variation = 1; // its clip's dice, for the randomness
+    GlideOut glideOut;
 };
 
 /// A drum lane that loops on its own length inside a looping clip (polymeter). Its notes are not in the clip's
@@ -45,7 +63,8 @@ struct NoteExtras {
 struct LaneLoop {
     Tick start = 0; // clip ticks
     Tick length = 0;
-    std::vector<NoteEvent> notes; // sorted by start, all inside [start, start + length)
+    std::vector<NoteEvent> notes;     // sorted by start, all inside [start, start + length)
+    std::vector<uint32_t> notesByEnd; // for playheads going backwards
 };
 
 /// One automation lane as the engine plays it (muted lanes are left out).
@@ -71,8 +90,12 @@ struct ClipPlayback {
     Tick loopStart = 0;
     Tick loopEnd = 0;
     bool looping = true;
-    Tick launchQuantize = -1;     // this clip's own launch grid in ticks; -1 = the song's
-    std::vector<NoteEvent> notes; // sorted by start, all inside [loopStart, loopEnd)
+    Tick launchQuantize = -1;         // this clip's own launch grid in ticks; -1 = the song's
+    NextActionSettings next;          // what it does by itself (docs/DECISIONS.md §184)
+    Tick nextSpan = 0;                // ticks it plays before its next action: its loops or bars; 0 = none
+    std::vector<NoteEvent> notes;     // sorted by start, all inside [loopStart, loopEnd)
+    std::vector<uint32_t> notesByEnd; // indices into `notes` sorted by end, for playheads going backwards
+    int8_t lowest = 0, highest = 127; // the clip's pitch range, which playheads invert inside
     std::vector<LaneLoop> laneLoops;
     std::vector<LanePlayback> lanes; // clip automation, clip time
     std::vector<KnobLanePlayback> knobLanes;
@@ -80,8 +103,22 @@ struct ClipPlayback {
     // In a lane cycle the loop is the whole cycle, and `notes` and the automation repeat the clip's own loop,
     // this long, inside it. 0: they repeat on the loop.
     Tick pattern = 0;
+    /// The notes of each Motion device, also kept apart: playheads read the ones whose Motion device sits before
+    /// them from here, shifted by its Time (a whole group moves together, so it stays in order).
+    struct MotionNotes {
+        uint64_t motion = 0;
+        std::vector<NoteEvent> notes;
+        std::vector<uint32_t> notesByEnd;
+    };
+    std::vector<MotionNotes> motions;
+
+    /// The clip's ID value when it plays through its own device chain (Snapshot::ownChainOf), 0 for its track's.
+    uint64_t ownChain = 0;
 
     Tick loopLength() const { return loopEnd - loopStart; }
+    // Where a playhead without a segment of its own reads (playheadSpan()).
+    Tick segmentStart = 0;
+    Tick segmentLength = 0;
     Tick patternLength() const { return pattern > 0 ? pattern : loopLength(); }
     /// Clip time `t` inside the loop brought into the pattern, for what repeats on it (the automation).
     double patternTime(double t) const {
@@ -102,6 +139,9 @@ struct InstanceLanes {
     Tick spanStart = 0, spanEnd = 0; // the loop (looping) or the whole clip
     std::shared_ptr<const ClipPlayback> clip;
     int row = 0; // its stacking row: where stacked clips share a lane, the lower row plays it
+    // The timeline clip's own transpose (0 on a drum track): playheads read the shared clip, so they apply it to each
+    // note they play from it.
+    int transpose = 0;
 
     /// Clip time at song tick `tick`, or NaN where the instance plays nothing.
     double clipTime(double tick) const;
@@ -121,6 +161,10 @@ struct TrackPlayback {
     TrackId id;
     int busSlot = -1;
     int polyphony = 1;
+    VoiceAllocation allocation = VoiceAllocation::Rotate;
+    // Its voices as blocks, one per channel of its playheads in playhead order (Song::voiceBlocks).
+    std::array<VoiceAllocator::Block, VoiceAllocator::kMaxBlocks> voiceBlocks{{{0, 0, 1}}};
+    int voiceBlockCount = 1;
     bool audible = true;
     bool drum = false;
     // Recording: an armed track takes live notes from its input; with monitor on it plays them too.
@@ -140,6 +184,8 @@ struct TrackPlayback {
     std::vector<ClipId> slotClips;
     /// Per slot: an empty slot without a stop button, whose scene leaves the track playing.
     std::vector<bool> keepsPlaying;
+    /// Per slot: whether it holds a clip that plays, for next actions to pick from.
+    std::vector<bool> filled;
     /// The arrangement as it plays, in song ticks, sorted by start (muted instances left out).
     std::vector<NoteEvent> arrangement;
     /// The clips the arrangement uses, to know when to rebuild.
@@ -149,6 +195,25 @@ struct TrackPlayback {
     std::vector<LanePlayback> lanes;
     std::vector<KnobLanePlayback> knobLanes;
     std::vector<InstanceLanes> arrangementLanes;
+    /// Where timeline clips with their own device chain play (song ticks, sorted by start): their notes go through
+    /// that chain. Overlapping stacked clips: the first that covers a moment decides.
+    struct ChainSpan {
+        Tick start = 0, end = 0;
+        uint64_t clip = 0;
+    };
+    std::vector<ChainSpan> arrangementChains;
+    /// The clip whose own chain plays at song tick `t` on the timeline; 0 for the track's chain.
+    uint64_t ownChainAt(double t) const {
+        for (const ChainSpan& c : arrangementChains) {
+            if (double(c.start) > t)
+                break;
+            if (t < double(c.end))
+                return c.clip;
+        }
+        return 0;
+    }
+    /// Every timeline clip that plays, sorted by position, for playheads to read (docs/design/PLAYHEADS.md).
+    std::vector<InstanceLanes> instances;
     std::vector<NoteExtras> arrangementExtras;
     int autoChannels = 0;
     bool voiceLanes = false; // some lane plays into the voices (pitch bend or pressure)
@@ -177,7 +242,8 @@ struct TrackPlayback {
 /// Upper bounds the engine sizes its tables by, so it never allocates.
 constexpr int kMaxModulatorSlots =
     kMaxSongModulators + kMaxTracks * (kMaxTrackModulators + kMaxDevices * kMaxDeviceModulators);
-constexpr int kMaxKnobs = (kMaxTracks * kMaxDevices + kMaxModulatorSlots) * kMaxDeviceParams;
+constexpr int kMaxKnobs = kMaxTracks * kMaxDevices * kMaxDeviceParams + kMaxModulatorSlots * kMaxModulatorParams +
+                          kMaxTracks * playheads::kMaxPlayheads * playheads::kMaxPlayheadParams;
 
 /// A device as the engine runs it. Its knob values start at `knobs` in the knob table.
 struct DevicePlayback {
@@ -186,7 +252,14 @@ struct DevicePlayback {
     bool affectDrums = false;
     uint64_t id = 0;
     int knobs = 0;
+    uint8_t lane = 0; // in a playhead's branch: that playhead's place (1..16); 0 = the track's chain
+    int32_t variation = 1; // its dice
+    std::vector<uint8_t> line; // an Arpeggiator's own Pattern line
+    int arpSlot = -1;          // an Arpeggiator: where the engine says which step it played (Engine::arpStep)
 };
+
+/// Arpeggiators whose last step the engine reports, for the editor to light it.
+constexpr int kMaxArpSlots = 64;
 
 /// One modulation onto a knob or an AUTO channel: a modulator (by slot) and how far it moves its target.
 struct ModSource {
@@ -199,9 +272,37 @@ struct AutoModulation {
     ModSource source;
 };
 
-/// A track's device chain.
+/// A playhead as the engine runs it (docs/design/PLAYHEADS.md). Its settings start at `knobs` in the knob table.
+struct PlayheadPlayback {
+    uint64_t id = 0;
+    int knobs = 0;
+    uint8_t channel = 1;         // 0 = each note keeps its own
+    bool audible = true;         // the solo applied; whether it is on is its On knob, read as it plays
+    std::vector<AutoPoint> path; // its drawn path, when its Path knob says Drawn
+    /// Curve modulators on its settings, which it reads at the moment it reads (Engine::playPlayheads).
+    struct Exact {
+        int modulator = 0; // index into Snapshot::modulators
+        uint16_t param = 0;
+        float amount = 0;
+    };
+    std::vector<Exact> exact;
+    int knobCount = 0;
+};
+
+/// A device chain: a track's, or a clip's own.
 struct ChainPlayback {
-    std::vector<DevicePlayback> devices;
+    uint64_t clip = 0; // a clip's own chain: its ClipId value; 0 for a track's
+    std::vector<DevicePlayback> devices; // the Playheads device is not among them: it reads the clip instead
+    /// The track's Playheads device, when it has one that is on: its playheads and where its own knobs are.
+    std::vector<PlayheadPlayback> playheads;
+    int playheadKnobs = -1;
+    /// Motion devices before the Playheads device: the playheads read their notes moved (Engine::playPlayheads),
+    /// so they are not in `devices`.
+    struct ReadMotion {
+        uint64_t id = 0;
+        int knobs = 0;
+    };
+    std::vector<ReadMotion> readMotions;
     /// Changes when devices are added, removed, reordered, switched on or off: their notes in flight are dropped.
     uint64_t structure = 0;
     bool active = false; // some device is on
@@ -218,8 +319,15 @@ struct ModulatorPlayback {
     int slot = 0;   // stable for the modulator's lifetime, so its phase carries over between snapshots
     int knobs = 0;  // its settings in the knob table
     int track = -1; // display index of its track; -1 for song modulators
+    int32_t variation = 1; // its dice
     std::array<float, kMaxSteps> steps{};
     int stepCount = 0;
+    Tick length = 0;                       // Curve: how long its drawing is
+    std::vector<AutoPoint> points;         // Curve: its shape
+    Tick segmentStart = 0, segmentEnd = 0; // Curve: the part that plays
+
+    /// A Curve's shape, for mods::evaluate().
+    mods::Drawn drawn() const { return {points.data(), int(points.size()), length, segmentStart, segmentEnd}; }
 };
 
 /// A knob with modulation on it.
@@ -227,6 +335,7 @@ struct KnobModulation {
     int knob = 0;
     std::array<ModSource, kMaxModulationsPerKnob> sources{};
     int count = 0;
+    bool motion = false; // a Motion device's knob: "Per pass" modulators add to it per note, not as they run
 };
 
 /// Whose knobs a range of the knob table holds, for finding a knob by reference.
@@ -266,13 +375,31 @@ struct Snapshot {
     // Devices and modulators: rebuilt with every snapshot (they are small), so track playback stays shared.
     std::vector<float> knobs;          // every device knob and modulator setting, normalized
     std::vector<KnobOwner> owners;     // sorted by kind, then ID
-    std::vector<ChainPlayback> chains; // per track, display order
+    /// Per track in display order, then the own chains of the clips that play through theirs.
+    std::vector<ChainPlayback> chains;
+    size_t trackChains = 0;
     std::vector<ModulatorPlayback> modulators;
+    bool turnsRackKnobs = false; // some modulator turns another Rack module's knob, so it keeps moving while stopped
     std::vector<KnobModulation> modulated; // knobs that modulators move
     std::vector<int> laneKnobs;            // knobs that knob lanes turn, sorted
+    std::vector<std::pair<uint64_t, int>> arpSlots; // each Arpeggiator's device ID value and its report slot
 
+    /// The own chain of clip `clip` (its ID value), or nullptr when it doesn't play through one.
+    const ChainPlayback* ownChainOf(uint64_t clip) const {
+        for (size_t i = trackChains; clip && i < chains.size(); i++)
+            if (chains[i].clip == clip)
+                return &chains[i];
+        return nullptr;
+    }
     /// The knob table index of a device knob or modulator setting; -1 when it isn't there.
     int knobIndex(const ParamRef& ref) const;
+    /// Where the engine reports the steps of the Arpeggiator with this ID value; -1 for none.
+    int arpSlotOf(uint64_t device) const {
+        for (const auto& [id, slot] : arpSlots)
+            if (id == device)
+                return slot;
+        return -1;
+    }
 };
 
 /// Gives each track an output-bus slot that stays the same for the track's whole lifetime, so reordering

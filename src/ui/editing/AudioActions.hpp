@@ -1,0 +1,117 @@
+#pragma once
+
+#include "../../model/AudioEdits.hpp"
+
+#include <rack.hpp>
+
+#include <functional>
+#include <string>
+#include <vector>
+
+/// Editor actions for audio that reach into the rack (docs/design/AUDIO_MIXER.md §8.2).
+namespace tessera {
+
+class TesseraModule;
+class EditorContext;
+class OutputModuleBase;
+
+namespace audioActions {
+
+/// The items of each part of an audio clip's settings, for the clip menu's submenus and the audio editor's header.
+void appendFollowItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendSoundItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendPitchItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendTempoItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+void appendGainItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+/// Quantize's settings (grid, strength, which hits), Quantize itself and Remove markers.
+void appendWarpItems(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+/// Pins clip `clip`'s hits to the grid at the set strength, across every take it plays, as one undo step.
+void quantizeClip(EditorContext& ctx, ClipId clip);
+
+/// Whether the patch has one of Rack's Audio modules, for offering the Connect helper.
+bool audioModuleInPatch();
+
+/// Cables MAIN L and R to the first two inputs of the first Audio module in the patch, as one Rack undo step.
+/// Changes nothing when those inputs are in use or there is no Audio module. Returns what happened, for a toast.
+std::string connectMainToAudio(TesseraModule* module);
+
+/// For a patch with no Audio module: adds Rack's Audio module beside Tessera and cables MAIN L and R to its inputs 1
+/// and 2, as one Rack undo step. Returns what happened, for a toast.
+std::string addAudioModuleForMain(TesseraModule* module);
+
+/// The MAIN helper the patch needs now: connect to the Audio module there, or add one first. Adds it to `menu`.
+void appendConnectMainItem(rack::ui::Menu* menu, EditorContext& ctx);
+
+/// Add a Track Out for this track (§8.2): places a new output module beside Tessera, in the first free space to
+/// its right, bound to `track` (a Drum Out for a drum track, a Track Out for any other track or the master). One
+/// Rack undo step; the new module's screen flashes. Returns what happened, for a toast.
+std::string addOutputFor(TesseraModule* module, TrackId track);
+
+/// Show in the rack (§8.2): scrolls the rack to `output`, keeping the zoom, and flashes its screen.
+void showInRack(OutputModuleBase* output);
+
+/// An output module's short name for menus and chips: "Track Out", "Drum Out", "Auto Out".
+std::string outputName(const OutputModuleBase* output);
+
+/// The output modules that play `track` of `module` now, in the order they were added.
+std::vector<OutputModuleBase*> outputsFor(const TesseraModule* module, TrackId track);
+
+/// The output items of a track's (or the master's) menus: "Show Track Out in the rack" for each module that plays
+/// it, then "Add a Track Out for this track", or "Add another Track Out" once it has one (a Drum Out on a drum track).
+void appendOutputItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track);
+
+/// The audio part of a clip's menu: Reverse, Clip settings ▸ (tempo, follow, sound type, pitch, warp, gain back to
+/// 0 dB), Process ▸ (Normalise, Render to new file, then `moreProcess`'s items), Replace file…, and Find or Try again
+/// when the file is missing or a render failed (§6.2).
+void appendAudioClipMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip,
+                         std::function<void(rack::ui::Menu*)> moreProcess = nullptr);
+
+/// File ▸ Import audio… (Ctrl/Cmd+Shift+O): picks a file and imports it like a drop on empty space, on new tracks
+/// at the playhead's bar or in their first slots, following what plays.
+void importDialog(EditorContext& ctx);
+
+/// A track's or an empty place's menu: picks a file and imports it onto this audio track, at the playhead's bar on the
+/// timeline or into the first empty slot, following what plays.
+void importToTrack(EditorContext& ctx, TrackId track);
+
+/// The timeline's menu: picks a file and imports it onto this audio track at `at`.
+void importToTimeline(EditorContext& ctx, TrackId track, Tick at);
+
+/// An empty slot's menu: picks a file and imports it into this slot of an audio track.
+void importToSlot(EditorContext& ctx, TrackId track, int slot);
+
+/// File ▸ Remove unused audio: takes out the sources no clip plays, as one undo step, and says how many.
+void removeUnused(EditorContext& ctx);
+
+/// File ▸ Audio files (§3.4): every file the song holds, with its length, format, size on disk and how many clips
+/// use it, missing ones in amber first; per file Find file… (when missing) and Select its clips; then the total
+/// size and Remove unused audio.
+void openAudioFiles(EditorContext& ctx);
+
+/// The toast after a drop of audio files: what came in, what couldn't be read, what didn't fit.
+std::string dropMessage(const std::vector<std::string>& imported, const std::vector<std::string>& failed,
+                        int skipped);
+
+/// Replace file…: asks for a file and gives it to audio clip `clip`, keeping its place, length, gain and fades.
+void replaceFileDialog(EditorContext& ctx, ClipId clip);
+/// Gives the dropped file to audio clip `clip` (a Ctrl/Cmd+drop on the clip), with a toast.
+void replaceFile(EditorContext& ctx, ClipId clip, const std::string& path);
+
+/// Finds every missing file: first in the other Tesseras of this patch, then in a folder the user picks, by content
+/// and name. Asks before using a file with the right name and other content.
+void findMissing(EditorContext& ctx);
+/// The sources whose files aren't in patch storage.
+std::vector<AudioSourceId> missingSources(TesseraModule& module);
+
+/// Asks once before importing files that need a lot of memory (one over 20 minutes, or over 1 GB in all, §8.7).
+/// True to go on.
+bool confirmSize(const std::vector<std::string>& paths);
+
+/// Imports dropped files into the editor's Tessera (§6.5): one undo step, the new clips selected, a toast saying
+/// what came in. When the first loop set the song tempo, the toast offers to keep the old one.
+/// `note` goes first in the toast ("Added an audio track: Lead plays notes").
+void dropAudio(EditorContext& ctx, const std::vector<std::string>& paths, const AudioDropTarget& target,
+               const std::string& note = "");
+
+} // namespace audioActions
+} // namespace tessera

@@ -5,9 +5,11 @@
 #include "../src/model/DeviceTypes.hpp"
 #include "../src/model/Devices.hpp"
 #include "../src/model/Modulators.hpp"
+#include "../src/model/Render.hpp"
 
 #include <algorithm>
 #include <set>
+#include <tuple>
 #include <vector>
 
 using namespace tessera;
@@ -49,7 +51,9 @@ struct Rig {
     chain::Chain chain;
     Collect out;
     bool drum = false;
-    uint32_t seed = 1;
+    uint32_t seed = 1;  // every device's dice number
+    bool fresh = false; // every device on New instead, playing on `roll`
+    uint32_t roll = 0;
 
     void add(DeviceType type, std::initializer_list<std::pair<int, float>> values = {}) {
         knobs.push_back(knobsOf(type, values));
@@ -67,7 +71,9 @@ struct Rig {
         c.drum = drum;
         c.songKey = &songKey;
         c.clipKeys = &clipKeys;
-        c.seed = seed;
+        for (chain::DeviceSlot& s : slots)
+            s.variation = fresh ? kNewEachPlay : int32_t(seed); // each device's dice
+        c.roll = roll;
         return c;
     }
     ChainNote note(double start, double length, int pitch, float velocity = 0.8f) {
@@ -207,6 +213,23 @@ TEST_CASE("Velocity curves, scales into a range and randomizes repeatably") {
         seedMatters |= through(0.5f, 0, pass) != one;
     }
     CHECK(seedMatters);
+
+    SUBCASE("on New it plays on the run's roll, which a fixed number ignores") {
+        rig.seed = 1;
+        rig.roll = 1;
+        float fixedOne = through(0.5f, 0, 3);
+        rig.roll = 2;
+        CHECK(through(0.5f, 0, 3) == fixedOne);
+        rig.fresh = true;
+        bool rolls = false;
+        for (int pass = 0; pass < 8; pass++) {
+            rig.roll = 1;
+            float one = through(0.5f, 0, pass);
+            rig.roll = 2;
+            rolls |= through(0.5f, 0, pass) != one;
+        }
+        CHECK(rolls);
+    }
 }
 
 TEST_CASE("Note Length scales, fixes or joins note lengths") {
@@ -219,7 +242,7 @@ TEST_CASE("Note Length scales, fixes or joins note lengths") {
     CHECK(rig.out.notes[0].end == doctest::Approx(240));
 
     rig.set(0, chain::knob::kMode, float(chain::LengthMode::Fixed));
-    rig.set(0, chain::knob::kLength, 5); // 1/4
+    rig.set(0, chain::knob::kLength, float(devices::rateIndex("1/4")));
     rig.push(rig.note(10, 100, 60));
     rig.run(11);
     CHECK(rig.out.notes.back().end == doctest::Approx(10 + kPpq));
@@ -331,7 +354,9 @@ TEST_CASE("a full chain drops new notes but never loses an end") {
 
 TEST_CASE("a synced LFO follows the song position") {
     using namespace mods;
-    std::vector<float> k = knobsOf(ModulatorType::Lfo, {{knob::kSync, 1}, {knob::kSyncedRate, 3}, {knob::kBipolar, 1}});
+    std::vector<float> k =
+        knobsOf(ModulatorType::Lfo,
+                {{knob::kSync, 1}, {knob::kSyncedRate, float(devices::rateIndex("1 bar"))}, {knob::kBipolar, 1}});
     State state;
     Clock clock;
     auto at = [&](double tick) {
@@ -350,13 +375,14 @@ TEST_CASE("a synced LFO follows the song position") {
     CHECK(at(3 * bar / 4) == doctest::Approx(0));
     CHECK(at(0) == doctest::Approx(0.5));
 
-    k = knobsOf(ModulatorType::Lfo, {{knob::kSync, 1}, {knob::kSyncedRate, 3}, {knob::kPhase, 90}});
+    k = knobsOf(ModulatorType::Lfo,
+                {{knob::kSync, 1}, {knob::kSyncedRate, float(devices::rateIndex("1 bar"))}, {knob::kPhase, 90}});
     CHECK(at(0) == doctest::Approx(1));
 
     SUBCASE("restart each bar") {
         k = knobsOf(ModulatorType::Lfo, {{knob::kShape, float(Shape::SawUp)},
                                          {knob::kSync, 1},
-                                         {knob::kSyncedRate, 2}, // 2 bars
+                                         {knob::kSyncedRate, float(devices::rateIndex("2 bars"))},
                                          {knob::kRestart, float(Restart::EachBar)}});
         CHECK(at(bar * 1.25) == doctest::Approx(at(bar * 0.25)));
         CHECK(at(bar * 0.25) == doctest::Approx(-0.75));
@@ -364,7 +390,7 @@ TEST_CASE("a synced LFO follows the song position") {
     SUBCASE("restart each note") {
         k = knobsOf(ModulatorType::Lfo, {{knob::kShape, float(Shape::SawUp)},
                                          {knob::kSync, 1},
-                                         {knob::kSyncedRate, 3},
+                                         {knob::kSyncedRate, float(devices::rateIndex("1 bar"))},
                                          {knob::kRestart, float(Restart::EachNote)}});
         trigger(state, 100, 50, NoteValues(), clock);
         CHECK(at(100) == doctest::Approx(-1));
@@ -385,8 +411,9 @@ TEST_CASE("a free LFO runs in hertz, and its random shapes repeat by seed") {
     CHECK(outs[3] == doctest::Approx(-1));
     CHECK(outs[4] == doctest::Approx(0).scale(1));
 
-    std::vector<float> sh = knobsOf(
-        ModulatorType::Lfo, {{knob::kShape, float(Shape::SampleHold)}, {knob::kSync, 1}, {knob::kSyncedRate, 7}});
+    std::vector<float> sh = knobsOf(ModulatorType::Lfo, {{knob::kShape, float(Shape::SampleHold)},
+                                                         {knob::kSync, 1},
+                                                         {knob::kSyncedRate, float(devices::rateIndex("1/16"))}});
     auto cycles = [&](uint32_t seed) {
         State st;
         Clock c;
@@ -420,6 +447,14 @@ struct Spec {
     int pitch;
     float velocity = 0.8f;
 };
+
+/// A playhead setting's saved value for the choice named `name` ("2x", "1/16").
+float choiceKnob(int k, const char* name) {
+    const devices::ParamInfo& info = devices::playheadInfo().params[size_t(k)];
+    int index = playheads::choiceIndex(info.choices, name, -1);
+    REQUIRE(index >= 0);
+    return devices::normalize(info, float(index));
+}
 
 Song songWith(const std::vector<Spec>& notes, Tick loopLength = 4 * kPpq, int polyphony = 2) {
     Song song;
@@ -458,7 +493,9 @@ struct Harness {
     BusSlots slots;
     SnapshotBuilder builder;
     std::unique_ptr<Snapshot> snapshot, old;
-    Engine engine;
+    // On the heap: an Engine is over a megabyte, and a test's subcases keep several harnesses in one stack frame.
+    std::unique_ptr<Engine> enginePtr = std::make_unique<Engine>();
+    Engine& engine = *enginePtr;
     std::array<TrackFrame, kMaxTracks> frames{};
     TransportEvents events;
     int64_t sample = -1;
@@ -529,7 +566,8 @@ TEST_CASE("engine: notes go through the chain on the same samples") {
 TEST_CASE("engine: Note Length ends notes on exact samples") {
     Song song = songWith({{0, 480, 60}});
     addDevice(song, DeviceType::NoteLength,
-              {{chain::knob::kMode, float(chain::LengthMode::Fixed)}, {chain::knob::kLength, 7}}); // 1/16
+              {{chain::knob::kMode, float(chain::LengthMode::Fixed)},
+               {chain::knob::kLength, float(devices::rateIndex("1/16"))}});
     Harness h(song);
     h.runTo(240 * kSamplesPerTick - 1);
     CHECK(h.gate());
@@ -581,7 +619,8 @@ TEST_CASE("engine: an LFO on a knob moves the notes") {
     Song song = songWith({{0, 100, 60}, {960, 100, 60}, {1920, 100, 60}, {2880, 100, 60}}, 4 * kPpq, 1);
     Device& t = addDevice(song, DeviceType::Transpose);
     Modulator lfo = devices::makeModulator(ModulatorType::Lfo, song.newId<ModulatorId>());
-    lfo.params = knobsOf(ModulatorType::Lfo, {{mods::knob::kSync, 1}, {mods::knob::kSyncedRate, 3}});
+    lfo.params = knobsOf(ModulatorType::Lfo,
+                         {{mods::knob::kSync, 1}, {mods::knob::kSyncedRate, float(devices::rateIndex("1 bar"))}});
     Modulation route;
     route.target = {ParamRef::Kind::Device, t.id.value, chain::knob::kSemitones};
     route.amount = 0.25f; // 12 of the knob's 48 semitones
@@ -661,7 +700,8 @@ TEST_CASE("engine: live notes go through the chain, also while stopped") {
 
     SUBCASE("a fixed length ends a held key on time, transport stopped") {
         addDevice(h.song, DeviceType::NoteLength,
-                  {{chain::knob::kMode, float(chain::LengthMode::Fixed)}, {chain::knob::kLength, 7}});
+                  {{chain::knob::kMode, float(chain::LengthMode::Fixed)},
+                   {chain::knob::kLength, float(devices::rateIndex("1/16"))}});
         h.republish();
         h.runTo(h.sample + 100); // past the last note's retrigger gap
         h.engine.liveNote({LiveSource::Midi, 0, 60, 0.9f, true});
@@ -678,9 +718,10 @@ TEST_CASE("engine: live notes go through the chain, also while stopped") {
     }
 }
 
-TEST_CASE("engine: device randomness repeats with the same seed") {
+TEST_CASE("engine: device randomness repeats with the same number on its dice") {
     Song song = songWith({{0, 100, 60}, {240, 100, 60}, {480, 100, 60}, {720, 100, 60}}, kPpq, 1);
     addDevice(song, DeviceType::Velocity, {{chain::knob::kRandom, 50}});
+    song.tracks[0].devices.back().variation = 17;
     auto velocities = [](const Song& s) {
         Harness h(s);
         std::vector<float> v;
@@ -698,7 +739,7 @@ TEST_CASE("engine: device randomness repeats with the same seed") {
     CHECK(a == velocities(song));
     // The second pass of the clip differs from the first.
     CHECK(std::vector<float>(a.begin(), a.begin() + 4) != std::vector<float>(a.begin() + 4, a.end()));
-    song.seed = 99;
+    song.tracks[0].devices.back().variation = 99;
     CHECK(a != velocities(song));
 }
 
@@ -769,7 +810,8 @@ TEST_CASE("Chord turns each note into a chord") {
 
 TEST_CASE("the arpeggiator steps through held notes on the grid") {
     Rig rig;
-    rig.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kGate, 50}}); // 1/16 = 240 ticks
+    rig.add(DeviceType::Arpeggiator,
+            {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kGate, 50}}); // 1/16 = 240 ticks
     for (int p : {67, 60, 64})
         rig.push(rig.note(0, 960, p));
     rig.runTicks(-1, 1200);
@@ -783,7 +825,7 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
     SUBCASE("patterns and octaves") {
         auto run = [](float pattern, int octaves) {
             Rig r;
-            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7},
+            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
                                             {chain::knob::kPattern, pattern},
                                             {chain::knob::kArpOctaves, float(octaves)}});
             for (int p : {60, 64, 67})
@@ -795,10 +837,138 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
         CHECK(run(float(chain::ArpPattern::UpDown), 1) == std::vector<int>{60, 64, 67, 64, 60, 64, 67, 64});
         CHECK(run(float(chain::ArpPattern::Up), 2) == std::vector<int>{60, 64, 67, 72, 76, 79, 60, 64});
         CHECK(run(float(chain::ArpPattern::Chord), 1).size() == 24);
+        // The ends twice at each turn: a round of 6 with three notes.
+        CHECK(run(float(chain::ArpPattern::UpAndDown), 1) == std::vector<int>{60, 64, 67, 67, 64, 60, 60, 64});
+        CHECK(run(float(chain::ArpPattern::DownAndUp), 1) == std::vector<int>{67, 64, 60, 60, 64, 67, 67, 64});
+        // Outside in: C G E; over two octaves the whole run, C G' E E' G C'.
+        CHECK(run(float(chain::ArpPattern::Converge), 1) == std::vector<int>{60, 67, 64, 60, 67, 64, 60, 67});
+        CHECK(run(float(chain::ArpPattern::Converge), 2) == std::vector<int>{60, 79, 64, 76, 67, 72, 60, 79});
+        // Middle out, the lower first: E C G; with six notes G C' E E' C G'.
+        CHECK(run(float(chain::ArpPattern::Diverge), 1) == std::vector<int>{64, 60, 67, 64, 60, 67, 64, 60});
+        CHECK(run(float(chain::ArpPattern::Diverge), 2) == std::vector<int>{67, 72, 64, 76, 60, 79, 67, 72});
+        // Each note once per round, the same order every round and every time.
+        std::vector<int> shuffled = run(float(chain::ArpPattern::RandomOnce), 1);
+        REQUIRE(shuffled.size() == 8);
+        CHECK(std::multiset<int>(shuffled.begin(), shuffled.begin() + 3) == std::multiset<int>{60, 64, 67});
+        CHECK(std::equal(shuffled.begin(), shuffled.begin() + 5, shuffled.begin() + 3));
+        CHECK(run(float(chain::ArpPattern::RandomOnce), 1) == shuffled);
+        // In to the middle and out again: C G E G, C G E G.
+        CHECK(run(float(chain::ArpPattern::ConvergeDiverge), 1) == std::vector<int>{60, 67, 64, 67, 60, 67, 64, 67});
+        // The thumb (lowest) between the others: C E C G, and up-down the same with three notes.
+        CHECK(run(float(chain::ArpPattern::ThumbUp), 1) == std::vector<int>{60, 64, 60, 67, 60, 64, 60, 67});
+        CHECK(run(float(chain::ArpPattern::ThumbUpDown), 2) == std::vector<int>{60, 64, 60, 67, 60, 72, 60, 76});
+        // The pinky (highest) after the others: C G E G.
+        CHECK(run(float(chain::ArpPattern::PinkyUp), 1) == std::vector<int>{60, 67, 64, 67, 60, 67, 64, 67});
+        CHECK(run(float(chain::ArpPattern::PinkyUpDown), 2) == std::vector<int>{60, 79, 64, 79, 67, 79, 72, 79});
+        // Random other never plays the same note twice in a row.
+        std::vector<int> other = run(float(chain::ArpPattern::RandomOther), 1);
+        REQUIRE(other.size() == 8);
+        for (size_t i = 1; i < other.size(); i++)
+            CHECK(other[i] != other[i - 1]);
+        // Shuffle: each note once in every round of three, each round mixed on its own.
+        std::vector<int> shuffle = run(float(chain::ArpPattern::Shuffle), 1);
+        REQUIRE(shuffle.size() == 8);
+        CHECK(std::multiset<int>(shuffle.begin(), shuffle.begin() + 3) == std::multiset<int>{60, 64, 67});
+        CHECK(std::multiset<int>(shuffle.begin() + 3, shuffle.begin() + 6) == std::multiset<int>{60, 64, 67});
+        // Walk starts on the lowest note and moves at most one note a step, the same path every time.
+        std::vector<int> walk = run(float(chain::ArpPattern::Walk), 2);
+        const std::vector<int> run6 = {60, 64, 67, 72, 76, 79};
+        REQUIRE(walk.size() == 8);
+        CHECK(walk[0] == 60);
+        for (size_t i = 1; i < walk.size(); i++) {
+            int from = int(std::find(run6.begin(), run6.end(), walk[i - 1]) - run6.begin());
+            int to = int(std::find(run6.begin(), run6.end(), walk[i]) - run6.begin());
+            int move = (to - from + 6) % 6;
+            CHECK((move == 0 || move == 1 || move == 5)); // the same, the next, or back one (wrapping)
+        }
+        CHECK(run(float(chain::ArpPattern::Walk), 2) == walk);
+        CHECK(walk != std::vector<int>{60, 64, 67, 72, 76, 79, 60, 64}); // it wanders, unlike Up
+        // Pattern: a fixed line of held notes, the same every time.
+        std::vector<int> line = run(float(chain::ArpPattern::Pattern), 1);
+        REQUIRE(line.size() == 8);
+        CHECK(line == run(float(chain::ArpPattern::Pattern), 1));
+        for (int p : line)
+            CHECK((p == 60 || p == 64 || p == 67));
+        std::vector<int> wide = run(float(chain::ArpPattern::RandomOnce), 4);
+        CHECK(std::set<int>(wide.begin(), wide.end()).size() == 8); // no repeats inside a round of 12
+    }
+    SUBCASE("Pattern with its own line: notes, a chord step, a rest, an octave, and a row past the held notes") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)},
+                                        {chain::knob::kArpOctaves, 3.f}}); // Oct leaves an own line alone
+        std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(3), chain::kFullStep,
+                                     0,                chain::stepOf(2), chain::stepOf(4)};
+        r.set(0, chain::knob::kArpStepOct + 4, 1);
+        r.slots[0].line = line.data();
+        r.slots[0].lineLength = uint8_t(line.size());
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 6, p));
+        r.runTicks(-1, 240 * 6 - 1);
+        // C, G, the chord (each note once), a rest, E an octave up, and row 4 of three notes wraps around to C.
+        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 67, 60, 64, 67, 76, 60});
+    }
+    SUBCASE("Pattern rows: velocity, gate, octave and semitones per step, each row its own length") {
+        auto rig = [](Rig& r, int steps) {
+            r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                            {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+            static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(2), chain::stepOf(3),
+                                                      chain::stepOf(1)};
+            r.slots[0].line = line.data();
+            r.slots[0].lineLength = 4;
+            for (int p : {60, 64, 67})
+                r.push(r.note(0, 240 * steps, p, 0.8f));
+        };
+        Rig r;
+        rig(r, 6);
+        using chain::ArpLane;
+        r.set(0, chain::arpLaneSteps(ArpLane::Velocity), 2); // 100%, 50%, 100%, 50%...
+        r.set(0, chain::arpLaneFirst(ArpLane::Velocity) + 1, 50);
+        r.set(0, chain::arpLaneFirst(ArpLane::Gate) + 2, 150);
+        r.set(0, chain::arpLaneSteps(ArpLane::Octave), 3); // 0, -1, 0, 0, -1, 0
+        r.set(0, chain::arpLaneFirst(ArpLane::Octave) + 1, -1);
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 3, 7);
+        r.runTicks(-1, 240 * 6 - 1);
+        REQUIRE(r.out.notes.size() == 6);
+        // Notes C E G C C E; octave row 0 -1 0 repeating; step 4 a fifth up.
+        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 52, 67, 67, 48, 64});
+        std::vector<float> velocities;
+        for (const ChainNote& n : r.out.notes)
+            velocities.push_back(std::round(n.velocity * 100) / 100);
+        CHECK(velocities == std::vector<float>{0.8f, 0.4f, 0.8f, 0.4f, 0.8f, 0.4f});
+        CHECK(r.out.notes[2].end - r.out.notes[2].start == doctest::Approx(360)); // 150% of a 1/16
+        CHECK(r.out.notes[0].end - r.out.notes[0].start == doctest::Approx(120)); // 50%, the default
+        SUBCASE("moving by key steps: +2 from C in C major is E") {
+            Rig k;
+            rig(k, 1);
+            k.set(0, chain::knob::kArpMoveUnit, float(chain::ArpMove::Key));
+            k.set(0, chain::arpLaneFirst(ArpLane::Move), 2);
+            k.runTicks(-1, 100);
+            CHECK(pitchesOf(k.out.notes) == std::vector<int>{64});
+        }
+    }
+    SUBCASE("a new chord starts the pattern again; one voice moving inside it doesn't") {
+        auto run = [](bool hold, const std::vector<std::tuple<double, double, int>>& notes) {
+            Rig r;
+            r.add(DeviceType::Arpeggiator,
+                  {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kHold, hold ? 1.f : 0.f}});
+            for (auto [start, length, pitch] : notes)
+                r.push(r.note(start, length, pitch));
+            r.runTicks(-1, 1900);
+            return pitchesOf(r.out.notes);
+        };
+        // Held on through a gap: the latched C E G plays on, then D F A starts from its lowest note.
+        CHECK(
+            run(true, {{0, 900, 60}, {0, 900, 64}, {0, 900, 67}, {1000, 900, 62}, {1000, 900, 65}, {1000, 900, 69}}) ==
+            std::vector<int>{60, 64, 67, 60, 64, 62, 65, 69});
+        // E moves to F under a held C and G: the pattern carries on.
+        CHECK(run(false, {{0, 1920, 60}, {0, 900, 64}, {0, 1920, 67}, {900, 1020, 65}}) ==
+              std::vector<int>{60, 64, 67, 60, 65, 67, 60, 65});
     }
     SUBCASE("off-grid notes wait for the next step; hold keeps playing after release") {
         Rig r;
-        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kHold, 1}});
+        r.add(DeviceType::Arpeggiator,
+              {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kHold, 1}});
         r.push(r.note(100, 50, 60));
         r.runTicks(99, 1000);
         REQUIRE(!r.out.notes.empty());
@@ -807,11 +977,106 @@ TEST_CASE("the arpeggiator steps through held notes on the grid") {
     }
 }
 
+TEST_CASE("arpeggiator Hold keeps the last chord through a rest and lets the next chord replace it") {
+    auto play = [](bool hold, Tick gap) {
+        Rig rig;
+        rig.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                          {chain::knob::kHold, hold ? 1.f : 0.f}}); // 1/16 = 240 ticks
+        for (int p : {60, 64, 67})
+            rig.push(rig.note(0, 960, p));
+        for (int p : {62, 65, 69})
+            rig.push(rig.note(960 + gap, 960, p));
+        rig.runTicks(-1, 960 + gap + 960 - 1);
+        return pitchesOf(rig.out.notes);
+    };
+    // Without Hold the rest is silent; with it the first chord plays on through the rest.
+    CHECK(play(false, 960) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
+    CHECK(play(true, 960) == std::vector<int>{60, 64, 67, 60, 64, 67, 60, 64, 62, 65, 69, 62});
+    // Chords back to back: the next replaces the last, with or without Hold.
+    CHECK(play(false, 0) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
+    CHECK(play(true, 0) == std::vector<int>{60, 64, 67, 60, 62, 65, 69, 62});
+}
+
+TEST_CASE("a Pattern line plays held notes 5 to 8 of a big chord, and wraps around past the chord") {
+    auto play = [](std::vector<int> chord, const std::vector<uint8_t>& line) {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+        r.slots[0].line = line.data();
+        r.slots[0].lineLength = uint8_t(line.size());
+        for (int p : chord)
+            r.push(r.note(0, 240 * int(line.size()), p));
+        r.runTicks(-1, 240 * int(line.size()) - 1);
+        return pitchesOf(r.out.notes);
+    };
+    static const std::vector<uint8_t> big = {chain::stepOf(5), chain::stepOf(8), chain::stepOf(6), chain::stepOf(1)};
+    CHECK(play({48, 52, 55, 59, 62, 65, 69, 72}, big) == std::vector<int>{62, 72, 65, 48});
+    // Three notes: rows past them wrap around in the same octave, so rows 5 and 8 both play the second note.
+    static const std::vector<uint8_t> past = {chain::stepOf(5), chain::stepOf(8)};
+    CHECK(play({60, 64, 67}, past) == std::vector<int>{64, 64});
+    // Row 1 is the lowest note however the chord arrives.
+    static const std::vector<uint8_t> up = {chain::stepOf(1), chain::stepOf(2), chain::stepOf(3)};
+    CHECK(play({67, 60, 64}, up) == std::vector<int>{60, 64, 67});
+    CHECK(play({64, 67, 60}, up) == std::vector<int>{60, 64, 67});
+}
+
+TEST_CASE("Pattern steps light any notes, Vel 0 is a rest, and Move by chord notes walks the chord") {
+    using chain::ArpLane;
+    auto rig = [](Rig& r, const std::vector<uint8_t>& line) {
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))},
+                                        {chain::knob::kPattern, float(chain::ArpPattern::Pattern)}});
+        r.slots[0].line = line.data();
+        r.slots[0].lineLength = uint8_t(line.size());
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * int(line.size()), p));
+    };
+    auto run = [](Rig& r, int steps) {
+        r.runTicks(-1, 240 * steps - 1);
+        return pitchesOf(r.out.notes);
+    };
+    SUBCASE("a step with two notes plays both; rows that wrap onto the same note play it once") {
+        static const std::vector<uint8_t> line = {uint8_t(chain::stepOf(1) | chain::stepOf(3)),
+                                                  uint8_t(chain::stepOf(1) | chain::stepOf(4))};
+        Rig r;
+        rig(r, line);
+        CHECK(run(r, 2) == std::vector<int>{60, 67, 60});
+    }
+    SUBCASE("Vel 0 plays nothing on that step") {
+        static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(2), chain::stepOf(3)};
+        Rig r;
+        rig(r, line);
+        r.set(0, chain::arpLaneSteps(ArpLane::Velocity), 3);
+        r.set(0, chain::arpLaneFirst(ArpLane::Velocity) + 1, 0);
+        CHECK(run(r, 3) == std::vector<int>{60, 67});
+    }
+    SUBCASE("Move by chord notes: +1 is the next held note, wrapping around in the same octave") {
+        static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(3), chain::stepOf(2)};
+        Rig r;
+        rig(r, line);
+        r.set(0, chain::knob::kArpMoveUnit, float(chain::ArpMove::Chord));
+        r.set(0, chain::arpLaneSteps(ArpLane::Move), 3);
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 0, 1);  // C -> E
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 1, 1);  // G -> C (wraps)
+        r.set(0, chain::arpLaneFirst(ArpLane::Move) + 2, -2); // E -> G (wraps down)
+        CHECK(run(r, 3) == std::vector<int>{64, 60, 67});
+    }
+    SUBCASE("a row's setting for every step adds to each step") {
+        static const std::vector<uint8_t> line = {chain::stepOf(1), chain::stepOf(2)};
+        Rig r;
+        rig(r, line);
+        r.set(0, chain::knob::kArpMoveUnit, float(chain::ArpMove::Chord));
+        r.set(0, chain::arpLaneShift(ArpLane::Move), 1);
+        r.set(0, chain::arpLaneShift(ArpLane::Octave), 1);
+        CHECK(run(r, 2) == std::vector<int>{76, 79});
+    }
+}
+
 TEST_CASE("Echo repeats notes, fading") {
     Rig rig;
-    rig.add(
-        DeviceType::Echo,
-        {{chain::knob::kTime, 6}, {chain::knob::kRepeats, 3}, {chain::knob::kDecay, 50}, {chain::knob::kEchoPitch, 2}});
+    rig.add(DeviceType::Echo, {{chain::knob::kTime, float(devices::rateIndex("1/8"))},
+                               {chain::knob::kRepeats, 3},
+                               {chain::knob::kDecay, 50},
+                               {chain::knob::kEchoPitch, 2}});
     rig.push(rig.note(0, 100, 60, 0.8f));
     rig.runTicks(-1, 2000);
     REQUIRE(rig.out.notes.size() == 4);
@@ -893,9 +1158,34 @@ TEST_CASE("Note Filter lets some notes through") {
     CHECK(pitchesOf(rig.out.notes) == std::vector<int>{62, 68});
 }
 
-TEST_CASE("Note Filter keeps one channel, or every channel") {
+TEST_CASE("Note Filter keeps a set of channels, or every channel") {
+    SUBCASE("channels 1 and 3") {
+        Rig rig;
+        rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 0b101}});
+        for (int i = 0; i < 4; i++) {
+            ChainNote n = rig.note(i * 10, 5, 60 + i);
+            n.channel = uint8_t(i + 1); // 1, 2, 3, 4
+            rig.push(n);
+        }
+        rig.run(100);
+        CHECK(pitchesOf(rig.out.notes) == std::vector<int>{60, 62});
+    }
+    SUBCASE("none picked: any channel") {
+        Rig rig;
+        rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 0}});
+        for (int i = 0; i < 4; i++) {
+            ChainNote n = rig.note(i * 10, 5, 60 + i);
+            n.channel = uint8_t(i * 5 + 1); // 1, 6, 11, 16
+            rig.push(n);
+        }
+        rig.run(100);
+        CHECK(pitchesOf(rig.out.notes) == std::vector<int>{60, 61, 62, 63});
+    }
+}
+
+TEST_CASE("Note Filter keeps one channel") {
     Rig rig;
-    rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 2}}); // the choice after Any: channel 2
+    rig.add(DeviceType::NoteFilter, {{chain::knob::kChannel, 0b10}}); // only channel 2
     for (int i = 0; i < 4; i++) {
         ChainNote n = rig.note(i * 10, 5, 60 + i);
         n.channel = uint8_t(i % 2 + 1); // 1, 2, 1, 2
@@ -913,7 +1203,8 @@ TEST_CASE("Steps, Random, Ramp, Envelope and Note modulators") {
     State state;
     double bar = double(ticksPerBar(TimeSig{}));
     SUBCASE("steps on the grid") {
-        std::vector<float> k = knobsOf(ModulatorType::Steps, {{knob::kStepCount, 4}, {knob::kStepRate, 5}}); // 1/4
+        std::vector<float> k =
+            knobsOf(ModulatorType::Steps, {{knob::kStepCount, 4}, {knob::kStepRate, float(devices::rateIndex("1/4"))}});
         float steps[] = {0.1f, 0.9f, 0.3f, 0.7f};
         std::vector<float> got;
         for (int i = 0; i < 6; i++) {
@@ -923,7 +1214,7 @@ TEST_CASE("Steps, Random, Ramp, Envelope and Note modulators") {
         CHECK(got == std::vector<float>{0.1f, 0.9f, 0.3f, 0.7f, 0.1f, 0.9f});
     }
     SUBCASE("random by seed") {
-        std::vector<float> k = knobsOf(ModulatorType::Random, {{knob::kRandomRate, 5}});
+        std::vector<float> k = knobsOf(ModulatorType::Random, {{knob::kRandomRate, float(devices::rateIndex("1/4"))}});
         clock.songTick = 10;
         float a = evaluate(ModulatorType::Random, 1, k.data(), state, clock);
         CHECK(a == evaluate(ModulatorType::Random, 1, k.data(), state, clock));
@@ -980,7 +1271,8 @@ TEST_CASE("engine: a Chord device sounds the whole chord") {
 
 TEST_CASE("engine: an arpeggiator plays steps on the song's grid") {
     Song song = songWith({{0, 960, 60}, {0, 960, 64}, {0, 960, 67}}, 4 * kPpq, 2);
-    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kGate, 50}});
+    addDevice(song, DeviceType::Arpeggiator,
+              {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kGate, 50}});
     Harness h(song);
     std::vector<std::pair<int64_t, int>> starts;
     std::array<bool, 2> was{};
@@ -998,11 +1290,29 @@ TEST_CASE("engine: an arpeggiator plays steps on the song's grid") {
     CHECK(starts[2] == std::make_pair(int64_t(480 * kSamplesPerTick), 67));
 }
 
+TEST_CASE("a Pattern's rows count the notes that reach the arpeggiator, and the engine says how many it holds") {
+    // A six-note chord in the clip: six rows.
+    Song song = songWith({{0, 960, 48}, {0, 960, 52}, {0, 960, 55}, {0, 960, 59}, {0, 960, 62}, {0, 960, 65}});
+    CHECK(song.notesInto(song.tracks[0], nullptr, {}) == 6);
+    // Single notes through a seventh chord before it: four.
+    Song single = songWith({{0, 480, 60}, {480, 480, 62}});
+    Device chord = devices::makeDevice(DeviceType::Chord, single.newId<DeviceId>());
+    chord.params = knobsOf(DeviceType::Chord, {{chain::knob::kChord, float(shapeIndex("7th in key"))}});
+    CHECK(single.notesInto(single.tracks[0], nullptr, {chord}) == 4);
+
+    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+    Harness h(song);
+    for (int64_t s = 0; s < 300 * kSamplesPerTick; s++)
+        h.step();
+    CHECK(h.engine.arpHeld(h.snapshot->arpSlotOf(song.tracks[0].devices[0].id.value)) == 6);
+}
+
 TEST_CASE("engine: an arpeggiator's held notes let go of their curves when the snapshot is replaced") {
     Song song = songWith({{0, 960, 60}, {0, 960, 64}}, 4 * kPpq, 2);
     for (Note& n : song.clips.begin()->second.notes)
         n.pressureExpr = {{0, 0.2f, 0}, {1, 0.9f, 0}};
-    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, 7}, {chain::knob::kGate, 50}});
+    addDevice(song, DeviceType::Arpeggiator,
+              {{chain::knob::kRate, float(devices::rateIndex("1/16"))}, {chain::knob::kGate, 50}});
     Harness h(song);
     h.runTo(100 * kSamplesPerTick);
     // An edit while the arpeggiator holds the notes; the old snapshot is freed, as the module does.
@@ -1355,4 +1665,1599 @@ TEST_CASE("engine: song swing plays on the timeline too, and an off-beat 1/8 swi
     CHECK(startOf(240, kPpq / 4, true) == doctest::Approx(360).epsilon(0.01));
     CHECK(startOf(480, kPpq / 4, false) == doctest::Approx(480).epsilon(0.01)); // an off-beat 1/8 doesn't move on 1/16s
     CHECK(startOf(480, kPpq / 2, false) == doctest::Approx(720).epsilon(0.01)); // it does on 1/8s
+}
+
+TEST_CASE("engine: playheads read the clip each from its own segment") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    const auto& info = devices::playheadInfo();
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        if (i == 1) { // a bar long, from beat 2
+            p.params[playheads::knob::kRegionStart] = devices::normalize(info.params[playheads::knob::kRegionStart], 4);
+            p.params[playheads::knob::kRegionLength] =
+                devices::normalize(info.params[playheads::knob::kRegionLength], 16);
+        }
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto sounding = [&h] {
+        std::multiset<int> out;
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v))
+                out.insert(h.pitch(v));
+        return out;
+    };
+
+    h.step();
+    CHECK(sounding() == std::multiset<int>{60, 64}); // the second playhead starts a beat in, on the 64
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            CHECK(int(h.frame().part[v]) == (h.pitch(v) == 60 ? 1 : 2)); // each playhead's channel, for Track Outs
+    h.runTo(960 * kSamplesPerTick + 1);
+    CHECK(sounding() == std::multiset<int>{64}); // the first reaches the 64; the second is past the clip's notes
+
+    SUBCASE("bypassed, the clip plays as usual") {
+        h.song.tracks[0].devices[0].on = false;
+        h.republish();
+        h.runTo(4 * 960 * kSamplesPerTick + 1);
+        CHECK(sounding() == std::multiset<int>{60});
+    }
+}
+
+TEST_CASE("engine: playheads play each timeline clip at its own transpose, as MIDI export does") {
+    Song song = songWith({{0, 240, 60, 0.8f}}, 4 * kPpq, kAutoVoices);
+    ClipId clip = song.clips.begin()->first;
+    for (int k = 0; k < 2; k++) {
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip;
+        a.position = Tick(k) * 4 * kPpq;
+        a.length = 4 * kPpq;
+        if (k == 1)
+            a.transpose = 5;
+        song.tracks[0].arrangement.push_back(a);
+    }
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads = {devices::makePlayhead(song.newId<PlayheadId>(), 0)};
+    song.tracks[0].devices.push_back(d);
+
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    h.runTo(10 * kSamplesPerTick);
+    REQUIRE(h.gate());
+    CHECK(h.pitch() == 60);
+    CHECK(h.frame().vel[0] == doctest::Approx(8));
+    h.runTo((4 * kPpq + 10) * kSamplesPerTick);
+    int sounding = -1;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding = v;
+    REQUIRE(sounding >= 0);
+    CHECK(h.pitch(sounding) == 65);
+
+    render::Options o;
+    std::vector<std::pair<int, float>> exported;
+    for (const render::ExportNote& n : render::trackNotes(song, song.tracks[0].id, o, {}))
+        exported.push_back({n.pitch, n.velocity});
+    REQUIRE(exported.size() == 2);
+    CHECK(exported[0].first == 60);
+    CHECK(exported[0].second == doctest::Approx(0.8f));
+    CHECK(exported[1].first == 65);
+}
+
+TEST_CASE("engine: a Curve speeds up a playhead's repeats, as MIDI export does") {
+    // A note held over the bar, Repeat 1/16, Times 4, Curve Ease in (t cubed): the second hit of the beat comes at the
+    // cube root of 1/4 of it, and the first note stops there (Retrigger).
+    Song song = songWith({{0, 4 * 960, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    const auto& info = devices::playheadInfo();
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    const std::vector<std::string>& sizes = playheads::repeatNames();
+    const std::vector<std::string>& curves = playheads::curveNames();
+    p.params[playheads::knob::kRepeatSize] = devices::normalize(
+        info.params[playheads::knob::kRepeatSize], float(std::find(sizes.begin(), sizes.end(), "1/16") - sizes.begin()));
+    p.params[playheads::knob::kRepeatTimes] = devices::normalize(info.params[playheads::knob::kRepeatTimes], 4);
+    p.params[playheads::knob::kCurve] = devices::normalize(
+        info.params[playheads::knob::kCurve], float(std::find(curves.begin(), curves.end(), "Ease in") - curves.begin()));
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    REQUIRE(h.gate());
+    int64_t s = 1;
+    while (s < 960 * kSamplesPerTick && h.gate())
+        h.step(), s++;
+    CHECK(double(s) / kSamplesPerTick == doctest::Approx(960 * std::cbrt(0.25)).epsilon(0.01));
+}
+
+TEST_CASE("engine: a segment past the clip's end reads the notes written there, the piano roll is a canvas") {
+    // A one-bar loop, and notes written in bar 2, outside it.
+    Song song = songWith({{0, 240, 60}, {3840, 240, 67}, {4800, 240, 69}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    const auto& info = devices::playheadInfo();
+    p.params[playheads::knob::kRegionStart] = devices::normalize(info.params[playheads::knob::kRegionStart], 16);
+    p.params[playheads::knob::kRegionLength] = devices::normalize(info.params[playheads::knob::kRegionLength], 16);
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto sounding = [&h] {
+        std::multiset<int> out;
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v))
+                out.insert(h.pitch(v));
+        return out;
+    };
+
+    h.step();
+    CHECK(sounding() == std::multiset<int>{67});
+    h.runTo(960 * kSamplesPerTick + 1);
+    CHECK(sounding() == std::multiset<int>{69});
+    h.runTo(2 * 960 * kSamplesPerTick + 1);
+    CHECK(sounding().empty()); // nothing written there: silence, not the clip again
+}
+
+TEST_CASE("engine: a playhead that jumps into a note plays it again, and cuts the one it was playing") {
+    // One long note; Repeat 1/16 x4 reads each sixteenth four times, so in beat 2 it keeps jumping back into the note.
+    const auto& info = devices::playheadInfo();
+    auto run = [&](int onJump, int* most) {
+        Song song = songWith({{0, 3840, 60}}, 4 * kPpq, kAutoVoices);
+        Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+        p.params[playheads::knob::kRepeatSize] = choiceKnob(playheads::knob::kRepeatSize, "1/16");
+        p.params[playheads::knob::kRepeatTimes] = devices::normalize(info.params[playheads::knob::kRepeatTimes], 4);
+        p.params[playheads::knob::kOnJump] = devices::normalize(info.params[playheads::knob::kOnJump], float(onJump));
+        d.playheads.push_back(p);
+        song.tracks[0].devices.push_back(d);
+        Harness h(song);
+        // The notes that start in beat 2, counted by gates rising, and the most sounding at once.
+        int starts = 0;
+        *most = 0;
+        std::vector<bool> was(16, false);
+        for (int64_t s = 960 * kSamplesPerTick; s < 1920 * kSamplesPerTick; s += 4) {
+            h.runTo(s);
+            int now = 0;
+            for (int v = 0; v < h.frame().channels && v < 16; v++) {
+                if (h.gate(v) && !was[size_t(v)] && s > 960 * kSamplesPerTick)
+                    starts++;
+                was[size_t(v)] = h.gate(v);
+                now += h.gate(v) ? 1 : 0;
+            }
+            *most = std::max(*most, now);
+        }
+        return starts;
+    };
+    int most = 0;
+    CHECK(run(0, &most) == 4); // Retrigger: one at each sixteenth, including the move to the next sixteenth
+    CHECK(most == 1);          // each repeat cuts the one before
+    CHECK(run(1, &most) == 0); // Let ring: no note starts where it lands, so nothing new plays
+    CHECK(most >= 1);          // the notes from beat 1 still ring
+}
+
+TEST_CASE("engine: a chord read by playheads keeps its whole length when one playhead echoes it") {
+    // A three-note chord, half a bar long, read by two playheads; the first has an Echo in its own chain (1/8,
+    // 3 repeats, gate 50%). Auto voices must hold the chord and every echo, or the echoes take the chord's voices
+    // halfway through it.
+    Song song = songWith({{0, 1920, 60}, {0, 1920, 64}, {0, 1920, 67}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.branch.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(int64_t(1800) * kSamplesPerTick);
+    int sounding = 0;
+    for (int v = 0; v < h.frame().channels; v++)
+        sounding += h.gate(v) ? 1 : 0;
+    CHECK(sounding == 12); // both playheads' chords (6) and the two echoes still going (6)
+}
+
+TEST_CASE("engine: a playhead turned off stops its echoes still to come, and the other playhead plays on") {
+    // A short note read by two playheads; the first echoes it (1/8, 3 repeats).
+    Song song = songWith({{0, 200, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.branch.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto channelSounds = [&h](int channel) {
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v) && h.frame().part[v] == channel)
+                return true;
+        return false;
+    };
+    h.runTo(int64_t(100) * kSamplesPerTick);
+    REQUIRE(channelSounds(1));
+    REQUIRE(channelSounds(2));
+    h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kOn] = 0;
+    h.republish();
+    h.step();
+    CHECK_FALSE(channelSounds(1));
+    CHECK(channelSounds(2));
+    // Where the echoes would have come (every 1/8 for 3 repeats), it stays silent.
+    bool echoed = false;
+    while (h.sample < int64_t(4) * kPpq * kSamplesPerTick - 10) {
+        h.step();
+        echoed |= channelSounds(1);
+    }
+    CHECK_FALSE(echoed);
+}
+
+TEST_CASE("engine: one playhead running out of voices never takes another playhead's") {
+    // Three voices per channel. Playhead 1 echoes its chord, far more than 3 voices; playhead 2 just plays it.
+    Song song = songWith({{0, 1920, 60}, {0, 1920, 64}, {0, 1920, 67}}, 4 * kPpq, 3);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.branch.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    REQUIRE(int(h.frame().channels) == 6);
+    h.runTo(int64_t(1800) * kSamplesPerTick);
+    int second = 0;
+    for (int v = 0; v < h.frame().channels; v++)
+        second += h.frame().part[v] == 2 && h.gate(v) ? 1 : 0;
+    CHECK(second == 3); // playhead 2's chord, whole, while playhead 1's echoes fight over its own three
+}
+
+TEST_CASE("engine: muting or unmuting one playhead leaves the others' sounding notes alone") {
+    // Three long notes read by three playheads, each on its own channel.
+    Song song = songWith({{0, 3800, 60}, {0, 3800, 64}, {0, 3800, 67}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 3; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    // What each channel has sounding, by the channel the frame reports for its voices.
+    auto sounding = [&h](int channel) {
+        int n = 0;
+        for (int v = 0; v < h.frame().channels; v++)
+            n += h.gate(v) && h.frame().part[v] == channel ? 1 : 0;
+        return n;
+    };
+    h.runTo(int64_t(1000) * kSamplesPerTick);
+    REQUIRE(sounding(2) == 3);
+    REQUIRE(sounding(3) == 3);
+
+    REQUIRE(sounding(1) == 3);
+    auto setOn = [&h](int k, bool on) {
+        h.song.tracks[0].devices[0].playheads[size_t(k)].params[playheads::knob::kOn] = on ? 1.f : 0.f;
+    };
+    setOn(0, false);
+    h.republish();
+    h.step();
+    CHECK(sounding(1) == 0); // its notes stop at once (Trello: "the current gate continues")
+    h.runTo(int64_t(1200) * kSamplesPerTick);
+    CHECK(sounding(1) == 0);
+    CHECK(sounding(2) == 3);
+    CHECK(sounding(3) == 3);
+
+    setOn(0, true);
+    h.republish();
+    h.runTo(int64_t(1400) * kSamplesPerTick);
+    CHECK(sounding(2) == 3);
+    CHECK(sounding(3) == 3);
+
+    // A playhead added in front shifts every block: the sounding notes move along with their channels.
+    Playhead added = devices::makePlayhead(h.song.newId<PlayheadId>(), 3);
+    added.channel = 4;
+    auto& heads = h.song.tracks[0].devices[0].playheads;
+    heads.insert(heads.begin(), added);
+    h.republish();
+    h.runTo(int64_t(1600) * kSamplesPerTick);
+    CHECK(sounding(2) == 3);
+    CHECK(sounding(3) == 3);
+
+    // The second playhead off, then one more added in front: the third moves to the place the second had, and the
+    // second (off) to the third's. Its notes follow it, so the off one's place stops nothing of the third's.
+    setOn(2, false); // the second of the first three, behind the added one
+    h.republish();
+    h.step();
+    CHECK(sounding(2) == 0);
+    CHECK(sounding(3) == 3);
+    Playhead another = devices::makePlayhead(h.song.newId<PlayheadId>(), 4);
+    another.channel = 5;
+    heads.insert(heads.begin(), another);
+    h.republish();
+    h.runTo(int64_t(1800) * kSamplesPerTick);
+    CHECK(sounding(2) == 0);
+    CHECK(sounding(3) == 3);
+}
+
+TEST_CASE("engine: a bass playhead over chords uses one voice; its Track Out sends just that one") {
+    // Chords on every beat. Playhead 1 picks the highest note of each (a line); playhead 2 plays the chords.
+    Song song = songWith({{0, 900, 60},
+                          {0, 900, 64},
+                          {0, 900, 67},
+                          {960, 900, 62},
+                          {960, 900, 65},
+                          {960, 900, 69},
+                          {1920, 900, 60},
+                          {1920, 900, 64},
+                          {1920, 900, 67}},
+                         4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++) {
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), i);
+        p.channel = uint8_t(i + 1);
+        if (i == 0)
+            p.params[playheads::knob::kNotes] =
+                devices::normalize(devices::playheadInfo().params[playheads::knob::kNotes], 2); // Highest
+        d.playheads.push_back(p);
+    }
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    auto used = [&h](int channel) {
+        int n = 0;
+        for (int v = 0; v < h.frame().channels; v++)
+            n += h.frame().part[v] == channel && h.frame().used[v] ? 1 : 0;
+        return n;
+    };
+    h.runTo(int64_t(3000) * kSamplesPerTick);
+    REQUIRE(h.frame().byChannel);
+    CHECK(used(1) == 1); // a line of single notes: always its first voice
+    CHECK(used(2) == 3); // the chords: three
+    h.engine.stop();
+    h.step();
+    CHECK(used(2) == 1); // stopped: each channel back to one until it needs more
+}
+
+TEST_CASE("engine: a playhead's line of back-to-back notes stays on one voice, however long the engine ran first") {
+    // Each note ends where the next starts. The voice's end is on the engine's clock, which keeps running while
+    // stopped, and the next start is on the play clock: the two can round a hair apart.
+    Song song =
+        songWith({{0, 1920, 55}, {1920, 1920, 55}, {3840, 1920, 57}, {5760, 1920, 59}, {7680, 1920, 52}}, 12 * kPpq, 8);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.channel = 1;
+    p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, "2x");
+    p.params[playheads::knob::kRegionLength] =
+        devices::normalize(devices::playheadInfo().params[playheads::knob::kRegionLength], 32); // steps
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.length = 48 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    song.loopStart = 0;
+    song.loopEnd = 48 * kPpq;
+    for (int64_t idle : {0, 1000, 44100, 100000, 220500, 333333}) {
+        CAPTURE(idle);
+        Harness h(song, false);
+        h.engine.setSampleRate(44100);
+        h.engine.setTempo(120);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.setLoopEnabled(true);
+        h.runTo(idle);
+        h.engine.reset();
+        h.engine.play();
+        int second = 0;
+        for (int64_t s = 0; s < 44100 * 20; s++) {
+            h.step();
+            for (int v = 1; v < h.frame().channels; v++)
+                second += h.frame().part[v] == 1 && h.gate(v) ? 1 : 0;
+        }
+        CHECK(second == 0);
+    }
+}
+
+TEST_CASE("engine: playheads read the timeline's clips too, from each clip's start") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.position = 4 * kPpq;
+    a.length = 4 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.params[playheads::knob::kDirection] =
+        devices::normalize(devices::playheadInfo().params[playheads::knob::kDirection], 1); // reverse
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+
+    h.runTo(4 * kPpq * kSamplesPerTick - 2);
+    CHECK_FALSE(h.anyGate()); // nothing before the timeline clip
+    // Going backward from the clip's start it wraps to the end; the 64 ends 2 beats and 3/4 before it.
+    h.runTo((4 * kPpq + 4 * kPpq - 1200) * kSamplesPerTick + 2);
+    CHECK(h.gate());
+    CHECK(h.pitch() == 64);
+}
+
+TEST_CASE("engine: timeline playheads read ahead, and play every note once while the song is being edited") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.length = 16 * kPpq; // the one-bar clip looping four times on the timeline
+    song.tracks[0].arrangement.push_back(a);
+    song.clips.begin()->second.loopMode = LoopMode::Loop;
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    // An odd tempo, so reads ahead don't line up with the beats and hold queued notes when an edit comes.
+    h.engine.setTempo(kBpm * 1.37);
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = 0; s < int64_t((16 * kPpq - 100) * kSamplesPerTick / 1.37); s++) {
+        if (s % 47 == 0)
+            h.republish();
+        h.step();
+        bool now = h.anyGate();
+        starts += now && !was;
+        was = now;
+    }
+    CHECK(starts == 16);
+}
+
+TEST_CASE("engine: a playhead's branch changes only that playhead's notes") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++)
+        d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), i));
+    Device up = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+    up.params = knobsOf(DeviceType::Transpose, {{chain::knob::kSemitones, 12}});
+    d.playheads[1].branch.push_back(up);
+    song.tracks[0].devices.push_back(d);
+    Device fifth = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+    fifth.params = knobsOf(DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    song.tracks[0].devices.push_back(fifth); // the shared chain, after the branches
+    Harness h(song);
+    h.step();
+    std::multiset<int> sounding;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding.insert(h.pitch(v));
+    CHECK(sounding == std::multiset<int>{67, 79}); // both playheads on the 60: one up a fifth, one up an octave too
+}
+
+TEST_CASE("engine: changing a playhead's rate while it plays changes its speed, without a jump") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(1000 * kSamplesPerTick);
+    CHECK(h.pitch() == 62);
+    // Twice as fast from tick 1000: the 64 (at 1920) comes 460 ticks later; 2x from the start would play the 65 by
+    // then.
+    float twice = choiceKnob(playheads::knob::kRate, "2x");
+    h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kRate] = twice;
+    h.republish();
+    h.runTo(1480 * kSamplesPerTick);
+    CHECK(h.gate());
+    CHECK(h.pitch() == 64);
+}
+
+TEST_CASE("engine: note operators still apply to the notes playheads play") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}}, 4 * kPpq, kAutoVoices);
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].ops.chance = 0;  // never plays
+    clip.notes[1].ops.repeats = 2; // twice
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    CHECK_FALSE(h.anyGate());
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = h.sample; s < 1920 * kSamplesPerTick; s++) {
+        h.step();
+        bool now = h.anyGate();
+        starts += now && !was;
+        was = now;
+    }
+    CHECK(starts == 2);
+}
+
+TEST_CASE("engine: a note in a Motion device drifts pass by pass with a Per pass Steps modulator") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Clip& clip = song.clips.begin()->second;
+    Device& group = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    clip.notes[0].motion = group.id;
+    Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+    steps.params = knobsOf(ModulatorType::Steps, {{mods::knob::kStepCount, 2}, {mods::knob::kStepPerPass, 1}});
+    steps.steps = {0, 1};
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, group.id.value, 0};
+    route.amount = 1.f / 48; // one step at full
+    steps.routes.push_back(route);
+    song.tracks[0].modulators.push_back(steps);
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int pass = 0; pass < 3; pass++) {
+        h.runTo(int64_t(pass) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    CHECK(pitches == std::vector<int>{60, 61, 60}); // up a semitone on the second pass, back on the third
+}
+
+TEST_CASE("engine: one piano roll, two parts: the bass playhead takes the lowest notes two octaves down") {
+    Song song = songWith({{0, 240, 60}, {0, 240, 64}, {0, 240, 67}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    for (int i = 0; i < 2; i++)
+        d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), i));
+    const devices::TypeInfo& info = devices::playheadInfo();
+    auto set = [&](Playhead& p, int k, float v) {
+        p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v);
+    };
+    set(d.playheads[0], playheads::knob::kNotes, 2);   // the melody: highest notes
+    set(d.playheads[1], playheads::knob::kNotes, 1);   // the bass: lowest notes...
+    set(d.playheads[1], playheads::knob::kOctave, -2); // ...two octaves down
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.step();
+    std::multiset<int> sounding;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding.insert(h.pitch(v));
+    CHECK(sounding == std::multiset<int>{36, 67});
+}
+
+TEST_CASE("engine: a Curve modulator moves a playhead setting while it plays") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    const devices::ParamInfo& octave = devices::playheadInfo().params[playheads::knob::kOctave];
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    // Two bars: the first at the octave as set, the second an octave up. Drawn around the middle (no change), turning
+    // the setting all the way: one octave is an eighth of the knob, so a sixteenth above the middle.
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.length = curve.segmentEnd = 8 * kPpq;
+    float up = 0.5f + (devices::normalize(octave, 1) - devices::normalize(octave, 0)) / 2;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}};
+    Modulation route;
+    route.target = {ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOctave)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int bar = 0; bar < 3; bar++) {
+        h.runTo(int64_t(bar) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    CHECK(pitches == std::vector<int>{60, 72, 60});
+}
+
+TEST_CASE("engine: a curve or a lane on a playhead's On switches it off and on, cutting what it sounds") {
+    // A long note from the start and a short one halfway through beat 2. The playhead is off for beat 2.
+    Song song = songWith({{0, 3800, 60}, {1440, 100, 64}}, 8 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    ParamRef on{ParamRef::Kind::Playhead, p.id.value, uint16_t(playheads::knob::kOn)};
+    SUBCASE("a curve") {
+        Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+        curve.length = curve.segmentEnd = 8 * kPpq;
+        // The middle is the On as set (on); a whole row down is off.
+        curve.points = {{0, 0.5f, CurveType::Hold, 0}, {960, 0, CurveType::Hold, 0}, {1920, 0.5f, CurveType::Hold, 0}};
+        Modulation route;
+        route.target = on;
+        route.amount = 1;
+        curve.routes.push_back(route);
+        song.tracks[0].modulators.push_back(curve);
+    }
+    SUBCASE("a knob lane") {
+        AutomationEnvelope lane = makeKnobLane(song.newId<AutomationId>(), on, "Playhead · On", 1, true, 0);
+        lane.points = {{0, 1, CurveType::Hold, 0}, {960, 0, CurveType::Hold, 0}, {1920, 1, CurveType::Hold, 0}};
+        song.tracks[0].automation.push_back(lane);
+    }
+    Harness h(song);
+    auto sounding = [&h] {
+        std::vector<int> out;
+        for (int v = 0; v < h.frame().channels; v++)
+            if (h.gate(v))
+                out.push_back(h.pitch(v));
+        return out;
+    };
+    h.runTo(900 * kSamplesPerTick);
+    CHECK(sounding() == std::vector<int>{60});
+    // Off: the long note stops within a control block, and the one in beat 2 never starts.
+    h.runTo(960 * kSamplesPerTick + 64);
+    CHECK(sounding().empty());
+    h.runTo(1460 * kSamplesPerTick);
+    CHECK(sounding().empty());
+    // On again: it plays what it reaches next, not the note it cut.
+    h.runTo(1940 * kSamplesPerTick);
+    CHECK(sounding().empty());
+    // Round again (the clip is two bars), it plays from the start.
+    h.runTo((8 * kPpq + 20) * kSamplesPerTick);
+    CHECK(sounding() == std::vector<int>{60});
+}
+
+/// A Curve on a Transpose's octaves: the first bar of its drawing as set, the second an octave up.
+Modulator octaveCurve(Song& song, Device& transpose, Tick segmentStart = 0) {
+    const devices::ParamInfo& octaves = devices::deviceInfo(DeviceType::Transpose).params[chain::knob::kOctaves];
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.length = 8 * kPpq;
+    float up = 0.5f + (devices::normalize(octaves, 1) - devices::normalize(octaves, 0)) / 2;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}};
+    curve.segmentStart = segmentStart;
+    curve.segmentEnd = 8 * kPpq;
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, transpose.id.value, uint16_t(chain::knob::kOctaves)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    return curve;
+}
+
+TEST_CASE("engine: a Curve counts from when its track's timeline clip starts, not from the song's start") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    ArrangerClip a;
+    a.id = song.newId<ArrangementId>();
+    a.clip = song.clips.begin()->first;
+    a.position = 6 * kPpq; // halfway through bar 2: the song's own count would be inside the curve's second bar
+    a.length = 12 * kPpq;
+    song.tracks[0].arrangement.push_back(a);
+    Device& transpose = addDevice(song, DeviceType::Transpose);
+    song.tracks[0].modulators.push_back(octaveCurve(song, transpose));
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    std::vector<int> pitches;
+    for (int bar = 0; bar < 3; bar++) {
+        h.runTo((6 * kPpq + int64_t(bar) * 4 * kPpq) * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    INFO(pitches[0], " ", pitches[1], " ", pitches[2]);
+    CHECK(pitches == std::vector<int>{60, 72, 60});
+}
+
+TEST_CASE("engine: a launched clip's Curve plays its segment, from the segment's start, round and round") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device& transpose = addDevice(song, DeviceType::Transpose);
+    // Only the second bar of the drawing plays: every pass is an octave up.
+    song.tracks[0].modulators.push_back(octaveCurve(song, transpose, 4 * kPpq));
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int bar = 0; bar < 3; bar++) {
+        h.runTo(int64_t(bar) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    INFO(pitches[0], " ", pitches[1], " ", pitches[2]);
+    CHECK(pitches == std::vector<int>{72, 72, 72});
+}
+
+TEST_CASE("engine: playheads play every note while the song is being edited") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 62}, {1920, 240, 64}, {2880, 240, 65}}, 4 * kPpq, kAutoVoices);
+    song.clips.begin()->second.notes[1].ops.velocitySpread = 0.01f; // a note with operators (extras)
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    // An odd tempo, so the playheads' reads ahead don't line up with the beats and hold queued notes.
+    h.engine.setTempo(kBpm * 1.37);
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = 0; s < int64_t((4 * 4 * kPpq - 100) * kSamplesPerTick / 1.37); s++) {
+        if (s % 47 == 0)
+            h.republish(); // edits all the time: the notes read ahead must still play
+        h.step();
+        bool now = h.anyGate();
+        starts += now && !was;
+        was = now;
+    }
+    CHECK(starts == 16);
+}
+
+TEST_CASE("engine: playheads play exactly the notes their settings say, whatever the settings") {
+    const devices::TypeInfo& info = devices::playheadInfo();
+    using namespace playheads::knob;
+    int checked = 0;
+    for (const char* rate : {"1/2x", "1x", "2x", "4x"})
+        for (int direction : {0, 1, 2})
+            for (const char* repeat : {"Off", "1/4"})
+                for (int order : {0, 1, 4}) {
+                    Song song = songWith({{0, 120, 60}, {960, 120, 62}, {1920, 120, 64}, {2880, 120, 65}}, 4 * kPpq,
+                                         kAutoVoices);
+                    tessera::Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+                    tessera::Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+                    auto set = [&](int k, float v) {
+                        p.params[size_t(k)] = devices::normalize(info.params[size_t(k)], v);
+                    };
+                    p.params[kRate] = choiceKnob(kRate, rate);
+                    set(kDirection, float(direction));
+                    p.params[kRepeatSize] = choiceKnob(kRepeatSize, repeat);
+                    set(kOrder, float(order));
+                    p.params[kOrderStep] = choiceKnob(kOrderStep, "1/4");
+                    d.playheads.push_back(p);
+                    song.tracks[0].devices.push_back(d);
+
+                    // What should play: the pure maths over the same 4 bars.
+                    playheads::Motion m =
+                        playheads::motionFrom(p.params.data(), d.params.data(), 0, 4 * kPpq, TimeSig());
+                    const Clip& clip = song.clips.begin()->second;
+                    struct Ev {
+                        double start, end;
+                    };
+                    std::vector<Ev> evs;
+                    for (const Note& n : clip.notes)
+                        evs.push_back({double(n.start), double(n.end())});
+                    std::vector<uint32_t> byEnd = playheads::orderByEnd(evs);
+                    int expected = 0;
+                    double until = 4 * 4 * kPpq;
+                    for (double a = 0; a < until; a += 8) {
+                        playheads::Sweep s[playheads::kMaxSweeps];
+                        int n = playheads::sweeps(m, a, std::min(until, a + 8), s);
+                        for (int i = 0; i < n; i++)
+                            playheads::crossed(s[i], evs, byEnd, [&](const Ev&, double) { expected++; });
+                    }
+
+                    // What plays: gate rises on any voice.
+                    Harness h(song);
+                    int starts = 0;
+                    std::array<bool, kMaxVoices> was{};
+                    for (int64_t smp = 0; smp < int64_t(until) * kSamplesPerTick; smp++) {
+                        h.step();
+                        for (int v = 0; v < h.frame().channels; v++) {
+                            bool now = h.gate(v);
+                            starts += now && !was[size_t(v)];
+                            was[size_t(v)] = now;
+                        }
+                    }
+                    CAPTURE(rate);
+                    CAPTURE(direction);
+                    CAPTURE(repeat);
+                    CAPTURE(order);
+                    CHECK(starts == expected);
+                    checked++;
+                }
+    CHECK(checked == 72);
+}
+
+TEST_CASE("engine: a Motion device before the playheads moves the note inside the clip; after them it delays it") {
+    // One note on beat 1, pushed a beat later; one playhead at 2x.
+    auto firstStart = [](bool before) {
+        Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+        Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+        Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+        p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, "2x");
+        heads.playheads.push_back(p);
+        Device motion = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+        motion.params[chain::knob::kMotionTime] =
+            devices::normalize(devices::motionInfo().params[chain::knob::kMotionTime], 4); // 4/16 = a beat
+        song.clips.begin()->second.notes[0].motion = motion.id;
+        if (before) {
+            song.tracks[0].devices.push_back(motion);
+            song.tracks[0].devices.push_back(heads);
+        } else {
+            song.tracks[0].devices.push_back(heads);
+            song.tracks[0].devices.push_back(motion);
+        }
+        Harness h(song);
+        for (int64_t s = 0; s < 2 * kPpq * kSamplesPerTick; s++) {
+            h.step();
+            if (h.gate())
+                return double(s) / kSamplesPerTick;
+        }
+        return -1.0;
+    };
+    // Before: the note sits on beat 2 of the clip, which a 2x playhead reaches after half a beat.
+    CHECK(firstStart(true) == doctest::Approx(kPpq / 2).epsilon(0.01));
+    // After: the playhead plays it on beat 1, then it is a beat late.
+    CHECK(firstStart(false) == doctest::Approx(kPpq).epsilon(0.01));
+}
+
+TEST_CASE("engine: Steps set to Per pass step a Motion knob once a pass") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    song.clips.begin()->second.notes[0].motion = motion.id;
+    // Three passes: as written, one semitone up, two up. Pitch spans 48 semitones, so a semitone is 1/48 of the knob:
+    // bipolar with amount 1, the drawn value moves half that per semitone.
+    Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+    steps.params = knobsOf(ModulatorType::Steps,
+                           {{mods::knob::kStepCount, 3}, {mods::knob::kStepBipolar, 1}, {mods::knob::kStepPerPass, 1}});
+    float semitone = 1.f / 96;
+    steps.steps = {0.5f, 0.5f + semitone, 0.5f + 2 * semitone};
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
+    route.amount = 1;
+    steps.routes.push_back(route);
+    song.tracks[0].modulators.push_back(steps);
+    Harness h(song);
+    std::vector<int> pitches;
+    for (int pass = 0; pass < 4; pass++) {
+        h.runTo(int64_t(pass) * 4 * kPpq * kSamplesPerTick + 10);
+        pitches.push_back(h.gate() ? h.pitch() : -1);
+    }
+    CHECK(pitches == std::vector<int>{60, 61, 62, 60}); // then round again
+}
+
+TEST_CASE(
+    "the piano roll learns the pitch a Motion's Per pass steps give each note on every pass, as the engine plays it") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    Device& motion = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = motion.id;
+    Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+    steps.params = knobsOf(ModulatorType::Steps,
+                           {{mods::knob::kStepCount, 3}, {mods::knob::kStepBipolar, 1}, {mods::knob::kStepPerPass, 1}});
+    float semitone = 1.f / 96;
+    steps.steps = {0.5f, 0.5f + semitone, 0.5f + 2 * semitone};
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
+    route.amount = 1;
+    steps.routes.push_back(route);
+    song.tracks[0].modulators.push_back(steps);
+
+    std::vector<std::vector<render::MotionMove>> moves = render::motionMoves(song, song.tracks[0], clip);
+    REQUIRE(moves.size() == 2);
+    std::vector<int> pitches;
+    for (const render::MotionMove& m : moves[0])
+        pitches.push_back(m.pitch);
+    CHECK(pitches == std::vector<int>{60, 61, 62}); // the same three passes the engine plays
+    CHECK(moves[1].empty());                        // not in the Motion
+}
+
+TEST_CASE("engine: a note's pitch curve keeps pace with the playhead crossing it, at any speed") {
+    Song song = songWith({{0, 960, 60}}, 4 * kPpq, kAutoVoices);
+    song.clips.begin()->second.notes[0].pitchExpr = {{0, 0, 0}, {1, 12, 0}}; // an octave up across the note
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, "1/2x");
+    d.playheads.push_back(p); // "1/2x": it takes 1920 ticks to cross the 960-tick note
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(960 * kSamplesPerTick);
+    REQUIRE(h.gate());
+    CHECK(h.frame().voct[0] * 12 == doctest::Approx(6).epsilon(0.05)); // half way across: half way up
+    h.runTo(1900 * kSamplesPerTick);
+    CHECK(h.frame().voct[0] * 12 == doctest::Approx(12 * 1900.0 / 1920).epsilon(0.05));
+}
+
+TEST_CASE("engine: it tells the editor where each playhead is, as a changed rate moved it") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices.push_back(d);
+    Harness h(song);
+    h.runTo(1000 * kSamplesPerTick);
+    CHECK(h.engine.playheadPosition(0, 0) == doctest::Approx(1000).epsilon(0.02));
+    h.song.tracks[0].devices[0].playheads[0].params[playheads::knob::kRate] =
+        choiceKnob(playheads::knob::kRate, "2x"); // from here on
+    h.republish();
+    h.runTo(1480 * kSamplesPerTick);
+    // 1000 + 2 x 480, not 2 x 1480 as the new rate alone would say.
+    CHECK(h.engine.playheadPosition(0, 0) == doctest::Approx(1960).epsilon(0.02));
+}
+
+/// The ticks at which notes of `pitch` start on any voice, up to `ticks`.
+std::vector<double> startsOf(Harness& h, int pitch, double ticks) {
+    std::vector<double> out;
+    bool was = false;
+    while (double(h.sample + 1) < ticks * kSamplesPerTick) {
+        h.step();
+        bool now = false;
+        for (int v = 0; v < h.frame().channels; v++)
+            now = now || (h.gate(v) && h.pitch(v) == pitch);
+        if (now && !was)
+            out.push_back(double(h.sample) / kSamplesPerTick);
+        was = now;
+    }
+    return out;
+}
+
+/// A song with one Playheads device of one playhead whose Offset is `offset` (a choice name such as "+1/8").
+Song offsetSong(const std::vector<Spec>& notes, const char* offset, Tick loopLength = 4 * kPpq) {
+    Song song = songWith(notes, loopLength, kAutoVoices);
+    Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.params[playheads::knob::kTimeOffset] = choiceKnob(playheads::knob::kTimeOffset, offset);
+    d.playheads.push_back(p);
+    song.tracks[0].devices.push_back(d);
+    return song;
+}
+
+void checkStarts(const std::vector<double>& got, const std::vector<double>& want) {
+    REQUIRE(got.size() == want.size());
+    for (size_t i = 0; i < got.size(); i++)
+        CHECK(got[i] == doctest::Approx(want[i]).epsilon(0.002));
+}
+
+TEST_CASE("engine: a playhead's Offset plays its notes later or earlier, and its line follows") {
+    SUBCASE("late") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "+1/8"));
+        checkStarts(startsOf(h, 60, 4400), {480, 4320});
+        Harness line(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "+1/8"));
+        line.runTo(1000 * kSamplesPerTick);
+        CHECK(line.engine.playheadPosition(0, 0) == doctest::Approx(520).epsilon(0.03)); // trailing by 1/8
+    }
+    SUBCASE("late, the other note") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "+1/8"));
+        checkStarts(startsOf(h, 64, 4000), {2400});
+    }
+    SUBCASE("early: the first pass skips the note that would come before the clip started") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "-1/16"));
+        checkStarts(startsOf(h, 60, 7600), {3600, 7440});
+    }
+    SUBCASE("early, the other note") {
+        Harness h(offsetSong({{0, 240, 60}, {1920, 240, 64}}, "-1/16"));
+        checkStarts(startsOf(h, 64, 4000), {1680});
+    }
+}
+
+TEST_CASE("engine: an Offset never plays past a clip's end, on the timeline or launched") {
+    SUBCASE("a late note past the timeline clip's end is cut") {
+        Song song = offsetSong({{0, 240, 60}, {3600, 120, 64}}, "+1/8");
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = song.clips.begin()->first;
+        a.position = 4 * kPpq;
+        a.length = 4 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        Harness h(song, false);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.reset();
+        h.engine.play();
+        checkStarts(startsOf(h, 60, 12 * kPpq), {4 * kPpq + 480});
+        Harness again(song, false);
+        again.engine.setPlayMode(PlayMode::Arranger);
+        again.engine.reset();
+        again.engine.play();
+        CHECK(startsOf(again, 64, 12 * kPpq).empty());
+    }
+    SUBCASE("an early note from past the timeline clip's end is not read") {
+        Song song = offsetSong({{0, 240, 60}, {3900, 120, 64}}, "-1/8", 8 * kPpq);
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = song.clips.begin()->first;
+        a.position = 4 * kPpq;
+        a.length = 4 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        Harness h(song, false);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.reset();
+        h.engine.play();
+        CHECK(startsOf(h, 64, 12 * kPpq).empty());
+    }
+    SUBCASE("a launched clip that doesn't loop cuts its late notes at its end") {
+        Song song = offsetSong({{0, 240, 60}, {3600, 120, 64}}, "+1/8");
+        song.clips.begin()->second.loopMode = LoopMode::Off;
+        Harness h(song);
+        CHECK(startsOf(h, 64, 6000).empty());
+    }
+    SUBCASE("a looping launched clip carries its late notes over the loop") {
+        Harness h(offsetSong({{0, 240, 60}, {3600, 120, 64}}, "+1/8"));
+        checkStarts(startsOf(h, 64, 8000), {4080, 7920});
+    }
+}
+
+TEST_CASE("engine: a lane moves a playhead's Offset while it plays, and no note plays twice") {
+    Song song = offsetSong({{0, 120, 60}, {960, 120, 62}, {1920, 120, 64}, {2880, 120, 65}}, "0");
+    ParamRef offset{ParamRef::Kind::Playhead, song.tracks[0].devices[0].playheads[0].id.value,
+                    uint16_t(playheads::knob::kTimeOffset)};
+    AutomationEnvelope lane = makeKnobLane(song.newId<AutomationId>(), offset, "Playhead · Offset",
+                                           choiceKnob(playheads::knob::kTimeOffset, "0"), true, 0);
+    // From halfway through beat 2 a quarter late: the playhead waits a beat, then reads on from where it was.
+    lane.points = {{0, choiceKnob(playheads::knob::kTimeOffset, "0"), CurveType::Hold, 0},
+                   {1440, choiceKnob(playheads::knob::kTimeOffset, "+1/4"), CurveType::Hold, 0}};
+    song.tracks[0].automation.push_back(lane);
+    Harness h(song);
+    std::vector<double> starts;
+    bool was[128] = {};
+    while (h.sample < 4000 * kSamplesPerTick) {
+        h.step();
+        for (int pitch : {60, 62, 64, 65}) {
+            bool now = false;
+            for (int v = 0; v < h.frame().channels; v++)
+                now = now || (h.gate(v) && h.pitch(v) == pitch);
+            if (now && !was[pitch])
+                starts.push_back(double(h.sample) / kSamplesPerTick + pitch * 1e4);
+            was[pitch] = now;
+        }
+    }
+    std::sort(starts.begin(), starts.end());
+    checkStarts(starts, {60e4 + 0, 62e4 + 960, 64e4 + 2880, 65e4 + 3840});
+}
+
+TEST_CASE("the piano roll finds the moves of a Motion inside a playhead's own devices, as of one in the chain") {
+    Song song = songWith({{0, 240, 60}, {960, 240, 64}}, 4 * kPpq, kAutoVoices);
+    auto motion = [&](float semitones) {
+        Device m = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+        m.params[chain::knob::kMotionInKey] = 0;
+        m.params[chain::knob::kMotionPitch] =
+            devices::normalize(devices::motionInfo().params[chain::knob::kMotionPitch], semitones);
+        return m;
+    };
+    Device inChain = motion(2), inBranch = motion(5);
+    Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+    p.branch.push_back(inBranch);
+    heads.playheads.push_back(p);
+    song.tracks[0].devices = {inChain, heads};
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = inChain.id;
+    clip.notes[1].motion = inBranch.id;
+    std::vector<std::vector<render::MotionMove>> moves = render::motionMoves(song, song.tracks[0], clip);
+    REQUIRE(moves[0].size() >= 1);
+    REQUIRE(moves[1].size() >= 1);
+    CHECK(moves[0][0].pitch == 62);
+    CHECK(moves[1][0].pitch == 69);
+}
+
+TEST_CASE("the piano roll reads a Motion's Curve from when its timeline clip started, as the engine does") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device motion = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+    motion.params[chain::knob::kMotionInKey] = 0;
+    Device heads = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+    heads.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+    song.tracks[0].devices = {motion, heads};
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = motion.id;
+    // A step up two semitones at bar 2 of the curve; the clip starts on the timeline at bar 2.
+    const devices::ParamInfo& pitch = devices::motionInfo().params[chain::knob::kMotionPitch];
+    Modulator curve = devices::makeModulator(ModulatorType::Curve, song.newId<ModulatorId>());
+    curve.length = 8 * kPpq;
+    float up = 0.5f + (devices::normalize(pitch, 2) - devices::normalize(pitch, 0)) / 2;
+    curve.points = {{0, 0.5f, CurveType::Hold, 0}, {4 * kPpq, up, CurveType::Hold, 0}};
+    curve.segmentEnd = 8 * kPpq;
+    Modulation route;
+    route.target = {ParamRef::Kind::Device, motion.id.value, uint16_t(chain::knob::kMotionPitch)};
+    route.amount = 1;
+    curve.routes.push_back(route);
+    song.tracks[0].modulators.push_back(curve);
+
+    double clipStart = 4 * kPpq;
+    // Bar 1 of the clip: the curve hasn't stepped yet, though the song is past its step.
+    CHECK(render::motionMoveAt(song, song.tracks[0], clip, 0, 0, clipStart + kPpq, kPpq).pitch == 60);
+    // Bar 2 of the clip: stepped up.
+    CHECK(render::motionMoveAt(song, song.tracks[0], clip, 0, 1, clipStart + 5 * kPpq, 5 * kPpq).pitch == 62);
+}
+
+TEST_CASE("a free LFO keeps its speed while a stopped engine slows its modulators, and turns Rack knobs smoothly") {
+    // Two seconds stopped: far past the settling time, after which modulators that feed only the screen run at an
+    // eighth of the control rate.
+    auto run = [](bool rackKnob, bool play, std::vector<float>& outs) {
+        Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+        Modulator lfo = devices::makeModulator(ModulatorType::Lfo, song.newId<ModulatorId>());
+        lfo.params = knobsOf(ModulatorType::Lfo, {{mods::knob::kSync, 0}, {mods::knob::kRate, 1}});
+        if (rackKnob) {
+            Modulation route;
+            route.kind = Modulation::Kind::RackKnob;
+            route.knob.moduleId = 1;
+            route.amount = 1;
+            lfo.routes.push_back(route);
+        }
+        song.modulators.push_back(lfo);
+        Harness h(song, play);
+        int slot = h.builder.modulatorSlots().slotOf(lfo.id);
+        h.runTo(int64_t(2 * kSampleRate));
+        for (int k = 0; k < int(kSampleRate / 10); k++) {
+            h.step();
+            outs.push_back(h.engine.modulatorOutput(slot));
+        }
+    };
+    std::vector<float> slowed, knob, playing;
+    run(false, false, slowed);
+    run(true, false, knob);
+    run(false, true, playing); // playing, modulators never slow down
+    // A free LFO doesn't follow the transport: stopped, it is where it is while playing (within the eighth-rate step).
+    CHECK(slowed.front() == doctest::Approx(playing.front()).scale(1).epsilon(0.05));
+    CHECK(knob.front() == doctest::Approx(playing.front()).scale(1).epsilon(0.01));
+    auto changes = [](const std::vector<float>& v) {
+        int n = 0;
+        for (size_t k = 1; k < v.size(); k++)
+            n += v[k] != v[k - 1];
+        return n;
+    };
+    // A tenth of a second: 150 control blocks. Turning a Rack knob, it steps on every one; for the screen alone,
+    // on every eighth.
+    CHECK(changes(knob) >= 140);
+    CHECK(changes(slowed) <= 20);
+}
+
+TEST_CASE("the piano roll moves a Motion's note as the engine does, whatever moves its settings") {
+    Song song = songWith({{0, 240, 60}}, 4 * kPpq, kAutoVoices);
+    Device& added = addDevice(song, DeviceType::Motion, {{chain::knob::kMotionInKey, 0}}); // semitones
+    DeviceId id = added.id;
+    Clip& clip = song.clips.begin()->second;
+    clip.notes[0].motion = id;
+    const devices::ParamInfo& pitch = devices::motionInfo().params[chain::knob::kMotionPitch];
+    float semitone = devices::normalize(pitch, 1) - devices::normalize(pitch, 0);
+    ParamRef pitchKnob{ParamRef::Kind::Device, id.value, uint16_t(chain::knob::kMotionPitch)};
+    // The pitch a Motion pitch knob at `knob` (normalized) plays the note at.
+    auto pitchFor = [&](float knob) {
+        return 60 + int(std::lround(devices::display(pitch, std::clamp(knob, 0.f, 1.f))));
+    };
+    const double tick = 1.5 * kPpq, sinceClip = 300;
+    const int64_t pass = 2;
+    render::EngineNow engine;
+    engine.output = [](ModulatorId) { return 0.37f; }; // what a modulator that runs on its own clock gives now
+    engine.roll = 5;
+    auto moved = [&](bool now = false) {
+        return render::motionMoveLive(song, song.tracks[0], clip, 0, pass, tick, sinceClip, engine, now).pitch;
+    };
+    auto routed = [&](Modulator m, float amount) {
+        Modulation route;
+        route.target = pitchKnob;
+        route.amount = amount;
+        m.routes = {route};
+        return m;
+    };
+    CHECK(moved() == 60);
+
+    SUBCASE("every modulator type, worked out ahead when it depends on the song alone, else as it is now") {
+        for (int t = 0; t < kModulatorTypeCount; t++)
+            for (int flip = 0; flip < 2; flip++) {
+                auto type = ModulatorType(t);
+                Modulator m = devices::makeModulator(type, song.newId<ModulatorId>());
+                // The second round flips the switch that changes how it is worked out.
+                int sw = type == ModulatorType::Lfo     ? int(mods::knob::kSync)
+                         : type == ModulatorType::Steps ? int(mods::knob::kStepPerPass)
+                         : type == ModulatorType::Ramp  ? int(mods::knob::kRampPerPass)
+                                                        : -1;
+                if (flip && sw < 0)
+                    continue;
+                if (flip)
+                    m.params[size_t(sw)] = 1 - m.params[size_t(sw)];
+                if (type == ModulatorType::Steps)
+                    m.steps = {0.1f, 0.9f, 0.3f, 0.7f};
+                m = routed(m, 0.3f);
+                song.tracks[0].modulators = {m};
+                CAPTURE(t);
+                CAPTURE(flip);
+                auto shown = [&](int k) {
+                    return devices::display(devices::modulatorInfo(type).params[size_t(k)], m.params[size_t(k)]);
+                };
+                bool perPass = mods::perPass(type, m.params.data());
+                bool songAlone = type == ModulatorType::Curve || type == ModulatorType::Random ||
+                                 type == ModulatorType::Macro ||
+                                 (type == ModulatorType::Lfo && shown(mods::knob::kSync) > 0.5f &&
+                                  shown(mods::knob::kRestart) < 1.5f) ||
+                                 ((type == ModulatorType::Steps || type == ModulatorType::Ramp) && !perPass);
+                mods::Drawn drawn = mods::drawnOf(m);
+                float v;
+                if (perPass) {
+                    v = mods::passValue(type, m.id.value, m.params.data(), pass, song.timeSig, m.steps.data(),
+                                        int(m.steps.size()), &drawn);
+                } else if (songAlone) {
+                    mods::State state;
+                    mods::Clock clock;
+                    clock.songTick = tick;
+                    clock.sinceClip = sinceClip;
+                    clock.timeSig = song.timeSig;
+                    clock.seed = variationSeed(m.variation, engine.roll, m.id.value);
+                    v = mods::evaluate(type, m.id.value, m.params.data(), state, clock, m.steps.data(),
+                                       int(m.steps.size()), &drawn);
+                } else {
+                    v = 0.37f;
+                }
+                CHECK(moved() == pitchFor(0.5f + 0.3f * v));
+            }
+    }
+    SUBCASE("lanes: the track's at the song tick, the clip's own at the note's place in the clip") {
+        AutomationEnvelope lane;
+        lane.id = song.newId<AutomationId>();
+        lane.paramTarget = pitchKnob;
+        lane.points = {{0, devices::normalize(pitch, 0), CurveType::Hold, 0},
+                       {kPpq, devices::normalize(pitch, 2), CurveType::Hold, 0}};
+        song.tracks[0].automation.push_back(lane);
+        CHECK(moved() == 62);
+        lane.points = {{0, devices::normalize(pitch, -3), CurveType::Hold, 0}};
+        clip.automation.push_back(lane); // the clip's own lane sets it last
+        CHECK(moved() == 57);
+    }
+    SUBCASE("a modulator's own settings as the engine moves them now") {
+        Modulator macro = routed(devices::makeModulator(ModulatorType::Macro, song.newId<ModulatorId>()), 4 * semitone);
+        song.tracks[0].modulators = {macro};
+        ModulatorId macroId = macro.id;
+        engine.knob = [&](const ParamRef& r) -> std::optional<float> {
+            if (r.kind == ParamRef::Kind::Modulator && r.owner == macroId.value)
+                return 1.f; // something turns the Macro all the way up
+            return std::nullopt;
+        };
+        CHECK(moved() == 64);
+    }
+    SUBCASE("read now, the engine's own knobs, with Per pass on top") {
+        engine.knob = [&](const ParamRef& r) -> std::optional<float> {
+            if (r == pitchKnob)
+                return devices::normalize(pitch, 5);
+            return std::nullopt;
+        };
+        Modulator steps = devices::makeModulator(ModulatorType::Steps, song.newId<ModulatorId>());
+        steps.params = knobsOf(ModulatorType::Steps,
+                               {{mods::knob::kStepCount, 3}, {mods::knob::kStepBipolar, 1}, {mods::knob::kStepPerPass, 1}});
+        steps.steps = {0.5f, 0.5f + semitone / 2, 0.5f + semitone};
+        song.tracks[0].modulators = {routed(steps, 1)};
+        CHECK(moved(true) == 65 + 2); // pass 2: the third step
+    }
+    SUBCASE("a clip playing its own chain moves with the Motion there, not the track's") {
+        Device own = devices::makeDevice(DeviceType::Motion, song.newId<DeviceId>());
+        own.params[chain::knob::kMotionInKey] = 0;
+        own.params[chain::knob::kMotionPitch] = devices::normalize(pitch, 7);
+        clip.hasOwnChain = clip.playsOwnChain = true;
+        clip.devices = {own};
+        CHECK(moved() == -1); // its notes' Motion is the track's, which doesn't play them now
+        clip.notes[0].motion = own.id;
+        CHECK(moved() == 67);
+        Modulator lfo = devices::makeModulator(ModulatorType::Lfo, song.newId<ModulatorId>());
+        lfo.params[mods::knob::kSync] = 0;
+        Modulation route;
+        route.target = ParamRef{ParamRef::Kind::Device, own.id.value, uint16_t(chain::knob::kMotionPitch)};
+        route.amount = semitone / 0.37f;
+        lfo.routes = {route};
+        clip.modulators = {lfo};
+        CHECK(moved() == 68); // the clip's own free LFO, as it is now
+    }
+}
+
+namespace {
+/// Rising edges of `pitch` on any voice over `samples`.
+int countStarts(Harness& h, int pitch, int64_t samples) {
+    int starts = 0;
+    bool was = false;
+    for (int64_t s = 0; s < samples; s++) {
+        h.step();
+        bool now = false;
+        for (int v = 0; v < 48; v++)
+            now |= h.frame().gate[v] > 5.f && int(std::lround(h.frame().voct[v] * 12)) + 60 == pitch;
+        starts += now && !was;
+        was = now;
+    }
+    return starts;
+}
+} // namespace
+
+TEST_CASE("engine: playheads play a clip's first note on every pass, at any speed and tempo") {
+    for (double tempo : {1.0, 1.37, 0.91, 1.113}) {
+        for (const char* rate : {"1x", "1/2x", "3/4x", "4/3x", "2x"}) {
+            // Launcher loop.
+            Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
+            song.clips.begin()->second.loopMode = LoopMode::Loop;
+            Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+            Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+            p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, rate);
+            d.playheads.push_back(p);
+            song.tracks[0].devices.push_back(d);
+            Harness h(song);
+            h.engine.setTempo(kBpm * tempo);
+            double speed = playheads::playheadRate(playheads::choiceIndex(playheads::rateNames(), rate));
+            int64_t bars = 12;
+            int starts = countStarts(h, 60, int64_t(bars * 4 * kPpq * kSamplesPerTick / tempo) - 50);
+            int expected = int(std::ceil(bars * speed - 1e-9));
+            if (starts != expected)
+                MESSAGE("launcher tempo " << tempo << " rate " << rate << ": " << starts << " of " << expected);
+            CHECK(starts == expected);
+        }
+    }
+}
+
+TEST_CASE("engine: timeline playheads play the first note again after the song loop") {
+    for (double tempo : {1.0, 1.37, 0.91, 1.113}) {
+        Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
+        song.clips.begin()->second.loopMode = LoopMode::Loop;
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = song.clips.begin()->first;
+        a.length = 8 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+        song.loopStart = 0;
+        song.loopEnd = 8 * kPpq;
+        Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+        d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), 0));
+        song.tracks[0].devices.push_back(d);
+        Harness h(song, false);
+        h.engine.setPlayMode(PlayMode::Arranger);
+        h.engine.setLoopEnabled(true);
+        h.engine.reset();
+        h.engine.play();
+        h.engine.setTempo(kBpm * tempo);
+        int starts = countStarts(h, 60, int64_t(3 * 8 * kPpq * kSamplesPerTick / tempo) - 50);
+        if (starts != 6)
+            MESSAGE("timeline tempo " << tempo << ": " << starts << " of 6");
+        CHECK(starts == 6);
+    }
+}
+
+TEST_CASE("engine: back-to-back notes of one pitch start again each time, across the loop, with or without playheads") {
+    for (bool heads : {false, true}) {
+        for (const char* rate : {"1x", "1/2x", "2x"}) {
+            Song song =
+                songWith({{0, 960, 60}, {960, 960, 60}, {1920, 960, 60}, {2880, 960, 60}}, 4 * kPpq, kAutoVoices);
+            song.clips.begin()->second.loopMode = LoopMode::Loop;
+            if (heads) {
+                Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+                Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), 0);
+                p.params[playheads::knob::kRate] = choiceKnob(playheads::knob::kRate, rate);
+                d.playheads.push_back(p);
+                song.tracks[0].devices.push_back(d);
+            } else if (std::string(rate) != "1x") {
+                continue;
+            }
+            Harness h(song);
+            double speed = playheads::playheadRate(playheads::choiceIndex(playheads::rateNames(), rate));
+            int starts = countStarts(h, 60, int64_t(3 * 4 * kPpq * kSamplesPerTick) - 50);
+            int expected = int(std::ceil(12 * speed - 1e-9));
+            if (starts != expected)
+                MESSAGE("heads " << heads << " rate " << rate << ": " << starts << " of " << expected);
+            CHECK(starts == expected);
+        }
+    }
+}
+
+TEST_CASE("engine: one to three playheads at any speed start the first note on the first sample") {
+    const int rates = int(playheads::rateNames().size());
+    for (int r = 0; r < rates; r++) {
+        for (int heads = 1; heads <= 3; heads++) {
+            Song song = songWith({{0, 120, 60}, {960, 120, 62}}, 4 * kPpq, kAutoVoices);
+            Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+            for (int k = 0; k < heads; k++) {
+                Playhead p = devices::makePlayhead(song.newId<PlayheadId>(), k);
+                p.params[playheads::knob::kRate] = devices::normalize(
+                    devices::playheadInfo().params[playheads::knob::kRate], float((r + k * 3) % rates));
+                d.playheads.push_back(p);
+            }
+            song.tracks[0].devices.push_back(d);
+            Harness h(song);
+            int64_t first = -1;
+            for (int64_t s = 0; s < 200 && first < 0; s++) {
+                h.step();
+                for (int v = 0; v < 48; v++)
+                    if (h.frame().gate[v] > 5.f)
+                        first = s;
+            }
+            if (first != 0)
+                MESSAGE("rate index " << r << " heads " << heads << ": first gate at sample " << first);
+            CHECK(first == 0);
+        }
+    }
+}
+
+// ---- A clip's own chain (docs/DECISIONS.md §157) -----------------------------------------------------------------
+
+namespace {
+
+/// Gives clip `clip` its own chain with one Transpose of `semitones` (playing through it).
+void ownTranspose(Song& song, ClipId clip, float semitones) {
+    Clip& c = song.clips.at(clip);
+    c.hasOwnChain = c.playsOwnChain = true;
+    Device d = devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>());
+    d.params = knobsOf(DeviceType::Transpose, {{chain::knob::kSemitones, semitones}});
+    c.devices = {d};
+}
+
+/// The pitches the first track's gated voices play, low to high.
+std::vector<int> sounding(const Harness& h) {
+    std::vector<int> out;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            out.push_back(h.pitch(v));
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+/// A second clip with one note of `pitch` in a new scene, its slot on the first track.
+ClipId addSceneClip(Song& song, int pitch) {
+    Clip clip;
+    clip.id = song.newId<ClipId>();
+    clip.length = clip.loopEnd = 4 * kPpq;
+    Note n;
+    n.id = song.newId<NoteId>();
+    n.length = kPpq;
+    n.pitch = int8_t(pitch);
+    clip.notes.push_back(n);
+    song.clips.emplace(clip.id, clip);
+    song.scenes.resize(song.scenes.size() + 1);
+    song.tracks[0].slots.resize(song.scenes.size());
+    song.tracks[0].slots.back().clip = clip.id;
+    return clip.id;
+}
+
+} // namespace
+
+TEST_CASE("engine: a clip with its own chain plays through it instead of the track's") {
+    Song song = songWith({{0, 240, 60}, {480, 240, 62}});
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ClipId clip = song.clips.begin()->first;
+    ownTranspose(song, clip, 12);
+    Harness h(song);
+    h.step();
+    CHECK(h.pitch() == 72);
+
+    SUBCASE("back on the track's chain, the next note goes through it") {
+        h.song.clips.at(clip).playsOwnChain = false;
+        h.republish();
+        h.runTo(480 * kSamplesPerTick);
+        CHECK(sounding(h) == std::vector<int>{69});
+    }
+    SUBCASE("an empty chain of its own plays the notes dry") {
+        h.song.clips.at(clip).devices.clear();
+        h.republish();
+        h.runTo(480 * kSamplesPerTick);
+        CHECK(sounding(h) == std::vector<int>{62});
+    }
+}
+
+TEST_CASE("engine: launching clips switches between their chains and the track's, leaving no gate high") {
+    Song song = songWith({{0, kPpq, 60}}, 4 * kPpq, 1);
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ClipId fill = addSceneClip(song, 60);
+    ownTranspose(song, fill, 12);
+    Device echo = devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>());
+    song.clips.at(fill).devices.push_back(echo);
+    song.launchQuantize = LaunchQuantize::Off;
+    Harness h(song);
+    h.step();
+    CHECK(h.pitch() == 67);
+    // The one voice takes a moment to start again (the retrigger gap).
+    h.engine.launch({LaunchEvent::Kind::Scene, 0, 1, true});
+    h.runTo(h.sample + 100);
+    CHECK(sounding(h) == std::vector<int>{72});
+    // Its Echo repeats come while Fill plays; launching the first clip again cuts them.
+    h.runTo(h.sample + 300 * kSamplesPerTick);
+    h.engine.launch({LaunchEvent::Kind::Scene, 0, 0, true});
+    h.runTo(h.sample + 100);
+    CHECK(sounding(h) == std::vector<int>{67});
+    h.runTo(h.sample + 2 * kPpq * kSamplesPerTick);
+    CHECK_FALSE(h.anyGate());
+    h.engine.stop();
+    h.step();
+    CHECK_FALSE(h.anyGate());
+}
+
+TEST_CASE("engine: on the timeline each clip plays through its own choice of chain") {
+    Song song = songWith({{0, kPpq, 60}}, 4 * kPpq, 1);
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ClipId verse = song.clips.begin()->first;
+    ClipId fill = addSceneClip(song, 60);
+    ownTranspose(song, fill, 12);
+    for (auto [clip, at] : {std::pair<ClipId, Tick>{verse, 0}, {fill, 4 * kPpq}, {verse, 8 * kPpq}}) {
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip;
+        a.position = at;
+        a.length = 4 * kPpq;
+        song.tracks[0].arrangement.push_back(a);
+    }
+    Harness h(song, false);
+    h.engine.setPlayMode(PlayMode::Arranger);
+    h.engine.reset();
+    h.engine.play();
+    std::vector<int> heard;
+    bool was = false;
+    while (h.sample < 12 * kPpq * kSamplesPerTick) {
+        h.step();
+        if (h.gate() && !was)
+            heard.push_back(h.pitch());
+        was = h.gate();
+    }
+    CHECK(heard == std::vector<int>{67, 72, 67});
+}
+
+TEST_CASE("engine: live keys go through the track's chain while a clip plays through its own") {
+    Song song = songWith({{0, kPpq, 48}}, 4 * kPpq, 2);
+    song.tracks[0].armed = true;
+    song.tracks[0].monitor = true;
+    addDevice(song, DeviceType::Transpose, {{chain::knob::kSemitones, 7}});
+    ownTranspose(song, song.clips.begin()->first, 12);
+    Harness h(song);
+    h.step();
+    h.engine.liveNote({LiveSource::Midi, 0, 64, 0.9f, true});
+    h.step();
+    CHECK(sounding(h) == std::vector<int>{60, 71});
+    h.engine.liveNote({LiveSource::Midi, 0, 64, 0, false});
+    h.runTo(h.sample + 2 * kPpq * kSamplesPerTick);
+    CHECK_FALSE(h.anyGate());
+}
+
+TEST_CASE("a chain edited while it plays keeps what its devices hold") {
+    SUBCASE("a device added after an arpeggiator: it plays on, through the new device") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 8, p));
+        r.runTicks(-1, 479);
+        uint64_t before[] = {100};
+        bool on[] = {true, true};
+        r.add(DeviceType::Transpose, {{chain::knob::kSemitones, 12}});
+        uint64_t after[] = {100, 101};
+        r.chain.restructure(before, on, 1, after, on, 2, 479, r.out);
+        r.runTicks(479, 240 * 4 - 1);
+        // Up over C E G: steps 3 and 4 come on time, an octave up.
+        CHECK(pitchesOf(r.out.notes) == std::vector<int>{60, 64, 79, 72});
+    }
+    SUBCASE("an arpeggiator removed: its chord sounds on at once") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 8, p));
+        r.runTicks(-1, 479);
+        uint64_t before[] = {100};
+        bool on[] = {true};
+        r.chain.restructure(before, on, 1, nullptr, nullptr, 0, 479, r.out);
+        r.slots.clear();
+        r.knobs.clear();
+        r.out.notes.clear();
+        r.runTicks(479, 600);
+        std::vector<int> chord = pitchesOf(r.out.notes);
+        std::sort(chord.begin(), chord.end());
+        CHECK(chord == std::vector<int>{60, 64, 67});
+    }
+    SUBCASE("a chord device removed: its chord notes end, the played note ends when it is let go") {
+        Rig r;
+        r.add(DeviceType::Chord);
+        ChainNote held = r.note(0, 0, 60);
+        held.end = INFINITY;
+        r.push(held);
+        r.run(10);
+        REQUIRE(r.out.notes.size() >= 2);
+        uint64_t before[] = {100};
+        bool on[] = {true};
+        r.chain.restructure(before, on, 1, nullptr, nullptr, 0, 10, r.out);
+        r.slots.clear();
+        r.knobs.clear();
+        r.run(11);
+        CHECK(r.out.ends.size() == r.out.notes.size() - 1);
+        r.chain.end(held.id, 20, r.out);
+        r.run(21);
+        CHECK(r.out.ends.size() == r.out.notes.size());
+    }
+    SUBCASE("an arpeggiator switched off hands its chord on") {
+        Rig r;
+        r.add(DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+        for (int p : {60, 64, 67})
+            r.push(r.note(0, 240 * 8, p));
+        r.runTicks(-1, 479);
+        uint64_t ids[] = {100};
+        bool was[] = {true}, now[] = {false};
+        r.chain.restructure(ids, was, 1, ids, now, 1, 479, r.out);
+        r.slots[0].on = false;
+        r.out.notes.clear();
+        r.runTicks(479, 240 * 4 - 1);
+        std::vector<int> chord = pitchesOf(r.out.notes);
+        std::sort(chord.begin(), chord.end());
+        CHECK(chord == std::vector<int>{60, 64, 67}); // the held chord, and no more arpeggio steps
+    }
+}
+
+TEST_CASE("engine: adding a device while an arpeggio plays keeps it playing on the next step") {
+    Song song = songWith({{0, 3600, 60}, {0, 3600, 64}, {0, 3600, 67}});
+    addDevice(song, DeviceType::Arpeggiator, {{chain::knob::kRate, float(devices::rateIndex("1/16"))}});
+    Harness h(song);
+    h.runTo(2 * 240 * kSamplesPerTick + 100);
+    REQUIRE(h.anyGate());
+    addDevice(h.song, DeviceType::Transpose, {{chain::knob::kSemitones, 12}});
+    h.republish();
+    // Step 4 of Up over C E G is C, now an octave up; before the fix the chain forgot the chord and stayed silent.
+    h.runTo(3 * 240 * kSamplesPerTick + 100);
+    std::vector<int> sounding;
+    for (int v = 0; v < h.frame().channels; v++)
+        if (h.gate(v))
+            sounding.push_back(h.pitch(v));
+    CHECK(sounding == std::vector<int>{72});
 }

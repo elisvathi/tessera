@@ -1,5 +1,7 @@
 #include "Zip.hpp"
 
+#include "Inflate.hpp"
+
 #include <array>
 
 namespace tessera::zip {
@@ -33,7 +35,7 @@ uint32_t get32(const std::string& in, size_t at) { return get16(in, at) | get16(
 
 } // namespace
 
-uint32_t crc32(const std::string& data) {
+uint32_t crc32Add(uint32_t crc, const char* data, size_t size) {
     static const std::array<uint32_t, 256> table = [] {
         std::array<uint32_t, 256> t{};
         for (uint32_t i = 0; i < 256; i++) {
@@ -44,11 +46,13 @@ uint32_t crc32(const std::string& data) {
         }
         return t;
     }();
-    uint32_t c = 0xFFFFFFFFu;
-    for (char ch : data)
-        c = table[(c ^ uint8_t(ch)) & 0xFF] ^ (c >> 8);
+    uint32_t c = crc ^ 0xFFFFFFFFu;
+    for (size_t i = 0; i < size; i++)
+        c = table[(c ^ uint8_t(data[i])) & 0xFF] ^ (c >> 8);
     return c ^ 0xFFFFFFFFu;
 }
+
+uint32_t crc32(const std::string& data) { return crc32Add(0, data.data(), data.size()); }
 
 std::string store(const std::vector<std::pair<std::string, std::string>>& files) {
     std::string out, central;
@@ -95,25 +99,65 @@ std::string store(const std::vector<std::pair<std::string, std::string>>& files)
     return out;
 }
 
+std::vector<Entry> list(const std::string& archive) {
+    std::vector<Entry> out;
+    // The end record sits in the last 22 bytes plus a comment of up to 64 KB.
+    if (archive.size() < 22)
+        return out;
+    size_t end = std::string::npos;
+    size_t lowest = archive.size() > 22 + 0xFFFF ? archive.size() - 22 - 0xFFFF : 0;
+    for (size_t at = archive.size() - 22 + 1; at-- > lowest;)
+        if (get32(archive, at) == kEndRecord) {
+            end = at;
+            break;
+        }
+    if (end == std::string::npos)
+        return out;
+    uint32_t count = get16(archive, end + 10);
+    size_t at = get32(archive, end + 16);
+    for (uint32_t k = 0; k < count; k++) {
+        if (at + 46 > archive.size() || get32(archive, at) != kCentralHeader)
+            return {};
+        Entry e;
+        e.method = uint16_t(get16(archive, at + 10));
+        e.crc = get32(archive, at + 16);
+        e.packedSize = get32(archive, at + 20);
+        e.size = get32(archive, at + 24);
+        uint32_t nameLength = get16(archive, at + 28), extra = get16(archive, at + 30), comment = get16(archive, at + 32);
+        size_t local = get32(archive, at + 42);
+        if (at + 46 + nameLength > archive.size())
+            return {};
+        e.name = archive.substr(at + 46, nameLength);
+        // The data follows the local header, whose name and extra field may differ in length from these.
+        if (local + 30 > archive.size() || get32(archive, local) != kLocalHeader)
+            return {};
+        e.dataAt = local + 30 + get16(archive, local + 26) + get16(archive, local + 28);
+        if (e.packedSize == 0xFFFFFFFF || e.size == 0xFFFFFFFF || e.dataAt + e.packedSize > archive.size())
+            return {}; // ZIP64 (files over 4 GB) isn't read
+        if (!e.name.empty() && e.name.back() != '/')
+            out.push_back(e);
+        at += 46 + nameLength + extra + comment;
+    }
+    return out;
+}
+
+bool extract(const std::string& archive, const Entry& e, std::string& data) {
+    data.clear();
+    const uint8_t* packed = reinterpret_cast<const uint8_t*>(archive.data()) + e.dataAt;
+    if (e.method == 0)
+        data.assign(archive, e.dataAt, e.packedSize);
+    else if (e.method != 8 || !inflate::raw(packed, e.packedSize, data, e.size, size_t(e.size) + 1))
+        return false;
+    return data.size() == e.size && crc32(data) == e.crc;
+}
+
 std::map<std::string, std::string> read(const std::string& archive) {
     std::map<std::string, std::string> files;
-    size_t at = 0;
-    while (at + 30 <= archive.size() && get32(archive, at) == kLocalHeader) {
-        if (get16(archive, at + 8) != 0)
-            return {}; // compressed: not ours
-        uint32_t crc = get32(archive, at + 14);
-        uint32_t size = get32(archive, at + 18);
-        uint32_t nameLength = get16(archive, at + 26);
-        uint32_t extra = get16(archive, at + 28);
-        size_t dataAt = at + 30 + nameLength + extra;
-        if (dataAt + size > archive.size())
+    for (const Entry& e : list(archive)) {
+        std::string data;
+        if (!extract(archive, e, data))
             return {};
-        std::string name = archive.substr(at + 30, nameLength);
-        std::string data = archive.substr(dataAt, size);
-        if (crc32(data) != crc)
-            return {};
-        files[name] = data;
-        at = dataAt + size;
+        files[e.name] = std::move(data);
     }
     return files;
 }

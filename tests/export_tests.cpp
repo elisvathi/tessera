@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/model/AudioEdits.hpp"
 #include "../src/model/AutomationEdits.hpp"
 #include "../src/model/Chord.hpp"
 #include "../src/model/DawProject.hpp"
@@ -9,6 +10,7 @@
 #include "../src/model/MidiFile.hpp"
 #include "../src/model/MidiImport.hpp"
 #include "../src/model/NoteOperators.hpp"
+#include "../src/model/Recording.hpp"
 #include "../src/model/Render.hpp"
 #include "../src/model/Zip.hpp"
 
@@ -188,20 +190,19 @@ TEST_CASE("export: the arrangement as tracks with tempo, names and channels") {
     CHECK(drum[0].channel == 9); // MIDI channel 10
 }
 
-TEST_CASE("export: instance transpose, velocity scale and loop repeats are what plays") {
+TEST_CASE("export: instance transpose and loop repeats are what plays") {
     Song song;
     TrackId lead = addTrack(song);
     Clip& c = addClip(song, kBeat, {makeNote(song, 0, kBeat / 2, 60, 0.8f)});
     c.loopMode = LoopMode::Loop;
     ArrangerClip& a = place(song, lead, c.id, 0, 4 * kBeat);
     a.transpose = 12;
-    a.velocityScale = 0.5f;
     auto notes = notesOf(roundTrip(renderSong(song, Options(), Context())).tracks[1]);
     REQUIRE(notes.size() == 4);
     for (size_t i = 0; i < 4; i++) {
         CHECK(notes[i].on == Tick(i) * kBeat);
         CHECK(notes[i].pitch == 72);
-        CHECK(notes[i].velocity == smf::velocity7(0.4f));
+        CHECK(notes[i].velocity == smf::velocity7(0.8f));
     }
 }
 
@@ -298,6 +299,7 @@ TEST_CASE("export: rendered operators follow the engine's passes and seed") {
     rec.ops.recurrenceMask = 0b01;
     Clip& c = addClip(song, kBeat, {n, r, rec});
     c.loopMode = LoopMode::Loop;
+    c.variation = 42; // its chance dice, on Same every time
     place(song, lead, c.id, 0, 16 * kBeat);
 
     Options o;
@@ -572,7 +574,8 @@ TEST_CASE("export: an arpeggiator's steps become notes, and echoes stop at the e
     Clip& c =
         addClip(song, kBar, {makeNote(song, 0, kBar, 60), makeNote(song, 0, kBar, 64), makeNote(song, 0, kBar, 67)});
     place(song, lead, c.id, 0, kBar);
-    addDeviceOn(song, lead, DeviceType::Arpeggiator, {{chain::knob::kRate, 6}, {chain::knob::kGate, 50}}); // 1/8
+    addDeviceOn(song, lead, DeviceType::Arpeggiator,
+                {{chain::knob::kRate, float(devices::rateIndex("1/8"))}, {chain::knob::kGate, 50}});
     std::vector<NoteSeen> notes = notesOf(roundTrip(renderSong(song, Options(), Context())).tracks[1]);
     REQUIRE(notes.size() == 8);
     std::vector<int> pitches;
@@ -588,7 +591,9 @@ TEST_CASE("export: an arpeggiator's steps become notes, and echoes stop at the e
     Clip& one = addClip(echo, kBar, {makeNote(echo, 3 * kBeat, kBeat / 4, 60)});
     place(echo, t, one.id, 0, kBar);
     addDeviceOn(echo, t, DeviceType::Echo,
-                {{chain::knob::kTime, 5}, {chain::knob::kRepeats, 8}, {chain::knob::kDecay, 10}});
+                {{chain::knob::kTime, float(devices::rateIndex("1/4"))},
+                 {chain::knob::kRepeats, 8},
+                 {chain::knob::kDecay, 10}});
     // The song ends at the bar: repeats after it aren't written.
     std::vector<NoteSeen> echoes = notesOf(roundTrip(renderSong(echo, Options(), Context())).tracks[1]);
     REQUIRE(echoes.size() == 1);
@@ -788,4 +793,172 @@ TEST_CASE("import: channel controls become clip lanes") {
     CHECK(clip.automation[0].name == "Mod wheel (CC 1)");
     CHECK(clip.automation[0].outputIndex == 0);
     CHECK(clip.automation[1].drive == LaneDrive::Pressure);
+}
+
+TEST_CASE("dawproject: an audio track's clips point at their files inside the project, warped to the clip tempo") {
+    Song song = makeDefaultSong();
+    ImportedAudio file;
+    file.source.name = "Drum loop.wav";
+    file.source.sampleRate = 48000;
+    file.source.frames = 96000; // 2 s
+    file.tempo = 120;
+    AudioDropTarget target;
+    target.index = int(song.tracks.size());
+    target.at = 4 * kPpq;
+    ImportResult made;
+    importAudio(song, {file}, target, [&song] { return song.nextId++; }, &made)->apply(song);
+    Context ctx{120, "Song"};
+    std::string xml = dawproject::projectXml(song, Options(), ctx, "2.0.0");
+    CHECK(xml.find("contentType=\"audio\"") != std::string::npos);
+    CHECK(xml.find("<File path=\"audio/Drum loop.wav\"/>") != std::string::npos);
+    CHECK(xml.find("<Clip time=\"4.0\" duration=\"4.0\"") != std::string::npos);
+    // Four beats at 120 BPM are the file's two seconds.
+    CHECK(xml.find("<Warp time=\"4.0\" contentTime=\"2.0\"/>") != std::string::npos);
+    std::map<std::string, std::string> files =
+        zip::read(dawproject::build(song, Options(), ctx, "2.0.0", {{"audio/Drum loop.wav", "RIFF"}}));
+    CHECK(files["audio/Drum loop.wav"] == "RIFF");
+}
+
+TEST_CASE("export: a tie is written as a small overlap, so a legato instrument plays on") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    Note b = makeNote(song, kBeat, kBeat, 64);
+    b.tied = true;
+    Note c = makeNote(song, 3 * kBeat, kBeat, 67); // not tied: ends as written
+    Clip& clip = addClip(song, kBar, {a, b, c});
+    place(song, lead, clip.id, 0, kBar);
+    smf::File f = roundTrip(renderSong(song, Options(), Context()));
+    auto notes = notesOf(f.tracks[1]);
+    REQUIRE(notes.size() == 3);
+    CHECK(notes[1].on == kBeat);
+    CHECK(notes[0].off == kBeat + kTieOverlap);
+    CHECK(notes[1].off == 2 * kBeat);
+}
+
+TEST_CASE("export: with MPE, ties can go out as one note whose glide is pitch bend") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    Note b = makeNote(song, kBeat, kBeat, 64);
+    b.tied = true;
+    b.glideBefore = kBeat / 4;
+    b.glideAfter = kBeat / 4;
+    Clip& clip = addClip(song, kBar, {a, b});
+    place(song, lead, clip.id, 0, kBar);
+    Options o;
+    o.expressions = ExpressionMode::Mpe;
+    o.ties = TieMode::Bend;
+    smf::File f = roundTrip(renderSong(song, o, Context()));
+    auto notes = notesOf(f.tracks[1]);
+    REQUIRE(notes.size() == 1);
+    CHECK(notes[0].pitch == 60);
+    CHECK(notes[0].off == 2 * kBeat);
+    // Halfway at the joint (+2 of ±48), all the way (+4) once the glide is over.
+    int ch = notes[0].channel;
+    int atJoint = 0, last = 0;
+    for (const smf::Event& e : f.tracks[1].events)
+        if (e.status() == (0xE0 | ch)) {
+            int v = (e.bytes[1] | e.bytes[2] << 7) - 8192;
+            if (e.tick <= kBeat)
+                atJoint = v;
+            last = v;
+        }
+    CHECK(atJoint == doctest::Approx(2.0 / 48 * 8192).epsilon(0.05));
+    CHECK(last == doctest::Approx(4.0 / 48 * 8192).epsilon(0.02));
+
+    // Asked for bend without MPE: overlapping notes still.
+    o.expressions = ExpressionMode::Off;
+    CHECK(notesOf(roundTrip(renderSong(song, o, Context())).tracks[1]).size() == 2);
+}
+
+TEST_CASE("export: export options keep how ties are written") {
+    Options o;
+    o.ties = TieMode::Bend;
+    json_t* j = o.toJson();
+    CHECK(Options::fromJson(j).ties == TieMode::Bend);
+    json_decref(j);
+}
+
+TEST_CASE("export: a pitch bend lane goes out as pitch bend with its range, a pressure lane as channel pressure") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Clip& clip = addClip(song, kBar, {makeNote(song, 0, kBar, 60)});
+    AutomationEnvelope bend = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::PitchBend}, 0, 0);
+    bend.points = {{0, 0.5f, CurveType::Hold, 0}, {kBeat, 1.f, CurveType::Hold, 0}};
+    AutomationEnvelope press = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::Pressure}, 0, 0);
+    press.points = {{0, 0.f, CurveType::Hold, 0}, {kBeat * 2, 1.f, CurveType::Hold, 0}};
+    clip.automation = {bend, press};
+    place(song, lead, clip.id, 0, kBar);
+    Options o;
+    o.automation = AutomationMode::Cc;
+    smf::File f = roundTrip(renderSong(song, o, Context()));
+    const smf::Track& t = f.tracks[1];
+    // The bend range (RPN 0) says ±2, as the lane does.
+    bool range = false;
+    for (const smf::Event& e : t.events)
+        range |= e.bytes == std::vector<uint8_t>{0xB0, 6, 2};
+    CHECK(range);
+    std::vector<std::pair<Tick, int>> bends, pressures;
+    for (const smf::Event& e : t.events) {
+        if (e.status() == 0xE0)
+            bends.push_back({e.tick, (e.bytes[1] | e.bytes[2] << 7) - 8192});
+        if (e.status() == 0xD0)
+            pressures.push_back({e.tick, e.bytes[1]});
+    }
+    REQUIRE(!bends.empty());
+    CHECK(bends.front() == std::pair<Tick, int>{kBeat, 8191});
+    REQUIRE(!pressures.empty());
+    CHECK(pressures.front() == std::pair<Tick, int>{2 * kBeat, 127});
+    // Automation off: neither.
+    smf::File none = roundTrip(renderSong(song, Options(), Context()));
+    for (const smf::Event& e : none.tracks[1].events)
+        CHECK((e.status() & 0xF0) != 0xE0);
+}
+
+TEST_CASE("dawproject: each note's curves go inside it, and a tie's glide is in its notes' pitch curves") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Note a = makeNote(song, 0, kBeat, 60);
+    a.timbreExpr = {{0, 0.25f, 0}, {1, 0.75f, 0}};
+    a.pressureExpr = {{0, 1, 0}};
+    Note b = makeNote(song, 2 * kBeat, kBeat, 64);
+    Note c = makeNote(song, 3 * kBeat, kBeat, 67);
+    c.tied = true;
+    c.glideBefore = kBeat / 2;
+    c.glideAfter = kBeat / 2;
+    Clip& clip = addClip(song, kBar, {a, b, c});
+    place(song, lead, clip.id, 0, kBar);
+    std::string xml = dawproject::projectXml(song, Options(), Context{120, "t"}, "2.0.0");
+    if (const char* out = std::getenv("TESSERA_DAWPROJECT_NOTES_OUT"))
+        std::ofstream(out) << xml;
+    // One curve: straight inside the note, times from the note's start in beats.
+    CHECK(xml.find("<Points id=") != std::string::npos);
+    CHECK(xml.find("unit=\"linear\">") != std::string::npos);
+    CHECK(xml.find("<Target expression=\"timbre\"/>") != std::string::npos);
+    CHECK(xml.find("<RealPoint time=\"1.0\" value=\"0.75\" interpolation=\"linear\"/>") != std::string::npos);
+    // Two curves on one note: in a Lanes.
+    CHECK(count(xml, "<Lanes id=") >= 1);
+    CHECK(xml.find("<Target expression=\"pressure\"/>") != std::string::npos);
+    // The tie: the first note bends up halfway (+1.5 of 3) by the joint; the tied note starts 1.5 below.
+    CHECK(xml.find("<Target expression=\"transpose\"/>") != std::string::npos);
+    CHECK(xml.find("value=\"1.5\"") != std::string::npos);
+    CHECK(xml.find("value=\"-1.5\"") != std::string::npos);
+}
+
+TEST_CASE("dawproject: pitch bend and pressure lanes go across as pitchBend and channelPressure") {
+    Song song;
+    TrackId lead = addTrack(song);
+    Clip& clip = addClip(song, kBar, {makeNote(song, 0, kBar, 60)});
+    AutomationEnvelope bend = makeMidiLane(song.newId<AutomationId>(), {MidiControl::Kind::PitchBend}, 0, 0);
+    bend.points = {{0, 0.75f, CurveType::Hold, 0}};
+    clip.automation = {bend};
+    place(song, lead, clip.id, 0, kBar);
+    Options o;
+    o.automation = AutomationMode::Cc;
+    std::string xml = dawproject::projectXml(song, o, Context{120, "t"}, "2.0.0");
+    if (const char* out = std::getenv("TESSERA_DAWPROJECT_BEND_OUT"))
+        std::ofstream(out) << xml;
+    CHECK(xml.find("<Target expression=\"pitchBend\" channel=\"0\"/>") != std::string::npos);
+    CHECK(xml.find("value=\"0.75\"") != std::string::npos);
 }

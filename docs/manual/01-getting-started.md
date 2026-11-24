@@ -9,8 +9,8 @@ your patch.
 
 | Module | Width | What it does |
 |---|---|---|
-| **Roll** | 24 HP (or wider) | The sequencer. It holds the song, the transport (play, stop, tempo) and the editor. |
-| **Track Out** | 6 HP | The outputs of one instrument track: pitch, gate, velocity and more. |
+| **Roll** | 30 HP (or wider) | The sequencer. It holds the song, the transport (play, stop, tempo) and the editor. |
+| **Track Out** | 6 HP | The outputs of one track: pitch, gate, velocity and more, and an audio section to send its sound through an effect and back. |
 | **Drum Out** | 20 HP | The outputs of one drum track: a strip of trigger, velocity, pitch, timbre and pressure jacks for each drum sound. |
 | **Auto Out** | 8 HP | The automation curves of one track, on eight separate jacks. |
 
@@ -56,7 +56,7 @@ Click **EDITOR** on the Roll panel. The editor fills the Rack window.
 A new Roll has four tracks: three instrument tracks and one drum track. It has no clips yet. The top half shows
 the song (tracks, clips and the timeline). The bottom half shows the notes of the selected track.
 
-Press **Esc** or click **×** (top right) to close the editor. Your song stays as it is.
+Press **Esc** twice or click **×** (top right) to close the editor. Your song stays as it is.
 
 ## Step 5: make a clip and draw notes
 

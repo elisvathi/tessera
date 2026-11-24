@@ -9,9 +9,9 @@ keyboard on the left. It shows the clip of the selected track: the clip you clic
 
 From left to right:
 
-- **The clip chip** ("Lead · Hook · 4 bars ▾"): the track, the clip and its length. Its menu renames the clip, turns
-  its loop on or off, sets its length, and switches tracks. See [Clips and scenes](05-clips-and-scenes.md#clip-length-and-loop).
-- **Devices**: opens the note effects of this track (F3). See [Devices](13-devices.md).
+- **The clip chip** ("Lead · Hook · 4 bars ▾"): the track, the clip and its length, and "own devices" when the clip
+  plays through devices of its own. Its menu renames the clip, turns its loop on or off, chooses its **Devices**, sets
+  its length, and switches tracks. See [Clips and scenes](05-clips-and-scenes.md#clip-length-and-loop).
 - How many notes are selected.
 - **Select**, **Draw** and **▾** (more tools, see below).
 - **Snap ▾**: the grid notes snap to.
@@ -30,6 +30,11 @@ When the header is narrow, some of these fold into a **⋯** menu. Nothing is ev
 - **Click** a key to hear it. **Drag** along the keys for a glissando.
 - **Ctrl+click** a key to select every note of that pitch.
 - With a key chosen, keys outside the key are dimmed and each root is marked.
+- Keys light up in the track's colour while the clip plays their notes.
+- Keys you play on a MIDI keyboard, the **REC CV** inputs or your computer keyboard (Ctrl+K) light up too, with a
+  bright outline, and a faint band runs along their rows in the grid. So you can see where the note you just played
+  would go. This works for every note that comes in, whether or not the track is armed. On a drum track the lane you
+  hit lights up the same way.
 
 ## Drawing notes
 
@@ -71,6 +76,8 @@ If you draw past the end of a looping clip, the clip grows to hold the new notes
 - Where two notes touch, each side of the seam grabs its own note's edge.
 - **Alt+Shift+drag an edge** stretches the whole selection in time.
 - A note dropped on another note of the same pitch trims it, or replaces it when it covers it fully.
+- Pasted and duplicated notes land on top of what is there and remove nothing: drag them away and the notes under
+  them are still there.
 
 ### The transform box
 

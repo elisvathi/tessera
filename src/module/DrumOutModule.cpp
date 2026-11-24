@@ -30,17 +30,58 @@ DrumOutModule::DrumOutModule() : OutputModuleBase(TrackType::Drum) {
         configOutput(TIMBRE_OUTPUT + i, lane + " timbre")->description = kTimbreHelp;
         configOutput(PRESS_OUTPUT + i, lane + " pressure")->description = kPressHelp;
     }
+    for (int i = 0; i < kTrigJacks; i++)
+        configInput(LANE_IN_INPUT + i, "Lane " + std::to_string(i + 1) + " audio")->description =
+            "The sound of the drum on this lane (its module's output), mixed into the drum track and its OUT. A poly "
+            "cable is summed";
+    const char* outHelp = "The kit's sound up to this Drum Out (every lane IN mixed), for an effect: patch it into the "
+                          "effect and the effect's output back into Kit IN. What comes back then replaces the sound, "
+                          "blended by Mix in the mixer. 10 V is full scale (0 dB)";
+    configOutput(KIT_OUT_L_OUTPUT, "Kit OUT left")->description = outHelp;
+    configOutput(KIT_OUT_R_OUTPUT, "Kit OUT right")->description = outHelp;
+    const char* inHelp = "A stereo drum machine, added to the drum track before its fader; or, with Kit OUT patched, "
+                         "an effect on the kit coming back. With one side patched, both sides hear it";
+    configInput(KIT_IN_L_INPUT, "Kit IN left")->description = inHelp;
+    configInput(KIT_IN_R_INPUT, "Kit IN right")->description = inHelp;
+    configLight(KIT_IN_LIGHT, "Kit IN level")->description = "Green while audio comes back, red above 0 dB";
+    AudioPorts ports;
+    ports.outL = KIT_OUT_L_OUTPUT;
+    ports.outR = KIT_OUT_R_OUTPUT;
+    ports.inL = KIT_IN_L_INPUT;
+    ports.inR = KIT_IN_R_INPUT;
+    ports.inLight = KIT_IN_LIGHT;
+    ports.sourceFirst = LANE_IN_INPUT;
+    ports.sourceCount = kTrigJacks;
+    setAudioPorts(ports);
     lightDivider.setDivision(kLightDivision);
 }
 
 void DrumOutModule::writeFrame(const TrackFrame& frame) {
+    // With a channel picked, a lane sends only hits on that channel; its velocity, pitch, timbre and pressure hold
+    // the last of them.
+    int channel = part();
+    float gates[kMaxVoices], vels[kMaxVoices], tunes[kMaxVoices], timbres[kMaxVoices], presses[kMaxVoices];
+    for (int c = 0; c < frame.channels && c < kMaxVoices; c++) {
+        bool ours = channel == 0 || frame.part[c] == channel;
+        gates[c] = ours ? frame.gate[c] : 0.f;
+        if (ours) {
+            heldVel[c] = frame.vel[c];
+            heldTune[c] = frame.tune[c];
+            heldTimbre[c] = frame.timbre[c];
+            heldPress[c] = frame.press[c];
+        }
+        vels[c] = heldVel[c];
+        tunes[c] = heldTune[c];
+        timbres[c] = heldTimbre[c];
+        presses[c] = heldPress[c];
+    }
     for (int i = 0; i < kTrigJacks; i++) {
-        float gate = i < frame.channels ? frame.gate[i] : 0.f;
+        float gate = i < frame.channels ? gates[i] : 0.f;
         outputs[TRIG_OUTPUT + i].setVoltage(gate);
-        outputs[VEL_OUTPUT + i].setVoltage(i < frame.channels ? frame.vel[i] : 0.f);
-        outputs[PITCH_OUTPUT + i].setVoltage(i < frame.channels ? frame.tune[i] : 0.f);
-        outputs[TIMBRE_OUTPUT + i].setVoltage(i < frame.channels ? frame.timbre[i] : 0.f);
-        outputs[PRESS_OUTPUT + i].setVoltage(i < frame.channels ? frame.press[i] : 0.f);
+        outputs[VEL_OUTPUT + i].setVoltage(i < frame.channels ? vels[i] : 0.f);
+        outputs[PITCH_OUTPUT + i].setVoltage(i < frame.channels ? tunes[i] : 0.f);
+        outputs[TIMBRE_OUTPUT + i].setVoltage(i < frame.channels ? timbres[i] : 0.f);
+        outputs[PRESS_OUTPUT + i].setVoltage(i < frame.channels ? presses[i] : 0.f);
         if (gate > 0)
             hits |= uint8_t(1 << i);
     }
@@ -53,17 +94,17 @@ void DrumOutModule::writeFrame(const TrackFrame& frame) {
         hits = 0;
     }
     outputs[TRIG_POLY_OUTPUT].setChannels(frame.channels);
-    outputs[TRIG_POLY_OUTPUT].writeVoltages(frame.gate);
+    outputs[TRIG_POLY_OUTPUT].writeVoltages(gates);
     outputs[VEL_POLY_OUTPUT].setChannels(frame.channels);
-    outputs[VEL_POLY_OUTPUT].writeVoltages(frame.vel);
+    outputs[VEL_POLY_OUTPUT].writeVoltages(vels);
     outputs[AUTO_OUTPUT].setChannels(frame.autoChannels);
     outputs[AUTO_OUTPUT].writeVoltages(frame.automation);
     outputs[PITCH_POLY_OUTPUT].setChannels(frame.channels);
-    outputs[PITCH_POLY_OUTPUT].writeVoltages(frame.tune);
+    outputs[PITCH_POLY_OUTPUT].writeVoltages(tunes);
     outputs[TIMBRE_POLY_OUTPUT].setChannels(frame.channels);
-    outputs[TIMBRE_POLY_OUTPUT].writeVoltages(frame.timbre);
+    outputs[TIMBRE_POLY_OUTPUT].writeVoltages(timbres);
     outputs[PRESS_POLY_OUTPUT].setChannels(frame.channels);
-    outputs[PRESS_POLY_OUTPUT].writeVoltages(frame.press);
+    outputs[PRESS_POLY_OUTPUT].writeVoltages(presses);
 }
 
 void DrumOutModule::silenceGates() {

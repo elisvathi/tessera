@@ -1,0 +1,735 @@
+#include "Playheads.hpp"
+
+#include "DeviceTypes.hpp"
+#include "Lengths.hpp"
+
+#include <cmath>
+#include <limits>
+
+namespace tessera::playheads {
+
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+
+double floorMod(double x, double m) { return x - std::floor(x / m) * m; }
+
+/// Time `t` bent by `shape` inside cycles of `cycle` ticks: each cycle's ends stay where they are.
+double warpTime(Bend shape, double amount, double cycle, double t) {
+    if (cycle <= 0 || amount <= 0 || shape == Bend::Straight)
+        return t;
+    double k = std::floor(t / cycle);
+    double f = t / cycle - k;
+    return (k + warp(shape, amount, f)) * cycle;
+}
+
+/// The time a bent time comes from: warpTime's inverse. The shapes always rise, so halving finds it.
+double unwarpTime(Bend shape, double amount, double cycle, double b) {
+    if (cycle <= 0 || amount <= 0 || shape == Bend::Straight)
+        return b;
+    double cycles = b / cycle;
+    double nearest = std::round(cycles);
+    if (std::abs(cycles - nearest) < 1e-12)
+        return nearest * cycle; // on a cycle's edge, where rounding would land a hair inside the cycle before
+    double k = std::floor(cycles);
+    return (k + unwarp(shape, amount, cycles - k)) * cycle;
+}
+
+/// The playhead's own time inside a repeat group, bent by the Curve.
+double bent(const Motion& m, double own) { return warpTime(m.bend, m.bendAmount, m.bendCycle, own); }
+/// The playhead's own time a Curve-bent time comes from.
+double unbent(const Motion& m, double b) { return unwarpTime(m.bend, m.bendAmount, m.bendCycle, b); }
+
+/// Elapsed time bent by the speed curve: how far a steady playhead would have got by now.
+double sped(const Motion& m, double elapsed) { return warpTime(m.speed, m.speedAmount, m.speedCycle, elapsed); }
+/// The elapsed time a speed-bent time comes from.
+double unsped(const Motion& m, double s) { return unwarpTime(m.speed, m.speedAmount, m.speedCycle, s); }
+
+/// The travel after `elapsed` ticks (from the last restart): rate, speed curve and Curve applied.
+double travelAt(const Motion& m, double elapsed) { return bent(m, m.rate * sped(m, elapsed)); }
+/// The elapsed time (from the last restart) at which the travel reaches `travel`: travelAt's inverse.
+double elapsedAt(const Motion& m, double travel) { return unsped(m, unbent(m, travel) / m.rate); }
+
+bool repeats(const Motion& m) { return m.repeatSize > 0 && m.repeatTimes > 1; }
+
+/// Where travel `d` has taken the playhead through the clip's content (before wrapping): with a repeat, each
+/// segment is travelled `repeatTimes` times before the next.
+double contentAt(const Motion& m, double d, double* segmentEnd = nullptr) {
+    if (!repeats(m)) {
+        if (segmentEnd)
+            *segmentEnd = INFINITY;
+        return d;
+    }
+    double r = std::floor(d / m.repeatSize);
+    if (segmentEnd)
+        *segmentEnd = (r + 1) * m.repeatSize;
+    return std::floor(r / m.repeatTimes) * m.repeatSize + (d - r * m.repeatSize);
+}
+
+/// The unwrapped place along the region: one region length per wrap (or per ping-pong half).
+double unwrapped(const Motion& m, double content) {
+    double s = floorMod(m.start, m.regionLength);
+    return m.direction == Direction::Reverse ? content + (m.regionLength - s) : content + s;
+}
+
+/// A clip position from the place within one wrap (`q`, 0..length) and which wrap it is.
+double positionOf(const Motion& m, double wrap, double q) {
+    bool backward = m.direction == Direction::Reverse || (m.direction == Direction::PingPong && floorMod(wrap, 2) >= 1);
+    return backward ? m.regionStart + m.regionLength - q : m.regionStart + q;
+}
+
+// ---- Drawn paths ----
+
+/// The path's place (0..1) at `c` ticks into its cycle, inside the segment that starts at point `i` (-1: before the
+/// first point). At a point's own time the segment before it is meant, so a hold's jump comes after it.
+double pathValue(const std::vector<AutoPoint>& path, int i, double c) {
+    if (i < 0)
+        return path.front().value;
+    if (i + 1 >= int(path.size()))
+        return path.back().value;
+    const AutoPoint& a = path[size_t(i)];
+    const AutoPoint& b = path[size_t(i) + 1];
+    if (b.t <= a.t)
+        return b.value;
+    double x = std::clamp((c - double(a.t)) / double(b.t - a.t), 0.0, 1.0);
+    return double(a.value) + (double(b.value) - double(a.value)) * curveShape(a.curve, a.tension, x);
+}
+
+/// The segment `c` falls in: the last point at or before it, or -1 before the first.
+int pathSegment(const std::vector<AutoPoint>& path, double c) {
+    auto it =
+        std::upper_bound(path.begin(), path.end(), c, [](double v, const AutoPoint& p) { return v < double(p.t); });
+    return int(it - path.begin()) - 1;
+}
+
+double drawnPosition(const Motion& m, double value) {
+    return m.regionStart + std::clamp(value, 0.0, 1.0) * m.regionLength;
+}
+
+/// Sweeps of a drawn path over the playhead's own time [oa, ob): one per stretch between points, cycle ends and
+/// jumps.
+int sweepDrawn(const Motion& m, double oa, double ob, double restartBase, Sweep* out, int max) {
+    const std::vector<AutoPoint>& path = *m.path;
+    int count = 0;
+    double o = oa;
+    double lastTo = NAN, lastDir = 0;
+    while (o < ob && count < max) {
+        double k = std::floor(o / m.pathCycle);
+        double c = o - k * m.pathCycle;
+        int i = pathSegment(path, c);
+        double next = i + 1 < int(path.size()) ? double(path[size_t(i) + 1].t) : m.pathCycle;
+        next = std::min(next, m.pathCycle);
+        if (next <= c)
+            next = m.pathCycle;
+        double end = std::min(ob, k * m.pathCycle + next);
+        double v0 = pathValue(path, i, c);
+        double v1 = pathValue(path, i, end - k * m.pathCycle);
+        double from = drawnPosition(m, v0), to = drawnPosition(m, v1);
+        if (to != from) {
+            Sweep& s = out[count++];
+            s.from = from;
+            s.to = to;
+            double dir = to > from ? 1 : -1;
+            // Turning back where the last stretch ended: the note there was just played.
+            s.includeFrom = !(from == lastTo && dir != lastDir);
+            s.travelFrom = 0;
+            s.restartBase = restartBase;
+            s.ownFrom = o;
+            s.ownTo = end;
+            lastDir = dir;
+        }
+        lastTo = to;
+        o = end;
+    }
+    return count;
+}
+
+bool ordered(const Motion& m) { return m.order != Order::InOrder && m.orderStep > 0 && m.orderStep < m.regionLength; }
+
+/// How far the step holding `pos` moves when its region is read in order `m.order` on pass `pass`.
+double orderShift(const Motion& m, double pos, double pass) {
+    if (!ordered(m))
+        return 0;
+    int count = int(std::ceil(m.regionLength / m.orderStep - 1e-9));
+    int k = std::clamp(int(std::floor((pos - m.regionStart) / m.orderStep)), 0, count - 1);
+    int to = orderedStep(m.order, k, count, int64_t(pass), m.seed);
+    // The last step can be shorter; a full step moved there would run past the region's end.
+    double shift = double(to - k) * m.orderStep;
+    double rel = pos - m.regionStart + shift;
+    return rel >= m.regionLength ? shift - (rel - m.regionLength + 1e-6) : shift;
+}
+
+int sweepTravel(const Motion& m, double da, double db, double restartBase, Sweep* out, int max) {
+    constexpr double kHair = 1e-6; // ticks: far less than any note's place can differ by
+    int count = 0;
+    double d = da;
+    double length = m.regionLength;
+    double ranToWrap = NAN; // the wrap the last sweep ran to the end of
+    while (d < db && count < max) {
+        double segmentEnd;
+        double content = contentAt(m, d, &segmentEnd);
+        // A hair short of a repeat block's end is its end. When the block's last repeat ends on the region's end,
+        // the hair would otherwise read as the wrap below, and a stray sweep would read the region's first note.
+        if (segmentEnd - d < kHair) {
+            d = segmentEnd;
+            continue;
+        }
+        double x = unwrapped(m, content);
+        double wrap = std::floor(x / length);
+        double q = x - wrap * length;
+        // Rounding (the plugin is built with unsafe math) can leave the travel a hair short of a wrap, or, right
+        // after a sweep that ran to one, a hair past it. A hair is no distance: it is the wrap. Otherwise a sweep
+        // ends a hair past the segment, reading the note that starts there, and the next begins a hair after its
+        // start, missing the note there. (A window that starts a hair past a wrap keeps its place: the window before
+        // it already read the wrap.)
+        if (length - q < kHair) {
+            wrap += 1;
+            q = 0;
+        } else if (q < kHair && wrap == ranToWrap + 1) {
+            q = 0;
+        }
+        double toWrap = length - q;
+        double end = std::min({db, segmentEnd, d + toWrap});
+        double from = positionOf(m, wrap, q);
+        if (ordered(m)) {
+            // Each step is read on its own: a sweep ends at a step's edge, and moves to where the order puts it.
+            double rel = from - m.regionStart;
+            double into = std::fmod(rel, m.orderStep);
+            bool forward = positionOf(m, wrap, q + 1e-3) > from;
+            double room = forward ? m.orderStep - into : (into <= 1e-9 ? m.orderStep : into);
+            end = std::min(end, d + room);
+        }
+        Sweep& s = out[count++];
+        s.from = from;
+        // A sweep that runs to the wrap ends exactly on the segment's edge, never past it.
+        bool toTheWrap = end - d >= toWrap - kHair;
+        s.to = positionOf(m, wrap, toTheWrap ? length : std::min(length, q + (end - d)));
+        ranToWrap = toTheWrap ? wrap : NAN;
+        double shift = orderShift(m, (s.from + s.to) / 2, wrap);
+        s.from += shift;
+        s.to += shift;
+        bool atSegmentStart = repeats(m) && d == std::floor(d / m.repeatSize) * m.repeatSize;
+        s.includeFrom = !(m.direction == Direction::PingPong && q == 0 && x > 0 && !atSegmentStart);
+        s.travelFrom = d;
+        s.restartBase = restartBase;
+        d = end;
+    }
+    return count;
+}
+
+/// A length as a fraction of a whole note (four quarters), or in bars when `bars` is set.
+struct Length {
+    const char* name;
+    double wholes;
+    bool bars = false;
+};
+
+double ticksOf(const Length& l, TimeSig ts) {
+    return l.bars ? l.wholes * double(ticksPerBar(ts)) : l.wholes * 4 * double(kPpq);
+}
+
+template <size_t N>
+std::vector<std::string> namesOf(const Length (&list)[N]) {
+    std::vector<std::string> out;
+    for (const Length& l : list)
+        out.push_back(l.name);
+    return out;
+}
+
+template <size_t N>
+double ticksAt(const Length (&list)[N], int index, TimeSig ts) {
+    return ticksOf(list[size_t(std::clamp(index, 0, int(N) - 1))], ts);
+}
+
+// Each list runs from short to long, so a curve on the setting moves through it in order. Saved songs keep their
+// choices by name when a list grows (Serialize: songs before schema 8 and 11). T is a triplet (2/3 of the note), D
+// dotted. The lengths come from the one scale (Lengths.hpp), except the drawn path's cycles (whole bars, odd ones too)
+// and Offset (every 1/16).
+/// Piece: Off, then 1/64 to 8 bars.
+const std::vector<lengths::Length>& repeats() {
+    static const std::vector<lengths::Length> list = [] {
+        std::vector<lengths::Length> l = lengths::range("1/64", "8 bars");
+        l.insert(l.begin(), {"Off", 0, false});
+        return l;
+    }();
+    return list;
+}
+/// Order step: 1/32 to 4 bars.
+const std::vector<lengths::Length>& orderSteps() {
+    static const std::vector<lengths::Length> list = lengths::range("1/32", "4 bars");
+    return list;
+}
+/// Fixed length: 1/64 to 4 bars (a note never lasts longer than 4 bars anyway).
+const std::vector<lengths::Length>& fixedLengths() {
+    static const std::vector<lengths::Length> list = lengths::range("1/64", "4 bars");
+    return list;
+}
+/// Speed over: 1/16 to 16 bars.
+const std::vector<lengths::Length>& speedOvers() {
+    static const std::vector<lengths::Length> list = lengths::range("1/16", "16 bars");
+    return list;
+}
+const Length kCycles[] = {{"1/16", 1.0 / 16}, {"1/8", 1.0 / 8},    {"1/4", 1.0 / 4},   {"1/2", 1.0 / 2},
+                          {"1 bar", 1, true}, {"2 bars", 2, true}, {"4 bars", 4, true}};
+const Length kPathCycles[] = {{"1/4", 1.0 / 4},      {"1/2", 1.0 / 2},      {"1 bar", 1, true},
+                              {"2 bars", 2, true},   {"3 bars", 3, true},   {"4 bars", 4, true},
+                              {"6 bars", 6, true},   {"8 bars", 8, true},   {"12 bars", 12, true},
+                              {"16 bars", 16, true}, {"32 bars", 32, true}, {"64 bars", 64, true}};
+
+// How far Offset moves a playhead, one way: the common note values with their triplets and dotted ones, and every
+// 1/16 up to a bar, so a canon can sit at any step. offsetNames() mirrors it around "0".
+const Length kOffsets[] = {{"1/64", 1.0 / 64},  {"1/32", 1.0 / 32},   {"1/16 T", 1.0 / 24}, {"1/16", 1.0 / 16},
+                           {"1/8 T", 1.0 / 12}, {"1/16 D", 3.0 / 32}, {"1/8", 1.0 / 8},     {"1/4 T", 1.0 / 6},
+                           {"1/8 D", 3.0 / 16}, {"1/4", 1.0 / 4},     {"5/16", 5.0 / 16},   {"1/2 T", 1.0 / 3},
+                           {"1/4 D", 3.0 / 8},  {"7/16", 7.0 / 16},   {"1/2", 1.0 / 2},     {"9/16", 9.0 / 16},
+                           {"5/8", 5.0 / 8},    {"11/16", 11.0 / 16}, {"1/2 D", 3.0 / 4},   {"13/16", 13.0 / 16},
+                           {"7/8", 7.0 / 8},    {"15/16", 15.0 / 16}, {"1 bar", 1, true}};
+
+struct Rate {
+    const char* name;
+    double value;
+};
+// Slow to fast, each speed with its opposite: halves and doubles, thirds (triplet speeds), dotted (3/8x and 8/3x, 3/4x
+// and 4/3x, 2/3x and 3/2x) and fives (4/5x, 5/4x).
+const Rate kRates[] = {{"1/32x", 1.0 / 32}, {"1/24x", 1.0 / 24}, {"1/16x", 1.0 / 16}, {"1/12x", 1.0 / 12},
+                       {"1/8x", 1.0 / 8},   {"1/6x", 1.0 / 6},   {"1/4x", 0.25},      {"1/3x", 1.0 / 3},
+                       {"3/8x", 3.0 / 8},   {"1/2x", 0.5},       {"2/3x", 2.0 / 3},   {"3/4x", 0.75},
+                       {"4/5x", 0.8},       {"1x", 1},           {"5/4x", 1.25},      {"4/3x", 4.0 / 3},
+                       {"3/2x", 1.5},       {"2x", 2},           {"8/3x", 8.0 / 3},   {"3x", 3},
+                       {"4x", 4},           {"6x", 6},           {"8x", 8},           {"12x", 12},
+                       {"16x", 16},         {"24x", 24},         {"32x", 32}};
+
+} // namespace
+
+const std::vector<std::string>& rateNames() {
+    static const std::vector<std::string> names = [] {
+        std::vector<std::string> out;
+        for (const Rate& r : kRates)
+            out.push_back(r.name);
+        return out;
+    }();
+    return names;
+}
+
+int choiceIndex(const std::vector<std::string>& names, const std::string& name, int fallback) {
+    auto it = std::find(names.begin(), names.end(), name);
+    return it == names.end() ? fallback : int(it - names.begin());
+}
+
+double playheadRate(int index) { return kRates[size_t(std::clamp(index, 0, int(std::size(kRates)) - 1))].value; }
+
+const std::vector<std::string>& repeatNames() {
+    static const std::vector<std::string> names = lengths::names(repeats());
+    return names;
+}
+double repeatTicks(int index, TimeSig ts) { return lengths::ticksAt(repeats(), index, ts); }
+
+const std::vector<std::string>& cycleNames() {
+    static const std::vector<std::string> names = namesOf(kCycles);
+    return names;
+}
+double cycleTicks(int index, TimeSig ts) { return ticksAt(kCycles, index, ts); }
+
+const std::vector<std::string>& fixedLengthNames() {
+    static const std::vector<std::string> names = lengths::names(fixedLengths());
+    return names;
+}
+double fixedLengthTicks(int index, TimeSig ts) { return lengths::ticksAt(fixedLengths(), index, ts); }
+
+const std::vector<std::string>& orderStepNames() {
+    static const std::vector<std::string> names = lengths::names(orderSteps());
+    return names;
+}
+double orderStepTicks(int index, TimeSig ts) { return lengths::ticksAt(orderSteps(), index, ts); }
+
+const std::vector<std::string>& speedOverNames() {
+    static const std::vector<std::string> names = lengths::names(speedOvers());
+    return names;
+}
+double speedOverTicks(int index, TimeSig ts) { return lengths::ticksAt(speedOvers(), index, ts); }
+
+const std::vector<std::string>& offsetNames() {
+    static const std::vector<std::string> names = [] {
+        std::vector<std::string> out;
+        for (size_t i = std::size(kOffsets); i-- > 0;)
+            out.push_back(std::string("-") + kOffsets[i].name);
+        out.push_back("0");
+        for (const Length& l : kOffsets)
+            out.push_back(std::string("+") + l.name);
+        return out;
+    }();
+    return names;
+}
+
+double offsetTicks(int index, TimeSig ts) {
+    int zero = int(std::size(kOffsets));
+    index = std::clamp(index, 0, 2 * zero);
+    if (index == zero)
+        return 0;
+    return index > zero ? ticksAt(kOffsets, index - zero - 1, ts) : -ticksAt(kOffsets, zero - 1 - index, ts);
+}
+
+int orderedStep(Order order, int k, int count, int64_t pass, uint32_t seed) {
+    if (count <= 1)
+        return 0;
+    k = ((k % count) + count) % count;
+    switch (order) {
+    case Order::OutsideIn: // first, last, second, second-last…
+        return k % 2 == 0 ? k / 2 : count - 1 - k / 2;
+    case Order::InsideOut: // the same, from the middle outwards
+        return orderedStep(Order::OutsideIn, count - 1 - k, count, pass, seed);
+    case Order::OddEven: { // every other step, then the ones between
+        int half = (count + 1) / 2;
+        return k < half ? 2 * k : 2 * (k - half) + 1;
+    }
+    case Order::Shuffle: {
+        // An affine shuffle: a multiplier that shares no factor with the count visits every step once, and needs
+        // no table, so it runs on the audio thread. Each pass picks its own from the seed.
+        uint32_t h = seed * 2654435761u ^ uint32_t(pass) * 40503u;
+        h ^= h >> 15;
+        h *= 2246822519u;
+        h ^= h >> 13;
+        static const int kPrimes[] = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41};
+        int a = 1;
+        for (int i = 0; i < 12; i++) {
+            int p = kPrimes[(size_t(h) + size_t(i)) % 12];
+            if (count % p != 0) {
+                a = p;
+                break;
+            }
+        }
+        return int((int64_t(a) * k + int64_t(h % uint32_t(count))) % count);
+    }
+    case Order::InOrder:
+    default:
+        return k;
+    }
+}
+
+const std::vector<std::string>& pathCycleNames() {
+    static const std::vector<std::string> names = namesOf(kPathCycles);
+    return names;
+}
+double pathCycleTicks(int index, TimeSig ts) { return ticksAt(kPathCycles, index, ts); }
+
+namespace {
+
+struct CurvePreset {
+    const char* name;
+    Bend bend;
+    double amount;
+};
+// Strengths are picked so soft, medium and hard ease as t^2, t^3 and t^4 (warp's power is 1 + 3 * amount).
+const CurvePreset kCurvePresets[] = {
+    {"Straight", Bend::Straight, 0},        {"Ease in soft", Bend::EaseIn, 1.0 / 3},
+    {"Ease in", Bend::EaseIn, 2.0 / 3},     {"Ease in hard", Bend::EaseIn, 1},
+    {"Ease out soft", Bend::EaseOut, 1.0 / 3}, {"Ease out", Bend::EaseOut, 2.0 / 3},
+    {"Ease out hard", Bend::EaseOut, 1},    {"Ease in-out", Bend::EaseInOut, 2.0 / 3},
+    {"Swing light", Bend::Swing, 0.4},      {"Swing heavy", Bend::Swing, 1},
+    {"Stairs", Bend::Stairs, 1}};
+
+} // namespace
+
+const std::vector<std::string>& curveNames() {
+    static const std::vector<std::string> names = [] {
+        std::vector<std::string> out;
+        for (const CurvePreset& c : kCurvePresets)
+            out.push_back(c.name);
+        return out;
+    }();
+    return names;
+}
+
+std::pair<Bend, double> curveShape(int index) {
+    const CurvePreset& c = kCurvePresets[std::clamp(index, 0, int(std::size(kCurvePresets)) - 1)];
+    return {c.bend, c.amount};
+}
+
+double unwarp(Bend shape, double amount, double g) {
+    double lo = 0, hi = 1;
+    for (int i = 0; i < 48; i++) {
+        double mid = (lo + hi) / 2;
+        (warp(shape, amount, mid) < g ? lo : hi) = mid;
+    }
+    return (lo + hi) / 2;
+}
+
+double warp(Bend shape, double amount, double f) {
+    f = std::clamp(f, 0.0, 1.0);
+    amount = std::clamp(amount, 0.0, 1.0);
+    double p = 1 + 3 * amount;
+    switch (shape) {
+    case Bend::EaseIn:
+        return std::pow(f, p);
+    case Bend::EaseOut:
+        return 1 - std::pow(1 - f, p);
+    case Bend::EaseInOut:
+        return f < 0.5 ? 0.5 * std::pow(2 * f, p) : 1 - 0.5 * std::pow(2 - 2 * f, p);
+    case Bend::Swing: {
+        // The first half of the cycle takes longer, the second catches up.
+        double k = 0.5 + 0.25 * amount;
+        return f < k ? 0.5 * f / k : 0.5 + 0.5 * (f - k) / (1 - k);
+    }
+    case Bend::Stairs:
+        // Four slow-fast steps per cycle; the slope never goes below zero.
+        return f - amount * std::sin(8 * kPi * f) / (8 * kPi);
+    case Bend::Straight:
+    default:
+        return f;
+    }
+}
+
+double positionAt(const Motion& m, double elapsed) {
+    elapsed -= m.offset;
+    if (m.regionLength <= 0)
+        return m.regionStart;
+    if (m.drawn()) {
+        double local = m.restartEvery > 0 ? floorMod(elapsed, m.restartEvery) : elapsed;
+        double c = floorMod(m.rate * std::max(0.0, local), m.pathCycle);
+        return drawnPosition(m, pathValue(*m.path, pathSegment(*m.path, c), c));
+    }
+    if (m.direction == Direction::Freeze)
+        return m.regionStart + floorMod(m.start, m.regionLength);
+    double local = m.restartEvery > 0 ? floorMod(elapsed, m.restartEvery) : elapsed;
+    double x = unwrapped(m, contentAt(m, travelAt(m, std::max(0.0, local))));
+    double wrap = std::floor(x / m.regionLength);
+    double pos = positionOf(m, wrap, x - wrap * m.regionLength);
+    return pos + orderShift(m, pos, wrap);
+}
+
+namespace {
+
+/// The sweeps between `a` and `b`, before jumps are marked on them.
+int sweepsUnmarked(const Motion& m, double a, double b, Sweep* out, int max) {
+    int count = 0;
+    double e = std::max(0.0, a);
+    while (e < b && count < max) {
+        double base = m.restartEvery > 0 ? std::floor(e / m.restartEvery) * m.restartEvery : 0;
+        double pieceEnd = m.restartEvery > 0 ? std::min(b, base + m.restartEvery) : b;
+        if (m.drawn()) {
+            count += sweepDrawn(m, m.rate * (e - base), m.rate * (pieceEnd - base), base, out + count, max - count);
+            e = pieceEnd;
+            continue;
+        }
+        double da = travelAt(m, e - base);
+        double db = travelAt(m, pieceEnd - base);
+        count += sweepTravel(m, da, db, base, out + count, max - count);
+        e = pieceEnd;
+    }
+    return count;
+}
+
+} // namespace
+
+int sweeps(const Motion& m, double a, double b, Sweep* out, int max, double before) {
+    if (b <= a || m.regionLength <= 0 || m.rate <= 0 || m.direction == Direction::Freeze)
+        return 0;
+    if (m.offset != 0) {
+        // The same moves, that much later; their times (restartBase) are counted back in the caller's time.
+        Motion unshifted = m;
+        unshifted.offset = 0;
+        int count = sweeps(unshifted, a - m.offset, b - m.offset, out, max, before);
+        for (int i = 0; i < count; i++)
+            out[i].restartBase += m.offset;
+        return count;
+    }
+    int count = sweepsUnmarked(m, a, b, out, max);
+    // A jump starts away from the previous place or begins another repeated piece, including a continuous advance.
+    if (std::isnan(before))
+        before = a > 0 ? positionAt(m, a - 1e-6) : NAN;
+    for (int i = 0; i < count; i++) {
+        double last = i > 0 ? out[i - 1].to : before;
+        bool repeatBoundary =
+            repeats(m) && out[i].travelFrom == std::floor(out[i].travelFrom / m.repeatSize) * m.repeatSize;
+        out[i].jumped = std::isfinite(last) && (repeatBoundary || std::abs(out[i].from - last) > 1e-3);
+    }
+    return count;
+}
+
+double nextJump(const Motion& m, double from, double horizon) {
+    Sweep found[kMaxSweeps];
+    double a = from, end = from + horizon;
+    while (a < end) {
+        // A jump right at `from` doesn't count, so the place before it isn't needed.
+        int n = sweeps(m, a, end, found, kMaxSweeps, std::numeric_limits<double>::infinity());
+        if (n == 0)
+            break;
+        for (int i = 0; i < n; i++) {
+            double at = timeAt(m, found[i], found[i].from);
+            if (found[i].jumped && at > from + 1e-6)
+                return at;
+        }
+        if (n < kMaxSweeps)
+            break;
+        // More than one call holds: carry on from where the last sweep ended.
+        double next = timeAt(m, found[n - 1], found[n - 1].to);
+        if (next <= a)
+            break;
+        a = next;
+    }
+    return std::numeric_limits<double>::infinity();
+}
+
+bool retriggers(const float* knobs) {
+    return std::lround(devices::display(devices::playheadInfo().params[knob::kOnJump], knobs[knob::kOnJump])) == 0;
+}
+
+double timeAt(const Motion& m, const Sweep& s, double pos) {
+    if (m.drawn()) {
+        // Within one stretch the place moves one way only, so halving finds when it reaches `pos`.
+        double k = std::floor(s.ownFrom / m.pathCycle);
+        int i = pathSegment(*m.path, s.ownFrom - k * m.pathCycle);
+        double lo = s.ownFrom, hi = s.ownTo;
+        bool rising = s.to > s.from;
+        for (int n = 0; n < 48; n++) {
+            double mid = (lo + hi) / 2;
+            double p = drawnPosition(m, pathValue(*m.path, i, mid - k * m.pathCycle));
+            ((rising ? p < pos : p > pos) ? lo : hi) = mid;
+        }
+        return s.restartBase + (lo + hi) / 2 / m.rate;
+    }
+    double travel = s.travelFrom + std::abs(pos - s.from);
+    return s.restartBase + elapsedAt(m, travel);
+}
+
+NoteShape noteShapeFrom(const float* knobs) {
+    auto shown = [&](int k) { return devices::display(devices::playheadInfo().params[size_t(k)], knobs[k]); };
+    NoteShape s;
+    s.octave = int(std::lround(shown(knob::kOctave)));
+    s.keySteps = int(std::lround(shown(knob::kKeySteps)));
+    s.pick = NotePick(std::lround(shown(knob::kNotes)));
+    s.invert = shown(knob::kInvert) > 0.5f;
+    s.velocity = shown(knob::kVelocity) / 100;
+    return s;
+}
+
+int shapedPitch(const NoteShape& shape, int pitch, int low, int high, const Scale& key) {
+    if (shape.invert) {
+        // Mirrored by key steps, so the mirror stays in the key: the lowest note becomes the highest.
+        int fromLow = key.indexOf(pitch) - key.indexOf(low);
+        int span = key.indexOf(high) - key.indexOf(low);
+        pitch = key.stepBy(low, span - fromLow);
+    }
+    pitch += 12 * shape.octave;
+    if (shape.keySteps != 0)
+        pitch = key.stepBy(pitch, shape.keySteps);
+    return std::clamp(pitch, 0, 127);
+}
+
+bool wantsDrawnPath(const float* knobs) {
+    return std::lround(devices::display(devices::playheadInfo().params[knob::kPath], knobs[knob::kPath])) == 1;
+}
+
+std::vector<AutoPoint> pathFromSettings(const Motion& settings, double cycle, double step) {
+    std::vector<AutoPoint> points;
+    if (settings.regionLength <= 0 || step <= 0)
+        return points;
+    // Offset moves a drawn path too, so the drawing leaves it out.
+    Motion m = settings;
+    m.offset = 0;
+    auto valueAt = [&](double own) { return float((positionAt(m, own / m.rate) - m.regionStart) / m.regionLength); };
+    float last = valueAt(0), slope = 0;
+    points.push_back({0, last, CurveType::Linear, 0});
+    for (double t = step; t < cycle; t += step) {
+        float v = valueAt(t);
+        if (std::abs(v - last) > 0.5f) {
+            // A wrap: carry on to just before the jump at the same speed, hold there, then jump.
+            AutoPoint before{Tick(t) - 1, std::clamp(last + slope * float((step - 1) / step), 0.f, 1.f),
+                             CurveType::Hold, 0};
+            if (before.t > points.back().t)
+                points.push_back(before);
+        } else {
+            slope = v - last;
+        }
+        points.push_back({Tick(t), v, CurveType::Linear, 0});
+        last = v;
+    }
+    // Points on a straight line between their neighbours add nothing to edit: keep only the corners.
+    std::vector<AutoPoint> corners;
+    for (size_t i = 0; i < points.size(); i++) {
+        if (i > 0 && i + 1 < points.size() && points[i - 1].curve == CurveType::Linear &&
+            points[i].curve == CurveType::Linear && !corners.empty()) {
+            const AutoPoint& a = corners.back();
+            const AutoPoint& b = points[i + 1];
+            double x = double(points[i].t - a.t) / double(b.t - a.t);
+            if (std::abs(a.value + (b.value - a.value) * x - points[i].value) < 1e-4)
+                continue;
+        }
+        corners.push_back(points[i]);
+    }
+    return corners;
+}
+
+std::pair<double, double> regionFrom(double startSteps, double lengthSteps, double clipStart, double clipLength) {
+    double step = double(kPpq) / 4;
+    if (lengthSteps <= 0)
+        return {clipStart, std::max(0.0, clipLength)};
+    return {std::max(0.0, startSteps * step), lengthSteps * step};
+}
+
+Motion motionFrom(const float* knobs, const float* deviceKnobs, double clipStart, double clipLength, TimeSig ts) {
+    auto shown = [&](int k) { return devices::display(devices::playheadInfo().params[size_t(k)], knobs[k]); };
+    auto index = [&](int k) { return int(std::lround(shown(k))); };
+    double bar = double(ticksPerBar(ts));
+
+    Motion m;
+    m.rate = playheadRate(index(knob::kRate));
+    m.direction = Direction(index(knob::kDirection));
+    auto [regionStart, regionLength] =
+        regionFrom(shown(knob::kRegionStart), shown(knob::kRegionLength), clipStart, clipLength);
+    m.regionStart = regionStart;
+    m.regionLength = regionLength;
+    // Start and Offset are no longer read: a playhead begins where its segment begins, and the segment says where.
+    m.repeatSize = repeatTicks(index(knob::kRepeatSize), ts);
+    m.repeatTimes = index(knob::kRepeatTimes);
+    // The Curve respaces the repeats inside each repeat group (Repeat's piece times Times), so a group keeps its
+    // length and lands where it would; without Repeat there is nothing to respace.
+    auto [bend, strength] = curveShape(index(knob::kCurve));
+    if (repeats(m)) {
+        m.bend = bend;
+        m.bendAmount = strength;
+        m.bendCycle = m.repeatSize * m.repeatTimes;
+    }
+    auto [speed, speedStrength] = curveShape(index(knob::kSpeedCurve));
+    if (speed != Bend::Straight) {
+        m.speed = speed;
+        m.speedAmount = speedStrength;
+        m.speedCycle = speedOverTicks(index(knob::kSpeedOver), ts);
+    }
+    m.pathCycle = pathCycleTicks(index(knob::kPathCycle), ts);
+    m.order = Order(index(knob::kOrder));
+    m.orderStep = orderStepTicks(index(knob::kOrderStep), ts);
+    m.offset = offsetTicks(index(knob::kTimeOffset), ts);
+    if (deviceKnobs) {
+        const devices::TypeInfo& info = devices::deviceInfo(DeviceType::Playheads);
+        auto device = [&](int k) { return devices::display(info.params[size_t(k)], deviceKnobs[k]); };
+        if (Restart(std::lround(device(knob::kRestart))) == Restart::EveryBars)
+            m.restartEvery = std::round(device(knob::kRestartBars)) * bar;
+    }
+    return m;
+}
+
+double noteLength(const float* knobs, const Motion& m, double written, TimeSig ts, double travel) {
+    const devices::ParamInfo& mode = devices::playheadInfo().params[knob::kLength];
+    double longest = 4 * double(ticksPerBar(ts)); // a frozen or crawling playhead never holds a note forever
+    switch (LengthMode(std::lround(devices::display(mode, knobs[knob::kLength])))) {
+    case LengthMode::FollowsPlayhead: {
+        double rate = std::max(m.rate, 1e-3);
+        bool bentTime = (m.bendCycle > 0 && m.bendAmount > 0 && m.bend != Bend::Straight) ||
+                        (m.speedCycle > 0 && m.speedAmount > 0 && m.speed != Bend::Straight);
+        if (!bentTime || m.drawn() || !std::isfinite(travel) || m.rate < 1e-3)
+            return std::min(longest, written / rate);
+        // Travel and the clip move together inside a piece; a jump out of the note ends it anyway (Retrigger).
+        return std::min(longest, elapsedAt(m, travel + written) - elapsedAt(m, travel));
+    }
+    case LengthMode::Fixed: {
+        const devices::ParamInfo& fixed = devices::playheadInfo().params[knob::kFixedLength];
+        return fixedLengthTicks(int(std::lround(devices::display(fixed, knobs[knob::kFixedLength]))), ts);
+    }
+    case LengthMode::AsWritten:
+    default:
+        return std::min(longest, written);
+    }
+}
+
+} // namespace tessera::playheads

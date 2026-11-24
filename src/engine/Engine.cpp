@@ -1,6 +1,8 @@
 #include "Engine.hpp"
 
+#include "../model/DeviceTypes.hpp"
 #include "../model/Recording.hpp"
+#include "../model/Ties.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -26,12 +28,19 @@ bool hasCurves(const NoteExtras* ex) {
 } // namespace
 
 Engine::Engine()
-    : chains(std::make_unique<std::array<ChainRuntime, kMaxTracks>>()),
+    : playheadClocks(std::make_unique<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>>()),
+      trackStore(std::make_unique<std::array<TrackState, kMaxTracks>>()),
+      previousStore(std::make_unique<std::array<TrackState, kMaxTracks>>()), tracks(*trackStore),
+      previous(*previousStore), chains(std::make_unique<std::array<ChainRuntime, kChainRuntimes>>()),
       knobValues(std::make_unique<float[]>(size_t(kMaxKnobs))),
       modStates(std::make_unique<std::array<mods::State, kMaxModulatorSlots>>()),
       liveKnobs(new std::atomic<float>[size_t(kMaxKnobs)]()), liveBases(new std::atomic<float>[size_t(kMaxKnobs)]()),
       liveModulators(new std::atomic<float>[size_t(kMaxModulatorSlots)]()) {
     indexOfSlot.fill(-1);
+    for (std::atomic<int64_t>& step : liveArpSteps)
+        step.store(-1, std::memory_order_relaxed);
+    for (std::atomic<int>& held : liveArpHeld)
+        held.store(0, std::memory_order_relaxed);
     setSampleRate(sampleRate);
 }
 
@@ -65,7 +74,22 @@ void Engine::setTempo(double newBpm) {
     ticksPerSample = bpm * kPpq / 60.0 / sampleRate;
 }
 
+namespace {
+
+/// Whether something moves a playhead's On while it plays (a curve, another modulator, a knob lane): then the
+/// playheads see it switch where they read, not when the snapshot arrives.
+bool onIsDriven(const Snapshot& s, const PlayheadPlayback& p) {
+    int k = p.knobs + playheads::knob::kOn;
+    return std::binary_search(s.laneKnobs.begin(), s.laneKnobs.end(), k) ||
+           std::any_of(s.modulated.begin(), s.modulated.end(), [k](const KnobModulation& m) { return m.knob == k; }) ||
+           std::any_of(p.exact.begin(), p.exact.end(),
+                       [](const PlayheadPlayback::Exact& x) { return x.param == playheads::knob::kOn; });
+}
+
+} // namespace
+
 void Engine::setSnapshot(const Snapshot* s) {
+    controlBlock++;
     wakeAll();
     frameEpoch++;
     activeMask = 0;
@@ -96,18 +120,28 @@ void Engine::setSnapshot(const Snapshot* s) {
         state.id = tp.id;
         // Extras live in the old snapshot, which is about to be freed: drop them, then find sounding notes' curves
         // again in the new one.
-        std::array<uint64_t, kMaxVoices> clips = state.voiceClip, notes = state.voiceNote;
+        std::array<uint64_t, kMaxTrackVoices> clips = state.voiceClip, notes = state.voiceNote;
         clearPending(state);
         state.voiceClip = clips;
         state.voiceNote = notes;
-        reattachCurves(tp, state);
         state.voices.setRetriggerGap(retriggerGap);
+        state.voices.setAllocation(tp.allocation);
         state.drums.setRetriggerGap(retriggerGap);
-        state.voices.setPolyphony(tp.polyphony);
-        for (int v = state.voices.polyphony(); v < kMaxVoices; v++)
-            if (state.audition[size_t(v)] >= 0)
-                endAudition(state, v);
+        // A new layout of voices (a playhead added, removed or moved) carries every sounding note to its channel's
+        // new place; what the engine keeps per voice goes along.
+        std::array<int8_t, kMaxTrackVoices> moved;
+        if (state.voices.setBlocks(tp.voiceBlocks.data(), tp.voiceBlockCount, &moved))
+            moveVoiceState(state, moved);
+        reattachCurves(tp, state);
         state.chainInfo = i < s->chains.size() ? &s->chains[i] : nullptr;
+        // A launched clip plays through its own chain if it has one now; on the timeline the chain follows the song
+        // (fireArrangement), and one that is gone gives way to the track's.
+        if (const ClipPlayback* launched = tp.slot(state.playing))
+            state.ownClip = launched->ownChain;
+        state.ownInfo = s->ownChainOf(state.ownClip);
+        if (!state.ownInfo)
+            state.ownClip = 0;
+        renumberReaders(state);
         state.autoChannels = std::max(tp.autoChannels, state.chainInfo ? state.chainInfo->autoChannels : 0);
         // Lanes may have come or gone: live controls find their channels again when they next move.
         state.liveAutoMask = 0;
@@ -155,63 +189,170 @@ void Engine::setSnapshot(const Snapshot* s) {
                     feeds[size_t(from.busSlot)] = true;
             }
         }
-    for (size_t i = trackCount; i < tracks.size(); i++)
-        tracks[i].chain = -1;
+    for (size_t i = trackCount; i < tracks.size(); i++) {
+        tracks[i].chain = tracks[i].ownChain = -1;
+        tracks[i].ownInfo = nullptr;
+        tracks[i].ownClip = 0;
+    }
     // Tracks moved to new indices: wakeAll() above brought every voice clock to now (new tracks start there).
     clockOf.fill(clockAt);
     assignChains();
+    anyCvOut = false;
     for (size_t i = 0; i < trackCount; i++)
-        if (!s->tracks[i]->audible)
+        anyCvOut = anyCvOut || movesWhileStopped(tracks[i]);
+    anyCvOut = anyCvOut || s->turnsRackKnobs;
+    knobSetsLeft = true;
+    for (size_t i = 0; i < trackCount; i++) {
+        if (!s->tracks[i]->audible) {
             releaseAll(tracks[i]);
+            continue;
+        }
+        // A playhead turned off (its dot, Shift+M, another one soloed) stops its notes now, not when they end.
+        // One a curve or a lane turns off stops when the playheads next read (Engine::playPlayheads).
+        if (const ChainPlayback* chain = tracks[i].readInfo()) {
+            auto& clocks = (*playheadClocks)[i];
+            for (size_t k = 0; k < chain->playheads.size() && k < clocks.size(); k++) {
+                const PlayheadPlayback& p = chain->playheads[k];
+                bool on = p.knobCount <= playheads::knob::kOn || playheads::playsNow(&s->knobs[size_t(p.knobs)]) ||
+                          onIsDriven(*s, p);
+                if (!p.audible || !on) {
+                    silencePlayhead(tracks[i], uint8_t(k + 1));
+                    clocks[k].heard = false;
+                }
+            }
+        }
+    }
     knobsDirty = true;
     seekAll();
 }
 
 void Engine::assignChains() {
-    // Runtimes stay with their track (by ID), so notes in flight carry over an edit.
-    std::array<bool, kMaxTracks> taken{};
+    // Runtimes stay with their chain (by its track's or clip's ID), so notes in flight carry over an edit.
+    std::array<bool, kChainRuntimes> taken{};
+    auto kept = [&](uint64_t key) {
+        for (size_t r = 0; key && r < chains->size(); r++)
+            if ((*chains)[r].owner == key) {
+                taken[r] = true;
+                return int(r);
+            }
+        return -1;
+    };
+    auto fresh = [&](uint64_t key, const ChainPlayback* info) {
+        for (size_t r = 0; r < chains->size(); r++) {
+            if (taken[r])
+                continue;
+            taken[r] = true;
+            ChainRuntime& rt = (*chains)[r];
+            rt.owner = key;
+            rt.structure = info ? info->structure : 0;
+            rt.idCount = -1;
+            rt.chain.clear();
+            return int(r);
+        }
+        return -1;
+    };
     for (size_t i = 0; i < trackCount; i++) {
         TrackState& state = tracks[i];
-        state.chain = -1;
-        for (size_t r = 0; r < chains->size(); r++) {
-            if ((*chains)[r].owner == state.id) {
-                state.chain = int(r);
-                taken[r] = true;
-                break;
-            }
-        }
+        state.chain = kept(state.id.value);
+        state.ownChain = state.ownInfo ? kept(state.ownClip) : -1;
     }
     for (size_t i = 0; i < trackCount; i++) {
         TrackState& state = tracks[i];
-        if (state.chain < 0) {
-            for (size_t r = 0; r < chains->size(); r++) {
-                if (taken[r])
-                    continue;
-                taken[r] = true;
-                ChainRuntime& fresh = (*chains)[r];
-                fresh.owner = state.id;
-                fresh.structure = state.chainInfo ? state.chainInfo->structure : 0;
-                fresh.chain.clear();
-                state.chain = int(r);
-                break;
-            }
-        }
         if (state.chain < 0)
-            continue;
-        ChainRuntime& rt = (*chains)[size_t(state.chain)];
-        // Expression curves live in the old snapshot, which is about to be freed.
-        rt.chain.dropExtras();
-        uint64_t structure = state.chainInfo ? state.chainInfo->structure : 0;
-        if (rt.structure != structure) {
-            // Devices came or went: what they held is dropped, and notes waiting for them to end end now.
-            rt.structure = structure;
-            rt.chain.clear();
-            releaseOpenVoices(state);
+            state.chain = fresh(state.id.value, state.chainInfo);
+        if (state.ownInfo && state.ownChain < 0)
+            state.ownChain = fresh(state.ownClip, state.ownInfo);
+        if (state.ownChain < 0) {
+            state.ownInfo = nullptr;
+            state.ownClip = 0;
+        }
+        for (auto [runtime, info] : {std::pair<int, const ChainPlayback*>{state.chain, state.chainInfo},
+                                     {state.ownChain, state.ownInfo}}) {
+            if (runtime < 0)
+                continue;
+            ChainRuntime& rt = (*chains)[size_t(runtime)];
+            // Expression curves live in the old snapshot, which is about to be freed.
+            rt.chain.dropExtras();
+            uint64_t structure = info ? info->structure : 0;
+            std::array<uint64_t, kMaxDevices> ids{};
+            std::array<bool, kMaxDevices> ons{};
+            int idCount = info ? std::min<int>(int(info->devices.size()), kMaxDevices) : 0;
+            for (int k = 0; k < idCount; k++) {
+                ids[size_t(k)] = info->devices[size_t(k)].id;
+                ons[size_t(k)] = info->devices[size_t(k)].on;
+            }
+            if (rt.structure != structure) {
+                rt.structure = structure;
+                if (rt.idCount >= 0) {
+                    // Devices came, went, moved or were switched: each one that stays keeps what it holds, so the
+                    // track plays on through the edit (a live set changes its chain while it plays).
+                    ChainSink sink(*this, *snapshot->tracks[i], state);
+                    rt.chain.restructure(rt.ids.data(), rt.ons.data(), rt.idCount, ids.data(), ons.data(), idCount,
+                                         freeTick, sink);
+                } else {
+                    rt.chain.clear();
+                    releaseOpenVoices(state);
+                }
+            }
+            rt.ids = ids;
+            rt.ons = ons;
+            rt.idCount = idCount;
         }
     }
     for (size_t r = 0; r < chains->size(); r++)
         if (!taken[r])
-            (*chains)[r].owner = TrackId();
+            (*chains)[r].owner = 0;
+}
+
+int Engine::claimRuntime(uint64_t key, uint64_t structure) {
+    for (size_t r = 0; r < chains->size(); r++)
+        if ((*chains)[r].owner == key)
+            return int(r);
+    for (size_t r = 0; r < chains->size(); r++) {
+        ChainRuntime& rt = (*chains)[r];
+        if (rt.owner != 0)
+            continue;
+        rt.owner = key;
+        rt.structure = structure;
+        rt.idCount = -1;
+        rt.chain.clear();
+        return int(r);
+    }
+    return -1;
+}
+
+void Engine::useOwnChain(TrackState& state, uint64_t clip) {
+    const ChainPlayback* info = snapshot ? snapshot->ownChainOf(clip) : nullptr;
+    if (!info)
+        clip = 0;
+    if (clip == state.ownClip)
+        return;
+    if (state.ownChain >= 0) {
+        // Switching clips cuts what the old chain still held, as a launch does; its notes already sounding end as
+        // they would, and open ones end now.
+        ChainRuntime& old = (*chains)[size_t(state.ownChain)];
+        old.chain.clear();
+        old.owner = 0;
+        releaseOpenVoices(state);
+    }
+    state.ownClip = clip;
+    state.ownInfo = info;
+    state.ownChain = info ? claimRuntime(clip, info->structure) : -1;
+    if (state.ownChain < 0) {
+        state.ownInfo = nullptr;
+        state.ownClip = 0;
+    }
+    // Another chain may have other playheads: they read again from now.
+    renumberReaders(state);
+    rewindPlayheads(state);
+}
+
+double Engine::chainDue(const TrackState& state) const {
+    double due = INFINITY;
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            due = std::min(due, (*chains)[size_t(runtime)].chain.nextDue());
+    return due;
 }
 
 void Engine::releaseOpenVoices(TrackState& state) {
@@ -250,6 +391,24 @@ void Engine::resolveSlots(const TrackPlayback& tp, TrackState& state) {
         state.queued = find(state.queued, state.queuedClip);
         if (state.queued == kNoSlot)
             state.queued = kNothingQueued;
+    }
+    // A next action set or taken off while the clip plays: it counts from the loop the clip is in now, or the launch
+    // it picked is called off.
+    const ClipPlayback* clip = tp.slot(state.playing);
+    if (clip && clip->nextSpan > 0) {
+        if (!std::isfinite(state.actionFrom)) {
+            double loop = double(clip->loopLength());
+            double played = playTick - state.launchTick;
+            state.actionFrom =
+                clip->looping && loop > 0 ? state.launchTick + std::floor(played / loop) * loop : state.launchTick;
+            state.actionKept = false;
+        }
+    } else {
+        state.actionFrom = NAN;
+        if (state.queuedByAction) {
+            state.queued = kNothingQueued;
+            state.queuedByAction = false;
+        }
     }
 }
 
@@ -295,12 +454,56 @@ void Engine::setPlayMode(PlayMode m) {
         return;
     wakeAll();
     mode = m;
+    // A track sent back to the timeline in Clips mode: in Timeline mode every track is; back in Clips none is.
+    for (size_t i = 0; i < trackCount; i++)
+        tracks[i].onTimeline = false;
     for (size_t i = 0; i < trackCount; i++) {
         if (m == PlayMode::Arranger)
             backToArrangement(*snapshot->tracks[i], tracks[i]);
         else if (!tracks[i].overridden)
             releaseClipVoices(tracks[i]); // the arrangement goes quiet; launched clips play on
     }
+    // Over to the clips with none launched: the picked scene comes in, on the launch line while playing.
+    if (m == PlayMode::Launcher && snapshot && nothingLaunched())
+        launch({LaunchEvent::Kind::Scene, 0, pickedScene, false, false});
+}
+
+bool Engine::nothingLaunched() const {
+    for (size_t i = 0; i < trackCount; i++)
+        if (tracks[i].playing != kNoSlot || tracks[i].queued != kNothingQueued || tracks[i].onTimeline)
+            return false;
+    return true;
+}
+
+void Engine::toTimeline(const TrackPlayback& tp, TrackState& state, double at) {
+    backToArrangement(tp, state);
+    state.onTimeline = mode == PlayMode::Launcher;
+    // From the launch line itself, so a note right on it still plays.
+    state.arrangementCursor = arrangementIndex(tp, songTickAt(at));
+}
+
+void Engine::queueTimeline(const TrackPlayback& tp, TrackState& state, bool immediate) {
+    if (followsArrangement(state) && state.queued == kNothingQueued)
+        return;
+    double q = double(snapshot->launchQuantize);
+    double wait = q > 0 ? std::ceil(songTick / q) * q - songTick : 0;
+    if (!playing || immediate || wait <= 0) {
+        toTimeline(tp, state, playTick);
+        return;
+    }
+    state.queued = kBackToTimeline;
+    state.queuedByAction = false;
+    state.queuedClip = ClipId();
+    state.queuedAt = playTick + wait;
+    state.queuedClipTime = NAN;
+}
+
+void Engine::start() {
+    if (playing)
+        return;
+    if (mode == PlayMode::Launcher && snapshot && nothingLaunched())
+        launch({LaunchEvent::Kind::Scene, 0, pickedScene, true, false});
+    play();
 }
 
 void Engine::backToArrangement(const TrackPlayback& tp, TrackState& state) {
@@ -311,6 +514,8 @@ void Engine::backToArrangement(const TrackPlayback& tp, TrackState& state) {
     state.playing = kNoSlot;
     state.playingClip = ClipId();
     state.queued = kNothingQueued;
+    state.queuedByAction = false;
+    state.actionFrom = NAN;
     state.overridden = false;
     seekTrack(tp, state);
 }
@@ -373,14 +578,63 @@ void Engine::pushCaptureStop(const TrackPlayback& tp) {
 }
 
 void Engine::releaseAll(TrackState& state) {
-    if (state.chain >= 0)
-        (*chains)[size_t(state.chain)].chain.clear();
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            (*chains)[size_t(runtime)].chain.clear();
     clearPending(state);
     state.voices.releaseAll();
     state.drums.releaseAll();
+    state.glide.fill(VoiceGlide());
+    state.glidingVoices = 0;
     holdDrumCurves(state);
     state.audition.fill(-1);
     state.auditions = 0;
+}
+
+void Engine::renumberReaders(TrackState& state) {
+    // Playheads are numbered by their place: one added or removed before another renumbers it, and what it sounds
+    // follows it by its ID (so turning another off never stops its notes).
+    std::array<uint8_t, playheads::kMaxPlayheads + 1> now{};
+    std::array<uint64_t, playheads::kMaxPlayheads> ids{};
+    if (const ChainPlayback* reader = state.readInfo())
+        for (size_t k = 0; k < reader->playheads.size() && k < ids.size(); k++)
+            ids[k] = reader->playheads[k].id;
+    for (size_t old = 0; old < state.readerIds.size(); old++)
+        for (size_t k = 0; k < ids.size() && state.readerIds[old] != 0; k++)
+            if (ids[k] == state.readerIds[old])
+                now[old + 1] = uint8_t(k + 1);
+    for (uint8_t& r : state.voiceReader)
+        r = r <= playheads::kMaxPlayheads ? now[r] : 0;
+    for (uint8_t& r : state.laneReader)
+        r = r <= playheads::kMaxPlayheads ? now[r] : 0;
+    state.readerIds = ids;
+}
+
+void Engine::silencePlayhead(TrackState& state, uint8_t lane) {
+    if (lane == 0)
+        return;
+    int kept = 0;
+    for (int i = 0; i < state.pendingCount; i++)
+        if (state.pending[size_t(i)].lane != lane)
+            state.pending[size_t(kept++)] = state.pending[size_t(i)];
+    state.pendingCount = kept;
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            (*chains)[size_t(runtime)].chain.dropLane(lane);
+    for (int v = 0; v < kMaxTrackVoices; v++) {
+        if (state.voiceReader[size_t(v)] != lane)
+            continue;
+        state.voiceReader[size_t(v)] = 0;
+        if (state.audition[size_t(v)] < 0 && state.voices.voice(v).held) {
+            state.voices.release(v);
+            setVoiceCurves(state, v, nullptr);
+        }
+    }
+    for (int l = 0; l < kMaxDrumLanes; l++)
+        if (state.laneReader[size_t(l)] == lane) {
+            state.laneReader[size_t(l)] = 0;
+            state.drums.cut(l); // a retrigger waiting to rise goes too
+        }
 }
 
 void Engine::endAudition(TrackState& state, int voice) {
@@ -388,8 +642,35 @@ void Engine::endAudition(TrackState& state, int voice) {
     state.auditions--;
 }
 
+void Engine::moveVoiceState(TrackState& state, const std::array<int8_t, kMaxTrackVoices>& moved) {
+    for (int v = 0; v < kMaxTrackVoices; v++)
+        if (moved[size_t(v)] < 0 && state.audition[size_t(v)] >= 0)
+            endAudition(state, v);
+    auto move = [&](auto& list, auto empty) {
+        auto old = list;
+        list.fill(empty);
+        for (int v = 0; v < kMaxTrackVoices; v++)
+            if (moved[size_t(v)] >= 0)
+                list[size_t(moved[size_t(v)])] = old[size_t(v)];
+    };
+    move(state.audition, int32_t(-1));
+    move(state.voiceExtras, static_cast<const NoteExtras*>(nullptr));
+    move(state.voiceStart, 0.0);
+    move(state.voiceLength, 0.0);
+    move(state.voiceScale, 1.0);
+    move(state.voicePart, uint8_t(0));
+    move(state.voiceReader, uint8_t(0));
+    move(state.voiceClip, uint64_t(0));
+    move(state.voiceNote, uint64_t(0));
+    move(state.liveBend, 0.f);
+    move(state.liveTimbre, 0.f);
+    move(state.livePress, 0.f);
+    move(state.glide, VoiceGlide());
+    state.glidingVoices = int(std::count_if(state.glide.begin(), state.glide.end(), [](const VoiceGlide& g) { return g.any(); }));
+}
+
 void Engine::advanceAuditions(TrackState& state) {
-    for (int v = 0; v < kMaxVoices; v++) {
+    for (int v = 0; v < kMaxTrackVoices; v++) {
         int32_t& left = state.audition[size_t(v)];
         if (left > 0 && --left == 0) {
             state.voices.release(v);
@@ -422,8 +703,19 @@ void Engine::audition(const AuditionEvent& event) {
             return;
         }
         if (event.on) {
-            int v = state.voices.noteOn(event.pitch, event.velocity, 0.5f, std::numeric_limits<double>::infinity(),
-                                        event.id);
+            constexpr double kInf = std::numeric_limits<double>::infinity();
+            // On one voice, a key pressed while another is held plays legato, as in sound(): a track with no
+            // devices plays live keys here, and they must not retrigger either (issue #12).
+            int v = -1;
+            if ((event.id & chain::kLiveNote) && state.voices.sizeFor(0) == 1) {
+                int held = state.voices.continued(event.pitch, 0, freeTick, 1e-6);
+                if (held >= 0 && (state.voices.voice(held).id & chain::kLiveNote))
+                    v = held;
+            }
+            if (v >= 0)
+                state.voices.takeOver(v, event.pitch, event.velocity, 0.5f, kInf, event.id, freeTick);
+            else
+                v = state.voices.noteOn(event.pitch, event.velocity, 0.5f, kInf, event.id, 0, freeTick);
             clearLiveVoice(state, v);
             if (state.audition[size_t(v)] < 0)
                 state.auditions++;
@@ -534,6 +826,7 @@ void Engine::liveNote(const LiveNote& note) {
     uint8_t noteChannel = note.source == LiveSource::Midi ? uint8_t(std::clamp(part + 1, 1, 16)) : 1;
     RecordEvent e;
     e.pitch = pitch;
+    e.inPitch = note.pitch;
     e.velocity = note.velocity;
     e.channel = noteChannel;
     e.on = note.on;
@@ -650,9 +943,9 @@ void Engine::liveValue(const LiveValue& lv) {
             TrackState& state = tracks[i];
             int v = state.voices.find(id);
             if (v >= 0) {
-                std::array<float, kMaxVoices>& target = lv.curve == NoteCurve::Pitch    ? state.liveBend
-                                                        : lv.curve == NoteCurve::Timbre ? state.liveTimbre
-                                                                                        : state.livePress;
+                std::array<float, kMaxTrackVoices>& target = lv.curve == NoteCurve::Pitch    ? state.liveBend
+                                                             : lv.curve == NoteCurve::Timbre ? state.liveTimbre
+                                                                                             : state.livePress;
                 target[size_t(v)] = lv.value;
                 state.autoChanges++;
             }
@@ -685,8 +978,13 @@ void Engine::stop() {
     applyQueued();
     if (std::isfinite(pendingSeekTo))
         seek(pendingSeekTo);
-    for (TrackState& t : tracks)
+    for (TrackState& t : tracks) {
         releaseAll(t);
+        t.voices.forgetUse(); // each playhead channel sends one voice again until it needs more
+    }
+    // Their chains went quiet: no Pattern step plays now (a key played while stopped reports again).
+    for (std::atomic<int64_t>& step : liveArpSteps)
+        step.store(-1, std::memory_order_relaxed);
 }
 
 void Engine::reset() {
@@ -700,8 +998,12 @@ void Engine::reset() {
     applyQueued();
     for (TrackState& t : tracks) {
         t.launchTick = 0;
+        if (std::isfinite(t.actionFrom))
+            t.actionFrom = 0;
         releaseAll(t);
     }
+    for (std::atomic<int64_t>& step : liveArpSteps)
+        step.store(-1, std::memory_order_relaxed);
     seekAll();
     resetPending = true;
     if (wasRecording)
@@ -718,13 +1020,15 @@ void Engine::applyQueued() {
 
 void Engine::releaseClipVoices(TrackState& state) {
     // Live notes in the chain lose what the devices held for them; their key release still ends them.
-    if (state.chain >= 0)
-        (*chains)[size_t(state.chain)].chain.clear();
+    for (int runtime : {state.chain, state.ownChain})
+        if (runtime >= 0)
+            (*chains)[size_t(runtime)].chain.clear();
+    rewindPlayheads(state);
     state.pendingCount = 0;
     state.drums.releaseAll();
     for (int v = 0; v < state.voices.polyphony(); v++)
         if (state.audition[size_t(v)] < 0)
-            state.voices.release(v);
+            state.voices.cut(v);
 }
 
 void Engine::launch(const LaunchEvent& e) {
@@ -746,6 +1050,7 @@ void Engine::launch(const LaunchEvent& e) {
                         double wait = q > 0 ? waitForPhase(e.clipTime - double(clip->loopStart), q) : 0;
                         if (wait > 0) {
                             state.queued = e.index;
+                            state.queuedByAction = false;
                             state.queuedClip = tp.slotClips[size_t(e.index)];
                             state.queuedAt = playTick + wait;
                             state.queuedClipTime = e.clipTime;
@@ -779,11 +1084,12 @@ void Engine::launch(const LaunchEvent& e) {
                 queueLaunch(tp, state, kNoSlot, e.immediate);
             break;
         case LaunchEvent::Kind::BackToArrangement:
-            if (mode == PlayMode::Arranger)
-                backToArrangement(tp, state);
+            if (e.track == 0 || state.id.value == e.track)
+                queueTimeline(tp, state, e.immediate);
             break;
         case LaunchEvent::Kind::Reset:
             backToArrangement(tp, state);
+            state.onTimeline = false;
             break;
         }
     }
@@ -817,12 +1123,17 @@ void Engine::queueLaunch(const TrackPlayback& tp, TrackState& state, int slot, b
         return;
     }
     state.queued = slot;
+    state.queuedByAction = false;
     state.queuedClip = slot >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
     state.queuedAt = playTick + wait;
     state.queuedClipTime = NAN;
 }
 
 void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at) {
+    if (state.queued == kBackToTimeline) {
+        toTimeline(tp, state, at);
+        return;
+    }
     double clipTime = state.queuedClipTime;
     int slot = state.queued;
     const ClipPlayback* clip = tp.slot(slot);
@@ -836,14 +1147,96 @@ void Engine::switchQueued(const TrackPlayback& tp, TrackState& state, double at)
 
 void Engine::switchTo(const TrackPlayback& tp, TrackState& state, int slot, double at) {
     releaseClipVoices(state);
+    state.onTimeline = false;
     state.queuedClipTime = NAN;
+    ClipId before = state.playingClip;
     state.playing = tp.slot(slot) ? slot : kNoSlot;
     state.playingClip = state.playing >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
+    if (before.valid() && before != state.playingClip)
+        state.previousClip = before;
+    const ClipPlayback* launched = tp.slot(state.playing);
+    useOwnChain(state, launched ? launched->ownChain : 0);
+    state.actionFrom = launched && launched->nextSpan > 0 ? at : NAN;
+    state.actionKept = false;
     state.queued = kNothingQueued;
+    state.queuedByAction = false;
     state.launchTick = at;
     state.cursor = 0;
     state.overridden = true;
     pushCapture(tp, state, at);
+}
+
+void Engine::setNextActions(bool on) {
+    if (on == nextActionsOn)
+        return;
+    nextActionsOn = on;
+    wakeAll();
+    if (on || !snapshot)
+        return;
+    for (size_t i = 0; i < trackCount; i++) {
+        TrackState& state = tracks[i];
+        if (state.queuedByAction) {
+            state.queued = kNothingQueued;
+            state.queuedByAction = false;
+        }
+    }
+}
+
+double Engine::nextActionDue(const TrackPlayback& tp, const TrackState& state) const {
+    const ClipPlayback* clip = tp.slot(state.playing);
+    if (!clip || clip->nextSpan <= 0 || !std::isfinite(state.actionFrom) || state.queued != kNothingQueued)
+        return INFINITY;
+    double span = double(clip->nextSpan);
+    if (!nextActionsOn || state.actionKept)
+        return state.actionFrom + span; // only the count starts over, at its end
+    // Picked one launch line before it happens, so the clip that comes next blinks as a launch does.
+    double q = double(clip->launchQuantize >= 0 ? clip->launchQuantize : snapshot->launchQuantize);
+    return state.actionFrom + span - std::min(q, span);
+}
+
+double Engine::drawAction() {
+    uint64_t z = ++actionDraws * 0x9E3779B97F4A7C15ull + uint64_t(roll) * 0xD1B54A32D192ED03ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    z ^= z >> 31;
+    return double(z >> 11) * (1.0 / 9007199254740992.0);
+}
+
+void Engine::decideNextAction(const TrackPlayback& tp, TrackState& state, double curPlay) {
+    double due = nextActionDue(tp, state);
+    if (curPlay < due)
+        return;
+    const ClipPlayback& clip = *tp.slot(state.playing);
+    double span = double(clip.nextSpan);
+    if (!nextActionsOn || state.actionKept) {
+        // The count ends with the clip playing on (held clips count on the same way), and the next one starts.
+        state.actionFrom += span * std::floor((curPlay - state.actionFrom) / span);
+        state.actionKept = false;
+        if (!nextActionsOn || curPlay < nextActionDue(tp, state))
+            return;
+    }
+    double fire = state.actionFrom + span;
+    NextAction action = rollNextAction(clip.next, drawAction());
+    int previous = kNoSlot;
+    if (state.previousClip.valid())
+        for (size_t j = 0; j < tp.slotClips.size(); j++)
+            if (tp.slotClips[j] == state.previousClip && tp.slot(int(j))) {
+                previous = int(j);
+                break;
+            }
+    NextActionTarget target = pickNextAction(action, clip.next.scope, tp.filled, state.playing, previous, drawAction());
+    if (target.kind == NextActionTarget::Kind::Keep) {
+        state.actionKept = true;
+        return;
+    }
+    int slot = target.kind == NextActionTarget::Kind::Timeline                    ? kBackToTimeline
+               : target.kind == NextActionTarget::Kind::Launch && tp.slot(target.slot) ? target.slot
+                                                                                       : kNoSlot;
+    state.queued = slot;
+    state.queuedByAction = true;
+    state.queuedClip = slot >= 0 ? tp.slotClips[size_t(slot)] : ClipId();
+    state.queuedAt = fire;
+    state.queuedClipTime = NAN;
 }
 
 double Engine::clipPosition(size_t i) const {
@@ -882,12 +1275,23 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
     // Modulation runs at control rate, before the notes of this sample read the knobs it sets.
     uint64_t sample = sampleCount++;
     clockAt = sample;
+    bool forced = controlNow;
     bool controlTick = (sample & (kControlBlock - 1)) == 0 || controlNow;
     controlNow = false;
     if (controlTick) {
         advanceKnobLanes();
-        advanceModulation();
+        // Settled while stopped, with no modulator sending CV out, modulators only feed the strip's live graphs
+        // and the knobs live notes would read (a live note wakes everything): an eighth of the rate does.
+        bool slowMods = !playing && quietTicks >= kSettleTicks && !anyCvOut;
+        if (!slowMods || (sample & (8 * kControlBlock - 1)) == 0) {
+            advanceModulation();
+            skippedMods = 0;
+        } else {
+            skippedMods++;
+        }
+        quietTicks = playing || forced ? 0 : std::min(quietTicks + 1, kSettleTicks);
     }
+    bool settled = !playing && quietTicks >= kSettleTicks;
 
     if (playing && std::isfinite(pendingSeekTo) && playTick >= pendingSeekAt - 1e-9)
         seek(pendingSeekTo);
@@ -900,6 +1304,8 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         // back to the loop start. A track asleep through it (its wake time rounds a hair late, as play and song
         // ticks drift apart over a long session) would skip the notes at the loop start for a whole pass.
         bool wrapped = spanCount == 2;
+        if (wrapped)
+            roll++; // a new pass of the song loop rolls again for what is on "New every play"
         if (wrapped && playTick > windowPlay + (spans[0][1] - spans[0][0])) {
             // The loop starts over: notes still sounding on the arrangement stop (notes started inside the loop
             // already end at its end; this catches the rest). When the wrap falls exactly on this sample's end, they
@@ -912,13 +1318,20 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
                 releaseClipVoices(tracks[i]);
             }
         }
-        for (size_t i = 0; i < trackCount; i++) {
-            if (!wrapped && playTick < wakeAt[i])
-                continue; // most tracks have nothing due on most samples
-            catchUp(i, sample);
-            scheduleTrackNow(*snapshot->tracks[i], tracks[i], prevPlay, playTick);
-            wakeAt[i] = nextWake(*snapshot->tracks[i], tracks[i], playTick);
-            idleUntil[i] = 0; // its outputs may have changed
+        if (wrapped || playTick >= earliestWake) {
+            for (size_t i = 0; i < trackCount; i++) {
+                if (!wrapped && playTick < wakeAt[i])
+                    continue; // most tracks have nothing due on most samples
+                catchUp(i, sample);
+                scheduleTrackNow(*snapshot->tracks[i], tracks[i], prevPlay, playTick);
+                wakeAt[i] = nextWake(*snapshot->tracks[i], tracks[i], playTick);
+                idleUntil[i] = 0; // its outputs may have changed
+                earliestIdleEnd = 0;
+            }
+            // Over all of them again: a track can wake another it feeds, one already passed in this loop.
+            earliestWake = INFINITY;
+            for (size_t i = 0; i < trackCount; i++)
+                earliestWake = std::min(earliestWake, wakeAt[i]);
         }
         if (events.loop && capturing)
             captureLoopWrap();
@@ -927,14 +1340,15 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
             e.kind = RecordEvent::Kind::LoopWrap;
             pushRecord(e);
         }
-    } else {
-        // Stopped: live notes still go through the chains, and the notes they made still end.
+    } else if (controlTick || sample >= earliestIdleEnd) {
+        // Stopped: live notes still go through the chains, and the notes they made still end. While every track is
+        // idle (earliestIdleEnd; a live note or any change wakes them all) there is nothing to visit.
         for (size_t i = 0; i < trackCount; i++) {
-            if (!controlTick && sample < idleUntil[i])
-                continue; // no chain message or note end is due (idleUntilControl)
+            if (sample < idleUntil[i] && (!controlTick || idleUntil[i] == kAsleep))
+                continue; // no chain message or note end is due (idleUntilControl), or it sleeps until woken
             catchUp(i, sample);
             TrackState& state = tracks[i];
-            if (state.chain >= 0 && (*chains)[size_t(state.chain)].chain.nextDue() < freeTick)
+            if (chainDue(state) < freeTick)
                 runChain(*snapshot->tracks[i], state, freeTick);
             if (state.voices.earliestEnd() < freeTick)
                 state.voices.releaseEndedBefore(freeTick);
@@ -964,16 +1378,17 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
     size_t parity = frames == buffers[1] ? 1 : 0;
 
     // Automation runs at control rate too: CV curves don't need every sample, and it is the costliest part.
-    for (size_t i = 0; i < trackCount; i++) {
-        if (!controlTick && sample < idleUntil[i])
-            continue; // its outputs can't change before the next control tick
+    bool anyAwake = controlTick || sample >= earliestIdleEnd;
+    for (size_t i = 0; anyAwake && i < trackCount; i++) {
+        if (sample < idleUntil[i] && (!controlTick || idleUntil[i] == kAsleep))
+            continue; // its outputs can't change before the next control tick, or it sleeps until woken
         catchUp(i, sample);
         TrackState& state = tracks[i];
         // The track's playback data is only looked at when there is work: a control tick or a changed frame.
         if (controlTick)
             advanceAutomation(*snapshot->tracks[i], state);
         // Read before the drum curves move on: a curve that ends on this sample still writes its last value.
-        bool curved = state.curvedVoices > 0 || state.curvedLanes > 0;
+        bool curved = state.curvedVoices > 0 || state.glidingVoices > 0 || state.curvedLanes > 0;
         if (state.curvedLanes > 0)
             advanceDrumCurves(state);
         if (state.busSlot >= 0) {
@@ -993,14 +1408,28 @@ void Engine::process(TrackFrame* frames, TransportEvents& events) {
         state.voices.advance();
         state.drums.advance();
         clockOf[i] = sample + 1;
-        idleUntil[i] = idleUntilControl(state, sample) ? (sample | (kControlBlock - 1)) + 1 : 0;
+        if (!idleUntilControl(state, sample))
+            idleUntil[i] = 0;
+        else if (settled && !movesWhileStopped(state))
+            idleUntil[i] = kAsleep;
+        else
+            idleUntil[i] = (sample | (kControlBlock - 1)) + 1;
+    }
+    if (anyAwake) {
+        earliestIdleEnd = ~uint64_t(0);
+        for (size_t i = 0; i < trackCount; i++)
+            earliestIdleEnd = std::min(earliestIdleEnd, idleUntil[i]);
     }
     clockAt = sample + 1; // events until the next process() happen at the next sample
 }
 
+bool Engine::movesWhileStopped(const TrackState& state) const {
+    return state.chainInfo && !state.chainInfo->autoRoutes.empty();
+}
+
 bool Engine::idleUntilControl(const TrackState& state, uint64_t sample) const {
     uint64_t next = (sample | (kControlBlock - 1)) + 1;
-    if (state.curvedVoices > 0 || state.curvedLanes > 0 || state.auditions > 0 || state.drums.counting() ||
+    if (state.curvedVoices > 0 || state.glidingVoices > 0 || state.curvedLanes > 0 || state.auditions > 0 || state.drums.counting() ||
         !state.voices.quietFor(int64_t(next - sample)))
         return false; // something counts down or moves on every sample
     // Both bus buffers must hold the current outputs, or the skipped samples would publish an older one.
@@ -1008,7 +1437,7 @@ bool Engine::idleUntilControl(const TrackState& state, uint64_t sample) const {
     if (state.busSlot >= 0 && (state.written[0] != version || state.written[1] != version))
         return false;
     // Playing, scheduling wakes the track for anything due. Stopped, nothing does: only idle without work in flight.
-    if (!playing && (state.voices.anyEnding() || (state.chain >= 0 && !(*chains)[size_t(state.chain)].chain.idle())))
+    if (!playing && (state.voices.anyEnding() || std::isfinite(chainDue(state))))
         return false;
     return true;
 }
@@ -1050,13 +1479,20 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
     constexpr double kEarly = 1e-6;
     // Voice ends and the chain's messages are on the engine clock.
     double wake = state.voices.earliestEnd() - clockOffset();
-    if (state.chain >= 0)
-        wake = std::min(wake, (*chains)[size_t(state.chain)].chain.nextDue() - clockOffset());
+    wake = std::min(wake, chainDue(state) - clockOffset());
     for (int i = 0; i < state.pendingCount; i++)
         wake = std::min(wake, state.pending[size_t(i)].start);
     if (state.queued != kNothingQueued)
         wake = std::min(wake, state.queuedAt);
+    else if (std::isfinite(state.actionFrom) && !followsArrangement(state))
+        wake = std::min(wake, nextActionDue(track, state));
     if (followsArrangement(state)) {
+        if (runs(track) && readByPlayheads(state) && !track.instances.empty()) {
+            // Playheads read the timeline's clips ahead: wake to read on (queued notes wake it too).
+            if (!std::isfinite(state.songLook.until))
+                return -INFINITY;
+            wake = std::min(wake, now + (state.songLook.until - songTick));
+        }
         // The arrangement is flat and in song ticks, which keep pace with play ticks until the song loop wraps.
         if (runs(track) && state.arrangementCursor < track.arrangement.size())
             wake = std::min(wake, now + (track.arrangement[state.arrangementCursor].start - songTick));
@@ -1066,6 +1502,13 @@ double Engine::nextWake(const TrackPlayback& track, const TrackState& state, dou
     }
     const ClipPlayback* clip = track.slot(state.playing);
     if (clip && runs(track)) {
+        if (readByPlayheads(state)) {
+            // Playheads read ahead a block at a time and queue their notes: wake for those, or to read on.
+            const TrackState::PlayheadLook& look = state.playheadLook;
+            if (look.launch != state.launchTick || !std::isfinite(look.until))
+                return -INFINITY;
+            return std::min(wake, state.launchTick + look.until) - kEarly;
+        }
         if (!clip->laneLoops.empty())
             return -INFINITY; // drum lanes with their own loops: every sample
         double length = double(clip->loopLength());
@@ -1090,6 +1533,8 @@ void Engine::scheduleTrackNow(const TrackPlayback& track, TrackState& state, dou
     state.voices.releaseEndedBefore(curPlay + clockOffset());
     if (state.pendingCount > 0)
         firePending(track, state, curPlay);
+    if (std::isfinite(state.actionFrom) && !followsArrangement(state))
+        decideNextAction(track, state, curPlay);
     double from = prevPlay;
     if (state.queued != kNothingQueued && state.queuedAt < curPlay) {
         double at = std::max(state.queuedAt, prevPlay);
@@ -1098,7 +1543,7 @@ void Engine::scheduleTrackNow(const TrackPlayback& track, TrackState& state, dou
         from = at;
     }
     playSource(track, state, from, curPlay);
-    if (state.chain >= 0)
+    if (state.chain >= 0 || state.ownChain >= 0)
         runChain(track, state, curPlay + clockOffset());
 }
 
@@ -1128,17 +1573,53 @@ void Engine::playArrangement(const TrackPlayback& track, TrackState& state, doub
 }
 
 void Engine::fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom) {
+    useOwnChain(state, track.ownChainAt(from));
     // Inside the song loop, a note never sounds past the loop end.
-    if (replacing(track)) {
+    if (replacing(track) || readByPlayheads(state)) {
         while (state.arrangementCursor < track.arrangement.size() &&
                track.arrangement[state.arrangementCursor].start < to)
             state.arrangementCursor++;
+        if (!replacing(track)) {
+            // Read ahead a block at a time, as a launched clip's playheads do, queueing the notes found: not on every
+            // sample. Never past the song loop's end, where the song jumps back.
+            TrackState::SongLook& look = state.songLook;
+            if (!(from >= look.last - 1e-9) || !(look.until >= from - 1e-9))
+                look = {from, from};
+            look.last = from;
+            if (to > look.until) {
+                double readTo = std::max(to, look.until + double(kControlBlock) * ticksPerSample);
+                double loopEnd = double(snapshot->loopEnd);
+                if (loopOn && loopEnd > double(snapshot->loopStart) && from < loopEnd)
+                    readTo = std::min(readTo, loopEnd);
+                playInstancesByPlayheads(track, state, look.until, readTo, playAtFrom + (look.until - from));
+                look.until = readTo;
+            }
+        }
         return;
     }
     bool looping = loopOn && snapshot->loopEnd > snapshot->loopStart;
     double cap = looping && from < double(snapshot->loopEnd) ? double(snapshot->loopEnd) : INFINITY;
     fireList(track, state, track.arrangement, state.arrangementCursor, from, to, playAtFrom, cap, -1,
              &track.arrangementExtras);
+}
+
+void Engine::playInstancesByPlayheads(const TrackPlayback& track, TrackState& state, double from, double to,
+                                      double playAtFrom) {
+    for (const InstanceLanes& inst : track.instances) {
+        if (double(inst.position) >= to)
+            break;
+        double a = std::max(from, double(inst.position));
+        double b = std::min(to, double(inst.end));
+        if (b <= a)
+            continue;
+        // The clip starts where the timeline clip begins it (its offset), and plays slower when stretched.
+        double begin = inst.offset - double(inst.spanStart);
+        double ea = begin + (a - double(inst.position)) / inst.stretch;
+        double eb = begin + (b - double(inst.position)) / inst.stretch;
+        double endsAt = begin + (double(inst.end) - double(inst.position)) / inst.stretch;
+        playPlayheads(track, state, *inst.clip, ea, eb, playAtFrom + (a - from), inst.stretch, begin, endsAt,
+                      inst.transpose);
+    }
 }
 
 size_t Engine::arrangementIndex(const TrackPlayback& track, double songPos) {
@@ -1176,6 +1657,27 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
     double a = from - state.launchTick;
     double b = to - state.launchTick;
 
+    if (readByPlayheads(state)) {
+        double end = clip.looping ? b : std::min(b, length);
+        TrackState::PlayheadLook& look = state.playheadLook;
+        // A relaunch or a jump reads afresh from here. A new snapshot of the same clip carries on where it read to.
+        if (look.launch != state.launchTick || !(a >= look.last - 1e-9) || !(look.until >= a - 1e-9))
+            look = {a, a, &clip, state.launchTick};
+        look.clip = &clip;
+        look.last = a;
+        if (end > look.until) {
+            double to = std::max(end, look.until + double(kControlBlock) * ticksPerSample);
+            if (!clip.looping)
+                to = std::min(to, length);
+            playPlayheads(track, state, clip, look.until, to, state.launchTick + look.until, 1, 0,
+                          clip.looping ? INFINITY : length);
+            look.until = to;
+        }
+        if (!clip.looping && b >= length)
+            state.playing = kNoSlot;
+        return;
+    }
+
     if (!clip.looping) {
         if (a < length) {
             fireList(track, state, clip.notes, state.cursor, clip.loopStart + a, clip.loopStart + std::min(b, length),
@@ -1195,6 +1697,221 @@ void Engine::playClip(const TrackPlayback& track, TrackState& state, double from
     for (size_t k = 0; k < clip.laneLoops.size() && k < state.laneCursor.size(); k++) {
         const LaneLoop& lane = clip.laneLoops[k];
         playLoop(track, state, lane.notes, state.laneCursor[k], lane.start, lane.length, a, b, from, &clip.extras);
+    }
+}
+
+void Engine::playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
+                           double from, double stretch, double first, double last, int transpose) {
+    const ChainPlayback& chain = *state.readInfo();
+    TimeSig ts = snapshot->timeSig;
+    const float* deviceKnobs = &knobValues[size_t(chain.playheadKnobs)];
+    bool once =
+        std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
+                                     deviceKnobs[playheads::knob::kSameNote])) == 1;
+    // Notes started in this window, so two playheads landing on the same note at once play it once.
+    struct Started {
+        double at;
+        int8_t pitch;
+        uint8_t channel;
+    };
+    std::array<Started, 32> started;
+    int startedCount = 0;
+
+    auto& clocks = (*playheadClocks)[size_t(&state - tracks.data())];
+    for (size_t index = 0; index < chain.playheads.size() && index < clocks.size(); index++) {
+        const PlayheadPlayback& p = chain.playheads[index];
+        PlayheadClock& clock = clocks[index];
+        const float* knobs = clock.knobs.data();
+        if (clock.motionBlock != controlBlock || clock.motionClip != &clip) {
+            // Its settings as modulators have them now; the region is the whole loop (a drum clip's whole lane
+            // cycle): the pattern and each lane with its own length repeat inside it, as they do without playheads.
+            std::copy_n(&knobValues[size_t(p.knobs)], p.knobCount, clock.knobs.data());
+            // The knob table moves a block at a time, a block behind; playheads read a block ahead. A curve is a
+            // function of the song position, so it is read where the playhead reads: a step drawn on a bar
+            // reaches the note on that bar.
+            for (const PlayheadPlayback::Exact& x : p.exact) {
+                const ModulatorPlayback& mp = snapshot->modulators[size_t(x.modulator)];
+                mods::State st = (*modStates)[size_t(mp.slot)];
+                const float* mk = &knobValues[size_t(mp.knobs)];
+                if (st.owner != mp.id)
+                    continue;
+                mods::Clock at;
+                at.songTick = songTick + (from - playTick);
+                at.sinceClip = sinceClipStart(track, state, at.songTick, from);
+                at.timeSig = ts;
+                at.seed = variationSeed(mp.variation, roll, mp.id);
+                mods::Drawn drawn = mp.drawn();
+                float applied = st.applied;
+                float v = mods::evaluate(mp.type, mp.id, mk, st, at, nullptr, 0, &drawn);
+                float& k = clock.knobs[x.param];
+                k = std::clamp(k + x.amount * (v - applied), 0.f, 1.f);
+            }
+            // Turning knobs into ticks reads every setting's table; most blocks nothing moved, so it is skipped.
+            size_t deviceCount =
+                std::min(devices::deviceInfo(DeviceType::Playheads).params.size(), clock.builtDevice.size());
+            bool same = clock.builtClip == &clip && clock.builtSnapshot == snapshot &&
+                        std::equal(clock.knobs.begin(), clock.knobs.begin() + p.knobCount, clock.builtFrom.begin()) &&
+                        std::equal(deviceKnobs, deviceKnobs + deviceCount, clock.builtDevice.begin());
+            if (!same) {
+                clock.motion =
+                    playheads::motionFrom(knobs, deviceKnobs, double(clip.segmentStart), double(clip.segmentLength), ts);
+                if (playheads::wantsDrawnPath(knobs))
+                    clock.motion.path = &p.path;
+                clock.shape = playheads::noteShapeFrom(knobs);
+                std::copy_n(clock.knobs.begin(), p.knobCount, clock.builtFrom.begin());
+                std::copy_n(deviceKnobs, deviceCount, clock.builtDevice.begin());
+                clock.builtClip = &clip;
+                clock.builtSnapshot = snapshot;
+            }
+            clock.motionBlock = controlBlock;
+            clock.motionClip = &clip;
+        }
+        // Its On setting as it plays now (a curve or a lane can switch it): turned off, what it sounds stops at once.
+        bool heard = p.audible && (p.knobCount <= playheads::knob::kOn || playheads::playsNow(knobs));
+        if (!heard && clock.heard)
+            silencePlayhead(state, uint8_t(index + 1));
+        clock.heard = heard;
+        playheads::Motion m = clock.motion;
+        double rate = m.rate;
+        double restartEvery = m.restartEvery;
+        // The engine counts the playhead's own time itself (rate 1 below), restarting where the song time says.
+        m.rate = 1;
+        m.restartEvery = 0;
+        // Offset: the playhead reads the clip that much earlier (or later) than now and its notes play now, so they
+        // come late (or early). It reads only inside the clip, so a clip's end cuts what would come after it.
+        double shift = m.offset / stretch;
+        m.offset = 0;
+        double pa = std::max(a - shift, first), pb = std::min(b - shift, last);
+        if (std::abs(a - clock.readTo) <= 1e-6) {
+            // Reading on from where it left off: an Offset moved later waits for the time to catch up rather than
+            // read the same notes again; one moved earlier skips ahead.
+            if (std::isfinite(clock.until))
+                pa = std::max(pa, clock.until);
+        } else {
+            clock.until = NAN;
+        }
+        clock.readTo = b;
+        clock.shift = shift;
+        for (double segA = pa; segA < pb;) {
+            double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
+            double segB = restartEvery > 0 ? std::min(pb, restart + restartEvery) : pb;
+            // A jump (launch, seek, restart, another timeline clip) starts counting afresh from where the time says.
+            // A timeline clip works its time out from the song's every sample, a hair off where the last stretch
+            // ended: that is no jump.
+            if (!(std::abs(clock.until - segA) <= 1e-6) || clock.restart != restart) {
+                clock.own = rate * (segA - restart);
+                clock.lastPos = NAN;
+            }
+            double ownA = clock.own, ownB = ownA + rate * (segB - segA);
+            clock.own = ownB;
+            clock.until = segB;
+            clock.restart = restart;
+            if (!heard)
+                clock.lastPos = NAN;
+            if (heard) {
+                playheads::Sweep sweeps[playheads::kMaxSweeps];
+                int count = playheads::sweeps(m, ownA, ownB, sweeps, playheads::kMaxSweeps, clock.lastPos);
+                if (count > 0)
+                    clock.lastPos = sweeps[count - 1].to;
+                for (int i = 0; i < count; i++) {
+                    const playheads::Sweep& sweep = sweeps[i];
+                    // `moved`: the note comes from a Motion device before the playheads, already shifted in time.
+                    // `written`: how much of the note is left to play, when a jump landed inside it.
+                    auto playHit = [&](const NoteEvent& e, double pos, const MovedBy* moved, double written = -1) {
+                        if (!moved && !chain.readMotions.empty() && e.extras < clip.extras.size() &&
+                            readMotion(chain, clip.extras[e.extras].note.motion.value))
+                            return; // read from its Motion device's own list, moved
+                        if (!playheads::picked(clock.shape.pick, e.role))
+                            return;
+                        double t = segA + (playheads::timeAt(m, sweep, pos) - ownA) / rate + shift;
+                        double onPlay = std::max(from, from + (t - a) * stretch);
+                        NoteEvent n = e;
+                        n.pitch = int8_t(std::clamp(int(n.pitch) + transpose, 0, 127));
+                        if (p.channel > 0)
+                            n.channel = p.channel;
+                        const Scale& key =
+                            n.key > 0 && n.key <= track.keys.size() ? track.keys[size_t(n.key) - 1] : snapshot->key;
+                        if (moved) {
+                            if (moved->steps != 0)
+                                n.pitch = int8_t(std::clamp(
+                                    moved->inKey ? key.stepBy(n.pitch, moved->steps) : n.pitch + moved->steps, 0, 127));
+                            n.velocity = std::clamp(n.velocity + moved->velocity, 0.f, 1.f);
+                        }
+                        n.pitch = int8_t(playheads::shapedPitch(
+                            clock.shape, n.pitch, std::clamp(int(clip.lowest) + transpose, 0, 127),
+                            std::clamp(int(clip.highest) + transpose, 0, 127), key));
+                        n.velocity = std::clamp(n.velocity + clock.shape.velocity, 0.f, 1.f);
+                        if (once) {
+                            for (int k = 0; k < startedCount; k++)
+                                if (started[size_t(k)].pitch == n.pitch && started[size_t(k)].channel == n.channel &&
+                                    std::abs(started[size_t(k)].at - onPlay) < 1e-6)
+                                    return;
+                            if (startedCount < int(started.size()))
+                                started[size_t(startedCount++)] = {onPlay, n.pitch, n.channel};
+                        }
+                        playheads::Motion timed = m;
+                        timed.rate = rate;
+                        double length = playheads::noteLength(knobs, timed, written >= 0 ? written : double(e.end - e.start),
+                                                              ts, sweep.travelFrom + std::abs(pos - sweep.from)) *
+                                        stretch;
+                        if (playheads::retriggers(knobs)) {
+                            // Retrigger: the note stops where the playhead next jumps.
+                            double own = playheads::timeAt(m, sweep, pos);
+                            double jump = playheads::nextJump(m, own, length / stretch * rate + 1);
+                            if (std::isfinite(jump))
+                                length = std::min(length, (jump - own) / rate * stretch);
+                        }
+                        if (moved)
+                            length = std::max(1.0, length * moved->lengthScale);
+                        // Each playhead counts its own passes (its region's length of its own time), and the
+                        // playhead's place is mixed in, so two playheads make their own chance and spread choices.
+                        int64_t pass = int64_t(std::floor(ownA / std::max(1.0, m.regionLength))) * 16 + int64_t(index);
+                        uint8_t lane = uint8_t(index + 1);
+                        if (e.extras != kNoExtras && e.extras < clip.extras.size()) {
+                            startWithOperators(track, state, n, clip.extras[e.extras], onPlay, onPlay + length, pass,
+                                               lane);
+                        } else if (onPlay >= playTick && state.pendingCount < kMaxPendingHits) {
+                            // Read ahead: it starts on its own sample, from the pending list.
+                            TrackState::PendingHit hit{onPlay,  onPlay + length, n.pitch, n.velocity, n.releaseVelocity,
+                                                       nullptr, double(n.start), pass,    n.key,      n.channel,
+                                                       lane};
+                            hit.tied = n.tied;
+                            hit.lowerLater = n.lowerLater;
+                            state.pending[size_t(state.pendingCount++)] = hit;
+                        } else {
+                            startNote(track, state, n, onPlay, onPlay + length, pass, lane);
+                        }
+                    };
+                    auto onHit = [&](const NoteEvent& e, double pos) { playHit(e, pos, nullptr); };
+                    double start = double(clip.loopStart);
+                    // Each Motion device before the playheads: its notes shifted later on the canvas by its Time on
+                    // this pass of the clip, and moved in pitch, length and velocity.
+                    for (const ChainPlayback::ReadMotion& rm : chain.readMotions)
+                        for (const ClipPlayback::MotionNotes& group : clip.motions) {
+                            if (group.motion != rm.id || clip.loopLength() <= 0)
+                                continue;
+                            int64_t clipPass = int64_t(std::floor(segA / double(clip.loopLength())));
+                            MovedBy moved = movedBy(rm.knobs, clipPass);
+                            playheads::crossedShifted(sweep, moved.delay, group.notes, group.notesByEnd,
+                                                      [&](const NoteEvent& e, double pos) { playHit(e, pos, &moved); });
+                        }
+                    if (clip.pattern > 0 && clip.pattern < clip.loopLength())
+                        playheads::crossedRepeating(sweep, start, start, double(clip.pattern), clip.notes,
+                                                    clip.notesByEnd, onHit);
+                    else
+                        playheads::crossed(sweep, clip.notes, clip.notesByEnd, onHit);
+                    for (const LaneLoop& lane : clip.laneLoops)
+                        playheads::crossedRepeating(sweep, start, double(lane.start), double(lane.length), lane.notes,
+                                                    lane.notesByEnd, onHit);
+                    // Retrigger: a jump plays again the notes it lands inside, for what is left of them.
+                    if (sweep.jumped && clip.pattern == 0 && playheads::retriggers(knobs))
+                        playheads::landedIn(sweep, clip.notes, [&](const NoteEvent& e, double rest) {
+                            playHit(e, sweep.from, nullptr, rest);
+                        });
+                }
+            }
+            segA = segB;
+        }
     }
 }
 
@@ -1246,9 +1963,9 @@ void Engine::fireList(const TrackPlayback& track, TrackState& state, const std::
 }
 
 void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, const NoteEvent& n, const NoteExtras& ex,
-                                double onPlay, double endPlay, int64_t pass) {
+                                double onPlay, double endPlay, int64_t pass, uint8_t lane) {
     operators::PassContext ctx;
-    ctx.seed = snapshot->seed;
+    ctx.seed = variationSeed(ex.variation, roll, ex.clip);
     ctx.clip = ex.clip;
     ctx.pass = pass;
     ctx.fill = fill;
@@ -1263,6 +1980,7 @@ void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, c
     double delay = std::max(0.0, ex.early + operators::timingOffset(note, ctx));
     float spread = operators::velocity(note, ctx) - note.velocity;
     double length = endPlay - onPlay;
+    int pitch = n.pitch;
     int count = operators::hitCount(note, ticksPerBeat(snapshot->timeSig));
     // Hits are laid out over the note as written, then fitted to the event (gate scale, loop cuts).
     double scale = note.length > 0 ? length / double(note.length) : 1;
@@ -1271,7 +1989,7 @@ void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, c
         TrackState::PendingHit hit;
         hit.start = onPlay + delay + h.start * scale;
         hit.end = hit.start + (count > 1 ? h.length * scale : length);
-        hit.pitch = n.pitch;
+        hit.pitch = int8_t(pitch);
         float shape = note.velocity > 0 ? h.velocity / note.velocity : 1;
         hit.velocity = std::clamp(n.velocity * shape + spread, 0.f, 1.f);
         hit.release = n.releaseVelocity;
@@ -1280,6 +1998,9 @@ void Engine::startWithOperators(const TrackPlayback& track, TrackState& state, c
         hit.pass = pass;
         hit.key = n.key;
         hit.channel = n.channel;
+        hit.lane = lane;
+        hit.tied = n.tied && i == 0; // repeats of a note start gates of their own
+        hit.lowerLater = n.lowerLater;
         if (hit.start < playTick)
             startHit(track, state, hit);
         else if (state.pendingCount < kMaxPendingHits)
@@ -1297,9 +2018,13 @@ void Engine::startHit(const TrackPlayback& track, TrackState& state, const Track
     n.release = hit.release;
     n.key = hit.key;
     n.channel = hit.channel;
+    n.lane = hit.lane;
     n.extras = hit.extras;
+    n.motion = hit.extras ? hit.extras->note.motion.value : 0;
     n.origin = hit.origin;
     n.pass = hit.pass;
+    n.tied = hit.tied;
+    n.lowerLater = hit.lowerLater;
     deliver(track, state, n);
 }
 
@@ -1333,7 +2058,7 @@ void Engine::reattachCurves(const TrackPlayback& tp, TrackState& state) {
         if (!hasCurves(found))
             continue;
         setVoiceCurves(state, v, found);
-        state.voiceLength[size_t(v)] = std::max(1.0, double(found->note.length) * found->stretch);
+        state.voiceLength[size_t(v)] = std::max(1.0, double(found->note.length) * state.voiceScale[size_t(v)]);
     }
     // A drum curve still playing finds its note again (edited or not); one whose note is gone holds where it is.
     state.curvedLanes = 0;
@@ -1347,12 +2072,52 @@ void Engine::reattachCurves(const TrackPlayback& tp, TrackState& state) {
         curve.extras = hasCurves(found) ? found : nullptr;
         if (!curve.extras)
             continue;
-        curve.length = std::max(1.0, double(found->note.length) * found->stretch);
+        curve.length = std::max(1.0, double(found->note.length) * curve.scale);
         state.curvedLanes++;
     }
 }
 
+void Engine::rewindPlayheads(TrackState& state) {
+    if (followsArrangement(state) && std::isfinite(state.songLook.until)) {
+        // The timeline: read again from where the song is; each playhead's clock follows the song time anew.
+        state.songLook = {};
+        size_t index = size_t(&state - tracks.data());
+        if (index < tracks.size())
+            for (PlayheadClock& clock : (*playheadClocks)[index]) {
+                clock.until = NAN;
+                clock.readTo = NAN;
+                clock.lastPos = NAN;
+            }
+        return;
+    }
+    TrackState::PlayheadLook& look = state.playheadLook;
+    if (!std::isfinite(look.until))
+        return;
+    // A hair past now: a note that started on this very sample has already been played.
+    double now = playTick - state.launchTick + 1e-6;
+    if (look.until <= now)
+        return;
+    look.until = now;
+    look.last = std::min(look.last, now);
+    size_t index = size_t(&state - tracks.data());
+    if (index >= tracks.size())
+        return;
+    for (PlayheadClock& clock : (*playheadClocks)[index]) {
+        if (std::isfinite(clock.readTo) && clock.readTo > now)
+            clock.readTo = now;
+        // Its own reading runs its Offset behind (or ahead of) now.
+        double ownNow = now - clock.shift;
+        if (std::isfinite(clock.until) && clock.until > ownNow) {
+            clock.own -= clock.motion.rate * (clock.until - ownNow);
+            clock.until = ownNow;
+            clock.lastPos = NAN; // it was further on: going back there is no jump
+        }
+    }
+}
+
 void Engine::clearPending(TrackState& state) {
+    // Queued notes the playheads read ahead go too: they read again from now.
+    rewindPlayheads(state);
     state.pendingCount = 0;
     state.voiceExtras.fill(nullptr);
     state.voiceClip.fill(0);
@@ -1361,7 +2126,7 @@ void Engine::clearPending(TrackState& state) {
 }
 
 void Engine::startNote(const TrackPlayback& track, TrackState& state, const NoteEvent& e, double onPlay, double endPlay,
-                       int64_t pass) {
+                       int64_t pass, uint8_t lane) {
     double off = clockOffset();
     chain::ChainNote n;
     n.start = onPlay + off;
@@ -1373,18 +2138,24 @@ void Engine::startNote(const TrackPlayback& track, TrackState& state, const Note
     n.channel = e.channel;
     n.origin = double(e.start);
     n.pass = pass;
+    n.lane = lane;
+    n.tied = e.tied;
+    n.lowerLater = e.lowerLater;
     deliver(track, state, n);
 }
 
 void Engine::deliver(const TrackPlayback& track, TrackState& state, const chain::ChainNote& note) {
     forwardNote(track, note, ListenSource::TrackBefore);
-    triggerModulators(state, note);
-    if (!chainActive(state)) {
+    // A clip's note goes through the clip's own chain when it plays through one; live keys and notes from a listened
+    // track go through the track's.
+    bool own = state.ownChain >= 0 && state.ownInfo && forwardDepth == 0 && !(note.id & chain::kLiveNote);
+    triggerModulators(own ? state.ownInfo : state.chainInfo, note);
+    if (own ? !state.ownInfo->active : !chainActive(state)) {
         sound(track, state, note);
         return;
     }
     chain::ChainNote n = note;
-    chain::Chain& c = (*chains)[size_t(state.chain)].chain;
+    chain::Chain& c = (*chains)[size_t(own ? state.ownChain : state.chain)].chain;
     if (n.id == 0)
         n.id = c.newId();
     c.push(n);
@@ -1398,7 +2169,27 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
         hitDrum(track, state, n);
         return;
     }
-    int v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id);
+    // A note's end and the next one's start are worked out apart (and the end on the engine's clock, which runs on
+    // while stopped), so they round a hair apart: a note ending where this one starts has ended, and its voice is
+    // free for this one. Otherwise a line of back-to-back notes now and then takes a second voice.
+    constexpr double kHair = 1e-6; // ticks: far less than a sample at any tempo
+    // A tied note takes over the voice of the note it continues, still sounding: no new gate (TIES_VOICES.md).
+    int v = n.tied ? state.voices.continued(n.pitch, n.channel, n.start, kHair) : -1;
+    // On one voice, a key pressed while another is held plays legato, as a mono synth does (and records as a tie).
+    if (v < 0 && (n.id & chain::kLiveNote) && state.voices.sizeFor(n.channel) == 1) {
+        int held = state.voices.continued(n.pitch, n.channel, n.start, kHair);
+        if (held >= 0 && (state.voices.voice(held).id & chain::kLiveNote))
+            v = held;
+    }
+    bool continues = v >= 0;
+    float joinedAt = continues ? glidedVolts(state.glide[size_t(v)], pitchToVolts(state.voices.voice(v).pitch), playTick)
+                               : 0.f;
+    if (continues)
+        state.voices.takeOver(v, n.pitch, n.velocity, n.release, n.end, n.id, n.start);
+    state.voices.releaseEndedBefore(n.start + kHair);
+    // Into its channel's own voices: a playhead's notes never take another channel's.
+    if (!continues)
+        v = state.voices.noteOn(n.pitch, n.velocity, n.release, n.end, n.id, n.channel, n.start, n.lowerLater);
     clearLiveVoice(state, v);
     if (n.id & chain::kLiveNote) {
         // Held until its key is released, like an audition: clip events leave it alone.
@@ -1413,10 +2204,61 @@ void Engine::sound(const TrackPlayback& track, TrackState& state, const chain::C
     bool curves = note && (!note->pitchExpr.empty() || !note->timbreExpr.empty() || !note->pressureExpr.empty());
     setVoiceCurves(state, v, curves ? extras : nullptr);
     state.voiceStart[size_t(v)] = n.start - clockOffset();
+    state.voicePart[size_t(v)] = n.channel;
+    state.voiceReader[size_t(v)] = n.lane;
     // Curves span the note as written, not the part that sounds: a note cut short by the song loop, the clip's
-    // loop or the gate length keeps its curve's timing, as the editor draws it.
-    double length = note ? double(note->length) * extras->stretch : n.open() ? double(kPpq) : double(n.end - n.start);
+    // loop or the gate length keeps its curve's timing, as the editor draws it. A playhead crosses the note at its
+    // own speed, so the curve keeps pace with it.
+    double scale = extras ? extras->stretch / playheadSpeed(state, n.lane) : 1;
+    double length = note ? double(note->length) * scale : n.open() ? double(kPpq) : double(n.end - n.start);
+    state.voiceScale[size_t(v)] = scale;
     state.voiceLength[size_t(v)] = std::max(1.0, length);
+    setGlide(state, v, glideFor(n, extras, continues, joinedAt, scale));
+}
+
+Engine::VoiceGlide Engine::glideFor(const chain::ChainNote& n, const NoteExtras* extras, bool continues,
+                                    float joinedAt, double scale) const {
+    VoiceGlide g;
+    double start = n.start - clockOffset();
+    float volts = pitchToVolts(n.pitch);
+    if (continues && extras && extras->note.tied && extras->note.glideAfter > 0) {
+        double before = double(std::max<Tick>(0, extras->note.glideBefore)) * scale;
+        double after = double(std::min(extras->note.glideAfter, extras->note.length)) * scale;
+        g.in.from = start - before;
+        g.in.to = start + after;
+        g.in.startAt = start;
+        g.in.e0 = float(ties::shaped(extras->note.glideShape, before / (before + after)));
+        g.in.a = joinedAt;
+        g.in.b = volts;
+        g.in.shape = extras->note.glideShape;
+        g.in.on = joinedAt != volts;
+    }
+    if (extras && extras->glideOut.moves()) {
+        const NoteExtras::GlideOut& o = extras->glideOut;
+        g.out.from = start + (o.joint - o.before) * scale;
+        g.out.to = start + (o.joint + o.after) * scale;
+        g.out.volts = o.semis / 12.f;
+        g.out.shape = o.shape;
+        g.out.on = true;
+    }
+    return g;
+}
+
+float Engine::glidedVolts(const VoiceGlide& g, float volts, double t) {
+    if (g.in.on) {
+        if (t >= g.in.to) {
+            volts = g.in.b;
+        } else if (t > g.in.startAt) {
+            double e = ties::shaped(g.in.shape, (t - g.in.from) / (g.in.to - g.in.from));
+            double rest = std::max(1e-6, 1.0 - double(g.in.e0));
+            volts = float(g.in.a + (g.in.b - g.in.a) * std::clamp((e - g.in.e0) / rest, 0.0, 1.0));
+        } else {
+            volts = g.in.a;
+        }
+    }
+    if (g.out.on && t > g.out.from)
+        volts += g.out.volts * float(ties::shaped(g.out.shape, std::min(1.0, (t - g.out.from) / (g.out.to - g.out.from))));
+    return volts;
 }
 
 void Engine::endNote(const TrackPlayback& track, TrackState& state, uint32_t id) {
@@ -1491,17 +2333,41 @@ void Engine::endInput(const TrackPlayback& track, TrackState& state, uint32_t id
 }
 
 void Engine::runChain(const TrackPlayback& track, TrackState& state, double until) {
-    if (state.chain < 0 || !state.chainInfo || !snapshot)
+    runChainOf(track, state, state.chain, state.chainInfo, until);
+    runChainOf(track, state, state.ownChain, state.ownInfo, until);
+}
+
+void Engine::runChainOf(const TrackPlayback& track, TrackState& state, int runtime, const ChainPlayback* info,
+                        double until) {
+    if (runtime < 0 || !info || !snapshot)
         return;
-    chain::Chain& c = (*chains)[size_t(state.chain)].chain;
-    if (c.idle())
-        return;
-    const std::vector<DevicePlayback>& devices = state.chainInfo->devices;
-    std::array<chain::DeviceSlot, kMaxDevices> slots;
+    chain::Chain& c = (*chains)[size_t(runtime)].chain;
+    const std::vector<DevicePlayback>& devices = info->devices;
     int count = std::min<int>(int(devices.size()), kMaxDevices);
+    // Where each Arpeggiator is in its line, for the editor to light the step playing.
+    auto report = [&] {
+        for (int k = 0; k < count; k++)
+            if (int slot = devices[size_t(k)].arpSlot; slot >= 0) {
+                liveArpSteps[size_t(slot)].store(c.arpStep(k), std::memory_order_relaxed);
+                liveArpHeld[size_t(slot)].store(c.arpHeld(k), std::memory_order_relaxed);
+            }
+    };
+    if (c.idle()) {
+        report();
+        return;
+    }
+    std::array<chain::DeviceSlot, kMaxDevices> slots;
     for (int k = 0; k < count; k++) {
         const DevicePlayback& d = devices[size_t(k)];
-        slots[size_t(k)] = {d.type, d.on, d.affectDrums, d.id, &knobValues[size_t(d.knobs)]};
+        slots[size_t(k)] = {d.type,
+                            d.on,
+                            d.affectDrums,
+                            d.id,
+                            &knobValues[size_t(d.knobs)],
+                            d.lane,
+                            d.variation,
+                            d.line.data(),
+                            uint8_t(std::min<size_t>(d.line.size(), chain::kMaxLineSteps))};
     }
     chain::Context context;
     context.devices = slots.data();
@@ -1510,15 +2376,21 @@ void Engine::runChain(const TrackPlayback& track, TrackState& state, double unti
     context.songKey = &snapshot->key;
     context.clipKeys = &track.keys;
     context.timeSig = snapshot->timeSig;
-    context.seed = snapshot->seed;
+    context.roll = roll;
     // Chain time is the engine clock; while playing it maps onto the song, so arpeggiators step on its grid.
     context.songOffset = playing ? songTick - freeTick : 0;
+    context.passUser = this;
+    context.passKnob = [](const void* user, const chain::DeviceSlot& d, int k, int64_t pass) {
+        const Engine& e = *static_cast<const Engine*>(user);
+        return e.motionKnob(int(d.knobs - e.knobValues.get()) + k, pass);
+    };
     ChainSink sink(*this, track, state);
     c.run(until, context, sink);
+    report();
 }
 
-void Engine::triggerModulators(const TrackState& state, const chain::ChainNote& note) {
-    if (!state.chainInfo || state.chainInfo->modulatorSlots.empty())
+void Engine::triggerModulators(const ChainPlayback* info, const chain::ChainNote& note) {
+    if (!info || info->modulatorSlots.empty())
         return;
     double at = songTickAt(note.start - clockOffset());
     mods::NoteValues values;
@@ -1531,16 +2403,93 @@ void Engine::triggerModulators(const TrackState& state, const chain::ChainNote& 
     }
     mods::Clock clock;
     clock.ticksPerSecond = bpm * kPpq / 60.0;
-    for (int slot : state.chainInfo->modulatorSlots)
+    for (int slot : info->modulatorSlots)
         mods::trigger((*modStates)[size_t(slot)], at, note.end - note.start, values, clock);
 }
 
+bool Engine::perPassSlot(int slot) const {
+    for (const ModulatorPlayback& m : snapshot->modulators)
+        if (m.slot == slot)
+            return mods::perPass(m.type, &knobValues[size_t(m.knobs)]);
+    return false;
+}
+
+bool Engine::readMotion(const ChainPlayback& chain, uint64_t motion) {
+    for (const ChainPlayback::ReadMotion& rm : chain.readMotions)
+        if (rm.id == motion)
+            return motion != 0;
+    return false;
+}
+
+Engine::MovedBy Engine::movedBy(int knobs, int64_t pass) const {
+    // Its knobs change once a control block at most: what they make is kept until then.
+    for (const MovedCache& c : movedCache)
+        if (c.knobs == knobs && c.pass == pass && c.block == controlBlock)
+            return c.moved;
+    auto value = [&](int k) {
+        return devices::display(devices::motionInfo().params[size_t(k)], motionKnob(knobs + k, pass));
+    };
+    MovedBy m;
+    m.steps = int(std::lround(value(chain::knob::kMotionPitch)));
+    m.inKey = value(chain::knob::kMotionInKey) > 0.5f;
+    m.delay = double(value(chain::knob::kMotionTime)) * double(kPpq / 4);
+    m.lengthScale = 1 + double(value(chain::knob::kMotionLength)) / 100;
+    m.velocity = value(chain::knob::kMotionVelocity) / 100;
+    movedCache[movedNext] = {knobs, pass, controlBlock, m};
+    movedNext = (movedNext + 1) % movedCache.size();
+    return m;
+}
+
+float Engine::motionKnob(int knob, int64_t pass) const {
+    float v = knobValues[size_t(knob)];
+    // "Per pass" modulators step with the note's pass here; the knob table left them out of motion knobs.
+    for (const KnobModulation& km : snapshot->modulated) {
+        if (km.knob != knob)
+            continue;
+        for (int j = 0; j < km.count; j++) {
+            const ModSource& src = km.sources[size_t(j)];
+            for (const ModulatorPlayback& m : snapshot->modulators)
+                if (m.slot == src.slot && mods::perPass(m.type, &knobValues[size_t(m.knobs)])) {
+                    mods::Drawn drawn = m.drawn();
+                    v += src.amount * mods::passValue(m.type, m.id, &knobValues[size_t(m.knobs)], pass,
+                                                      snapshot->timeSig, m.steps.data(), m.stepCount, &drawn);
+                }
+        }
+    }
+    return std::clamp(v, 0.f, 1.f);
+}
+
 void Engine::advanceModulation() {
+    controlBlock++;
     if (!snapshot)
         return;
     const Snapshot& s = *snapshot;
-    // Every modulation uses the modulators' outputs from the previous block, so modulators turning each other's
-    // settings never loop.
+    // Curves depend on time alone, so they are read for where the song will be at the end of this block and used in
+    // it: a step drawn where a note starts reaches that note, as knob lanes do. Every other modulation uses the
+    // modulators' outputs from the previous block, so modulators turning each other's settings never loop.
+    double ahead = ticksPerSample * kControlBlock;
+    double songAhead = songTick + ahead;
+    if (loopOn && s.loopEnd > s.loopStart && songTick < double(s.loopEnd) && songAhead >= double(s.loopEnd))
+        songAhead = double(s.loopStart) + (songAhead - double(s.loopEnd));
+    for (const ModulatorPlayback& m : s.modulators) {
+        if (m.type != ModulatorType::Curve)
+            continue;
+        mods::State& st = (*modStates)[size_t(m.slot)];
+        if (st.owner != m.id) {
+            st = mods::State();
+            st.owner = m.id;
+        }
+        mods::Clock clock;
+        clock.songTick = songAhead;
+        clock.timeSig = s.timeSig;
+        if (m.track >= 0 && size_t(m.track) < trackCount)
+            clock.sinceClip =
+                sinceClipStart(*s.tracks[size_t(m.track)], tracks[size_t(m.track)], songAhead, playTick + ahead);
+        mods::Drawn drawn = m.drawn();
+        st.out = mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, nullptr, 0, &drawn);
+        st.applied = st.out;
+        liveModulators[size_t(m.slot)].store(st.out, std::memory_order_relaxed);
+    }
     if (knobsDirty || overrideOn || overrideWasOn || knobLanesOn || knobLanesWereOn || !s.modulated.empty()) {
         std::copy(s.knobs.begin(), s.knobs.end(), knobValues.get());
         // Knob lanes set the base; a knob held by the mouse wins while it is held, and modulation adds on top.
@@ -1565,7 +2514,8 @@ void Engine::advanceModulation() {
         for (const KnobModulation& km : s.modulated) {
             float v = knobValues[size_t(km.knob)];
             for (int j = 0; j < km.count; j++)
-                v += km.sources[size_t(j)].amount * (*modStates)[size_t(km.sources[size_t(j)].slot)].out;
+                if (!km.motion || !perPassSlot(km.sources[size_t(j)].slot))
+                    v += km.sources[size_t(j)].amount * (*modStates)[size_t(km.sources[size_t(j)].slot)].out;
             v = std::clamp(v, 0.f, 1.f);
             knobValues[size_t(km.knob)] = v;
             liveKnobs[size_t(km.knob)].store(v, std::memory_order_relaxed);
@@ -1577,17 +2527,23 @@ void Engine::advanceModulation() {
         return;
     mods::Clock clock;
     clock.songTick = songTick;
-    clock.seconds = double(kControlBlock) / sampleRate;
+    // Slowed while stopped, a modulator still moves by the time that passed, so a free LFO keeps its speed.
+    clock.seconds = double(kControlBlock) * double(1 + skippedMods) / sampleRate;
     clock.timeSig = s.timeSig;
-    clock.seed = s.seed;
     clock.ticksPerSecond = bpm * kPpq / 60.0;
     for (const ModulatorPlayback& m : s.modulators) {
+        if (m.type == ModulatorType::Curve) // read above, for this block
+            continue;
+        clock.seed = variationSeed(m.variation, roll, m.id);
         mods::State& st = (*modStates)[size_t(m.slot)];
         if (st.owner != m.id) {
             st = mods::State();
             st.owner = m.id;
         }
-        float out = mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, m.steps.data(), m.stepCount);
+        mods::Drawn drawn = m.drawn();
+        st.applied = st.out;
+        float out =
+            mods::evaluate(m.type, m.id, &knobValues[size_t(m.knobs)], st, clock, m.steps.data(), m.stepCount, &drawn);
         liveModulators[size_t(m.slot)].store(out, std::memory_order_relaxed);
     }
 }
@@ -1610,6 +2566,8 @@ void Engine::hitDrum(const TrackPlayback& track, TrackState& state, const chain:
     else
         samples = l.gateMs > 0 ? int(std::ceil(l.gateMs * 0.001 * sampleRate)) : retriggerGap; // a 1 ms trigger
     state.drums.hit(lane, n.velocity, samples);
+    state.lanePart[size_t(lane)] = n.channel;
+    state.laneReader[size_t(lane)] = n.lane;
     // The hit's expression curves drive the lane's pitch, timbre and pressure outputs for the note's span. A hit
     // without curves sets them back to rest.
     const auto* ex = static_cast<const NoteExtras*>(n.extras);
@@ -1622,7 +2580,16 @@ void Engine::hitDrum(const TrackPlayback& track, TrackState& state, const chain:
     curve.clip = ex->clip;
     curve.note = ex->note.id.value;
     curve.start = n.start - clockOffset();
-    curve.length = std::max(1.0, std::isfinite(length) ? length : double(kPpq));
+    curve.scale = ex->stretch / playheadSpeed(state, n.lane);
+    curve.length = std::max(1.0, double(ex->note.length) * curve.scale);
+}
+
+double Engine::playheadSpeed(const TrackState& state, uint8_t lane) const {
+    size_t index = size_t(&state - tracks.data());
+    if (lane == 0 || lane > playheads::kMaxPlayheads || index >= tracks.size())
+        return 1;
+    double rate = std::abs((*playheadClocks)[index][size_t(lane) - 1].motion.rate);
+    return rate > 1e-3 ? rate : 1;
 }
 
 void Engine::releaseDrum(const TrackPlayback& track, TrackState& state, int pitch) {
@@ -1687,6 +2654,21 @@ void Engine::seekAll() {
         seekTrack(*snapshot->tracks[i], tracks[i]);
 }
 
+double Engine::sinceClipStart(const TrackPlayback& tp, const TrackState& state, double song, double play) const {
+    if (tp.slot(state.playing))
+        return play - state.launchTick;
+    if (!followsArrangement(state) || replacing(tp))
+        return NAN;
+    double start = NAN;
+    for (const InstanceLanes& inst : tp.instances) {
+        if (double(inst.position) > song)
+            break;
+        if (double(inst.end) > song)
+            start = double(inst.position);
+    }
+    return song - start;
+}
+
 int Engine::lanesClips(const TrackPlayback& tp, const TrackState& state, double song, double play,
                        LaneClips& out) const {
     if (const ClipPlayback* clip = tp.slot(state.playing)) {
@@ -1727,6 +2709,10 @@ void Engine::advanceKnobLanes() {
     knobLanesOn = false;
     if (!snapshot)
         return;
+    // Stopped, knob lanes set nothing: once every track's count is back to 0 there is nothing to visit.
+    if (!playing && !knobSetsLeft)
+        return;
+    knobSetsLeft = playing;
     // Lanes are read for where the song will be at the end of this block, so a note on a lane's point already
     // plays with the point's value (notes read the knobs set at the block's start).
     double ahead = ticksPerSample * kControlBlock;
@@ -1783,6 +2769,7 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
                 state.autoVolts[size_t(o)] = 0;
                 state.autoChanges++;
             }
+        state.mixAutomated = {};
         return;
     }
     // A track silenced by mute or a solo contributes no lanes, exactly as its muted lanes would: channels with
@@ -1856,6 +2843,12 @@ void Engine::advanceAutomation(const TrackPlayback& tp, TrackState& state) {
             state.autoChanges++;
         state.autoVolts[o] = volts;
     }
+    // Fader and pan lanes: their value (0..1) while one plays; with none, the strip's own setting applies.
+    for (size_t o : {size_t(kVolumeLaneSlot), size_t(kPanLaneSlot)}) {
+        state.mixAutomated[o - kVolumeLaneSlot] = have[o];
+        if (have[o])
+            state.autoValue[o] += (target[o] - state.autoValue[o]) * state.slewAlpha[o];
+    }
 }
 
 void Engine::writeAutomation(const TrackPlayback& tp, const TrackState& state, TrackFrame& frame) {
@@ -1883,14 +2876,18 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
     const VoiceAllocator& voices = state.voices;
     frame.trackId = track.id.value;
     frame.channels = uint8_t(voices.polyphony());
+    bool byChannel = false;
     writeAutomation(track, state, frame);
     bool live = playsLiveValues(track);
     for (int v = 0; v < voices.polyphony(); v++) {
         const VoiceAllocator::Voice& voice = voices.voice(v);
-        frame.voct[v] = pitchToVolts(voice.pitch);
+        frame.voct[v] = state.glide[size_t(v)].any() ? glidedVolts(state.glide[size_t(v)], pitchToVolts(voice.pitch), playTick)
+                                                     : pitchToVolts(voice.pitch);
         frame.gate[v] = voices.gate(v) ? 10.f : 0.f;
         frame.vel[v] = voice.velocity * 10.f;
         frame.rel[v] = voice.releaseVelocity * 10.f;
+        // A playhead channel's voices always say its channel, so an output on that channel keeps a steady count.
+        frame.part[v] = state.voicePart[size_t(v)];
         frame.timbre[v] = 0;
         frame.press[v] = 0;
         if (const NoteExtras* ex = state.voiceExtras[size_t(v)]) {
@@ -1914,6 +2911,20 @@ void Engine::writeFrame(const TrackPlayback& track, const TrackState& state, Tra
             frame.press[v] = std::max(frame.press[v], state.liveChannelPress);
         }
     }
+    // A playhead channel's voices always say its channel (so an output on that channel keeps a steady count), and
+    // which of them it has needed so far. One walk through the blocks.
+    for (int b = 0; b < voices.blockTotal(); b++) {
+        const VoiceAllocator::Block& block = voices.block(b);
+        int used = voices.usedIn(b);
+        byChannel = byChannel || block.part != 0;
+        for (int i = 0; i < block.size; i++) {
+            int v = block.start + i;
+            if (block.part)
+                frame.part[v] = block.part;
+            frame.used[v] = i < used ? 1 : 0;
+        }
+    }
+    frame.byChannel = byChannel;
 }
 
 } // namespace tessera
@@ -1924,6 +2935,7 @@ void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state,
     // One channel per lane output: a gate (or trigger) with the lane's velocity and its note as pitch (for a Track
     // Out). `tune` carries the hit's own pitch alone (0 V = as the drum module is tuned), for Drum Out.
     frame.trackId = track.id.value;
+    frame.byChannel = false;
     frame.channels = uint8_t(std::clamp(track.drumChannels, 1, kMaxVoices));
     writeAutomation(track, state, frame);
     for (int c = 0; c < frame.channels; c++) {
@@ -1947,6 +2959,7 @@ void Engine::writeDrumFrame(const TrackPlayback& track, const TrackState& state,
             frame.voct[c] = pitchToVolts(track.drumLanes[i].pitch) + frame.tune[c];
             frame.timbre[c] = curve.timbre * 10.f;
             frame.press[c] = curve.press * 10.f;
+            frame.part[c] = state.lanePart[i];
             if (high)
                 frame.gate[c] = 10.f;
         }

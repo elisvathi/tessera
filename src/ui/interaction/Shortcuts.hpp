@@ -11,6 +11,7 @@ namespace tessera {
 enum class Action {
     // Transport
     PlayStop,
+    Stop,
     PlayFromMouse,
     Record,
     CaptureMidi,
@@ -42,12 +43,16 @@ enum class Action {
     PasteAtMouse,
     Duplicate,
     Delete,
+    DeleteClosingGap,
+    ToggleTakes,
     SelectAll,
     SelectNone,
     SelectInvert,
     Split,
     Glue,
+    Tie,
     MakeUnique,
+    Bounce,
     Quantize,
     QuantizeDialog,
     TransposeUp,
@@ -83,8 +88,6 @@ enum class Action {
     PageLeft,
     PageRight,
     FitAllTracks,
-    ShowUsedLanes,
-    MaximizeLane,
     GridNarrower,
     GridWider,
     GridTriplet,
@@ -94,7 +97,9 @@ enum class Action {
     SwitchPane,
     MaximizePane,
     WidenClips,
+    ShowNotes,
     ToggleDevices,
+    ToggleMixer, // shows the mixer (F5); the name is kept for saved key maps
     ToggleDrumView,
     // Tracks
     AddInstrumentTrack,
@@ -104,10 +109,13 @@ enum class Action {
     PreviousTrack,
     MuteTracks,
     SoloTracks,
+    MutePlayhead,
     AddMarker,
     // General
     Help,
     ExportMidi,
+    ExportAudio,
+    ImportAudio,
     Close,
     Count
 };

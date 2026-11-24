@@ -22,6 +22,9 @@ namespace tessera {
 enum class ArrangerRecordMode : uint8_t { Merge, Stack, Replace };
 
 /// Recording settings of one Tessera, saved with it (not song content, so not undoable).
+/// When the metronome sounds on MAIN (§8.5).
+enum class MetronomeMode : uint8_t { Off, CountIn, Recording, Always };
+
 struct RecordSettings {
     static constexpr int kMaxCountInBars = 2;
 
@@ -33,11 +36,17 @@ struct RecordSettings {
     bool toKey = false;          // incoming pitches snap to the key
     bool mpe = false;            // MIDI input reads MPE: each note on its own channel (docs/design/EXPRESSION_INPUT.md)
     bool newControlLanes = true; // a moved CC that no lane records gets one in the take's clip; off: left out
+    MetronomeMode metronome = MetronomeMode::Off;
+    float metronomeDb = -12; // its level on MAIN
+    // How late audio comes back through the sound card and into an armed track (§8.6), measured or typed:
+    // recordings are moved earlier by this much.
+    int recordOffsetSamples = 0;
 
     bool operator==(const RecordSettings& o) const {
         return countInBars == o.countInBars && clipBars == o.clipBars && arranger == o.arranger &&
                quantize == o.quantize && strength == o.strength && toKey == o.toKey && mpe == o.mpe &&
-               newControlLanes == o.newControlLanes;
+               newControlLanes == o.newControlLanes && metronome == o.metronome && metronomeDb == o.metronomeDb &&
+               recordOffsetSamples == o.recordOffsetSamples;
     }
 
     json_t* toJson() const;
@@ -53,6 +62,7 @@ struct TakeNote {
     float velocity = 0.8f;
     float release = 0.5f;
     uint8_t channel = 1;
+    bool tied = false; // continues the note before it (a key played legato on a one-voice track)
     // What was played on the note itself (poly aftertouch, MPE), across the note: pitch in semitones, else 0..1.
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr;
 };

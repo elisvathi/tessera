@@ -4,21 +4,32 @@
 Run it with an output folder: `demo_patch.py build/manual-rack`. It writes demo.vcv (a small song with its output
 modules), panel.vcv (the same song in an 80 HP panel editor), modules.vcv (the modules zoomed in), first.vcv
 (Roll, a Track Out and a simple voice from Fundamental, to patch by hand), fresh.vcv (a new Roll alone) and
-polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own) and hitvalues.vcv
-(the Drums track open on its Pitch lane: the snares tuned up step by step, the second a shaped curve, the hats with
-timbre).
+polymeter.vcv (the demo with the Drums track open and its closed hat on a 3-step loop of its own), playheads.vcv
+(Lead read by three playheads), ties.vcv (the Bass track on one voice, its verse a tied line with a glide), devices.vcv (the Chords track open with an Arpeggiator and an Echo, and a track LFO
+that moves the arpeggio's Gate), curve.vcv (the Bass track open, a 16-bar Curve on its Transpose's key steps that
+plays bars 5 to 8), hitvalues.vcv (the Drums track open on its Pitch lane: the snares tuned up step by step, the
+second a shaped curve, the hats with timbre) and audio.vcv (the demo with an audio track, "Loop", playing a
+synthesised 112 BPM drum loop from bar 5, its file in the patch's storage; Rack's patch archive format, so it carries
+the file), with crossfade.vcv, takes.vcv and loops.vcv (effect loops on Loop and on the master) made from it.
 """
 
 import json
+import math
+import random
+import struct
+import subprocess
 import sys
+import tempfile
+import wave
 from pathlib import Path
 
 BEAT = 960
 BAR = 4 * BEAT
 
 TESSERA_ID = 1001
-TRACK_IDS = {"Bass": 1, "Chords": 2, "Lead": 3, "Drums": 4}
-COLORS = {"Bass": 0x4498E8, "Chords": 0xDA743C, "Lead": 0x9B7FE2, "Drums": 0x1AAE74}
+TRACK_IDS = {"Bass": 1, "Chords": 2, "Lead": 3, "Drums": 4, "Loop": 5}
+COLORS = {"Bass": 0x4498E8, "Chords": 0xDA743C, "Lead": 0x9B7FE2, "Drums": 0x1AAE74, "Loop": 0xD79628}
+PANEL_HP = 30  # Tessera's own width
 
 # The model's 16 track colours (src/model/TrackColors.hpp); a kit lane takes colour (output * 5) % 16, as new kits do.
 TRACK_COLORS = [0xEF806F, 0xE88949, 0xD79628, 0xBDA422, 0x9AB140, 0x6DBA67, 0x2DC08E, 0x00C0B4,
@@ -105,7 +116,7 @@ def make_song():
     def place(c, bar, bars):
         """A timeline instance of clip `c` from `bar`, `bars` long (loops fill the rest)."""
         return {"id": ids.take(), "clip": c["id"], "pos": bar * BAR, "len": bars * BAR, "offset": 0, "muted": False,
-                "transpose": 0, "velScale": 1.0, "stretch": 1.0}
+                "transpose": 0, "stretch": 1.0}
 
     def track(name, kind, slots, arrangement, automation=()):
         """A track with its launcher slots (8 scenes) and timeline clips."""
@@ -152,7 +163,7 @@ def tessera_module(song, selected_clip, panel_hp, plays_timeline, selected_track
         ui["overlay"]["noteLane"] = note_lane
     return {"id": TESSERA_ID, "plugin": "Tessera", "model": "Roll", "version": "2.0.0",
             "params": [{"value": v, "id": i} for i, v in enumerate(params)], "pos": [0, 0],
-            "data": {"schema": 6, "name": "Roll", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
+            "data": {"schema": 8, "name": "Roll", "savedId": TESSERA_ID, "launcher": [], "song": song, "ui": ui}}
 
 
 def output_module(mid, model, track, x):
@@ -212,25 +223,233 @@ def hit_values_song():
     return song, verse
 
 
+def ties_song():
+    """The demo song with Bass on one voice and its verse clip a tied line: A1 glides into C2 (1/16 each side of the
+    joint), C2 is tied on at the same pitch, E2 is played apart, then tied into D2 with no glide (a jump). Returns the
+    song and the clip."""
+    song, _ = make_song()
+    bass = next(t for t in song["tracks"] if t["name"] == "Bass")
+    bass["polyphony"] = 1
+    verse = next(c for c in song["clips"] if c["name"] == "Verse bass")
+    q = BEAT
+    line = [note(0, 2 * q, 33), note(2 * q, q, 36), note(3 * q, q, 36), note(BAR + q // 2, q + q // 2, 40),
+            note(BAR + 2 * q, 2 * q, 38)]
+    line[1].append({"tie": {"before": q // 4, "after": q // 4}})
+    line[2].append({"tie": {}})
+    line[4].append({"tie": {}})
+    verse["notes"] = line
+    return song, verse
+
+
+def playheads_module():
+    """The demo song with a Playheads device on Lead: three playheads (Sparkle off), the first with its own Echo,
+    then a Scale for all of them. The device strip is open. Sparkle is off by the old "mute" switch, which loads as its
+    On setting off (the settings list stays empty, so every other setting is its default)."""
+    song, lead = make_song()
+    for t in song["tracks"]:
+        if t["name"] != "Lead":
+            continue
+        echo = {"id": ids.take(), "type": "echo", "name": "", "on": True, "params": []}
+        heads = [{"id": ids.take(), "name": name, "color": color, "params": [], "channel": ch, "mute": mute,
+                  "branch": branch}
+                 for name, color, ch, mute, branch in (("Melody", 0, 0, False, [echo]), ("Bass", 1, 2, False, []),
+                                                       ("Sparkle", 3, 3, True, []))]
+        t["devices"] = [{"id": ids.take(), "type": "playheads", "name": "", "on": True, "params": [],
+                         "playheads": heads},
+                        {"id": ids.take(), "type": "scale", "name": "", "on": True, "params": []}]
+    song["nextId"] = ids.next + 10
+    module = tessera_module(song, lead, PANEL_HP, False)
+    module["data"]["schema"] = 8
+    module["data"]["ui"]["overlay"]["deviceStrip"] = True
+    return module
+
+
+def devices_module():
+    """The demo song with the Chords track open: an Arpeggiator (Up-down, 1/16, Gate 50%) and an Echo (1/8 T, three
+    repeats climbing a fifth), and a track LFO moving the Arpeggiator's Gate by 35%. The device strip is open."""
+    song, _ = make_song()
+    chords = next(t for t in song["tracks"] if t["name"] == "Chords")
+    arp = {"id": ids.take(), "type": "arpeggiator", "name": "", "on": True,
+           "params": [2 / 6, 7 / 16, 45 / 195, 0.0, 0.0, 0.0, 0.0]}  # schema 8: seven patterns
+    echo = {"id": ids.take(), "type": "echo", "name": "", "on": True,
+            "params": [12 / 16, 2 / 15, 0.3, 19 / 24, 45 / 95]}
+    chords["devices"] = [arp, echo]
+    chords["modulators"] = [{"id": ids.take(), "type": "lfo", "name": "LFO 1", "params": [],
+                             "routes": [{"kind": "param", "amount": 0.35, "target": ["device", arp["id"], 2]}]}]
+    song["nextId"] = ids.next + 10
+    verse = next(c for c in song["clips"] if c["name"] == "Verse chords")
+    module = tessera_module(song, verse, PANEL_HP, False, "Chords")
+    module["data"]["ui"]["overlay"]["deviceStrip"] = True
+    return module
+
+
+def curve_module():
+    """The demo song with the Bass track open: a Transpose device whose Key steps a Curve modulator moves. The curve
+    is 16 bars of steps and one ramp; its segment plays bars 5 to 8. The device strip is open."""
+    song, _ = make_song()
+    bass = next(t for t in song["tracks"] if t["name"] == "Bass")
+    verse = next(c for c in song["clips"] if c["name"] == "Verse bass")
+    transpose = {"id": ids.take(), "type": "transpose", "name": "", "on": True, "params": []}
+    bass["devices"] = [transpose]
+
+    def at(steps):
+        """The drawn value for `steps` key steps from the knob: Key steps span 28, turned all the way."""
+        return 0.5 + steps / 56
+
+    steps = [0, 0, 2, 4, 5, 4, 2, 0, -3, -3, -1, 0]
+    points = [[bar * BAR, at(v), 0, 0.0] for bar, v in enumerate(steps)]
+    points += [[12 * BAR, at(7), 1, 0.0], [15 * BAR, at(2), 0, 0.0]]
+    bass["modulators"] = [{"id": ids.take(), "type": "curve", "name": "Bass Key steps", "params": [],
+                           "length": 16 * BAR, "points": points, "segment": [4 * BAR, 8 * BAR],
+                           "routes": [{"kind": "param", "amount": 1.0, "target": ["device", transpose["id"], 2]}]}]
+    song["nextId"] = ids.next + 10
+    module = tessera_module(song, verse, PANEL_HP, False, "Bass")
+    module["data"]["schema"] = 8
+    module["data"]["ui"]["overlay"]["deviceStrip"] = True
+    return module
+
+
+def drum_loop(path, bpm=112.0, bars=2, rate=44100):
+    """Writes a stereo drum loop to `path`: kick, snare and closed hats, synthesised so the file is free to use."""
+    beat = 60.0 / bpm
+    n = int(round(bars * 4 * beat * rate))
+    left, right = [0.0] * n, [0.0] * n
+    rnd = random.Random(7)
+
+    def hit(at, length, sample, pan=0.0):
+        start = int(round(at * rate))
+        for i in range(int(length * rate)):
+            if start + i >= n:
+                break
+            v = sample(i / rate)
+            left[start + i] += v * (1 - max(0.0, pan))
+            right[start + i] += v * (1 + min(0.0, pan))
+
+    kick = lambda t: 0.9 * math.sin(2 * math.pi * (50 * t + 120 * (1 - math.exp(-t * 25)) / 25)) * math.exp(-t * 7)
+    snare = lambda t: (0.45 * (rnd.random() * 2 - 1) + 0.25 * math.sin(2 * math.pi * 190 * t)) * math.exp(-t * 18)
+    hat = lambda t: 0.22 * (rnd.random() * 2 - 1) * math.exp(-t * 70)
+    for bar in range(bars):
+        t0 = bar * 4 * beat
+        for k in (0, 1.5, 2) if bar == 0 else (0, 1.5, 2.5):
+            hit(t0 + k * beat, 0.5, kick)
+        for k in (1, 3):
+            hit(t0 + k * beat, 0.3, snare)
+        for k in range(8):
+            hit(t0 + k * beat / 2, 0.08, hat, 0.3)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<hh", max(-32767, min(32767, int(a * 30000))),
+                                           max(-32767, min(32767, int(b * 30000)))) for a, b in zip(left, right)))
+    return n
+
+
+def audio_patch(out, crossfade=False, takes=False, loops=False):
+    """Writes audio.vcv: the demo with a "Loop" audio track playing a drum loop on the timeline from bar 5 and in
+    the Verse and Chorus slots, its file in the patch storage, and the Loop clip selected with the mixer showing in the lower pane.
+    With `crossfade` it writes crossfade.vcv instead: two copies of the loop overlapping by a bar, the second one
+    reversed, and a curved fade in on the first, with the notes showing in the lower pane. With `takes` it writes
+    takes.vcv: the same loop with two more takes, the newest one a pass that stopped early, and the notes showing.
+    With `loops` it writes loops.vcv: audio.vcv plus an effect loop on Loop (through Fundamental's Delay) and one on
+    the master (through its VCF), so the mixer shows their Mix strips."""
+    song, _ = make_song()
+    name = "Drum loop 112 BPM.wav"
+    file = "audio/00000000-" + name
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        storage = root / "modules" / str(TESSERA_ID) / "audio"
+        storage.mkdir(parents=True)
+        frames = drum_loop(storage / Path(file).name)
+        source = {"id": ids.take(), "name": name, "file": file, "hash": "0000000000000000", "channels": 2,
+                  "rate": 44100.0, "frames": frames, "tempo": 112.0, "volts": 5.0}
+        loop = {"id": ids.take(), "name": "Drum loop 112 BPM", "color": 0, "length": 2 * BAR, "loop": [0, 2 * BAR],
+                "loopMode": "loop", "notes": [], "automation": [],
+                "audio": {"source": source["id"], "start": 0, "follow": "stretch", "sound": "drums", "tempo": 112.0}}
+        place = {"id": ids.take(), "clip": loop["id"], "pos": 4 * BAR, "len": 16 * BAR, "offset": 0, "muted": False,
+                 "transpose": 0, "stretch": 1.0, "fadeIn": [BEAT // 2, 0.0]}
+        places = [place]
+        if crossfade:
+            back = dict(loop, id=ids.take(), name="Drum loop reversed", color=2,
+                        audio=dict(loop["audio"], reverse=True))
+            place = dict(place, len=4 * BAR, fadeIn=[2 * BEAT, 0.6])
+            second = {"id": ids.take(), "clip": back["id"], "pos": 7 * BAR, "len": 4 * BAR, "offset": 0,
+                      "muted": False, "transpose": 0, "stretch": 1.0}
+            places = [place, second]
+            song["clips"].append(back)
+        song["tracks"].append({"id": TRACK_IDS["Loop"], "name": "Loop", "color": COLORS["Loop"], "type": "audio",
+                               "polyphony": 0, "mute": False, "solo": False, "armed": False, "monitor": True,
+                               "recordInput": "any", "midiChannel": 0, "gateScale": 1.0, "transpose": 0,
+                               "drumLanes": [], "slots": [None, loop["id"], loop["id"]] + [None] * 5,
+                               "arrangement": places, "automation": [], "channel": {"volume": -3.0, "pan": 0.0}})
+        song["clips"].append(loop)
+        song["audioSources"] = [source]
+        if takes:
+            second = dict(source, id=ids.take())
+            third = dict(source, id=ids.take(), frames=int(frames * 0.7))
+            song["audioSources"] += [second, third]
+            loop["audio"]["takes"] = [{"source": second["id"], "start": 14000}, {"source": third["id"], "start": 28000}]
+        song["master"] = {"id": ids.take(), "volume": 0.0}
+        song["nextId"] = ids.next + 10
+        tessera = tessera_module(song, loop, PANEL_HP, True, "Loop")
+        tessera["data"]["ui"]["overlay"].update({"mixerOpen": not (crossfade or takes), "mixerHeight": 300.0})
+        modules = [tessera] + outputs(PANEL_HP)
+        cables = []
+        if loops:
+            # Loop's Track Out runs through Fundamental's Delay and the master's through its VCF. Track Out jacks: IN L
+            # is input 0, OUT L output 7. Delay: IN is input 4, MIX output 0. VCF: IN is input 3, LPF output 0.
+            loop_out = output_module(2006, "TrackOut", "Loop", PANEL_HP + 44)
+            master_out = output_module(2007, "TrackOut", "Loop", PANEL_HP + 60)
+            master_out["data"]["track"] = song["master"]["id"]
+            loop_out["data"]["mix"] = 0.3
+            master_out["data"]["mix"] = 1.0
+            modules += [loop_out, fundamental(3101, "Delay", PANEL_HP + 50), master_out,
+                        fundamental(3102, "VCF", PANEL_HP + 66)]
+            for n, (mid, fx, fx_in, fx_out) in enumerate(((2006, 3101, 4, 0), (2007, 3102, 3, 0))):
+                cables.append({"id": 9000 + n * 2, "outputModuleId": mid, "outputId": 7, "inputModuleId": fx,
+                               "inputId": fx_in, "color": "#ffb437"})
+                cables.append({"id": 9001 + n * 2, "outputModuleId": fx, "outputId": fx_out, "inputModuleId": mid,
+                               "inputId": 0, "color": "#ffb437"})
+        body = patch(modules)
+        body["cables"] = cables
+        (root / "patch.json").write_text(json.dumps(body))
+        name = ("crossfade.vcv" if crossfade else "takes.vcv" if takes else "loops.vcv" if loops
+                else "audio.vcv")
+        subprocess.run(["tar", "--zstd", "-cf", str(out / name), "-C", tmp, "patch.json", "modules"], check=True)
+
+
 def main():
     """Writes the patches into the folder given on the command line."""
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
     song, lead = make_song()
-    (out / "demo.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 24, True)] + outputs(24))))
-    (out / "panel.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 80, True)] + outputs(80))))
-    (out / "modules.vcv").write_text(json.dumps(patch([tessera_module(song, lead, 24, True)] + outputs(24), 1.6)))
-    first = [tessera_module(song, lead, 24, False), output_module(2001, "TrackOut", "Bass", 24),
-             fundamental(3001, "VCO", 31), fundamental(3002, "ADSR", 42), fundamental(3003, "VCA-1", 52)]
+    hp = PANEL_HP
+    (out / "demo.vcv").write_text(json.dumps(patch([tessera_module(song, lead, hp, True)] + outputs(hp))))
+    # The two editors share their open lanes, and the panel has no room for this one.
+    panel = tessera_module(song, lead, 80, True)
+    del panel["data"]["ui"]["overlay"]["openAutomation"]
+    (out / "panel.vcv").write_text(json.dumps(patch([panel] + outputs(80))))
+    (out / "modules.vcv").write_text(json.dumps(patch([tessera_module(song, lead, hp, True)] + outputs(hp), 1.6)))
+    first = [tessera_module(song, lead, hp, False), output_module(2001, "TrackOut", "Bass", hp),
+             fundamental(3001, "VCO", hp + 7), fundamental(3002, "ADSR", hp + 18), fundamental(3003, "VCA-1", hp + 28)]
     (out / "first.vcv").write_text(json.dumps(patch(first, 1.3)))
     poly, verse = polymeter_song()
-    (out / "polymeter.vcv").write_text(json.dumps(patch([tessera_module(poly, verse, 24, False, "Drums")] +
-                                                        outputs(24))))
+    (out / "polymeter.vcv").write_text(json.dumps(patch([tessera_module(poly, verse, hp, False, "Drums")] +
+                                                        outputs(hp))))
     values, beat = hit_values_song()
-    (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, 24, False, "Drums", "pitch")] +
-                                                         outputs(24))))
+    (out / "hitvalues.vcv").write_text(json.dumps(patch([tessera_module(values, beat, hp, False, "Drums", "pitch")] +
+                                                         outputs(hp))))
+    tied, line = ties_song()
+    (out / "ties.vcv").write_text(json.dumps(patch([tessera_module(tied, line, hp, False, "Bass")] + outputs(hp))))
+    (out / "playheads.vcv").write_text(json.dumps(patch([playheads_module()] + outputs(hp))))
+    (out / "curve.vcv").write_text(json.dumps(patch([curve_module()] + outputs(hp))))
+    (out / "devices.vcv").write_text(json.dumps(patch([devices_module()] + outputs(hp))))
     (out / "fresh.vcv").write_text(json.dumps(patch([{"id": TESSERA_ID, "plugin": "Tessera", "model": "Roll",
                                                       "version": "2.0.0", "params": [], "pos": [0, 0]}])))
+    audio_patch(out)
+    audio_patch(out, crossfade=True)
+    audio_patch(out, takes=True)
+    audio_patch(out, loops=True)
 
 
 if __name__ == "__main__":

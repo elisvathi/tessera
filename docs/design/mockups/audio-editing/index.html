@@ -1,0 +1,287 @@
+<title>Tessera Audio Editing</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; each band is a claim, then the screen that proves it, with numbered notes under it. */
+:root{
+  --page:#ECE8E1;--ink:#16191F;--muted:#565B65;--rule:#D3CDC3;--card:#F8F6F2;--note:#C2410C;--note-ink:#FFFFFF;--good:#007D50;--bad:#C9302D;
+  --t-bg0:#FDFBF9;--t-bg1:#F5F2ED;--t-bg2:#E9E5DE;--t-line1:#E1DDD7;--t-line2:#C2BDB5;--t-text0:#171B21;--t-text1:#484D56;--t-text2:#646972;--t-accent:#5356CD;--t-ground:#E0DCD4;--t-ontile:#13151B;
+  --c2:#CB8100;--c5:#65A84A;--c9:#00A3D8;--c12:#9B7FE2;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --page:#141519;--ink:#D8DBDF;--muted:#9AA0AA;--rule:#2B2E34;--card:#1B1D22;--note:#FF8A3D;--note-ink:#1B0F06;--good:#5AD69B;--bad:#F76560;
+  --t-bg0:#292B30;--t-bg1:#2F3238;--t-bg2:#3B3F45;--t-line1:#373B40;--t-line2:#4C5057;--t-text0:#D8DBDF;--t-text1:#AFB4BD;--t-text2:#969CA6;--t-accent:#909CF5;--t-ground:#212429;--t-ontile:#13151B;
+  --c2:#D79628;--c5:#6DBA67;--c9:#24B2ED;--c12:#B28FEF;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --page:#141519;--ink:#D8DBDF;--muted:#9AA0AA;--rule:#2B2E34;--card:#1B1D22;--note:#FF8A3D;--note-ink:#1B0F06;--good:#5AD69B;--bad:#F76560;
+  --t-bg0:#292B30;--t-bg1:#2F3238;--t-bg2:#3B3F45;--t-line1:#373B40;--t-line2:#4C5057;--t-text0:#D8DBDF;--t-text1:#AFB4BD;--t-text2:#969CA6;--t-accent:#909CF5;--t-ground:#212429;--t-ontile:#13151B;
+  --c2:#D79628;--c5:#6DBA67;--c9:#24B2ED;--c12:#B28FEF;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--ink);font:15px/1.55 var(--f-ui);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 72px}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+h1,h2{font-family:var(--f-display);font-weight:600;text-wrap:balance;margin:0;line-height:1.1}
+h1{font-size:44px}h2{font-size:30px}
+h3{font:600 15px/1.3 var(--f-ui);margin:0}
+p{margin:0;max-width:68ch}
+.eyebrow{font:500 12px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--note)}
+.head{display:flex;flex-direction:column;gap:10px}
+section{display:flex;flex-direction:column;gap:18px}
+.status{font-size:13px;color:var(--muted)}
+.fig{background:var(--card);border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.figt{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--rule);font-weight:600;font-size:13.5px}
+.tag{font:500 11px/1 var(--f-mono);padding:4px 6px;border-radius:3px;background:var(--t-bg2);color:var(--t-text1)}
+.tag.new{background:var(--note);color:var(--note-ink)}
+.stage{overflow-x:auto}
+.stage svg{display:block;width:100%;min-width:680px;height:auto}
+ol.notes{list-style:none;margin:0;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px 22px;font-size:13.5px;border-top:1px solid var(--rule)}
+ol.notes li{display:flex;gap:9px;min-width:0}
+.n{flex:none;width:20px;height:20px;border-radius:50%;background:var(--note);color:var(--note-ink);font:600 11px/20px var(--f-mono);text-align:center}
+.layers{width:100%;border-collapse:collapse;font-size:14px}
+.tablebox{overflow-x:auto}
+.layers th,.layers td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+.layers th{font-weight:600;color:var(--muted);font-size:12.5px}
+.layers tr:last-child td{border-bottom:0}
+.layers td:first-child{font-weight:600;white-space:nowrap}
+.bad{color:var(--bad);font-weight:500}.good{color:var(--good);font-weight:500}
+.demo{padding:14px;display:flex;flex-direction:column;gap:12px}
+.demoSvgBox{overflow-x:auto}
+#demoSvg{display:block;width:100%;min-width:640px;height:auto;background:var(--t-bg0);border-radius:4px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button{font:500 13.5px var(--f-ui);padding:7px 12px;border-radius:4px;border:1px solid var(--t-line2);background:var(--t-bg1);color:var(--t-text0);cursor:pointer}
+button:hover{background:var(--t-bg2)}
+button:focus-visible{outline:2px solid var(--t-accent);outline-offset:1px}
+button.pri{background:var(--t-accent);border-color:var(--t-accent);color:var(--page)}
+#demoSay{min-height:3em;font-size:14px;max-width:none}
+.tree{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}
+.treebox{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+pre{margin:0;font:13px/1.65 var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.dialog{background:var(--t-bg1);border:1px solid var(--t-line2);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:12px;max-width:560px}
+.row{display:flex;justify-content:space-between;gap:12px;font:13px var(--f-mono);border-bottom:1px solid var(--t-line1);padding-bottom:6px}
+.row span:first-child{overflow-wrap:anywhere;min-width:0}
+.q{display:flex;flex-direction:column;gap:5px;padding-block:12px;border-top:1px solid var(--rule)}
+.rec{color:var(--note);font-weight:600}
+@media (max-width:560px){h1{font-size:34px}h2{font-size:25px}}
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div class="eyebrow">Tessera · proposal · 9 Nov</div>
+    <h1>Cut audio without touching the file</h1>
+    <p>Cuts, takes, gain and fades become a list inside the clip. The audio files never change. Linked copies share the list, independent copies get their own, and a project becomes one file you can move anywhere.</p>
+    <p class="status">Agreed 9 Nov. Built: the split rule and one-file projects. Cuts in the audio editor and takes come next.</p>
+  </header>
+
+  <section>
+    <div class="head"><div class="eyebrow">The rule</div><h2>Each edit lands on one layer</h2></div>
+    <div class="fig tablebox"><table class="layers">
+      <tr><th>Layer</th><th>What it holds</th><th>Linked copy</th><th>Independent copy</th></tr>
+      <tr><td>File</td><td>The samples, as imported or recorded</td><td>Same file</td><td>Same file</td></tr>
+      <tr><td>Clip</td><td>Cuts, moved parts, takes, gain, inner fades, reverse</td><td>Shared: edits show everywhere</td><td>Its own: edits stay here</td></tr>
+      <tr><td>Tile</td><td>Timeline place, length, outer fades, mute</td><td>Its own</td><td>Its own</td></tr>
+    </table></div>
+    <div class="fig">
+      <div class="figt"><span class="tag new">Try it</span>Split on the timeline, or cut in the editor</div>
+      <div class="demo">
+        <div class="demoSvgBox"><svg id="demoSvg" viewBox="0 0 1000 150" role="img" aria-label="Three vocal tiles on a timeline; click one to select it"></svg></div>
+        <div class="btns">
+          <button class="pri" id="bCut">Cut a breath in the editor</button>
+          <button id="bSplit">Split the tile (Ctrl+E)</button>
+          <button id="bReset">Start again</button>
+        </div>
+        <p id="demoSay" aria-live="polite"></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><div class="eyebrow">The audio editor</div><h2>The ruler becomes the clip's time</h2>
+    <p>Today the editor shows the file, so a part can't move. In clip time it can. A clip you haven't edited looks the same as before.</p></div>
+    <div class="fig">
+      <div class="figt"><span class="tag">Today</span>File time: one bright window</div>
+      <div class="stage" id="edToday"></div>
+    </div>
+    <div class="fig">
+      <div class="figt"><span class="tag new">Proposed</span>Clip time: parts you can cut, move, fade and crossfade</div>
+      <div class="stage" id="edNew"></div>
+      <ol class="notes">
+        <li><span class="n">1</span><div><b>∞ 3 copies</b> says how far an edit reaches. <b>Make unique</b> sits beside it.</div></li>
+        <li><span class="n">2</span><div>The clip's settings live in the header, not in menus.</div></li>
+        <li><span class="n">3</span><div><b>Select | Slice</b>. Slice (C) cuts at a click. Shift+click cuts at every hit or beat.</div></li>
+        <li><span class="n">4</span><div>A deleted breath is a gap. The audio is still there: drag an edge to bring it back.</div></li>
+        <li><span class="n">5</span><div>Drag the top strip for gain and the corners for fades, as on the timeline.</div></li>
+        <li><span class="n">6</span><div>Parts that overlap crossfade. Drag the handle to change its length.</div></li>
+        <li><span class="n">7</span><div>Dim audio is the part of the file this clip doesn't use.</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><div class="eyebrow">Takes</div><h2>Comp by dragging across a take</h2>
+    <p>Takes move into the clip, so a comp needs no timeline splits and every linked copy plays it.</p></div>
+    <div class="fig">
+      <div class="figt"><span class="tag new">Proposed</span>Takes 3, open under the waveform</div>
+      <div class="stage" id="takes"></div>
+      <ol class="notes">
+        <li><span class="n">1</span><div><b>Comp</b> shows what plays, coloured by take.</div></li>
+        <li><span class="n">2</span><div>Drag across a take and that stretch plays it. One undo step.</div></li>
+        <li><span class="n">3</span><div><b>Hear</b> plays one take in time, in place of the comp. Nothing in the song changes.</div></li>
+        <li><span class="n">4</span><div>Hatching means the pass stopped early and has no audio here.</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><div class="eyebrow">Files</div><h2>A project should survive being moved</h2>
+    <p>A saved Rack patch already holds its audio. A Tessera project does not: it needs a folder beside it, found only by name.</p></div>
+    <div class="tree">
+      <div class="treebox"><span><span class="tag">Today</span></span><pre>Music/
+├─ Song.tessera
+└─ Song audio/
+   ├─ 3fa1b2c4-vox.wav
+   └─ 91cc07de-drums.flac</pre><p class="bad">Rename the project and its audio is lost.</p></div>
+      <div class="treebox"><span><span class="tag new">Proposed</span></span><pre>Music/
+└─ Song.tessera
+   (inside: project.json
+    and audio/…)</pre><p class="good">One file. Nothing can get separated.</p></div>
+    </div>
+    <div class="fig tablebox"><table class="layers">
+      <tr><th>When you…</th><th>Today</th><th>Proposed</th></tr>
+      <tr><td>Move or rename the project</td><td class="bad">Audio lost unless the folder follows</td><td class="good">Works</td></tr>
+      <tr><td>Send it to another computer</td><td class="bad">Must send both</td><td class="good">One file</td></tr>
+      <tr><td>Save again</td><td class="bad">Reads every file twice, editor freezes</td><td class="good">Saves in the background</td></tr>
+      <tr><td>Delete clips, then save</td><td class="bad">Old audio stays forever</td><td class="good">Only what the song has</td></tr>
+      <tr><td>Lose power during a save</td><td class="bad">Project damaged</td><td class="good">Old project is safe</td></tr>
+      <tr><td>Move or mail the .vcv patch</td><td class="good">Works</td><td class="good">Works</td></tr>
+      <tr><td>Move the original WAV</td><td class="good">Works: it was copied in</td><td class="good">Works</td></tr>
+      <tr><td>Load a Rack preset elsewhere</td><td class="bad">Missing, one dialog per file</td><td>Missing, one Find for all</td></tr>
+    </table></div>
+    <div class="fig">
+      <div class="figt"><span class="tag new">Proposed</span>Find missing audio</div>
+      <div style="padding:14px"><div class="dialog">
+        <h3>3 audio files are missing</h3>
+        <div class="row"><span>vox take 2.wav</span><span class="good">found, same recording</span></div>
+        <div class="row"><span>drums.flac</span><span class="good">found, same recording</span></div>
+        <div class="row"><span>bass.wav</span><span class="bad">same name, different audio</span></div>
+        <p>Find looks through a whole folder once. It checks each file really is the same recording, and asks before using one that isn't.</p>
+        <div class="btns"><button id="dFind" type="button">Find in a folder…</button><button id="dUse" type="button">Use bass.wav anyway</button></div>
+      </div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="head"><div class="eyebrow">Agreed 9 Nov: all four as recommended</div><h2>Four questions</h2></div>
+    <div>
+      <div class="q"><h3>1. One file or a folder for a .tessera project?</h3><p>One file means nothing can get separated. A folder keeps the project readable as text, and a missing folder could only warn you. <span class="rec">Recommended: one file.</span></p></div>
+      <div class="q"><h3>2. What should Delete do in the audio editor?</h3><p>Del leaves a gap and Shift+Del closes it, or the other way round. <span class="rec">Recommended: Del leaves a gap,</span> so timing stays put, as Delete range does on the timeline.</p></div>
+      <div class="q"><h3>3. Should every loop pass on an audio track be kept as a take?</h3><p>Today the record mode decides, and in the default mode a new pass replaces the last. <span class="rec">Recommended: always keep them.</span> A lost pass can't be recovered.</p></div>
+      <div class="q"><h3>4. Where does the choice of take live?</h3><p>On the clip, so linked copies play one comp, or also on each tile. <span class="rec">Recommended: on the clip.</span> It matches your rule, and Make unique gives a different comp when you want one.</p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+function rng(seed){return function(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}}
+function wave(seed,n){const r=rng(seed),a=[];let env=.5;for(let i=0;i<n;i++){if(r()<.07)env=.35+r()*.65;env*=.985;a.push(Math.max(.05,env*(.55+r()*.45)))}return a}
+function bars(amps,x0,y,w,h,col,op,from,to){from=from===undefined?0:from;to=to===undefined?1:to;const n=Math.max(1,Math.floor(w/3));let d='';for(let i=0;i<n;i++){const u=from+(to-from)*(i/n);const a=amps[Math.min(amps.length-1,Math.floor(u*amps.length))];const x=x0+i*3+.5;const hh=a*h/2;d+='M'+x.toFixed(1)+' '+(y-hh).toFixed(1)+'V'+(y+hh).toFixed(1)}return '<path d="'+d+'" stroke="'+col+'" stroke-width="2" opacity="'+(op===undefined?1:op)+'" fill="none"/>'}
+function text(x,y,s,o){o=o||{};return '<text x="'+x+'" y="'+y+'" font-family="'+(o.mono?'var(--f-mono)':'var(--f-ui)')+'" font-size="'+(o.size||12)+'" font-weight="'+(o.weight||400)+'" fill="'+(o.fill||'var(--t-text1)')+'" text-anchor="'+(o.anchor||'start')+'">'+s+'</text>'}
+function rect(x,y,w,h,f,o){o=o||{};return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+f+'" rx="'+(o.r||0)+'"'+(o.stroke?' stroke="'+o.stroke+'" stroke-width="'+(o.sw||1)+'"':'')+(o.op!==undefined?' opacity="'+o.op+'"':'')+(o.dash?' stroke-dasharray="'+o.dash+'"':'')+'/>'}
+function note(x,y,n){return '<circle cx="'+x+'" cy="'+y+'" r="10" fill="var(--note)"/>'+text(x,y+4,n,{anchor:'middle',fill:'var(--note-ink)',weight:600,size:11,mono:true})}
+function chip(x,s,o){o=o||{};const w=s.length*(o.mono?7.4:6.9)+16;return {w:w,s:rect(x,7,w,22,o.bg||'var(--t-bg2)',{r:3})+text(x+8,22,s,{fill:o.fill||'var(--t-text0)',mono:o.mono,weight:o.weight||500})}}
+function row(items,x){let out='';items.forEach(function(it){const c=chip(x,it[0],it[1]);out+=c.s;x+=c.w+6});return {s:out,x:x}}
+function ruler(y,x0,x1,beats,label){let s=rect(0,y,1000,24,'var(--t-bg1)');const step=(x1-x0)/beats;for(let i=0;i<=beats;i++){const x=x0+i*step;s+='<path d="M'+x+' '+(y+(i%4==0?4:14))+'V'+(y+24)+'" stroke="var(--t-line2)"/>';if(i%4==0&&i<beats)s+=text(x+4,y+15,(i/4+1)+'',{mono:true,size:11})}if(label)s+=text(990,y+15,label,{anchor:'end',size:11,fill:'var(--t-text2)'});return s}
+function svg(h,b){return '<svg viewBox="0 0 1000 '+h+'" role="img">'+b+'</svg>'}
+
+(function(){
+  var today=rect(0,0,1000,190,'var(--t-bg0)');
+  var c=chip(10,'Lead vox',{bg:'var(--c9)',fill:'var(--t-ontile)'});today+=rect(0,0,1000,36,'var(--t-bg1)')+c.s;
+  today+=ruler(36,180,720,16,'file time');
+  var a=wave(7,800);
+  today+=rect(0,60,1000,130,'var(--t-ground)');
+  today+=bars(a,0,125,1000,105,'var(--c9)',.3);
+  today+=rect(180,60,540,130,'var(--t-bg0)')+bars(a,180,125,540,105,'var(--c9)',1,.18,.72);
+  today+=rect(180,60,540,130,'none',{stroke:'var(--t-accent)',sw:1.5});
+  document.getElementById('edToday').innerHTML=svg(190,today);
+
+  var ed=rect(0,0,1000,262,'var(--t-bg0)')+rect(0,0,1000,36,'var(--t-bg1)');
+  var h=row([['Lead vox',{bg:'var(--c9)',fill:'var(--t-ontile)'}],['∞ 3 copies',{bg:'var(--note)',fill:'var(--note-ink)'}],['Make unique',{}]],10);ed+=h.s;
+  var h2=row([['112 ▾',{mono:true}],['Stretch ▾',{}],['Vocal ▾',{}],['Pitch 0 st',{}],['Gain −3.0 dB',{}],['◀',{}],['Takes 3',{}]],h.x+14);ed+=h2.s;
+  ed+=rect(860,7,68,22,'var(--t-accent)',{r:3})+text(894,22,'Select',{anchor:'middle',fill:'var(--t-ground)',weight:600})+rect(928,7,60,22,'var(--t-bg2)',{r:3})+text(958,22,'Slice',{anchor:'middle',fill:'var(--t-text0)',weight:500});
+  ed+=ruler(36,110,890,16,'clip time');
+  ed+=rect(0,60,1000,202,'var(--t-ground)');
+  var w=wave(11,1000),y=160,H=170;
+  ed+=bars(w,0,y,110,H,'var(--c9)',.28,.02,.13)+bars(w,890,y,110,H,'var(--c9)',.28,.9,1);
+  function part(x,wd,from,to,sel,gain){var o=rect(x,66,wd,190,'var(--t-bg0)',{r:2,stroke:sel?'var(--t-accent)':'var(--t-line2)',sw:sel?2:1});o+=bars(w,x+1,y,wd-2,H*(gain||1),'var(--c9)',1,from,to);return o}
+  ed+=part(110,245,.13,.38);
+  ed+=part(425,235,.45,.68,true,.75);
+  ed+=part(640,250,.66,.9);
+  ed+='<path d="M640 256L660 66M660 256L640 66" stroke="var(--t-text1)" stroke-width="1.2"/>'+rect(642,58,16,8,'var(--t-accent)',{r:2});
+  ed+='<path d="M425 256L470 66" stroke="var(--t-accent)" stroke-width="1.5"/><circle cx="470" cy="70" r="4.5" fill="var(--t-accent)"/>';
+  ed+=rect(470,66,190,14,'var(--t-accent)',{op:.28})+text(565,77,'−3.0 dB',{anchor:'middle',mono:true,size:10.5,fill:'var(--t-text0)'});
+  ed+=rect(355,66,70,190,'none',{stroke:'var(--t-line2)',dash:'4 4'});
+  ed+=note(190,18,1);ed+=note(h2.x+2,18,2);ed+=note(848,18,3);ed+=note(390,160,4);ed+=note(550,100,5);ed+=note(650,48,6);ed+=note(60,90,7);
+  document.getElementById('edNew').innerHTML=svg(262,ed);
+
+  var t=rect(0,0,1000,272,'var(--t-bg0)');
+  t+=rect(0,0,1000,24,'var(--t-bg1)')+text(10,16,'Takes',{size:11,fill:'var(--t-text2)'});
+  t+=ruler(0,160,960,16,'');
+  var rows=[{n:'Comp',y:26},{n:'Take 3',y:88,c:'var(--c9)',s:21},{n:'Take 2',y:150,c:'var(--c5)',s:31},{n:'Take 1',y:212,c:'var(--c12)',s:41}];
+  rows.forEach(function(r){t+=rect(0,r.y,1000,60,r.n=='Comp'?'var(--t-bg1)':'var(--t-bg0)')+'<path d="M0 '+(r.y+60)+'H1000" stroke="var(--t-line1)"/>';t+=text(12,r.y+26,r.n,{weight:600,fill:'var(--t-text0)',size:13});if(r.c){t+=rect(12,r.y+35,44,18,'var(--t-bg2)',{r:3})+text(34,r.y+48,'Hear',{anchor:'middle',size:11,fill:'var(--t-text0)'});}});
+  var wa=wave(21,700),wb=wave(31,700),wc=wave(41,700);
+  t+=bars(wa,160,118,800,48,'var(--c9)');
+  t+=bars(wb,160,180,800,48,'var(--c5)');
+  t+=bars(wc,160,242,540,48,'var(--c12)',1,0,.67);
+  t+='<defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0V8" stroke="var(--t-line2)" stroke-width="2"/></pattern></defs>'+rect(700,214,260,56,'url(#hatch)');
+  function comp(x,wd,c,src,from,to,l){return rect(x,28,wd,56,c,{op:.18,r:2})+bars(src,x,56,wd,44,c,1,from,to)+text(x+6,42,l,{size:10.5,mono:true,fill:'var(--t-text0)'})}
+  t+=comp(160,210,'var(--c9)',wa,0,.26,'T3')+comp(370,250,'var(--c5)',wb,.26,.575,'T2')+comp(620,340,'var(--c9)',wa,.575,1,'T3');
+  t+=rect(370,152,250,56,'var(--c5)',{op:.25,stroke:'var(--t-accent)',sw:2})+text(495,166,'drag',{anchor:'middle',size:10.5,fill:'var(--t-text0)',weight:600});
+  t+=note(140,44,1)+note(636,180,2)+note(72,132,3)+note(830,242,4);
+  document.getElementById('takes').innerHTML=svg(272,t);
+})();
+
+(function(){
+  var clips,tiles,selected,say,nextClip;
+  var svgEl=document.getElementById('demoSvg'),sayEl=document.getElementById('demoSay');
+  var amps=wave(17,600);
+  function reset(){clips={X:{gaps:[]},Y:{gaps:[]}};tiles=[{id:'a',name:'Bar 1',clip:'X',x:30,w:280,from:0,to:1},{id:'b',name:'Bar 9',clip:'X',x:350,w:280,from:0,to:1},{id:'c',name:'Bar 17',clip:'Y',x:670,w:280,from:0,to:1}];selected='a';nextClip=1;say='Bars 1 and 9 are linked. Bar 17 is an independent copy. Click a tile, then pick an edit.';draw()}
+  function uses(c){return tiles.filter(function(t){return t.clip==c}).length}
+  function draw(){
+    var s='';
+    tiles.forEach(function(t,i){
+      var sel=t.id==selected,y=38,h=90,linked=uses(t.clip)>1;
+      s+='<g data-t="'+t.id+'" style="cursor:pointer">'+rect(t.x,y,t.w,h,'var(--t-bg1)',{r:3,stroke:sel?'var(--t-accent)':'var(--t-line2)',sw:sel?2.5:1});
+      s+=rect(t.x,y,t.w,18,linked?'var(--note)':'var(--c9)',{r:3,op:linked?1:.7});
+      s+=text(t.x+7,y+13,t.name+(linked?'  ∞ linked':'  own clip'),{size:11,weight:600,fill:linked?'var(--note-ink)':'var(--t-ontile)'});
+      var n=Math.floor(t.w/3),d='';
+      for(var k=0;k<n;k++){var u=t.from+(t.to-t.from)*(k/n);var gap=clips[t.clip].gaps.some(function(g){return u>=g[0]&&u<g[1]});if(gap)continue;var a=amps[Math.floor(u*amps.length)];var X=t.x+k*3+1.5,Y=y+56,hh=a*30;d+='M'+X+' '+(Y-hh)+'V'+(Y+hh)}
+      s+='<path d="'+d+'" stroke="var(--c9)" stroke-width="2" fill="none"/>';
+      s+='</g>';
+    });
+    s+=text(30,22,'Timeline',{size:11,fill:'var(--t-text2)'});
+    svgEl.innerHTML=s;sayEl.textContent=say;
+    Array.prototype.forEach.call(svgEl.querySelectorAll('[data-t]'),function(g){g.addEventListener('click',function(){selected=g.getAttribute('data-t');var t=tiles.filter(function(q){return q.id==selected})[0];say='Selected '+t.name+'. '+(uses(t.clip)>1?'An edit inside this clip reaches '+uses(t.clip)+' tiles.':'An edit inside this clip stays on this tile.');draw()})});
+  }
+  document.getElementById('bCut').addEventListener('click',function(){
+    var t=tiles.filter(function(q){return q.id==selected})[0],c=clips[t.clip];
+    var span=t.to-t.from,m=c.gaps.filter(function(g){return g[0]>=t.from&&g[1]<=t.to}).length;
+    var st=t.from+span*(.2+.28*m);
+    if(st+span*.14>t.to){say='This part has no room for another cut in the demo.';draw();return}
+    c.gaps.push([st,st+span*.14]);
+    var n=uses(t.clip);say=n>1?'Cut inside the clip: all '+n+' linked tiles lost the breath. The file did not change.':'Cut inside the clip: only this tile changed. The file did not change.';draw();
+  });
+  document.getElementById('bSplit').addEventListener('click',function(){
+    var t=tiles.filter(function(q){return q.id==selected})[0];
+    if(t.w<120){say='This tile is too short to split in the demo.';draw();return}
+    var mid=(t.from+t.to)/2,oldClip=t.clip,copy=function(){var id='N'+(nextClip++);clips[id]={gaps:clips[oldClip].gaps.map(function(g){return g.slice()})};return id};
+    var w=t.w,left={id:t.id+'L',name:t.name+' A',clip:oldClip,x:t.x,w:w/2-3,from:t.from,to:mid},right={id:t.id+'R',name:t.name+' B',clip:copy(),x:t.x+w/2+3,w:w/2-3,from:mid,to:t.to};
+    var was=uses(oldClip);if(was>1)left.clip=copy();
+    tiles.splice(tiles.indexOf(t),1,left,right);selected=right.id;
+    say=was>1?'Split a linked tile: both parts left the link and each has its own clip. The other copy stays as it was.':'Split: each part has its own clip. An edit in one no longer reaches the other.';draw();
+  });
+  document.getElementById('bReset').addEventListener('click',reset);
+  reset();
+})();
+</script>

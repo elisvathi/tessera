@@ -1,12 +1,44 @@
 #include "Serialize.hpp"
 
+#include "DeviceLookup.hpp"
+#include "DeviceTypes.hpp"
 #include "Devices.hpp"
 #include "Json.hpp"
+#include "LauncherCommands.hpp"
+#include "Modulators.hpp"
+#include "Playheads.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
+#include <map>
 
 namespace tessera {
+
+bool isSafeAudioFile(const std::string& file) {
+    if (file.empty() || file.front() == '/' || file.find_first_of("\\:") != std::string::npos)
+        return false;
+    size_t start = 0;
+    while (start <= file.size()) {
+        size_t end = std::min(file.find('/', start), file.size());
+        std::string part = file.substr(start, end - start);
+        if (part.empty() || part == "." || part == "..")
+            return false;
+        start = end + 1;
+    }
+    return true;
+}
+
+std::string safeAudioFile(const std::string& file) {
+    if (file.empty() || isSafeAudioFile(file))
+        return file;
+    size_t cut = file.find_last_of("/\\");
+    std::string name = cut == std::string::npos ? file : file.substr(cut + 1);
+    std::replace(name.begin(), name.end(), ':', '_');
+    return "audio/" + (name.empty() || name == "." || name == ".." ? std::string("unnamed") : name);
+}
 
 using namespace json;
 
@@ -28,21 +60,33 @@ E enumFromName(const json_t* j, const char* const (&names)[N], E fallback) {
     return fallback;
 }
 
-const char* const kTrackTypes[] = {"instrument", "drum"};
-const char* const kRecordInputs[] = {"any", "cv", "midi"};
+const char* const kTrackTypes[] = {"instrument", "drum", "audio"};
+const char* const kTempoFollow[] = {"stretch", "repitch", "off"};
+// In SoundType's order.
+const char* const kSoundTypes[] = {"drums", "melody", "voice", "fullMix"};
+const char* const kRecordInputs[] = {"any", "cv", "midi", "rollIn", "track"};
 const char* const kListenSources[] = {"none", "external", "trackAfter", "trackBefore"};
 const char* const kAutoSources[] = {"knob", "cv"};
 const char* const kAutoRecordModes[] = {"touch", "latch", "write"};
-const char* const kLaneDrives[] = {"auto", "pitch", "pressure"};
+const char* const kLaneDrives[] = {"auto", "pitch", "pressure", "volume", "pan", "send"};
 const char* const kMidiControls[] = {"none", "bend", "pressure", "cc"};
 const char* const kLoopModes[] = {"off", "loop"};
+const char* const kAllocations[] = {"rotate", "reuse", "reset", "channel"};
 const char* const kOccurrences[] = {"always", "first", "notFirst", "prevPlayed", "prevNotPlayed", "fill", "notFill"};
 const char* const kCombineModes[] = {"override", "modulate"};
 const char* const kLaunchQuantize[] = {"off", "1/16", "1/4", "1bar", "2bars", "4bars"};
-const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord", "arpeggiator",
-                                    "echo",      "random", "noteFilter", "humanize",   "groove"};
-const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note"};
-const char* const kParamOwners[] = {"device", "modulator"};
+const char* const kNextActions[] = {"none",  "next",       "previous", "first", "last",    "random",
+                                    "other", "roundRobin", "back",     "stop",  "timeline"};
+static_assert(sizeof(kNextActions) / sizeof(kNextActions[0]) == kNextActionCount, "a name per next action");
+const char* const kNextActionUnits[] = {"loops", "bars"};
+const char* const kNextActionScopes[] = {"track", "block"};
+const char* const kDeviceTypes[] = {"transpose", "scale",  "velocity",   "noteLength", "chord",    "arpeggiator",
+                                    "echo",      "random", "noteFilter", "humanize",   "groove",   "playheads",
+                                    "motion", "noteRepeat"};
+const char* const kModulatorTypes[] = {"lfo", "envelope", "steps", "random", "ramp", "macro", "note", "curve"};
+// "motion" (a clip's motion group, before 30 Oct 2026) reads as "device": each group became a Motion device with
+// the group's ID.
+const char* const kParamOwners[] = {"device", "modulator", "playhead"};
 const char* const kModulationKinds[] = {"param", "auto", "knob"};
 
 constexpr int kNoteMuted = 1;
@@ -91,7 +135,7 @@ ParamRef paramRefFromJson(const json_t* j) {
     ParamRef r;
     if (!json_is_array(j))
         return r;
-    r.kind = enumFromName(json_array_get(j, 0), kParamOwners, r.kind);
+    r.kind = enumFromName(json_array_get(j, 0), kParamOwners, ParamRef::Kind::Device);
     r.owner = uint64_t(std::max<int64_t>(0, intAt(j, 1, 0)));
     r.param = saturate<uint16_t>(intAt(j, 2, 0));
     return r;
@@ -121,6 +165,10 @@ json_t* automationToJson(const AutomationEnvelope& a) {
     // Written only when set, so older patches load unchanged.
     if (a.drive != LaneDrive::Auto)
         setString(j, "drive", enumName(a.drive, kLaneDrives));
+    if (a.sendTo.valid())
+        set(j, "sendTo", idJson(a.sendTo));
+    if (a.part != 0)
+        setInt(j, "part", int64_t(a.part));
     if (a.midi.valid()) {
         json_t* midi = json_array();
         json_array_append_new(midi, json_string(enumName(a.midi.kind, kMidiControls)));
@@ -167,6 +215,9 @@ AutomationEnvelope automationFromJson(const json_t* j) {
     });
     a.paramTarget = paramRefFromJson(get(j, "paramTarget"));
     a.drive = enumFromName(get(j, "drive"), kLaneDrives, a.drive);
+    if (get(j, "sendTo"))
+        a.sendTo = readId<TrackId>(get(j, "sendTo"));
+    a.part = uint64_t(std::max<int64_t>(0, getInt(j, "part", 0)));
     if (const json_t* midi = get(j, "midi"); json_is_array(midi)) {
         a.midi.kind = enumFromName(json_array_get(midi, 0), kMidiControls, a.midi.kind);
         a.midi.cc = uint8_t(std::clamp<int64_t>(intAt(midi, 1, 0), 0, 127));
@@ -278,6 +329,18 @@ json_t* noteToJson(const Note& n) {
         set(extras, "timbre", exprToJson(n.timbreExpr));
     if (!n.pressureExpr.empty())
         set(extras, "pressure", exprToJson(n.pressureExpr));
+    if (n.motion.valid())
+        set(extras, "motion", idJson(n.motion));
+    if (n.tied) {
+        json_t* tie = json_object();
+        if (n.glideBefore)
+            setInt(tie, "before", n.glideBefore);
+        if (n.glideAfter)
+            setInt(tie, "after", n.glideAfter);
+        if (n.glideShape != 0)
+            setNumber(tie, "shape", n.glideShape);
+        set(extras, "tie", tie);
+    }
     if (json_object_size(extras) > 0)
         json_array_append_new(arr, extras);
     else
@@ -307,6 +370,13 @@ bool noteFromJson(const json_t* arr, Note& n) {
         n.pitchExpr = exprFromJson(get(extras, "pitch"));
         n.timbreExpr = exprFromJson(get(extras, "timbre"));
         n.pressureExpr = exprFromJson(get(extras, "pressure"));
+        n.motion = readId<DeviceId>(get(extras, "motion"));
+        if (const json_t* tie = get(extras, "tie"); json_is_object(tie)) {
+            n.tied = true;
+            n.glideBefore = std::max<Tick>(0, getInt(tie, "before", 0));
+            n.glideAfter = std::max<Tick>(0, getInt(tie, "after", 0));
+            n.glideShape = std::clamp(getFloat(tie, "shape", 0), -1.f, 1.f);
+        }
     }
     return true;
 }
@@ -345,6 +415,194 @@ DrumLane drumLaneFromJson(const json_t* j) {
     return l;
 }
 
+// ---- Audio --------------------------------------------------------------------------------------------------
+
+json_t* fadeToJson(const Fade& f) { return json_pack("[If]", static_cast<json_int_t>(f.length), double(f.curve)); }
+
+Fade fadeFromJson(const json_t* j) {
+    Fade f;
+    f.length = intAt(j, 0, f.length);
+    f.curve = float(numberAt(j, 1, f.curve));
+    return f;
+}
+
+json_t* sourceToJson(const AudioSource& s) {
+    json_t* j = json_object();
+    set(j, "id", idJson(s.id));
+    setString(j, "name", s.name);
+    setString(j, "file", s.file);
+    // As a hex string: JSON numbers can't hold all 64 bits.
+    char hash[17];
+    snprintf(hash, sizeof hash, "%016llx", static_cast<unsigned long long>(s.contentHash));
+    setString(j, "hash", hash);
+    setInt(j, "channels", s.channels);
+    if (s.fileChannels != s.channels)
+        setInt(j, "fileChannels", s.fileChannels);
+    setNumber(j, "rate", s.sampleRate);
+    setInt(j, "frames", s.frames);
+    if (s.tempo > 0)
+        setNumber(j, "tempo", s.tempo);
+    setNumber(j, "volts", s.volts);
+    return j;
+}
+
+AudioSource sourceFromJson(const json_t* j) {
+    AudioSource s;
+    s.id = readId<AudioSourceId>(get(j, "id"));
+    s.name = getString(j, "name", s.name);
+    s.file = safeAudioFile(getString(j, "file", s.file));
+    s.contentHash = std::strtoull(getString(j, "hash", "0").c_str(), nullptr, 16);
+    s.channels = saturate<int>(getInt(j, "channels", s.channels));
+    s.fileChannels = saturate<int>(getInt(j, "fileChannels", s.channels));
+    s.sampleRate = getNumber(j, "rate", s.sampleRate);
+    s.frames = getInt(j, "frames", s.frames);
+    s.tempo = getNumber(j, "tempo", s.tempo);
+    s.volts = getFloat(j, "volts", s.volts);
+    return s;
+}
+
+json_t* warpsToJson(const std::vector<WarpMarker>& list) {
+    json_t* warps = json_array();
+    for (const WarpMarker& m : list) {
+        json_t* mj = json_array();
+        json_array_append_new(mj, json_real(m.tick));
+        json_array_append_new(mj, json_integer(json_int_t(m.frame)));
+        json_array_append_new(warps, mj);
+    }
+    return warps;
+}
+
+std::vector<WarpMarker> warpsFromJson(const json_t* j) {
+    std::vector<WarpMarker> out;
+    forEach(j, [&](const json_t* mj) {
+        if (json_array_size(mj) == 2)
+            out.push_back({json_number_value(json_array_get(mj, 0)), int64_t(json_integer_value(json_array_get(mj, 1)))});
+    });
+    return out;
+}
+
+json_t* audioToJson(const AudioContent& a) {
+    json_t* j = json_object();
+    set(j, "source", idJson(a.source));
+    setInt(j, "start", a.sourceStart);
+    setString(j, "follow", enumName(a.follow, kTempoFollow));
+    setString(j, "sound", enumName(a.sound, kSoundTypes));
+    setNumber(j, "tempo", a.sourceTempo);
+    if (a.gainDb != 0)
+        setNumber(j, "gain", a.gainDb);
+    if (a.semitones != 0)
+        setInt(j, "semitones", a.semitones);
+    if (a.cents != 0)
+        setNumber(j, "cents", a.cents);
+    if (a.reverse)
+        setBool(j, "reverse", true);
+    if (!a.warps.empty())
+        set(j, "warps", warpsToJson(a.warps));
+    if (!a.takes.empty()) {
+        json_t* takes = json_array();
+        for (const AudioTake& tk : a.takes) {
+            json_t* tj = json_object();
+            set(tj, "source", idJson(tk.source));
+            setInt(tj, "start", tk.sourceStart);
+            if (!tk.name.empty())
+                setString(tj, "name", tk.name);
+            if (!tk.warps.empty())
+                set(tj, "warps", warpsToJson(tk.warps));
+            json_array_append_new(takes, tj);
+        }
+        set(j, "takes", takes);
+    }
+    if (!a.regions.empty()) {
+        json_t* regions = json_array();
+        for (const AudioRegion& r : a.regions) {
+            json_t* rj = json_object();
+            set(rj, "id", idJson(r.id));
+            setInt(rj, "start", r.start);
+            setInt(rj, "length", r.length);
+            setInt(rj, "frame", r.sourceFrame);
+            if (r.take >= 0)
+                setInt(rj, "take", r.take);
+            if (r.gainDb != 0)
+                setNumber(rj, "gain", r.gainDb);
+            if (r.muted)
+                setBool(rj, "muted", true);
+            if (r.reverse)
+                setBool(rj, "reverse", true);
+            if (r.fadeIn.length != 0 || r.fadeIn.curve != 0)
+                set(rj, "fadeIn", fadeToJson(r.fadeIn));
+            if (r.fadeOut.length != 0 || r.fadeOut.curve != 0)
+                set(rj, "fadeOut", fadeToJson(r.fadeOut));
+            json_array_append_new(regions, rj);
+        }
+        set(j, "regions", regions);
+    }
+    return j;
+}
+
+AudioContent audioFromJson(const json_t* j) {
+    AudioContent a;
+    a.source = readId<AudioSourceId>(get(j, "source"));
+    a.sourceStart = getInt(j, "start", a.sourceStart);
+    a.follow = enumFromName(get(j, "follow"), kTempoFollow, a.follow);
+    a.sound = enumFromName(get(j, "sound"), kSoundTypes, a.sound);
+    a.sourceTempo = getNumber(j, "tempo", a.sourceTempo);
+    a.gainDb = getFloat(j, "gain", a.gainDb);
+    a.semitones = saturate<int8_t>(getInt(j, "semitones", a.semitones));
+    a.cents = getFloat(j, "cents", a.cents);
+    a.reverse = getBool(j, "reverse", a.reverse);
+    a.warps = warpsFromJson(get(j, "warps"));
+    forEach(get(j, "takes"), [&](const json_t* tj) {
+        AudioTake take{readId<AudioSourceId>(get(tj, "source")), getInt(tj, "start", 0), getString(tj, "name", ""),
+                       warpsFromJson(get(tj, "warps"))};
+        a.takes.push_back(std::move(take));
+    });
+    forEach(get(j, "regions"), [&](const json_t* rj) {
+        AudioRegion r;
+        r.id = readId<AudioRegionId>(get(rj, "id"));
+        r.start = getInt(rj, "start", r.start);
+        r.length = getInt(rj, "length", r.length);
+        r.sourceFrame = getInt(rj, "frame", r.sourceFrame);
+        r.take = saturate<int>(getInt(rj, "take", r.take));
+        r.gainDb = getFloat(rj, "gain", r.gainDb);
+        r.muted = getBool(rj, "muted", r.muted);
+        r.reverse = getBool(rj, "reverse", r.reverse);
+        r.fadeIn = fadeFromJson(get(rj, "fadeIn"));
+        r.fadeOut = fadeFromJson(get(rj, "fadeOut"));
+        a.regions.push_back(r);
+    });
+    return a;
+}
+
+json_t* channelToJson(float volumeDb, float pan) {
+    json_t* j = json_object();
+    setNumber(j, "volume", volumeDb);
+    if (pan != 0)
+        setNumber(j, "pan", pan);
+    return j;
+}
+
+json_t* sourceLevelToJson(const SourceLevel& l) {
+    json_t* j = json_object();
+    setNumber(j, "volume", l.db);
+    if (!l.use)
+        set(j, "use", json_false());
+    if (l.pan != 0)
+        json_object_set_new(j, "pan", json_real(l.pan));
+    if (l.solo)
+        json_object_set_new(j, "solo", json_true());
+    return j;
+}
+
+SourceLevel sourceLevelFromJson(const json_t* j) {
+    SourceLevel l;
+    l.db = getFloat(j, "volume", l.db);
+    l.use = getBool(j, "use", l.use);
+    if (const json_t* pan = json_object_get(j, "pan"))
+        l.pan = std::clamp(float(json_number_value(pan)), -1.f, 1.f);
+    l.solo = json_is_true(json_object_get(j, "solo"));
+    return l;
+}
+
 json_t* arrangerClipToJson(const ArrangerClip& a) {
     json_t* j = json_object();
     set(j, "id", idJson(a.id));
@@ -354,10 +612,13 @@ json_t* arrangerClipToJson(const ArrangerClip& a) {
     setInt(j, "offset", a.offset);
     setBool(j, "muted", a.muted);
     setInt(j, "transpose", a.transpose);
-    setNumber(j, "velScale", a.velocityScale);
     setNumber(j, "stretch", a.stretch);
     if (a.layer != 0)
         setInt(j, "layer", a.layer);
+    if (a.fadeIn != Fade{})
+        set(j, "fadeIn", fadeToJson(a.fadeIn));
+    if (a.fadeOut != Fade{})
+        set(j, "fadeOut", fadeToJson(a.fadeOut));
     return j;
 }
 
@@ -370,9 +631,10 @@ ArrangerClip arrangerClipFromJson(const json_t* j) {
     a.offset = getInt(j, "offset", a.offset);
     a.muted = getBool(j, "muted", a.muted);
     a.transpose = saturate<int8_t>(getInt(j, "transpose", a.transpose));
-    a.velocityScale = getFloat(j, "velScale", a.velocityScale);
     a.stretch = getFloat(j, "stretch", a.stretch);
     a.layer = int8_t(std::clamp<int64_t>(getInt(j, "layer", a.layer), 0, kMaxStackLayer));
+    a.fadeIn = fadeFromJson(get(j, "fadeIn"));
+    a.fadeOut = fadeFromJson(get(j, "fadeOut"));
     return a;
 }
 
@@ -427,14 +689,125 @@ Modulation modulationFromJson(const json_t* j) {
     return m;
 }
 
+/// Points as [t, value, curve, tension] arrays, as playhead paths store them.
+json_t* drawnPointsToJson(const std::vector<AutoPoint>& points) {
+    json_t* arr = json_array();
+    for (const AutoPoint& pt : points)
+        json_array_append_new(arr, json_pack("[Ifif]", static_cast<json_int_t>(pt.t), double(pt.value), int(pt.curve),
+                                             double(pt.tension)));
+    return arr;
+}
+
+std::vector<AutoPoint> drawnPointsFromJson(const json_t* arr) {
+    std::vector<AutoPoint> out;
+    forEach(arr, [&](const json_t* pj) {
+        if (json_array_size(pj) < 2)
+            return;
+        AutoPoint ap;
+        ap.t = intAt(pj, 0, 0);
+        ap.value = float(numberAt(pj, 1, 0));
+        int64_t curve = intAt(pj, 2, int64_t(ap.curve));
+        ap.curve = curve >= 0 && curve <= int64_t(CurveType::SCurve) ? CurveType(curve) : CurveType::Linear;
+        ap.tension = float(numberAt(pj, 3, 0));
+        out.push_back(ap);
+    });
+    return out;
+}
+
+/// Playheads saved before curves became modulators (30 Oct 2026) kept a curve per setting that set its value. Each
+/// becomes a Curve modulator on the track turning that setting all the way (amount 1), drawn so it gives the same
+/// values. New IDs are given when the song is normalized; past the track's modulator limit they are dropped.
+void curvesToModulators(const json_t* devices, Track& t) {
+    forEach(devices, [&](const json_t* dj) {
+        forEach(get(dj, "playheads"), [&](const json_t* pj) {
+            uint64_t playhead = readId<PlayheadId>(get(pj, "id")).value;
+            std::string name = getString(pj, "name", "Playhead");
+            std::vector<float> params = floatsFromJson(get(pj, "params"));
+            forEach(get(pj, "curves"), [&](const json_t* cj) {
+                int param = int(intAt(cj, 0, 0));
+                const devices::ParamInfo* info = devices::playheadParamInfo(param);
+                if (!info)
+                    return;
+                float base = size_t(param) < params.size() ? params[size_t(param)] : devices::defaultNormalized(*info);
+                Modulator m = devices::makeModulator(ModulatorType::Curve, ModulatorId());
+                m.name = name + " " + info->name;
+                m.length = intAt(cj, 1, 4 * kPpq);
+                m.points = drawnPointsFromJson(json_array_get(cj, 2));
+                for (AutoPoint& pt : m.points)
+                    pt.value = std::clamp((pt.value - base + 1) / 2, 0.f, 1.f);
+                Modulation route;
+                route.kind = Modulation::Kind::Param;
+                route.target = {ParamRef::Kind::Playhead, playhead, uint16_t(param)};
+                route.amount = 1;
+                m.routes.push_back(route);
+                t.modulators.push_back(m);
+            });
+        });
+    });
+}
+
+/// Curves saved before 31 Oct 2026 had no segment. They repeated their whole drawing, could count passes instead of
+/// time, and turned their setting by the route's amount. One that counted passes becomes a Steps modulator stepping
+/// per pass with the same values; one that counted time is drawn at full scale (its first route turning all the
+/// way, its other routes rescaled), so both play as they did.
+void curveFromBefore(Modulator& m) {
+    const devices::ParamInfo& counts = devices::modulatorInfo(ModulatorType::Curve).params[mods::knob::kCurvePerPass];
+    bool passes = size_t(mods::knob::kCurvePerPass) < m.params.size() &&
+                  devices::display(counts, m.params[size_t(mods::knob::kCurvePerPass)]) > 0.5f;
+    if (passes) {
+        mods::Drawn drawn{m.points.data(), int(m.points.size()), m.length, 0, m.length};
+        int count = std::clamp(int(std::lround(double(m.length) / double(mods::kPassTicks))), 1, kMaxSteps);
+        Modulator steps = devices::makeModulator(ModulatorType::Steps, m.id);
+        steps.name = m.name;
+        steps.routes = m.routes;
+        steps.steps.clear();
+        for (int k = 0; k < count; k++)
+            steps.steps.push_back(mods::drawnAt(drawn, double(k) * double(mods::kPassTicks)));
+        const devices::TypeInfo& info = devices::modulatorInfo(ModulatorType::Steps);
+        steps.params[mods::knob::kStepCount] = devices::normalize(info.params[mods::knob::kStepCount], float(count));
+        steps.params[mods::knob::kStepSmooth] = 0;
+        steps.params[mods::knob::kStepBipolar] = 1;
+        steps.params[mods::knob::kStepPerPass] = 1;
+        m = steps;
+        return;
+    }
+    m.segmentStart = 0;
+    m.segmentEnd = m.length;
+    auto first = std::find_if(m.routes.begin(), m.routes.end(),
+                              [](const Modulation& r) { return r.kind == Modulation::Kind::Param; });
+    if (first == m.routes.end() || !std::isfinite(first->amount) || std::fabs(first->amount) < 1e-6f)
+        return;
+    float amount = first->amount;
+    for (AutoPoint& p : m.points)
+        p.value = std::clamp(0.5f + amount * (p.value - 0.5f), 0.f, 1.f);
+    for (Modulation& r : m.routes)
+        r.amount = &r == &*first ? 1.f : std::clamp(r.amount / amount, -1.f, 1.f);
+}
+
+/// A dice switch as saved: the number, or -1 for new every play. Songs from before the switch played every random
+/// thing on the song's one fixed number, 1, which is what a missing value reads as, so they sound as they did.
+int32_t variationFromJson(const json_t* j) {
+    int64_t v = getInt(j, "variation", 1);
+    return clampVariation(int32_t(std::clamp<int64_t>(v, -kMaxVariation, kMaxVariation)));
+}
+
 json_t* modulatorToJson(const Modulator& m) {
     json_t* j = json_object();
     set(j, "id", idJson(m.id));
     setString(j, "type", enumName(m.type, kModulatorTypes));
     setString(j, "name", m.name);
     set(j, "params", floatsToJson(m.params));
+    setInt(j, "variation", m.variation);
     if (!m.steps.empty())
         set(j, "steps", floatsToJson(m.steps));
+    if (m.type == ModulatorType::Curve) {
+        set(j, "length", json_integer(static_cast<json_int_t>(m.length)));
+        set(j, "points", drawnPointsToJson(m.points));
+        json_t* segment = json_array();
+        json_array_append_new(segment, json_integer(static_cast<json_int_t>(m.segmentStart)));
+        json_array_append_new(segment, json_integer(static_cast<json_int_t>(m.segmentEnd)));
+        set(j, "segment", segment);
+    }
     json_t* routes = json_array();
     for (const Modulation& r : m.routes)
         json_array_append_new(routes, modulationToJson(r));
@@ -448,8 +821,19 @@ Modulator modulatorFromJson(const json_t* j) {
     m.type = enumFromName(get(j, "type"), kModulatorTypes, m.type);
     m.name = getString(j, "name", m.name);
     m.params = floatsFromJson(get(j, "params"));
+    m.variation = variationFromJson(j);
     m.steps = floatsFromJson(get(j, "steps"));
+    m.length = getInt(j, "length", 0);
+    m.points = drawnPointsFromJson(get(j, "points"));
     forEach(get(j, "routes"), [&](const json_t* r) { m.routes.push_back(modulationFromJson(r)); });
+    if (m.type == ModulatorType::Curve) {
+        if (const json_t* segment = get(j, "segment")) {
+            m.segmentStart = intAt(segment, 0, 0);
+            m.segmentEnd = intAt(segment, 1, 0);
+        } else {
+            curveFromBefore(m);
+        }
+    }
     return m;
 }
 
@@ -466,6 +850,65 @@ std::vector<Modulator> modulatorListFromJson(const json_t* arr) {
     return out;
 }
 
+json_t* deviceToJson(const Device& d);
+Device deviceFromJson(const json_t* j);
+
+json_t* playheadToJson(const Playhead& p) {
+    json_t* j = json_object();
+    set(j, "id", idJson(p.id));
+    setString(j, "name", p.name);
+    setInt(j, "color", p.color);
+    set(j, "params", floatsToJson(p.params));
+    setInt(j, "channel", p.channel);
+    if (p.solo)
+        setBool(j, "solo", true);
+    if (!p.path.empty()) {
+        json_t* path = json_array();
+        for (const AutoPoint& pt : p.path)
+            json_array_append_new(path, json_pack("[Ifif]", static_cast<json_int_t>(pt.t), double(pt.value),
+                                                  int(pt.curve), double(pt.tension)));
+        set(j, "path", path);
+    }
+    if (!p.branch.empty()) {
+        json_t* branch = json_array();
+        for (const Device& d : p.branch)
+            json_array_append_new(branch, deviceToJson(d));
+        set(j, "branch", branch);
+    }
+    return j;
+}
+
+Playhead playheadFromJson(const json_t* j) {
+    Playhead p;
+    p.id = readId<PlayheadId>(get(j, "id"));
+    p.name = getString(j, "name", p.name);
+    p.color = saturate<uint8_t>(getInt(j, "color", p.color));
+    p.params = floatsFromJson(get(j, "params"));
+    p.channel = saturate<uint8_t>(getInt(j, "channel", p.channel));
+    if (getBool(j, "mute", false)) {
+        // Before 5 Nov a playhead was turned off by a switch of its own; now it is its On setting, which curves and
+        // lanes can move too.
+        const std::vector<devices::ParamInfo>& list = devices::playheadInfo().params;
+        for (size_t i = p.params.size(); i < list.size(); i++)
+            p.params.push_back(devices::defaultNormalized(list[i]));
+        p.params[size_t(playheads::knob::kOn)] = 0;
+    }
+    p.solo = getBool(j, "solo", p.solo);
+    forEach(get(j, "branch"), [&](const json_t* dj) { p.branch.push_back(deviceFromJson(dj)); });
+    forEach(get(j, "path"), [&](const json_t* pj) {
+        if (json_array_size(pj) < 2)
+            return;
+        AutoPoint ap;
+        ap.t = intAt(pj, 0, 0);
+        ap.value = float(numberAt(pj, 1, 0));
+        int64_t curve = intAt(pj, 2, int64_t(ap.curve));
+        ap.curve = curve >= 0 && curve <= int64_t(CurveType::SCurve) ? CurveType(curve) : CurveType::Linear;
+        ap.tension = float(numberAt(pj, 3, 0));
+        p.path.push_back(ap);
+    });
+    return p;
+}
+
 json_t* deviceToJson(const Device& d) {
     json_t* j = json_object();
     set(j, "id", idJson(d.id));
@@ -475,8 +918,23 @@ json_t* deviceToJson(const Device& d) {
     if (d.affectDrumLanes)
         setBool(j, "drumLanes", true);
     set(j, "params", floatsToJson(d.params));
+    setInt(j, "variation", d.variation);
+    if (!d.line.empty()) {
+        json_t* line = json_array();
+        for (uint8_t step : d.line)
+            json_array_append_new(line, json_integer(step));
+        set(j, "line", line);
+    }
     if (!d.modulators.empty())
         set(j, "modulators", modulatorListToJson(d.modulators));
+    if (!d.playheads.empty()) {
+        json_t* list = json_array();
+        for (const Playhead& p : d.playheads)
+            json_array_append_new(list, playheadToJson(p));
+        set(j, "playheads", list);
+    }
+    if (d.type == DeviceType::Motion)
+        setInt(j, "color", d.color);
     return j;
 }
 
@@ -488,7 +946,19 @@ Device deviceFromJson(const json_t* j) {
     d.on = getBool(j, "on", d.on);
     d.affectDrumLanes = getBool(j, "drumLanes", d.affectDrumLanes);
     d.params = floatsFromJson(get(j, "params"));
+    // Settings a device gained since the song was saved start at their defaults: the engine reads every setting
+    // its type has, so a short list must never reach it.
+    const std::vector<devices::ParamInfo>& info = devices::deviceInfo(d.type).params;
+    while (d.params.size() < info.size())
+        d.params.push_back(devices::defaultNormalized(info[d.params.size()]));
+    d.variation = variationFromJson(j);
+    forEach(get(j, "line"), [&](const json_t* step) {
+        if (d.line.size() < 16)
+            d.line.push_back(uint8_t(std::clamp<json_int_t>(json_integer_value(step), 0, 0xFF)));
+    });
     d.modulators = modulatorListFromJson(get(j, "modulators"));
+    forEach(get(j, "playheads"), [&](const json_t* pj) { d.playheads.push_back(playheadFromJson(pj)); });
+    d.color = saturate<uint8_t>(getInt(j, "color", 0));
     return d;
 }
 
@@ -499,11 +969,15 @@ json_t* trackToJson(const Track& t) {
     setInt(j, "color", t.color);
     setString(j, "type", enumName(t.type, kTrackTypes));
     setInt(j, "polyphony", t.polyphony);
+    if (t.allocation != VoiceAllocation::Rotate)
+        setString(j, "allocation", enumName(t.allocation, kAllocations));
     setBool(j, "mute", t.mute);
     setBool(j, "solo", t.solo);
     setBool(j, "armed", t.armed);
     setBool(j, "monitor", t.monitor);
     setString(j, "recordInput", enumName(t.recordInput, kRecordInputs));
+    if (t.recordFrom.valid())
+        set(j, "recordFrom", idJson(t.recordFrom));
     setInt(j, "midiChannel", t.midiChannel);
     if (t.listen != ListenSource::None) {
         setString(j, "listen", enumName(t.listen, kListenSources));
@@ -538,6 +1012,47 @@ json_t* trackToJson(const Track& t) {
     }
     if (!t.modulators.empty())
         set(j, "modulators", modulatorListToJson(t.modulators));
+    if (t.channel != Channel{})
+        set(j, "channel", channelToJson(t.channel.volumeDb, t.channel.pan));
+    if (std::any_of(t.drumInputs.begin(), t.drumInputs.end(), [](const Channel& c) { return c != Channel{}; })) {
+        json_t* inputs = json_array();
+        for (const Channel& c : t.drumInputs)
+            json_array_append_new(inputs, channelToJson(c.volumeDb, c.pan));
+        set(j, "drumInputs", inputs);
+    }
+    if (t.clips != SourceLevel{})
+        set(j, "clips", sourceLevelToJson(t.clips));
+    if (t.latencySamples != 0)
+        setInt(j, "latency", t.latencySamples);
+    if (!t.toMaster)
+        setBool(j, "toMaster", false);
+    if (!t.sends.empty()) {
+        json_t* sends = json_array();
+        for (const Send& send : t.sends) {
+            json_t* sj = json_object();
+            set(sj, "to", idJson(send.to));
+            setNumber(sj, "volume", send.db);
+            if (send.preFader)
+                setBool(sj, "pre", true);
+            switch (send.from.kind) {
+            case SendFrom::Kind::Clips:
+                setString(sj, "from", "clips");
+                break;
+            case SendFrom::Kind::Lane:
+                setString(sj, "from", "lane");
+                setInt(sj, "lane", send.from.lane);
+                break;
+            case SendFrom::Kind::Input:
+                setString(sj, "from", "input");
+                setInt(sj, "module", send.from.module);
+                break;
+            default:
+                break;
+            }
+            json_array_append_new(sends, sj);
+        }
+        set(j, "sends", sends);
+    }
     return j;
 }
 
@@ -548,11 +1063,13 @@ Track trackFromJson(const json_t* j) {
     t.color = saturate<uint32_t>(getInt(j, "color", t.color));
     t.type = enumFromName(get(j, "type"), kTrackTypes, t.type);
     t.polyphony = saturate<int>(getInt(j, "polyphony", t.polyphony));
+    t.allocation = enumFromName(get(j, "allocation"), kAllocations, t.allocation);
     t.mute = getBool(j, "mute", t.mute);
     t.solo = getBool(j, "solo", t.solo);
     t.armed = getBool(j, "armed", t.armed);
     t.monitor = getBool(j, "monitor", t.monitor);
     t.recordInput = enumFromName(get(j, "recordInput"), kRecordInputs, t.recordInput);
+    t.recordFrom = readId<TrackId>(get(j, "recordFrom"));
     t.midiChannel = saturate<int8_t>(getInt(j, "midiChannel", t.midiChannel));
     t.listen = enumFromName(get(j, "listen"), kListenSources, t.listen);
     t.listenTrack = readId<TrackId>(get(j, "listenTrack"));
@@ -570,12 +1087,64 @@ Track trackFromJson(const json_t* j) {
     t.automation = automationListFromJson(get(j, "automation"));
     forEach(get(j, "devices"), [&](const json_t* d) { t.devices.push_back(deviceFromJson(d)); });
     t.modulators = modulatorListFromJson(get(j, "modulators"));
+    curvesToModulators(get(j, "devices"), t);
+    t.channel.volumeDb = getFloat(get(j, "channel"), "volume", t.channel.volumeDb);
+    t.channel.pan = getFloat(get(j, "channel"), "pan", t.channel.pan);
+    if (const json_t* inputs = get(j, "drumInputs"); json_is_array(inputs))
+        for (size_t k = 0; k < t.drumInputs.size() && k < json_array_size(inputs); k++) {
+            const json_t* c = json_array_get(inputs, k);
+            t.drumInputs[k].volumeDb = getFloat(c, "volume", 0);
+            t.drumInputs[k].pan = getFloat(c, "pan", 0);
+        }
+    t.clips = sourceLevelFromJson(get(j, "clips"));
+    t.latencySamples = int(getInt(j, "latency", 0));
+    t.toMaster = getBool(j, "toMaster", true);
+    forEach(get(j, "sends"), [&](const json_t* sj) {
+        Send send;
+        send.to = readId<TrackId>(get(sj, "to"));
+        send.db = getFloat(sj, "volume", send.db);
+        send.preFader = getBool(sj, "pre", false);
+        std::string from = getString(sj, "from", "");
+        if (from == "clips")
+            send.from = SendFrom::clips();
+        else if (from == "lane")
+            send.from = SendFrom::ofLane(saturate<int>(getInt(sj, "lane", -1)));
+        else if (from == "input")
+            send.from = SendFrom::input(getInt(sj, "module", -1));
+        t.sends.push_back(send);
+    });
     return t;
 }
 
 } // namespace
 
 // ---- Clips --------------------------------------------------------------------------------------------------
+
+namespace {
+
+json_t* nextActionToJson(const NextActionSettings& n) {
+    json_t* j = json_object();
+    setString(j, "action", enumName(n.action, kNextActions));
+    setString(j, "otherwise", enumName(n.otherwise, kNextActions));
+    setInt(j, "chance", n.chance);
+    setInt(j, "count", n.count);
+    setString(j, "unit", enumName(n.unit, kNextActionUnits));
+    setString(j, "scope", enumName(n.scope, kNextActionScopes));
+    return j;
+}
+
+NextActionSettings nextActionFromJson(const json_t* j) {
+    NextActionSettings n;
+    n.action = enumFromName(get(j, "action"), kNextActions, n.action);
+    n.otherwise = enumFromName(get(j, "otherwise"), kNextActions, n.otherwise);
+    n.chance = uint8_t(std::clamp<int64_t>(getInt(j, "chance", n.chance), 0, 100));
+    n.count = uint16_t(std::clamp<int64_t>(getInt(j, "count", n.count), 1, kMaxNextActionCount));
+    n.unit = enumFromName(get(j, "unit"), kNextActionUnits, n.unit);
+    n.scope = enumFromName(get(j, "scope"), kNextActionScopes, n.scope);
+    return n;
+}
+
+} // namespace
 
 json_t* clipToJson(const Clip& c) {
     json_t* j = json_object();
@@ -587,6 +1156,7 @@ json_t* clipToJson(const Clip& c) {
     setInt(j, "length", c.length);
     set(j, "loop", json_pack("[II]", static_cast<json_int_t>(c.loopStart), static_cast<json_int_t>(c.loopEnd)));
     setString(j, "loopMode", enumName(c.loopMode, kLoopModes));
+    setInt(j, "variation", c.variation);
     json_t* notes = json_array();
     for (const Note& n : c.notes)
         json_array_append_new(notes, noteToJson(n));
@@ -596,6 +1166,20 @@ json_t* clipToJson(const Clip& c) {
         set(j, "scale", scaleToJson(*c.scaleOverride));
     if (c.launchQuantize)
         setString(j, "launchQuantize", enumName(*c.launchQuantize, kLaunchQuantize));
+    if (c.next != NextActionSettings())
+        set(j, "next", nextActionToJson(c.next));
+    if (c.audio)
+        set(j, "audio", audioToJson(*c.audio));
+    if (c.hasOwnChain) {
+        json_t* own = json_object();
+        set(own, "plays", json_boolean(c.playsOwnChain));
+        json_t* devices = json_array();
+        for (const Device& d : c.devices)
+            json_array_append_new(devices, deviceToJson(d));
+        set(own, "devices", devices);
+        set(own, "modulators", modulatorListToJson(c.modulators));
+        set(j, "ownChain", own);
+    }
     return j;
 }
 
@@ -610,6 +1194,7 @@ Clip clipFromJson(const json_t* j) {
     c.loopStart = intAt(loop, 0, c.loopStart);
     c.loopEnd = intAt(loop, 1, c.length);
     c.loopMode = enumFromName(get(j, "loopMode"), kLoopModes, c.loopMode);
+    c.variation = variationFromJson(j);
     forEach(get(j, "notes"), [&](const json_t* nj) {
         Note n;
         if (noteFromJson(nj, n))
@@ -620,10 +1205,47 @@ Clip clipFromJson(const json_t* j) {
         c.scaleOverride = scaleFromJson(get(j, "scale"));
     if (json_is_string(get(j, "launchQuantize")))
         c.launchQuantize = enumFromName(get(j, "launchQuantize"), kLaunchQuantize, LaunchQuantize::Bar);
+    if (json_is_object(get(j, "next")))
+        c.next = nextActionFromJson(get(j, "next"));
+    if (json_is_object(get(j, "audio")))
+        c.audio = audioFromJson(get(j, "audio"));
+    if (const json_t* own = get(j, "ownChain"); json_is_object(own) && !c.audio) {
+        c.hasOwnChain = true;
+        c.playsOwnChain = json_is_true(get(own, "plays"));
+        forEach(get(own, "devices"), [&](const json_t* d) { c.devices.push_back(deviceFromJson(d)); });
+        c.modulators = modulatorListFromJson(get(own, "modulators"));
+    }
     return c;
 }
 
 // ---- Song ---------------------------------------------------------------------------------------------------
+
+/// Clips saved before 30 Oct 2026 kept motion groups. Each becomes a Motion device with the group's ID (so its notes
+/// and the routes to its knobs still point at it) on the track that plays the clip, right after its Playheads
+/// device, where the group used to act: on each note as a playhead played it.
+void motionGroupsToDevices(const json_t* clips, Song& s) {
+    forEach(clips, [&](const json_t* cj) {
+        ClipId clip = readId<ClipId>(get(cj, "id"));
+        Track* owner = nullptr;
+        for (Track& t : s.tracks) {
+            for (const ClipSlot& slot : t.slots)
+                owner = owner ? owner : (slot.clip == clip ? &t : nullptr);
+            for (const ArrangerClip& a : t.arrangement)
+                owner = owner ? owner : (a.clip == clip ? &t : nullptr);
+        }
+        if (!owner)
+            return;
+        forEach(get(cj, "motions"), [&](const json_t* mj) {
+            Device d = devices::makeDevice(DeviceType::Motion, readId<DeviceId>(get(mj, "id")));
+            d.name = getString(mj, "name", d.name);
+            d.color = saturate<uint8_t>(getInt(mj, "color", 0));
+            d.params = floatsFromJson(get(mj, "params"));
+            auto at = std::find_if(owner->devices.begin(), owner->devices.end(),
+                                   [](const Device& k) { return k.type == DeviceType::Playheads; });
+            owner->devices.insert(at == owner->devices.end() ? owner->devices.begin() : at + 1, d);
+        });
+    });
+}
 
 json_t* songToJson(const Song& s) {
     json_t* j = json_object();
@@ -661,6 +1283,10 @@ json_t* songToJson(const Song& s) {
         for (TrackId id : g.tracks)
             json_array_append_new(members, idJson(id));
         set(gj, "tracks", members);
+        if (g.channel != Channel{})
+            set(gj, "channel", channelToJson(g.channel.volumeDb, g.channel.pan));
+        if (g.mute)
+            setBool(gj, "mute", true);
         json_array_append_new(groups, gj);
     }
     set(j, "groups", groups);
@@ -693,6 +1319,19 @@ json_t* songToJson(const Song& s) {
     set(j, "markers", markers);
     if (!s.modulators.empty())
         set(j, "modulators", modulatorListToJson(s.modulators));
+    if (!s.audioSources.empty()) {
+        json_t* sources = json_array();
+        for (const AudioSource& src : s.audioSources)
+            json_array_append_new(sources, sourceToJson(src));
+        set(j, "audioSources", sources);
+    }
+    json_t* master = channelToJson(s.master.volumeDb, 0);
+    set(master, "id", idJson(s.master.id));
+    if (!s.master.automation.empty())
+        set(master, "automation", automationListToJson(s.master.automation));
+    if (s.master.mix != SourceLevel{})
+        set(master, "mix", sourceLevelToJson(s.master.mix));
+    set(j, "master", master);
     return j;
 }
 
@@ -745,7 +1384,162 @@ bool migrateSong(json_t* songJ, int fromVersion) {
         json_array_foreach(tracks, i, t) json_object_set_new(t, "monitor", json_true());
     }
     // Version 5 added device chains and modulators. Older songs have none, and every new field loads as empty,
-    // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob; songFromJson rescales it.
+    // so there is nothing to rewrite. Version 6 narrowed Transpose's Semitones knob (songFromJson rescales it).
+    // Version 7 was taken by two branches at once: one added the Playheads device, the other audio (sources, audio
+    // clips, fades, mixer channels and the master; older songs load with none, every channel at 0 dB and centred,
+    // and the master at 0 dB). A song saved at 7 has one or the other, and neither needs rewriting here. Version 8
+    // gave the playheads' choices more rates and lengths (songFromJson keeps each saved choice by name; a song
+    // without playheads has nothing to keep). Version 9 gave the Arpeggiator more patterns (kept by name the same way).
+    // Version 10 made the Note Filter's Channel a set of channels (songFromJson turns the one channel into a set).
+    // Version 11 gave every length and synced rate the one scale, short to long (kept by name, like version 8).
+    // Version 12 let a clip have its own device chain; older songs have none, so nothing changes for them.
+    if (fromVersion < 13) {
+        // Version 13 gave the Arpeggiator's Pattern line a row of settings per step. A line saved before kept each
+        // step's octave inside the line and played every note for the card's Gate: both move into the new step
+        // settings, so the line sounds as it did.
+        const auto& info = devices::deviceInfo(DeviceType::Arpeggiator).params;
+        auto migrate = [&](json_t* d) {
+            json_t* line = json_object_get(d, "line");
+            const char* type = json_string_value(json_object_get(d, "type"));
+            if (!type || std::string(type) != "arpeggiator" || json_array_size(line) == 0)
+                return;
+            json_t* params = json_object_get(d, "params");
+            if (!json_is_array(params))
+                return;
+            while (json_array_size(params) < info.size())
+                json_array_append_new(params, json_real(devices::defaultNormalized(info[json_array_size(params)])));
+            json_t* gateJ = json_array_get(params, size_t(chain::knob::kGate));
+            float gate = devices::display(info[chain::knob::kGate],
+                                          json_is_number(gateJ) ? float(json_number_value(gateJ))
+                                                                : devices::defaultNormalized(info[chain::knob::kGate]));
+            for (int k = 0; k < 16; k++) {
+                int at = chain::arpLaneFirst(chain::ArpLane::Gate) + k;
+                json_array_set_new(params, size_t(at), json_real(devices::normalize(info[size_t(at)], gate)));
+            }
+            size_t k;
+            json_t* step;
+            json_array_foreach(line, k, step) {
+                auto v = uint8_t(std::clamp<json_int_t>(json_integer_value(step), 0, 0x3F));
+                if (k < 16) {
+                    int at = chain::arpLaneFirst(chain::ArpLane::Octave) + int(k);
+                    json_array_set_new(params, size_t(at),
+                                       json_real(devices::normalize(info[size_t(at)], float(int((v >> 4) & 3) - 1))));
+                }
+                json_array_set_new(line, k, json_integer(v & 7)); // the row; the octave went into the step setting
+            }
+        };
+        auto chainOf = [&](json_t* devicesJ) {
+            size_t k, h, b;
+            json_t *d, *p, *bd;
+            json_array_foreach(devicesJ, k, d) {
+                migrate(d);
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_array_foreach(json_object_get(p, "branch"), b, bd) migrate(bd);
+                }
+            }
+        };
+        size_t i;
+        json_t* t;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) chainOf(json_object_get(t, "devices"));
+        json_array_foreach(json_object_get(songJ, "clips"), i, t) {
+            chainOf(json_object_get(json_object_get(t, "ownChain"), "devices"));
+        }
+    }
+    if (fromVersion < 14) {
+        // Version 14 gave the Pattern line rows for up to 8 held notes: "all" moved from row 5 to row 9, since 5
+        // is now the fifth note.
+        auto migrate = [](json_t* d) {
+            const char* type = json_string_value(json_object_get(d, "type"));
+            if (!type || std::string(type) != "arpeggiator")
+                return;
+            size_t k;
+            json_t* step;
+            json_array_foreach(json_object_get(d, "line"), k, step) {
+                json_int_t v = json_integer_value(step);
+                if ((v & 7) == 5)
+                    json_array_set_new(json_object_get(d, "line"), k,
+                                       json_integer((v & ~json_int_t(15)) | 9));
+            }
+        };
+        auto chainOf = [&](json_t* devicesJ) {
+            size_t k, h, b;
+            json_t *d, *p, *bd;
+            json_array_foreach(devicesJ, k, d) {
+                migrate(d);
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_array_foreach(json_object_get(p, "branch"), b, bd) migrate(bd);
+                }
+            }
+        };
+        size_t i;
+        json_t* t;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) chainOf(json_object_get(t, "devices"));
+        json_array_foreach(json_object_get(songJ, "clips"), i, t) {
+            chainOf(json_object_get(json_object_get(t, "ownChain"), "devices"));
+        }
+    }
+    if (fromVersion < 15) {
+        // Version 15 made each Pattern step a set of rows (a bit per held note, so a step can be any chord) and the
+        // semitone row's key switch the Move row's unit (Semitones, Key, Chord). A step's one row becomes that row's
+        // bit, "all" (row 9) every row; "in key" moves from the switch's 1 to the choice's middle.
+        const devices::ParamInfo& unit =
+            devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(chain::knob::kArpMoveUnit)];
+        auto migrate = [&unit](json_t* d) {
+            const char* type = json_string_value(json_object_get(d, "type"));
+            if (!type || std::string(type) != "arpeggiator")
+                return;
+            size_t k;
+            json_t* step;
+            json_t* line = json_object_get(d, "line");
+            json_array_foreach(line, k, step) {
+                int row = int(json_integer_value(step) & 15);
+                int bits = row == 9 ? chain::kFullStep : chain::stepOf(row);
+                json_array_set_new(line, k, json_integer(bits));
+            }
+            json_t* params = json_object_get(d, "params");
+            json_t* inKey = json_array_get(params, size_t(chain::knob::kArpMoveUnit));
+            if (json_is_number(inKey))
+                json_array_set_new(params, size_t(chain::knob::kArpMoveUnit),
+                                   json_real(devices::normalize(unit, json_number_value(inKey) > 0.5 ? 1.f : 0.f)));
+        };
+        auto chainOf = [&](json_t* devicesJ) {
+            size_t k, h, b;
+            json_t *d, *p, *bd;
+            json_array_foreach(devicesJ, k, d) {
+                migrate(d);
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_array_foreach(json_object_get(p, "branch"), b, bd) migrate(bd);
+                }
+            }
+        };
+        size_t i;
+        json_t* t;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) chainOf(json_object_get(t, "devices"));
+        json_array_foreach(json_object_get(songJ, "clips"), i, t) {
+            chainOf(json_object_get(json_object_get(t, "ownChain"), "devices"));
+        }
+    }
+    if (fromVersion == 6) {
+        // Before version 6 was released for Transpose, test builds saved version 6 with playheads that played their
+        // notes for the written length by default, so at half speed a note stopped halfway while the playhead was
+        // still on it. Its notes now last while the playhead is on them. Released version 6 songs have no playheads,
+        // so this leaves them alone.
+        const devices::ParamInfo& length = devices::playheadInfo().params[playheads::knob::kLength];
+        float asWritten = devices::normalize(length, float(playheads::LengthMode::AsWritten));
+        float follows = devices::normalize(length, float(playheads::LengthMode::FollowsPlayhead));
+        size_t i, k, h;
+        json_t *t, *d, *p;
+        json_array_foreach(json_object_get(songJ, "tracks"), i, t) {
+            json_array_foreach(json_object_get(t, "devices"), k, d) {
+                json_array_foreach(json_object_get(d, "playheads"), h, p) {
+                    json_t* params = json_object_get(p, "params");
+                    json_t* value = json_array_get(params, size_t(playheads::knob::kLength));
+                    if (json_is_number(value) && std::fabs(json_number_value(value) - asWritten) < 1e-4)
+                        json_array_set_new(params, size_t(playheads::knob::kLength), json_real(follows));
+                }
+            }
+        }
+    }
     return fromVersion <= Song::kSchemaVersion;
 }
 
@@ -804,6 +1598,250 @@ void narrowTransposeSemitones(Song& s) {
         for (Device& d : t.devices)
             routes(d.modulators);
         lanes(t.automation);
+    }
+    for (auto& [id, clip] : s.clips)
+        lanes(clip.automation);
+}
+
+/// A choice setting whose list grew: its names before, and its list now.
+struct GrownChoice {
+    int knob;
+    std::vector<std::string> before;
+    const std::vector<std::string>& now;
+};
+
+/// One owner's saved settings (a device's or a playhead's) and which of its choices grew.
+struct GrownSettings {
+    ParamRef::Kind kind;
+    uint64_t owner;
+    std::vector<float>* params;
+    const std::vector<GrownChoice>* grown;
+};
+
+/// A choice is saved as 0..1 of its list, so when a list grows each saved value finds its choice by name in the
+/// longer list. Lanes on those settings move the same way; a curve drawn in one keeps reaching the choices it reached
+/// from the setting as set, and another modulator's amount keeps its reach from there.
+void growChoices(Song& s, const std::vector<GrownSettings>& settings) {
+    auto oldIndex = [](const GrownChoice& g, float v) {
+        return std::clamp(int(std::lround(double(v) * double(g.before.size() - 1))), 0, int(g.before.size()) - 1);
+    };
+    auto newIndex = [](const GrownChoice& g, int old) { return playheads::choiceIndex(g.now, g.before[size_t(old)]); };
+    auto normalized = [](const GrownChoice& g, int index) { return float(double(index) / double(g.now.size() - 1)); };
+    // A move of `delta` (0..1 of the old list) from choice `from`, as a move in the new list.
+    auto moved = [&](const GrownChoice& g, int from, double delta) {
+        int to = std::clamp(int(std::lround(double(from) + delta * double(g.before.size() - 1))), 0,
+                            int(g.before.size()) - 1);
+        return double(newIndex(g, to) - newIndex(g, from)) / double(g.now.size() - 1);
+    };
+    // Where each grown setting was (old index), before it moves, and which choice it is.
+    std::map<std::tuple<int, uint64_t, int>, std::pair<int, const GrownChoice*>> base;
+    for (const GrownSettings& o : settings)
+        for (const GrownChoice& g : *o.grown)
+            if (size_t(g.knob) < o.params->size()) {
+                float& v = (*o.params)[size_t(g.knob)];
+                int old = oldIndex(g, v);
+                base[{int(o.kind), o.owner, g.knob}] = {old, &g};
+                v = normalized(g, newIndex(g, old));
+            }
+    auto found = [&](const ParamRef& r) -> const std::pair<int, const GrownChoice*>* {
+        auto it = base.find({int(r.kind), r.owner, int(r.param)});
+        return it == base.end() ? nullptr : &it->second;
+    };
+    auto lanes = [&](std::vector<AutomationEnvelope>& list) {
+        for (AutomationEnvelope& lane : list)
+            if (const auto* f = found(lane.paramTarget))
+                for (AutoPoint& p : lane.points)
+                    p.value = normalized(*f->second, newIndex(*f->second, oldIndex(*f->second, p.value)));
+    };
+    for (Track& t : s.tracks)
+        lanes(t.automation);
+    for (auto& [id, clip] : s.clips)
+        lanes(clip.automation);
+    forEachModulator(s, [&](Modulator& m, const ModulatorPlace&) {
+        int drawn = mods::drawnRoute(m);
+        for (size_t i = 0; i < m.routes.size(); i++) {
+            Modulation& r = m.routes[i];
+            const auto* f = r.kind == Modulation::Kind::Param ? found(r.target) : nullptr;
+            if (!f)
+                continue;
+            const GrownChoice& g = *f->second;
+            if (int(i) == drawn) {
+                // A drawn point's height is a move from the setting as set: 0.5 + (move / 2) at full amount.
+                for (AutoPoint& p : m.points)
+                    p.value = std::clamp(float(0.5 + moved(g, f->first, (double(p.value) - 0.5) * 2) / 2), 0.f, 1.f);
+            } else {
+                r.amount = std::clamp(float(moved(g, f->first, double(r.amount))), -1.f, 1.f);
+            }
+        }
+    });
+}
+
+/// Before schema 8 a playhead's Rate, Piece, Order step, Fixed length and Path cycle had fewer choices (Trello: "add
+/// more divisions").
+void growPlayheadChoices(Song& s) {
+    namespace pk = playheads::knob;
+    static const std::vector<GrownChoice> grown = {
+        {pk::kRate,
+         {"1/16x", "1/8x", "1/4x", "1/3x", "1/2x", "2/3x", "3/4x", "1x", "4/3x", "3/2x", "2x", "3x", "4x", "8x", "16x"},
+         playheads::rateNames()},
+        {pk::kRepeatSize, {"Off", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::repeatNames()},
+        {pk::kOrderStep, {"1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::orderStepNames()},
+        {pk::kFixedLength, {"1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1 bar"}, playheads::fixedLengthNames()},
+        {pk::kPathCycle, {"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, playheads::pathCycleNames()}};
+    std::vector<GrownSettings> settings;
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices)
+            for (Playhead& p : d.playheads)
+                settings.push_back({ParamRef::Kind::Playhead, p.id.value, &p.params, &grown});
+    growChoices(s, settings);
+}
+
+/// Before schema 9 the Arpeggiator had seven patterns, before 16 fourteen; the longer list keeps related patterns
+/// together. Schema 9 to 15's list is given with today's names for the three renamed since (Up-down full, Down-up
+/// full, Shuffled), so each finds itself in today's list.
+void growArpPatterns(Song& s, int schemaVersion) {
+    static const std::vector<GrownChoice> before9 = {
+        {chain::knob::kPattern,
+         {"Up", "Down", "Up-down", "Down-up", "Random", "As played", "Chord"},
+         devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(chain::knob::kPattern)].choices}};
+    static const std::vector<GrownChoice> before16 = {
+        {chain::knob::kPattern,
+         {"Up", "Down", "Up-down", "Up & down", "Down-up", "Down & up", "Converge", "Diverge", "As played", "Random",
+          "Walk", "Random once", "Pattern", "Chord"},
+         devices::deviceInfo(DeviceType::Arpeggiator).params[size_t(chain::knob::kPattern)].choices}};
+    const std::vector<GrownChoice>& grown = schemaVersion < 9 ? before9 : before16;
+    std::vector<GrownSettings> settings;
+    auto add = [&](Device& d) {
+        if (d.type == DeviceType::Arpeggiator)
+            settings.push_back({ParamRef::Kind::Device, d.id.value, &d.params, &grown});
+    };
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices) {
+            add(d);
+            for (Playhead& p : d.playheads)
+                for (Device& b : p.branch)
+                    add(b);
+        }
+    growChoices(s, settings);
+}
+
+/// Before schema 11 each list of lengths had its own stretch and order: note devices' and modulators' rates ran 8 bars
+/// down to 1/64, then the triplets and dotted values; the playheads' lists missed some. Every one now takes its stretch
+/// of the one scale, short to long (Lengths.hpp), and each saved choice keeps its length by name.
+void unifyLengths(Song& s, bool playheadsToo) {
+    static const std::vector<std::string> oldRates = {"8 bars", "4 bars", "2 bars", "1 bar", "1/2",   "1/4",
+                                                      "1/8",    "1/16",   "1/32",   "1/64",  "1/2 T", "1/4 T",
+                                                      "1/8 T",  "1/16 T", "1/4 D",  "1/8 D", "1/16 D"};
+    namespace ck = chain::knob;
+    namespace mk = mods::knob;
+    namespace pk = playheads::knob;
+    auto rate = [](int knob) { return GrownChoice{knob, oldRates, devices::rateNames()}; };
+    auto slowRate = [](int knob) { return GrownChoice{knob, oldRates, devices::slowRateNames()}; };
+    static const std::vector<GrownChoice> noteLength = {rate(ck::kLength)}, arp = {rate(ck::kRate)},
+                                          noteRepeat = {rate(ck::kRepeatRate)}, echo = {rate(ck::kTime)},
+                                          lfo = {slowRate(mk::kSyncedRate)}, steps = {slowRate(mk::kStepRate)},
+                                          random = {slowRate(mk::kRandomRate)};
+    static const std::vector<GrownChoice> playhead = {
+        {pk::kRate,
+         {"1/32x", "1/16x", "1/12x", "1/8x", "1/6x", "1/4x", "1/3x", "3/8x", "1/2x", "2/3x", "3/4x", "4/5x",
+          "1x",    "5/4x",  "4/3x",  "3/2x", "2x",   "3x",   "4x",   "6x",   "8x",   "12x",  "16x",  "32x"},
+         playheads::rateNames()},
+        {pk::kRepeatSize,
+         {"Off", "1/64", "1/32", "1/16 T", "1/16", "1/8 T", "1/16 D", "1/8", "1/4 T", "1/8 D", "1/4", "1/2 T", "1/4 D",
+          "1/2", "1/2 D", "1 bar", "2 bars", "4 bars"},
+         playheads::repeatNames()},
+        {pk::kOrderStep,
+         {"1/32", "1/16 T", "1/16", "1/8 T", "1/8", "1/4 T", "1/4", "1/2", "1 bar", "2 bars"},
+         playheads::orderStepNames()},
+        {pk::kFixedLength,
+         {"1/64", "1/32", "1/16 T", "1/16", "1/8 T", "1/16 D", "1/8", "1/4 T", "1/8 D", "1/4", "1/4 D", "1/2", "1 bar",
+          "2 bars"},
+         playheads::fixedLengthNames()},
+        {pk::kSpeedOver, {"1/8", "1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars"}, playheads::speedOverNames()}};
+    std::vector<GrownSettings> settings;
+    auto device = [&](Device& d) {
+        const std::vector<GrownChoice>* grown = d.type == DeviceType::NoteLength    ? &noteLength
+                                                : d.type == DeviceType::Arpeggiator ? &arp
+                                                : d.type == DeviceType::NoteRepeat  ? &noteRepeat
+                                                : d.type == DeviceType::Echo        ? &echo
+                                                                                    : nullptr;
+        if (grown)
+            settings.push_back({ParamRef::Kind::Device, d.id.value, &d.params, grown});
+    };
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices) {
+            device(d);
+            for (Playhead& p : d.playheads) {
+                if (playheadsToo)
+                    settings.push_back({ParamRef::Kind::Playhead, p.id.value, &p.params, &playhead});
+                for (Device& b : p.branch)
+                    device(b);
+            }
+        }
+    forEachModulator(s, [&](Modulator& m, const ModulatorPlace&) {
+        const std::vector<GrownChoice>* grown = m.type == ModulatorType::Lfo      ? &lfo
+                                                : m.type == ModulatorType::Steps  ? &steps
+                                                : m.type == ModulatorType::Random ? &random
+                                                                                  : nullptr;
+        if (grown)
+            settings.push_back({ParamRef::Kind::Modulator, m.id.value, &m.params, grown});
+    });
+    growChoices(s, settings);
+}
+
+/// Before schema 10 the Note Filter's Channel was one choice: Any, or 1 to 16. It is now a set of channels: Any
+/// becomes the empty set (any channel), channel n the set with only channel n. A set is only picked by hand, so the
+/// lanes and modulations that moved the old choice are dropped.
+void channelsToSets(Song& s) {
+    constexpr int kOldChoices = 17; // Any, 1..16
+    const devices::ParamInfo& info = devices::deviceInfo(DeviceType::NoteFilter).params[size_t(chain::knob::kChannel)];
+    std::vector<uint64_t> filters;
+    auto convert = [&](Device& d) {
+        if (d.type != DeviceType::NoteFilter)
+            return;
+        filters.push_back(d.id.value);
+        if (d.params.size() <= size_t(chain::knob::kChannel))
+            return;
+        int channel = std::clamp(int(std::lround(d.params[chain::knob::kChannel] * (kOldChoices - 1))), 0, 16);
+        int set = channel > 0 ? 1 << (channel - 1) : 0;
+        d.params[chain::knob::kChannel] = devices::normalize(info, float(set));
+    };
+    for (Track& t : s.tracks)
+        for (Device& d : t.devices) {
+            convert(d);
+            for (Playhead& p : d.playheads)
+                for (Device& b : p.branch)
+                    convert(b);
+        }
+    if (filters.empty())
+        return;
+    auto aimsAtChannel = [&](const ParamRef& r) {
+        return r.kind == ParamRef::Kind::Device && r.param == chain::knob::kChannel &&
+               std::find(filters.begin(), filters.end(), r.owner) != filters.end();
+    };
+    auto routes = [&](std::vector<Modulator>& list) {
+        for (Modulator& m : list)
+            m.routes.erase(std::remove_if(m.routes.begin(), m.routes.end(),
+                                          [&](const Modulation& r) {
+                                              return r.kind == Modulation::Kind::Param && aimsAtChannel(r.target);
+                                          }),
+                           m.routes.end());
+    };
+    auto lanes = [&](std::vector<AutomationEnvelope>& list) {
+        list.erase(std::remove_if(list.begin(), list.end(),
+                                  [&](const AutomationEnvelope& l) { return aimsAtChannel(l.paramTarget); }),
+                   list.end());
+    };
+    routes(s.modulators);
+    for (Track& t : s.tracks) {
+        routes(t.modulators);
+        lanes(t.automation);
+        for (Device& d : t.devices) {
+            routes(d.modulators);
+            for (Playhead& p : d.playheads)
+                for (Device& b : p.branch)
+                    routes(b.modulators);
+        }
     }
     for (auto& [id, clip] : s.clips)
         lanes(clip.automation);
@@ -869,6 +1907,139 @@ void splitLegacyRandom(Song& s) {
 
 } // namespace
 
+namespace {
+
+/// `clip` plays take `take` from now on: the form a clip with a choice of take has had since takes moved into the clip.
+void playOldTake(Clip& clip, int take) {
+    AudioContent& a = *clip.audio;
+    if (take < 0 || size_t(take) >= a.takes.size())
+        return;
+    if (a.regions.empty()) {
+        AudioRegion r;
+        r.length = clip.length;
+        r.take = take;
+        r.reverse = a.reverse;
+        r.sourceFrame = a.takes[size_t(take)].sourceStart;
+        a.reverse = false;
+        a.regions = {r};
+        return;
+    }
+    for (AudioRegion& r : a.regions)
+        if (r.take < 0) {
+            r.take = take;
+            r.sourceFrame += a.takes[size_t(take)].sourceStart - a.sourceStart;
+        }
+}
+
+/// Songs saved before takes moved into the clip name the take on each timeline copy. Each copy keeps playing what it
+/// played: copies of a clip that picked different takes get clips of their own.
+void applyOldTakeChoices(Song& s, const json_t* tracksJ) {
+    std::map<uint64_t, int> picked;
+    forEach(tracksJ, [&](const json_t* tj) {
+        forEach(get(tj, "arrangement"), [&](const json_t* aj) {
+            int take = int(getInt(aj, "take", -1));
+            if (take >= 0)
+                picked[readId<ArrangementId>(get(aj, "id")).value] = take;
+        });
+    });
+    if (picked.empty())
+        return;
+    // The take each clip keeps: the first use decides, and a launcher slot always plays the clip's own.
+    std::map<ClipId, int> kept;
+    std::map<std::pair<ClipId, int>, ClipId> copies;
+    for (const Track& t : s.tracks)
+        for (const ClipSlot& slot : t.slots)
+            if (slot.clip)
+                kept.emplace(*slot.clip, -1);
+    NextId nextId = [&] { return s.nextId++; };
+    for (Track& t : s.tracks)
+        for (ArrangerClip& a : t.arrangement) {
+            auto choice = picked.find(a.id.value);
+            int take = choice == picked.end() ? -1 : choice->second;
+            auto [owner, fresh] = kept.emplace(a.clip, take);
+            if (fresh || owner->second == take)
+                continue;
+            auto [made, isNew] = copies.emplace(std::make_pair(a.clip, take), ClipId());
+            if (isNew) {
+                const Clip* source = s.findClip(a.clip);
+                if (!source || !source->audio)
+                    continue;
+                Clip copy = copyClip(*source, nextId);
+                playOldTake(copy, take);
+                made->second = copy.id;
+                s.clips.emplace(copy.id, std::move(copy));
+            }
+            if (made->second.valid())
+                a.clip = made->second;
+        }
+    for (const auto& [clip, take] : kept)
+        if (Clip* c = s.findClip(clip); c && c->audio)
+            playOldTake(*c, take);
+}
+
+/// Songs saved before 15 Nov 2026 could give a timeline tile a velocity scale ("velScale"), which no longer exists
+/// (DECISIONS §160). Its notes keep sounding as they did: each scale is multiplied into the velocities of the notes,
+/// in the clip itself when every use of it had that scale, else in a copy for the tiles that had it.
+void applyOldVelocityScales(Song& s, const json_t* tracksJ) {
+    std::map<uint64_t, float> scaleOf; // tile ID -> its scale, only where it wasn't 100%
+    forEach(tracksJ, [&](const json_t* tj) {
+        forEach(get(tj, "arrangement"), [&](const json_t* aj) {
+            float scale = getFloat(aj, "velScale", 1);
+            if (std::isfinite(scale) && std::abs(scale - 1) > 1e-4f)
+                scaleOf[readId<ArrangementId>(get(aj, "id")).value] = std::max(0.f, scale);
+        });
+    });
+    if (scaleOf.empty())
+        return;
+    auto tileScale = [&](const ArrangerClip& a) {
+        auto it = scaleOf.find(a.id.value);
+        return it == scaleOf.end() ? 1.f : it->second;
+    };
+    // Each clip's uses, by scale: a launcher slot plays the clip as it is.
+    std::map<ClipId, std::map<float, int>> uses;
+    for (const Track& t : s.tracks) {
+        for (const ClipSlot& slot : t.slots)
+            if (slot.clip)
+                uses[*slot.clip][1.f]++;
+        for (const ArrangerClip& a : t.arrangement)
+            uses[a.clip][tileScale(a)]++;
+    }
+    auto scaleNotes = [](Clip& c, float scale) {
+        for (Note& n : c.notes)
+            n.velocity = std::clamp(n.velocity * scale, 0.f, 1.f);
+    };
+    NextId nextId = [&] { return s.nextId++; };
+    std::map<std::pair<ClipId, float>, ClipId> copies;
+    std::map<ClipId, float> ownScale; // clips whose own notes take a scale
+    for (Track& t : s.tracks)
+        for (ArrangerClip& a : t.arrangement) {
+            float scale = tileScale(a);
+            Clip* source = s.findClip(a.clip);
+            if (scale == 1.f || !source || source->notes.empty())
+                continue;
+            // No use plays the clip as it is: the first scale met goes into the clip itself, so it doesn't stay
+            // behind unused; other scales get copies.
+            const std::map<float, int>& byScale = uses[a.clip];
+            if (!byScale.count(1.f) && !ownScale.count(a.clip))
+                ownScale[a.clip] = scale;
+            if (auto own = ownScale.find(a.clip); own != ownScale.end() && own->second == scale)
+                continue; // scaled below, once every copy was taken from the notes as they were
+            auto [made, isNew] = copies.emplace(std::make_pair(a.clip, scale), ClipId());
+            if (isNew) {
+                Clip copy = copyClip(*source, nextId);
+                scaleNotes(copy, scale);
+                made->second = copy.id;
+                s.clips.emplace(copy.id, std::move(copy));
+            }
+            a.clip = made->second;
+        }
+    for (const auto& [clip, scale] : ownScale)
+        if (Clip* c = s.findClip(clip))
+            scaleNotes(*c, scale);
+}
+
+} // namespace
+
 Song songFromJson(const json_t* songJ, int schemaVersion) {
     Song s;
     if (!json_is_object(songJ)) {
@@ -906,12 +2077,18 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
             s.clips.emplace(c.id, std::move(c));
     });
     forEach(get(j, "tracks"), [&](const json_t* tj) { s.tracks.push_back(trackFromJson(tj)); });
+    applyOldTakeChoices(s, get(j, "tracks"));
+    applyOldVelocityScales(s, get(j, "tracks"));
+    motionGroupsToDevices(get(j, "clips"), s);
     forEach(get(j, "groups"), [&](const json_t* gj) {
         TrackGroup g;
         g.id = readId<GroupId>(get(gj, "id"));
         g.name = getString(gj, "name", g.name);
         g.color = saturate<uint32_t>(getInt(gj, "color", g.color));
         forEach(get(gj, "tracks"), [&](const json_t* id) { g.tracks.push_back(readId<TrackId>(id)); });
+        g.channel.volumeDb = getFloat(get(gj, "channel"), "volume", 0);
+        g.channel.pan = getFloat(get(gj, "channel"), "pan", 0);
+        g.mute = getBool(gj, "mute", false);
         s.groups.push_back(g);
     });
     forEach(get(j, "scenes"), [&](const json_t* sj) {
@@ -931,11 +2108,25 @@ Song songFromJson(const json_t* songJ, int schemaVersion) {
         s.markers.push_back(m);
     });
     s.modulators = modulatorListFromJson(get(j, "modulators"));
+    forEach(get(j, "audioSources"), [&](const json_t* aj) { s.audioSources.push_back(sourceFromJson(aj)); });
+    s.master.id = readId<TrackId>(get(get(j, "master"), "id"));
+    s.master.volumeDb = getFloat(get(j, "master"), "volume", s.master.volumeDb);
+    s.master.automation = automationListFromJson(get(get(j, "master"), "automation"));
+    s.master.mix = sourceLevelFromJson(get(get(j, "master"), "mix"));
 
     // Before normalize, which trims each device's knobs to its type's list and would drop the old values.
     splitLegacyRandom(s);
     if (schemaVersion < 6)
         narrowTransposeSemitones(s);
+    if (schemaVersion < 8)
+        growPlayheadChoices(s);
+    if (schemaVersion < 16)
+        growArpPatterns(s, schemaVersion);
+    if (schemaVersion < 10)
+        channelsToSets(s);
+    // Songs before 8 already found their playhead choices by name in today's lists.
+    if (schemaVersion < 11)
+        unifyLengths(s, schemaVersion >= 8);
     normalize(s);
     return s;
 }

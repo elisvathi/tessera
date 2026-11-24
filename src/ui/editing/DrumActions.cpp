@@ -1,5 +1,6 @@
 #include "DrumActions.hpp"
 
+#include "../../model/Lengths.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../views/PianoRoll.hpp"
@@ -16,8 +17,15 @@ namespace {
 /// A copied lane: notes relative to the lane region's start.
 edits::NoteList laneClipboard;
 
-const char* const kRateNames[] = {"1/4", "1/8", "1/8 triplet", "1/16", "1/16 triplet", "1/32"};
-constexpr Tick kRates[] = {kPpq, kPpq / 2, kPpq / 3, kPpq / 4, kPpq / 6, kPpq / 8};
+/// A lane's step lengths: 1/64 to 1/2 from the one scale (Lengths.hpp), triplets and dotted too, short to long.
+/// A lane saves its step in ticks, so the list can change freely.
+const std::vector<lengths::Length>& laneRates() {
+    static const std::vector<lengths::Length> list = lengths::range("1/64", "1/2");
+    return list;
+}
+
+/// A rate's length in ticks (a note value, so the time signature doesn't matter).
+Tick rateTicks(const lengths::Length& l) { return Tick(std::llround(lengths::ticks(l, TimeSig()))); }
 constexpr int kStepCounts[] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24, 32};
 constexpr float kGateLengths[] = {0, 10, 25, 50, 100, 250};
 
@@ -181,14 +189,14 @@ void appendLaneMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
                 set("Set lane steps", [n](DrumLane& d) { d.loopLength = Tick(n) * d.stepLength; })));
     }));
     std::string rate;
-    for (size_t i = 0; i < std::size(kRates); i++)
-        if (kRates[i] == l.stepLength)
-            rate = kRateNames[i];
+    for (const lengths::Length& r : laneRates())
+        if (rateTicks(r) == l.stepLength)
+            rate = r.name;
     menu->addChild(rack::createSubmenuItem("Rate", rate, [set, current](rack::ui::Menu* sub) {
-        for (size_t i = 0; i < std::size(kRates); i++) {
-            Tick r = kRates[i];
+        for (const lengths::Length& length : laneRates()) {
+            Tick r = rateTicks(length);
             sub->addChild(rack::createCheckMenuItem(
-                kRateNames[i], "", [current, r] { return current() && current()->stepLength == r; },
+                length.name, "", [current, r] { return current() && current()->stepLength == r; },
                 set("Set lane rate", [r](DrumLane& d) {
                     // Keep the step count when the lane has its own loop.
                     if (d.loopLength > 0)
@@ -361,7 +369,7 @@ void appendHitOperators(rack::ui::Menu* menu, NoteTarget& hits) {
         }
     }));
     menu->addChild(rack::createSubmenuItem("Repeats", "", [=](rack::ui::Menu* sub) {
-        for (int count : {0, 2, 3, 4, 6, 8}) {
+        for (int count : {0, 2, 3, 4, 5, 6, 7, 8}) {
             sub->addChild(
                 rack::createCheckMenuItem(count == 0 ? "Off" : std::to_string(count) + " hits", "",
                                           all([count](const Note& n) { return n.ops.repeats == count; }),

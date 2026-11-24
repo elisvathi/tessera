@@ -1,10 +1,20 @@
 #include "TrackHeaders.hpp"
 
+#include "../../model/AudioEdits.hpp"
+#include "AudioClipDraw.hpp"
+#include "MixerPane.hpp"
+
+#include "../../model/Sends.hpp"
 #include "../../model/TrackCommands.hpp"
+#include "../../module/OutputModuleBase.hpp"
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
+#include "../editing/AudioActions.hpp"
 #include "../editing/DeviceActions.hpp"
+#include "../editing/DrumActions.hpp"
+#include "../editing/SendActions.hpp"
+#include "../editing/Sources.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
 #include "../interaction/Navigation.hpp"
@@ -35,8 +45,6 @@ constexpr float kButtonHCompact = 14;
 constexpr float kButtonGapCompact = 2;
 constexpr float kArmWidth = 16;
 constexpr float kArmWidthCompact = 13;
-constexpr float kArrowWidth = 12;
-constexpr float kArrowWidthCompact = 10;
 constexpr float kTileWidth = 18;
 constexpr float kTileWidthCompact = 16;
 constexpr float kNameGap = 6;
@@ -47,17 +55,30 @@ constexpr float kCompactHeight = 24;
 constexpr float kExpandedHeight = 96;
 constexpr float kRowTopPad = 6;
 constexpr float kAddRowHeight = 28;
+constexpr float kLevelBarH = 6;
+constexpr float kLevelHitH = 12;
+constexpr float kPanSize = 16;
+constexpr float kDbTextWidth = 44;
+constexpr float kMinFromWidth = 34;   // narrower than this, the words go rather than squeeze the name
+constexpr float kMixMinName = 26;  // a mix row's name, shortest
+constexpr float kMixMinLevel = 36; // a mix row's level, shortest before the pan goes
+constexpr float kWidthEdge = 4;    // the column's right edge: drag to widen it
+constexpr float kMinHeaderWidth = 100, kMaxHeaderWidth = 400;
+constexpr float kMixIndent = 14; // a part's sends sit this much further in than the part
+constexpr float kMixArrow = 11;  // a mix fold's arrow, before its dots
+constexpr float kMixDot = 4;     // one dot per row a mix fold hides, three to a line, two lines at most
+constexpr int kMixDotsShown = 6; // more rows than this show five dots and a "+"
 
 /// Drags a track's bottom edge. With Alt every track takes the new height.
 class ResizeLaneGesture : public DragGesture {
   public:
     ResizeLaneGesture(EditorContext& ctx, AutomationId lane, float startY)
-        : ctx(ctx), lane(lane), startY(startY), startHeight(ctx.view().laneHeight(lane)) {}
+        : ctx(ctx), lane(lane), startY(startY), startHeight(ctx.state().laneHeight(lane)) {}
     void update(Vec pos, Modifiers mods) override {
         height = std::clamp(startHeight + (pos.y - startY), TrackAxis::kMinHeight, TrackAxis::kMaxHeight);
-        ctx.view().laneHeights[lane.value] = height;
+        ctx.state().laneHeights[lane.value] = height;
     }
-    void cancel() override { ctx.view().laneHeights[lane.value] = startHeight; }
+    void cancel() override { ctx.state().laneHeights[lane.value] = startHeight; }
     std::string readout() const override { return std::to_string(int(height)) + " px"; }
     CursorShape cursor() const override { return CursorShape::ResizeV; }
 
@@ -72,22 +93,22 @@ class ResizeLaneGesture : public DragGesture {
 class ResizeTrackGesture : public DragGesture {
   public:
     ResizeTrackGesture(EditorContext& ctx, TrackId track, float startY)
-        : ctx(ctx), track(track), startY(startY), startHeights(ctx.view().trackHeights),
-          startHeight(ctx.view().trackHeight(track)) {}
+        : ctx(ctx), track(track), startY(startY), startHeights(ctx.state().trackHeights),
+          startHeight(ctx.state().trackHeight(track)) {}
 
     void update(Vec pos, Modifiers mods) override {
         ViewState& view = ctx.view();
-        view.trackHeights = startHeights;
+        ctx.state().trackHeights = startHeights;
         double h = std::clamp(startHeight + (pos.y - startY), TrackAxis::kMinHeight, TrackAxis::kMaxHeight);
         if (mods.alt) {
             for (const Track& t : ctx.module()->song().tracks)
-                view.trackHeights[t.id.value] = h;
+                ctx.state().trackHeights[t.id.value] = h;
         } else {
-            view.trackHeights[track.value] = h;
+            ctx.state().trackHeights[track.value] = h;
         }
         height = h;
     }
-    void cancel() override { ctx.view().trackHeights = startHeights; }
+    void cancel() override { ctx.state().trackHeights = startHeights; }
     std::string readout() const override { return std::to_string(int(height)) + " px"; }
     CursorShape cursor() const override { return CursorShape::ResizeV; }
 
@@ -225,16 +246,10 @@ Rect TrackHeaders::muteRect(float top, float h) {
     return Rect(s.pos.x - gap - s.size.x, s.pos.y, s.size.x, s.size.y);
 }
 
-Rect TrackHeaders::automationRect(float top, float h) {
-    Rect m = muteRect(top, h);
-    float w = compact() ? kArrowWidthCompact : kArrowWidth;
-    return Rect(m.pos.x - (compact() ? kButtonGapCompact : kButtonGap) - w, m.pos.y, w, m.size.y);
-}
-
 Rect TrackHeaders::armRect(float top, float h) {
-    Rect a = automationRect(top, h);
+    Rect m = muteRect(top, h);
     float w = compact() ? kArmWidthCompact : kArmWidth;
-    return Rect(a.pos.x - w, a.pos.y, w, a.size.y);
+    return Rect(m.pos.x - (compact() ? kButtonGapCompact : kButtonGap) - w, m.pos.y, w, m.size.y);
 }
 
 Rect TrackHeaders::outputRect(float top, float h) {
@@ -257,6 +272,9 @@ Rect TrackHeaders::nameRect(int row) {
         return Rect(kFoldZone + 14, y - 9, box.size.x - kFoldZone - 14 - kPad, 18);
     const Track* t = ctx.module() ? ctx.module()->song().findTrack(r.track) : nullptr;
     float x = indentOf(r) + (compact() ? kTileWidthCompact : kTileWidth) + kNameGap;
+    Rect fold = trackMixFold(row, top, h);
+    if (fold.size.x > 0)
+        x = fold.getRight() + 4;
     if (t && t->type == TrackType::Drum)
         x += kDrumMarkWidth;
     bool noOutput = t && missingOutput(*t);
@@ -269,6 +287,38 @@ Rect TrackHeaders::addRowRect() {
     return Rect(kPad / 2, top + 4, box.size.x - kPad, kAddRowHeight - 8);
 }
 
+bool TrackHeaders::showsMaster() const {
+    TesseraModule* m = ctx.module();
+    return m && m->makesSound();
+}
+
+Rect TrackHeaders::masterRowRect() {
+    for (size_t i = 0; i < owner.rows.size() && i < owner.tracks.heights().size(); i++)
+        if (owner.rows[i].kind == TrackRow::Kind::Master) {
+            float top = float(owner.tracks.trackTop(int(i)));
+            float h = float(owner.tracks.trackHeight(int(i)));
+            return Rect(kPad / 2, top + (h - kMasterRowHeight) / 2, box.size.x - kPad, kMasterRowHeight);
+        }
+    return Rect();
+}
+
+Rect TrackHeaders::masterLanesRect() {
+    Rect level = masterLevelRect();
+    if (level.size.x <= 0)
+        return Rect();
+    return Rect(level.pos.x - 17, masterRowRect().getCenter().y - 7, 14, 14);
+}
+
+Rect TrackHeaders::masterLevelRect() {
+    Rect row = masterRowRect();
+    if (row.size.x <= 0)
+        return Rect();
+    // Room for "Master" and its lanes arrow before the bar.
+    float x = row.pos.x + (compact() ? kTileWidthCompact : kTileWidth) + kNameGap + 56;
+    float right = row.getRight() - 8 - kDbTextWidth;
+    return Rect(x, row.getCenter().y - kLevelHitH / 2, std::max(40.f, right - x), kLevelHitH);
+}
+
 void TrackHeaders::openAddMenu() {
     EditorContext* c = &ctx;
     rack::ui::Menu* menu = rack::createMenu();
@@ -279,10 +329,16 @@ void TrackHeaders::openAddMenu() {
         [c] { trackActions::add(*c, TrackType::Instrument); }, full));
     menu->addChild(rack::createMenuItem(
         "Drum track", shortcutLabel(Action::AddDrumTrack), [c] { trackActions::add(*c, TrackType::Drum); }, full));
+    menu->addChild(rack::createMenuItem(
+        "Audio track", "or drop audio files", [c] { trackActions::add(*c, TrackType::Audio); }, full));
 }
 
 TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
     Hit hit;
+    if (pos.x >= box.size.x - kWidthEdge) {
+        hit.part = Part::WidthEdge;
+        return hit;
+    }
     hit.row = owner.tracks.trackAt(pos.y);
     if (hit.row < 0 || hit.row >= int(owner.rows.size())) {
         // Below the tracks: the add row, then empty space (both offer to add a track).
@@ -291,6 +347,12 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
         return empty;
     }
     const TrackRow& row = owner.rows[size_t(hit.row)];
+    if (row.kind == TrackRow::Kind::Master) {
+        hit.part = masterLevelRect().contains(pos)                   ? Part::MasterLevel
+                   : masterLanesRect().grow(Vec(2, 2)).contains(pos) ? Part::Automation
+                                                                     : Part::Master;
+        return hit;
+    }
     float top = float(owner.tracks.trackTop(hit.row));
     float h = float(owner.tracks.trackHeight(hit.row));
     if (row.kind == TrackRow::Kind::Group) {
@@ -301,6 +363,17 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
         hit.part = Part::AddLane;
         return hit;
     }
+    if (row.kind == TrackRow::Kind::Mix) {
+        MixGeometry g = mixGeometry(hit.row, top, h);
+        hit.part = g.fold.contains(pos)                    ? Part::MixFold
+                   : g.level.grow(Vec(2, 2)).contains(pos) ? Part::MixLevel
+                   : g.pan.grow(Vec(2, 2)).contains(pos)   ? Part::MixPan
+                   : g.mute.contains(pos)                  ? Part::MixMute
+                   : g.solo.contains(pos)                  ? Part::MixSolo
+                   : g.name.contains(pos)                  ? Part::Name
+                                                           : Part::Body;
+        return hit;
+    }
     if (row.kind == TrackRow::Kind::Lane) {
         hit.part = pos.y >= top + h - kEdgeZone     ? Part::Edge
                    : soloRect(top, h).contains(pos) ? Part::LaneMute
@@ -308,10 +381,15 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
                                                     : Part::Body;
         return hit;
     }
+    const Track* level = ctx.module() ? ctx.module()->song().findTrack(row.track) : nullptr;
     if (pos.y >= top + h - kEdgeZone)
         hit.part = Part::Edge;
-    else if (automationRect(top, h).contains(pos))
-        hit.part = Part::Automation;
+    else if (trackMixFold(hit.row, top, h).contains(pos))
+        hit.part = Part::MixFold;
+    else if (level && levelRect(*level, hit.row, top, h).contains(pos))
+        hit.part = Part::Level;
+    else if (level && panRect(*level, hit.row, top, h).grow(Vec(2, 2)).contains(pos))
+        hit.part = Part::Pan;
     else if (armRect(top, h).contains(pos))
         hit.part = Part::Arm;
     else if (const Track* t = ctx.module() ? ctx.module()->song().findTrack(row.track) : nullptr;
@@ -321,11 +399,299 @@ TrackHeaders::Hit TrackHeaders::hitTest(Vec pos) {
         hit.part = Part::Mute;
     else if (soloRect(top, h).contains(pos))
         hit.part = Part::Solo;
+    else if (fromRect(hit.row, top, h).contains(pos))
+        hit.part = Part::From;
     else if (nameRect(hit.row).contains(pos))
         hit.part = Part::Name;
     else
         hit.part = Part::Body;
     return hit;
+}
+
+namespace {
+
+/// Drags an audio track's level bar sideways: relative, Shift or Ctrl/Cmd for fine, a soft detent at 0 dB (Alt
+/// skips it). Plays at once through the player's hold; one undo step on release.
+class LevelGesture : public DragGesture {
+  public:
+    LevelGesture(EditorContext& ctx, TrackId track, float width, rack::math::Vec press)
+        : ctx(ctx), track(track), width(std::max(20.f, width)), press(press) {
+        const Song& song = ctx.module()->song();
+        master = track == song.master.id;
+        if (master)
+            start.volumeDb = song.master.volumeDb;
+        else if (const Track* t = song.findTrack(track))
+            start = t->channel;
+        now = start.volumeDb;
+    }
+    void update(rack::math::Vec pos, Modifiers mods) override {
+        float scale = mods.shift || mods.ctrl ? 0.1f : 1.f;
+        float p = MixerPane::faderPos(start.volumeDb) + (pos.x - press.x) / width * scale;
+        now = MixerPane::faderDb(std::clamp(p, 0.f, 1.f));
+        if (!mods.alt && std::abs(MixerPane::faderPos(now) - 0.75f) * width < 6)
+            now = 0;
+        ctx.module()->holdChannel(track, now, start.pan, false);
+    }
+    void commit() override {
+        TesseraModule* m = ctx.module();
+        if (now != start.volumeDb && master)
+            m->perform(setMasterVolume(m->song(), now));
+        else if (now != start.volumeDb)
+            m->perform(setChannel(m->song(), track, {now, start.pan}, "Volume " + audioDraw::dbText(now)));
+        m->releaseChannelHolds();
+    }
+    void cancel() override { ctx.module()->audioPlayer().releaseHolds(); }
+    std::string readout() const override { return (master ? "Master " : "Volume ") + audioDraw::dbText(now); }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
+
+  private:
+    EditorContext& ctx;
+    TrackId track;
+    bool master = false;
+    float width;
+    rack::math::Vec press;
+    Channel start;
+    float now = 0;
+};
+
+/// Draws a level bar: the groove, the live level (bright only in its top 6 dB, red past 0 dB) and the fader as a
+/// thin bright line. Shared by the audio track rows and the Master row.
+void drawLevelBar(NVGcontext* vg, Rect bar, float volts, float volumeDb, NVGcolor dim, NVGcolor bright) {
+    const theme::Palette& c = theme::colors();
+    draw::roundedRect(vg, bar, 2, theme::recessed(c, c.bg0, 0.5f));
+    float db = gainToDb(volts / kFullScaleVolts);
+    float pos = std::clamp((db + 60) / 66, 0.f, 1.f);
+    if (pos > 0) {
+        Rect lit(bar.pos.x, bar.pos.y, bar.size.x * pos, bar.size.y);
+        draw::roundedRect(vg, lit, 2, db > -6 ? bright : dim);
+        if (db > 0) {
+            float zeroX = bar.pos.x + bar.size.x * 60 / 66;
+            nvgBeginPath(vg);
+            nvgRect(vg, zeroX, bar.pos.y, lit.getRight() - zeroX, bar.size.y);
+            nvgFillColor(vg, c.record);
+            nvgFill(vg);
+        }
+    }
+    float fx = bar.pos.x + bar.size.x * MixerPane::faderPos(volumeDb);
+    nvgBeginPath(vg);
+    nvgRect(vg, fx - 1, bar.pos.y - 2, 2, bar.size.y + 4);
+    nvgFillColor(vg, c.text0);
+    nvgFill(vg);
+}
+
+/// "Pan centre", "Pan 30% left".
+std::string panText(float pan) {
+    if (pan == 0)
+        return "Pan centre";
+    char text[32];
+    snprintf(text, sizeof text, "Pan %.0f%% %s", double(std::abs(pan) * 100), pan < 0 ? "left" : "right");
+    return text;
+}
+
+/// Drags the header's pan knob up/down: relative, Shift or Ctrl/Cmd for fine.
+class HeaderPanGesture : public DragGesture {
+  public:
+    HeaderPanGesture(EditorContext& ctx, TrackId track, rack::math::Vec press) : ctx(ctx), track(track), press(press) {
+        if (const Track* t = ctx.module()->song().findTrack(track))
+            start = t->channel;
+        now = start.pan;
+    }
+    void update(rack::math::Vec pos, Modifiers mods) override {
+        float scale = mods.shift || mods.ctrl ? 0.1f : 1.f;
+        now = std::clamp(start.pan + ((pos.x - press.x) - (pos.y - press.y)) / 100 * scale, -1.f, 1.f);
+        if (!mods.alt && std::abs(now) < 0.03f)
+            now = 0;
+        ctx.module()->holdChannel(track, start.volumeDb, now, true);
+    }
+    void commit() override {
+        TesseraModule* m = ctx.module();
+        if (now != start.pan)
+            m->perform(setChannel(m->song(), track, {start.volumeDb, now}, "Pan"));
+        m->releaseChannelHolds();
+    }
+    void cancel() override { ctx.module()->audioPlayer().releaseHolds(); }
+    std::string readout() const override { return panText(now); }
+    CursorShape cursor() const override { return CursorShape::ResizeV; }
+
+  private:
+    EditorContext& ctx;
+    TrackId track;
+    rack::math::Vec press;
+    Channel start;
+    float now = 0;
+};
+
+/// A pan knob: an arc from the centre to where it points, and a ring in a lane's colour when one moves it.
+void drawPanKnob(NVGcontext* vg, Rect box, float pan, std::optional<NVGcolor> ring) {
+    const theme::Palette& c = theme::colors();
+    Vec cc = box.getCenter();
+    float r = box.size.x / 2 - 2;
+    nvgBeginPath(vg);
+    nvgArc(vg, cc.x, cc.y, r, float(M_PI) * 0.75f, float(M_PI) * 2.25f, NVG_CW);
+    nvgStrokeColor(vg, theme::recessed(c, c.bg0, 0.6f));
+    nvgStrokeWidth(vg, 2);
+    nvgStroke(vg);
+    float at = float(M_PI) * 1.5f + pan * float(M_PI) * 0.75f;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, cc.x, cc.y);
+    nvgLineTo(vg, cc.x + std::cos(at) * r, cc.y + std::sin(at) * r);
+    nvgStrokeColor(vg, c.text0);
+    nvgStrokeWidth(vg, 1.5f);
+    nvgStroke(vg);
+    if (ring) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cc.x, cc.y, r + 2.5f);
+        nvgStrokeColor(vg, *ring);
+        nvgStrokeWidth(vg, 1.f);
+        nvgStroke(vg);
+    }
+}
+
+/// Drags the column's right edge: the headers get wider or narrower, saved with the editor's view.
+class HeaderWidthGesture : public DragGesture {
+  public:
+    HeaderWidthGesture(EditorContext& ctx, Vec press) : ctx(ctx), press(press), start(ctx.view().headerWidth) {}
+    void update(Vec pos, Modifiers mods) override {
+        ctx.view().headerWidth = std::clamp(start + (pos.x - press.x), kMinHeaderWidth, kMaxHeaderWidth);
+    }
+    void cancel() override { ctx.view().headerWidth = start; }
+    std::string readout() const override { return std::to_string(int(ctx.view().headerWidth)) + " px"; }
+    CursorShape cursor() const override { return CursorShape::ResizeH; }
+
+  private:
+    EditorContext& ctx;
+    Vec press;
+    float start;
+};
+
+/// Whether two mix rows are the same row.
+bool sameMixRow(const TrackRow& a, const TrackRow& b) {
+    return a.track == b.track && a.mix == b.mix && a.from == b.from && a.other == b.other;
+}
+
+/// Drags a mix row's level sideways or a part's pan (as the track's own): relative, Shift or Ctrl/Cmd for fine, a
+/// soft detent at 0 dB or centre that Alt skips. It plays at once and is one undo step on release.
+class MixGesture : public DragGesture {
+  public:
+    MixGesture(EditorContext& ctx, TrackHeaders& headers, const TrackRow& row, bool pan, float width, Vec press)
+        : ctx(ctx), headers(headers), row(row), pan(pan), width(std::max(20.f, width)), press(press) {
+        start = now = headers.mixValue(row);
+    }
+    void update(Vec pos, Modifiers mods) override {
+        float scale = mods.shift || mods.ctrl ? 0.1f : 1.f;
+        if (pan) {
+            now.pan = std::clamp(start.pan + ((pos.x - press.x) - (pos.y - press.y)) / 100 * scale, -1.f, 1.f);
+            if (!mods.alt && std::abs(now.pan) < 0.03f)
+                now.pan = 0;
+        } else {
+            float p = MixerPane::faderPos(start.volumeDb) + (pos.x - press.x) / width * scale;
+            now.volumeDb = MixerPane::faderDb(std::clamp(p, 0.f, 1.f));
+            if (!mods.alt && std::abs(MixerPane::faderPos(now.volumeDb) - 0.75f) * width < 6)
+                now.volumeDb = 0;
+        }
+        headers.mixHold = TrackHeaders::MixHold{row, now};
+        TesseraModule* m = ctx.module();
+        if (row.mix != TrackRow::Mix::Part) {
+            TrackId from, to;
+            TrackHeaders::sendOf(row, from, to);
+            m->audioPlayer().holdSend(from.value, to.value, dbToGain(now.volumeDb), row.from.key());
+        } else if (row.from.kind == SendFrom::Kind::Lane) {
+            m->holdDrumInput(row.track, row.from.lane, now);
+        } else {
+            sources::previewInput(ctx, row.track, module(), now.volumeDb, now.pan);
+        }
+    }
+    void commit() override {
+        if (now != start)
+            headers.commitMix(row, now, readout());
+        release();
+    }
+    void cancel() override {
+        ctx.module()->audioPlayer().releaseHolds();
+        release();
+    }
+    std::string readout() const override {
+        if (pan)
+            return panText(now.pan);
+        return (row.mix == TrackRow::Mix::Part ? "Volume " : "Send ") + audioDraw::dbText(now.volumeDb);
+    }
+    CursorShape cursor() const override { return pan ? CursorShape::ResizeV : CursorShape::ResizeH; }
+
+  private:
+    /// The input's output module, or -1 for the clips.
+    int64_t module() const { return row.from.kind == SendFrom::Kind::Input ? row.from.module : -1; }
+    void release() {
+        headers.mixHold.reset();
+        TesseraModule* m = ctx.module();
+        if (row.mix != TrackRow::Mix::Part)
+            m->releaseChannelHolds();
+        else if (row.from.kind == SendFrom::Kind::Lane)
+            m->releaseDrumInputHolds();
+        else
+            sources::endInputPreview(ctx, row.track, module());
+    }
+    EditorContext& ctx;
+    TrackHeaders& headers;
+    TrackRow row;
+    bool pan;
+    float width;
+    Vec press;
+    Channel start, now;
+};
+
+} // namespace
+
+Rect TrackHeaders::levelRect(const Track& t, int row, float top, float h) {
+    // Every track that makes sound has the second line (§7.9): audio tracks, and tracks whose IN brings audio back.
+    if (h < theme::metrics::kLevelLineMinHeight || !ctx.module() || ctx.module()->soundIndex(t.id) < 0)
+        return Rect();
+    float x = indentOf(owner.rows[size_t(row)]) + (compact() ? kTileWidthCompact : kTileWidth) + kNameGap;
+    float right = box.size.x - kPad - kPanSize - 4 - kDbTextWidth;
+    float y = top + kRowTopPad + kButtonH + 8;
+    return Rect(x, y - kLevelHitH / 2, std::max(40.f, right - x), kLevelHitH);
+}
+
+Rect TrackHeaders::panRect(const Track& t, int row, float top, float h) {
+    Rect level = levelRect(t, row, top, h);
+    if (level.size.x <= 0)
+        return Rect();
+    return Rect(box.size.x - kPad - kPanSize, level.getCenter().y - kPanSize / 2, kPanSize, kPanSize);
+}
+
+void TrackHeaders::drawLevelLine(NVGcontext* vg, const Track& t, int row, float top, float h) {
+    Rect hit = levelRect(t, row, top, h);
+    if (hit.size.x <= 0)
+        return;
+    const theme::Palette& c = theme::colors();
+    TesseraModule* m = ctx.module();
+    int index = m->soundIndex(t.id);
+    float volume = t.channel.volumeDb, pan = t.channel.pan, automated, held;
+    if (m->audioPlayer().automated(index, false, automated))
+        volume = automated;
+    if (m->audioPlayer().automated(index, true, automated))
+        pan = automated;
+    if (m->audioPlayer().held(t.id.value, false, held))
+        volume = gainToDb(held);
+    if (m->audioPlayer().held(t.id.value, true, held))
+        pan = held;
+    Rect bar(hit.pos.x, hit.getCenter().y - kLevelBarH / 2, hit.size.x, kLevelBarH);
+    // The live level in the track colour, faint, and bright only in its top 6 dB, so a busy song doesn't flicker
+    // in every row.
+    float level = std::max(m->audioPlayer().level(index, 0), m->audioPlayer().level(index, 1));
+    drawLevelBar(vg, bar, level, volume, theme::track(t.color, 0.4f), theme::track(t.color, 0.95f));
+    // A lane on the fader or pan: a ring in its colour (§7.3).
+    auto laneColor = [&](LaneDrive drive) -> std::optional<NVGcolor> {
+        for (const AutomationEnvelope& l : t.automation)
+            if (l.drive == drive && l.part == 0 && !l.mute)
+                return theme::track(l.color ? l.color : t.color);
+        return std::nullopt;
+    };
+    if (std::optional<NVGcolor> ring = laneColor(LaneDrive::Volume))
+        draw::roundedRectStroke(vg, bar.grow(Vec(2, 3)), 3, *ring, 1.f);
+    draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+    Rect panBox = panRect(t, row, top, h);
+    draw::text(vg, mono, panBox.pos.x - 4, hit.getCenter().y, audioDraw::dbText(volume));
+    drawPanKnob(vg, panBox, pan, laneColor(LaneDrive::Pan));
 }
 
 TrackHeaders::DropTarget TrackHeaders::dropTargetAt(float y) {
@@ -372,10 +738,30 @@ std::unique_ptr<DragGesture> TrackHeaders::startGesture(Vec pos, int button, Mod
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return nullptr;
     Hit hit = hitTest(pos);
+    if (hit.part == Part::WidthEdge)
+        return std::make_unique<HeaderWidthGesture>(ctx, pos);
+    if (hit.part == Part::MasterLevel) {
+        // Like a track's level bar: a click in place does nothing, so the bar never jumps.
+        auto inner = std::make_unique<LevelGesture>(ctx, ctx.module()->song().master.id, masterLevelRect().size.x, pos);
+        return std::make_unique<ClickOrDrag>(std::move(inner), pos, [] {});
+    }
+    if (hit.row >= 0 && hit.row < int(owner.rows.size()) && owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Master)
+        return nullptr;
     if (hit.row < 0 || hit.part == Part::Fold || hit.part == Part::Arm || hit.part == Part::Mute ||
-        hit.part == Part::Solo || hit.part == Part::Automation)
+        hit.part == Part::Solo || hit.part == Part::Automation || hit.part == Part::Output ||
+        hit.part == Part::MixFold || hit.part == Part::MixMute || hit.part == Part::MixSolo ||
+        hit.part == Part::From)
         return nullptr;
     const TrackRow& row = owner.rows[size_t(hit.row)];
+    if (row.kind == TrackRow::Kind::Mix) {
+        if (hit.part != Part::MixLevel && hit.part != Part::MixPan)
+            return nullptr;
+        // A click in place does nothing, so the bar never jumps.
+        float top = float(owner.tracks.trackTop(hit.row)), h = float(owner.tracks.trackHeight(hit.row));
+        MixGeometry g = mixGeometry(hit.row, top, h);
+        auto inner = std::make_unique<MixGesture>(ctx, *this, row, hit.part == Part::MixPan, g.level.size.x, pos);
+        return std::make_unique<ClickOrDrag>(std::move(inner), pos, [] {});
+    }
     if (row.isLane())
         return hit.part == Part::Edge && row.kind == TrackRow::Kind::Lane
                    ? std::make_unique<ResizeLaneGesture>(ctx, row.lane, pos.y)
@@ -397,6 +783,19 @@ std::unique_ptr<DragGesture> TrackHeaders::startGesture(Vec pos, int button, Mod
     }
     if (hit.part == Part::Edge)
         return std::make_unique<ResizeTrackGesture>(ctx, row.track, pos.y);
+    if (hit.part == Part::Level || hit.part == Part::Pan) {
+        // A click without moving selects the track, so the bar never jumps (§7.5).
+        TrackId id = row.track;
+        const Track* t = ctx.module()->song().findTrack(id);
+        float top = float(owner.tracks.trackTop(hit.row)), h = float(owner.tracks.trackHeight(hit.row));
+        std::unique_ptr<DragGesture> inner;
+        if (hit.part == Part::Level)
+            inner = std::make_unique<LevelGesture>(ctx, id, t ? levelRect(*t, hit.row, top, h).size.x : 100, pos);
+        else
+            inner = std::make_unique<HeaderPanGesture>(ctx, id, pos);
+        return std::make_unique<ClickOrDrag>(std::move(inner), pos,
+                                             [this, id, mods] { trackActions::click(ctx, id, mods.shift, mods.ctrl); });
+    }
 
     // A press selects at once (so a drag moves what you grabbed); a click in place adjusts the selection.
     TrackId id = row.track;
@@ -415,6 +814,31 @@ std::unique_ptr<DragGesture> TrackHeaders::startGesture(Vec pos, int button, Mod
 void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
     owner.target = ArrangerView::Target::Tracks;
     Hit hit = hitTest(pos);
+    if (hit.part == Part::Master) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT)
+            ctx.state().mixerOpen = true;
+        return;
+    }
+    if (hit.row >= 0 && hit.row < int(owner.rows.size()) &&
+        owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Master) {
+        TrackId id = owner.rows[size_t(hit.row)].track;
+        if (button == GLFW_MOUSE_BUTTON_RIGHT && hit.part == Part::MasterLevel) {
+            EditorContext* c = &ctx;
+            rack::ui::Menu* menu = rack::createMenu();
+            menu->addChild(rack::createMenuItem("Automate in the timeline", "",
+                                                [c, id] { trackActions::automateMix(*c, id, false); }));
+            menu->addChild(rack::createMenuItem("Reset to 0 dB", "double-click", [c] {
+                TesseraModule* m = c->module();
+                if (m->song().master.volumeDb != 0)
+                    m->perform(setMasterVolume(m->song(), 0));
+            }));
+        } else if (button == GLFW_MOUSE_BUTTON_LEFT && hit.part == Part::Automation) {
+            std::set<uint64_t>& open = ctx.state().openAutomation;
+            if (!open.erase(id.value))
+                open.insert(id.value);
+        }
+        return;
+    }
     if (hit.row < 0) {
         // Empty space and the add row: a click on the add row or a right-click anywhere below the tracks.
         if (hit.part == Part::AddRow || button == GLFW_MOUSE_BUTTON_RIGHT)
@@ -422,6 +846,14 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
         return;
     }
     const TrackRow& row = owner.rows[size_t(hit.row)];
+    if (hit.part == Part::MixFold && button == GLFW_MOUSE_BUTTON_LEFT) {
+        toggleMix(row.track, row.kind == TrackRow::Kind::Mix ? row.from : SendFrom());
+        return;
+    }
+    if (row.kind == TrackRow::Kind::Mix) {
+        clickMix(row, hit, button, mods);
+        return;
+    }
     if (row.kind == TrackRow::Kind::AddLane) {
         trackActions::appendAddLaneItems(rack::createMenu(), ctx, row.track, LaneOwner::ofTrack(row.track));
         return;
@@ -440,6 +872,24 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
         }
         return;
     }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && (hit.part == Part::Level || hit.part == Part::Pan)) {
+        // The level bar's and pan knob's own menu (§7.3).
+        rack::ui::Menu* menu = rack::createMenu();
+        EditorContext* c = &ctx;
+        TrackId id = row.track;
+        bool pan = hit.part == Part::Pan;
+        menu->addChild(rack::createMenuItem("Automate in the timeline", "",
+                                            [c, id, pan] { trackActions::automateMix(*c, id, pan); }));
+        menu->addChild(rack::createMenuItem(pan ? "Centre" : "Reset to 0 dB", "double-click", [c, id, pan] {
+            TesseraModule* m = c->module();
+            if (const Track* t = m->song().findTrack(id)) {
+                Channel ch = t->channel;
+                (pan ? ch.pan : ch.volumeDb) = 0;
+                m->perform(setChannel(m->song(), id, ch, pan ? "Pan centre" : "Volume 0 dB"));
+            }
+        }));
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         rack::ui::Menu* menu = rack::createMenu();
         int index = hit.row;
@@ -456,16 +906,27 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
     if (button != GLFW_MOUSE_BUTTON_LEFT)
         return;
     switch (hit.part) {
-    case Part::Fold: {
-        std::set<uint64_t>& folded = ctx.view().foldedGroups;
-        if (!folded.erase(row.group.value))
-            folded.insert(row.group.value);
+    case Part::From: {
+        // The menu that sets it: the track's Input, then who sends to it.
+        TesseraModule* m = ctx.module();
+        const Track* t = m->song().findTrack(row.track);
+        if (!t)
+            break;
+        rack::ui::Menu* menu = rack::createMenu();
+        bool listens = t->listen == ListenSource::TrackAfter || t->listen == ListenSource::TrackBefore;
+        if (listens || sendersTo(m->song(), t->id).empty())
+            trackActions::appendInputItems(menu, ctx, t->id);
+        if (!sendersTo(m->song(), t->id).empty()) {
+            if (listens)
+                menu->addChild(new rack::ui::MenuSeparator);
+            sendActions::appendReceivedItems(menu, ctx, t->id);
+        }
         break;
     }
-    case Part::Automation: {
-        std::set<uint64_t>& open = ctx.view().openAutomation;
-        if (!open.erase(row.track.value))
-            open.insert(row.track.value);
+    case Part::Fold: {
+        std::set<uint64_t>& folded = ctx.state().foldedGroups;
+        if (!folded.erase(row.group.value))
+            folded.insert(row.group.value);
         break;
     }
     case Part::Arm:
@@ -477,6 +938,9 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
     case Part::Solo:
         trackActions::toggleSolo(ctx, row.track, !mods.shift);
         break;
+    case Part::Output:
+        ctx.toast(audioActions::addOutputFor(ctx.module(), row.track));
+        break;
     default:
         break;
     }
@@ -484,6 +948,16 @@ void TrackHeaders::click(Vec pos, int button, Modifiers mods) {
 
 void TrackHeaders::doubleClick(Vec pos, Modifiers mods) {
     Hit hit = hitTest(pos);
+    if (hit.part == Part::WidthEdge) {
+        ctx.view().headerWidth = ctx.surface == Surface::Panel ? ViewState::compact().headerWidth : ViewState().headerWidth;
+        return;
+    }
+    if (hit.part == Part::MasterLevel) {
+        TesseraModule* m = ctx.module();
+        if (m->song().master.volumeDb != 0)
+            m->perform(setMasterVolume(m->song(), 0));
+        return;
+    }
     if (hit.part == Part::Empty) {
         // Double-click in the empty space below the tracks adds an instrument track.
         trackActions::add(ctx, TrackType::Instrument);
@@ -492,13 +966,37 @@ void TrackHeaders::doubleClick(Vec pos, Modifiers mods) {
     if (hit.row < 0)
         return;
     const TrackRow& row = owner.rows[size_t(hit.row)];
+    if (row.kind == TrackRow::Kind::Mix && (hit.part == Part::Name || hit.part == Part::Body)) {
+        startMixRename(hit.row);
+        return;
+    }
+    if (row.kind == TrackRow::Kind::Mix && (hit.part == Part::MixLevel || hit.part == Part::MixPan)) {
+        Channel value = mixValue(row);
+        bool pan = hit.part == Part::MixPan;
+        (pan ? value.pan : value.volumeDb) = 0;
+        if (value != mixValue(row))
+            commitMix(row, value, pan ? "Pan centre" : row.mix == TrackRow::Mix::Part ? "Volume 0 dB" : "Send 0 dB");
+        return;
+    }
     if (row.isLane())
         return;
     if (hit.part == Part::Edge) {
         // Double-clicking the bottom edge toggles between compact and expanded.
         ViewState& view = ctx.view();
-        view.trackHeights[row.track.value] =
-            view.trackHeight(row.track) > kCompactHeight ? kCompactHeight : kExpandedHeight;
+        ctx.state().trackHeights[row.track.value] =
+            ctx.state().trackHeight(row.track) > kCompactHeight ? kCompactHeight : kExpandedHeight;
+        return;
+    }
+    if (hit.part == Part::Level || hit.part == Part::Pan) {
+        TesseraModule* m = ctx.module();
+        if (const Track* t = m->song().findTrack(row.track)) {
+            Channel ch = t->channel;
+            if (hit.part == Part::Level)
+                ch.volumeDb = 0;
+            else
+                ch.pan = 0;
+            m->perform(setChannel(m->song(), t->id, ch, hit.part == Part::Level ? "Volume 0 dB" : "Pan centre"));
+        }
         return;
     }
     if (hit.part == Part::Name || hit.part == Part::Body)
@@ -541,26 +1039,56 @@ CursorShape TrackHeaders::hoverCursor(Vec pos, Modifiers mods) {
             tip.enter();
         }
     }
-    if (hover.part == Part::AddRow || hover.part == Part::AddLane)
+    if (hover.part == Part::AddRow || hover.part == Part::AddLane || hover.part == Part::Output ||
+        hover.part == Part::MixFold || hover.part == Part::MixMute || hover.part == Part::MixSolo ||
+        hover.part == Part::From)
         return CursorShape::Hand;
+    if (hover.part == Part::Level || hover.part == Part::MasterLevel || hover.part == Part::MixLevel ||
+        hover.part == Part::WidthEdge)
+        return CursorShape::ResizeH;
+    if (hover.part == Part::Pan || hover.part == Part::MixPan)
+        return CursorShape::ResizeV;
     return hover.part == Part::Edge ? CursorShape::ResizeV : CursorShape::Arrow;
 }
 
 std::string TrackHeaders::tipFor(const Hit& hit) {
+    if (hit.part == Part::WidthEdge)
+        return "Drag to make the track headers wider or narrower; double-click for the usual width";
+    if (hit.part == Part::MasterLevel && ctx.module())
+        return "Master " + audioDraw::dbText(ctx.module()->song().master.volumeDb) +
+               ". Drag sideways; double-click: 0 dB; right-click to automate";
+    if (hit.part == Part::Master)
+        return "Master: every track that makes sound, on its way to MAIN. Click to open the mixer";
+    if (hit.row >= 0 && hit.row < int(owner.rows.size()) &&
+        owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Master && hit.part == Part::Automation)
+        return "The Master's Volume lane: right-click its level bar to add one";
+    if (hit.row >= 0 && hit.row < int(owner.rows.size()) && (hit.part == Part::MixFold ||
+                                                              owner.rows[size_t(hit.row)].kind == TrackRow::Kind::Mix))
+        return mixTip(owner.rows[size_t(hit.row)], hit.part);
     if (hit.row < 0 || hit.row >= int(owner.rows.size()) || owner.rows[size_t(hit.row)].kind != TrackRow::Kind::Track)
         return "";
     const Track* t = ctx.module() ? ctx.module()->song().findTrack(owner.rows[size_t(hit.row)].track) : nullptr;
     if (!t)
         return "";
     switch (hit.part) {
+    case Part::From: {
+        std::optional<NVGcolor> color;
+        bool listens = t->listen == ListenSource::TrackAfter || t->listen == ListenSource::TrackBefore;
+        return std::string(listens ? "Plays another track's notes besides its clips" : "Gets sound sent from other tracks") +
+               ": " + fromWords(*t, color) + ". Click to change";
+    }
     case Part::Arm:
         return t->armed ? "Armed: records when the transport records. Click to disarm" : "Arm for recording";
     case Part::Automation:
         return t->automation.empty() ? "Automation lanes: add one to draw CV or turn a knob"
                                      : "Automation lanes (" + std::to_string(t->automation.size()) + ")";
     case Part::Output:
-        return t->type == TrackType::Drum ? "Nothing plays this track. Add a Drum Out and pick this track"
-                                          : "Nothing plays this track. Add a Track Out and pick this track";
+        return t->type == TrackType::Drum ? "Nothing plays this track. Click to add a Drum Out for it beside Roll"
+                                          : "Nothing plays this track. Click to add a Track Out for it beside Roll";
+    case Part::Level:
+        return "Volume " + audioDraw::dbText(t->channel.volumeDb) + ". Drag sideways; double-click: 0 dB";
+    case Part::Pan:
+        return "Pan. Drag; double-click: centre";
     case Part::Mute:
         return withShortcut("Mute", Action::MuteTracks);
     case Part::Solo:
@@ -583,13 +1111,34 @@ void TrackHeaders::onLeave(const LeaveEvent& e) {
 }
 
 void TrackHeaders::wheel(Vec pos, Vec delta, Modifiers mods) {
+    Hit hit = hitTest(pos);
+    if (hit.part == Part::MasterLevel && delta.y != 0) {
+        TesseraModule* m = ctx.module();
+        float v = m->song().master.volumeDb;
+        float step = (mods.shift ? 0.1f : 0.5f) * (delta.y > 0 ? 1.f : -1.f);
+        v = v <= kSilentDb ? (delta.y > 0 ? -60.f : kSilentDb) : std::clamp(v + step, kSilentDb, kMaxFaderDb);
+        if (v != m->song().master.volumeDb)
+            m->perform(setMasterVolume(m->song(), v));
+        return;
+    }
+    if (hit.part == Part::Level && delta.y != 0) {
+        TesseraModule* m = ctx.module();
+        if (const Track* t = m->song().findTrack(owner.rows[size_t(hit.row)].track)) {
+            Channel ch = t->channel;
+            float step = (mods.shift ? 0.1f : 0.5f) * (delta.y > 0 ? 1.f : -1.f);
+            ch.volumeDb = ch.volumeDb <= kSilentDb ? (delta.y > 0 ? -60.f : kSilentDb)
+                                                   : std::clamp(ch.volumeDb + step, kSilentDb, kMaxFaderDb);
+            m->perform(setChannel(m->song(), t->id, ch, "Volume " + audioDraw::dbText(ch.volumeDb)));
+        }
+        return;
+    }
     ctx.touchNavigation();
     if (mods.alt) {
         owner.zoomTracksAt(pos.y, wheelZoomFactor(delta.y));
         return;
     }
     owner.tracks.scrollByPx(-delta.y);
-    ctx.view().trackScroll = owner.tracks.scroll();
+    ctx.state().trackScroll = owner.tracks.scroll();
 }
 
 // ---- Drawing ------------------------------------------------------------------------------------------------
@@ -620,6 +1169,12 @@ void TrackHeaders::drawView(const DrawArgs& args) {
             break;
         case TrackRow::Kind::AddLane:
             drawAddLaneRow(vg, int(i), top, h);
+            break;
+        case TrackRow::Kind::Mix:
+            drawMixRow(vg, int(i), top, h);
+            break;
+        case TrackRow::Kind::Master:
+            drawMasterRow(vg);
             break;
         default:
             drawTrackRow(vg, int(i), top, h);
@@ -660,13 +1215,50 @@ void TrackHeaders::drawAddRow(NVGcontext* vg) {
     draw::text(vg, text, r.getCenter().x, r.getCenter().y, "+  Add track");
 }
 
+void TrackHeaders::drawMasterRow(NVGcontext* vg) {
+    Rect r = masterRowRect();
+    if (r.size.x <= 0 || r.pos.y > box.size.y || r.getBottom() < 0)
+        return;
+    const theme::Palette& c = theme::colors();
+    TesseraModule* m = ctx.module();
+    const MasterChannel& master = m->song().master;
+    bool onRow = hover.row >= 0 && hover.row < int(owner.rows.size()) &&
+                 owner.rows[size_t(hover.row)].kind == TrackRow::Kind::Master;
+    bool hovered = onRow && !hasGesture();
+    draw::roundedRect(vg, r, theme::metrics::kRadiusControl, hovered ? c.bg2 : theme::recessed(c, c.bg1, 0.4f));
+    draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, name, r.pos.x + 6, r.getCenter().y, "Master");
+    Rect lanes = masterLanesRect();
+    bool lanesOpen = ctx.state().openAutomation.count(master.id.value) > 0;
+    bool lanesHover = hovered && hover.part == Part::Automation;
+    if (lanesHover)
+        draw::roundedRect(vg, lanes, 3, c.line0);
+    NVGcolor arrow = lanesHover ? c.text0 : !master.automation.empty() ? c.text1 : nvgTransRGBAf(c.text2, 0.55f);
+    drawFoldArrow(vg, lanes.getCenter().x - (lanesOpen ? 3 : 2), lanes.getCenter().y, !lanesOpen, arrow);
+    Rect hit = masterLevelRect();
+    float volume = master.volumeDb, automated, held;
+    if (m->audioPlayer().masterAutomated(automated))
+        volume = automated;
+    if (m->audioPlayer().held(master.id.value, false, held))
+        volume = gainToDb(held);
+    Rect bar(hit.pos.x, hit.getCenter().y - kLevelBarH / 2, hit.size.x, kLevelBarH);
+    float level = std::max(m->audioPlayer().masterLevel(0), m->audioPlayer().masterLevel(1));
+    drawLevelBar(vg, bar, level, volume, nvgTransRGBAf(c.text1, 0.35f), c.text1);
+    for (const AutomationEnvelope& l : master.automation)
+        if (l.drive == LaneDrive::Volume && !l.mute)
+            draw::roundedRectStroke(vg, bar.grow(Vec(2, 3)), 3, theme::track(l.color ? l.color : theme::kMasterColor),
+                                    1.f);
+    draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, mono, r.getRight() - 6, r.getCenter().y, audioDraw::dbText(volume));
+}
+
 void TrackHeaders::drawGroupRow(NVGcontext* vg, int index, float top, float h) {
     const theme::Palette& c = theme::colors();
     const TrackRow& row = owner.rows[size_t(index)];
     const TrackGroup* g = ctx.module()->song().findGroup(row.group);
     if (!g)
         return;
-    bool folded = ctx.view().foldedGroups.count(g->id.value) > 0;
+    bool folded = ctx.state().foldedGroups.count(g->id.value) > 0;
     bool hovered = hover.row == index && !hasGesture();
     nvgBeginPath(vg);
     nvgRect(vg, 0, top, box.size.x, h);
@@ -725,15 +1317,16 @@ void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
     const TrackRow& row = owner.rows[size_t(index)];
     const Track* track = m->song().findTrack(row.track);
     const AutomationEnvelope* lane = findLane(m->song(), LaneOwner::ofTrack(row.track), row.lane);
-    if (!track || !lane)
+    if (!lane || (!track && row.track != m->song().master.id))
         return;
     bool hovered = hover.row == index && !hasGesture();
-    float indent = indentOf(row) + kIndent;
+    // Lanes of a part or a send sit one step in, under the row they move.
+    float indent = indentOf(row) + kIndent + float(std::max(0, row.depth - 1)) * kMixIndent;
     nvgBeginPath(vg);
     nvgRect(vg, 0, top, box.size.x, h);
     nvgFillColor(vg, nvgLerpRGBA(c.bg1, c.bg0, hovered ? 0.3f : 0.5f));
     nvgFill(vg);
-    NVGcolor color = theme::track(lane->color ? lane->color : track->color);
+    NVGcolor color = theme::track(lane->color ? lane->color : track ? track->color : theme::kMasterColor);
     nvgBeginPath(vg);
     nvgRect(vg, indent, top + 2, 2, h - 4);
     nvgFillColor(vg, lane->mute ? c.text2 : color);
@@ -767,6 +1360,8 @@ void TrackHeaders::drawLaneRow(NVGcontext* vg, int index, float top, float h) {
                 text = "Target missing";
                 detail.color = c.record;
             }
+        } else if (std::string mix = audioDraw::mixLaneText(*lane, evaluate(*lane, now)); !mix.empty()) {
+            text = laneOutputLabel(*lane) + "  ·  " + mix;
         } else {
             char volts[48];
             snprintf(volts, sizeof(volts), "  ·  %.2f V", double(toVolts(*lane, evaluate(*lane, now))));
@@ -852,13 +1447,17 @@ void TrackHeaders::drawTrackRow(NVGcontext* vg, int index, float top, float h) {
     draw::TextStyle number{theme::fonts::uiStrong(), theme::metrics::kTextRuler,
                            audible ? c.onTile : nvgTransRGBAf(c.text1, 0.8f), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
     draw::text(vg, number, indent + tileW / 2, y + 0.5f, std::to_string(song.trackIndex(t.id) + 1));
+    Rect mixFold = trackMixFold(index, top, h);
+    if (mixFold.size.x > 0)
+        drawMixFold(vg, mixFold, ctx.state().openMix.count({t.id.value, 0}) > 0, mixDots(row),
+                    hovered && hover.part == Part::MixFold);
     if (t.type == TrackType::Drum)
-        drawDrumMark(vg, indent + tileW + kNameGap, y, c.text2);
+        drawDrumMark(vg, nameRect(index).pos.x - kDrumMarkWidth, y, c.text2);
 
     if (missingOutput(t))
         drawMissingOutput(vg, outputRect(top, h), hovered && hover.part == Part::Output, c.queue);
 
-    // Arm and the lanes arrow are always there but small and dim until they are on.
+    // Arm is always there but small and dim until it is on.
     Rect arm = armRect(top, h);
     bool armHover = hovered && hover.part == Part::Arm;
     if (armHover)
@@ -873,36 +1472,525 @@ void TrackHeaders::drawTrackRow(NVGcontext* vg, int index, float top, float h) {
         nvgStrokeWidth(vg, 1.2f);
         nvgStroke(vg);
     }
-    Rect lanes = automationRect(top, h);
-    bool lanesOpen = ctx.view().openAutomation.count(t.id.value) > 0;
-    bool lanesHover = hovered && hover.part == Part::Automation;
-    if (lanesHover)
-        draw::roundedRect(vg, lanes, 3, c.line0);
-    NVGcolor arrow = lanesHover ? c.text0 : !t.automation.empty() ? c.text1 : nvgTransRGBAf(c.text2, 0.55f);
-    drawFoldArrow(vg, lanes.getCenter().x - (lanesOpen ? 3 : 2), lanes.getCenter().y, !lanesOpen, arrow);
 
+    drawLevelLine(vg, t, index, top, h);
     drawSmallButton(vg, muteRect(top, h), "M", t.mute, hovered && hover.part == Part::Mute, c.queue);
     drawSmallButton(vg, soloRect(top, h), "S", t.solo, hovered && hover.part == Part::Solo, c.select);
 
     draw::TextStyle name{theme::fonts::uiStrong(), theme::metrics::kTextUi, focus ? c.text0 : c.text1,
                          NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     Rect nameBox = nameRect(index);
-    draw::text(vg, name, nameBox.pos.x, y, draw::ellipsize(vg, name, t.name, nameBox.size.x));
-
-    // Arranger mode, but a launched clip has taken this track over: say why its timeline is silent.
-    if (h >= 44 && m->playMode() == PlayMode::Arranger && m->launcherStatus(t.id).overridden) {
-        draw::TextStyle detail{theme::fonts::ui(), theme::metrics::kTextRuler, c.queue,
-                               NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        float x = indent + tileW + kNameGap;
-        draw::text(vg, detail, x, top + kRowTopPad + kButtonH + 12,
-                   draw::ellipsize(vg, detail, "Launcher clip playing  ·  \"Back to timeline\" resumes it",
-                                   box.size.x - x - kPad));
+    float nameW = nameBox.size.x;
+    Rect from = fromRect(index, top, h, &nameW);
+    draw::text(vg, name, nameBox.pos.x, y, draw::ellipsize(vg, name, t.name, nameW));
+    if (from.size.x > 0) {
+        std::optional<NVGcolor> source;
+        std::string words = fromWords(t, source);
+        bool hot = hovered && hover.part == Part::From;
+        draw::TextStyle arrowStyle{theme::fonts::uiStrong(), theme::metrics::kTextRuler, source ? *source : c.text2,
+                                   NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        draw::TextStyle wordStyle{theme::fonts::ui(), theme::metrics::kTextRuler, hot ? c.text0 : c.text2,
+                                  NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+        const char* arrow = "\xE2\x86\x90";
+        float aw = draw::textWidth(vg, arrowStyle, arrow) + 3;
+        float cy = from.getCenter().y;
+        draw::text(vg, arrowStyle, from.pos.x, cy, arrow);
+        draw::text(vg, wordStyle, from.pos.x + aw, cy, draw::ellipsize(vg, wordStyle, words, from.size.x - aw));
     }
 
     nvgBeginPath(vg);
     nvgRect(vg, 0, top + h - 1, box.size.x, 1);
     nvgFillColor(vg, c.line0);
     nvgFill(vg);
+}
+
+// ---- Mix rows -----------------------------------------------------------------------------------------------
+
+void TrackHeaders::sendOf(const TrackRow& row, TrackId& from, TrackId& to) {
+    bool receive = row.mix == TrackRow::Mix::Receive;
+    from = receive ? row.other : row.track;
+    to = receive ? row.track : row.other;
+}
+
+std::vector<TrackId> TrackHeaders::mixDots(const TrackRow& row) {
+    if (!ctx.module())
+        return {};
+    if (row.kind == TrackRow::Kind::Track)
+        return mixChildren(ctx.module()->song(), owner.mix, row.track);
+    if (row.kind == TrackRow::Kind::Mix && row.mix == TrackRow::Mix::Part)
+        return mixChildren(ctx.module()->song(), owner.mix, row.track, row.from);
+    return {};
+}
+
+/// How wide a mix fold is for `count` hidden rows: the arrow, then its dots three to a line, so even a big kit's
+/// fold leaves the name its room.
+static float mixFoldWidth(size_t count) { return kMixArrow + float(std::min<size_t>(count, 3)) * kMixDot + 2; }
+
+Rect TrackHeaders::trackMixFold(int row, float top, float h) {
+    const TrackRow& r = owner.rows[size_t(row)];
+    if (r.kind != TrackRow::Kind::Track)
+        return Rect();
+    // Always there, as "+ Add automation lane" is under it even when nothing else is (§201).
+    std::vector<TrackId> dots = mixDots(r);
+    float x = indentOf(r) + (compact() ? kTileWidthCompact : kTileWidth) + 4;
+    return Rect(x, lineY(top, h) - 8, mixFoldWidth(dots.size()), 16);
+}
+
+TrackHeaders::MixGeometry TrackHeaders::mixGeometry(int index, float top, float h) {
+    const TrackRow& r = owner.rows[size_t(index)];
+    MixGeometry g;
+    float cy = top + h / 2;
+    float x = indentOf(r) + (compact() ? kTileWidthCompact : kTileWidth) + 4 + float(r.depth - 1) * kMixIndent;
+    bool part = r.mix == TrackRow::Mix::Part;
+    std::vector<TrackId> dots = part ? mixDots(r) : std::vector<TrackId>();
+    if (!dots.empty())
+        g.fold = Rect(x, cy - 8, mixFoldWidth(dots.size()), 16);
+    // The rows right under a track keep their names in line: room for the widest fold among its parts.
+    float reserve = kMixArrow;
+    if (r.depth == 1) {
+        auto parts = owner.mix.parts.find(r.track.value);
+        if (parts != owner.mix.parts.end())
+            for (SendFrom p : parts->second) {
+                size_t n = mixChildren(ctx.module()->song(), owner.mix, r.track, p).size();
+                if (n > 0)
+                    reserve = std::max(reserve, mixFoldWidth(n) + 2);
+            }
+    }
+    float nameX = x + reserve;
+    float right = box.size.x - (compact() ? kPad / 2 : kPad);
+    if (part && r.from.kind != SendFrom::Kind::Lane) {
+        g.solo = soloRect(top, h);
+        g.mute = muteRect(top, h);
+        right = g.mute.pos.x - 6;
+    }
+    // The level comes first: in a narrow column (the in-panel editor) the pan goes, then the name shortens, before
+    // the level gets too short to drag. The pan stays in the mixer.
+    if (part && right - kPanSize - 4 - nameX >= kMixMinName + 6 + kMixMinLevel) {
+        g.pan = Rect(right - kPanSize, cy - kPanSize / 2, kPanSize, kPanSize);
+        right = g.pan.pos.x - 4;
+    }
+    float room = right - nameX;
+    float nameW = std::clamp(room * (part ? 0.42f : 0.58f), kMixMinName, part ? 110.f : 150.f);
+    nameW = std::max(std::min(nameW, room - 6 - kMixMinLevel), std::min(kMixMinName, room));
+    g.name = Rect(nameX, cy - 8, std::max(0.f, nameW), 16);
+    float levelX = nameX + nameW + 6;
+    bool dbRoom = right - levelX >= kDbTextWidth + 40;
+    float levelRight = dbRoom ? right - kDbTextWidth : right;
+    if (levelRight - levelX >= 24)
+        g.level = Rect(levelX, cy - kLevelHitH / 2, levelRight - levelX, kLevelHitH);
+    if (dbRoom)
+        g.dbRight = right;
+    return g;
+}
+
+Channel TrackHeaders::mixValue(const TrackRow& row) {
+    if (mixHold && sameMixRow(mixHold->row, row))
+        return mixHold->value;
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    if (row.mix != TrackRow::Mix::Part) {
+        TrackId from, to;
+        sendOf(row, from, to);
+        const Track* sender = song.findTrack(from);
+        if (!sender)
+            return {kSilentDb, 0};
+        for (size_t k = 0; k < sender->sends.size(); k++)
+            if (sender->sends[k].to == to && sender->sends[k].from == row.from) {
+                // A Send lane playing moves the send with it, as in the mixer.
+                float db;
+                if (m->audioPlayer().sendAutomated(m->soundIndex(from), int(k), db))
+                    return {db, 0};
+                return {sender->sends[k].db, 0};
+            }
+        return {kSilentDb, 0};
+    }
+    // A lane on the part's level or pan, while it plays.
+    float autoDb = NAN, autoPan = NAN;
+    if (m->outputBus())
+        m->outputBus()->partLevels().get(m->busSlotOf(row.track), row.from.key(), autoDb, autoPan);
+    auto automated = [&](Channel c) {
+        if (!std::isnan(autoDb))
+            c.volumeDb = autoDb;
+        if (!std::isnan(autoPan))
+            c.pan = autoPan;
+        return c;
+    };
+    if (row.from.kind == SendFrom::Kind::Lane) {
+        const Track* t = song.findTrack(row.track);
+        return automated(t && row.from.lane >= 0 && row.from.lane < kDrumInputs ? t->drumInputs[size_t(row.from.lane)]
+                                                                                : Channel());
+    }
+    SourceLevel level =
+        sources::inputLevel(ctx, row.track, row.from.kind == SendFrom::Kind::Input ? row.from.module : -1);
+    return automated({level.db, level.pan});
+}
+
+std::string TrackHeaders::mixName(const TrackRow& row) {
+    const Song& song = ctx.module()->song();
+    if (row.mix == TrackRow::Mix::Part) {
+        const Track* t = song.findTrack(row.track);
+        return t ? sendActions::partName(*ctx.module(), *t, row.from) : std::string();
+    }
+    const Track* other = song.findTrack(row.other);
+    if (!other)
+        return "";
+    if (row.mix == TrackRow::Mix::Send)
+        return "\xE2\x86\x92 " + other->name;
+    return "\xE2\x86\x90 " + sendActions::senderName(*ctx.module(), *other, row.from);
+}
+
+TrackId TrackHeaders::mixColorTrack(const TrackRow& row) {
+    return row.mix == TrackRow::Mix::Part ? row.track : row.other;
+}
+
+void TrackHeaders::toggleMix(TrackId track, SendFrom part) {
+    std::set<std::pair<uint64_t, uint64_t>>& open = ctx.state().openMix;
+    std::pair<uint64_t, uint64_t> key{track.value, part.key()};
+    if (!open.erase(key))
+        open.insert(key);
+}
+
+void TrackHeaders::commitMix(const TrackRow& row, Channel value, const std::string& name) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    if (row.mix != TrackRow::Mix::Part) {
+        TrackId from, to;
+        sendOf(row, from, to);
+        if (const Send* send = findSend(song, from, to, row.from)) {
+            Send next = *send;
+            next.db = value.volumeDb;
+            m->perform(setSend(song, from, next, name));
+        }
+        return;
+    }
+    if (row.from.kind == SendFrom::Kind::Lane) {
+        m->perform(setDrumInput(song, row.track, row.from.lane, value, name));
+        return;
+    }
+    int64_t module = row.from.kind == SendFrom::Kind::Input ? row.from.module : -1;
+    SourceLevel next = sources::inputLevel(ctx, row.track, module);
+    next.db = value.volumeDb;
+    next.pan = value.pan;
+    sources::commitInput(ctx, row.track, module, next, name);
+}
+
+void TrackHeaders::drawMixFold(NVGcontext* vg, Rect r, bool open, const std::vector<TrackId>& dots, bool hot) {
+    const theme::Palette& c = theme::colors();
+    if (hot)
+        draw::roundedRect(vg, r, 3, c.line0);
+    float cy = r.getCenter().y;
+    // Dim while nothing is under it but the add-lane row.
+    NVGcolor arrow = hot ? c.text0 : dots.empty() ? nvgTransRGBAf(c.text2, 0.55f) : c.text1;
+    drawFoldArrow(vg, r.pos.x + (open ? 2 : 3), cy, !open, arrow);
+    const Song& song = ctx.module()->song();
+    bool more = dots.size() > size_t(kMixDotsShown);
+    size_t shown = std::min(dots.size(), size_t(kMixDotsShown));
+    bool twoLines = shown > 3;
+    for (size_t k = 0; k < shown; k++) {
+        float x = r.pos.x + kMixArrow + float(k % 3) * kMixDot + 1.5f;
+        float y = twoLines ? cy + (k < 3 ? -2.f : 2.f) : cy;
+        if (more && k == shown - 1) {
+            // A tiny "+": more rows than dots.
+            nvgBeginPath(vg);
+            nvgRect(vg, x - 1.5f, y - 0.4f, 3, 0.8f);
+            nvgRect(vg, x - 0.4f, y - 1.5f, 0.8f, 3);
+            nvgFillColor(vg, c.text1);
+            nvgFill(vg);
+            continue;
+        }
+        const Track* t = song.findTrack(dots[k]);
+        nvgBeginPath(vg);
+        nvgCircle(vg, x, y, 1.4f);
+        nvgFillColor(vg, t ? theme::track(t->color) : c.text2);
+        nvgFill(vg);
+    }
+}
+
+void TrackHeaders::drawMixRow(NVGcontext* vg, int index, float top, float h) {
+    const theme::Palette& c = theme::colors();
+    TesseraModule* m = ctx.module();
+    const TrackRow& row = owner.rows[size_t(index)];
+    const Track* colorOf = m->song().findTrack(mixColorTrack(row));
+    NVGcolor color = colorOf ? theme::track(colorOf->color) : c.text2;
+    bool hovered = hover.row == index && !hasGesture();
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, top, box.size.x, h);
+    nvgFillColor(vg, hovered ? nvgLerpRGBA(c.bg1, c.bg2, 0.4f) : theme::recessed(c, c.bg1, 0.25f));
+    nvgFill(vg);
+    MixGeometry g = mixGeometry(index, top, h);
+    float cy = top + h / 2;
+    // A thin bar in the colour it belongs to: the track's for a part, the other track's for a send.
+    float stripeX = indentOf(row) + (compact() ? kTileWidthCompact : kTileWidth) + float(row.depth - 1) * kMixIndent;
+    draw::roundedRect(vg, Rect(stripeX, top + 5, 2, h - 10), 1, color);
+    if (g.fold.size.x > 0)
+        drawMixFold(vg, g.fold, ctx.state().openMix.count({row.track.value, row.from.key()}) > 0, mixDots(row),
+                    hovered && hover.part == Part::MixFold);
+    bool part = row.mix == TrackRow::Mix::Part;
+    draw::TextStyle name{part ? theme::fonts::uiStrong() : theme::fonts::ui(), theme::metrics::kTextRuler + 0.5f,
+                         part ? c.text1 : c.text2, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, name, g.name.pos.x, cy, draw::ellipsize(vg, name, mixName(row), g.name.size.x));
+    Channel value = mixValue(row);
+    // A lane on the level or pan: a ring in its colour, as on the track's own (§7.3).
+    auto laneRing = [&](LaneDrive drive) -> std::optional<NVGcolor> {
+        TrackId from, to;
+        sendOf(row, from, to);
+        const Track* owner = m->song().findTrack(part ? row.track : from);
+        if (!owner)
+            return std::nullopt;
+        for (const AutomationEnvelope& l : owner->automation)
+            if (l.drive == drive && l.part == row.from.key() && !l.mute && (drive != LaneDrive::Send || l.sendTo == to))
+                return theme::track(l.color ? l.color : owner->color);
+        return std::nullopt;
+    };
+    if (g.level.size.x > 0) {
+        Rect bar(g.level.pos.x, cy - kLevelBarH / 2, g.level.size.x, kLevelBarH);
+        drawLevelBar(vg, bar, mixLevel(row), value.volumeDb, nvgTransRGBAf(color, 0.4f), nvgTransRGBAf(color, 0.95f));
+        if (std::optional<NVGcolor> ring = laneRing(part ? LaneDrive::Volume : LaneDrive::Send))
+            draw::roundedRectStroke(vg, bar.grow(Vec(2, 3)), 3, *ring, 1.f);
+    }
+    if (g.dbRight > 0) {
+        draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.text1,
+                             NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
+        draw::text(vg, mono, g.dbRight, cy, audioDraw::dbText(value.volumeDb));
+    }
+    if (g.pan.size.x > 0)
+        drawPanKnob(vg, g.pan, value.pan, laneRing(LaneDrive::Pan));
+    if (g.mute.size.x > 0) {
+        SourceLevel level =
+            sources::inputLevel(ctx, row.track, row.from.kind == SendFrom::Kind::Input ? row.from.module : -1);
+        drawSmallButton(vg, g.mute, "M", !level.use, hovered && hover.part == Part::MixMute, c.queue);
+        drawSmallButton(vg, g.solo, "S", level.solo, hovered && hover.part == Part::MixSolo, c.select);
+    }
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, top + h - 1, box.size.x, 1);
+    nvgFillColor(vg, c.line0);
+    nvgFill(vg);
+}
+
+void TrackHeaders::clickMix(const TrackRow& row, const Hit& hit, int button, Modifiers mods) {
+    TesseraModule* m = ctx.module();
+    const Track* t = m->song().findTrack(row.track);
+    if (!t)
+        return;
+    int64_t module = row.from.kind == SendFrom::Kind::Input ? row.from.module : -1;
+    if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+        rack::ui::Menu* menu = rack::createMenu();
+        if (row.mix != TrackRow::Mix::Part) {
+            TrackId from, to;
+            sendOf(row, from, to);
+            const Track* sender = m->song().findTrack(from);
+            const Track* receiver = m->song().findTrack(to);
+            if (sender && receiver)
+                menu->addChild(rack::createMenuLabel(sendActions::senderName(*m, *sender, row.from) + " \xE2\x86\x92 " +
+                                                     receiver->name));
+            sendActions::appendSendItems(menu, ctx, from, to, row.from);
+            return;
+        }
+        menu->addChild(rack::createMenuLabel(sendActions::senderName(*m, *t, row.from)));
+        TrackRow r = row;
+        TrackHeaders* self = this;
+        if (row.from.kind == SendFrom::Kind::Lane || row.from.kind == SendFrom::Kind::Input) {
+            int index = hit.row;
+            menu->addChild(rack::createMenuItem("Rename…", "double-click", [self, index] { self->startMixRename(index); }));
+        }
+        EditorContext* c = &ctx;
+        TrackId track = row.track;
+        SendFrom part = row.from;
+        menu->addChild(rack::createMenuItem("Automate its level in the timeline", "",
+                                            [c, track, part] { trackActions::automateMix(*c, track, false, part); }));
+        menu->addChild(rack::createMenuItem("Automate its pan in the timeline", "",
+                                            [c, track, part] { trackActions::automateMix(*c, track, true, part); }));
+        menu->addChild(rack::createMenuItem("Reset to 0 dB", "double-click the level", [self, r] {
+            Channel value = self->mixValue(r);
+            value.volumeDb = 0;
+            self->commitMix(r, value, "Volume 0 dB");
+        }));
+        menu->addChild(rack::createMenuItem("Centre", "double-click the pan", [self, r] {
+            Channel value = self->mixValue(r);
+            value.pan = 0;
+            self->commitMix(r, value, "Pan centre");
+        }));
+        menu->addChild(new rack::ui::MenuSeparator);
+        sendActions::appendAddSendItems(menu, ctx, row.track, row.from);
+        return;
+    }
+    if (button != GLFW_MOUSE_BUTTON_LEFT)
+        return;
+    if (hit.part == Part::MixMute) {
+        SourceLevel next = sources::inputLevel(ctx, row.track, module);
+        next.use = !next.use;
+        sources::commitInput(ctx, row.track, module, next, next.use ? "Unmute input" : "Mute input");
+    } else if (hit.part == Part::MixSolo) {
+        sources::toggleInputSolo(ctx, row.track, module, mods.shift);
+    }
+}
+
+std::string TrackHeaders::mixTip(const TrackRow& row, Part part) {
+    if (!ctx.module())
+        return "";
+    if (part == Part::MixFold) {
+        bool open = ctx.state().openMix.count({row.track.value, row.kind == TrackRow::Kind::Mix ? row.from.key() : 0});
+        std::string what = row.kind == TrackRow::Kind::Mix ? "its lanes and sends" : "its lanes, parts and sends";
+        return (open ? "Fold " : "Show ") + what + " (a dot per row)" +
+               (row.kind == TrackRow::Kind::Mix ? "" : ". The mixer folds with it");
+    }
+    Channel value = mixValue(row);
+    switch (part) {
+    case Part::MixLevel:
+        return (row.mix == TrackRow::Mix::Part ? "Volume " : "Send ") + audioDraw::dbText(value.volumeDb) +
+               ". Drag sideways; double-click: 0 dB; right-click for more";
+    case Part::MixPan:
+        return panText(value.pan) + ". Drag; double-click: centre";
+    case Part::MixMute:
+        return "Mute this input";
+    case Part::MixSolo:
+        return "Solo this input (Shift+click: only this one)";
+    default:
+        return row.mix == TrackRow::Mix::Part
+                   ? (row.from.kind == SendFrom::Kind::Clips ? "Right-click: reset, or send this part to another track"
+                                                             : "Double-click to rename. Right-click: reset, or send "
+                                                               "this part to another track")
+                   : "Right-click for the send's menu";
+    }
+}
+
+std::string TrackHeaders::fromWords(const Track& t, std::optional<NVGcolor>& color) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    std::vector<std::string> parts;
+    if (t.listen == ListenSource::TrackAfter || t.listen == ListenSource::TrackBefore) {
+        const Track* from = song.findTrack(t.listenTrack);
+        parts.push_back(from ? from->name : "Missing track");
+        if (from)
+            color = theme::track(from->color);
+    }
+    std::vector<TrackId> senders = sendersTo(song, t.id);
+    if (senders.size() == 1) {
+        const Track* from = song.findTrack(senders[0]);
+        parts.push_back(from ? from->name : "a track");
+        if (from && parts.size() == 1)
+            color = theme::track(from->color);
+    } else if (senders.size() > 1) {
+        std::string names;
+        for (TrackId id : senders)
+            if (const Track* from = song.findTrack(id))
+                names += (names.empty() ? "" : ", ") + from->name;
+        parts.push_back(std::to_string(senders.size()) + " sends (" + names + ")");
+    }
+    std::string out;
+    for (const std::string& p : parts)
+        out += (out.empty() ? "" : " \xC2\xB7 ") + p;
+    return out;
+}
+
+Rect TrackHeaders::fromRect(int index, float top, float h, float* nameWidth) {
+    const TrackRow& r = owner.rows[size_t(index)];
+    Rect name = nameRect(index);
+    if (nameWidth)
+        *nameWidth = name.size.x;
+    if (r.kind != TrackRow::Kind::Track || !ctx.module())
+        return Rect();
+    const Track* t = ctx.module()->song().findTrack(r.track);
+    std::optional<NVGcolor> color;
+    std::string words = t ? fromWords(*t, color) : std::string();
+    NVGcontext* vg = APP->window->vg;
+    if (words.empty() || !vg)
+        return Rect();
+    draw::TextStyle wordStyle{theme::fonts::ui(), theme::metrics::kTextRuler, theme::colors().text2};
+    float wordsW = draw::textWidth(vg, wordStyle, words) + 12;
+    // On a line of its own when the row is tall enough: under the name, or under the level line.
+    bool level = levelRect(*t, index, top, h).size.x > 0;
+    if (h >= theme::metrics::kRowFromMinHeight(level)) {
+        float y = level ? top + theme::metrics::kLevelLineMinHeight - 3 : name.getBottom();
+        return Rect(name.pos.x, y, std::min(wordsW, box.size.x - kPad - name.pos.x), theme::metrics::kFromLineHeight);
+    }
+    // After the name: the words shorten first, then go, before the name does.
+    draw::TextStyle nameStyle{theme::fonts::uiStrong(), theme::metrics::kTextUi, theme::colors().text0};
+    float nameW = std::min(name.size.x, draw::textWidth(vg, nameStyle, t->name));
+    float room = name.size.x - nameW - 8;
+    if (room < kMinFromWidth)
+        return Rect();
+    if (nameWidth)
+        *nameWidth = nameW + 2;
+    float w = std::min(wordsW, room);
+    return Rect(name.getRight() - room, name.pos.y, w, name.size.y);
+}
+
+void TrackHeaders::startMixRename(int index) {
+    if (index < 0 || index >= int(owner.rows.size()))
+        return;
+    const TrackRow row = owner.rows[size_t(index)];
+    if (row.kind != TrackRow::Kind::Mix || row.mix != TrackRow::Mix::Part ||
+        (row.from.kind != SendFrom::Kind::Lane && row.from.kind != SendFrom::Kind::Input))
+        return;
+    float top = float(owner.tracks.trackTop(index)), h = float(owner.tracks.trackHeight(index));
+    MixGeometry g = mixGeometry(index, top, h);
+    EditorContext* c = &ctx;
+    auto* field = new InlineTextField(mixName(row), [c, row](const std::string& name) {
+        TesseraModule* m = c->module();
+        const Track* t = m ? m->song().findTrack(row.track) : nullptr;
+        if (!t)
+            return;
+        if (row.from.kind == SendFrom::Kind::Input) {
+            sources::renameInput(sources::moduleById(row.from.module), name);
+            return;
+        }
+        for (size_t k = 0; k < t->drumLanes.size(); k++)
+            if (t->drumLanes[k].outputIndex == row.from.lane) {
+                drumActions::editLane(*c, row.track, int(k), [name](DrumLane& d) { d.name = name; }, "Rename lane");
+                return;
+            }
+    });
+    // Room to type: the name and the level after it.
+    field->box = Rect(g.name.pos.x - 2, g.name.pos.y - 1,
+                      std::max(g.name.size.x, g.level.getRight() - g.name.pos.x) + 4, g.name.size.y + 2);
+    addChild(field);
+    field->focus();
+}
+
+float TrackHeaders::partLevel(TrackId track, SendFrom part) {
+    TesseraModule* m = ctx.module();
+    const AudioPlayer& player = m->audioPlayer();
+    int index = m->soundIndex(track);
+    float level = 0;
+    switch (part.kind) {
+    case SendFrom::Kind::Track:
+        if (index >= 0)
+            level = std::max(player.level(index, 0), player.level(index, 1));
+        break;
+    case SendFrom::Kind::Clips:
+        // The sound before the chain, which the clips' Level already scaled, as on the mixer's Clips strip.
+        if (index >= 0)
+            level = player.outLevel(index);
+        break;
+    case SendFrom::Kind::Input:
+        for (OutputModuleBase* o : audioActions::outputsFor(m, track))
+            if (o->id == part.module)
+                level = o->inputLevel();
+        break;
+    case SendFrom::Kind::Lane:
+        for (OutputModuleBase* o : Registry::get().outputsOf(m->id))
+            if (o->boundTrack() == track)
+                level = std::max(level, o->sourceLevel(part.lane));
+        break;
+    }
+    return level;
+}
+
+float TrackHeaders::mixLevel(const TrackRow& row) {
+    if (row.mix == TrackRow::Mix::Part)
+        return partLevel(row.track, row.from);
+    // A send: what its sender (or part) plays, scaled by the send, worked out here so the audio pays nothing.
+    TrackId from, to;
+    sendOf(row, from, to);
+    const Send* send = findSend(ctx.module()->song(), from, to, row.from);
+    if (!send)
+        return 0;
+    TesseraModule* m = ctx.module();
+    int index = m->soundIndex(from);
+    float source = send->preFader && row.from.whole() && index >= 0 ? m->audioPlayer().outLevel(index)
+                                                                    : partLevel(from, row.from);
+    return source * dbToGain(mixValue(row).volumeDb);
 }
 
 } // namespace tessera

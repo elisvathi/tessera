@@ -1,10 +1,18 @@
 #include "ArrangeActions.hpp"
+
+#include <set>
+#include "BounceActions.hpp"
+
+#include "AudioActions.hpp"
 #include "ImportMidi.hpp"
 
 #include "ExportMidi.hpp"
 #include "TrackActions.hpp"
 
 #include "../../model/ArrangementEdits.hpp"
+#include "../../model/AudioEdits.hpp"
+#include "../../model/LauncherCommands.hpp"
+#include "../../model/TrackCommands.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../interaction/Shortcuts.hpp"
 #include "../views/Arranger.hpp"
@@ -76,7 +84,16 @@ void duplicateSelected(ArrangerLanes& lanes) {
     Layout after =
         arrange::duplicate(before, ids, end - start, songOrder(moduleOf(lanes)->song()), 0, idSource(lanes), &added);
     after = lanes.settle(after, added, idSource(lanes));
-    lanes.commit("Duplicate " + arrange::countClips(ids.size()), before, after, added);
+    std::vector<Clip> copies;
+    NextId next = moduleOf(lanes)->ids();
+    for (arrange::Placed& p : after) {
+        const Clip* c = added.count(p.clip.id) ? moduleOf(lanes)->song().findClip(p.clip.clip) : nullptr;
+        if (!c)
+            continue;
+        copies.push_back(copyClip(*c, next));
+        p.clip.clip = copies.back().id;
+    }
+    lanes.commit("Duplicate " + arrange::countClips(ids.size()), before, after, added, std::move(copies));
 }
 
 void split(ArrangerLanes& lanes, Tick at) {
@@ -98,12 +115,189 @@ void split(ArrangerLanes& lanes, Tick at) {
     lanes.commit("Split " + arrange::countClips(right.size()), before, after, select);
 }
 
+namespace {
+
+/// The hits of one timeline audio clip, in song ticks, and their loudness 0..1; empty while its file decodes.
+struct Hits {
+    TrackId track;
+    const ArrangerClip* at = nullptr;
+    std::vector<Tick> ticks;
+    std::vector<float> level;
+};
+
+Hits hitsOf(TesseraModule& m, ArrangementId instance) {
+    Hits h;
+    for (const Track& t : m.song().tracks)
+        for (const ArrangerClip& a : t.arrangement)
+            if (a.id == instance) {
+                h.track = t.id;
+                h.at = &a;
+            }
+    const Clip* clip = h.at ? m.song().findClip(h.at->clip) : nullptr;
+    AudioStore* store = m.audioStore();
+    if (!clip || !clip->audio || !store)
+        return h;
+    // Every take this clip plays has its own file, so its own hits.
+    regions::Files files = regions::filesOf(m.song(), *clip->audio);
+    regions::List parts = regions::of(*clip, files);
+    std::set<int> takes;
+    for (const AudioRegion& r : parts)
+        takes.insert(r.take);
+    double tempo = m.tempo() > 0 ? m.tempo() : 120;
+    std::vector<std::pair<Tick, float>> found;
+    for (int take : takes) {
+        SourceStatus status = store->status(takeContent(*clip->audio, take).source);
+        if (!status.transients || status.sampleRate <= 0)
+            continue;
+        for (Tick t : hitTicks(*clip, *h.at, *status.transients, status.sampleRate, tempo, take)) {
+            // Loudness: the waveform's peak just after each hit, against the loudest of them.
+            float peak = 0.8f;
+            double clipTick = double(h.at->offset) + double(t - h.at->position);
+            if (clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart)
+                clipTick = double(clip->loopStart) + std::fmod(clipTick, double(clip->loopEnd - clip->loopStart));
+            if (const AudioRegion* r = regions::at(parts, clipTick); r && status.peaks) {
+                double frame = regions::frameAt(*clip->audio, *r, clipTick, files);
+                float lo = 0, hi = 0;
+                status.peaks->range(0, frame, frame + 0.02 * status.sampleRate, lo, hi);
+                peak = std::max(std::fabs(lo), std::fabs(hi));
+            }
+            found.push_back({t, peak});
+        }
+    }
+    std::sort(found.begin(), found.end());
+    for (const auto& [t, peak] : found) {
+        h.ticks.push_back(t);
+        h.level.push_back(peak);
+    }
+    float most = h.level.empty() ? 1.f : *std::max_element(h.level.begin(), h.level.end());
+    for (float& l : h.level)
+        l = most > 0 ? std::clamp(l / most, 0.2f, 1.f) : 0.8f;
+    return h;
+}
+
+} // namespace
+
+void splitAtTransients(ArrangerLanes& lanes, ArrangementId instance) {
+    TesseraModule* m = moduleOf(lanes);
+    Hits hits = hitsOf(*m, instance);
+    if (!hits.at) {
+        return;
+    }
+    if (hits.ticks.empty()) {
+        lanes.context().toast("No hits found in this clip (or its file is still loading)");
+        return;
+    }
+    const Layout& before = lanes.committed();
+    Layout after = before;
+    IdSet ids{instance}, made;
+    // Cut from left to right, each time the part on the right; not right at the clip's edges.
+    Tick start = hits.at->position, edge = kPpq / 32;
+    for (Tick t : hits.ticks) {
+        if (t <= start + edge)
+            continue;
+        IdSet right;
+        after = arrange::split(after, ids, t, m->song().clips, idSource(lanes), &right);
+        if (right.empty())
+            continue;
+        made.insert(right.begin(), right.end());
+        ids = right;
+    }
+    if (made.empty())
+        return;
+    made.insert(instance);
+    lanes.commit("Split at transients", before, after, made);
+}
+
+void makeTriggers(ArrangerLanes& lanes, ArrangementId instance) {
+    TesseraModule* m = moduleOf(lanes);
+    Hits hits = hitsOf(*m, instance);
+    if (!hits.at)
+        return;
+    if (hits.ticks.empty()) {
+        lanes.context().toast("No hits found in this clip (or its file is still loading)");
+        return;
+    }
+    const Song& song = m->song();
+    const Track* source = song.findTrack(hits.track);
+    const Clip* audio = song.findClip(hits.at->clip);
+    int index = song.trackIndex(hits.track) + 1;
+    CommandPtr add = addTrack(song, TrackType::Drum, index, m->ids());
+    if (!add) {
+        lanes.context().toast(trackActions::kTracksFull);
+        return;
+    }
+    Song preview = song;
+    add->apply(preview);
+    Track& drums = preview.tracks[size_t(index)];
+    // A new drum track starts with no lanes: the hits get one, on the first trigger output.
+    std::vector<DrumLane> lanesBefore = drums.drumLanes;
+    if (drums.drumLanes.empty()) {
+        DrumLane hitsLane;
+        hitsLane.name = "Hits";
+        hitsLane.pitch = 36;
+        hitsLane.outputIndex = 0;
+        drums.drumLanes.push_back(hitsLane);
+    }
+    int8_t pitch = drums.drumLanes.front().pitch;
+    double k = songTicksPerClipTick(*audio->audio, m->tempo() > 0 ? m->tempo() : 120);
+    Tick span = Tick(std::llround(double(hits.at->length) * k));
+    Clip clip;
+    clip.id = m->newId<ClipId>();
+    clip.name = (audio->name.empty() ? source->name : audio->name) + " triggers";
+    clip.length = span;
+    clip.loopMode = LoopMode::Off;
+    for (size_t i = 0; i < hits.ticks.size(); i++) {
+        Note n;
+        n.id = m->newId<NoteId>();
+        n.start = hits.ticks[i] - hits.at->position;
+        n.length = kPpq / 8;
+        n.pitch = pitch;
+        n.velocity = hits.level[i];
+        if (n.start >= 0 && n.start < span)
+            clip.notes.push_back(n);
+    }
+    std::sort(clip.notes.begin(), clip.notes.end(), [](const Note& a, const Note& b) { return a.start < b.start; });
+    TrackId drumId = drums.id;
+    CommandPtr place = arrange::placeNewClip(preview, drumId, hits.at->position, clip, ArrangementId(m->newId<ArrangementId>()),
+                                    idSource(lanes), false, clip.name);
+    auto all = std::make_unique<CompoundCommand>("Make triggers from audio");
+    all->add(std::move(add));
+    if (drums.drumLanes != lanesBefore)
+        all->add(std::make_unique<SetTrackField<std::vector<DrumLane>>>("Add lane", drums.id, &Track::drumLanes,
+                                                                         lanesBefore, drums.drumLanes));
+    // The new track is named after the audio track.
+    if (CommandPtr rename = setTrackField(preview, drumId, &Track::name, source->name + " triggers", "Rename"))
+        all->add(std::move(rename));
+    all->add(std::move(place));
+    m->perform(std::move(all));
+    lanes.context().state().selectedTrack = drumId;
+    lanes.context().toast("Added " + source->name + " triggers: " + std::to_string(clip.notes.size()) +
+                          " hits on its first lane");
+}
+
 void glueSelected(ArrangerLanes& lanes) {
     TesseraModule* m = moduleOf(lanes);
     IdSet ids = lanes.selection();
     CommandPtr command = arrange::glue(m->song(), ids, m->ids());
-    if (!command)
+    if (!command) {
+        // Audio from different files, or with gaps: render them into one new file.
+        std::vector<arrange::Placed> picked = arrange::pick(lanes.committed(), ids);
+        bool audio = !picked.empty(), oneTrack = true;
+        std::vector<ArrangementId> instances;
+        for (const arrange::Placed& p : picked) {
+            const Clip* c = m->song().findClip(p.clip.clip);
+            audio &= c && c->audio;
+            oneTrack &= p.track == picked.front().track;
+            instances.push_back(p.clip.id);
+        }
+        if (audio && picked.size() > 1) {
+            if (!oneTrack)
+                lanes.context().toast("Audio clips glue on one track at a time");
+            else if (m->glueAudio(picked.front().track, instances))
+                lanes.context().toast("Gluing " + std::to_string(picked.size()) + " audio clips into one file");
+        }
         return;
+    }
     IdSet old = arrange::idsOf(lanes.committed());
     m->perform(std::move(command));
     // Select the glued instance: the one that wasn't there before.
@@ -128,9 +322,24 @@ void transpose(ArrangerLanes& lanes, int semitones) {
                  [semitones](const Layout& l, const IdSet& ids) { return arrange::transpose(l, ids, semitones); });
 }
 
-void setVelocityScale(ArrangerLanes& lanes, float scale) {
-    editSelected(lanes, "Scale clip velocity",
-                 [scale](const Layout& l, const IdSet& ids) { return arrange::setVelocityScale(l, ids, scale); });
+void resetLevel(ArrangerLanes& lanes) {
+    TesseraModule* m = moduleOf(lanes);
+    if (!m)
+        return;
+    std::vector<ClipId> audio;
+    for (const arrange::Placed& p : lanes.committed()) {
+        if (!lanes.selection().count(p.clip.id))
+            continue;
+        const Clip* c = m->song().findClip(p.clip.clip);
+        if (c && c->audio && c->audio->gainDb != 0 && std::find(audio.begin(), audio.end(), c->id) == audio.end())
+            audio.push_back(c->id);
+    }
+    if (audio.empty())
+        return;
+    auto all = std::make_unique<CompoundCommand>("Reset clip gain");
+    for (ClipId id : audio)
+        all->add(editAudio(m->song(), id, [](AudioContent& a) { a.gainDb = 0; }, "Reset clip gain"));
+    m->perform(std::move(all));
 }
 
 void resetStretch(ArrangerLanes& lanes) {
@@ -223,10 +432,18 @@ void paste(ArrangerLanes& lanes, bool atMouse) {
     Layout after = before;
     IdSet added;
     std::vector<Clip> restored;
+    NextId next = m->ids();
     for (const auto& [rowOffset, item] : clipboard.items) {
         int row = base + rowOffset;
         if (row >= int(order.size()))
             continue; // past the last track
+        const Clip* pasted = song.findClip(item.clip);
+        for (const Clip& c : clipboard.clips)
+            if (!pasted && c.id == item.clip)
+                pasted = &c;
+        const Track* onto = song.findTrack(order[size_t(row)]);
+        if (pasted && onto && pasted->audio.has_value() != (onto->type == TrackType::Audio))
+            continue; // a clip only goes on a track of its own kind
         if (!song.findClip(item.clip)) {
             auto kept = std::find_if(clipboard.clips.begin(), clipboard.clips.end(),
                                      [&](const Clip& c) { return c.id == item.clip; });
@@ -237,6 +454,10 @@ void paste(ArrangerLanes& lanes, bool atMouse) {
                 restored.push_back(*kept);
         }
         arrange::Placed p{order[size_t(row)], item};
+        if (const Clip* source = song.findClip(item.clip)) {
+            restored.push_back(copyClip(*source, next));
+            p.clip.clip = restored.back().id;
+        }
         p.clip.id = lanes.newInstanceId();
         p.clip.position = std::max<Tick>(0, at + item.position);
         after.push_back(p);
@@ -251,15 +472,17 @@ void openInEditor(ArrangerLanes& lanes, ArrangementId id) {
     const arrange::Placed* p = arrange::find(lanes.committed(), id);
     if (!p)
         return;
-    ViewState& view = ctx.view();
-    bool alreadyOpen = ctx.state().selectedClip == p->clip.clip && view.focus == Pane::Detail;
+    bool alreadyOpen =
+        ctx.state().selectedClip == p->clip.clip && ctx.state().focus == Pane::Detail && !ctx.state().mixerOpen;
+    // Opening a clip shows its editor, also when the lower pane was showing the mixer.
+    ctx.state().mixerOpen = false;
     lanes.selection() = {id};
     clipActions::select(ctx, p->track, p->clip.clip);
-    view.focus = Pane::Detail;
-    if (view.maximized == Pane::Top)
-        view.maximized.reset();
+    ctx.state().focus = Pane::Detail;
+    if (ctx.state().maximized == Pane::Top)
+        ctx.state().maximized.reset();
     else if (alreadyOpen)
-        view.maximized = Pane::Detail; // double-click again: the piano roll fills the editor
+        ctx.state().maximized = Pane::Detail; // double-click again: the piano roll fills the editor
 }
 
 void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId clicked, Tick at) {
@@ -275,12 +498,13 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
     int uses = song.clipUses(clipId);
     std::string title = n > 1 ? arrange::countClips(n) : (clip->name.empty() ? "Clip" : clip->name);
     if (n == 1 && uses > 1)
-        title += "  (linked, " + std::to_string(uses) + " uses)";
+        title += "  (" + std::to_string(uses) + " linked copies)";
     menu->addChild(rack::createMenuLabel(title));
 
-    menu->addChild(
-        rack::createMenuItem("Open in piano roll", "double-click", [l, clicked] { openInEditor(*l, clicked); }));
-    if (n > 1) {
+    bool audio = clip->isAudio();
+    menu->addChild(rack::createMenuItem(audio ? "Open in the audio editor" : "Open in piano roll", "double-click",
+                                        [l, clicked] { openInEditor(*l, clicked); }));
+    if (n > 1 && !audio) {
         std::vector<ClipId> together;
         for (const arrange::Placed& p : lanes.committed())
             if (lanes.selection().count(p.clip.id))
@@ -310,58 +534,97 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
                 if (std::find(clips.begin(), clips.end(), one) == clips.end())
                     clips.push_back(one);
             }
-        menu->addChild(rack::createMenuItem(clips.size() > 1 ? "Export clips as MIDI…" : "Export as MIDI…", "",
-                                            [l, clips] { exportMidi::openClips(l->context(), clips); }));
+        if (!audio)
+            menu->addChild(rack::createMenuItem(clips.size() > 1 ? "Export clips as MIDI…" : "Export as MIDI…", "",
+                                                [l, clips] { exportMidi::openClips(l->context(), clips); }));
     }
     menu->addChild(rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [l] { deleteSelected(*l); }));
     menu->addChild(rack::createMenuItem("Split here", shortcutLabel(Action::Split), [l, at] { split(*l, at); }));
     menu->addChild(rack::createMenuItem("Glue", shortcutLabel(Action::Glue), [l] { glueSelected(*l); }));
+    // Takes: the whole clip plays one, in every linked copy. The audio editor mixes them.
+    if (const Clip* ac = m->song().findClip(placed->clip.clip); audio && ac && ac->audio && !ac->audio->takes.empty()) {
+        int count = int(ac->audio->takes.size()) + 1;
+        ClipId clipId = ac->id;
+        menu->addChild(rack::createSubmenuItem(
+            "Take", regions::playingText(*ac), [c, count, clipId](rack::ui::Menu* sub) {
+                TesseraModule* mm = c->module();
+                const Clip* shown = mm ? mm->song().findClip(clipId) : nullptr;
+                if (!shown || !shown->audio)
+                    return;
+                sub->addChild(rack::createMenuLabel("The whole clip plays"));
+                std::string playing = regions::playingText(*shown);
+                for (int k = -1; k < count - 1; k++)
+                    sub->addChild(rack::createCheckMenuItem(
+                        regions::takeName(*shown->audio, k), "",
+                        [playing, k] { return playing == "take " + std::to_string(k + 2); },
+                        [c, clipId, k] {
+                            TesseraModule* mod = c->module();
+                            mod->perform(regions::useTake(mod->song(), clipId, k, mod->ids()));
+                        }));
+                sub->addChild(rack::createMenuLabel("The audio editor mixes takes (Alt+T)"));
+            }));
+    }
+    const Track* ownerTrack = c->module() ? c->module()->song().findTrack(placed->track) : nullptr;
+    TrackId owner = placed->track;
+    if (ownerTrack && c->module()->soundIndex(owner) >= 0)
+        menu->addChild(rack::createMenuItem("Bounce audio to a new track…", shortcutLabel(Action::Bounce),
+                                            [c, owner] { bounceActions::openAudioDialog(*c, owner); }));
+    if (ownerTrack && ownerTrack->type != TrackType::Audio)
+        menu->addChild(rack::createMenuItem("Bounce notes to a new track…", "",
+                                            [c, owner] { bounceActions::openNotes(*c, owner); }));
     menu->addChild(rack::createMenuItem(
         "Make unique", shortcutLabel(Action::MakeUnique), [l] { makeUniqueSelected(*l); }, uses <= 1));
     bool muted = placed->clip.muted;
     menu->addChild(rack::createMenuItem(muted ? "Unmute" : "Mute", "", [l, muted] { setMuted(*l, !muted); }));
     // Overlapping clips stack in rows; these swap it with the clip in the row above or below. Where they share an
     // AUTO channel the clip on the lowest row plays it, as a newer take lands there.
-    auto moveInStack = [l, clicked](int direction, const char* name) {
-        const arrange::Layout& before = l->committed();
-        l->commit(name, before, arrange::moveInStack(before, clicked, direction), arrange::IdSet{clicked});
-    };
-    menu->addChild(rack::createMenuItem(
-        "Move up a row", "", [moveInStack] { moveInStack(-1, "Move clip up a row"); },
-        !arrange::canMoveInStack(lanes.committed(), clicked, -1)));
-    menu->addChild(rack::createMenuItem(
-        "Move down a row", "", [moveInStack] { moveInStack(+1, "Move clip down a row"); },
-        !arrange::canMoveInStack(lanes.committed(), clicked, +1)));
+    // Audio clips never stack (they crossfade), and their pitch and gain live on the clip, not the copy.
+    if (!audio) {
+        auto moveInStack = [l, clicked](int direction, const char* name) {
+            const arrange::Layout& before = l->committed();
+            l->commit(name, before, arrange::moveInStack(before, clicked, direction), arrange::IdSet{clicked});
+        };
+        menu->addChild(rack::createMenuItem(
+            "Move up a row", "", [moveInStack] { moveInStack(-1, "Move clip up a row"); },
+            !arrange::canMoveInStack(lanes.committed(), clicked, -1)));
+        menu->addChild(rack::createMenuItem(
+            "Move down a row", "", [moveInStack] { moveInStack(+1, "Move clip down a row"); },
+            !arrange::canMoveInStack(lanes.committed(), clicked, +1)));
 
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(
-        rack::createSubmenuItem("Transpose", std::to_string(placed->clip.transpose), [l](rack::ui::Menu* sub) {
-            for (int d : {12, 1, -1, -12})
-                sub->addChild(
-                    rack::createMenuItem((d > 0 ? "+" : "") + std::to_string(d), "", [l, d] { transpose(*l, d); }));
-            sub->addChild(rack::createMenuItem("Reset", "", [l] {
-                editSelected(*l, "Reset transpose", [](const Layout& lay, const IdSet& ids) {
-                    Layout out = lay;
-                    for (arrange::Placed& p : out)
-                        if (ids.count(p.clip.id))
-                            p.clip.transpose = 0;
-                    return out;
-                });
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(
+            rack::createSubmenuItem("Transpose", std::to_string(placed->clip.transpose), [l](rack::ui::Menu* sub) {
+                for (int d : {12, 1, -1, -12})
+                    sub->addChild(
+                        rack::createMenuItem((d > 0 ? "+" : "") + std::to_string(d), "", [l, d] { transpose(*l, d); }));
+                sub->addChild(rack::createMenuItem("Reset", "", [l] {
+                    editSelected(*l, "Reset transpose", [](const Layout& lay, const IdSet& ids) {
+                        Layout out = lay;
+                        for (arrange::Placed& p : out)
+                            if (ids.count(p.clip.id))
+                                p.clip.transpose = 0;
+                        return out;
+                    });
+                }));
             }));
-        }));
-    menu->addChild(rack::createSubmenuItem(
-        "Velocity", std::to_string(int(std::lround(placed->clip.velocityScale * 100))) + "%", [l](rack::ui::Menu* sub) {
-            for (int pct : {50, 75, 100, 125, 150})
-                sub->addChild(rack::createMenuItem(std::to_string(pct) + "%", "",
-                                                   [l, pct] { setVelocityScale(*l, float(pct) / 100.f); }));
-        }));
-    menu->addChild(rack::createMenuItem("Reset stretch", "", [l] { resetStretch(*l); }, placed->clip.stretch == 1.f));
+        menu->addChild(rack::createMenuItem("Reset stretch", "", [l] { resetStretch(*l); }, placed->clip.stretch == 1.f));
+    }
 
     // The clip itself (every instance of it changes).
     menu->addChild(new rack::ui::MenuSeparator);
-    clipActions::appendScaleMenu(menu, *c, clipId);
+    if (!audio) {
+        clipActions::appendScaleMenu(menu, *c, clipId);
+        // Devices for every selected clip, when the clicked one is among them.
+        std::vector<ClipId> clips = {clipId};
+        if (lanes.selection().count(clicked))
+            for (const arrange::Placed& p : lanes.committed())
+                if (lanes.selection().count(p.clip.id) &&
+                    std::find(clips.begin(), clips.end(), p.clip.clip) == clips.end())
+                    clips.push_back(p.clip.clip);
+        clipActions::appendDevicesMenu(menu, *c, clips);
+    }
     menu->addChild(rack::createBoolMenuItem(
-        "Clip loops", "",
+        "Loop", "",
         [c, clipId] {
             const Clip* cl = c->module()->song().findClip(clipId);
             return cl && cl->loopMode == LoopMode::Loop;
@@ -371,8 +634,16 @@ void appendClipMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, ArrangementId cl
             mod->perform(setClipField(mod->song(), clipId, &Clip::loopMode, on ? LoopMode::Loop : LoopMode::Off,
                                       on ? "Loop clip" : "Play clip once"));
         }));
-    menu->addChild(
-        rack::createMenuItem("Save as Tessera clip file…", "", [c, clipId] { clipActions::exportClip(*c, clipId); }));
+    if (!audio)
+        menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "",
+                                            [c, clipId] { clipActions::exportClip(*c, clipId); }));
+    if (audio)
+        audioActions::appendAudioClipMenu(menu, lanes.context(), clipId, [l, clicked](rack::ui::Menu* sub) {
+            sub->addChild(
+                rack::createMenuItem("Split at transients", "", [l, clicked] { splitAtTransients(*l, clicked); }));
+            sub->addChild(
+                rack::createMenuItem("Make triggers from audio", "", [l, clicked] { makeTriggers(*l, clicked); }));
+        });
 }
 
 void appendLaneMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, TrackId track, Tick at) {
@@ -382,34 +653,42 @@ void appendLaneMenu(rack::ui::Menu* menu, ArrangerLanes& lanes, TrackId track, T
         return;
     ArrangerLanes* l = &lanes;
     menu->addChild(rack::createMenuLabel(t->name));
-    menu->addChild(rack::createMenuItem("Create clip here", "double-click", [l, track, at] {
-        TesseraModule* mod = l->context().module();
-        Tick bar = ticksPerBar(mod->song().timeSig);
-        ClipId clip = l->newClipId();
-        ArrangementId id = l->newInstanceId();
-        mod->perform(arrange::drawClip(
-            mod->song(), track, at, bar, clip, id, [l] { return l->newInstanceId(); },
-            l->context().state().stackClips));
-        l->selection() = {id};
-        clipActions::select(l->context(), track, clip);
-    }));
-    menu->addChild(rack::createMenuItem("Import MIDI file here…", "", [l, track, at] {
-        std::string path = importMidi::pickFile(); // the dialog blocks; check the module again after it
-        if (path.empty() || !l->context().module())
-            return;
-        importMidi::chooseClip(l->context(), path, [l, track, at](Clip clip) {
+    if (t->type != TrackType::Audio) {
+        menu->addChild(rack::createMenuItem("Create clip here", "double-click", [l, track, at] {
             TesseraModule* mod = l->context().module();
-            if (!mod)
+            Tick bar = ticksPerBar(mod->song().timeSig);
+            ClipId clip = l->newClipId();
+            ArrangementId id = l->newInstanceId();
+            mod->perform(arrange::drawClip(
+                mod->song(), track, at, bar, clip, id, [l] { return l->newInstanceId(); },
+                l->context().state().stackClips));
+            l->selection() = {id};
+            clipActions::select(l->context(), track, clip);
+        }));
+    }
+    if (t->type == TrackType::Audio)
+        menu->addChild(rack::createMenuItem("Import audio file here…", "", [l, track, at] {
+            audioActions::importToTimeline(l->context(), track, at);
+        }));
+    if (t->type != TrackType::Audio) {
+        menu->addChild(rack::createMenuItem("Import MIDI file here…", "", [l, track, at] {
+            std::string path = importMidi::pickFile(); // the dialog blocks; check the module again after it
+            if (path.empty() || !l->context().module())
                 return;
-            ClipId id = clip.id;
-            ArrangementId instance = l->newInstanceId();
-            mod->perform(arrange::placeNewClip(
-                mod->song(), track, at, std::move(clip), instance, [l] { return l->newInstanceId(); },
-                l->context().state().stackClips, "Import MIDI file"));
-            l->selection() = {instance};
-            clipActions::select(l->context(), track, id);
-        });
-    }));
+            importMidi::chooseClip(l->context(), path, [l, track, at](Clip clip) {
+                TesseraModule* mod = l->context().module();
+                if (!mod)
+                    return;
+                ClipId id = clip.id;
+                ArrangementId instance = l->newInstanceId();
+                mod->perform(arrange::placeNewClip(
+                    mod->song(), track, at, std::move(clip), instance, [l] { return l->newInstanceId(); },
+                    l->context().state().stackClips, "Import MIDI file"));
+                l->selection() = {instance};
+                clipActions::select(l->context(), track, id);
+            });
+        }));
+    }
     menu->addChild(rack::createMenuItem(
         "Paste", shortcutLabel(Action::Paste), [l] { paste(*l, false); }, clipboard.items.empty()));
     // The launcher's clips of this track, ready to drop here.

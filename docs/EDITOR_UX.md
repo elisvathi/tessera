@@ -40,7 +40,7 @@ Rack is not a DAW host, so a few things need deliberate handling:
 | **Ctrl/Cmd + drag** | Duplicate the dragged items |
 | **Ctrl/Cmd + click** | Toggle item in selection |
 | **Shift + click** | Add to selection (range-extend where order is meaningful, e.g. tracks) |
-| **Alt + drag on a note or clip body** | Edit its primary value (note velocity, clip instance velocity scale) |
+| **Alt + drag on a note body** | Its velocity. On a clip body: slip the content inside the clip (an audio clip's gain is its level line just under the title strip; DECISIONS §159, §160) |
 | **Double-click** | Open / edit (note → inspector focus, clip → detail editor, empty space → create) |
 | **Right-click** | Context menu. In the Draw tool, right-click (and right-drag) deletes. A setting switches this to "always context menu" |
 | **Esc during a drag** | Cancel the gesture and revert to the pre-drag state |
@@ -108,7 +108,7 @@ Toggle `Ctrl/Cmd+F` (button in transport). Modes: **Page** (jumps when the playh
 
 - Click in the ruler's lower half: move the playhead (snapped). Double-click: move and play from there. While
   playing, the jump waits for the target's place in the launch quantize grid and the target blinks in the queue
-  colour until then (DECISIONS §96).
+  colour until then (DECISIONS §150).
 - Drag in the ruler's upper half (the loop strip): draw the loop region. Drag its body to move it, edges to resize. Double-click it to toggle loop on/off.
 - `Ctrl/Cmd+L`: set loop to selection.
 - Markers row above the ruler: double-click to add, drag to move, click a marker to jump, double-click a marker to
@@ -135,7 +135,7 @@ Toggle `Ctrl/Cmd+F` (button in transport). Modes: **Page** (jumps when the playh
 └──────┴───────────────────────────────────────────────────────────┴───────┘
 ```
 
-- **Keyboard** (left): click/drag to audition (glissando across keys while dragging). Scale notes tinted, root marked, active (playing) notes light up. Ctrl/Cmd+click a key selects all notes of that pitch. Drum tracks show lane names instead of keys.
+- **Keyboard** (left): click/drag to audition (glissando across keys while dragging). Scale notes tinted, root marked, active (playing) notes light up. Keys held on any live input (MIDI, REC CV, computer keyboard) light with an accent outline, and their grid rows get a faint band (DECISIONS §180). Ctrl/Cmd+click a key selects all notes of that pitch. Drum tracks show lane names instead of keys.
 - **Grid**: bar / beat / subdivision lines at three strengths; black-key rows shaded; out-of-scale rows dimmed when a scale is active; clip loop region shown, content beyond the loop end dimmed.
 - **Expression lanes** (bottom, resizable, multiple visible at once stacked, or tabbed): see §4.6.
 - **Inspector** (right, collapsible with `I`): see §4.7.
@@ -228,6 +228,10 @@ Per-note expression curves (Pitch, Timbre, Pressure):
   Draw alike); timbre and pressure are shaped in a strip above the selected notes while the lower pane shows them
   (docs/DECISIONS.md §63–66).
 - Output: per voice, the Pitch curve is added to the V/OCT output; Timbre and Pressure go to Track Out's **TIMBRE** and **PRESS** poly outputs (see DESIGN.md §6).
+- **Ties and glides** (docs/design/TIES_VOICES.md, DECISIONS §176): a tie is a dot on the joint with the jump or
+  glide line, an arc for the same pitch, an open dot when nothing is there to continue. Drag the dot sideways to
+  open a glide evenly; on a selected tie drag its start or end handle, or its hollow middle handle to bend it. These
+  handles go before note edges. J ties or unties; the tie's right-click menu removes the glide or unties without it.
 
 ### 4.7 Inspector (selection editing panel)
 
@@ -273,13 +277,13 @@ Menu: `Notes` in the toolbar's `⋯`, and the right-click menu on selected notes
 - Clip loop start/end and loop on/off (also draggable as the loop brace in the ruler).
 - Clip length; `Ctrl/Cmd+Shift+D` doubles the loop and duplicates content into the new half.
 - "Fit loop to notes".
-- Clip-level transpose and velocity scale (non-destructive, applied at playback).
+- Clip-level transpose (non-destructive, applied at playback). No clip-level velocity scale (DECISIONS §160).
 - Clip scale override.
 - Multi-clip editing: select several clips in the arranger or launcher and open them together. Their notes are shown in the same grid, each clip's notes in its own color, with a clip filter strip to choose which are editable ("layered editing"). Time is shown in arranger time when opened from the arranger.
 
 ### 4.10 Computer keyboard as instrument
 
-`Ctrl/Cmd+K` toggles "keyboard play" (only while the editor is focused): two rows of the QWERTY keyboard play notes on the selected track (Z-row lower octave, Q-row upper, `Z`/`X` octave down/up, `C`/`V` velocity down/up). While active, the tool shortcuts are disabled and a banner shows "Keyboard play — Ctrl/Cmd+K to exit". Works with recording and step input.
+`Ctrl/Cmd+K` toggles "keyboard play" (only while the editor is focused): two rows of the QWERTY keyboard play notes on the selected track (Z-row lower octave, Q-row upper, `Z`/`X` octave down/up, `C`/`V` velocity down/up). While active, every plain letter, digit and punctuation key belongs to it (the other letters do nothing), so no shortcut fires while you play; Space, Escape, the arrows, Backspace and shortcuts with Ctrl/Cmd or Alt still work. A banner shows "Keyboard play — Ctrl/Cmd+K to exit". Works with recording and step input.
 
 ### 4.11 Scale tools in the roll
 
@@ -354,18 +358,19 @@ instead of pitch rows (DESIGN.md §9). Differences:
 | Gesture | Result |
 |---|---|
 | Drag body | Move (snaps; can move across tracks — vertical move shows the target track highlight) |
-| Ctrl/Cmd + drag | Duplicate (as a linked instance; Alt+Ctrl/Cmd+drag makes an independent copy) |
+| Ctrl/Cmd + drag | Duplicate (as an independent copy; Alt+Ctrl/Cmd+drag makes a linked instance). A clip stays on tracks of its own kind, audio or notes |
 | Drag right edge | Lengthen/shorten. Looping clips repeat their content; non-looping clips reveal empty space |
 | Drag left edge | Trim the start (adjusts offset); content stays in place on the timeline |
 | **Alt + drag right edge** | Time-stretch the instance's content: notes are scaled in time; the clip's stretch factor is stored on the instance |
 | **Alt + drag body** (slip) | Slide the content inside the clip without moving the clip (adjusts offset) |
 | Double-click | Open in the detail editor; double-click again maximizes the detail editor |
 | Pencil drag in empty space | Create an empty clip of that length |
-| Click in the clip's top header strip and drag down | Fade-like "velocity scale" handle for the instance (instances can scale velocity non-destructively) |
+| Drag the clip's header strip | Moves the clip, as its body does (DECISIONS §159) |
+| Drag an audio clip's level line just under the header strip | Its gain; double-click resets it to 0 dB (DECISIONS §159, §160) |
 
 - `Ctrl/Cmd+D`: duplicate selection after itself. `Ctrl/Cmd+E`: split at the playhead or mouse. `Ctrl/Cmd+J`: consolidate (glue) the selected clips on a track into one clip. `Ctrl/Cmd+U`: make unique.
 - Magnetic snap: in addition to the grid, clip edges snap to other clips' edges, markers, the loop edges and the playhead when within 8 px (Alt bypasses).
-- Instance properties (inspector when a clip is selected): name, color, loop on/off, start offset, transpose, velocity scale, time-stretch factor, mute, link status, "Show in launcher slot".
+- Instance properties (inspector when a clip is selected): name, color, loop on/off, start offset, transpose, time-stretch factor, mute, link status, "Show in launcher slot".
 
 ### 6.4 Time selection and range editing
 
@@ -454,6 +459,7 @@ Shortcuts are active only while the editor overlay is focused. They are defined 
 | | Delete | Delete / Backspace |
 | | Select all / none / invert | Ctrl/Cmd+A, Ctrl/Cmd+Shift+A, Ctrl/Cmd+I |
 | | Split / glue / make unique | Ctrl/Cmd+E, Ctrl/Cmd+J, Ctrl/Cmd+U |
+| | Tie the selection / untie, keeping the glide (notes pane) | J |
 | | Quantize / quantize dialog | Q, Shift+Q |
 | | Transpose ±1 / ±octave | Up/Down, Shift+Up/Down |
 | | Nudge grid / fine / bar | Left/Right, Alt+Left/Right, Shift+Left/Right |
@@ -472,14 +478,16 @@ Shortcuts are active only while the editor overlay is focused. They are defined 
 | | Inspector | I |
 | | Switch focus arranger ↔ detail | Tab |
 | | Maximize focused pane | Shift+Tab or double-click splitter |
-| | Widen / narrow the clips beside the timeline | F2 |
+| | Lower pane shows the notes / devices / the mixer | F3 / F4 / F5, or Notes · Devices · Mixer in its header |
+| | Widen / narrow the clips beside the timeline | F2, or the › / ‹ handle on the clips' right edge |
+| | A folded pane (the other one maximized) | its bar keeps its switch: a click brings both panes back |
 | Tracks | Add instrument / drum track | Ctrl/Cmd+T, Ctrl/Cmd+Shift+T |
 | | Select next/prev track | Ctrl/Cmd+Up/Down |
 | | Mute / solo selected tracks | M, Alt+S |
 | | Add marker / jump to marker 1–9 | Ctrl/Cmd+M, Ctrl/Cmd+1–9 in arranger with Alt (Alt+1–9) |
 | General | Help overlay | ? |
 | | Export MIDI (opens the export dialog, DESIGN.md §17) | Ctrl/Cmd+Shift+E |
-| | Close editor | Esc (first Esc clears selection / cancels drag, second closes) |
+| | Close editor | Esc (first Esc clears selection / cancels drag; with nothing left, Esc twice within 1.5 s closes) |
 
 Rule: when two DAWs disagree, prefer the binding that doesn't need a modifier for the most frequent action, then the most common convention among DAWs.
 

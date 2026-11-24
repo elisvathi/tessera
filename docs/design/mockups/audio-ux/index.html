@@ -1,0 +1,2003 @@
+<title>Tessera Audio UX</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a review board read top to bottom. A sticky contents bar, then one band per subject: heading, a short note,
+   figures scaled to fit their column with numbered pins, and the notes for those pins underneath. The mockups wear
+   Tessera's own palette from src/ui/Theme.cpp: Slate in dark, Plaster in light. The board itself borrows the
+   silkscreen lettering of a Rack panel for its headings. */
+:root{
+  --page:#ECE8E1;--ink:#16191F;--muted:#565B65;--rule:#D3CDC3;--card:#F8F6F2;--note:#C2410C;--note-ink:#FFFFFF;
+  --today:#676C75;--focus:#5356CD;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* Tessera: Plaster */
+  --t-bg0:#FDFBF9;--t-bg1:#F5F2ED;--t-bg2:#E9E5DE;--t-line0:#EEEBE6;--t-line1:#E1DDD7;--t-line2:#C2BDB5;
+  --t-text0:#171B21;--t-text1:#484D56;--t-text2:#646972;--t-accent:#5356CD;--t-record:#C9302D;--t-play:#007D50;
+  --t-queue:#A06604;--t-select:#5356CD;--t-ground:#E0DCD4;--t-ink:#FCFCFC;--t-ontile:#13151B;
+  /* track colours: the OKLCH ring, deeper on light schemes */
+  --c0:#DF6C65;--c1:#DA743C;--c2:#CB8100;--c3:#B39000;--c4:#929D16;--c5:#65A84A;--c6:#1AAE74;--c7:#00AF9B;
+  --c8:#00ABBE;--c9:#00A3D8;--c10:#4498E8;--c11:#768BEC;--c12:#9B7FE2;--c13:#B875CD;--c14:#CD6DAF;--c15:#DA698C;
+  /* module screens are dark in every scheme (Theme.cpp screenColors) */
+  --s-bg0:#191C21;--s-bg1:#23262B;--s-text0:#D8DBDF;--s-text1:#AFB4BD;--s-text2:#8C929C;--s-line:#373B40;
+  --s-play:#5AD69B;--s-queue:#F0C45E;--s-record:#F76560;--s-accent:#909CF5;
+  /* hardware */
+  --metal-a:#AEB3BA;--metal-b:#EEF0F2;--knob:#2A2C31;--knob-rim:#4A4D54;--hole:#0A0B0D;
+  --o-bg:#D5D1CA;--o-ink:#3C4048;--o-line:#B5B0A7;--o-screen:#2E3136;
+  --rack:#3B3D42;--rail:#8D929A;--shadow:rgba(40,32,20,.2);
+  /* Rack's own menus are dark whatever the scheme */
+  --menu-bg:#26272A;--menu-ink:#E7E8EA;--menu-dim:#9A9DA3;--menu-hi:#35588A;--menu-line:#3A3C40;
+  --cab-y:#E2B42A;--cab-r:#D0453E;--cab-b:#3C84D4;--cab-g:#3A9F66;--cab-v:#8C6CCD;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --page:#141519;--ink:#D8DBDF;--muted:#9AA0AA;--rule:#2B2E34;--card:#1B1D22;--note:#FF8A3D;--note-ink:#1B0F06;
+  --today:#8B919B;--focus:#909CF5;
+  --t-bg0:#292B30;--t-bg1:#2F3238;--t-bg2:#3B3F45;--t-line0:#303238;--t-line1:#373B40;--t-line2:#4C5057;
+  --t-text0:#D8DBDF;--t-text1:#AFB4BD;--t-text2:#969CA6;--t-accent:#909CF5;--t-record:#F76560;--t-play:#5AD69B;
+  --t-queue:#F0C45E;--t-select:#909CF5;--t-ground:#212429;--t-ink:#131524;--t-ontile:#13151B;
+  --c0:#EF806F;--c1:#E88949;--c2:#D79628;--c3:#BDA422;--c4:#9AB140;--c5:#6DBA67;--c6:#2DC08E;--c7:#00C0B4;
+  --c8:#00BBD5;--c9:#24B2ED;--c10:#65A7FA;--c11:#909BFB;--c12:#B28FEF;--c13:#CE85D8;--c14:#E17EB9;--c15:#ED7C95;
+  --metal-a:#80868F;--metal-b:#C9CDD3;--knob:#1C1E22;--knob-rim:#3C3F46;--hole:#050607;
+  --o-bg:#3A3C42;--o-ink:#C3C7CE;--o-line:#4B4E55;--o-screen:#1A1C20;
+  --rack:#1E2023;--rail:#575C64;--shadow:rgba(0,0,0,.55);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --page:#141519;--ink:#D8DBDF;--muted:#9AA0AA;--rule:#2B2E34;--card:#1B1D22;--note:#FF8A3D;--note-ink:#1B0F06;
+  --today:#8B919B;--focus:#909CF5;
+  --t-bg0:#292B30;--t-bg1:#2F3238;--t-bg2:#3B3F45;--t-line0:#303238;--t-line1:#373B40;--t-line2:#4C5057;
+  --t-text0:#D8DBDF;--t-text1:#AFB4BD;--t-text2:#969CA6;--t-accent:#909CF5;--t-record:#F76560;--t-play:#5AD69B;
+  --t-queue:#F0C45E;--t-select:#909CF5;--t-ground:#212429;--t-ink:#131524;--t-ontile:#13151B;
+  --c0:#EF806F;--c1:#E88949;--c2:#D79628;--c3:#BDA422;--c4:#9AB140;--c5:#6DBA67;--c6:#2DC08E;--c7:#00C0B4;
+  --c8:#00BBD5;--c9:#24B2ED;--c10:#65A7FA;--c11:#909BFB;--c12:#B28FEF;--c13:#CE85D8;--c14:#E17EB9;--c15:#ED7C95;
+  --metal-a:#80868F;--metal-b:#C9CDD3;--knob:#1C1E22;--knob-rim:#3C3F46;--hole:#050607;
+  --o-bg:#3A3C42;--o-ink:#C3C7CE;--o-line:#4B4E55;--o-screen:#1A1C20;
+  --rack:#1E2023;--rail:#575C64;--shadow:rgba(0,0,0,.55);
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--ink);font:400 15px/1.55 var(--f-ui);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:40;background:var(--page)}
+.wrap{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+a{color:inherit;text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+code{font:500 .86em var(--f-mono)}
+
+.mast{padding-block:44px 26px;display:grid;gap:16px}
+.eyebrow{font:600 12px/1 var(--f-display);letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+h1{margin:0;font:700 clamp(36px,6vw,64px)/.95 var(--f-display);letter-spacing:.01em;text-transform:uppercase;text-wrap:balance}
+.lede{margin:0;max-width:68ch;font-size:16.5px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:13px}
+.controls{display:flex;flex-wrap:wrap;gap:12px 22px;align-items:center;font-size:13px;color:var(--muted)}
+.themes{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.themes button{font:600 12px/1 var(--f-ui);padding:8px 11px;background:transparent;color:var(--muted);border:0;cursor:pointer}
+.themes button[aria-pressed="true"]{background:var(--ink);color:var(--page)}
+.key{display:inline-flex;align-items:center;gap:8px}
+
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:var(--page);border-block:1px solid var(--rule)}
+nav.toc .in{display:flex;gap:2px;overflow-x:auto;padding-block:7px;scrollbar-width:thin}
+nav.toc a{flex:none;text-decoration:none;font:600 13px/1 var(--f-display);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);padding:7px 9px;border-radius:4px}
+nav.toc a:hover{color:var(--ink);background:var(--card)}
+
+section.band{padding-block:44px 6px;display:grid;gap:18px;scroll-margin-top:52px}
+section.band+section.band{border-top:1px solid var(--rule)}
+.bandhead{display:grid;gap:8px}
+h2{margin:0;font:700 clamp(26px,3.4vw,34px)/1 var(--f-display);letter-spacing:.02em;text-transform:uppercase;text-wrap:balance}
+.bandhead p{margin:0;max-width:72ch}
+.refs{display:flex;flex-wrap:wrap;gap:6px}
+.ref{font:500 11.5px/1 var(--f-mono);color:var(--muted);border:1px solid var(--rule);border-radius:3px;padding:4px 6px}
+
+.fig{margin:0;background:var(--card);border:1px solid var(--rule);border-radius:6px;overflow:hidden;min-width:0}
+.fig-head{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--rule)}
+.fig-head .ttl{font-weight:600;font-size:14px}
+.fig-head .sub{color:var(--muted);font-size:13px}
+.sizebtn{margin-left:auto;font:600 11px/1 var(--f-ui);color:var(--muted);background:transparent;border:1px solid var(--rule);
+  border-radius:4px;padding:6px 8px;cursor:pointer}
+.sizebtn:hover{color:var(--ink)}
+.tag{font:700 10px/1 var(--f-ui);letter-spacing:.1em;text-transform:uppercase;padding:4px 7px;border-radius:3px;
+  border:1px solid currentColor;white-space:nowrap}
+.tag.today{color:var(--today)}
+.tag.prop{color:var(--note)}
+.fit{position:relative;overflow:hidden;background:var(--t-ground)}
+.fit.actual{overflow-x:auto;overflow-y:hidden}
+.stage{position:absolute;left:0;top:0;transform-origin:0 0}
+.fit.actual .stage{position:relative}
+.pin{position:absolute;z-index:8;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;background:var(--note);
+  color:var(--note-ink);font:700 11px/20px var(--f-ui);text-align:center;font-style:normal;
+  box-shadow:0 0 0 2px var(--card),0 2px 6px var(--shadow);transform:scale(var(--inv,1))}
+.callouts{list-style:none;margin:0;padding:14px 16px 16px;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:10px 26px}
+.callouts li{display:grid;grid-template-columns:20px 1fr;gap:10px;font-size:13.5px;line-height:1.45;min-width:0}
+.callouts .n{width:20px;height:20px;border-radius:50%;background:var(--note);color:var(--note-ink);font:700 11px/20px var(--f-ui);
+  text-align:center}
+.callouts .n.t{background:transparent;color:var(--today);border:1px solid var(--today);line-height:18px}
+.callouts .id{font:500 11px var(--f-mono);color:var(--muted)}
+.grid2{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr))}
+
+ol.top{list-style:none;margin:0;padding:0;display:grid;gap:0;counter-reset:top;border-top:1px solid var(--rule)}
+ol.top li{display:grid;grid-template-columns:56px minmax(0,1fr);gap:4px 16px;padding:14px 0;border-bottom:1px solid var(--rule)}
+ol.top .rk{font:700 34px/1 var(--f-display);color:var(--note);grid-row:span 2}
+ol.top .h{font-weight:600;font-size:16px}
+ol.top .d{color:var(--muted);font-size:14px;max-width:80ch}
+ol.top .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chipx{font:600 11px/1 var(--f-ui);border-radius:3px;padding:4px 6px;background:var(--card);border:1px solid var(--rule);color:var(--muted);text-decoration:none}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--card)}
+table.keys{border-collapse:collapse;width:100%;min-width:720px;font-size:13.5px}
+table.keys th,table.keys td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+table.keys th{font:600 12px/1.2 var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+table.keys tr:last-child td{border-bottom:0}
+kbd{font:500 12px/1 var(--f-mono);padding:3px 5px;border:1px solid var(--rule);border-bottom-width:2px;border-radius:4px;
+  background:var(--page);white-space:nowrap}
+
+ol.qs{list-style:none;margin:0;padding:0;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,500px),1fr))}
+.phases{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))}
+.phases>div{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;display:grid;gap:5px;align-content:start}
+.ph{font:700 12px/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase;color:var(--note)}
+.phases b{font-size:14.5px}
+.phases p{margin:0;font-size:13px;color:var(--muted)}
+ol.qs>li{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;display:grid;gap:8px;min-width:0;align-content:start}
+ol.qs ul li{padding:1px 0}
+ol.qs .qh{font-weight:600}
+ol.qs .qn{font:700 22px/1 var(--f-display);color:var(--note);margin-right:8px}
+ol.qs ul{margin:0;padding-left:18px;font-size:14px;color:var(--ink)}
+ol.qs .rec{font-size:13.5px;color:var(--muted)}
+ol.qs .rec b{color:var(--note)}
+
+/* ---- Tessera's editor, drawn in HTML ---- */
+.tx{position:absolute;inset:0;overflow:hidden;background:var(--t-ground);color:var(--t-text0);font:400 11px/1.25 var(--f-ui)}
+.tx .a{position:absolute}
+.tx .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.tx .b{font-weight:600}
+.tx .t1{color:var(--t-text1)}
+.tx .t2{color:var(--t-text2)}
+.tx .ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx .pane{position:absolute;background:var(--t-bg0);border:1px solid var(--t-line1);border-radius:4px;overflow:hidden}
+.tx .pane.focus{border-color:var(--t-accent)}
+.tx .hdrbar{position:absolute;left:0;right:0;top:0;height:26px;display:flex;align-items:center;gap:7px;padding:0 8px;
+  background:var(--t-bg1);border-bottom:1px solid var(--t-line1);white-space:nowrap;overflow:hidden}
+.tx .chip{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 7px;border-radius:4px;background:var(--t-bg2);
+  color:var(--t-text0);font-size:10.5px;white-space:nowrap;flex:none}
+.tx .chip.ghost{background:transparent;color:var(--t-text1)}
+.tx .chip.acc{background:var(--t-accent);color:var(--t-ink)}
+.tx .chip.warn{background:transparent;color:var(--t-queue);box-shadow:inset 0 0 0 1px var(--t-queue)}
+.tx .chip.rec{background:transparent;color:var(--t-record);box-shadow:inset 0 0 0 1px var(--t-record)}
+.tx .chip.new{box-shadow:inset 0 0 0 1px var(--note)}
+.tx .seg{display:inline-flex;border-radius:4px;background:var(--t-bg2);overflow:hidden;height:20px;flex:none}
+.tx .seg span{padding:0 9px;line-height:20px;font-size:10.5px;color:var(--t-text1)}
+.tx .seg span.on{background:var(--t-play);color:var(--t-ink);font-weight:600}
+.tx .seg.acc span.on{background:var(--t-accent)}
+.tx .sb{position:absolute;width:16px;height:14px;border-radius:3px;background:var(--t-bg2);color:var(--t-text1);
+  font:600 9px/14px var(--f-ui);text-align:center}
+.tx .sb.mon{background:var(--t-queue);color:var(--t-ink)}
+.tx .sb.son{background:var(--t-select);color:var(--t-ink)}
+.tx .sb.ron{background:var(--t-record);color:var(--t-ink)}
+.tx .sb.inon{background:var(--t-play);color:var(--t-ink)}
+.tx .ring{position:absolute;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--t-text2);opacity:.8}
+.tx .ring.on{background:var(--t-record);border-color:var(--t-record);opacity:1}
+.tx .tile{position:absolute;left:0;top:0;bottom:0;width:18px;color:var(--t-ontile);font:600 10px/1 var(--f-ui);text-align:center;padding-top:6px}
+.tx .groove{position:absolute;border-radius:3px;background:var(--t-ground);overflow:hidden}
+.tx .menu{position:absolute;background:var(--menu-bg);color:var(--menu-ink);border-radius:4px;padding:4px 0;font:400 11.5px/1.2 var(--f-ui);
+  box-shadow:0 6px 22px var(--shadow);z-index:4;min-width:150px}
+.tx .menu div{padding:4px 12px;display:flex;justify-content:space-between;gap:16px;white-space:nowrap}
+.tx .menu .lb{color:var(--menu-dim);font-size:10.5px}
+.tx .menu .hi{background:var(--menu-hi)}
+.tx .menu .sep{height:1px;padding:0;margin:4px 0;background:var(--menu-line)}
+.tx .menu .k{color:var(--menu-dim)}
+.tx .toast{position:absolute;display:flex;align-items:center;gap:12px;padding:7px 12px;border-radius:5px;background:var(--t-bg2);
+  color:var(--t-text0);box-shadow:0 4px 16px var(--shadow);white-space:nowrap;z-index:4}
+.tx .toast .act{color:var(--t-accent);font-weight:600}
+.tx .readout{position:absolute;font:500 10.5px/1 var(--f-mono);padding:4px 7px;border-radius:9px;background:var(--t-bg0);
+  border:1px solid var(--t-line2);color:var(--t-text0);white-space:nowrap;z-index:4}
+.tx .newmark{box-shadow:0 0 0 1.5px var(--note)}
+
+/* ---- panels and racks, drawn in SVG in millimetres ---- */
+svg.rack{display:block}
+.pnl text{font-family:var(--f-ui)}
+.pt{font-size:4.06px;font-weight:600;letter-spacing:.68px;fill:var(--t-text0);text-anchor:middle}
+.pl{font-size:2.54px;font-weight:600;letter-spacing:.2px;fill:var(--t-text1);text-anchor:middle}
+.pl.out{fill:var(--t-text0)}
+.pl.sec{fill:var(--t-text2)}
+.pl.rn{text-anchor:end}
+.pl.left{text-anchor:start}
+.ot{font-size:4px;font-weight:700;letter-spacing:.5px;fill:var(--o-ink);text-anchor:middle}
+.ol{font-size:2.4px;font-weight:600;fill:var(--o-ink);text-anchor:middle}
+.ds{font-family:var(--f-ui);font-size:2.5px;fill:var(--s-text1)}
+.ds.b{font-weight:600;font-size:3.1px;fill:var(--s-text0)}
+.ds.sm{font-size:2.1px;font-weight:600;letter-spacing:.15px}
+.ds.c{text-anchor:middle}
+.ds.r{text-anchor:end}
+.ds.mono{font-family:var(--f-mono);font-size:3.3px;fill:var(--s-text0)}
+.ds.msg{font-size:2.55px;fill:var(--s-text0)}
+.ds.big{font-size:7.4px;font-weight:600}
+.ds.nm{font-size:3px;font-weight:600;fill:var(--s-text0)}
+
+@media (prefers-reduced-motion:no-preference){
+  .blink{animation:blink 1s steps(2,start) infinite}
+  @keyframes blink{to{visibility:hidden}}
+}
+@media (max-width:640px){
+  ol.top li{grid-template-columns:36px minmax(0,1fr)}
+  ol.top .rk{font-size:26px}
+}
+</style>
+
+<div class="wrap">
+<header class="mast">
+  <div class="eyebrow">Tessera · audio, mixer and performance · design review</div>
+  <h1>From the musician's chair</h1>
+  <p class="lede">Mockups for <code>docs/design/AUDIO_UX.md</code>. Every screen is drawn with Tessera's real palette and sizes
+    from <code>src/ui/Theme.hpp</code>; module panels sit at true proportions (380 px tall, 15 px per HP). Where a picture
+    shows how it is today, it says <b>Today</b>; everything marked <b>Proposed</b> is a design, not built.</p>
+  <div class="meta"><span>5 Nov 2026</span><span>Branch <code>feature/audio-mixer</code> at <code>c795aea</code></span>
+    <span>Proposal IDs (A1, M1, S1…) and findings (F1…F37) refer to AUDIO_UX.md</span></div>
+  <div class="controls">
+    <span class="key">Scheme
+      <span class="themes" role="group" aria-label="Colour scheme">
+        <button type="button" id="th-system" data-theme-set="system" aria-pressed="true">System</button>
+        <button type="button" id="th-dark" data-theme-set="dark" aria-pressed="false">Slate (dark)</button>
+        <button type="button" id="th-light" data-theme-set="light" aria-pressed="false">Plaster (light)</button>
+      </span>
+    </span>
+    <span class="key"><span class="tag today">Today</span> as built</span>
+    <span class="key"><span class="tag prop">Proposed</span> this review</span>
+    <span class="key"><i class="pin" style="position:static;margin:0;transform:none;display:inline-block">1</i> numbered notes</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections"><div class="in">
+  <a href="#top10">Top 10</a><a href="#rack">The rack</a><a href="#first-minute">First minute</a>
+  <a href="#panel-editor">Panel editor</a><a href="#full-editor">Full editor</a><a href="#mixer-heights">Mixer heights</a>
+  <a href="#audio-editor">Audio editor</a><a href="#recording">Recording</a><a href="#loops">Loops in slots</a>
+  <a href="#live">Live setup</a><a href="#automation">Automation</a><a href="#two-editors">Two editors</a>
+  <a href="#keys">Keys</a><a href="#questions">Questions</a>
+</div></nav>
+
+<section class="band" id="top10">
+  <div class="bandhead"><div class="eyebrow">Summary</div><h2>The ten changes that matter most</h2>
+    <p>Ranked by what they give a producer at a desk and a performer on a stage, for the effort. Phases are in §6 of the
+      proposal.</p></div>
+  <ol class="top">
+    <li><span class="rk">1</span><div class="h">A first minute that just works</div>
+      <div class="d">A loop dropped on the panel plays when you press PLAY. With the editor closed, the display says what happened. When a synth already uses the Audio module's inputs, one helper puts Tessera's mixer in front of it.
+      <div class="chips"><a class="chipx" href="#first-minute">A1 · L4 · P5</a><span class="chipx">Everyone</span><span class="chipx">S–M · Phase 1</span></div></div></li>
+    <li><span class="rk">2</span><div class="h">A mixer that fits any height, and scrolls</div>
+      <div class="d">Strips, compact strips, tiles or meters, picked by height; strips scroll under a pinned Master; a level bar in every track row; keys in the mixer.
+      <div class="chips"><a class="chipx" href="#mixer-heights">M1 · L2 · M3</a><span class="chipx">Everyone who mixes</span><span class="chipx">M · Phase 1</span></div></div></li>
+    <li><span class="rk">3</span><div class="h">Audio slots that loop like a looper</div>
+      <div class="d">● records into an empty slot, a second press closes the loop on the beat, ● on the playing loop overdubs a layer, undo peels it back. REC and Perform drive the same steps.
+      <div class="chips"><a class="chipx" href="#loops">S1</a><span class="chipx">Performers</span><span class="chipx">L · Phase 2</span></div></div></li>
+    <li><span class="rk">4</span><div class="h">The Perform module</div>
+      <div class="d">Eight strips of launch, stop, send, level, mute, solo and arm, all Rack parameters for MIDI-Map, with poly CV inputs and an EOC jack per strip.
+      <div class="chips"><a class="chipx" href="#rack">P3</a><span class="chipx">Performers</span><span class="chipx">L · Phase 3</span></div></div></li>
+    <li><span class="rk">5</span><div class="h">Keep every pass, comp by swiping</div>
+      <div class="d">Loop passes on audio tracks always become takes; takes show as rows; drag across one to use it there; an IN button takes the mic out of the mix.
+      <div class="chips"><a class="chipx" href="#recording">R1 · R2 · R4</a><span class="chipx">Producers</span><span class="chipx">M · Phase 2</span></div></div></li>
+    <li><span class="rk">6</span><div class="h">One view across both editors</div>
+      <div class="d">Lanes, folds, Notes or Mixer, drum view and the lower lane follow you between the panel editor and the full editor; size, zoom and scroll stay per editor.
+      <div class="chips"><a class="chipx" href="#two-editors">L1</a><span class="chipx">Everyone</span><span class="chipx">S–M · Phase 1</span></div></div></li>
+    <li><span class="rk">7</span><div class="h">Automate every mixer control</div>
+      <div class="d">Group, drum-lane and source levels; Mute and Record switch lanes, also for another track; a Tempo lane on the Master row.
+      <div class="chips"><a class="chipx" href="#automation">M4 · S6</a><span class="chipx">Producers, loopers</span><span class="chipx">M–L · Phase 4</span></div></div></li>
+    <li><span class="rk">8</span><div class="h">An audio editor you can work in</div>
+      <div class="d">The clip's settings in its header, Q pins hits to the grid with a strength after showing the drift, a Slice tool, fades, preview while stopped.
+      <div class="chips"><a class="chipx" href="#audio-editor">A2–A5</a><span class="chipx">Producers</span><span class="chipx">M · Phase 2</span></div></div></li>
+    <li><span class="rk">9</span><div class="h">Safe on stage</div>
+      <div class="d">Bars-left counts and record buttons in the perform view, Lock editing, Stop now, LAUNCH that walks the set, sections with Next song, Perform keys anywhere in Rack.
+      <div class="chips"><a class="chipx" href="#live">S2–S5 · P2</a><span class="chipx">Performers</span><span class="chipx">M · Phase 3</span></div></div></li>
+    <li><span class="rk">10</span><div class="h">Modules that say more</div>
+      <div class="d">EOC beside AUTO on Track Out and on Drum Out, each output module's screen shows mute, solo, arm and what plays, and an FX Loop module gives the agreed effect chain a home.
+      <div class="chips"><a class="chipx" href="#rack">P1 · P4</a><span class="chipx">Rack patchers</span><span class="chipx">S, L · Phases 1, 4</span></div></div></li>
+  </ol>
+  <div class="phases">
+    <div><span class="ph">Phase 1</span><b>The first minute, a mixer that works anywhere</b><p>A1 L4 P5 · M1 L2 M3 · L1 · R1 R4 · P1 · P2 without REC. Mostly small; no new module. Fixes the two losses and four open Trello items.</p></div>
+    <div><span class="ph">Phase 2</span><b>Record, comp, loop, edit</b><p>R2 R3 R5 · S1 and REC · A2 A3 A4 A5 · M2 · E1 M5. All on the capture path and the audio editor.</p></div>
+    <div><span class="ph">Phase 3</span><b>The stage</b><p>P3 Perform · S2 perform view · S3 Lock editing · S4 sections and Next song · S5 Perform keys.</p></div>
+    <div><span class="ph">Phase 4</span><b>Depth</b><p>M4 every control automated · S6 switch lanes, Tempo lane · P4 FX Loop · A6 · A7 if wanted · L3.</p></div>
+  </div>
+</section>
+
+<section class="band" id="rack">
+  <div class="bandhead"><div class="eyebrow">Modules and panels · P1 P2 P3 P4</div><h2>The rack</h2>
+    <p>What a performer can reach without the editor. Today the rack holds the transport and the scenes; no track can be
+      mapped, patched or watched. The proposal adds no jack to Tessera and no HP to Track Out: an EOC jack takes the free
+      half of AUTO's row, and two new modules carry the controls.</p>
+    <div class="refs"><span class="ref">F28 F29 F33 F35</span><span class="ref">TesseraModule.hpp:64-78</span><span class="ref">TrackOutWidget.cpp:26-35</span></div></div>
+  <figure class="fig" data-fig="rack-today">
+    <div class="fig-head"><span class="tag today">Today</span><span class="ttl">Tessera, Track Out, Drum Out, Auto Out</span><span class="sub">true proportions</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n t">1</b><div>With the editor closed, nothing on the display says a drop worked or that the song tempo changed. <span class="id">F2</span></div></li>
+      <li><b class="n t">2</b><div>Twelve parameters: transport, tempo and scenes. MIDI-Map can't reach any track. <span class="id">F28</span></div></li>
+      <li><b class="n t">3</b><div>The screen shows the binding only: not mute, solo, arm or what plays. EOC exists only for the song loop. <span class="id">F35</span></div></li>
+      <li><b class="n t">4</b><div>Each lane IN has a level and pan in the mixer, but no mute and no lane to automate them. <span class="id">F21 F23</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="rack-proposed">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">The same rack, plus Perform and FX Loop</span><span class="sub">true proportions</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div><b>Messages on the display</b> when no editor is open, amber for warnings; the action (Keep 120 BPM) waits at the top of the module menu for 30 s. <span class="id">L4</span></div></li>
+      <li><b class="n">2</b><div><b>KEYS</b> lights while Perform keys work anywhere in Rack. <span class="id">S5</span></div></li>
+      <li><b class="n">3</b><div><b>EOC</b> beside AUTO: a trigger each time this track's clip comes round. Saved cables stay on their jacks. <span class="id">P1</span></div></li>
+      <li><b class="n">4</b><div><b>The track's state</b> in the screen's corners: ▶ and the bar of its loop, M, S, ● (red while it records). <span class="id">P1</span></div></li>
+      <li><b class="n">5</b><div>Drum Out's poly row spaced for seven jacks, <b>EOC</b> last. <span class="id">P1</span></div></li>
+      <li><b class="n">6</b><div><b>Perform</b>, a strip per track: ▶ launches the picked scene's clip (records on an armed empty slot), ■ stops, SEND, LEVEL with its meter, M, S, ARM. All Rack parameters. <span class="id">P3</span></div></li>
+      <li><b class="n">7</b><div>Poly CV: a channel per strip for <b>LAUNCH</b>, <b>STOP</b>, <b>MUTE</b> and <b>LEVEL</b> (an envelope here ducks a track). <span class="id">P3</span></div></li>
+      <li><b class="n">8</b><div><b>BANK</b> moves the eight strips across 64 tracks, so eight hardware faders are mapped once. <span class="id">P3</span></div></li>
+      <li><b class="n">9</b><div><b>FX Loop</b>: one place in a track's ordered chain. SEND to the effect, RETURN from it, WET and BYPASS to map. <span class="id">P4</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="first-minute">
+  <div class="bandhead"><div class="eyebrow">Journey 1 · A1 L4 P5</div><h2>The first minute</h2>
+    <p>The patch the manual's first chapter builds sends the voice straight into the Audio module. Drop a loop on the
+      panel after that, press PLAY, and nothing plays: the loop wasn't launched, MAIN has no cable, and the helper that
+      would patch it refuses because the Audio module's inputs are taken.</p>
+    <div class="refs"><span class="ref">F1 F2 F3</span><span class="ref">AudioEdits.cpp:535</span><span class="ref">AudioActions.cpp:466</span></div></div>
+  <figure class="fig" data-fig="first-today">
+    <div class="fig-head"><span class="tag today">Today</span><span class="ttl">A loop dropped on a patched rack</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n t">1</b><div>The new Loop track holds the clip in its first slot, but it isn't launched: PLAY plays the old tracks only. <span class="id">F1</span></div></li>
+      <li><b class="n t">2</b><div>An amber dot: the master plays, MAIN has no cable. That's the only sign with the editor closed. <span class="id">F2</span></div></li>
+      <li><b class="n t">3</b><div>Connect MAIN to Audio module refuses, and says so only in the full editor. <span class="id">F3</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="first-proposed">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">The same drop, and one helper</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div>The loop is <b>cued</b> in its slot, so PLAY starts it, and the display says so: "Loop: song set to 92 BPM · press PLAY". <span class="id">A1 L4</span></div></li>
+      <li><b class="n">2</b><div>With inputs 1–2 taken, the menu offers <b>Put Tessera's mixer in front of the Audio module</b>: one Rack undo step. <span class="id">P5</span></div></li>
+      <li><b class="n">3</b><div>The voice's cables move to the IN of a new Track Out bound to the <b>Master</b>: it still plays, at the same level. <span class="id">P5</span></div></li>
+      <li><b class="n">4</b><div>MAIN L/R go to the Audio module's inputs 1 and 2. On the timeline, the first loop also gets the song loop around it. <span class="id">P5 A1</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="panel-editor">
+  <div class="bandhead"><div class="eyebrow">Editor layout · L1 L2 M1</div><h2>The editor inside the panel</h2>
+    <p>Tessera widened to 80 HP: the panel editor is 799 × 348 px at 100% rack zoom, and its lower pane gets 70–200 px.
+      That is where today's mixer gives up. The proposal keeps the same pane and the same F4 key (DECISIONS §118) and
+      changes what a short pane shows.</p>
+    <div class="refs"><span class="ref">F17 F18 F19 F36</span><span class="ref">MixerPane.cpp:534</span><span class="ref">TrackHeaders.cpp:55</span><span class="ref">EditorState.hpp:126</span></div></div>
+  <figure class="fig" data-fig="panel-today">
+    <div class="fig-head"><span class="tag today">Today</span><span class="ttl">80 HP, the mixer in the lower pane</span><span class="sub">1200 × 380 px, true size</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n t">1</b><div>Rows are 24 px, so no row shows its level, though six of these tracks make sound. <span class="id">F17</span></div></li>
+      <li><b class="n t">2</b><div>Under 190 px a strip drops its source, sends and pan, and its fader shrinks. <span class="id">F19</span></div></li>
+      <li><b class="n t">3</b><div>Strips past the edge run under the Master: Reverb and Delay can't be reached. <span class="id">F18</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="panel-proposed">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">The same panel: compact strips, level bars in the rows</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div>A <b>3 px level bar</b> along each short row: drag sideways for the level; up or down still resizes the row. <span class="id">L2</span></div></li>
+      <li><b class="n">2</b><div><b>Compact strips</b>, 44 px: name, pan as an arc, M S, a dot per send, fader and meter, dB. <span class="id">M1</span></div></li>
+      <li><b class="n">3</b><div>Drum lanes and the Rhythm group fold in as narrow strips, in track order. <span class="id">M1</span></div></li>
+      <li><b class="n">4</b><div><b>View ▾</b> says which layout the height picked; pin one if you prefer. <span class="id">M1</span></div></li>
+      <li><b class="n">5</b><div>Notes or Mixer, open lanes and folded groups are the same as in the full editor. <span class="id">L1</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="panel-tiles">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">The splitter dragged down: tiles</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div>Under 150 px the mixer becomes <b>tiles</b>: name, pan, M, S, level bar and dB per track, flowing into rows. <span class="id">M1</span></div></li>
+      <li><b class="n">2</b><div>The Master's tile stays pinned at the right.</div></li>
+      <li><b class="n">3</b><div>Drag the splitter back up and the strips come back. The layout is picked by height each time, unless View ▾ pins one.</div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="full-editor">
+  <div class="bandhead"><div class="eyebrow">Editor layout and mixer · L3 M2 R3 R4 M5 S3</div><h2>The full editor</h2>
+    <p>The full editor at 1280 × 800, mixing a song of note tracks, audio tracks and two returns, with Vox armed to
+      record. Everything new sits in places the editor already has: the transport bar, the track rows, the strips, the
+      inspector.</p>
+    <div class="refs"><span class="ref">F14 F15 F16 F18 F22 F25 F32</span><span class="ref">mixer.png</span><span class="ref">editor-overview.png</span></div></div>
+  <figure class="fig" data-fig="full-proposed">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">Song pane above, mixer below, the channel in the inspector</span><span class="sub">1280 × 800</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div><b>The record plan</b> beside ● while a track with audio is armed: what records, from where, the count-in, the click. Amber when something is missing ("Vox has nothing on IN"). <span class="id">R3</span></div></li>
+      <li><b class="n">2</b><div><b>Lock editing</b>: performing and mixing stay live; edits to the song's content are refused with a readout. <span class="id">S3</span></div></li>
+      <li><b class="n">3</b><div>The armed track's level line shows its <b>IN level in red</b>, so the input is set before recording. <span class="id">R3</span></div></li>
+      <li><b class="n">4</b><div><b>FX loops</b> in chain order, a bypass dot each, and + FX to add one (the agreed chain). <span class="id">M2 P4</span></div></li>
+      <li><b class="n">5</b><div><b>M S ● IN</b>: IN takes the microphone out of the mix after recording, without pulling a cable. <span class="id">R4</span></div></li>
+      <li><b class="n">6</b><div><b>The finish meter</b>: short-term loudness under the Master's dB; a click cycles integrated and peak. <span class="id">M5</span></div></li>
+      <li><b class="n">7</b><div>Strips <b>scroll sideways</b> under the pinned Master: Shift+wheel, two fingers, or this bar. <span class="id">M1</span></div></li>
+      <li><b class="n">8</b><div><b>The channel in the inspector</b>: level, pan, M S ● IN, sources, FX loops, sends, latency with <b>Measure</b>, output. <span class="id">L3 R5</span></div></li>
+      <li><b class="n">9</b><div>Drum lane strips get an <b>M</b>, and every control here has <b>Automate in the timeline</b>. <span class="id">M4</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="mixer-heights">
+  <div class="bandhead"><div class="eyebrow">Mixer · M1 M2 M5</div><h2>The mixer at four heights</h2>
+    <p>One song, four pane heights. The layout is picked from the height the strips get; View ▾ can pin one. The
+      thresholds live in <code>Theme.hpp</code> with the strip and tile sizes.</p>
+    <div class="refs"><span class="ref">F18 F19 F25</span><span class="ref">MixerPane.cpp:585-652</span></div></div>
+  <figure class="fig" data-fig="mix-today">
+    <div class="fig-head"><span class="tag today">Today</span><span class="ttl">A 200 px lower pane, 760 px wide</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n t">1</b><div>No source, sends or pan below 190 px. <span class="id">F19</span></div></li>
+      <li><b class="n t">2</b><div>The strips after Guitar are under the Master, with no way to scroll to them. <span class="id">F18</span></div></li>
+      <li><b class="n t">3</b><div>About 90 px of fader travel, and a 0 dB detent that is hard to feel. <span class="id">F19</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="mix-heights">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">Strips, compact strips, tiles, meters</span><span class="sub">1000 px wide</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div><b>Strips</b> (280 px and more): FX loops in order, + FX, then the sends. <span class="id">M2 P4</span></div></li>
+      <li><b class="n">2</b><div>Every strip keeps the same room for FX and sends, so the faders stay level. If that would leave less than 140 px of fader, FX and sends fold to a count and dots first. <span class="id">M1 M2</span></div></li>
+      <li><b class="n">3</b><div><b>M S ● IN</b>; IN shows only where a track has clips and an IN. <span class="id">R4</span></div></li>
+      <li><b class="n">4</b><div>The Master: short-term <b>LUFS</b> under its dB; the audio memory moves to its tooltip. <span class="id">M5</span></div></li>
+      <li><b class="n">5</b><div><b>Compact</b> (150–279 px): 44 px strips, pan as an arc, a dot per send (click it for its knob). <span class="id">M1</span></div></li>
+      <li><b class="n">6</b><div>Drum lanes as 30 px strips, each with its new <b>M</b>. <span class="id">M4</span></div></li>
+      <li><b class="n">7</b><div><b>Tiles</b> (36–149 px): a tile per track, flowing into rows; drum lanes as small tiles. <span class="id">M1</span></div></li>
+      <li><b class="n">8</b><div>The Master's tile, pinned at the right.</div></li>
+      <li><b class="n">9</b><div><b>Meters</b> (under 36 px): a live meter per track and the Master's peak; click one to select its track. <span class="id">M1</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="audio-editor">
+  <div class="bandhead"><div class="eyebrow">Journey 2 · A2 A3 A4 A5 A6</div><h2>The audio editor</h2>
+    <p>Making a beat from a loose break. Today the audio editor shows the file and the clip's window; its settings live
+      in menus, and warping is one hit at a time or every hit to 1/16. The proposal puts the clip in the header, shows
+      the drift before you fix it, and makes quantizing audio the same key as quantizing notes.</p>
+    <div class="refs"><span class="ref">F7 F8 F9 F10 F11</span><span class="ref">DECISIONS §107 §123 §128</span><span class="ref">audio-editor.png</span></div></div>
+  <figure class="fig" data-fig="ae-today">
+    <div class="fig-head"><span class="tag today">Today</span><span class="ttl">A two-bar break in the audio editor</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n t">1</b><div>The header holds the clip chip and nothing else: tempo, follow, sound type, pitch, gain and reverse are in menus. <span class="id">F10</span></div></li>
+      <li><b class="n t">2</b><div>No Slice tool, no fades, no gain here yet; a launcher-only clip can't be heard from this ruler. <span class="id">F10 F11</span></div></li>
+      <li><b class="n t">3</b><div>Nothing shows how far each hit is from the grid before you warp it. <span class="id">F9</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="ae-proposed">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">One bar, zoomed: drift, markers, Slice, a fade</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div><b>The clip in the header</b>: tempo badge, Stretch, Drums, Pitch, Gain, reverse. In a narrow pane they fold into one Clip ▾. <span class="id">A2</span></div></li>
+      <li><b class="n">2</b><div><b>Warp ▾</b>: grid, strength and a loudness threshold; <b>Q</b> pins the hits, Shift+Q opens these settings. Same keys as notes. <span class="id">A3</span></div></li>
+      <li><b class="n">3</b><div>Warp markers: a line through the pinned beat, a handle in the ruler. The window and its edges still drag with markers. <span class="id">A3</span></div></li>
+      <li><b class="n">4</b><div><b>Drift ticks</b> under each hit, to its grid line: dim under 5 ms, amber over 15 ms with the number. <span class="id">A3</span></div></li>
+      <li><b class="n">5</b><div>The <b>Slice</b> tool (C) splits the selected timeline copy; Shift+click offers every hit, 1/16, 1/8, every beat. <span class="id">A4</span></div></li>
+      <li><b class="n">6</b><div><b>Fades</b> on the window's corners, with a curve dot, as on the timeline. Alt+click the ruler previews the clip alone while stopped. <span class="id">A4 A5</span></div></li>
+      <li><b class="n">7</b><div>The speaker ("hear while editing") now also covers audio. <span class="id">A5</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="ae-menus">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">Make triggers, by sound</span><span class="sub">clip menu, on the timeline and in slots</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div>Make triggers from audio asks one thing: three lanes (kick, snare, hats) or one. From a slot, the triggers go in the same scene. <span class="id">A6</span></div></li>
+      <li><b class="n">2</b><div>The new drum track gets its Drum Out in the same Rack undo step. <span class="id">A6</span></div></li>
+      <li><b class="n">3</b><div>Each hit is sorted by where its energy sits in the 20 ms after it. <b>Slice to a drum track</b> is question 12. <span class="id">A6 A7</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="recording">
+  <div class="bandhead"><div class="eyebrow">Journey 3 · R1 R2 R3 R4 R5</div><h2>Recording and comping</h2>
+    <p>Four passes of a vocal over a four-bar loop. Today, in the default record mode, each pass replaces the last on
+      the timeline; in Stack mode the passes are kept, and comping is a right-click per part. The proposal keeps every
+      pass on an audio track, and comps by dragging across the take you want, on the model that exists today (split
+      plus a take per part, DECISIONS §129).</p>
+    <div class="refs"><span class="ref">F12 F13 F14 F15</span><span class="ref">DECISIONS §77 §119 §129</span><span class="ref">record-menu.png</span></div></div>
+  <figure class="fig" data-fig="rec-takes">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">Takes as rows in the audio editor</span><span class="sub">Takes 3, or Alt+T</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div><b>Takes 3</b> in the header shows the clip's takes as rows, newest first, lined up with the clip's window. <span class="id">R2</span></div></li>
+      <li><b class="n">2</b><div><b>Comp</b> shows what plays: each part tinted and labelled by its take. Each seam has a handle to crossfade it. <span class="id">R2</span></div></li>
+      <li><b class="n">3</b><div><b>Drag across a take</b>: that stretch now plays it. One undo step: a split and a pick, underneath. <span class="id">R2</span></div></li>
+      <li><b class="n">4</b><div><b>Hear</b> plays a take in place of the comp, in time, while it is lit. Nothing changes in the song. <span class="id">R2</span></div></li>
+      <li><b class="n">5</b><div>A pass that stopped early is hatched where it has no audio. <span class="id">R2</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="rec-menus">
+    <div class="fig-head"><span class="tag today">Today</span><span class="tag prop">Proposed</span><span class="ttl">Where passes go, and how you pick them</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n t">1</b><div>Merge is the default, and on an audio track each new pass covers the last one, which it replaces. <span class="id">F12</span></div></li>
+      <li><b class="n t">2</b><div>Comping today: split, then right-click each part ▸ Take, without hearing the others. <span class="id">F13</span></div></li>
+      <li><b class="n">3</b><div><b>Audio passes: Keep as takes</b>, whatever the note setting says. Question 3. <span class="id">R1</span></div></li>
+      <li><b class="n">4</b><div>The first armed audio track turns the metronome to <b>Count-in only</b>, and says so. Question 10. <span class="id">R3</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="loops">
+  <div class="bandhead"><div class="eyebrow">Live looping · S1</div><h2>Loops in slots</h2>
+    <p>Today an audio take recorded while the clips play lands in the first empty slot as a clip that doesn't loop and
+      isn't launched (<code>TesseraCapture.cpp:723</code>). Notes already loop and overdub. The proposal gives audio the
+      same steps, with a ● on the slot, REC on the panel, or ▶ on the Perform module, so a foot switch through MIDI-Map
+      can run it.</p>
+    <div class="refs"><span class="ref">F27</span><span class="ref">Recorder.hpp:33-38</span><span class="ref">LaunchEvent::at</span></div></div>
+  <figure class="fig" data-fig="loop-states">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">One slot, seven moments</span><span class="sub">each close and each layer is one undo step</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div>The loop closes on the launch line (or by itself at a fixed 1, 2, 4 or 8 bars) and plays on from the same sample, as a recorded note clip does. <span class="id">S1</span></div></li>
+      <li><b class="n">2</b><div>A layer is mixed into a new take of the same clip by the writer thread when the pass ends, so an audio track still never plays two clips at once. Question 4. <span class="id">S1</span></div></li>
+      <li><b class="n">3</b><div>Undo takes the last layer off. Overdub needs the song at the loop's tempo, as takes do; otherwise ● is dim and says "Set the tempo back to 92 to overdub". <span class="id">S1</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="live">
+  <div class="bandhead"><div class="eyebrow">Journey 7 · P2 P3 P4 S2 S3 S4 S5</div><h2>A live setup</h2>
+    <p>A set of songs on one Tessera, played from a controller and a foot switch, with the editor closed or in the
+      perform view. Everything a performer touches is a Rack parameter or a CV input; nothing on stage needs the mouse.</p>
+    <div class="refs"><span class="ref">F27–F35</span><span class="ref">DESIGN.md §6</span><span class="ref">clips-playing.png</span><span class="ref">E2-perform-dark.png</span></div></div>
+  <figure class="fig" data-fig="live-rack">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">Two rows of a stage patch</span><span class="sub">true proportions</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div>Rack's <b>MIDI-Map</b> maps a controller to Perform once: faders to LEVEL, pads to ▶ and M, a foot switch to Tessera's REC. <span class="id">P3</span></div></li>
+      <li><b class="n">2</b><div><b>Perform</b>: banks of eight strips; its lights read in a dark room. <span class="id">P3</span></div></li>
+      <li><b class="n">3</b><div>The display says what is next ("NEXT 3 TIDE", amber) and that Perform keys are on. <span class="id">P2 S4 S5</span></div></li>
+      <li><b class="n">4</b><div>Vox's chain: <b>FX Loop</b> 1 sends to a delay and takes it back; BYPASS is mapped for a throw. <span class="id">P4</span></div></li>
+      <li><b class="n">5</b><div>The microphone comes in from the Audio module into Vox's Track Out IN; Vox records into slots (●). <span class="id">S1</span></div></li>
+      <li><b class="n">6</b><div>A shared reverb: Reverb's Track Out OUT → reverb → IN, fed by sends (unchanged, DECISIONS §97). <span class="id">—</span></div></li>
+      <li><b class="n">7</b><div><b>REC</b> runs the loop steps for armed audio tracks: record, close, overdub. <span class="id">P2 S1</span></div></li>
+    </ol>
+  </figure>
+  <figure class="fig" data-fig="live-perform">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">The perform view (F2 key), locked</span><span class="sub">1280 × 560</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div><b>Locked</b> (Ctrl+Shift+L): launching, mixing and recording work; edits to the song's content are refused. The pane's frame turns amber. <span class="id">S3</span></div></li>
+      <li><b class="n">2</b><div><b>Sections</b> group scenes into songs, each with its tempo and time signature. <span class="id">S4</span></div></li>
+      <li><b class="n">3</b><div><b>Next song</b> launches the next section's first scene at the launch line (Shift+] in the editor, NEXT SONG on Perform). <span class="id">S4</span></div></li>
+      <li><b class="n">4</b><div>A queued launch shows the <b>bars left</b> in its corner. <span class="id">S2</span></div></li>
+      <li><b class="n">5</b><div>Armed tracks show <b>●</b> in empty slots; a recording slot counts its bars. <span class="id">S1 S2</span></div></li>
+      <li><b class="n">6</b><div>A <b>stop column</b> after the last scene: one ■ per track. <span class="id">S2</span></div></li>
+      <li><b class="n">7</b><div><b>Scene follow</b>: "then next · 8 bars" lets a song walk its parts by itself. <span class="id">S4</span></div></li>
+      <li><b class="n">8</b><div>Perform rows are 44 px, so every row shows its level line; Vox shows its IN level in red. <span class="id">S2 R3</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="automation">
+  <div class="bandhead"><div class="eyebrow">Mixer and lanes · M4 S6</div><h2>Automation</h2>
+    <p>"Automation for all mixer elements (even children level, panning etc, in drums)", and "automation lanes to
+      control the other track's armed status". Every mixer control gets "Automate in the timeline", lanes open where
+      you would look for them, and two kinds of lane are new: switch lanes and song lanes.</p>
+    <div class="refs"><span class="ref">F21 F23</span><span class="ref">Automation.hpp:51</span><span class="ref">DECISIONS §109 §112 §115 §127</span></div></div>
+  <figure class="fig" data-fig="auto-lanes">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">Lanes for drum lanes, groups, switches and the song</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div>A <b>drum lane</b>'s level (and pan, and its new M) has a lane under the drum track, in the lane's colour. <span class="id">M4</span></div></li>
+      <li><b class="n">2</b><div>A <b>group</b>'s volume, pan and mute: lanes under the group's header. Groups have no arm, so these are drawn. <span class="id">M4</span></div></li>
+      <li><b class="n">3</b><div>A <b>Mute</b> switch lane: steps, with the usual fade; gates drop. <span class="id">S6</span></div></li>
+      <li><b class="n">4</b><div><b>Record · Vox</b> on a control track: switches another track, punching it in and out with no hands. <span class="id">S6</span></div></li>
+      <li><b class="n">5</b><div>A <b>Tempo</b> lane on the Master row: ramps allowed; the TEMPO knob follows; Stretch clips follow like tape while it moves. <span class="id">S6</span></div></li>
+      <li><b class="n">6</b><div><b>+ Add automation lane ▸ Switch</b>: Mute or Record, for this track or another. <span class="id">S6</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="two-editors">
+  <div class="bandhead"><div class="eyebrow">Editor layout · L1</div><h2>One view, two editors</h2>
+    <p>"State of the view between the panel view and the large editor should be consistent." What you look at becomes
+      one state shared by both editors; how big things are stays per editor, because the panel is 380 px tall.</p>
+    <div class="refs"><span class="ref">F36</span><span class="ref">EditorState.hpp:67-133</span><span class="ref">DECISIONS §15 §17</span></div></div>
+  <figure class="fig" data-fig="views-shared">
+    <div class="fig-head"><span class="tag prop">Proposed</span><span class="ttl">The same view at two sizes</span><button type="button" class="sizebtn">Actual size</button></div>
+    <div class="fit"><div class="stage"></div></div>
+    <ol class="callouts">
+      <li><b class="n">1</b><div><b>Shared</b>: which tracks show lanes, folded groups, drum lanes or keys, the lower lane, the perform view, the Takes rows. <span class="id">L1</span></div></li>
+      <li><b class="n">2</b><div><b>Shared</b>: Notes or Mixer, and Show sends. The mixer's layout follows each editor's height. <span class="id">L1 M1</span></div></li>
+      <li><b class="n">3</b><div><b>Per editor</b>: zoom, scroll, row and lane heights, the splitter, header width, inspector, device strip. An editor that appears scrolls to the selected track and the playhead. <span class="id">L1</span></div></li>
+    </ol>
+  </figure>
+</section>
+
+<section class="band" id="keys">
+  <div class="bandhead"><div class="eyebrow">Keys · checked against Shortcuts.cpp and EDITOR_UX §7</div><h2>Keys</h2>
+    <p>Every binding goes in the one action table, so the help overlay and the tooltips list it. One rule changes: a
+      binding scoped to the pane under the mouse wins over an Everywhere one, so the mixer and the audio editor can give
+      the arrows their own meaning. Today no Everywhere chord collides with a scoped one, so nothing that works now
+      changes.</p></div>
+  <div class="tablewrap"><table class="keys">
+    <thead><tr><th>Action</th><th>Key</th><th>Scope</th><th>Check</th></tr></thead>
+    <tbody>
+      <tr><td>Add audio track</td><td><kbd>Ctrl/Cmd+Alt+T</kbd></td><td>Everywhere</td><td>Free; AUDIO_MIXER.md §9.3 named it</td></tr>
+      <tr><td>Launch the picked scene</td><td><kbd>Enter</kbd></td><td>Everywhere</td><td>Free; text fields and the Tap popover keep their Enter</td></tr>
+      <tr><td>Stop all clips (at the launch line)</td><td><kbd>Shift+Enter</kbd></td><td>Everywhere</td><td>Free</td></tr>
+      <tr><td>Pick the scene before / after</td><td><kbd>[</kbd> <kbd>]</kbd></td><td>Everywhere</td><td>Free; Ctrl+[ ] stay zoom history; keyboard play doesn't use them</td></tr>
+      <tr><td>Previous / next song (section)</td><td><kbd>Shift+[</kbd> <kbd>Shift+]</kbd></td><td>Everywhere</td><td>Free</td></tr>
+      <tr><td>Lock editing</td><td><kbd>Ctrl/Cmd+Shift+L</kbd></td><td>Everywhere</td><td>Free; L is loop, Ctrl+L loop to selection</td></tr>
+      <tr><td>Level of the selected strips ±0.5 dB / ±0.1 dB</td><td><kbd>↑</kbd> <kbd>↓</kbd>, <kbd>Shift+↑</kbd> <kbd>Shift+↓</kbd></td><td>Mixer (new)</td><td>Wins over Transpose and Octave there</td></tr>
+      <tr><td>The strip before / after</td><td><kbd>←</kbd> <kbd>→</kbd></td><td>Mixer</td><td>Wins over Nudge there</td></tr>
+      <tr><td>Pan ±5% / ±1%</td><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd>, with Shift</td><td>Mixer</td><td>Wins over Select next note and Shorter / longer there</td></tr>
+      <tr><td>Selected strips to 0 dB</td><td><kbd>0</kbd></td><td>Mixer</td><td>Free</td></tr>
+      <tr><td>Pin hits to the grid / its settings</td><td><kbd>Q</kbd> / <kbd>Shift+Q</kbd></td><td>Audio editor (new)</td><td>The Quantize actions, same keys as for notes</td></tr>
+      <tr><td>Takes rows on or off</td><td><kbd>Alt+T</kbd></td><td>Audio editor</td><td>Free</td></tr>
+      <tr><td>Use the take above / below for the selected part</td><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Audio editor, Takes shown</td><td>Wins over Transpose there</td></tr>
+      <tr><td>Slice tool</td><td><kbd>C</kbd></td><td>Audio editor</td><td>Already the Slice key</td></tr>
+      <tr><td>Stop every clip now</td><td>Shift+click ■ Stop all; STOP ALL held 1 s</td><td>Mouse, panel</td><td>No key, on purpose</td></tr>
+      <tr><td>Perform keys, outside the editors (opt-in)</td><td><kbd>Space</kbd> <kbd>Enter</kbd> <kbd>Shift+Enter</kbd> <kbd>Page Up</kbd> <kbd>Page Down</kbd>, with Shift for songs</td><td>Anywhere in Rack, when nothing under the mouse uses the key</td><td>Avoids Rack's arrows (they scroll the rack), its Ctrl keys and the computer-keyboard MIDI rows; to check in the hidden Rack</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="band" id="questions">
+  <div class="bandhead"><div class="eyebrow">For the user · answer by number</div><h2>Open questions</h2>
+    <p>Each has a recommendation. Questions 2, 3, 4, 7 and 16 touch choices already recorded (DECISIONS §17, §77
+      with §119, §119, the open half of AUDIO_MIXER.md §12, §128).</p></div>
+  <ol class="qs">
+    <li><div class="qh"><span class="qn">1</span>The mixer when the pane is short</div><ul><li>(a) Compact strips, then tiles, then meters</li><li>(b) Under 150 px, hide it; use the rows' level bars</li><li>(c) Keep full strips and scroll up and down</li></ul><div class="rec"><b>Rec. (a)</b>: short panes keep pan, M, S and a usable fader.</div></li>
+    <li><div class="qh"><span class="qn">2</span>One view across both editors (against DECISIONS §17)</div><ul><li>(a) Share what you look at; sizes per editor</li><li>(b) Share everything, zoom and scroll too</li><li>(c) Keep separate; add "Match the other editor"</li></ul><div class="rec"><b>Rec. (a)</b>: answers the Trello card; the panel keeps its small sizes.</div></li>
+    <li><div class="qh"><span class="qn">3</span>Loop passes on audio tracks (against §77, §119)</div><ul><li>(a) Always takes on audio; Merge/Stack/Replace stay for notes</li><li>(b) One setting for both, Stack the new default</li><li>(c) As today</li></ul><div class="rec"><b>Rec. (a)</b>: losing passes silently is the worst a recorder can meet.</div></li>
+    <li><div class="qh"><span class="qn">4</span>Audio loops in slots (against §119)</div><ul><li>(a) Loop like notes, and overdub: each pass mixed with the loop into a new take; undo peels layers</li><li>(b) Loop like notes, no overdub: each pass a take, comped later</li><li>(c) As today</li></ul><div class="rec"><b>Rec. (a)</b>: it is what live looping is, and keeps "never layer".</div></li>
+    <li><div class="qh"><span class="qn">5</span>Hardware moves and undo</div><ul><li>(a) One undo step once the control rests a second</li><li>(b) Not undoable, like Rack's mapped knobs</li><li>(c) Only mouse drags on the module</li></ul><div class="rec"><b>Rec. (a)</b>: every edit stays undoable without flooding the list.</div></li>
+    <li><div class="qh"><span class="qn">6</span>The Perform module's shape</div><ul><li>(a) One 30 HP module, eight strips, banks</li><li>(b) A 4 HP strip per track, by each voice</li><li>(c) Both, (b) later</li></ul><div class="rec"><b>Rec. (a)</b>: eight sliders map once; banks reach 64 tracks.</div></li>
+    <li><div class="qh"><span class="qn">7</span>The effect chain's slot (AUDIO_MIXER.md §12)</div><ul><li>(a) A 5 HP FX Loop module: SEND, RETURN, WET, BYPASS</li><li>(b) A Track Out in an "effect slot" role</li><li>(c) Not now: patch effects in series between OUT and IN</li></ul><div class="rec"><b>Rec. (a)</b>: the panel says what it does; its controls map.</div></li>
+    <li><div class="qh"><span class="qn">8</span>What "global keyboard shortcuts" means</div><ul><li>(a) Opt-in Perform keys anywhere in Rack, editor closed</li><li>(b) Editor keys that ignore which pane the mouse is over</li><li>(c) Keys you can remap (EDITOR_UX §7's v1.1 item)</li></ul><div class="rec"><b>Rec. (a) now, (c) later</b>: (b) breaks the scoped keys.</div></li>
+    <li><div class="qh"><span class="qn">9</span>A set of songs</div><ul><li>(a) Sections in one song, Next song, scene follow</li><li>(b) CV picks an output module's Tessera and track, at a launch line, gates dropped first, "CV" on its screen</li><li>(c) A set list of project files, preloaded and swapped</li></ul><div class="rec"><b>Rec. (a)</b>, then (b) for separate patches per song.</div></li>
+    <li><div class="qh"><span class="qn">10</span>Metronome when an audio track is first armed</div><ul><li>(a) Switch to Count-in only, and say so</li><li>(b) Leave it Off</li><li>(c) Ask once</li></ul><div class="rec"><b>Rec. (a)</b>.</div></li>
+    <li><div class="qh"><span class="qn">11</span>Switch lanes</div><ul><li>(a) Under their track, with "Switches: another track"</li><li>(b) Only their own track</li><li>(c) Only on the Master row, aimed at any track</li></ul><div class="rec"><b>Rec. (a)</b>: lanes stay where people look.</div></li>
+    <li><div class="qh"><span class="qn">12</span>Slice to a drum track (Tessera plays slices from drum lanes)</div><ul><li>(a) Build it, in Phase 4</li><li>(b) No: timeline chops and Make triggers for rack samplers</li></ul><div class="rec"><b>Rec. (a)</b>: the classic way to make a beat from a break.</div></li>
+    <li><div class="qh"><span class="qn">13</span>EOC per track</div><ul><li>(a) A jack beside AUTO, on Drum Out's poly row, and per Perform strip</li><li>(b) A ninth channel on the AUTO poly jack</li><li>(c) Only on Perform</li></ul><div class="rec"><b>Rec. (a)</b>.</div></li>
+    <li><div class="qh"><span class="qn">14</span>What Lock editing locks</div><ul><li>(a) The song's content; performing and mixing stay live</li><li>(b) Mixer and tempo too: only launching stays</li><li>(c) No lock; undo is enough</li></ul><div class="rec"><b>Rec. (a)</b>.</div></li>
+    <li><div class="qh"><span class="qn">15</span>The first loop on the timeline</div><ul><li>(a) Set the song loop around it and turn it on</li><li>(b) Lengthen the clip to 8 bars</li><li>(c) As today</li></ul><div class="rec"><b>Rec. (a)</b>: it cycles at once; one undo takes it back.</div></li>
+    <li><div class="qh"><span class="qn">16</span>Warp markers and the clip's window (against §128)</div><ul><li>(a) Window and edges drag with markers, which move with the window; tempo drag stays off</li><li>(b) As built: all locked until the markers go</li></ul><div class="rec"><b>Rec. (a)</b>: trimming a warped loop shouldn't lose its warp.</div></li>
+  </ol>
+</section>
+
+
+</div>
+
+<script>
+(() => {
+'use strict';
+// ------------------------------------------------------------------------------------------------ helpers
+const MM = 75 / 25.4;                   // Rack: px per mm at 100% zoom
+const C = i => `var(--c${i})`;          // a track colour from the ring
+const mix = (a, p, b = 'var(--t-bg0)') => `color-mix(in srgb, ${a} ${p}%, ${b})`;
+const f2 = n => (+n).toFixed(2);
+function rng(seed) {
+  let s = (seed * 2654435761) >>> 0 || 1;
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+}
+const B = {};                           // figure builders, by data-fig
+
+// ------------------------------------------------------------------------------------------------ waveforms
+// Min/max per column, mirrored: the look of AudioClipDraw. kind picks the shape of the sound.
+function waveAmps(n, o = {}) {
+  const r = rng(o.seed || 1), amps = [];
+  const beats = (o.bars || 2) * 4, per = n / beats;
+  const pat = o.pattern || [1, .35, .78, .4, .95, .38, .8, .5];
+  for (let i = 0; i < n; i++) {
+    let a;
+    const kind = o.kind || 'drums';
+    if (kind === 'drums') {
+      const pos = i / per * 2, step = Math.floor(pos), fr = pos - step;
+      a = pat[step % pat.length] * Math.exp(-fr * 4.2) * (0.78 + 0.22 * r());
+    } else if (kind === 'vocal') {
+      const ph = 0.5 + 0.5 * Math.sin(i / n * Math.PI * (o.phrases || 3) * 2 - 1.2);
+      a = ph > 0.3 ? ph * (0.55 + 0.45 * r()) * (0.7 + 0.3 * Math.sin(i * 0.37)) : 0.02 + 0.03 * r();
+    } else if (kind === 'guitar') {
+      const pos = (i / per) % 2; a = Math.exp(-pos * 1.3) * (0.65 + 0.35 * r());
+    } else { a = 0.5 + 0.12 * Math.sin(i / n * 9) + 0.12 * r(); }
+    amps.push(Math.max(0.025, Math.min(1, a * (o.gain || 1))));
+  }
+  return amps;
+}
+function wavePath(w, h, o = {}) {
+  const n = Math.max(12, Math.floor(w / (o.res || 1.6))), amps = waveAmps(n, o), mid = h / 2, dx = w / (n - 1), k = mid * 0.94;
+  let p = `M0 ${f2(mid)}`;
+  for (let i = 0; i < n; i++) p += `L${f2(i * dx)} ${f2(mid - amps[i] * k)}`;
+  for (let i = n - 1; i >= 0; i--) p += `L${f2(i * dx)} ${f2(mid + amps[i] * k)}`;
+  return p + 'Z';
+}
+function wave(w, h, fill, o = {}, alpha = 0.85) {
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><path d="${wavePath(w, h, o)}" fill="${fill}" fill-opacity="${alpha}"/></svg>`;
+}
+
+// ------------------------------------------------------------------------------------------------ small glyphs
+function ic(name, size = 12, col = 'currentColor') {
+  const s = size, h = s / 2;
+  const g = {
+    play: `<path d="M${s * .25} ${s * .15}L${s * .85} ${h}L${s * .25} ${s * .85}Z" fill="${col}"/>`,
+    stop: `<rect x="${s * .22}" y="${s * .22}" width="${s * .56}" height="${s * .56}" rx="1" fill="${col}"/>`,
+    rec: `<circle cx="${h}" cy="${h}" r="${s * .32}" fill="${col}"/>`,
+    loop: `<path d="M${s * .2} ${s * .55}a${s * .3} ${s * .3} 0 0 1 ${s * .3}-${s * .3}h${s * .2}M${s * .8} ${s * .45}a${s * .3} ${s * .3} 0 0 1-${s * .3} ${s * .3}h-${s * .2}" stroke="${col}" stroke-width="1.4" fill="none"/><path d="M${s * .62} ${s * .12}l${s * .14} ${s * .13}l-${s * .14} ${s * .13}M${s * .38} ${s * .62}l-${s * .14} ${s * .13}l${s * .14} ${s * .13}" stroke="${col}" stroke-width="1.4" fill="none"/>`,
+    down: `<path d="M${s * .28} ${s * .4}L${h} ${s * .64}L${s * .72} ${s * .4}" stroke="${col}" stroke-width="1.4" fill="none"/>`,
+    lock: `<rect x="${s * .2}" y="${s * .45}" width="${s * .6}" height="${s * .42}" rx="1.5" fill="${col}"/><path d="M${s * .32} ${s * .46}v-${s * .12}a${s * .18} ${s * .18} 0 0 1 ${s * .36} 0v${s * .12}" stroke="${col}" stroke-width="1.4" fill="none"/>`,
+    max: `<path d="M${s * .55} ${s * .2}h${s * .25}v${s * .25}M${s * .45} ${s * .8}h-${s * .25}v-${s * .25}M${s * .8} ${s * .2}l-${s * .22} ${s * .22}M${s * .2} ${s * .8}l${s * .22}-${s * .22}" stroke="${col}" stroke-width="1.3" fill="none"/>`,
+    ptr: `<path d="M${s * .3} ${s * .15}L${s * .3} ${s * .8}L${s * .45} ${s * .64}L${s * .58} ${s * .88}L${s * .66} ${s * .84}L${s * .54} ${s * .6}L${s * .74} ${s * .58}Z" fill="${col}"/>`,
+    pen: `<path d="M${s * .22} ${s * .78}l${s * .1}-${s * .28}l${s * .38}-${s * .38}l${s * .18} ${s * .18}l-${s * .38} ${s * .38}z" fill="${col}"/>`,
+    cut: `<path d="M${h} ${s * .1}V${s * .9}" stroke="${col}" stroke-width="1.4"/><circle cx="${h}" cy="${h}" r="${s * .14}" fill="${col}"/>`,
+    spk: `<path d="M${s * .18} ${s * .4}h${s * .16}l${s * .2}-${s * .18}v${s * .56}l-${s * .2}-${s * .18}h-${s * .16}z" fill="${col}"/><path d="M${s * .66} ${s * .34}a${s * .2} ${s * .2} 0 0 1 0 ${s * .32}" stroke="${col}" stroke-width="1.2" fill="none"/>`,
+    x: `<path d="M${s * .25} ${s * .25}L${s * .75} ${s * .75}M${s * .75} ${s * .25}L${s * .25} ${s * .75}" stroke="${col}" stroke-width="1.4"/>`,
+    undo: `<path d="M${s * .3} ${s * .35}h${s * .32}a${s * .2} ${s * .2} 0 0 1 0 ${s * .4}h-${s * .3}M${s * .3} ${s * .35}l${s * .14}-${s * .14}M${s * .3} ${s * .35}l${s * .14} ${s * .14}" stroke="${col}" stroke-width="1.3" fill="none"/>`,
+    redo: `<path d="M${s * .7} ${s * .35}h-${s * .32}a${s * .2} ${s * .2} 0 0 0 0 ${s * .4}h${s * .3}M${s * .7} ${s * .35}l-${s * .14}-${s * .14}M${s * .7} ${s * .35}l-${s * .14} ${s * .14}" stroke="${col}" stroke-width="1.3" fill="none"/>`,
+    follow: `<path d="M${s * .2} ${s * .2}v${s * .6}M${s * .35} ${h}h${s * .45}M${s * .62} ${s * .32}l${s * .18} ${s * .18}l-${s * .18} ${s * .18}" stroke="${col}" stroke-width="1.3" fill="none"/>`,
+    insp: `<rect x="${s * .18}" y="${s * .2}" width="${s * .64}" height="${s * .6}" rx="1.5" stroke="${col}" stroke-width="1.2" fill="none"/><path d="M${s * .58} ${s * .2}v${s * .6}" stroke="${col}" stroke-width="1.2"/>`,
+    chev: `<path d="M${s * .4} ${s * .25}L${s * .64} ${h}L${s * .4} ${s * .75}" stroke="${col}" stroke-width="1.4" fill="none"/>`,
+  };
+  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="display:inline-block;vertical-align:middle;flex:none">${g[name] || ''}</svg>`;
+}
+
+// ------------------------------------------------------------------------------------------------ panel parts (mm)
+const lc = n => ({ play: 'var(--t-play)', record: 'var(--t-record)', accent: 'var(--t-accent)', queue: 'var(--t-queue)',
+  select: 'var(--t-select)', green: 'var(--t-play)' }[n] || n);
+const PL = {
+  plate: (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.35" fill="var(--t-bg2)"/>`,
+  box(x, y, w, h, title) {
+    const tw = title.length * 1.75 + 2;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.35" fill="none" stroke="var(--t-line2)" stroke-width=".34"/>` +
+      `<rect x="${f2(x + w / 2 - tw / 2)}" y="${y - .9}" width="${f2(tw)}" height="1.8" fill="var(--t-bg1)"/>` +
+      `<text x="${f2(x + w / 2)}" y="${f2(y + .9)}" class="pl sec">${title}</text>`;
+  },
+  label: (x, y, t, cls = '') => `<text x="${f2(x)}" y="${f2(y)}" class="pl ${cls}">${t}</text>`,
+  jack(x, y, label, o = {}) {
+    let s = label ? `<text x="${f2(x)}" y="${f2(y - 6.4)}" class="pl${o.out ? ' out' : ''}">${label}</text>` : '';
+    s += `<circle cx="${f2(x)}" cy="${f2(y)}" r="3.85" fill="var(--metal-a)"/><circle cx="${f2(x)}" cy="${f2(y)}" r="3.2" fill="var(--metal-b)"/>` +
+      `<circle cx="${f2(x)}" cy="${f2(y)}" r="2.35" fill="var(--knob)"/><circle cx="${f2(x)}" cy="${f2(y)}" r="1.5" fill="var(--hole)"/>`;
+    if (o.dim) s += `<rect x="${f2(x - 5.6)}" y="${f2(y - 8.8)}" width="11.2" height="13.4" rx="1.2" fill="${o.ground || 'var(--t-bg2)'}" fill-opacity=".7"/>`;
+    if (o.warn) s += `<circle cx="${f2(x)}" cy="${f2(y)}" r="4.4" fill="none" stroke="var(--t-queue)" stroke-width=".55"/>`;
+    if (o.hl) s += `<circle cx="${f2(x)}" cy="${f2(y)}" r="5" fill="none" stroke="var(--note)" stroke-width=".5" stroke-dasharray="1.1 .7"/>`;
+    return s;
+  },
+  btn(x, y, label, o = {}) {
+    const r = o.r || 3.1;
+    let s = `<circle cx="${f2(x)}" cy="${f2(y)}" r="${r}" fill="var(--knob)" stroke="var(--knob-rim)" stroke-width=".4"/>`;
+    if (o.light) {
+      if (o.on) s += `<circle cx="${f2(x)}" cy="${f2(y)}" r="${f2(r * .95)}" fill="${lc(o.light)}" fill-opacity=".28"/>`;
+      s += `<circle cx="${f2(x)}" cy="${f2(y)}" r="${f2(r * .55)}" fill="${o.on ? lc(o.light) : 'var(--knob-rim)'}"/>`;
+    }
+    if (o.hl) s += `<circle cx="${f2(x)}" cy="${f2(y)}" r="${f2(r + 1.2)}" fill="none" stroke="var(--note)" stroke-width=".45" stroke-dasharray="1.1 .7"/>`;
+    if (label) s += `<text x="${f2(x)}" y="${f2(y + r + (o.gap || 4.2))}" class="pl">${label}</text>`;
+    return s;
+  },
+  knob(x, y, label, o = {}) {
+    const r = o.r || 6, v = o.val ?? .5, a = (-135 + 270 * v) * Math.PI / 180;
+    const px = x + Math.sin(a) * r * .74, py = y - Math.cos(a) * r * .74;
+    let s = `<circle cx="${f2(x)}" cy="${f2(y)}" r="${r}" fill="var(--knob)" stroke="var(--knob-rim)" stroke-width=".45"/>` +
+      `<circle cx="${f2(x)}" cy="${f2(y)}" r="${f2(r * .76)}" fill="none" stroke="var(--knob-rim)" stroke-width=".25"/>` +
+      `<line x1="${f2(x)}" y1="${f2(y)}" x2="${f2(px)}" y2="${f2(py)}" stroke="var(--metal-b)" stroke-width="${r > 4 ? .7 : .5}" stroke-linecap="round"/>`;
+    if (label) s += `<text x="${f2(x)}" y="${f2(y + r + (o.gap || 3.9))}" class="pl">${label}</text>`;
+    return s;
+  },
+  slider(x, y0, len, v, o = {}) {
+    const hy = y0 + len * (1 - v);
+    let s = `<rect x="${f2(x - .9)}" y="${f2(y0)}" width="1.8" height="${f2(len)}" rx=".9" fill="var(--hole)"/>`;
+    if (o.zero != null) { const zy = y0 + len * (1 - o.zero); s += `<line x1="${f2(x - 3.1)}" x2="${f2(x - 1.5)}" y1="${f2(zy)}" y2="${f2(zy)}" stroke="var(--t-text2)" stroke-width=".3"/>`; }
+    if (o.meter != null) {
+      const n = 12, step = len / n;
+      for (let i = 0; i < n; i++) {
+        const yy = y0 + len - (i + 1) * step + .3, on = i < Math.round(o.meter * n);
+        const col = i >= n - 1 ? 'var(--t-record)' : i >= n - 3 ? 'var(--t-queue)' : 'var(--t-play)';
+        s += `<rect x="${f2(x + 2.4)}" y="${f2(yy)}" width="1.1" height="${f2(step - .6)}" rx=".2" fill="${on ? col : 'var(--knob-rim)'}"/>`;
+      }
+    }
+    s += `<rect x="${f2(x - 2.9)}" y="${f2(hy - 2.1)}" width="5.8" height="4.2" rx=".7" fill="var(--knob-rim)" stroke="var(--knob)" stroke-width=".3"/>` +
+      `<rect x="${f2(x - 2.1)}" y="${f2(hy - .25)}" width="4.2" height=".5" fill="${o.light || 'var(--metal-b)'}"/>`;
+    return s;
+  },
+  screen: (x, y, w, h, inner = '') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1" fill="var(--s-bg0)" stroke="var(--s-line)" stroke-width=".3"/>${inner}`,
+  step(cx, cy, w, h, dir) {
+    const x = cx - w / 2, y = cy - h / 2, d = dir === '<' ? -1 : 1;
+    return `<rect x="${f2(x)}" y="${f2(y)}" width="${w}" height="${h}" rx="1" fill="var(--t-bg2)"/>` +
+      `<path d="M${f2(cx - .7 * d)} ${f2(cy - 1.3)}L${f2(cx + .7 * d)} ${f2(cy)}L${f2(cx - .7 * d)} ${f2(cy + 1.3)}" stroke="var(--t-text1)" stroke-width=".45" fill="none"/>`;
+  },
+  light: (x, y, col, r = .95) => `<circle cx="${f2(x)}" cy="${f2(y)}" r="${r}" fill="${col}"/>`,
+};
+function screw(x, y) {
+  return `<circle cx="${f2(x)}" cy="${f2(y)}" r="1.95" fill="var(--metal-a)"/><circle cx="${f2(x)}" cy="${f2(y)}" r="1.5" fill="var(--metal-b)"/>` +
+    `<line x1="${f2(x - 1.1)}" y1="${f2(y + .5)}" x2="${f2(x + 1.1)}" y2="${f2(y - .5)}" stroke="var(--metal-a)" stroke-width=".45"/>`;
+}
+function panelSVG(hp, title, body) {
+  const w = hp * 5.08, h = 128.5;
+  const sc = hp >= 10 ? [[7.62, 2.54], [w - 7.62, 2.54], [7.62, h - 2.54], [w - 7.62, h - 2.54]] : [[7.62, 2.54], [w - 7.62, h - 2.54]];
+  return `<rect width="${f2(w)}" height="${h}" fill="var(--t-bg1)"/><rect x=".17" y=".17" width="${f2(w - .34)}" height="${h - .34}" fill="none" stroke="var(--t-line0)" stroke-width=".34"/>` +
+    sc.map(([a, b]) => screw(a, b)).join('') + `<text x="${f2(w / 2)}" y="8.5" class="pt">${title}</text>${body}`;
+}
+function otherSVG(hp, title, body) {      // a module by someone else: plain grey, its own lettering
+  const w = hp * 5.08, h = 128.5;
+  const sc = hp >= 10 ? [[7.62, 2.54], [w - 7.62, 2.54], [7.62, h - 2.54], [w - 7.62, h - 2.54]] : [[7.62, 2.54], [w - 7.62, h - 2.54]];
+  return `<rect width="${f2(w)}" height="${h}" fill="var(--o-bg)"/><rect x=".17" y=".17" width="${f2(w - .34)}" height="${h - .34}" fill="none" stroke="var(--o-line)" stroke-width=".34"/>` +
+    sc.map(([a, b]) => screw(a, b)).join('') + `<text x="${f2(w / 2)}" y="9" class="ot">${title}</text>${body}`;
+}
+const oLabel = (x, y, t) => `<text x="${f2(x)}" y="${f2(y)}" class="ol">${t}</text>`;
+
+// ------------------------------------------------------------------------------------------------ racks
+// rows: [[{hp, svg, gap}], ...]; cables: {a:[row,i,xmm,ymm], b:[...], col, sag}
+function rack(rows, o = {}) {
+  const pad = o.pad ?? 14, top = o.top ?? 16, rowH = 128.5 * MM, between = o.between ?? 30;
+  const placed = [];
+  let W = 0;
+  rows.forEach((row, r) => {
+    let x = pad;
+    const y = top + r * (rowH + between);
+    placed.push(row.map(m => { const p = { ...m, x, y }; x += m.hp * 15 + (m.gap ?? 2); return p; }));
+    W = Math.max(W, x - 2 + pad);
+  });
+  if (o.minW) W = Math.max(W, o.minW);
+  const H = top + rows.length * rowH + (rows.length - 1) * between + (o.bottom ?? 16);
+  const at = (r, i, xm, ym) => [placed[r][i].x + xm * MM, placed[r][i].y + ym * MM];
+  let s = `<svg class="rack" width="${f2(W)}" height="${f2(H)}" viewBox="0 0 ${f2(W)} ${f2(H)}"><rect width="${f2(W)}" height="${f2(H)}" fill="var(--rack)"/>`;
+  rows.forEach((row, r) => {
+    const y = top + r * (rowH + between);
+    s += `<rect x="0" y="${f2(y - 5)}" width="${f2(W)}" height="9" fill="var(--rail)" fill-opacity=".55"/><rect x="0" y="${f2(y + rowH - 4)}" width="${f2(W)}" height="9" fill="var(--rail)" fill-opacity=".55"/>`;
+  });
+  placed.flat().forEach(m => {
+    s += `<svg x="${f2(m.x)}" y="${f2(m.y)}" width="${m.hp * 15}" height="${f2(rowH)}" viewBox="0 0 ${f2(m.hp * 5.08)} 128.5" class="pnl">${m.svg}</svg>`;
+  });
+  (o.cables || []).forEach(c => { s += cable(at(...c.a), at(...c.b), c.col, c.sag); });
+  s += '</svg>';
+  return { svg: s, W, H, at };
+}
+function cable([x1, y1], [x2, y2], col, sag) {
+  const d = Math.hypot(x2 - x1, y2 - y1), s = sag ?? Math.min(130, 28 + d * .28);
+  const p = `M${f2(x1)} ${f2(y1)}C${f2(x1)} ${f2(y1 + s)} ${f2(x2)} ${f2(y2 + s)} ${f2(x2)} ${f2(y2)}`;
+  return `<path d="${p}" fill="none" stroke="var(--shadow)" stroke-width="6.5" stroke-linecap="round" transform="translate(1.5 3)"/>` +
+    `<path d="${p}" fill="none" stroke="${col}" stroke-width="4.2" stroke-linecap="round" opacity=".93"/>` +
+    plug(x1, y1, col) + plug(x2, y2, col);
+}
+const plug = (x, y, col) => `<circle cx="${f2(x)}" cy="${f2(y)}" r="5.8" fill="${col}"/><circle cx="${f2(x)}" cy="${f2(y)}" r="2.6" fill="var(--shadow)"/>`;
+const pin = (x, y, n) => `<i class="pin" style="left:${f2(x)}px;top:${f2(y)}px">${n}</i>`;
+
+// ------------------------------------------------------------------------------------------------ modules
+// Tessera, 26 HP (TesseraWidget.cpp). d: the display's state.
+function tessDisplay(d = {}) {
+  const L = 6, T = 13, R = 126.08;
+  let s = `<text x="${L + 3}" y="${T + 5.3}" class="ds b">${d.name || 'Tessera'}</text>`;
+  let rx = R - 3;
+  const pill = d.mode === 'timeline' ? '▶ TIMELINE' : 'CLIPS', pw = pill.length * 1.45 + 3.4;
+  s += `<rect x="${f2(rx - pw)}" y="${T + 2.4}" width="${f2(pw)}" height="3.9" rx="1.95" fill="var(--s-bg1)"/>` +
+    `<text x="${f2(rx - pw / 2)}" y="${T + 5.1}" class="ds sm c" style="fill:${d.playing ? 'var(--s-play)' : 'var(--s-text2)'}">${pill}</text>`;
+  rx -= pw + 1.6;
+  if (d.keys) {
+    s += `<rect x="${f2(rx - 8.6)}" y="${T + 2.4}" width="8.6" height="3.9" rx="1.95" fill="none" stroke="var(--s-accent)" stroke-width=".3"/>` +
+      `<text x="${f2(rx - 4.3)}" y="${T + 5.1}" class="ds sm c" style="fill:var(--s-accent)">KEYS</text>`;
+    rx -= 10.2;
+  }
+  s += `<text x="${f2(rx)}" y="${T + 5.1}" class="ds sm r"${d.sceneCol ? ` style="fill:${d.sceneCol}"` : ''}>${d.scene || 'SCENE 1 INTRO'}</text>`;
+  // the song in small: one row per track, a cell per scene (clips) with the playing ones bright
+  const rows = d.rows || [];
+  rows.forEach((row, i) => {
+    const y = T + 8 + i * 2.3;
+    s += `<rect x="${L + 1.6}" y="${f2(y)}" width="1.6" height="1.7" rx=".3" fill="${C(row.c)}"/>`;
+    row.cells.forEach((cell, k) => {
+      const x = L + 4.4 + k * 14.2;
+      const fill = cell === 0 ? 'var(--s-bg1)' : C(row.c);
+      const op = cell === 2 ? 1 : cell === 3 ? .9 : cell === 1 ? .38 : 1;
+      s += `<rect x="${f2(x)}" y="${f2(y)}" width="13.4" height="1.7" rx=".3" fill="${fill}" fill-opacity="${op}"/>`;
+      if (cell === 3) s += `<rect x="${f2(x - .35)}" y="${f2(y - .35)}" width="14.1" height="2.4" rx=".5" fill="none" stroke="var(--s-queue)" stroke-width=".35"/>`;
+    });
+  });
+  // the selected clip's notes
+  const ny = T + 8 + Math.max(rows.length, 4) * 2.3 + .8, nh = 27.2 - (ny - T);
+  s += `<rect x="${L + 1.6}" y="${f2(ny)}" width="116.9" height="${f2(nh)}" fill="var(--s-bg1)" fill-opacity=".55"/>`;
+  const r = rng(7);
+  for (let i = 0; i < 14; i++) {
+    const nx = L + 3 + i * 8.2, nyy = ny + 1 + r() * (nh - 2.6);
+    s += `<rect x="${f2(nx)}" y="${f2(nyy)}" width="${f2(3 + r() * 4)}" height="1" rx=".3" fill="${C(d.selC ?? 12)}" fill-opacity=".9"/>`;
+  }
+  // the bottom line, or a message in its place
+  const by = T + 31.4;
+  if (d.msg) {
+    s += `<circle cx="${L + 3.3}" cy="${f2(by - .9)}" r=".95" fill="${d.msg.warn ? 'var(--s-queue)' : 'var(--s-accent)'}"/>` +
+      `<text x="${L + 5.2}" y="${f2(by)}" class="ds msg">${d.msg.text}</text>`;
+  } else {
+    s += `<text x="${L + 3}" y="${f2(by + .2)}" class="ds mono">${d.pos || '1.1.1'}</text>`;
+    s += `<rect x="${L + 47}" y="${f2(by - 2.1)}" width="2" height="2" rx=".4" fill="${C(d.selC ?? 12)}"/><text x="${L + 50}" y="${f2(by)}" class="ds" style="font-weight:600;fill:var(--s-text0)">${d.sel || 'Lead · Hook'}</text>`;
+    s += `<text x="${f2(R - 9)}" y="${f2(by + .2)}" class="ds mono r">${d.bpm || '112.0'}</text><text x="${f2(R - 3)}" y="${f2(by)}" class="ds sm r">BPM</text>`;
+  }
+  return s;
+}
+function mainMeter(level = 0) {
+  let s = '';
+  for (const x of [128.3, 129.6]) for (let i = 0; i < 10; i++) {
+    const y = 119.4 - (i + 1) * 3.25 + .4, on = i < Math.round(level * 10);
+    const col = i >= 9 ? 'var(--t-record)' : i >= 7 ? 'var(--t-queue)' : 'var(--t-play)';
+    s += `<rect x="${x}" y="${f2(y)}" width=".95" height="2.85" rx=".2" fill="${on ? col : 'var(--knob-rim)'}"/>`;
+  }
+  return s;
+}
+function tesseraPanel(o = {}) {
+  const b = [], cr = 57, sr = 72, r1 = 95.5, r2 = 113;
+  b.push(PL.screen(6, 13, 120.08, 34, tessDisplay(o.display)));
+  b.push(PL.btn(12, cr, 'PLAY', { light: 'play', on: o.playing }), PL.btn(25, cr, 'REC', { light: 'record', on: o.rec, hl: o.hlRec }),
+    PL.btn(38, cr, 'RESET'), PL.btn(51, cr, 'LOOP', { light: 'accent', on: o.loop }), PL.btn(64, cr, 'TAP', { light: 'accent' }));
+  b.push(`<rect x="69.5" y="53.5" width="15" height="7" rx="1.2" fill="var(--t-accent)"/><text x="77" y="58" class="pl" style="fill:var(--t-ink);font-size:2.7px">EDITOR</text>`);
+  b.push(PL.knob(108, 58, 'TEMPO', { r: 6, val: o.tempoVal ?? .3 }));
+  b.push(PL.btn(12, sr, 'PREV'), PL.btn(25, sr, 'NEXT'), PL.btn(38, sr, 'LAUNCH', { light: 'queue', on: o.queued }),
+    PL.btn(54, sr, 'STOP ALL', { hl: o.hlStop }), PL.btn(93, sr, 'FILL', { light: 'queue' }));
+  const clips = o.mode !== 'timeline';
+  b.push(`<rect x="64" y="68.75" width="24" height="6.5" rx="1.3" fill="var(--knob)"/><rect x="${clips ? 64.45 : 76}" y="69.2" width="11.55" height="5.6" rx="1.1" fill="var(--t-play)"/>` +
+    `<text x="70.2" y="72.95" class="pl" style="font-size:2.15px;fill:${clips ? 'var(--t-ink)' : 'var(--metal-a)'}">CLIPS</text>` +
+    `<text x="81.8" y="72.95" class="pl" style="font-size:2.15px;fill:${clips ? 'var(--metal-a)' : 'var(--t-ink)'}">TIMELINE</text>` +
+    `<text x="76" y="79.6" class="pl">PLAYS</text>`);
+  [['CLOCK', 12], ['RESET', 25], ['RUN', 38]].forEach(([l, x]) => b.push(PL.jack(x, r1, l)));
+  [['SCENE', 12], ['LAUNCH', 25], ['FILL', 38]].forEach(([l, x]) => b.push(PL.jack(x, r2, l)));
+  b.push(PL.box(45.5, 84, 27.5, 37.5, 'RECORD'));
+  b.push(PL.jack(53, r1, 'V/OCT'), PL.jack(65.5, r1, 'GATE'), PL.jack(53, r2, 'VEL'), PL.jack(65.5, r2, 'AUTO'));
+  b.push(PL.plate(77, 84, 53, 37.5));
+  [['CLOCK', 84], ['RESET', 97], ['RUN', 110]].forEach(([l, x]) => b.push(PL.jack(x, r1, l, { out: 1 })));
+  [['EOC', 84], ['BAR', 97], ['CLICK', 110]].forEach(([l, x]) => b.push(PL.jack(x, r2, l, { out: 1 })));
+  b.push(`<line x1="116.5" y1="87" x2="116.5" y2="119" stroke="var(--t-line2)" stroke-width=".25"/>`);
+  b.push(PL.jack(122.6, r1, 'MAIN L', { out: 1 }), PL.jack(122.6, r2, 'MAIN R', { out: 1 }));
+  b.push(mainMeter(o.main ?? 0));
+  if (o.mainDot) b.push(`<circle cx="129.1" cy="85.4" r=".85" fill="var(--t-queue)"/>`);
+  return panelSVG(26, 'TESSERA', b.join(''));
+}
+// Track Out, 6 HP (TrackOutWidget.cpp). o.proposed adds EOC and the state corners.
+function trackOutPanel(o = {}) {
+  const b = [], L = 9, R = 21.48, Cx = 15.24, rows = [47.5, 60.7, 73.9, 87.1];
+  const c = o.c ?? 10, master = o.kind === 'master';
+  let disp = `<rect x="3" y="11" width="24.48" height="1" fill="${master ? 'var(--s-text1)' : C(c)}" fill-opacity="${o.stopped ? .45 : 1}"/>` +
+    `<text x="15.24" y="16.1" class="ds c" style="font-size:2.3px">${o.src || 'Tessera'}</text>` +
+    `<text x="15.24" y="24.2" class="ds c big" style="fill:${master ? 'var(--s-text0)' : C(c)};fill-opacity:${o.mute ? .5 : 1}">${o.num ?? 1}</text>` +
+    `<text x="15.24" y="27.6" class="ds c nm">${o.name || 'Bass'}</text>`;
+  if (o.corners) {
+    disp += `<text x="3.9" y="15.6" class="ds sm" style="font-size:1.95px;fill:${o.stopped ? 'var(--s-text2)' : 'var(--s-play)'}">${o.stopped ? '■' : '▶ ' + (o.bar || '3/4')}</text>`;
+    const st = [];
+    if (o.mute) st.push('<tspan style="fill:var(--s-queue)">M</tspan>');
+    if (o.solo) st.push('<tspan style="fill:var(--s-accent)">S</tspan>');
+    if (o.arm) st.push(`<tspan style="fill:var(--s-record)">${o.recording ? '●' : '○'}</tspan>`);
+    if (st.length) disp += `<text x="26.6" y="15.6" class="ds sm r" style="font-size:1.95px">${st.join(' ')}</text>`;
+  }
+  b.push(PL.screen(3, 11, 24.48, 18, disp));
+  b.push(PL.step(L, 33.25, 9.5, 6, '<'), PL.step(R, 33.25, 9.5, 6, '>'));
+  b.push(PL.plate(2.5, 38.5, 25.48, 53.5), PL.plate(2.5, 93, 25.48, 31), PL.label(Cx, 96.4, 'AUDIO', 'sec'));
+  const noteDim = o.kind === 'audio' || master;
+  [['V/OCT', L, 0], ['GATE', R, 0], ['VEL', L, 1], ['REL', R, 1], ['TIMB', L, 2], ['PRESS', R, 2]]
+    .forEach(([l, x, k]) => b.push(PL.jack(x, rows[k], l, { out: 1, dim: noteDim })));
+  if (o.proposed) b.push(PL.jack(L, rows[3], 'AUTO', { out: 1 }), PL.jack(R, rows[3], 'EOC', { out: 1, hl: o.hl }));
+  else b.push(PL.jack(Cx, rows[3], 'AUTO', { out: 1 }));
+  const outDim = o.kind === 'inst' && !o.sends;
+  b.push(PL.jack(L, 106, 'OUT L', { out: 1, dim: outDim }), PL.jack(R, 106, 'OUT R', { out: 1, dim: outDim }));
+  b.push(PL.jack(L, 119.5, 'IN L'), PL.jack(R, 119.5, 'IN R'));
+  b.push(PL.light(Cx, 119.5, o.inLight ? 'var(--t-play)' : 'var(--knob-rim)'));
+  return panelSVG(6, 'TRACK OUT', b.join(''));
+}
+// Drum Out, 20 HP (DrumOutWidget.cpp).
+const LANE_C = [0, 5, 10, 15, 4, 9, 14, 3];
+function drumOutPanel(o = {}) {
+  const b = [];
+  let disp = `<rect x="4" y="10.5" width="54" height="1" fill="${C(6)}"/><text x="31" y="15.6" class="ds c" style="font-size:2.3px">Tessera</text>` +
+    `<text x="31" y="24.3" class="ds c big" style="fill:${C(6)}">4</text><text x="31" y="28.2" class="ds c nm">Drums</text>`;
+  if (o.proposed) disp += `<text x="5.2" y="15.4" class="ds sm" style="font-size:1.95px;fill:var(--s-play)">▶ 2/2</text>`;
+  b.push(PL.screen(4, 10.5, 54, 20, disp));
+  b.push(PL.step(23, 37.5, 12, 6, '<'), PL.step(39, 37.5, 12, 6, '>'));
+  b.push(PL.plate(60.5, 10.5, 38.6, 31.5), PL.label(79.8, 14.6, 'AUDIO', 'sec'), PL.label(81, 18.9, 'L', 'out'), PL.label(92.5, 18.9, 'R', 'out'));
+  b.push(`<text x="73" y="24.5" class="pl rn out">OUT</text><text x="73" y="36.5" class="pl rn">IN</text>`);
+  b.push(PL.jack(81, 23.6, null, { out: 1 }), PL.jack(92.5, 23.6, null, { out: 1 }), PL.jack(81, 35.6, null), PL.jack(92.5, 35.6, null));
+  b.push(PL.light(65, 35.6, 'var(--t-play)', .85));
+  b.push(PL.plate(2.5, 45, 96.6, 79.5));
+  const rows = [58.6, 68.3, 78, 87.7, 97.4, 107.1], names = ['TRIG', 'VEL', 'PITCH', 'TIMBRE', 'PRESS', 'IN'];
+  rows.forEach((y, i) => b.push(`<text x="14.4" y="${f2(y + .9)}" class="pl rn${i < 5 ? ' out' : ''}">${names[i]}</text>`));
+  for (let k = 0; k < 8; k++) {
+    const cx = 20.7 + k * 10.44;
+    b.push(`<rect x="${f2(cx - 4.8)}" y="46.5" width="9.6" height="65" rx="1" fill="var(--t-bg1)" fill-opacity=".45"/>`);
+    b.push(`<rect x="${f2(cx - 4.2)}" y="47.3" width="8.4" height="4" rx="1.2" fill="${C(LANE_C[k])}"/><text x="${f2(cx)}" y="50.2" class="pl" style="fill:var(--t-ontile);font-size:2.3px">${k + 1}</text>`);
+    b.push(PL.light(cx, 53.4, k === 0 || k === 2 ? C(LANE_C[k]) : 'var(--knob-rim)', .6));
+    rows.forEach((y, i) => b.push(PL.jack(cx, y, null, { out: i < 5 })));
+  }
+  const poly = o.proposed ? ['TRIGS', 'VEL', 'PITCH', 'TIMBRE', 'PRESS', 'AUTO', 'EOC'] : ['TRIGS', 'VEL', 'PITCH', 'TIMBRE', 'PRESS', 'AUTO'];
+  const x0 = o.proposed ? 9.6 : 10.55, dx = o.proposed ? 13.8 : 16.1;
+  poly.forEach((l, i) => b.push(PL.jack(x0 + i * dx, 120.5, l, { out: 1, hl: o.proposed && l === 'EOC' })));
+  return panelSVG(20, 'DRUM OUT', b.join(''));
+}
+// Auto Out, 8 HP (AutoOutWidget.cpp).
+function autoOutPanel() {
+  const b = [];
+  b.push(PL.screen(3, 12.5, 34.64, 26, `<rect x="3" y="12.5" width="34.64" height="1" fill="${C(1)}"/><text x="20.3" y="18" class="ds c" style="font-size:2.3px">Tessera</text>` +
+    `<text x="20.3" y="28.6" class="ds c big" style="fill:${C(1)}">2</text><text x="20.3" y="33.6" class="ds c nm">Keys</text>`));
+  b.push(PL.step(12.6, 43, 12, 6, '<'), PL.step(28, 43, 12, 6, '>'));
+  b.push(PL.plate(2.5, 48, 35.64, 74));
+  let lanes = '';
+  for (let i = 0; i < 8; i++) {
+    const y = 54.5 + i * 8.7;
+    lanes += i === 0 ? `<text x="5.4" y="${f2(y - .4)}" class="ds" style="font-size:2.3px;font-weight:600;fill:var(--s-text0)">1 Cutoff</text><rect x="5.4" y="${f2(y + .7)}" width="19" height=".8" fill="var(--s-bg1)"/><rect x="5.4" y="${f2(y + .7)}" width="5.6" height=".8" fill="${C(1)}"/>`
+      : `<text x="5.4" y="${f2(y + .6)}" class="ds" style="font-size:2.2px;fill:var(--s-text2)">${i + 1} —</text>`;
+  }
+  b.push(PL.screen(4, 50, 23.5, 70, lanes));
+  for (let i = 0; i < 8; i++) b.push(PL.jack(32.6, 54.5 + i * 8.7, null, { out: 1 }));
+  return panelSVG(8, 'AUTO OUT', b.join(''));
+}
+// Perform, 30 HP: proposed (P3).
+const STRIPS = [
+  { n: 1, name: 'Bass', c: 10, prog: .7, lvl: .62, send: .2 },
+  { n: 2, name: 'Keys', c: 1, prog: .35, lvl: .55, send: .45, m: 1 },
+  { n: 3, name: 'Lead', c: 12, stopped: 1, lvl: .7, send: .6 },
+  { n: 4, name: 'Drums', c: 6, prog: .7, lvl: .74, send: .1 },
+  { n: 5, name: 'Break', c: 2, prog: .2, lvl: .6, send: .3, s: 1 },
+  { n: 6, name: 'Vox', c: 15, rec: 1, lvl: .66, send: .55, arm: 1 },
+  { n: 7, name: 'Guitar', c: 7, stopped: 1, lvl: .5, send: .4 },
+  { n: 8, name: 'Reverb', c: 9, prog: 0, lvl: .58, send: 0, ret: 1 },
+];
+const PX0 = 35.5, PW = 114.9 / 8, pcx = i => PX0 + PW * i + PW / 2;
+function performPanel(o = {}) {
+  const b = [];
+  // left column
+  b.push(PL.screen(3.5, 11, 28.5, 18, `<text x="17.75" y="15.6" class="ds c" style="font-size:2.3px">Tessera</text><text x="17.75" y="21.6" class="ds c" style="font-size:4.2px;font-weight:600;fill:var(--s-text0)">BANK 1</text><text x="17.75" y="25.6" class="ds c" style="font-size:2.1px">tracks 1–8 · send → Reverb</text>`));
+  b.push(PL.step(10.2, 34, 8.5, 5.5, '<'), PL.step(24.8, 34, 8.5, 5.5, '>'), PL.label(17.5, 40.4, 'BANK'));
+  b.push(PL.btn(10.2, 47, null), PL.btn(24.8, 47, null, { light: 'queue', on: o.nextQueued }));
+  b.push(PL.label(10.2, 54, 'STOP'), PL.label(10.2, 56.8, 'ALL'), PL.label(24.8, 54, 'NEXT'), PL.label(24.8, 56.8, 'SONG'));
+  b.push(PL.slider(10.2, 60, 31, .72, { zero: .75 }), PL.label(10.2, 96.4, 'MASTER'));
+  b.push(PL.btn(24.8, 64, 'UNDO'));
+  b.push(PL.jack(10.2, 107, 'LAUNCH'), PL.jack(24.8, 107, 'STOP'), PL.jack(10.2, 120.3, 'MUTE'), PL.jack(24.8, 120.3, 'LEVEL'));
+  b.push(`<line x1="34" y1="11" x2="34" y2="125.5" stroke="var(--t-line2)" stroke-width=".25"/>`);
+  // the screen band, one cell per strip
+  let cells = '';
+  STRIPS.forEach((s, i) => {
+    const x = PX0 + PW * i, cx = pcx(i);
+    if (i) cells += `<line x1="${f2(x)}" y1="11.6" x2="${f2(x)}" y2="28.4" stroke="var(--s-line)" stroke-width=".25"/>`;
+    cells += `<rect x="${f2(x + .6)}" y="11.6" width="${f2(PW - 1.2)}" height=".9" fill="${C(s.c)}" fill-opacity="${s.stopped ? .45 : 1}"/>`;
+    cells += `<text x="${f2(x + 1.4)}" y="16.6" class="ds" style="font-size:2.6px;font-weight:600;fill:${C(s.c)}">${s.n}</text>`;
+    cells += `<text x="${f2(cx)}" y="21" class="ds c" style="font-size:2.25px;font-weight:600;fill:var(--s-text0)">${s.name}</text>`;
+    const ry = 25.4, rx = x + 3.4;
+    if (s.rec) cells += `<circle cx="${f2(rx)}" cy="${ry}" r="1.4" fill="var(--s-record)"/>`;
+    else if (s.stopped) cells += `<rect x="${f2(rx - 1)}" y="${ry - 1}" width="2" height="2" rx=".3" fill="var(--s-text2)"/>`;
+    else {
+      const a = s.prog * Math.PI * 2, ex = rx + 1.5 * Math.sin(a), ey = ry - 1.5 * Math.cos(a);
+      cells += `<circle cx="${f2(rx)}" cy="${ry}" r="1.5" fill="none" stroke="var(--s-line)" stroke-width=".45"/>` +
+        (s.prog > 0 ? `<path d="M${f2(rx)} ${ry - 1.5}A1.5 1.5 0 ${s.prog > .5 ? 1 : 0} 1 ${f2(ex)} ${f2(ey)}" fill="none" stroke="${C(s.c)}" stroke-width=".55"/>` : '');
+    }
+    const st = [['M', s.m, 'var(--s-queue)'], ['S', s.s, 'var(--s-accent)'], ['●', s.arm, 'var(--s-record)']];
+    cells += `<text x="${f2(x + PW - 1.2)}" y="26.2" class="ds r" style="font-size:2.1px;font-weight:600">` +
+      st.map(([t, on, col]) => `<tspan style="fill:${on ? col : 'var(--s-line)'}">${t}</tspan>`).join(' ') + `</text>`;
+  });
+  b.push(PL.screen(PX0, 11, 114.9, 18, cells));
+  STRIPS.forEach((s, i) => {
+    const cx = pcx(i);
+    b.push(PL.btn(cx - 3.5, 35.5, null, { r: 2.5, light: 'play', on: !s.stopped && !s.rec }), PL.btn(cx + 3.5, 35.5, null, { r: 2.5 }));
+    b.push(`<text x="${f2(cx - 3.5)}" y="41.5" class="pl">▶</text><text x="${f2(cx + 3.5)}" y="41.5" class="pl">■</text>`);
+    b.push(PL.knob(cx, 49, 'SEND', { r: 2.7, val: s.send, gap: 3.5 }));
+    b.push(PL.slider(cx - .9, 59, 33, s.lvl, { zero: .75, meter: s.stopped ? 0 : s.lvl * .9 }));
+    b.push(PL.btn(cx - 4.3, 99, null, { r: 1.9, light: 'queue', on: s.m }), PL.btn(cx, 99, null, { r: 1.9, light: 'select', on: s.s }),
+      PL.btn(cx + 4.3, 99, null, { r: 1.9, light: 'record', on: s.arm }));
+    b.push(`<text x="${f2(cx - 4.3)}" y="104.1" class="pl">M</text><text x="${f2(cx)}" y="104.1" class="pl">S</text><text x="${f2(cx + 4.3)}" y="104.1" class="pl">●</text>`);
+  });
+  b.push(PL.plate(PX0, 108.6, 114.9, 15.2));
+  STRIPS.forEach((s, i) => b.push(PL.jack(pcx(i), 119.2, 'EOC', { out: 1 })));
+  return panelSVG(30, 'PERFORM', b.join(''));
+}
+// FX Loop, 5 HP: proposed (P4).
+function fxLoopPanel(o = {}) {
+  const b = [], c = o.c ?? 15, w = 25.4, cx = w / 2;
+  b.push(PL.screen(2.5, 11, 20.4, 17, `<rect x="2.5" y="11" width="20.4" height=".9" fill="${C(c)}"/><text x="${cx}" y="15.6" class="ds c" style="font-size:2.2px;font-weight:600;fill:var(--s-text0)">${o.track || '6 Vox'}</text>` +
+    `<text x="${cx}" y="22.6" class="ds c" style="font-size:5.4px;font-weight:600;fill:${C(c)}">FX ${o.slot || 1}</text><text x="${cx}" y="26.3" class="ds c" style="font-size:2px">of ${o.of || 2}</text>`));
+  b.push(PL.step(7.4, 32.2, 8, 5.5, '<'), PL.step(18, 32.2, 8, 5.5, '>'));
+  b.push(PL.knob(cx, 45, 'WET', { r: 4.6, val: o.wet ?? 1 }));
+  b.push(PL.btn(cx, 62, 'BYPASS', { light: 'queue', on: o.bypass }));
+  b.push(PL.plate(2.5, 74, 20.4, 23), PL.label(cx, 77.8, 'SEND', 'sec'));
+  b.push(PL.jack(7.4, 89.5, 'L', { out: 1 }), PL.jack(18, 89.5, 'R', { out: 1 }));
+  b.push(PL.label(cx, 102.4, 'RETURN', 'sec'), PL.jack(7.4, 114.6, 'L'), PL.jack(18, 114.6, 'R'));
+  b.push(PL.light(cx, 114.6, o.inLight ? 'var(--t-play)' : 'var(--knob-rim)', .8));
+  return panelSVG(5, 'FX LOOP', b.join(''));
+}
+// Other people's modules, kept plain.
+function audioModule(o = {}) {
+  const b = [], w = 50.8;
+  b.push(`<rect x="4" y="14" width="${w - 8}" height="14" rx="1" fill="var(--o-screen)"/><text x="${w / 2}" y="22.4" class="ds c" style="font-size:2.6px;fill:var(--s-text0)">Sound card · 48 kHz</text>`);
+  b.push(oLabel(w / 2, 40, 'TO DEVICE'));
+  const xs = [9.4, 20.1, 30.8, 41.5];
+  for (let i = 0; i < 8; i++) {
+    const x = xs[i % 4], y = i < 4 ? 54 : 72;
+    b.push(oLabel(x, y - 6.4, String(i + 1)), PL.jack(x, y, null, { warn: o.warn && i < 2 }));
+  }
+  b.push(oLabel(w / 2, 90, 'FROM DEVICE'));
+  for (let i = 0; i < 4; i++) b.push(oLabel(xs[i], 99.4, String(i + 1)), PL.jack(xs[i], 106, null));
+  return otherSVG(10, 'AUDIO', b.join(''));
+}
+function genericModule(hp, title, jacks = [], extra = '') {
+  return otherSVG(hp, title, extra + jacks.map(([x, y, l]) => oLabel(x, y - 6.4, l) + PL.jack(x, y, null)).join(''));
+}
+function vcaModule() { return genericModule(4, 'VCA', [[10.16, 62, 'CV'], [10.16, 86, 'IN'], [10.16, 110, 'OUT']], PL.knob(10.16, 32, null, { r: 4.5, val: .7 })); }
+
+// ------------------------------------------------------------------------------------------------ figure: the rack
+B['rack-today'] = () => {
+  const disp = { mode: 'clips', playing: true, scene: 'SCENE 2 VERSE', pos: '9.3.1', bpm: '112.0', sel: 'Lead · Hook', selC: 12,
+    rows: [{ c: 10, cells: [1, 2, 1, 0, 0, 0, 0, 0] }, { c: 1, cells: [1, 2, 1, 0, 0, 0, 0, 0] }, { c: 12, cells: [0, 1, 1, 0, 0, 0, 0, 0] }, { c: 6, cells: [1, 2, 1, 0, 0, 0, 0, 0] }] };
+  const R = rack([[{ hp: 26, svg: tesseraPanel({ display: disp, playing: true, main: .55 }), gap: 18 },
+    { hp: 6, svg: trackOutPanel({ num: 1, name: 'Bass', c: 10, kind: 'inst', inLight: true }), gap: 18 },
+    { hp: 20, svg: drumOutPanel({}), gap: 18 },
+    { hp: 8, svg: autoOutPanel() }]], { pad: 18 });
+  const p = [pin(...R.at(0, 0, 60, 44.4), 1), pin(...R.at(0, 0, 38, 64.5), 2), pin(...R.at(0, 1, 15.24, 20), 3), pin(...R.at(0, 2, 14.4, 107.1), 4)];
+  return { html: R.svg + p.join(''), w: R.W, h: R.H };
+};
+B['rack-proposed'] = () => {
+  const disp = { mode: 'clips', playing: true, keys: true, scene: 'SCENE 2 VERSE', selC: 12,
+    rows: [{ c: 10, cells: [1, 2, 1, 0, 0, 0, 0, 0] }, { c: 1, cells: [1, 2, 1, 0, 0, 0, 0, 0] }, { c: 12, cells: [0, 1, 3, 0, 0, 0, 0, 0] }, { c: 6, cells: [1, 2, 1, 0, 0, 0, 0, 0] }],
+    msg: { text: 'Lead launches at bar 10 · LAUNCH IN 1', warn: false } };
+  const R = rack([[{ hp: 26, svg: tesseraPanel({ display: disp, playing: true, main: .55, queued: true }), gap: 14 },
+    { hp: 6, svg: trackOutPanel({ num: 1, name: 'Bass', c: 10, kind: 'inst', inLight: true, proposed: true, corners: true, bar: '3/4', hl: true }), gap: 14 },
+    { hp: 20, svg: drumOutPanel({ proposed: true }), gap: 14 },
+    { hp: 30, svg: performPanel({}), gap: 14 },
+    { hp: 5, svg: fxLoopPanel({ inLight: true }) }]], { pad: 18 });
+  const p = [pin(...R.at(0, 0, 9, 38.8), 1), pin(...R.at(0, 0, 106.5, 9.8), 2), pin(...R.at(0, 1, 27.5, 87.1), 3),
+    pin(...R.at(0, 1, 27.5, 14.5), 4), pin(...R.at(0, 2, 92.4, 113), 5), pin(...R.at(0, 3, 37, 59), 6),
+    pin(...R.at(0, 3, 17.5, 101), 7), pin(...R.at(0, 3, 17.5, 30.5), 8), pin(...R.at(0, 4, 23.6, 45), 9)];
+  return { html: R.svg + p.join(''), w: R.W, h: R.H };
+};
+
+// ------------------------------------------------------------------------------------------------ figure: the first minute
+function rackMenu(x, y, items, w = 250) {
+  return `<div class="tx" style="inset:auto;left:${x}px;top:${y}px;width:${w}px;height:auto;background:transparent;overflow:visible;position:absolute">` +
+    `<div class="menu" style="position:relative;left:0;top:0">${items.map(it => it === '-' ? '<div class="sep"></div>' :
+      `<div class="${it.cls || ''}"><span>${it.t}</span>${it.k ? `<span class="k">${it.k}</span>` : ''}</div>`).join('')}</div></div>`;
+}
+B['first-today'] = () => {
+  const disp = { mode: 'clips', scene: 'SCENE 1 INTRO', pos: '1.1.1', bpm: '92.0', sel: 'Loop · Drum loop 92', selC: 2,
+    rows: [{ c: 10, cells: [1, 0, 0, 0, 0, 0, 0, 0] }, { c: 1, cells: [1, 0, 0, 0, 0, 0, 0, 0] }, { c: 12, cells: [0, 0, 0, 0, 0, 0, 0, 0] }, { c: 6, cells: [1, 0, 0, 0, 0, 0, 0, 0] }, { c: 2, cells: [1, 0, 0, 0, 0, 0, 0, 0] }] };
+  const R = rack([[{ hp: 26, svg: tesseraPanel({ display: disp, mainDot: true, main: 0 }), gap: 250 },
+    { hp: 4, svg: vcaModule(), gap: 10 }, { hp: 10, svg: audioModule({ warn: true }) }]], { pad: 18,
+    cables: [{ a: [0, 1, 10.16, 110], b: [0, 2, 9.4, 54], col: 'var(--cab-y)' }, { a: [0, 1, 10.16, 110], b: [0, 2, 20.1, 54], col: 'var(--cab-g)', sag: 60 }] });
+  const menu = rackMenu(410, 70, [{ t: 'Tessera', cls: 'lb' }, '-', { t: 'Open editor' }, { t: 'Connect MAIN to Audio module', cls: 'hi' },
+    { t: 'File', k: '▸' }, { t: 'MIDI input (for recording)', k: '▸' }, { t: 'Panel editor', k: 'Off ▸' }, { t: 'Colour scheme', k: '▸' }], 236);
+  const note = `<div class="tx" style="inset:auto;left:410px;top:262px;width:236px;height:auto;position:absolute;background:transparent;overflow:visible"><div class="toast" style="position:relative;white-space:normal;line-height:1.35;color:var(--t-text0)"><span>"The Audio module's inputs 1 and 2 are in use". Nothing changes. Shown only while the full editor is open.</span></div></div>`;
+  const p = [pin(...R.at(0, 0, 103, 26), 1), pin(...R.at(0, 0, 129.1, 85.4), 2), pin(418, 100, 3)];
+  return { html: R.svg + menu + note + p.join(''), w: R.W, h: R.H };
+};
+B['first-proposed'] = () => {
+  const disp = { mode: 'clips', scene: 'SCENE 1 INTRO', selC: 2,
+    rows: [{ c: 10, cells: [1, 0, 0, 0, 0, 0, 0, 0] }, { c: 1, cells: [1, 0, 0, 0, 0, 0, 0, 0] }, { c: 12, cells: [0, 0, 0, 0, 0, 0, 0, 0] }, { c: 6, cells: [1, 0, 0, 0, 0, 0, 0, 0] }, { c: 2, cells: [3, 0, 0, 0, 0, 0, 0, 0] }],
+    msg: { text: 'Loop: song set to 92 BPM, cued in its first slot · press PLAY' } };
+  const R = rack([[{ hp: 26, svg: tesseraPanel({ display: disp, main: 0, queued: true }), gap: 10 },
+    { hp: 6, svg: trackOutPanel({ num: 'M', name: 'Master', kind: 'master', inLight: true }), gap: 236 },
+    { hp: 4, svg: vcaModule(), gap: 10 }, { hp: 10, svg: audioModule({}) }]], { pad: 18,
+    cables: [{ a: [0, 2, 10.16, 110], b: [0, 1, 9, 119.5], col: 'var(--cab-y)', sag: 70 }, { a: [0, 2, 10.16, 110], b: [0, 1, 21.48, 119.5], col: 'var(--cab-g)', sag: 92 },
+      { a: [0, 0, 122.6, 95.5], b: [0, 3, 9.4, 54], col: 'var(--cab-b)', sag: 150 }, { a: [0, 0, 122.6, 113], b: [0, 3, 20.1, 54], col: 'var(--cab-v)', sag: 150 }] });
+  const menu = rackMenu(512, 64, [{ t: 'Tessera', cls: 'lb' }, '-', { t: 'Keep 120 BPM', k: '30 s' }, '-', { t: 'Open editor' },
+    { t: "Put Tessera's mixer in front of the Audio module", cls: 'hi' }, { t: 'File', k: '▸' }, { t: 'Panel editor', k: 'Off ▸' }], 300);
+  const p = [pin(...R.at(0, 0, 52, 44.4), 1), pin(522, 140, 2), pin(...R.at(0, 1, 15.24, 112), 3), pin(...R.at(0, 3, 14.7, 46), 4)];
+  return { html: R.svg + menu + p.join(''), w: R.W, h: R.H };
+};
+
+// ------------------------------------------------------------------------------------------------ editor parts (px)
+const fpos = db => db === -Infinity ? 0 : db >= 0 ? .75 + .25 * Math.min(db, 6) / 6 : .75 * Math.pow(10, db / 80);
+const dbs = db => db === -Infinity ? '-inf' : (db > 0 ? '+' : '') + db.toFixed(1);
+const A = (x, y, w, h, style = '', inner = '', cls = '') =>
+  `<div class="a ${cls}" style="left:${f2(x)}px;top:${f2(y)}px;${w != null ? `width:${f2(w)}px;` : ''}${h != null ? `height:${f2(h)}px;` : ''}${style}">${inner}</div>`;
+function knobSvg(x, y, d, v, o = {}) {      // sends: v 0..1 from the left stop; pan (o.bi): v -1..1 from the top
+  const r = d / 2 - 1.5, c = d / 2;
+  const a0 = o.bi ? 0 : -135, a1 = o.bi ? v * 135 : -135 + 270 * v;
+  const pt = a => [c + r * Math.sin(a * Math.PI / 180), c - r * Math.cos(a * Math.PI / 180)];
+  const [sx, sy] = pt(a0), [ex, ey] = pt(a1);
+  const arc = Math.abs(a1 - a0) < 1 ? '' : `<path d="M${f2(sx)} ${f2(sy)}A${f2(r)} ${f2(r)} 0 ${Math.abs(a1 - a0) > 180 ? 1 : 0} ${a1 >= a0 ? 1 : 0} ${f2(ex)} ${f2(ey)}" stroke="${o.col || 'var(--t-accent)'}" stroke-width="2" fill="none"/>`;
+  return `<svg class="a" style="left:${f2(x)}px;top:${f2(y)}px" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}">` +
+    `<circle cx="${c}" cy="${c}" r="${f2(r)}" fill="var(--t-bg2)" stroke="${o.ring || 'var(--t-line2)'}" stroke-width="${o.ring ? 1.6 : 1}"/>${arc}` +
+    `<line x1="${c}" y1="${c}" x2="${f2(ex)}" y2="${f2(ey)}" stroke="var(--t-text0)" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+}
+function levelBar(x, y, w, o) {             // the fader and the meter in one (track rows, tiles, inspector)
+  const h = o.h || 6, col = o.col || (o.c == null ? 'var(--t-text2)' : C(o.c));
+  const mw = w * Math.min(1, o.meter || 0), hot = w * .84;
+  let e = A(x, y, w, h, `border-radius:${h / 2}px;background:var(--t-ground);overflow:hidden`,
+    A(0, 0, Math.min(mw, hot), h, `background:${o.col ? col : mix(col, 42, 'transparent')}`) + (mw > hot ? A(hot, 0, mw - hot, h, `background:${col}`) : ''));
+  return e + A(x + w * o.pos - 1, y - 2, 2, h + 4, `border-radius:1px;background:var(--t-text0)${o.ring ? `;box-shadow:0 0 0 1.5px ${o.ring}` : ''}`);
+}
+function hdrRow(t, o) {                     // a track header row (TrackHeaders.cpp)
+  const { x = 0, y, w = 190, h = 48 } = o, ly = h >= 40 ? 14 : h / 2;
+  let e = `<div class="tile" style="background:${C(t.c)};${h < 30 ? `padding-top:${f2(h / 2 - 5)}px` : ''}">${t.n}</div>`;
+  e += A(24, ly - 7, w - 24 - 86, 14, 'font-size:11px', (t.kind === 'drum' ? '<span class="t2">⊟</span> ' : '') + t.name, 'b ell');
+  e += `<div class="ring${o.armed ? ' on' : ''}" style="left:${w - 76}px;top:${f2(ly - 5)}px"></div>`;
+  e += A(w - 61, ly - 7, 10, 14, `font-size:9px;color:${o.lanes ? 'var(--t-text1)' : 'var(--t-text2)'}`, o.lanes ? '▾' : '▸');
+  e += `<div class="sb${o.mute ? ' mon' : ''}" style="left:${w - 46}px;top:${f2(ly - 7)}px">M</div><div class="sb${o.solo ? ' son' : ''}" style="left:${w - 26}px;top:${f2(ly - 7)}px">S</div>`;
+  if (o.level) {
+    const L = o.level, col = L.rec ? 'var(--t-record)' : null;
+    if (h >= 40) {
+      const by = ly + 15;
+      e += levelBar(24, by, w - 24 - 80, { c: t.c, col, pos: fpos(L.db), meter: L.meter });
+      e += A(w - 78, by - 4, 50, 12, 'font-size:9.5px;text-align:right;white-space:nowrap', (L.rec ? '<span style="color:var(--t-record)">IN </span>' + dbs(L.db) : dbs(L.db) + ' dB'), 'm t1');
+      e += knobSvg(w - 24, by - 7, 18, L.pan || 0, { bi: 1 });
+    } else if (o.thin) e += levelBar(24, h - 6, w - 32, { c: t.c, col, pos: fpos(L.db), meter: L.meter, h: 3 });
+  }
+  return A(x, y, w, h, `background:${o.sel ? 'var(--t-bg2)' : 'var(--t-bg1)'};border-bottom:1px solid var(--t-line1)`, e);
+}
+function slot(o) {                          // a launcher slot (SlotDraw.cpp)
+  const { x, y, w, h } = o, sq = Math.min(h - 2, 20), cy = h / 2, st = o.state;
+  if (st === 'empty' || st === 'arm') {
+    const g = st === 'arm' ? A(sq / 2 - 3, cy - 4, 8, 8, 'border-radius:50%;background:var(--t-record)')
+      : A(sq / 2 - 2, cy - 3, 6, 6, 'border-radius:1px;background:var(--t-text2);opacity:.55');
+    return A(x, y, w, h, `border-radius:3px;background:${mix('var(--t-ground)', 75, 'var(--t-bg0)')};box-shadow:inset 0 1px 2px var(--shadow)${o.hl ? ';outline:1.5px solid var(--note);outline-offset:1px' : ''}`,
+      g + (o.name ? A(sq + 4, cy - 6.5, w - sq - 6, 13, 'font-size:9.5px;color:var(--t-record)', o.name, 'ell') : ''));
+  }
+  const c = C(o.c), rec = st === 'rec' || st === 'recwait' || st === 'close', hot = st === 'play' || st === 'od';
+  let e = '';
+  if (o.wave && st !== 'recwait') e += A(sq + 2, 2, w - sq - 3, h - 4, 'opacity:.5', wave(Math.round(w - sq - 3), Math.round(h - 4), rec ? 'var(--t-record)' : hot ? 'var(--t-ontile)' : mix(c, 70, 'var(--t-text0)'), { seed: o.seed || 3, kind: o.wave, bars: 2, res: 1.2 }, .9));
+  e += A(0, 0, sq + 2, h, `background:${rec ? mix('var(--t-record)', 60, 'var(--t-bg0)') : mix(c, hot ? 88 : 58, 'var(--t-bg0)')}`);
+  if (rec) e += A(sq / 2 - 2.5, cy - 3.5, 7, 7, 'border-radius:50%;background:var(--t-record)', '', st === 'recwait' ? 'blink' : '');
+  else {
+    e += A(sq / 2 - 4, cy - 5, 10, 10, 'line-height:0', ic('play', 10, st === 'queue' ? 'var(--t-queue)' : hot ? 'var(--t-ontile)' : 'var(--t-text0)'), st === 'queue' ? 'blink' : '');
+    if (hot) {
+      const p = o.prog ?? .6, a = p * 2 * Math.PI, ex = 8 + 6.5 * Math.sin(a), ey = 8 - 6.5 * Math.cos(a);
+      e += `<svg class="a" style="left:${f2(sq / 2 - 7)}px;top:${f2(cy - 8)}px" width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--t-ontile)" stroke-opacity=".25" stroke-width="1.5"/><path d="M8 1.5A6.5 6.5 0 ${p > .5 ? 1 : 0} 1 ${f2(ex)} ${f2(ey)}" fill="none" stroke="${st === 'od' ? 'var(--t-record)' : 'var(--t-ontile)'}" stroke-width="1.6"/></svg>`;
+    }
+  }
+  e += A(sq + 6, cy - 6.5, w - sq - (o.badge ? 26 : 10), 13, `font-size:10px;color:${hot ? 'var(--t-ontile)' : 'var(--t-text0)'}`, o.name || '', 'ell' + (hot ? ' b' : ''));
+  if (o.badge) e += A(w - 18, cy - 7, 15, 14, `border-radius:3px;background:${rec ? 'var(--t-record)' : 'var(--t-queue)'};color:var(--t-ink);font:700 9px/14px var(--f-ui);text-align:center`, o.badge);
+  const outline = st === 'queue' ? 'var(--t-queue)' : st === 'od' || rec ? 'var(--t-record)' : o.sel ? 'var(--t-select)' : '';
+  return A(x, y, w, h, `border-radius:3px;overflow:hidden;background:${rec ? mix('var(--t-record)', st === 'recwait' ? 14 : 34, 'var(--t-bg0)') : mix(c, hot ? 74 : 40, 'var(--t-bg0)')}${outline ? `;box-shadow:inset 0 0 0 1.5px ${outline}` : ''}${o.hl ? ';outline:1.5px solid var(--note);outline-offset:1px' : ''}`, e);
+}
+function tlClip(o) {                        // a timeline clip (ClipDraw / AudioClipDraw)
+  const c = C(o.c), th = Math.min(14, Math.round(o.h * .42)), bh = o.h - th;
+  let body = '';
+  if (o.kind === 'audio') body = A(0, th, o.w, bh, '', wave(Math.round(o.w), Math.round(bh), mix(c, 70, 'var(--t-text0)'), { seed: o.seed || 2, kind: o.wk || 'drums', bars: Math.max(1, Math.round(o.w / (o.ppb || 40))), res: 1.3, phrases: 3 }, .85));
+  else if (o.kind === 'drum') {
+    const r = rng(o.seed || 5), n = Math.round(o.w / 5);
+    let d = '';
+    for (let row = 0; row < 3; row++) for (let i = 0; i < n; i++) if ((row === 0 && i % 4 === 0) || (row === 1 && i % 8 === 4) || (row === 2 && r() > .35)) d += `<rect x="${f2(i * 5 + 1)}" y="${f2(3 + row * (bh - 6) / 2.4)}" width="2.4" height="2.4" rx=".6" fill="${c}"/>`;
+    body = A(0, th, o.w, bh, '', `<svg width="${f2(o.w)}" height="${f2(bh)}">${d}</svg>`);
+  } else {
+    const r = rng(o.seed || 9), n = Math.round(o.w / 9);
+    let d = '';
+    for (let i = 0; i < n; i++) d += `<rect x="${f2(i * 9 + r() * 3)}" y="${f2(2 + r() * (bh - 6))}" width="${f2(4 + r() * 6)}" height="2" rx=".6" fill="${c}"/>`;
+    body = A(0, th, o.w, bh, '', `<svg width="${f2(o.w)}" height="${f2(bh)}">${d}</svg>`);
+  }
+  let e = A(0, 0, o.w, th, `background:${c};color:var(--t-ontile);font:600 9.5px/${th}px var(--f-ui);padding:0 4px`, `<span class="ell" style="display:block;padding-right:${o.badge ? 34 : 0}px">${o.name}</span>`);
+  if (o.badge) e += A(o.w - 42, 0, 38, th, `font:500 9px/${th}px var(--f-mono);color:var(--t-ontile);text-align:right`, o.badge);
+  return A(o.x, o.y, o.w, o.h, `border-radius:3px;overflow:hidden;background:${mix(c, 24, 'var(--t-bg0)')}${o.sel ? ';box-shadow:inset 0 0 0 1.5px var(--t-select)' : ''}`, e + body);
+}
+function rulerHTML(x, y, w, o) {            // markers, loop strip, bar numbers, overview
+  const mk = o.panel ? 11 : 14, lp = o.panel ? 9 : 12, rn = o.panel ? 14 : 20, ov = o.panel ? 4 : 8;
+  let e = A(x, y, w, mk + lp + rn + ov, 'background:var(--t-bg1)');
+  (o.markers || []).forEach(([bar, name]) => e += A(x + (bar - 1) * o.ppb, y + 1, null, mk - 2, `background:var(--t-queue);color:var(--t-ink);font:600 ${o.panel ? 8 : 9}px/${mk - 2}px var(--f-ui);padding:0 4px;border-radius:2px`, name));
+  if (o.loop) e += A(x + (o.loop[0] - 1) * o.ppb, y + mk + 2, (o.loop[1] - o.loop[0]) * o.ppb, lp - 4, `background:${o.loopOn ? 'var(--t-accent)' : 'var(--t-line2)'};border-radius:2px`);
+  for (let b = 0; b < o.bars; b++) {
+    const bx = x + b * o.ppb;
+    e += A(bx, y + mk + lp, 1, rn, 'background:var(--t-line2)');
+    if (b % (o.every || 1) === 0) e += A(bx + 3, y + mk + lp + 1, 30, rn - 2, `font-size:${o.panel ? 8.5 : 9.5}px;color:var(--t-text1)`, String(b + 1));
+    for (let q = 1; q < 4; q++) e += A(bx + q * o.ppb / 4, y + mk + lp + rn - 4, 1, 4, 'background:var(--t-line1)');
+  }
+  e += A(x + 2, y + mk + lp + rn + 1, w * .55, ov - 2, 'background:var(--t-line2);border-radius:2px');
+  if (o.head != null) e += A(x + (o.head - 1) * o.ppb, y + mk, 1, 400, 'background:var(--t-accent);z-index:2');
+  return e;
+}
+
+// ------------------------------------------------------------------------------------------------ the demo song
+const TRACKS = [
+  { n: 1, name: 'Bass', c: 10, kind: 'inst', db: -4.5, meter: .6, pan: -.15, slots: ['clip:Verse bass', 'play:Chorus bass', 'clip:Break bass'], clips: [[5, 8, 'Verse bass'], [13, 8, 'Chorus bass']] },
+  { n: 2, name: 'Keys', c: 1, kind: 'inst', db: -7, meter: .5, pan: .3, m: 1, slots: ['clip:Pads', 'play:Chorus keys', 'empty'], clips: [[1, 12, 'Pads'], [13, 8, 'Chorus keys']] },
+  { n: 3, name: 'Lead', c: 12, kind: 'inst', db: -6, meter: .55, pan: .1, slots: ['empty', 'queue:Hook', 'clip:Hook 2'], clips: [[13, 8, 'Hook']] },
+  { n: 4, name: 'Drums', c: 6, kind: 'drum', db: -2, meter: .74, slots: ['clip:Intro beat', 'play:Chorus beat', 'clip:Fill'], clips: [[1, 4, 'Intro beat'], [5, 8, 'Verse beat'], [13, 8, 'Chorus beat']] },
+  { n: 5, name: 'Break', c: 2, kind: 'audio', wk: 'drums', db: -6, meter: .62, s: 1, slots: ['clip:Amen 136', 'play:Amen 136', 'empty'], clips: [[5, 16, 'Amen 136', '136 ▾']] },
+  { n: 6, name: 'Vox', c: 15, kind: 'audio', wk: 'vocal', db: -3, meter: .58, armed: 1, slots: ['arm', 'play:Vox take 3', 'arm'], clips: [[9, 4, 'Vox · take 3'], [13, 8, 'Vox chorus']] },
+  { n: 7, name: 'Guitar', c: 7, kind: 'audio', wk: 'guitar', db: -8.5, meter: .32, pan: -.4, slots: ['clip:Riff A', 'clip:Riff B', 'empty'], clips: [[5, 6, 'Riff A'], [11, 10, 'Riff B']] },
+  { n: 8, name: 'Reverb', c: 9, kind: 'inst', db: -10, meter: .38, slots: ['empty', 'empty', 'empty'], clips: [] },
+  { n: 9, name: 'Delay', c: 11, kind: 'inst', db: -12, meter: .25, slots: ['empty', 'empty', 'empty'], clips: [] },
+];
+const MIXDATA = [
+  { n: 1, name: 'Bass', c: 10, chip: 'IN · Track Out', sends: [{ c: 9, l: 'Re', v: .35 }, { c: 11, l: 'De', v: .15 }], pan: -.15, db: -4.5, meter: [.62, .6] },
+  { n: 2, name: 'Keys', c: 1, chip: 'IN · Track Out', sends: [{ c: 9, l: 'Re', v: .55 }], pan: .3, db: -7, meter: [.5, .55], m: 1 },
+  { n: 3, name: 'Lead', c: 12, chip: 'IN · Track Out', sends: [{ c: 11, l: 'De', v: .6 }], pan: .1, db: -6, meter: [.58, .52], fx: ['Drive'] },
+  { n: 4, name: 'Drums', c: 6, chip: 'IN · Drum Out', sends: [{ c: 9, l: 'Re', v: .12 }], pan: 0, db: -2, meter: [.74, .72], group: 'Rhythm' },
+  { lane: 1, name: 'Kick', c: 0, pan: 0, db: 0, meter: [.8, .8] },
+  { lane: 1, name: 'Snare', c: 5, pan: -.1, db: -3, meter: [.6, .6] },
+  { lane: 1, name: 'Hats', c: 10, pan: .35, db: -9, meter: [.42, .45], lm: 1 },
+  { n: 5, name: 'Break', c: 2, chip: 'Clips', sends: [], pan: 0, db: -6, meter: [.6, .62], fx: ['Drive'], s: 1, group: 'Rhythm' },
+  { grp: 1, name: 'Rhythm', c: 4, chip: 'Group · 2', pan: 0, db: -1.5, meter: [.78, .77] },
+  { n: 6, name: 'Vox', c: 15, chip: '2 sources', sends: [{ c: 9, l: 'Re', v: .45 }, { c: 11, l: 'De', v: .3 }], pan: 0, db: -3, meter: [.6, .6], fx: ['Comp', 'EQ'], arm: 1, inb: 1, inShow: 1, sel: 1 },
+  { n: 7, name: 'Guitar', c: 7, chip: 'Clips', sends: [{ c: 11, l: 'De', v: .25 }], pan: -.4, db: -8.5, meter: [.34, .3] },
+  { n: 8, name: 'Reverb', c: 9, chip: 'IN · Track Out', recv: 4, outMeter: .45, pan: 0, db: -10, meter: [.38, .4] },
+  { n: 9, name: 'Delay', c: 11, chip: 'IN · Track Out', recv: 3, outMeter: .3, pan: 0, db: -12, meter: [.26, .24] },
+];
+const MASTER = { master: 1, name: 'Master', db: 0, meter: [.82, .8] };
+const MODE_NAME = { strips: 'Strips', compact: 'Compact', tiles: 'Tiles', meters: 'Meters' };
+
+// ------------------------------------------------------------------------------------------------ the mixer
+function meterBar(x, y, w, h, lv, dim) {
+  const g = `linear-gradient(to top, var(--t-play) 0 ${f2(Math.min(100, 82 / Math.max(lv, .01)))}%, var(--t-queue) 0 ${f2(Math.min(100, 91 / Math.max(lv, .01)))}%, var(--t-record) 0)`;
+  return A(x, y, w, h, 'border-radius:1px;background:var(--t-ground);overflow:hidden', lv > 0 ? A(0, h * (1 - lv), w, h * lv, `background:${g}${dim ? ';opacity:.65' : ''}`) : '');
+}
+function faderMeter(x, y, h, pos, meter, o = {}) {
+  let e = A(x, y, 4, h, 'border-radius:2px;background:var(--t-ground)') + A(x - 4, y + h * .25, 12, 1, 'background:var(--t-line2)');
+  e += A(x - 5, y + h * (1 - pos) - 4, 14, 8, `border-radius:2px;background:var(--t-text1)${o.ring ? `;box-shadow:0 0 0 1.5px ${o.ring}` : ''}`);
+  const mw = o.wide ? 4 : 3;
+  for (let k = 0; k < 2; k++) e += meterBar(x + 11 + k * (mw + 1), y, mw, h, meter[k] || 0);
+  if (o.outMeter != null) e += meterBar(x - 9, y, 2, h, o.outMeter, true);
+  return e;
+}
+function stripHTML(s, X, Y, W, H, mode, P, ctx) {
+  const lane = !!s.lane, grp = !!s.grp, master = !!s.master, full = mode === 'roomy' || mode === 'strips';
+  const col = master ? 'var(--t-text2)' : C(s.c);
+  let e = A(0, 0, W, 3, `background:${col};border-radius:4px 4px 0 0`);
+  e += A(2, 6, W - 4, 14, `text-align:center;font-size:${W < 50 ? 9 : 10.5}px${lane ? `;color:${col}` : ''}`, s.name, 'b ell');
+  let y = 22;
+  if (full) {
+    if (ctx.anyRecv) { if (s.recv) e += A(0, y - 3, W, 11, 'text-align:center;font-size:9.5px;color:var(--t-accent)', '← ' + s.recv); y += 9; }
+    if (!lane) {
+      const chip = master ? (ctx.mainOk ? 'MAIN' : 'MAIN not patched') : s.chip, warn = master && !ctx.mainOk;
+      e += A(3, y, W - 6, 14, `border-radius:3px;background:var(--t-bg2);font-size:8.5px;line-height:14px;text-align:center;color:${warn ? 'var(--t-queue)' : 'var(--t-text1)'}`, chip, 'ell');
+    }
+    y += 18;
+    if (P && mode === 'strips') {
+      if (!lane && !grp && !master) {
+        (s.fx || []).forEach((f, k) => e += A(3, y + k * 14, W - 6, 12, 'border-radius:3px;background:var(--t-bg2);font-size:9px;line-height:12px;padding-left:12px',
+          `<span class="a" style="left:4px;top:3.5px;width:5px;height:5px;border-radius:50%;background:var(--t-play)"></span>${k + 1} ${f}`, 'ell'));
+        e += A(0, y + (s.fx || []).length * 14, W, 11, 'text-align:center;font-size:9px;color:var(--t-text2)', '+ FX');
+      }
+      y += ctx.fxRows * 14 + 2;
+    }
+    if (!master && !lane && !grp) {
+      (s.sends || []).forEach((sd, k) => {
+        const kx = W / 4 - 10 + (k % 2) * (W / 2), ky = y + Math.floor(k / 2) * 28;
+        e += knobSvg(kx, ky, 20, sd.v, { col: C(sd.c) }) + A(kx - 4, ky + 19, 28, 10, `text-align:center;font-size:8.5px;color:${C(sd.c)}`, sd.l);
+      });
+      const n = (s.sends || []).length;
+      e += A(W / 2 - 9, y + Math.floor(n / 2) * 28 + 2, 18, 12, 'text-align:center;color:var(--t-text2);font-size:11px', '+');
+    }
+    y += ctx.sendRows * 28 + 14;
+    if (!master) e += knobSvg(W / 2 - 11, y, 22, s.pan || 0, { bi: 1 });
+    y += 26;
+  } else if (mode === 'compact') {
+    if (!master) e += knobSvg(W / 2 - 8, y, 16, s.pan || 0, { bi: 1 });
+    y += 19;
+  }
+  if (master) e += A(4, y, W - 8, 14, 'border-radius:3px;background:var(--t-bg2);font-size:9px;line-height:14px;text-align:center;color:var(--t-text1)', 'no clip');
+  else if (lane) { if (P) e += `<div class="sb${s.lm ? ' mon' : ''}" style="left:${f2(W / 2 - 8)}px;top:${y}px">M</div>`; }
+  else if (grp) e += `<div class="sb" style="left:4px;top:${y}px;width:${W - 8}px">M</div>`;
+  else if (P && mode === 'strips') {
+    const items = [['M', s.m, 'mon'], ['S', s.s, 'son'], ['●', s.arm, 'ron']].concat(s.inShow ? [['IN', s.inb, 'inon']] : []);
+    const bw = (W - 6 - (items.length - 1) * 2) / items.length;
+    items.forEach(([t, on, cls], k) => e += `<div class="sb${on ? ' ' + cls : ''}" style="left:${f2(3 + k * (bw + 2))}px;top:${y}px;width:${f2(bw)}px">${t}</div>`);
+  } else {
+    const bw = (W - 10) / 2;
+    e += `<div class="sb${s.m ? ' mon' : ''}" style="left:4px;top:${y}px;width:${f2(bw)}px">M</div><div class="sb${s.s ? ' son' : ''}" style="left:${f2(6 + bw)}px;top:${y}px;width:${f2(bw)}px">S</div>`;
+  }
+  y += 18;
+  if (mode === 'compact') {
+    if (!master && !lane && !grp) (s.sends || []).forEach((sd, k) => e += A(6 + k * 9, y, 6, 6, `border-radius:50%;background:${C(sd.c)};opacity:${f2(.35 + sd.v * .65)}`));
+    y += 10;
+  }
+  const fb = H - (mode === 'compact' ? 18 : master && P ? 44 : 34);
+  e += faderMeter(W / 2 - (master ? 14 : 10), y + 4, Math.max(14, fb - y - 8), fpos(s.db), s.meter, { outMeter: s.outMeter, wide: master });
+  e += A(0, fb + 2, W, 12, 'text-align:center;font-size:9.5px', dbs(s.db) + (W >= 60 ? ' dB' : ''), 'm');
+  if (master && P && mode !== 'compact') e += A(0, fb + 15, W, 12, 'text-align:center;font-size:9.5px', '-14.2 <span class="t2">LUFS</span>', 'm');
+  if (mode !== 'compact' && !lane) {
+    const out = master ? (P ? '→ MAIN' : 'audio 41 MB') : s.group ? '→ ' + s.group : '→ Master';
+    e += A(0, fb + (master && P ? 28 : 16), W, 12, 'text-align:center;font-size:9px;color:var(--t-text2)', out, 'ell');
+  }
+  return A(X, Y, W, H, `background:${lane ? mix('var(--t-bg1)', 65, 'var(--t-bg0)') : 'var(--t-bg1)'};border-radius:4px${s.sel ? ';box-shadow:inset 0 0 0 1px var(--t-accent)' : ''}`, e);
+}
+function tileHTML(s, X, Y, W) {
+  const lane = !!s.lane, master = !!s.master, col = master ? 'var(--t-text2)' : C(s.c);
+  let e = A(0, 0, 4, 28, `background:${col};border-radius:4px 0 0 4px`);
+  e += A(8, 3, W - 8 - (lane ? 24 : master ? 6 : 56), 13, 'font-size:10px', (s.n ? `<span class="t2">${s.n}</span> ` : '') + s.name, 'b ell');
+  if (!master) e += knobSvg(W - (lane ? 19 : 54), 2, 14, s.pan || 0, { bi: 1 });
+  if (!master && !lane) e += `<div class="sb${s.m ? ' mon' : ''}" style="left:${W - 37}px;top:2px;width:15px;height:13px;line-height:13px">M</div><div class="sb${s.s ? ' son' : ''}" style="left:${W - 19}px;top:2px;width:15px;height:13px;line-height:13px">S</div>`;
+  e += levelBar(8, 19, W - 8 - (lane ? 32 : 44), { c: master ? null : s.c, pos: fpos(s.db), meter: Math.max(...s.meter), h: 5 });
+  e += A(W - (lane ? 30 : 42), 15, lane ? 27 : 38, 12, 'text-align:right;font-size:9px', dbs(s.db), 'm t1');
+  return A(X, Y, W, 28, `background:${lane ? mix('var(--t-bg1)', 65, 'var(--t-bg0)') : 'var(--t-bg1)'};border-radius:4px${s.sel ? ';box-shadow:inset 0 0 0 1px var(--t-accent)' : ''}`, e);
+}
+function mixHeader(w, list, P, mode, o) {
+  let e = A(0, 0, w, 26, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1)');
+  e += A(8, 3, null, 20, '', '<span class="seg acc"><span>Notes</span><span class="on">Mixer</span></span>');
+  let mx = 124;
+  const maxX = w - (P ? 330 : 240);
+  for (const s of list) {
+    if (s.lane || s.grp) continue;
+    if (mx + 40 > maxX) break;
+    e += A(mx, 11.5, 40, 3, 'background:var(--t-ground)', A(0, 0, 40 * Math.max(...s.meter), 3, `background:${C(s.c)}`));
+    mx += 46;
+  }
+  let right = '<span class="m t1" style="font-size:10px">peak -6.2</span>';
+  if (!o.mainOk) right = '<span class="m" style="font-size:10px;color:var(--t-queue)">MAIN not patched</span>' + right;
+  if (P) right = `<span class="chip" style="font-size:10px">View ${ic('down', 9)} <span class="t2">Auto · ${MODE_NAME[mode]}</span></span>` + right;
+  if (mode === 'meters') right = '<span class="t2" style="font-size:10px">drag up for the faders</span>' + right;
+  e += A(w - 420, 0, 390, 26, 'display:flex;align-items:center;justify-content:flex-end;gap:12px', right);
+  return e + A(w - 24, 5, 16, 16, 'color:var(--t-text1);line-height:0', ic('max', 16));
+}
+function mixerPane(o) {
+  const { x, y, w, h } = o, P = !!o.proposed, list = o.list || MIXDATA, area = h - 34;
+  const mode = o.mode || (P ? (area >= 280 ? 'strips' : area >= 150 ? 'compact' : area >= 36 ? 'tiles' : 'meters') : (area >= 190 ? 'roomy' : 'short'));
+  let e = mixHeader(w, list, P, mode, o);
+  if (mode !== 'meters') {
+    const top = 30, sh = h - top - (P ? 10 : 4), mw = mode === 'compact' ? 64 : mode === 'tiles' ? 132 : 88, mx = w - mw - 6;
+    const ctx = { anyRecv: list.some(s => s.recv), mainOk: !!o.mainOk,
+      sendRows: Math.max(...list.map(s => Math.ceil(((s.sends || []).length + 1) / 2))),
+      fxRows: P ? Math.max(...list.map(s => (s.fx || []).length)) + 1 : 0 };
+    let inner = '', sx = 0, contentW = 0;
+    if (mode === 'tiles') {
+      const rows = Math.max(1, Math.floor((sh + 4) / 32)), avail = mx - 10;
+      let col = 0, row = 0;
+      list.forEach(s => {
+        const tw = s.lane ? 92 : 132;
+        if (col + tw > avail && col > 0) { col = 0; row++; }
+        if (row < rows) inner += tileHTML(s, col, row * 32, tw);
+        col += tw + 4;
+      });
+      contentW = avail;
+      e += A(4, top, avail, sh, 'overflow:hidden', inner);
+      e += tileHTML(MASTER, mx, top, mw);
+    } else {
+      list.forEach(s => {
+        const sw = s.lane ? (mode === 'compact' ? 30 : 40) : (mode === 'compact' ? 44 : 64);
+        inner += stripHTML(s, sx, 0, sw, sh, mode, P, ctx);
+        sx += sw + (s.lane ? 1 : 4);
+      });
+      contentW = sx;
+      const clipW = P ? mx - 10 : w - 8;
+      e += A(4, top, clipW, sh, 'overflow:hidden', inner);
+      if (P) {
+        const vis = Math.min(1, clipW / contentW), off = o.scroll || 0;
+        if (contentW > clipW) e += A(mx - 18, top, 12, sh, 'background:linear-gradient(to right, transparent, var(--shadow))');
+        e += A(4, h - 7, clipW, 3, 'border-radius:2px;background:var(--t-line0)', A(off * clipW, 0, clipW * vis, 3, 'border-radius:2px;background:var(--t-line2)'));
+      }
+      e += stripHTML(MASTER, mx, top, mw, sh, mode, P, ctx);
+    }
+  }
+  return `<div class="pane${o.focus ? ' focus' : ''}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px">${e}</div>`;
+}
+
+// ------------------------------------------------------------------------------------------------ the editors
+function transportBar(x, y, w, o = {}) {
+  const btn = (inner, extra = '') => `<span class="chip ghost" style="height:24px;padding:0 6px;${extra}">${inner}</span>`;
+  const left = `<span class="chip ghost">Tessera ${ic('down', 10)}</span>` +
+    `<span style="display:inline-flex;gap:3px;align-items:center"><span class="chip" style="height:24px;padding:0 9px;background:var(--t-play)">${ic('play', 12, 'var(--t-ink)')}</span>` +
+    btn(ic('stop', 12)) + btn(ic('rec', 12, o.armed ? 'var(--t-record)' : 'currentColor') + ic('down', 9)) + btn(ic('loop', 13)) + '</span>' +
+    (o.plan ? `<span class="chip rec">${o.plan}</span>` : '') +
+    '<span class="t2" style="font:600 8.5px/1 var(--f-ui);letter-spacing:.12em">PLAYS</span>' +
+    `<span class="seg"><span class="${o.clips ? 'on' : ''}">${o.clips ? '▶ ' : ''}Clips</span><span class="${o.clips ? '' : 'on'}">${o.clips ? '' : '▶ '}Timeline</span></span>` +
+    `<span class="chip m" style="font-size:13px;height:24px;background:var(--t-bg0);padding:0 12px">${o.pos || '14.1.3'}</span>` +
+    `<span class="m" style="font-size:13px">${o.bpm || '92.00'} <span class="t2" style="font-size:9px">BPM</span></span><span class="chip ghost">${o.sig || '4/4'} ${ic('down', 9)}</span>`;
+  const right = (o.lock != null ? `<span class="chip ${o.lock ? 'warn' : 'ghost'}" style="height:24px">${ic('lock', 13)}${o.lock ? ' Locked' : ''}</span>` : '') +
+    btn(ic('undo', 15)) + btn(ic('redo', 15)) + btn(ic('follow', 15), 'background:var(--t-bg2)') + btn(ic('insp', 15), 'background:var(--t-bg2)') + btn(ic('x', 15));
+  return A(x, y, w, 40, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1);display:flex;align-items:center;gap:9px;padding:0 10px;white-space:nowrap;overflow:hidden',
+    left + '<span style="flex:1"></span>' + right);
+}
+function songPane(x, y, w, h, o) {          // headers | clips | timeline
+  const P = !!o.proposed, hw = o.hw || 190, lw = o.lw || 233, rowH = o.rowH || 40, panel = !!o.panel;
+  const band = panel ? 38 : 54, tlx = hw + lw, tlw = w - tlx, bars = o.bars || 20, ppb = tlw / bars, nsc = Math.round(lw / 77);
+  let e = '';
+  // top-left corner: tools, launch quantize, stop all (the panel editor puts the transport there)
+  if (panel) e += A(4, 10, null, 18, 'display:flex;gap:2px', [ic('play', 12, 'var(--t-play)'), ic('stop', 12), ic('rec', 12), ic('loop', 13)].map(g => `<span class="chip ghost" style="height:18px;padding:0 3px">${g}</span>`).join('') + `<span class="chip acc" style="height:18px;padding:0 3px;margin-left:6px">${ic('ptr', 12, 'var(--t-ink)')}</span><span class="chip ghost" style="height:18px;padding:0 3px">${ic('pen', 12)}</span>`);
+  else e += A(6, 8, hw - 12, 18, 'display:flex;gap:4px;align-items:center', `<span class="chip acc" style="height:18px;padding:0 4px">${ic('ptr', 12, 'var(--t-ink)')}</span><span class="chip ghost" style="height:18px;padding:0 4px">${ic('pen', 12)}${ic('down', 9)}</span><span style="flex:1"></span><span class="chip ghost">Launch 1 bar ${ic('down', 9)}</span><span class="chip ghost" style="padding:0 4px">${ic('stop', 10)}</span>`);
+  // scene headers over the clips
+  const sw = (lw - 6) / nsc, scenes = ['Intro', 'Verse', 'Chorus', 'Break'];
+  for (let k = 0; k < nsc; k++) e += A(hw + 3 + k * sw, band - 18, sw - 4, 15, 'font-size:10px;color:var(--t-text1);display:flex;gap:4px;align-items:center', ic('play', 9, 'var(--t-text1)') + scenes[k], 'ell');
+  e += rulerHTML(tlx, 0, tlw, { bars, ppb, panel, markers: [[1, 'Intro'], [5, 'Verse'], [13, 'Chorus']], loop: o.loop || [9, 13], loopOn: o.loopOn, every: ppb < 32 ? 2 : 1, head: o.head });
+  // rows
+  const tracks = o.tracks || TRACKS;
+  let ry = band;
+  tracks.forEach(t => {
+    if (ry > h) return;
+    e += hdrRow(t, { y: ry, w: hw, h: rowH, armed: t.armed, mute: t.m, solo: t.s, sel: t.sel || (o.sel === t.n), lanes: t.lanesOpen,
+      level: { db: t.db, meter: t.meter, pan: t.pan, rec: P && t.armed && o.recIn }, thin: P });
+    e += A(hw, ry, lw, rowH, 'background:var(--t-bg0);border-bottom:1px solid var(--t-line0)');
+    t.slots.slice(0, nsc).forEach((sl, k) => {
+      let [st, name] = sl.split(':');
+      if (st === 'arm' && !P) st = 'empty';
+      e += slot({ x: hw + 3 + k * sw, y: ry + 3, w: sw - 4, h: rowH - 6, state: st, name, c: t.c, wave: t.kind === 'audio' ? t.wk : null, seed: t.n * 3 + k, prog: .55, badge: st === 'queue' && P ? '1' : '' });
+    });
+    e += A(tlx, ry, tlw, rowH, 'background:var(--t-bg0);border-bottom:1px solid var(--t-line0)');
+    for (let b = 0; b < bars; b++) e += A(tlx + b * ppb, ry, 1, rowH, 'background:var(--t-line0)');
+    t.clips.forEach(([at, len, name, badge], k) => {
+      const cx = tlx + (at - 1) * ppb;
+      if (cx > w) return;
+      e += tlClip({ x: cx, y: ry + 2, w: Math.min(len * ppb, w - cx) - 1, h: rowH - 4, c: t.c, name, badge, kind: t.kind === 'audio' ? 'audio' : t.kind === 'drum' ? 'drum' : 'notes', wk: t.wk, seed: t.n * 7 + k, ppb: ppb * 2 });
+    });
+    ry += rowH;
+    if (t.extraLane) { e += t.extraLane(ry, hw, tlx, tlw, ppb); ry += t.extraH; }
+  });
+  return `<div class="pane${o.focus ? ' focus' : ''}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px">${e}</div>`;
+}
+function inspector(x, y, w, h) {
+  let e = '', yy = 10;
+  const sec = t => { const r = A(12, yy, w - 24, 12, 'font:600 9px/12px var(--f-ui);letter-spacing:.12em;color:var(--t-text2)', t); yy += 17; return r; };
+  const row = (l, v, st = '') => { const r = A(12, yy, w - 24, 14, 'display:flex;justify-content:space-between;gap:8px;font-size:10.5px', `<span class="t1">${l}</span><span style="text-align:right;${st}">${v}</span>`); yy += 18; return r; };
+  e += A(12, yy, w - 24, 16, 'font-size:12px', 'Inspector', 'b'); yy += 26;
+  e += sec('TRACK') + row('Name', 'Vox') + row('Recording', 'Any input ▾');
+  yy += 4;
+  const y0 = yy;
+  e += sec('CHANNEL');
+  e += levelBar(12, yy + 3, w - 24 - 54, { c: 15, pos: fpos(-3), meter: .58 }) + A(w - 62, yy - 1, 50, 14, 'text-align:right;font-size:10px', '-3.0 dB', 'm');
+  yy += 18;
+  e += row('Pan', 'Centre');
+  [['M', 0, ''], ['S', 0, ''], ['●', 1, 'ron'], ['IN', 1, 'inon']].forEach(([t, on, cls], k) => e += `<div class="sb${on ? ' ' + cls : ''}" style="left:${12 + k * 34}px;top:${yy}px;width:30px">${t}</div>`);
+  yy += 22;
+  e += A(12, yy, w - 24, 12, 'font-size:10px', 'Sources', 't2'); yy += 15;
+  e += row('☑ Clips', '0.0 dB', 'font-family:var(--f-mono);font-size:10px') + row('☑ Track Out 1 · mic', '-2.0 dB', 'font-family:var(--f-mono);font-size:10px');
+  e += A(12, yy, w - 24, 12, 'font-size:10px', 'FX loops', 't2'); yy += 15;
+  e += row('<span style="color:var(--t-play)">●</span> 1 Comp', 'WET 100%') + row('<span style="color:var(--t-play)">●</span> 2 EQ', 'WET 100%') + row('<span class="t2">+ Add an FX loop</span>', '');
+  e += A(12, yy, w - 24, 12, 'font-size:10px', 'Sends', 't2'); yy += 15;
+  e += row(`<span style="color:${C(9)}">Reverb</span>`, '-14.0 dB · after') + row(`<span style="color:${C(11)}">Delay</span>`, '-20.0 dB · after');
+  e += row('Latency', '2.6 ms · 125 smp · <span style="color:var(--t-accent)">Measure</span>');
+  e += row('Output', '→ Master');
+  e += A(6, y0 - 4, w - 12, yy - y0 + 2, 'border-radius:5px;box-shadow:inset 0 0 0 1px var(--t-line2)');
+  return `<div class="pane" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;background:var(--t-bg1)">${e}</div>`;
+}
+function panelEditor(o) {
+  const H = 128.5 * MM, P = !!o.proposed;
+  const disp = { mode: 'timeline', playing: true, scene: 'SCENE 2 VERSE', pos: '14.1.3', bpm: '92.0', sel: 'Vox · take 3', selC: 15,
+    rows: [{ c: 10, cells: [1, 2, 1, 0, 0, 0, 0, 0] }, { c: 1, cells: [1, 2, 0, 0, 0, 0, 0, 0] }, { c: 12, cells: [0, 1, 1, 0, 0, 0, 0, 0] }, { c: 6, cells: [1, 2, 1, 0, 0, 0, 0, 0] }] };
+  let s = `<svg class="a pnl" style="left:0;top:0" width="390" height="${f2(H)}" viewBox="0 0 132.08 128.5">${tesseraPanel({ display: disp, playing: true, main: .5, mode: 'timeline' })}</svg>`;
+  s += A(390, 0, 810, H, 'background:var(--t-bg1);box-shadow:inset 1px 0 0 var(--t-line0)');
+  for (let i = -1; i <= 1; i++) s += A(1196 + i * 2, H / 2 - 10, 1, 20, 'background:var(--t-line2)');
+  const ex = 393, ey = 16, ew = 799, eh = H - 32, topH = Math.round((eh - 6) * (o.split ?? .42)), lowH = eh - 6 - topH;
+  s += songPane(ex, ey, ew, topH, { proposed: P, panel: true, hw: 150, lw: 160, rowH: 24, bars: 16, loop: [9, 13], head: 14 });
+  s += A(ex + ew - 50, ey + 9, 40, 18, 'display:flex;gap:4px;color:var(--t-text1);line-height:0', ic('insp', 16) + ic('max', 16));
+  s += mixerPane({ x: ex, y: ey + topH + 6, w: ew, h: lowH, proposed: P, mode: o.mode, focus: true });
+  return `<div class="tx" style="background:var(--rack)">${s}</div>`;
+}
+
+B['panel-today'] = () => {
+  const html = panelEditor({ proposed: false });
+  const p = [pin(536, 112, 1), pin(466, 215, 2), pin(1094, 262, 3)];
+  return { html: html + p.join(''), w: 1200, h: Math.ceil(128.5 * MM) };
+};
+B['panel-proposed'] = () => {
+  const html = panelEditor({ proposed: true });
+  const p = [pin(538, 97, 1), pin(444, 232, 2), pin(604, 206, 3), pin(990, 166, 4), pin(474, 166, 5)];
+  return { html: html + p.join(''), w: 1200, h: Math.ceil(128.5 * MM) };
+};
+B['panel-tiles'] = () => {
+  const html = panelEditor({ proposed: true, split: .66 });
+  const p = [pin(533, 277, 1), pin(1050, 291, 2), pin(990, 248, 3)];
+  return { html: html + p.join(''), w: 1200, h: Math.ceil(128.5 * MM) };
+};
+B['full-proposed'] = () => {
+  const W = 1280, H = 800;
+  let s = transportBar(0, 0, W, { armed: true, plan: '● Vox · from Track Out IN · count-in 1 bar · click', lock: false });
+  const sy = 44, sh = 360;
+  s += songPane(4, sy, W - 8, sh, { proposed: true, recIn: true, sel: 6, loop: [9, 13], loopOn: true, head: 10 });
+  const ly = sy + sh + 6, lh = H - ly - 4, iw = 240;
+  s += mixerPane({ x: 4, y: ly, w: W - 12 - iw, h: lh, proposed: true, mode: 'strips', focus: true, mainOk: true, scroll: .05 });
+  s += inspector(W - 4 - iw, ly, iw, lh);
+  const p = [pin(258, 20, 1), pin(1085, 20, 2), pin(198, 318, 3), pin(606, 500, 4), pin(606, 636, 5), pin(932, 762, 6),
+    pin(500, 789, 7), pin(1230, 540, 8), pin(322, 622, 9)];
+  return { html: `<div class="tx">${s}</div>` + p.join(''), w: W, h: H };
+};
+B['mix-today'] = () => {
+  const W = 760, H = 200;
+  const html = `<div class="tx">${mixerPane({ x: 0, y: 0, w: W, h: H, proposed: false })}</div>`;
+  const p = [pin(36, 52, 1), pin(690, 120, 2), pin(300, 110, 3)];
+  return { html: html + p.join(''), w: W, h: H };
+};
+B['mix-heights'] = () => {
+  const W = 1000, parts = [['strips', 430, 'Strips · 430 px'], ['compact', 196, 'Compact · 196 px'], ['tiles', 100, 'Tiles · 100 px'], ['meters', 26, 'Meters · 26 px']];
+  let s = '', y = 0;
+  parts.forEach(([mode, h, label]) => {
+    s += A(4, y + 2, 400, 16, 'font:600 10px/16px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--t-text1)', label);
+    y += 20;
+    s += mixerPane({ x: 0, y, w: W, h, proposed: true, mode, mainOk: true });
+    y += h + 14;
+  });
+  const p = [pin(603, 104, 1), pin(296, 150, 2), pin(603, 246, 3), pin(900, 427, 4), pin(100, 560, 5), pin(226, 530, 6), pin(140, 744, 7), pin(928, 792, 8), pin(300, 838, 9)];
+  return { html: `<div class="tx">${s}</div>` + p.join(''), w: W, h: y - 14 };
+};
+
+// ------------------------------------------------------------------------------------------------ the audio editor
+function hitsPath(w, h, hits, seed) {      // a waveform whose hits sit where they really are, drift and all
+  const r = rng(seed), n = Math.floor(w / 1.2), mid = h / 2, k = mid * .94, dx = w / (n - 1), amps = [];
+  for (let i = 0; i < n; i++) {
+    const x = i * dx;
+    let a = .03 + .03 * r();
+    hits.forEach(([hx, acc]) => { if (x >= hx) a = Math.max(a, acc * Math.exp(-(x - hx) / 30) * (.78 + .22 * r())); });
+    amps.push(Math.min(1, a));
+  }
+  let p = `M0 ${f2(mid)}`;
+  for (let i = 0; i < n; i++) p += `L${f2(i * dx)} ${f2(mid - amps[i] * k)}`;
+  for (let i = n - 1; i >= 0; i--) p += `L${f2(i * dx)} ${f2(mid + amps[i] * k)}`;
+  return p + 'Z';
+}
+function aeBody(x, y, w, h, o) {            // the whole file, the clip's window bright
+  const half = (h - 6) / 2, fill = mix(C(o.c), 72, 'var(--t-text0)');
+  let paths = '';
+  for (let k = 0; k < 2; k++) paths += `<path d="${hitsPath(w, half, o.hits, (o.seed || 4) + k)}" fill="${fill}" fill-opacity=".9" transform="translate(0 ${f2(k * (half + 6))})"/>`;
+  let e = A(x, y, w, h, `background:${mix(C(o.c), 8, 'var(--t-bg0)')}`) + A(x + o.wa, y, o.wb - o.wa, h, `background:${mix(C(o.c), 24, 'var(--t-bg0)')}`);
+  e += A(x, y, w, h, 'line-height:0', `<svg width="${w}" height="${f2(h)}">${paths}</svg>`);
+  e += A(x, y, o.wa, h, 'background:var(--t-bg0);opacity:.6') + A(x + o.wb, y, w - o.wb, h, 'background:var(--t-bg0);opacity:.6');
+  e += A(x + o.wa - 2, y + h / 2 - 10, 4, 20, `border-radius:2px;background:${C(o.c)}`) + A(x + o.wb - 2, y + h / 2 - 10, 4, 20, `border-radius:2px;background:${C(o.c)}`);
+  return e;
+}
+function aeRuler(x, y, w, o) {
+  let e = A(x, y, w, 22, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1)');
+  const bw = (o.wb - o.wa) / o.beats;
+  for (let k = 0; k <= o.beats; k++) {
+    const bx = x + o.wa + k * bw, bar = Math.floor(k / 4) + 1, beat = k % 4 + 1;
+    e += A(bx, y + 8, 1, 14, 'background:var(--t-line2)');
+    if (k > 0) e += A(bx + 3, y + 5, 40, 12, 'font-size:9.5px;color:var(--t-text1)', beat === 1 ? String(bar) : `${bar}.${beat}`);
+    for (let q = 1; q < 4 && k < o.beats; q++) e += A(bx + q * bw / 4, y + 17, 1, 5, 'background:var(--t-line1)');
+  }
+  e += A(x + o.wa - 1, y + 3, 14, 14, 'border-radius:3px;background:var(--t-accent);color:var(--t-ink);font:700 9px/14px var(--f-ui);text-align:center', '1');
+  return e;
+}
+function popover(x, y, w, rows) {           // a Tessera popover in the editor's palette
+  let e = '', yy = 8;
+  rows.forEach(r => {
+    if (r === '-') { e += A(8, yy + 3, w - 16, 1, 'background:var(--t-line1)'); yy += 8; return; }
+    if (r.slider != null) {
+      e += A(10, yy, w - 20, 14, 'display:flex;justify-content:space-between;font-size:10.5px', `<span class="t1">${r.l}</span><span class="m">${r.v}</span>`);
+      e += A(10, yy + 18, w - 20, 4, 'border-radius:2px;background:var(--t-ground)', A(0, 0, (w - 20) * r.slider, 4, 'border-radius:2px;background:var(--t-accent)'));
+      e += A(10 + (w - 20) * r.slider - 5, yy + 15, 10, 10, 'border-radius:50%;background:var(--t-text0)');
+      yy += 32; return;
+    }
+    e += A(10, yy, w - 20, 16, `display:flex;justify-content:space-between;font-size:10.5px;${r.hi ? 'color:var(--t-accent);font-weight:600' : ''}`, `<span>${r.l}</span><span class="${r.k ? 't2' : 'chip'}" style="${r.k ? '' : 'height:16px'}">${r.v || r.k || ''}</span>`);
+    yy += 22;
+  });
+  return A(x, y, w, yy + 4, 'border-radius:5px;background:var(--t-bg1);box-shadow:0 0 0 1px var(--t-line2),0 8px 24px var(--shadow);z-index:5', e);
+}
+const AE_HITS = (wa, step, drift, acc) => drift.map((d, k) => [wa + k * step + d, acc[k % acc.length]]);
+B['ae-today'] = () => {
+  const W = 1100, H = 300, wa = 30, wb = 1070, c = 2;
+  const hits = [];
+  for (let k = -1; k < 17; k++) hits.push([wa + k * (wb - wa) / 16, [1, .5, .8, .45, .95, .55, .75, .6][(k + 16) % 8]]);
+  let e = A(0, 0, W, 26, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1);display:flex;align-items:center;gap:8px;padding:0 8px',
+    `<span class="chip"><span style="width:9px;height:9px;border-radius:2px;background:${C(c)}"></span>Break · Amen 136 · 2 bars ${ic('down', 9)}</span><span style="flex:1"></span>${ic('max', 16, 'var(--t-text1)')}`);
+  e += aeRuler(0, 26, W, { wa, wb, beats: 8 });
+  e += aeBody(0, 48, W, H - 52, { c, wa, wb, hits, seed: 11 });
+  const p = [pin(14, 13, 1), pin(560, 13, 2), pin(560, 160, 3)];
+  return { html: `<div class="tx"><div class="pane focus" style="left:0;top:0;width:${W}px;height:${H}px">${e}</div></div>` + p.join(''), w: W, h: H };
+};
+B['ae-proposed'] = () => {
+  const W = 1100, H = 380, wa = 60, wb = 1040, c = 2, step = (wb - wa) / 8;
+  const drift = [0, 3.3, -2.2, 10, 1.1, -12.2, 5, 15], acc = [1, .5, .8, .45, .95, .55, .75, .6];
+  const hits = [[wa - step, .6], ...AE_HITS(wa, step, drift, acc), [wb, 1], [wb + step, .5]];
+  const chip = (t, cls = '') => `<span class="chip ${cls}">${t}</span>`;
+  const hdr = `<span class="chip"><span style="width:9px;height:9px;border-radius:2px;background:${C(c)}"></span>Break · Amen 136 · 1 bar ${ic('down', 9)}</span>` +
+    chip(`136 ${ic('down', 9)}`) + chip(`Stretch ${ic('down', 9)}`) + chip(`Drums ${ic('down', 9)}`) + chip('Pitch <span class="m">0 st</span>') +
+    chip('Gain <span class="m">-3.0 dB</span>') + chip('◀', 'ghost') + chip(`Warp ${ic('down', 9)} <span style="opacity:.8">1/16 · 75%</span>`, 'acc') + chip('Takes 1', 'ghost');
+  const right = `<span class="seg acc"><span>Select</span><span class="on">Slice</span></span>${ic('spk', 15, 'var(--t-accent)')}${ic('max', 16, 'var(--t-text1)')}`;
+  let e = A(0, 0, W, 26, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1);display:flex;align-items:center;gap:6px;padding:0 8px;white-space:nowrap', hdr + '<span style="flex:1"></span>' + right);
+  e += aeRuler(0, 26, W, { wa, wb, beats: 4 });
+  const by = 48, bh = H - by - 26;
+  e += aeBody(0, by, W, bh, { c, wa, wb, hits, seed: 21 });
+  // a fade in on the window's top-left corner, with its handle and curve dot
+  e += A(wa, by, 70, bh, 'line-height:0', `<svg width="70" height="${bh}"><path d="M0 0L70 0Q10 ${bh * .35} 0 ${bh}Z" fill="var(--t-bg0)" fill-opacity=".5"/><path d="M0 ${bh}Q10 ${bh * .35} 70 0" stroke="var(--t-text1)" stroke-width="1" fill="none"/></svg>`);
+  e += A(wa + 66, by + 2, 8, 8, 'border-radius:2px;background:var(--t-text0)') + A(wa + 13, by + bh * .48, 7, 7, 'border-radius:50%;background:var(--t-text0)');
+  // warp markers: a line through a pinned hit, a handle in the ruler
+  [3, 7].forEach(k => {
+    const hx = wa + k * step + drift[k], gx = wa + k * step;
+    e += A(gx, by, 1.5, bh, 'background:var(--t-accent);opacity:.9') + A(gx - 5, 30, 10, 10, 'background:var(--t-accent);transform:rotate(45deg);border-radius:2px');
+    e += A(hx - 1, by + bh - 34, 2, 28, 'background:var(--t-accent);opacity:.45');
+  });
+  // drift ticks: from each hit to its grid line, amber when far off
+  drift.forEach((d, k) => {
+    const gx = wa + k * step, hx = gx + d, ms = Math.abs(d / .555);
+    const col = ms > 15 ? 'var(--t-queue)' : ms > 5 ? 'var(--t-text1)' : 'var(--t-text2)';
+    e += A(hx - 4, by + bh + 2, 8, 6, 'line-height:0', `<svg width="8" height="6"><path d="M4 0L8 6H0Z" fill="${col}"/></svg>`);
+    e += A(Math.min(hx, gx), by + bh + 11, Math.max(2, Math.abs(d)), 2, `background:${col}`) + A(gx - .5, by + bh + 8, 1, 8, `background:${col}`);
+    if (ms > 15) e += A(hx + 6, by + bh + 7, 60, 12, `font-size:9px;color:${col}`, `${d > 0 ? '+' : '-'}${Math.round(ms)} ms`, 'm');
+  });
+  // the Slice tool's line, with its readout
+  const sx = wa + 6 * step + 5;
+  e += A(sx, by, 1.5, bh, 'background:var(--t-select)') + `<div class="readout" style="left:${sx + 10}px;top:${by + 36}px">Split at 1.4.1 · Shift+click: every hit</div>`;
+  e += popover(560, 22, 236, [{ l: 'Grid', v: `1/16 ${ic('down', 9)}` }, { l: 'Strength', v: '75%', slider: .5 }, { l: 'Hits louder than', v: '-24 dB', slider: .3 }, '-', { l: 'Pin hits to the grid', k: 'Q', hi: 1 }, { l: 'Settings…', k: 'Shift+Q' }, { l: 'Remove warp markers', k: '' }]);
+  const p = [pin(150, 13, 1), pin(548, 13, 2), pin(wa + 3 * step + 10, 36, 3), pin(wa + 5 * step - 22, by + bh + 12, 4), pin(sx + 2, by + 20, 5), pin(wa + 80, by + 6, 6), pin(888, 13, 7)];
+  return { html: `<div class="tx"><div class="pane focus" style="left:0;top:0;width:${W}px;height:${H}px">${e}</div></div>` + p.join(''), w: W, h: H };
+};
+B['ae-menus'] = () => {
+  const W = 760, H = 230;
+  const menu = (x, y, items, w) => A(x, y, w, null, 'position:absolute', `<div class="menu" style="position:relative">${items.map(it => it === '-' ? '<div class="sep"></div>' : `<div class="${it.c || ''}"><span>${it.t}</span>${it.k ? `<span class="k">${it.k}</span>` : ''}</div>`).join('')}</div>`);
+  let e = menu(16, 16, [{ t: 'Amen 136 (2 uses)', c: 'lb' }, '-', { t: 'Split at transients' }, { t: 'Make triggers from audio', k: '▸', c: 'hi' }, { t: 'Slice to a drum track…', k: '▸' }, { t: 'Bounce to a new audio track…' }, '-', { t: 'Pin every hit to the grid', k: 'Q' }, { t: 'Remove warp markers' }], 250);
+  e += menu(268, 68, [{ t: 'Kick, snare and hats (3 lanes)', k: '✓' }, { t: 'One lane (Hits)' }, '-', { t: 'Add its Drum Out too', k: '✓' }], 250);
+  e += menu(530, 16, [{ t: 'New drum track: Break triggers', c: 'lb' }, '-', { t: `<span style="color:${C(0)}">●</span> Kick · 36 · out 1`, k: '12 hits' }, { t: `<span style="color:${C(5)}">●</span> Snare · 38 · out 2`, k: '8 hits' }, { t: `<span style="color:${C(10)}">●</span> Hats · 42 · out 3`, k: '31 hits' }], 214);
+  const p = [pin(262, 92, 1), pin(520, 132, 2), pin(740, 30, 3)];
+  return { html: `<div class="tx" style="background:var(--t-ground)">${e}</div>` + p.join(''), w: W, h: H };
+};
+
+// ------------------------------------------------------------------------------------------------ recording and comping
+B['rec-takes'] = () => {
+  const W = 1100, H = 410, c = 15, lw = 124, x0 = lw, ww = W - lw, bars = 4, bw = ww / bars;
+  const chip = (t, cls = '') => `<span class="chip ${cls}">${t}</span>`;
+  let e = A(0, 0, W, 26, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1);display:flex;align-items:center;gap:6px;padding:0 8px;white-space:nowrap',
+    `<span class="chip"><span style="width:9px;height:9px;border-radius:2px;background:${C(c)}"></span>Vox · Verse vox · 4 bars ${ic('down', 9)}</span>` +
+    chip(`92 ${ic('down', 9)}`) + chip(`Stretch ${ic('down', 9)}`) + chip(`Voice ${ic('down', 9)}`) + chip('Gain <span class="m">0.0 dB</span>') + chip(`Takes 3 ${ic('down', 9)}`, 'acc') +
+    '<span style="flex:1"></span><span class="seg acc"><span class="on">Select</span><span>Slice</span></span>' + ic('max', 16, 'var(--t-text1)'));
+  // the ruler: bars and beats of the clip
+  e += A(0, 26, W, 22, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1)');
+  for (let b = 0; b < bars; b++) for (let q = 0; q < 4; q++) {
+    const x = x0 + b * bw + q * bw / 4;
+    e += A(x, q ? 40 : 34, 1, q ? 8 : 14, 'background:var(--t-line2)');
+    if (!q) e += A(x + 3, 30, 30, 12, 'font-size:9.5px;color:var(--t-text1)', String(b + 1));
+  }
+  const rows = [['Comp', 74], ['Take 3', 62], ['Take 2', 62], ['Take 1', 62]];
+  let y = 52;
+  const parts = [[0, .3, 3], [.3, .55, 1], [.55, .8, 2], [.8, 1, 3]];
+  rows.forEach(([name, h], i) => {
+    const comp = i === 0, take = 4 - i;
+    e += A(0, y, lw - 4, h, `background:var(--t-bg1);border-radius:3px`,
+      A(8, 8, lw - 20, 14, 'font-size:11px', name + (i === 1 ? ' <span class="t2" style="font-weight:400">newest</span>' : ''), 'b') +
+      (comp ? A(8, 26, lw - 20, 30, 'font-size:9.5px;line-height:1.3', 'What plays: each part tinted by its take', 't2')
+        : `<span class="chip ${i === 3 ? 'acc' : ''}" style="position:absolute;left:8px;top:30px;height:18px">${ic('spk', 12, i === 3 ? 'var(--t-ink)' : 'currentColor')} Hear</span>`));
+    e += A(x0, y, ww, h, `background:${mix(C(c), comp ? 16 : 9, 'var(--t-bg0)')}`);
+    if (comp) {
+      parts.forEach(([a, b, tk]) => {
+        const px = x0 + a * ww, pw = (b - a) * ww;
+        e += A(px, y, pw - 1, h, `background:${mix(C(c), tk === 3 ? 34 : tk === 2 ? 26 : 18, 'var(--t-bg0)')};border-right:1px solid var(--t-line2)`,
+          A(0, 0, pw, h, 'line-height:0;opacity:.95', wave(Math.round(pw), h, mix(C(c), 72, 'var(--t-text0)'), { kind: 'vocal', seed: 40 + tk, phrases: 2 }, .9)) +
+          A(4, 3, 30, 13, `border-radius:3px;background:${C(c)};color:var(--t-ontile);font:700 9px/13px var(--f-ui);text-align:center`, 'T' + tk));
+        if (a > 0) e += A(px - 4, y - 2, 8, 6, 'border-radius:2px;background:var(--t-text0)');
+      });
+    } else {
+      const end = take === 1 ? .86 : 1;
+      e += A(x0, y, ww * end, h, 'line-height:0', wave(Math.round(ww * end), h, mix(C(c), 60, 'var(--t-text0)'), { kind: 'vocal', seed: 40 + take, phrases: 6 }, .75));
+      if (take === 1) e += A(x0 + ww * end, y, ww * (1 - end), h, `background:repeating-linear-gradient(135deg, var(--t-line2) 0 1px, transparent 1px 6px)`) +
+        A(x0 + ww * end + 8, y + h / 2 - 7, 140, 14, 'font-size:9.5px;color:var(--t-text1)', 'no audio: the pass stopped');
+      parts.forEach(([a, b, tk]) => { if (tk === take) e += A(x0 + a * ww, y, (b - a) * ww, h, 'box-shadow:inset 0 0 0 1.5px var(--t-text1);border-radius:2px'); });
+    }
+    y += h + 6;
+  });
+  // a swipe on Take 2, live
+  const sy = 52 + 74 + 6 + 62 + 6, sa = x0 + .55 * ww, sb = x0 + .8 * ww;
+  e += A(sa, sy, sb - sa, 62, `background:${mix('var(--t-select)', 22, 'transparent')};box-shadow:inset 0 0 0 1.5px var(--t-select);border-radius:2px`);
+  e += `<div class="readout" style="left:${sb + 8}px;top:${sy + 20}px">Take 2 · 3.1 – 4.1</div>`;
+  const p = [pin(392, 13, 1), pin(x0 + .3 * ww, 50, 2), pin(sb + 4, sy + 6, 3), pin(lw - 14, y - 34, 4), pin(x0 + .92 * ww, y - 60, 5)];
+  return { html: `<div class="tx"><div class="pane focus" style="left:0;top:0;width:${W}px;height:${H}px">${e}</div></div>` + p.join(''), w: W, h: H };
+};
+B['rec-menus'] = () => {
+  const W = 1000, H = 300;
+  const menu = (x, y, title, items, w) => A(x, y, w, null, '', A(0, -20, 320, 16, 'font:600 10px/16px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--t-text1);white-space:nowrap', title) +
+    `<div class="menu" style="position:relative">${items.map(it => it === '-' ? '<div class="sep"></div>' : `<div class="${it.c || ''}"><span>${it.t}</span>${it.k ? `<span class="k">${it.k}</span>` : ''}</div>`).join('')}</div>`);
+  let e = menu(16, 36, 'Today · Record ▾', [{ t: 'Recording', c: 'lb' }, { t: 'Count-in', k: 'Off ▸' }, { t: 'Metronome', k: 'Off ▸' }, { t: 'Recording offset', k: '0.0 ms ▸' }, { t: 'New launcher clips', k: 'As long as played ▸' },
+    { t: 'Recording over arranger clips', k: 'Merge ▸', c: 'hi' }, { t: 'Input quantize', k: 'Off ▸' }], 300);
+  e += menu(340, 36, 'Today · comping, part by part', [{ t: 'Verse vox (take 3)', c: 'lb' }, '-', { t: 'Split here', k: 'Ctrl+E' }, { t: 'Take', k: '▸', c: 'hi' }, { t: 'Reverse' }], 190);
+  e += menu(536, 102, '', [{ t: 'Take 1' }, { t: 'Take 2' }, { t: 'Take 3', k: '✓' }, '-', { t: 'Every copy plays this take' }], 200);
+  e += A(750, 16, 230, null, '', A(0, 0, 230, 16, 'font:600 10px/16px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--t-text1)', 'Proposed · Record ▾') +
+    `<div class="menu" style="position:relative;margin-top:20px">${[{ t: 'Recording', c: 'lb' }, { t: 'Count-in', k: '1 bar ▸' }, { t: 'Metronome', k: 'Count-in only ▸' }, { t: 'Recording offset', k: '4.2 ms ▸' },
+      { t: 'New launcher clips', k: '4 bars ▸' }, { t: 'Over arranger clips (notes)', k: 'Merge ▸' }, { t: 'Audio passes', k: 'Keep as takes ▸', c: 'hi' }].map(it => `<div class="${it.c || ''}"><span>${it.t}</span><span class="k">${it.k || ''}</span></div>`).join('')}</div>`);
+  const p = [pin(318, 152, 1), pin(530, 112, 2), pin(972, 168, 3), pin(972, 76, 4)];
+  return { html: `<div class="tx" style="background:var(--t-ground)">${e}</div>` + p.join(''), w: W, h: H };
+};
+
+// ------------------------------------------------------------------------------------------------ loops in slots
+B['loop-states'] = () => {
+  const steps = [
+    ['arm', 'Armed', 'An armed track shows ● in its empty slots.', 'Arm Vox'],
+    ['recwait', 'Waiting', 'Records from the next launch line.', 'Click ●'],
+    ['rec', 'Recording', 'The live waveform and the bars so far.', ''],
+    ['close', 'Closing', 'The loop closes on the line and plays on, seamless.', 'Click the slot'],
+    ['play', 'Looping · layer 1', 'Plays like any clip; ● on it overdubs.', ''],
+    ['od', 'Overdub · layer 2', 'Each pass is mixed into a new take.', 'Click ●'],
+    ['play2', 'Undo', 'Ctrl+Z or UNDO: back to layer 1.', 'Ctrl+Z'],
+  ];
+  const cw = 156, gap = 12, W = steps.length * (cw + gap) + gap, H = 196;
+  let e = '';
+  steps.forEach(([st, title, text, act], i) => {
+    const x = gap + i * (cw + gap);
+    e += A(x, 12, cw, 172, 'background:var(--t-bg1);border-radius:6px;box-shadow:0 0 0 1px var(--t-line1)');
+    e += A(x + 10, 20, cw - 20, 14, 'font:600 10px/14px var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--t-text1)', `${i + 1} · ${title}`);
+    // a tiny track row: tile and name, then the slot
+    e += A(x + 10, 42, 18, 34, `background:${C(15)};border-radius:3px;color:var(--t-ontile);font:600 10px/34px var(--f-ui);text-align:center`, '6');
+    e += A(x + 32, 44, 60, 14, 'font-size:11px', 'Vox', 'b') + `<div class="ring on" style="left:${x + 32}px;top:62px"></div>`;
+    const map = { arm: { state: 'arm' }, recwait: { state: 'recwait', name: '● bar 9' }, rec: { state: 'rec', name: 'Recording', badge: '2', wave: 'vocal' },
+      close: { state: 'close', name: 'closes at bar 13', wave: 'vocal' }, play: { state: 'play', name: 'Loop 1', wave: 'vocal', prog: .3 },
+      od: { state: 'od', name: 'layer 2', wave: 'vocal', prog: .7 }, play2: { state: 'play', name: 'Loop 1', wave: 'vocal', prog: .55 } }[st];
+    e += slot({ x: x + 10, y: 84, w: cw - 20, h: 34, c: 15, seed: 9 + i, ...map });
+    e += A(x + 10, 126, cw - 20, 34, 'font-size:10.5px;line-height:1.35;color:var(--t-text1)', text);
+    if (act) e += A(x + 10, 160, null, 16, '', `<span class="chip" style="height:16px;font-size:9.5px">${act}</span>`);
+    if (i < steps.length - 1) e += A(x + cw + 1, 92, 10, 18, 'color:var(--t-text2);line-height:0', ic('chev', 10));
+  });
+  const p = [pin(gap + 3 * (cw + gap) + cw - 8, 84, 1), pin(gap + 5 * (cw + gap) + cw - 8, 84, 2), pin(gap + 6 * (cw + gap) + cw - 8, 84, 3)];
+  return { html: `<div class="tx" style="background:var(--t-ground)">${e}</div>` + p.join(''), w: W, h: H };
+};
+
+// ------------------------------------------------------------------------------------------------ a live setup
+function midiMapModule() {
+  const w = 60.96, maps = [['CC 21–28', 'Perform · LEVEL 1–8'], ['CC 41–48', 'Perform · ▶ 1–8'], ['CC 51–58', 'Perform · M 1–8'],
+    ['CC 64', 'Tessera · REC (foot switch)'], ['CC 65', 'Perform · UNDO'], ['CC 66', 'Perform · NEXT SONG'], ['CC 67', 'FX Loop · BYPASS'], ['CC 7', 'Perform · MASTER']];
+  let lines = '';
+  maps.forEach(([cc, t], i) => lines += `<text x="7" y="${f2(23.5 + i * 10.4)}" class="ds" style="font-size:2.6px;font-weight:600;fill:var(--s-text0)">${cc}</text><text x="7" y="${f2(27.2 + i * 10.4)}" class="ds" style="font-size:2.35px">${t}</text>`);
+  return otherSVG(12, 'MIDI-MAP', `<rect x="4" y="15" width="${f2(w - 8)}" height="88" rx="1" fill="var(--o-screen)"/>${lines}` + oLabel(w / 2, 112, 'Controller 1 · all channels'));
+}
+const voiceModule = () => genericModule(8, 'VOICE', [[12.5, 90, 'V/OCT'], [28.1, 90, 'GATE'], [20.3, 112, 'OUT']],
+  PL.knob(12.5, 32, null, { r: 4.5, val: .4 }) + PL.knob(28.1, 32, null, { r: 4.5, val: .7 }) + PL.knob(20.3, 55, null, { r: 4.5, val: .3 }));
+const delayModule = () => genericModule(6, 'DELAY', [[15.24, 92, 'IN'], [15.24, 113, 'OUT']],
+  PL.knob(15.24, 30, null, { r: 4.2, val: .5 }) + PL.knob(15.24, 48, null, { r: 4.2, val: .35 }) + PL.knob(15.24, 66, null, { r: 4.2, val: .8 }));
+const reverbModule = () => genericModule(8, 'REVERB', [[12.5, 108, 'IN'], [28.1, 108, 'OUT']],
+  PL.knob(12.5, 32, null, { r: 4.5, val: .75 }) + PL.knob(28.1, 32, null, { r: 4.5, val: .6 }) + PL.knob(20.3, 56, null, { r: 4.5, val: .5 }));
+B['live-rack'] = () => {
+  const disp = { mode: 'clips', playing: true, keys: true, scene: 'NEXT 3 TIDE', sceneCol: 'var(--s-queue)', pos: '37.3.1', bpm: '124.0', sel: 'Vox · recording', selC: 15,
+    rows: [{ c: 10, cells: [1, 1, 1, 2, 1, 1, 0, 0] }, { c: 1, cells: [1, 0, 1, 2, 0, 1, 0, 0] }, { c: 12, cells: [0, 1, 1, 3, 1, 0, 0, 0] }, { c: 6, cells: [1, 1, 1, 2, 1, 1, 0, 0] }] };
+  const R = rack([
+    [{ hp: 26, svg: tesseraPanel({ display: disp, playing: true, main: .6, rec: true }), gap: 6 }, { hp: 30, svg: performPanel({ nextQueued: true }), gap: 6 },
+      { hp: 12, svg: midiMapModule(), gap: 6 }, { hp: 10, svg: audioModule({}) }],
+    [{ hp: 6, svg: trackOutPanel({ num: 1, name: 'Bass', c: 10, kind: 'inst', inLight: true, proposed: true, corners: true, bar: '2/4' }), gap: 2 },
+      { hp: 8, svg: voiceModule(), gap: 16 },
+      { hp: 6, svg: trackOutPanel({ num: 6, name: 'Vox', c: 15, kind: 'audio', inLight: true, proposed: true, corners: true, arm: true, recording: true, bar: '3/4' }), gap: 2 },
+      { hp: 5, svg: fxLoopPanel({ inLight: true }), gap: 2 }, { hp: 6, svg: delayModule(), gap: 16 },
+      { hp: 6, svg: trackOutPanel({ num: 8, name: 'Reverb', c: 9, kind: 'inst', sends: true, inLight: true, proposed: true, corners: true, stopped: true }), gap: 2 },
+      { hp: 8, svg: reverbModule() }]
+  ], { pad: 18, between: 40, cables: [
+    { a: [0, 0, 122.6, 95.5], b: [0, 3, 9.4, 54], col: 'var(--cab-b)', sag: 70 }, { a: [0, 0, 122.6, 113], b: [0, 3, 20.1, 54], col: 'var(--cab-v)', sag: 80 },
+    { a: [1, 0, 9, 47.5], b: [1, 1, 12.5, 90], col: 'var(--cab-y)' }, { a: [1, 0, 21.48, 47.5], b: [1, 1, 28.1, 90], col: 'var(--cab-r)' },
+    { a: [1, 1, 20.3, 112], b: [1, 0, 9, 119.5], col: 'var(--cab-g)', sag: 30 },
+    { a: [0, 3, 9.4, 106], b: [1, 2, 9, 119.5], col: 'var(--cab-r)', sag: 120 },
+    { a: [1, 3, 7.4, 89.5], b: [1, 4, 15.24, 92], col: 'var(--cab-y)', sag: 30 }, { a: [1, 4, 15.24, 113], b: [1, 3, 7.4, 114.6], col: 'var(--cab-g)', sag: 28 },
+    { a: [1, 5, 9, 106], b: [1, 6, 12.5, 108], col: 'var(--cab-b)', sag: 34 }, { a: [1, 6, 28.1, 108], b: [1, 5, 9, 119.5], col: 'var(--cab-v)', sag: 40 }] });
+  const p = [pin(...R.at(0, 2, 56, 18), 1), pin(...R.at(0, 1, 37, 59), 2), pin(...R.at(0, 0, 84, 10.5), 3), pin(...R.at(1, 3, 23.6, 45), 4),
+    pin(...R.at(1, 2, 27.5, 112), 5), pin(...R.at(1, 6, 38, 100), 6), pin(...R.at(0, 0, 25, 64.5), 7)];
+  return { html: R.svg + p.join(''), w: R.W, h: R.H };
+};
+B['live-perform'] = () => {
+  const W = 1280, H = 560, px = 4, py = 44, pw = W - 8, ph = H - py - 4;
+  const hw = 190, rowH = 44, band = 64, scw = 132, nsc = 6, lx = hw;
+  let e = '';
+  e += A(6, 8, hw - 12, 18, 'display:flex;gap:4px;align-items:center', `<span class="chip ghost">Launch 1 bar ${ic('down', 9)}</span><span class="chip ghost" style="padding:0 4px">${ic('stop', 10)}</span>`);
+  // sections over the scenes, and Next song
+  [[0, 2, '1 Night Drive · 92', 0], [2, 6, '2 Glass · 124 · 7/8', 1]].forEach(([a, b, name, now]) =>
+    e += A(lx + 3 + a * scw, 6, (b - a) * scw - 4, 20, `border-radius:4px;background:${now ? mix('var(--t-accent)', 26, 'var(--t-bg1)') : 'var(--t-bg1)'};${now ? 'box-shadow:inset 0 0 0 1px var(--t-accent);' : ''}font:600 10.5px/20px var(--f-ui);padding:0 8px;color:${now ? 'var(--t-text0)' : 'var(--t-text2)'}`, name, 'ell'));
+  e += A(pw - 228, 6, 196, 20, 'display:flex;justify-content:flex-end', `<span class="chip" style="height:20px;box-shadow:inset 0 0 0 1px var(--t-queue)">Next song ${ic('chev', 10)} <b>3 Tide · 88</b></span>`);
+  // scene headers
+  const scenes = [['Night C', ''], ['Night D', ''], ['Glass A', '124'], ['Glass B', ''], ['Glass Drop', '', 'then next · 8 bars'], ['Glass Out', '']];
+  scenes.forEach(([n, t, follow], k) => {
+    e += A(lx + 3 + k * scw, 32, scw - 4, 26, `border-radius:4px;background:${k === 3 ? mix('var(--t-play)', 18, 'var(--t-bg1)') : 'var(--t-bg1)'};display:flex;align-items:center;gap:5px;padding:0 6px;font-size:10.5px`,
+      ic('play', 10, k === 3 ? 'var(--t-play)' : 'var(--t-text1)') + `<span class="b ell">${k + 1} ${n}</span>` + (t ? `<span class="m t2" style="font-size:9.5px;margin-left:auto">${t}</span>` : '') + (follow ? `<span class="t2" style="font-size:9px;margin-left:auto">${follow}</span>` : ''));
+  });
+  e += A(lx + 3 + nsc * scw, 32, 36, 26, 'font-size:9.5px;line-height:26px;text-align:center;color:var(--t-text2)', 'stop');
+  const rows = [
+    [TRACKS[0], ['clip:Night bass', 'clip:Night bass 2', 'clip:Glass bass', 'play:Glass bass B', 'clip:Drop bass', 'empty']],
+    [TRACKS[1], ['clip:Pads', 'empty', 'clip:Glass keys', 'play:Glass keys B', 'empty', 'clip:Out keys']],
+    [TRACKS[2], ['empty', 'clip:Hook', 'clip:Glass lead', 'queue:Glass hook', 'clip:Drop lead', 'empty']],
+    [TRACKS[3], ['clip:Night beat', 'clip:Night fill', 'clip:Glass beat', 'play:Glass beat B', 'clip:Drop beat', 'clip:Out beat']],
+    [TRACKS[4], ['clip:Amen 92', 'empty', 'clip:Break 124', 'play:Break 124 B', 'empty', 'empty']],
+    [TRACKS[5], ['clip:Hook vox', 'arm', 'clip:Glass vox', 'rec:Recording', 'arm', 'arm']],
+    [TRACKS[6], ['clip:Riff A', 'clip:Riff B', 'empty', 'play:Glass riff', 'clip:Drop riff', 'empty']],
+    [TRACKS[7], ['empty', 'empty', 'empty', 'empty', 'empty', 'empty']],
+  ];
+  rows.forEach(([t, sl], i) => {
+    const ry = band + i * rowH;
+    e += hdrRow(t, { y: ry, w: hw, h: rowH, armed: t.armed, mute: t.m, solo: t.s, level: { db: t.db, meter: t.meter, pan: t.pan, rec: t.armed } });
+    e += A(lx, ry, pw - lx, rowH, 'background:var(--t-bg0);border-bottom:1px solid var(--t-line0)');
+    sl.forEach((v, k) => {
+      const [st, name] = v.split(':');
+      e += slot({ x: lx + 3 + k * scw, y: ry + 3, w: scw - 4, h: rowH - 6, state: st, name, c: t.c, wave: t.kind === 'audio' ? t.wk : null, seed: t.n * 5 + k, prog: .4 + (i % 3) * .15,
+        badge: st === 'queue' ? '2' : st === 'rec' ? '3' : '' });
+    });
+    e += A(lx + 3 + nsc * scw + 8, ry + rowH / 2 - 8, 20, 16, 'border-radius:3px;background:var(--t-bg2);display:flex;align-items:center;justify-content:center', ic('stop', 9, 'var(--t-text1)'));
+  });
+  e += A(pw - 24, band - 30, 20, ph - band + 26, 'border-radius:4px;background:var(--t-bg1);writing-mode:vertical-rl;font-size:9.5px;color:var(--t-text2);text-align:center;line-height:20px', 'Timeline ◂ F2');
+  let s = transportBar(0, 0, W, { clips: true, lock: true, pos: '37.3.1', bpm: '124.00', sig: '7/8' });
+  s += `<div class="pane focus" style="left:${px}px;top:${py}px;width:${pw}px;height:${ph}px;box-shadow:inset 0 0 0 1px var(--t-queue)">${e}</div>`;
+  const p = [pin(1030, 10, 1), pin(px + lx + 2 * scw + 150, py + 16, 2), pin(pw - 28, py + 16, 3), pin(px + lx + 4 * scw - 12, py + band + 2 * rowH + 6, 4),
+    pin(px + lx + 4 * scw - 12, py + band + 5 * rowH + 6, 5), pin(px + lx + nsc * scw + 26, py + band + 4, 6), pin(px + lx + 5 * scw - 14, py + 36, 7), pin(px + 172, py + band + 3 * rowH + 30, 8)];
+  return { html: `<div class="tx">${s}</div>` + p.join(''), w: W, h: H };
+};
+
+// ------------------------------------------------------------------------------------------------ automation
+function laneRow(y, hw, tlx, tlw, o) {
+  const h = o.h, col = o.col || C(o.c);
+  let e = A(0, y, hw, h, `background:${mix('var(--t-bg1)', 70, 'var(--t-bg0)')};border-bottom:1px solid var(--t-line1)`,
+    A(14, 4, 3, h - 8, `background:${col};border-radius:2px`) + A(22, h / 2 - 12, hw - 72, 13, 'font-size:10.5px', o.name, 'b ell') +
+    A(22, h / 2 + 1, hw - 60, 12, 'font-size:9px', o.sub || '', 'm t1 ell') + `<div class="sb" style="left:${hw - 26}px;top:${f2(h / 2 - 7)}px">M</div>`);
+  let svg = '';
+  if (o.kind === 'switch') {
+    svg += `<line x1="0" y1="${h - 5}" x2="${tlw}" y2="${h - 5}" stroke="${col}" stroke-opacity=".45" stroke-width="1"/>`;
+    o.steps.forEach(([a, b]) => svg += `<rect x="${f2(a * tlw)}" y="5" width="${f2((b - a) * tlw)}" height="${h - 10}" fill="${col}" fill-opacity=".25"/><path d="M${f2(a * tlw)} ${h - 5}V5H${f2(b * tlw)}V${h - 5}" stroke="${col}" stroke-width="2" fill="none"/>`);
+  } else {
+    const pts = o.pts.map(([a, v]) => [a * tlw, 5 + (1 - v) * (h - 10)]);
+    let d = `M${f2(pts[0][0])} ${f2(pts[0][1])}`;
+    pts.slice(1).forEach(([a, v]) => d += `L${f2(a)} ${f2(v)}`);
+    svg += `<path d="${d}L${tlw} ${h}L0 ${h}Z" fill="${col}" fill-opacity=".12"/><path d="${d}" stroke="${col}" stroke-width="1.6" fill="none"/>`;
+    pts.forEach(([a, v]) => svg += `<circle cx="${f2(a)}" cy="${f2(v)}" r="3.5" fill="var(--t-bg0)" stroke="${col}" stroke-width="1.5"/>`);
+    (o.labels || []).forEach(([a, v, t]) => svg += `<text x="${f2(a * tlw + 6)}" y="${f2(5 + (1 - v) * (h - 10) - 5)}" style="font:500 9px var(--f-mono);fill:var(--t-text1)">${t}</text>`);
+  }
+  return e + A(tlx, y, tlw, h, 'background:var(--t-bg0);border-bottom:1px solid var(--t-line0);line-height:0', `<svg width="${f2(tlw)}" height="${h}">${svg}</svg>`);
+}
+B['auto-lanes'] = () => {
+  const W = 1100, H = 420, hw = 190, tlx = hw, tlw = W - hw, bars = 16, ppb = tlw / bars;
+  let e = rulerHTML(tlx, 0, tlw, { bars, ppb, markers: [[1, 'Verse'], [9, 'Chorus']], loop: [9, 13] });
+  e += A(6, 8, hw - 12, 18, 'display:flex;gap:4px;align-items:center', `<span class="chip acc" style="height:18px;padding:0 4px">${ic('ptr', 12, 'var(--t-ink)')}</span><span class="chip ghost" style="height:18px;padding:0 4px">${ic('pen', 12)}</span>`);
+  let y = 54;
+  const track = (t, clips, kind) => {
+    let r = hdrRow(t, { y, w: hw, h: 40, lanes: true, armed: t.armed, level: t.db != null ? { db: t.db, meter: t.meter, pan: t.pan } : null });
+    r += A(tlx, y, tlw, 40, 'background:var(--t-bg0);border-bottom:1px solid var(--t-line0)');
+    clips.forEach(([at, len, name], k) => r += tlClip({ x: tlx + (at - 1) * ppb, y: y + 2, w: len * ppb - 1, h: 36, c: t.c, name, kind, wk: t.wk, seed: 60 + k, ppb: ppb * 2 }));
+    y += 40;
+    return r;
+  };
+  e += track(TRACKS[3], [[1, 8, 'Verse beat'], [9, 8, 'Chorus beat']], 'drum');
+  e += laneRow(y, hw, tlx, tlw, { name: 'Kick level', sub: '-1.5 dB · Drum Out lane 1', c: 0, h: 36, pts: [[0, .75], [.44, .75], [.5, .55], [.74, .55], [.76, .82], [1, .82]] }); y += 36;
+  e += A(0, y, hw, 24, 'background:var(--t-bg2);border-bottom:1px solid var(--t-line1);display:flex;align-items:center;gap:6px;padding:0 8px;font-size:10.5px', `<span class="t1">▾</span><b>Rhythm</b><span class="t2">Group · 2</span><span style="margin-left:auto" class="t1">▾</span>`) +
+    A(tlx, y, tlw, 24, `background:${mix(C(4), 12, 'var(--t-bg0)')};border-bottom:1px solid var(--t-line1)`);
+  y += 24;
+  e += laneRow(y, hw, tlx, tlw, { name: 'Rhythm · Volume', sub: '-1.5 dB · drawn', c: 4, h: 36, pts: [[0, .72], [.5, .72], [.56, .42], [.7, .42], [.74, .72], [1, .72]] }); y += 36;
+  e += track(TRACKS[5], [[3, 4, 'Vox · take 3'], [9, 8, 'Vox chorus']], 'audio');
+  e += laneRow(y, hw, tlx, tlw, { name: 'Mute', sub: 'switch · this track', c: 15, h: 30, kind: 'switch', steps: [[.25, .31], [.81, .88]] }); y += 30;
+  e += track({ n: 10, name: 'Plan', c: 3, kind: 'inst' }, [], 'notes');
+  e += laneRow(y, hw, tlx, tlw, { name: 'Record · Vox', sub: 'switch · punches Vox', c: 3, h: 30, kind: 'switch', steps: [[.125, .25], [.5, .625]] }); y += 30;
+  e += A(0, y, hw, 26, 'background:var(--t-bg1);border-bottom:1px solid var(--t-line1)', A(10, 6, 60, 14, 'font-size:10.5px', 'Master ▾', 'b') + levelBar(74, 10, 70, { c: null, pos: fpos(0), meter: .8 }) + A(148, 6, 38, 14, 'font-size:9.5px;text-align:right', '0.0 dB', 'm t1'));
+  e += A(tlx, y, tlw, 26, 'background:var(--t-bg0);border-bottom:1px solid var(--t-line0)');
+  y += 26;
+  e += laneRow(y, hw, tlx, tlw, { name: 'Tempo', sub: '92 → 98 BPM · song lane', col: 'var(--t-text1)', h: 46, pts: [[0, .3], [.5, .3], [.62, .7], [1, .7]], labels: [[0, .3, '92'], [.62, .7, '98 BPM']] });
+  y += 46;
+  e += A(W - 290, 90, 270, null, '', `<div class="menu" style="position:relative">${[{ t: 'Add automation lane', c: 'lb' }, '-', { t: 'Empty lane (draw it)' }, { t: 'Automate a knob: touch it in the rack' }, { t: 'MIDI control', k: '▸' },
+    { t: 'Volume (the fader)' }, { t: 'Pan' }, { t: 'Send to', k: '▸' }, { t: 'Switch', k: '▸', c: 'hi' }].map(it => it === '-' ? '<div class="sep"></div>' : `<div class="${it.c || ''}"><span>${it.t}</span>${it.k ? `<span class="k">${it.k}</span>` : ''}</div>`).join('')}</div>`);
+  e += A(W - 150, 248, 150, null, '', `<div class="menu" style="position:relative;min-width:140px">${[{ t: 'Mute' }, { t: 'Record (punch in, out)' }, '-', { t: 'Switches: this track', k: '✓' }, { t: 'Switches: track', k: '▸' }].map(it => it === '-' ? '<div class="sep"></div>' : `<div><span>${it.t}</span>${it.k ? `<span class="k">${it.k}</span>` : ''}</div>`).join('')}</div>`);
+  const p = [pin(hw - 6, 96, 1), pin(hw - 6, 168, 2), pin(hw - 6, 242, 3), pin(hw - 6, 312, 4), pin(hw - 6, 366, 5), pin(W - 296, 96, 6)];
+  return { html: `<div class="tx"><div class="pane" style="left:0;top:0;width:${W}px;height:${Math.max(H, y + 4)}px">${e}</div></div>` + p.join(''), w: W, h: Math.max(H, y + 4) };
+};
+
+// ------------------------------------------------------------------------------------------------ one view, two editors
+B['views-shared'] = () => {
+  const W = 1260, H = 668;
+  const lane = h => ({ lanesOpen: true, extraH: h, extraLane: (ry, hw, tlx, tlw) => laneRow(ry, hw, tlx, tlw, { name: 'Volume', sub: '-3.0 dB', c: 15, h, pts: [[0, .7], [.45, .7], [.6, .45], [1, .45]] }) });
+  const tA = [TRACKS[0], TRACKS[3], { ...TRACKS[5], ...lane(24) }, TRACKS[6]], tB = [TRACKS[0], TRACKS[3], { ...TRACKS[5], ...lane(40) }, TRACKS[6]];
+  const head = (x, t) => A(x, 0, 500, 18, 'font:600 10px/18px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--t-text1)', t);
+  const list = MIXDATA.filter(s => !s.lane);
+  let s = head(0, 'Panel editor · 80 HP · its own sizes') + head(620, 'Full editor · its own sizes');
+  s += songPane(0, 22, 580, 168, { proposed: true, panel: true, hw: 150, lw: 160, rowH: 24, bars: 8, tracks: tA, loop: [3, 5] });
+  s += mixerPane({ x: 0, y: 196, w: 580, h: 196, proposed: true, mode: 'compact', mainOk: true, focus: true, list });
+  s += songPane(620, 22, 640, 300, { proposed: true, hw: 190, lw: 156, rowH: 40, bars: 12, tracks: tB, loop: [3, 5] });
+  s += mixerPane({ x: 620, y: 328, w: 640, h: 336, proposed: true, mode: 'strips', mainOk: true, focus: true, list, scroll: .1 });
+  // what both share, outlined
+  const box = (x, y, w, h) => A(x, y, w, h, 'border-radius:4px;box-shadow:0 0 0 2px var(--note);pointer-events:none;z-index:3');
+  s += box(0, 108, 580, 48) + box(620, 156, 640, 80) + box(4, 197, 76, 24) + box(624, 329, 76, 24);
+  const p = [pin(588, 132, 1), pin(1262, 196, 1), pin(86, 209, 2), pin(706, 341, 2), pin(560, 40, 3), pin(1180, 40, 3)];
+  return { html: `<div class="tx" style="background:var(--t-ground)">${s}</div>` + p.join(''), w: W + 10, h: H };
+};
+
+
+// ------------------------------------------------------------------------------------------------ boot
+function render() {
+  document.querySelectorAll('figure.fig[data-fig]').forEach(fig => {
+    const fn = B[fig.dataset.fig];
+    const stage = fig.querySelector('.stage'), fit = fig.querySelector('.fit');
+    if (!fn || !stage) return;
+    try {
+      const out = fn();
+      stage.innerHTML = out.html;
+      stage.style.width = out.w + 'px';
+      stage.style.height = out.h + 'px';
+      fit.dataset.w = out.w; fit.dataset.h = out.h;
+    } catch (err) {
+      stage.innerHTML = `<p style="padding:16px;color:var(--t-record)">This mockup failed to draw: ${String(err && err.message || err)}</p>`;
+      fit.dataset.w = 600; fit.dataset.h = 80;
+      console.error(err);
+    }
+  });
+  fitAll();
+}
+function fitOne(fit) {
+  const stage = fit.querySelector('.stage'), w = +fit.dataset.w || 800, h = +fit.dataset.h || 300;
+  if (fit.classList.contains('actual')) {
+    stage.style.transform = 'none'; stage.style.setProperty('--inv', 1); stage.style.left = '0px';
+    fit.style.height = (h + (fit.scrollWidth > fit.clientWidth ? 10 : 0)) + 'px';
+    return;
+  }
+  const s = Math.min(1, fit.clientWidth / w);
+  stage.style.left = Math.max(0, (fit.clientWidth - w * s) / 2) + 'px';
+  stage.style.transform = `scale(${s})`;
+  stage.style.setProperty('--inv', Math.min(1 / s, 1.7).toFixed(3));
+  fit.style.height = Math.ceil(h * s) + 'px';
+}
+function fitAll() { document.querySelectorAll('.fit').forEach(fitOne); }
+document.addEventListener('click', e => {
+  const b = e.target.closest('.sizebtn');
+  if (!b) return;
+  const fit = b.closest('.fig').querySelector('.fit');
+  const on = fit.classList.toggle('actual');
+  b.textContent = on ? 'Fit to page' : 'Actual size';
+  fitOne(fit);
+});
+// the scheme switch: System follows the viewer; the two others pin one
+function setTheme(t) {
+  if (t === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('[data-theme-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeSet === t)));
+  try { localStorage.setItem('tessera-ux-theme', t); } catch (e) { /* storage may be off */ }
+}
+document.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.themeSet)));
+let saved = 'system';
+try { saved = localStorage.getItem('tessera-ux-theme') || 'system'; } catch (e) { saved = 'system'; }
+setTheme(saved);
+render();
+if ('ResizeObserver' in window) new ResizeObserver(fitAll).observe(document.querySelector('.wrap'));
+else window.addEventListener('resize', fitAll);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAll);
+})();
+</script>

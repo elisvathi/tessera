@@ -72,7 +72,8 @@ void LaneTabs::draw(const DrawArgs& args) {
         const Rect& r = rects[size_t(i)];
         if (r.getRight() > box.size.x)
             break; // no room: the lane menu on the left still offers every lane
-        bool active = i < kTabCount ? view.lowerLane == 0 && view.noteLane == kTabs[i].lane : view.lowerLane != 0;
+        bool active = i < kTabCount ? ctx.state().lowerLane == 0 && ctx.state().noteLane == kTabs[i].lane
+                                    : ctx.state().lowerLane != 0;
         if (i == hovered && !active)
             draw::roundedRect(vg, Rect(r.pos.x + 1, 2, r.size.x - 2, r.size.y - 3), 3, c.bg2);
         if (active) {
@@ -109,8 +110,8 @@ void LaneTabs::onButton(const ButtonEvent& e) {
         openAutomationMenu();
         return;
     }
-    ctx.view().lowerLane = 0;
-    ctx.view().noteLane = kTabs[i].lane;
+    ctx.state().lowerLane = 0;
+    ctx.state().noteLane = kTabs[i].lane;
 }
 
 void LaneTabs::onHover(const HoverEvent& e) {

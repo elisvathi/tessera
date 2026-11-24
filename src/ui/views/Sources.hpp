@@ -59,6 +59,9 @@ class ClipSource : public TimelineSource {
     void toggleLoop() override;
     double playhead() override;
     double pendingSeek() override;
+    /// How far into the clip the music is, in clip ticks since it started (launched or on the timeline), not wrapped
+    /// at its loop; NaN when it isn't playing. Playheads and passes count from here.
+    double elapsed();
     double instanceEnd() override;
     double instanceStart() override;
     void previewInstanceEnd(double end) override { endPreview = end; }
@@ -70,6 +73,10 @@ class ClipSource : public TimelineSource {
 
     /// The timeline clip the piano roll was opened from: the one selected in the arranger, when it plays this clip.
     const ArrangerClip* instance();
+
+    std::vector<PlayheadSegment> playheadSegments() override;
+    void setPlayheadSegment(uint64_t id, double start, double end) override;
+    void openPlayheadSegmentMenu(uint64_t id) override;
 
   private:
     const Clip* current();

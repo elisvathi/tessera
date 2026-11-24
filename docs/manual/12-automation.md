@@ -19,7 +19,9 @@ A track and a clip can each have up to 8 lanes.
 
 ## Adding a track lane
 
-1. Click the lanes arrow (▸) in the track header, or choose **Show automation lanes** in the track menu.
+1. Click the arrow (▸) after the track's number, or choose **Show lanes, parts and sends** in the track menu. The
+   track's own lanes come first. A lane that moves a part's level or pan sits under that part, and a send's lane
+   under that send.
 2. Click **+ Add automation lane** under the track (or **Add automation lane** in the track menu) and choose:
    - **Empty lane (draw it)**: takes the first free AUTO channel.
    - **Automate a knob: touch it in the rack**: see [Turning knobs without cables](#turning-knobs-without-cables).
@@ -27,6 +29,8 @@ A track and a clip can each have up to 8 lanes.
      or any CC by typing its number. The lane is named, records that control when the track records, and plays
      where it belongs: pitch bend on **V/OCT**, pressure on **PRESS**, a CC on the next free AUTO channel. If the
      lane is already there, it is shown instead.
+   - **Volume (the fader)** and **Pan**, on audio tracks: the lane moves the track's own fader or pan. See
+     [The mixer](18-mixer.md#automating-the-fader-and-pan).
 
 ![Adding a lane for a MIDI control](images/add-lane-menu.png)
 
@@ -83,7 +87,7 @@ Right-click the lane header.
 | **Slew** | Smooths jumps, from Off to 100 ms. |
 | **Mute** | The lane stops sending. |
 | **Records from**, **Learn**, **AUTO REC channel**, **Record mode**, **Don't record this lane** | See [Recording automation](#recording-automation). |
-| **Thin**, **Quantize times to the beat**, **Invert**, **Reverse**, **Randomize (±10%)**, **Clear** | Act on the selected points, or all of them. |
+| **Simplify (fewer points, same shape)**, **Quantize times to the beat**, **Invert**, **Reverse**, **Randomize (±10%)**, **Clear** | Act on the selected points, or all of them. Simplify removes points that barely change the line (a recorded lane often has hundreds), so it is easier to edit and the line looks the same. |
 | **Stamp a shape** | Pick a shape: Sine, Triangle, Saw up, Saw down, Square, Random steps, Smooth random, Exp rise or Exp fall. Then drag across the lane: one cycle per grid step, and dragging up or down sets the depth. |
 | **Map another knob: touch it in the rack** | See below. |
 | **Delete lane** | Removes the lane. |
@@ -123,7 +127,8 @@ When a clip lane and a track lane use the same AUTO channel, the lane menu decid
 ## How automation plays
 
 - Track lanes follow the song position in both Plays modes. While the timeline plays, a track taken over by a
-  launched clip pauses its track lanes until **Back to timeline**.
+  launched clip pauses its track lanes until it goes back to the timeline (see
+  [Clips and scenes](05-clips-and-scenes.md#what-plays-clips-or-timeline)).
 - Stacked timeline clips: for each AUTO channel, the clip on top that has a lane there plays it.
 - A channel with nothing playing holds its last value. Pitch bend and pressure lanes go back to 0 instead, so a track
   never stays bent.
@@ -162,7 +167,7 @@ Where it goes:
 - **A launcher take** (into a clip in the clips panel): into the clip's lane on the same AUTO channel, made for you if
   the clip has none. The knob mapping stays on the track lane.
 - **A timeline take**: knob and AUTO REC moves go to the track lane, song-wide like a mix. MIDI controls go into the
-  clip the notes go into (which one depends on **Recording over arranger clips**: see
+  clip the notes go into (which one depends on **Recording over timeline clips**: see
   [Where the recording goes](11-recording.md#where-the-recording-goes)).
 - **Any take, for a MIDI control the track has its own lane for**: into that track lane, at the song position.
 

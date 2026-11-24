@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/model/DeviceTypes.hpp"
 #include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
@@ -213,6 +214,78 @@ TEST_CASE("an old Random with velocity and timing loads as Random plus Humanize,
     CHECK(throughText(song).tracks[0].devices.size() == 1);
 }
 
+TEST_CASE("a timeline tile's old velocity scale goes into its notes, in a copy where the clip plays other ways too") {
+    // Before 15 Nov 2026 a tile could scale its notes' velocity ("velScale", DECISIONS §160).
+    Song song = makeDefaultSong();
+    song.clips.clear();
+    Track& track = song.tracks[0];
+    for (ClipSlot& slot : track.slots)
+        slot.clip.reset();
+    auto addClip = [&](std::vector<float> velocities) {
+        Clip c;
+        c.id = song.newId<ClipId>();
+        c.length = 4 * kPpq;
+        for (size_t k = 0; k < velocities.size(); k++) {
+            Note n;
+            n.id = song.newId<NoteId>();
+            n.start = Tick(k) * kPpq;
+            n.velocity = velocities[k];
+            c.notes.push_back(n);
+        }
+        song.clips.emplace(c.id, c);
+        return c.id;
+    };
+    ClipId shared = addClip({0.8f, 0.5f}), alone = addClip({0.8f}), loud = addClip({0.9f});
+    auto addTile = [&](ClipId clip, Tick at) {
+        ArrangerClip a;
+        a.id = song.newId<ArrangementId>();
+        a.clip = clip;
+        a.position = at;
+        a.length = 4 * kPpq;
+        track.arrangement.push_back(a);
+        return a.id;
+    };
+    std::map<uint64_t, float> scales;
+    scales[addTile(shared, 0).value] = 0.5f;  // shared with a tile at 100%: a copy
+    addTile(shared, 4 * kPpq);                // plays the clip as it is
+    scales[addTile(shared, 8 * kPpq).value] = 0.5f; // the same scale shares that copy
+    scales[addTile(alone, 12 * kPpq).value] = 0.5f; // only use at 50%: the clip itself
+    scales[addTile(alone, 16 * kPpq).value] = 0.75f; // another scale on it: a copy
+    scales[addTile(loud, 20 * kPpq).value] = 1.5f;   // stays at most full velocity
+    json::Ref j(songToJson(song));
+    size_t i;
+    json_t* tile;
+    json_array_foreach(json_object_get(json_array_get(json_object_get(j.get(), "tracks"), 0), "arrangement"), i, tile) {
+        uint64_t id = uint64_t(json_integer_value(json_object_get(tile, "id")));
+        json_object_set_new(tile, "velScale", json_real(scales.count(id) ? scales[id] : 1.0));
+    }
+
+    Song loaded = songFromJson(j.get(), 15);
+    const std::vector<ArrangerClip>& tiles = loaded.tracks[0].arrangement;
+    REQUIRE(tiles.size() == 6);
+    auto velocities = [&](const ArrangerClip& a) {
+        std::vector<float> v;
+        for (const Note& n : loaded.findClip(a.clip)->notes)
+            v.push_back(n.velocity);
+        return v;
+    };
+    CHECK(tiles[0].clip != shared);
+    CHECK(tiles[2].clip == tiles[0].clip);
+    CHECK(tiles[1].clip == shared);
+    CHECK(velocities(tiles[0]) == std::vector<float>{0.4f, 0.25f});
+    CHECK(velocities(tiles[1]) == std::vector<float>{0.8f, 0.5f});
+    CHECK(tiles[3].clip == alone);
+    CHECK(velocities(tiles[3]) == std::vector<float>{0.4f});
+    CHECK(tiles[4].clip != alone);
+    REQUIRE(velocities(tiles[4]).size() == 1);
+    CHECK(velocities(tiles[4])[0] == doctest::Approx(0.6f));
+    CHECK(velocities(tiles[5]) == std::vector<float>{1.f});
+    CHECK(loaded.clips.size() == 5); // three clips and two copies, none left unused
+    // Saved again, nothing is scaled twice.
+    Song again = throughText(loaded);
+    CHECK(again.findClip(again.tracks[0].arrangement[0].clip)->notes[0].velocity == doctest::Approx(0.4f));
+}
+
 TEST_CASE("a Transpose saved with the old ±48 semitone knob keeps its pitch") {
     // Before schema 6 Semitones went from -48 to +48, saved as 0..1 of that range.
     Song song = makeDefaultSong();
@@ -317,4 +390,66 @@ TEST_CASE("the swing grid is saved, and swing on 1/8s moves the off-beat 1/8") {
     song.swingStep = kPpq / 2;
     CHECK(throughText(song).swingStep == kPpq / 2);
     CHECK(swung(double(kPpq / 2), 1.f, kPpq / 2) == doctest::Approx(double(kPpq / 2 + kPpq / 4)));
+}
+
+/// A song with one Arpeggiator whose saved line holds `raw` steps as they were written then, migrated from `version`.
+Device arpFromOldLine(const std::vector<int>& raw, int version, float inKey = 0) {
+    Song song = makeDefaultSong();
+    Device arp = devices::makeDevice(DeviceType::Arpeggiator, song.newId<DeviceId>());
+    arp.params[chain::knob::kArpMoveUnit] = inKey; // then a switch: 0 or 1
+    song.tracks[0].devices.push_back(arp);
+    json::Ref j(songToJson(song));
+    json_t* line = json_array();
+    for (int v : raw)
+        json_array_append_new(line, json_integer(v));
+    json_t* devicesJ = json_object_get(json_array_get(json_object_get(j.get(), "tracks"), 0), "devices");
+    json_object_set_new(json_array_get(devicesJ, 0), "line", line);
+    REQUIRE(migrateSong(j.get(), version));
+    return songFromJson(j.get(), Song::kSchemaVersion).tracks[0].devices[0];
+}
+
+TEST_CASE("Pattern lines saved before version 15 become sets of rows, and in key becomes Move by key steps") {
+    // Version 14: rows 1 to 8 and 9 for all, with the octave bits of then (16).
+    Device d = arpFromOldLine({1 | 16, 5 | 16, 9 | 16, 0 | 16}, 14, 1);
+    CHECK(d.line == std::vector<uint8_t>{chain::stepOf(1), chain::stepOf(5), chain::kFullStep, 0});
+    const devices::ParamInfo& unit = *devices::paramInfo(DeviceType::Arpeggiator, chain::knob::kArpMoveUnit);
+    CHECK(devices::display(unit, d.params[chain::knob::kArpMoveUnit]) == doctest::Approx(float(chain::ArpMove::Key)));
+    // Version 13: 5 was all.
+    CHECK(arpFromOldLine({1 | 16, 5 | 16, 4 | 16}, 13).line ==
+          std::vector<uint8_t>{chain::stepOf(1), chain::kFullStep, chain::stepOf(4)});
+    // A device saved with fewer settings gets the new ones at their defaults.
+    CHECK(d.params.size() == devices::deviceInfo(DeviceType::Arpeggiator).params.size());
+
+    SUBCASE("a line saved now keeps its chords") {
+        Song now = makeDefaultSong();
+        Device a = devices::makeDevice(DeviceType::Arpeggiator, now.newId<DeviceId>());
+        a.line = {chain::stepOf(5), chain::stepOf(8), chain::kFullStep, uint8_t(chain::stepOf(1) | chain::stepOf(3))};
+        now.tracks[0].devices.push_back(a);
+        json::Ref saved(songToJson(now));
+        REQUIRE(migrateSong(saved.get(), Song::kSchemaVersion));
+        CHECK(songFromJson(saved.get(), Song::kSchemaVersion).tracks[0].devices[0].line == a.line);
+    }
+}
+
+TEST_CASE("a Pattern line saved before version 13 keeps its octaves and its gate") {
+    Song song = makeDefaultSong();
+    const auto& info = devices::deviceInfo(DeviceType::Arpeggiator).params;
+    Device arp = devices::makeDevice(DeviceType::Arpeggiator, song.newId<DeviceId>());
+    arp.params.resize(7); // the settings it had then
+    arp.params[chain::knob::kGate] = devices::normalize(info[chain::knob::kGate], 120);
+    arp.line = {1 | 2 << 4, 2 | 0 << 4, 3 | 1 << 4}; // rows 1 2 3, octaves +1 -1 0, as written then
+    song.tracks[0].devices.push_back(arp);
+    json::Ref j(songToJson(song));
+    REQUIRE(migrateSong(j.get(), 12));
+    Song loaded = songFromJson(j.get(), Song::kSchemaVersion);
+    const Device& d = loaded.tracks[0].devices[0];
+    REQUIRE(d.params.size() == info.size());
+    auto shown = [&](int k) { return devices::display(info[size_t(k)], d.params[size_t(k)]); };
+    using chain::ArpLane;
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Octave)) == doctest::Approx(1));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Octave) + 1) == doctest::Approx(-1));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Octave) + 2) == doctest::Approx(0));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Gate) + 5) == doctest::Approx(120));
+    CHECK(shown(chain::arpLaneFirst(ArpLane::Velocity)) == doctest::Approx(100));
+    CHECK(d.line == std::vector<uint8_t>{chain::stepOf(1), chain::stepOf(2), chain::stepOf(3)});
 }

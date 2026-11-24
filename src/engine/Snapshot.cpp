@@ -6,10 +6,12 @@
 #include "../model/Devices.hpp"
 #include "../model/DrumKit.hpp"
 #include "../model/Swing.hpp"
+#include "../model/Ties.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <map>
 
 namespace tessera {
@@ -41,11 +43,16 @@ namespace {
 /// Drum lanes keep their pitches: transposing a drum track would move notes onto other lanes.
 int transposeOf(const Track& track) { return track.type == TrackType::Drum ? 0 : track.transpose; }
 
-NoteEvent noteEvent(const Note& note, const Track& track, Tick end) {
-    Tick length = std::max<Tick>(1, Tick(note.length * track.gateLengthScale));
+/// A note as the engine plays it, ending by `end`. A note a tie continues keeps its whole length, whatever the
+/// gate length, and runs a hair past it (and past `end`, into the next pass) so its voice is still sounding when
+/// the tied note takes it over.
+NoteEvent noteEvent(const Note& note, const Track& track, Tick end, bool continued = false) {
+    Tick length = continued ? note.length + ties::kTieOverlap
+                            : std::max<Tick>(1, Tick(note.length * track.gateLengthScale));
     NoteEvent e;
     e.start = note.start;
-    e.end = std::min(note.start + length, end);
+    e.end = std::min(note.start + length, continued ? end + ties::kTieOverlap : end);
+    e.tied = note.tied;
     e.pitch = int8_t(std::clamp(note.pitch + transposeOf(track), 0, 127));
     e.velocity = note.velocity;
     e.releaseVelocity = note.releaseVelocity;
@@ -56,11 +63,14 @@ NoteEvent noteEvent(const Note& note, const Track& track, Tick end) {
 std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& lanes) {
     std::vector<LanePlayback> out;
     for (const AutomationEnvelope& l : lanes) {
-        if (l.mute || l.paramTarget.valid())
+        // Send lanes, and the levels and pans of a track's parts, play in the audio player beside what they move.
+        if (l.mute || l.paramTarget.valid() || l.drive == LaneDrive::Send || l.part != 0)
             continue;
         LanePlayback p;
         p.output = l.drive == LaneDrive::Pitch      ? kPitchLaneSlot
                    : l.drive == LaneDrive::Pressure ? kPressureLaneSlot
+                   : l.drive == LaneDrive::Volume   ? kVolumeLaneSlot
+                   : l.drive == LaneDrive::Pan      ? kPanLaneSlot
                                                     : std::clamp(l.outputIndex, 0, kMaxAutomationLanes - 1);
         p.rangeMin = l.rangeMin;
         p.rangeMax = l.rangeMax;
@@ -75,7 +85,50 @@ std::vector<LanePlayback> flattenLanes(const std::vector<AutomationEnvelope>& la
 
 bool hasExtras(const Note& n) {
     return !(n.ops == NoteOperators()) || n.microOffset != 0 || !n.pitchExpr.empty() || !n.timbreExpr.empty() ||
-           !n.pressureExpr.empty();
+           !n.pressureExpr.empty() || n.motion.valid() || (n.tied && (n.glideBefore > 0 || n.glideAfter > 0));
+}
+
+/// The glide the tied note `b` starts inside `a`, which it continues; `joint` is where `b` starts, in ticks from
+/// `a`'s start (the loop end for a tie round the loop).
+NoteExtras::GlideOut glideOut(const Note& a, const Note& b, Tick joint) {
+    NoteExtras::GlideOut g;
+    if (b.pitch == a.pitch)
+        return g;
+    g.joint = double(joint);
+    g.before = double(std::min<Tick>(std::max<Tick>(0, b.glideBefore), joint));
+    g.after = double(std::min<Tick>(std::max<Tick>(0, b.glideAfter), b.length));
+    g.semis = float(b.pitch - a.pitch);
+    g.shape = b.glideShape;
+    return g;
+}
+
+/// For each of `notes`, the glide a tied note after it starts inside it (none for most).
+std::vector<NoteExtras::GlideOut> glidesOut(const std::vector<Note>& notes, const std::vector<int>& partners) {
+    std::vector<NoteExtras::GlideOut> out(notes.size());
+    for (size_t i = 0; i < notes.size(); i++) {
+        int p = partners[i];
+        if (p < 0)
+            continue;
+        const Note& a = notes[size_t(p)];
+        const Note& b = notes[i];
+        Tick joint = b.start > a.start ? b.start - a.start : a.length; // round the loop: at the loop end
+        out[size_t(p)] = glideOut(a, b, joint);
+    }
+    return out;
+}
+
+/// Counts, for each event (sorted by start), the lower notes on its channel that start later but within
+/// kTogether of it: a strummed chord's notes, which Reset allocation puts low to high.
+void markStrums(std::vector<NoteEvent>& events) {
+    constexpr Tick kTogether = kPpq / 8;
+    for (size_t i = 0; i < events.size(); i++) {
+        int n = 0;
+        for (size_t j = i + 1; j < events.size() && events[j].start - events[i].start <= kTogether; j++)
+            if (events[j].start > events[i].start && events[j].channel == events[i].channel &&
+                events[j].pitch < events[i].pitch)
+                n++;
+        events[i].lowerLater = uint8_t(std::min(n, 255));
+    }
 }
 
 /// Gives an event the extras of its note: an index into `extras`, and its start moved by the note's micro-timing
@@ -91,14 +144,14 @@ void swingEvent(NoteEvent& e, float swing, Tick step, Tick limit) {
     e.end = std::max(e.start + 1, std::min(end, limit));
 }
 
-void attachExtras(NoteEvent& e, const Note& note, std::vector<NoteExtras>& extras, uint64_t clip, Tick loopStart,
-                  Tick length, bool looping, double stretch = 1) {
-    if (!hasExtras(note) || extras.size() >= kNoExtras)
+void attachExtras(NoteEvent& e, const Note& note, std::vector<NoteExtras>& extras, const Clip& clip, Tick loopStart,
+                  Tick length, bool looping, double stretch = 1, const NoteExtras::GlideOut& out = {}) {
+    if ((!hasExtras(note) && !out.moves()) || extras.size() >= kNoExtras)
         return;
     double spread = operators::spreadTicks(note);
     Tick shift = Tick(std::llround(operators::microTicks(note) - spread));
     e.extras = uint16_t(extras.size());
-    extras.push_back({note, clip, spread, stretch});
+    extras.push_back({note, clip.id.value, spread, stretch, clip.variation, out});
     if (shift == 0)
         return;
     Tick duration = e.end - e.start;
@@ -182,9 +235,12 @@ int channelsOf(const std::vector<LanePlayback>& lanes) {
 
 ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick swingStep, uint8_t key) {
     ClipPlayback out;
+    out.ownChain = clip.usesOwnChain() ? clip.id.value : 0;
     out.looping = clip.loopMode == LoopMode::Loop;
     out.loopStart = out.looping ? clip.loopStart : 0;
     out.loopEnd = out.looping ? clip.loopEnd : clip.contentEnd();
+    std::tie(out.segmentStart, out.segmentLength) =
+        playheadSpan(clip, track.type == TrackType::Drum ? &track.drumLanes : nullptr);
 
     // Drum lanes with their own loop length get their own list (polymeter).
     std::vector<int> ownLoopPitches;
@@ -201,9 +257,11 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
                     note.start < region.start + region.length) {
                     loop.notes.push_back(noteEvent(note, track, region.start + region.length));
                     swingEvent(loop.notes.back(), swing, swingStep, region.start + region.length);
-                    attachExtras(loop.notes.back(), note, out.extras, clip.id.value, region.start, region.length, true);
+                    attachExtras(loop.notes.back(), note, out.extras, clip, region.start, region.length, true);
                 }
             sortEvents(loop.notes);
+            loop.notesByEnd = playheads::orderByEnd(loop.notes);
+            playheads::markChordRoles(loop.notes, [](NoteEvent& n) -> uint8_t& { return n.role; });
             out.laneLoops.push_back(std::move(loop));
             ownLoopPitches.push_back(lane.pitch);
         }
@@ -215,14 +273,25 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
 
     out.lanes = flattenLanes(clip.automation);
     out.knobLanes = flattenKnobLanes(clip.automation);
-    for (const Note& note : clip.notes) {
-        if (note.muted || note.start < out.loopStart || note.start >= out.loopEnd)
+    // Playheads read the piano roll as a canvas: every note where it is written, the loop's edges don't cut it.
+    // The clip plays through the playheads then, so its own loop never reads this list.
+    bool canvas = activePlayheads(track) != nullptr;
+    Tick readEnd = canvas ? std::numeric_limits<Tick>::max() / 4 : out.loopEnd;
+    bool wraps = out.looping && !canvas;
+    std::vector<int> partners = ties::partners(clip.notes, wraps ? out.loopStart : 0, wraps ? out.loopEnd : 0);
+    std::vector<char> continued = ties::continued(partners);
+    std::vector<NoteExtras::GlideOut> glides = glidesOut(clip.notes, partners);
+    for (size_t i = 0; i < clip.notes.size(); i++) {
+        const Note& note = clip.notes[i];
+        if (note.muted || (!canvas && (note.start < out.loopStart || note.start >= out.loopEnd)))
             continue;
         if (std::find(ownLoopPitches.begin(), ownLoopPitches.end(), note.pitch) != ownLoopPitches.end())
             continue;
-        out.notes.push_back(noteEvent(note, track, out.loopEnd));
-        swingEvent(out.notes.back(), swing, swingStep, out.loopEnd);
-        attachExtras(out.notes.back(), note, out.extras, clip.id.value, out.loopStart, out.loopLength(), out.looping);
+        Tick limit = readEnd + (continued[i] ? ties::kTieOverlap : 0);
+        out.notes.push_back(noteEvent(note, track, readEnd, continued[i]));
+        swingEvent(out.notes.back(), swing, swingStep, limit);
+        attachExtras(out.notes.back(), note, out.extras, clip, out.loopStart, out.loopLength(), out.looping, 1,
+                     glides[i]);
     }
     // With lanes of their own length the clip loops their whole cycle, so every pass plays the same; its other notes
     // keep repeating its own loop inside it.
@@ -235,11 +304,37 @@ ClipPlayback flattenClip(const Clip& clip, const Track& track, float swing, Tick
     }
     // Clip notes are already sorted by start; stable keeps chords in pitch order.
     sortEvents(out.notes);
+    markStrums(out.notes);
+    out.notesByEnd = playheads::orderByEnd(out.notes);
+    playheads::markChordRoles(out.notes, [](NoteEvent& n) -> uint8_t& { return n.role; });
+    bool any = false;
+    auto range = [&](const std::vector<NoteEvent>& list) {
+        for (const NoteEvent& n : list) {
+            out.lowest = any ? std::min(out.lowest, n.pitch) : n.pitch;
+            out.highest = any ? std::max(out.highest, n.pitch) : n.pitch;
+            any = true;
+        }
+    };
+    range(out.notes);
+    for (const LaneLoop& loop : out.laneLoops)
+        range(loop.notes);
     for (NoteEvent& e : out.notes)
         e.key = key;
     for (LaneLoop& loop : out.laneLoops)
         for (NoteEvent& e : loop.notes)
             e.key = key;
+    for (const NoteEvent& e : out.notes) {
+        uint64_t motion = e.extras < out.extras.size() ? out.extras[e.extras].note.motion.value : 0;
+        if (!motion)
+            continue;
+        auto it = std::find_if(out.motions.begin(), out.motions.end(),
+                               [&](const ClipPlayback::MotionNotes& m) { return m.motion == motion; });
+        if (it == out.motions.end())
+            it = out.motions.insert(out.motions.end(), {motion, {}, {}});
+        it->notes.push_back(e);
+    }
+    for (ClipPlayback::MotionNotes& m : out.motions)
+        m.notesByEnd = playheads::orderByEnd(m.notes);
     return out;
 }
 
@@ -279,8 +374,14 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     tp->id = track.id;
     tp->busSlot = slots.slotOf(track.id);
     tp->polyphony = song.voicesOf(track);
+    tp->allocation = track.allocation;
+    std::vector<Song::VoiceBlock> blocks = song.voiceBlocks(track);
+    tp->voiceBlockCount = int(std::min(blocks.size(), tp->voiceBlocks.size()));
+    for (int b = 0; b < tp->voiceBlockCount; b++)
+        tp->voiceBlocks[size_t(b)] = {blocks[size_t(b)].part, 0, uint8_t(blocks[size_t(b)].size)};
     tp->audible = song.isAudible(track);
-    tp->armed = track.armed;
+    // An armed audio track records audio from its IN, never notes (§8.6).
+    tp->armed = track.armed && track.type != TrackType::Audio;
     tp->monitor = track.monitor;
     tp->input = track.recordInput;
     tp->midiChannel = track.midiChannel;
@@ -316,11 +417,20 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
                     flattenClip(*clip, track, songSwingFor(song, track), song.swingStep, keyIndex(*clip)));
                 if (clip->launchQuantize)
                     flat->launchQuantize = launchQuantizeTicks(*clip->launchQuantize, song.timeSig);
+                if (clip->next.any()) {
+                    flat->next = clip->next;
+                    // A clip that plays once does its next action when it ends, whatever the count.
+                    Tick count = Tick(std::max<uint16_t>(clip->next.count, 1));
+                    flat->nextSpan = !flat->looping                              ? flat->loopLength()
+                                     : clip->next.unit == NextActionUnit::Bars ? count * ticksPerBar(song.timeSig)
+                                                                               : count * flat->loopLength();
+                }
                 if (flat->loopLength() > 0)
                     playback = flat;
                 built[id] = playback;
             }
         }
+        tp->filled.push_back(playback != nullptr);
         tp->slots.push_back(playback);
     }
 
@@ -341,7 +451,7 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
     arrange::Stacking stack = arrange::stackOf(mine, track.id);
     for (const ArrangerClip& a : track.arrangement) {
         const Clip* clip = song.findClip(a.clip);
-        if (!clip || a.muted || clip->automation.empty())
+        if (!clip || a.muted)
             continue;
         auto it = built.find(a.clip);
         std::shared_ptr<const ClipPlayback> playback =
@@ -350,8 +460,6 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
                 : std::make_shared<ClipPlayback>(
                       flattenClip(*clip, track, songSwingFor(song, track), song.swingStep, keyIndex(*clip)));
         built[a.clip] = playback;
-        if (playback->lanes.empty() && playback->knobLanes.empty())
-            continue;
         ClipSpan span = clipSpan(*clip);
         InstanceLanes inst;
         inst.position = a.position;
@@ -363,6 +471,13 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         inst.spanEnd = span.end;
         inst.clip = playback;
         inst.row = stack.row.count(a.id) ? stack.row.at(a.id) : 0;
+        inst.transpose = track.type == TrackType::Drum ? 0 : a.transpose;
+        if (playback->loopLength() > 0)
+            tp->instances.push_back(inst);
+        if (clip->usesOwnChain())
+            tp->arrangementChains.push_back({a.position, instanceEnd(a), clip->id.value});
+        if (clip->automation.empty() || (playback->lanes.empty() && playback->knobLanes.empty()))
+            continue;
         tp->arrangementLanes.push_back(inst);
         tp->autoChannels = std::max(tp->autoChannels, channelsOf(playback->lanes));
         tp->voiceLanes |= playsIntoVoices(playback->lanes);
@@ -379,6 +494,11 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
         uint8_t key = keyIndex(*clip);
         renderInstance(*clip, a, timed, transposeOf(track), track.gateLengthScale,
                        track.type == TrackType::Drum ? &track.drumLanes : nullptr);
+        ClipSpan span = clipSpan(*clip);
+        std::vector<int> partners =
+            ties::partners(clip->notes, span.looping ? span.start : 0, span.looping ? span.end : 0);
+        std::vector<char> continued = ties::continued(partners);
+        std::vector<NoteExtras::GlideOut> glides = glidesOut(clip->notes, partners);
         tp->arrangement.reserve(timed.size());
         for (size_t i = first; i < timed.size(); i++) {
             const TimedNote& n = timed[i];
@@ -386,24 +506,36 @@ std::shared_ptr<const TrackPlayback> buildTrack(const Song& song, const Track& t
             e.pass = n.pass;
             e.key = key;
             e.channel = n.source ? n.source->channel : 1;
-            swingEvent(e, songSwingFor(song, track), song.swingStep, instanceEnd(a));
-            attachExtras(e, *n.source, tp->arrangementExtras, clip->id.value, 0, 0, false,
-                         std::clamp(double(a.stretch), double(kMinStretch), double(kMaxStretch)));
+            size_t at = n.source ? size_t(n.source - clip->notes.data()) : clip->notes.size();
+            bool known = at < clip->notes.size();
+            e.tied = n.source && n.source->tied;
+            Tick limit = instanceEnd(a) + (known && continued[at] ? ties::kTieOverlap : 0);
+            swingEvent(e, songSwingFor(song, track), song.swingStep, limit);
+            attachExtras(e, *n.source, tp->arrangementExtras, *clip, 0, 0, false,
+                         std::clamp(double(a.stretch), double(kMinStretch), double(kMaxStretch)),
+                         known ? glides[at] : NoteExtras::GlideOut());
             tp->arrangement.push_back(e);
         }
     }
     sortEvents(tp->arrangement);
+    markStrums(tp->arrangement);
     return tp;
 }
 
 /// Devices that pass notes through and their order, switch and drum setting: what notes in flight depend on.
-uint64_t chainStructure(const Track& track) {
+uint64_t chainStructure(const std::vector<Device>& chain) {
     uint64_t h = 1469598103934665603ull;
     auto add = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
-    for (const Device& d : track.devices) {
+    auto device = [&](const Device& d) {
         add(d.id.value);
         add(uint64_t(d.type));
         add(uint64_t(d.on) << 1 | uint64_t(d.affectDrumLanes));
+    };
+    for (const Device& d : chain) {
+        device(d);
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                device(b);
     }
     return h;
 }
@@ -412,27 +544,103 @@ uint64_t chainStructure(const Track& track) {
 void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slots) {
     auto addOwner = [&snap](ParamRef::Kind kind, uint64_t id, const std::vector<float>& params) {
         int first = int(snap.knobs.size());
-        int n = std::min<int>(int(params.size()), kMaxDeviceParams);
+        int most = kind == ParamRef::Kind::Playhead    ? playheads::kMaxPlayheadParams
+                   : kind == ParamRef::Kind::Modulator ? kMaxModulatorParams
+                                                       : kMaxDeviceParams;
+        int n = std::min<int>(int(params.size()), most);
         snap.knobs.insert(snap.knobs.end(), params.begin(), params.begin() + n);
         snap.owners.push_back({kind, id, first, n});
         return first;
     };
 
-    snap.chains.resize(song.tracks.size());
-    for (size_t i = 0; i < song.tracks.size(); i++) {
-        const Track& track = song.tracks[i];
-        ChainPlayback& chain = snap.chains[i];
-        for (const Device& d : track.devices) {
+    auto arpSlot = [&snap](const Device& d) {
+        if (d.type != DeviceType::Arpeggiator || int(snap.arpSlots.size()) >= kMaxArpSlots)
+            return -1;
+        int slot = int(snap.arpSlots.size());
+        snap.arpSlots.push_back({d.id.value, slot});
+        return slot;
+    };
+    auto buildChain = [&](const std::vector<Device>& devices, ChainPlayback& chain) {
+        const Device* reader = activePlayheads(devices);
+        bool beforeReader = reader != nullptr;
+        for (const Device& d : devices) {
+            if (&d == reader)
+                beforeReader = false;
+            if (d.type == DeviceType::Motion && beforeReader) {
+                // Moves the notes the playheads read, so they read it, not the chain.
+                int knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
+                if (d.on)
+                    chain.readMotions.push_back({d.id.value, knobs});
+                continue;
+            }
+            if (d.type == DeviceType::Playheads) {
+                int knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
+                // On and off is its On setting, read as it plays (curves and lanes can move it); the solo is set.
+                bool solo = playheads::soloDecides(d.playheads);
+                for (size_t k = 0; k < d.playheads.size(); k++) {
+                    const Playhead& p = d.playheads[k];
+                    PlayheadPlayback pp;
+                    pp.id = p.id.value;
+                    pp.knobs = addOwner(ParamRef::Kind::Playhead, p.id.value, p.params);
+                    pp.channel = p.channel;
+                    pp.audible = !solo || p.solo;
+                    pp.path = p.path;
+                    pp.knobCount = std::min<int>(int(p.params.size()), playheads::kMaxPlayheadParams);
+                    if (d.on)
+                        chain.playheads.push_back(pp);
+                    // Branch devices run first in the chain; each only touches its own playhead's notes.
+                    for (const Device& b : p.branch) {
+                        DevicePlayback bp;
+                        bp.type = b.type;
+                        bp.on = b.on && d.on;
+                        bp.affectDrums = b.affectDrumLanes;
+                        bp.id = b.id.value;
+                        bp.variation = b.variation;
+                        bp.line = b.line;
+                        bp.knobs = addOwner(ParamRef::Kind::Device, b.id.value, b.params);
+                        bp.arpSlot = arpSlot(b);
+                        bp.lane = uint8_t(k + 1);
+                        chain.devices.push_back(bp);
+                        chain.active |= bp.on;
+                    }
+                }
+                if (d.on)
+                    chain.playheadKnobs = knobs;
+                continue;
+            }
             DevicePlayback dp;
             dp.type = d.type;
             dp.on = d.on;
             dp.affectDrums = d.affectDrumLanes;
             dp.id = d.id.value;
+            dp.variation = d.variation;
+            dp.line = d.line;
             dp.knobs = addOwner(ParamRef::Kind::Device, d.id.value, d.params);
+            dp.arpSlot = arpSlot(d);
             chain.devices.push_back(dp);
             chain.active |= d.on;
         }
-        chain.structure = chainStructure(track);
+        chain.structure = chainStructure(devices);
+    };
+    snap.chains.resize(song.tracks.size());
+    snap.trackChains = song.tracks.size();
+    for (size_t i = 0; i < song.tracks.size(); i++)
+        buildChain(song.tracks[i].devices, snap.chains[i]);
+    // Then the own chains of the clips the tracks play, each once.
+    for (const Track& track : song.tracks) {
+        auto addClip = [&](ClipId id) {
+            const Clip* clip = song.findClip(id);
+            if (!clip || !clip->usesOwnChain() || snap.ownChainOf(id.value))
+                return;
+            snap.chains.emplace_back();
+            snap.chains.back().clip = id.value;
+            buildChain(clip->devices, snap.chains.back());
+        };
+        for (const ClipSlot& slot : track.slots)
+            if (slot.clip)
+                addClip(*slot.clip);
+        for (const ArrangerClip& a : track.arrangement)
+            addClip(a.clip);
     }
 
     forEachModulator(song, [&](const Modulator& m, const ModulatorPlace& place) {
@@ -443,14 +651,38 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
         mp.type = m.type;
         mp.id = m.id.value;
         mp.slot = slot;
+        mp.variation = m.variation;
         mp.knobs = addOwner(ParamRef::Kind::Modulator, m.id.value, m.params);
         mp.track = place.level == ModLevel::Song ? -1 : song.trackIndex(place.track);
         mp.stepCount = int(std::min<size_t>(m.steps.size(), kMaxSteps));
         std::copy(m.steps.begin(), m.steps.begin() + mp.stepCount, mp.steps.begin());
+        mp.length = m.length;
+        mp.points = m.points;
+        mp.segmentStart = m.segmentStart;
+        mp.segmentEnd = m.segmentEnd;
         snap.modulators.push_back(mp);
-        if (mp.track >= 0)
+        snap.turnsRackKnobs = snap.turnsRackKnobs || std::any_of(m.routes.begin(), m.routes.end(), [](const Modulation& r) {
+                                  return r.kind == Modulation::Kind::RackKnob;
+                              });
+        // A clip's modulators (and its devices' own) restart with the notes that go through its chain.
+        ChainPlayback* own = place.clip.valid() ? const_cast<ChainPlayback*>(snap.ownChainOf(place.clip.value)) : nullptr;
+        if (own)
+            own->modulatorSlots.push_back(slot);
+        else if (mp.track >= 0)
             snap.chains[size_t(mp.track)].modulatorSlots.push_back(slot);
     });
+    // Curve modulators on playhead settings: the playheads read them where they read the clip.
+    for (size_t mi = 0; mi < snap.modulators.size(); mi++) {
+        const Modulator* m = findModulator(song, ModulatorId(snap.modulators[mi].id));
+        if (!m || m->type != ModulatorType::Curve)
+            continue;
+        for (const Modulation& r : m->routes)
+            if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Playhead)
+                for (ChainPlayback& chain : snap.chains)
+                    for (PlayheadPlayback& pp : chain.playheads)
+                        if (pp.id == r.target.owner && r.target.param < pp.knobCount)
+                            pp.exact.push_back({int(mi), r.target.param, r.amount});
+    }
     assert(snap.knobs.size() <= size_t(kMaxKnobs));
     std::sort(snap.owners.begin(), snap.owners.end(),
               [](const KnobOwner& a, const KnobOwner& b) { return a.kind != b.kind ? a.kind < b.kind : a.id < b.id; });
@@ -471,6 +703,9 @@ void buildModulation(const Song& song, Snapshot& snap, const ModulatorSlots& slo
                     snap.modulated.push_back({});
                     it = snap.modulated.end() - 1;
                     it->knob = knob;
+                    const Device* owner =
+                        r.target.kind == ParamRef::Kind::Device ? findDevice(song, DeviceId(r.target.owner)) : nullptr;
+                    it->motion = owner && owner->type == DeviceType::Motion;
                 }
                 if (it->count < kMaxModulationsPerKnob)
                     it->sources[size_t(it->count++)] = source;

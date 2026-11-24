@@ -123,8 +123,11 @@ class StepsDrag : public DragGesture {
     Rect area;
 };
 
-/// An LFO shows the one rate that applies: the synced length while Sync is on, else hertz.
+/// An LFO shows the one rate that applies: the synced length while Sync is on, else hertz. A Curve shows no
+/// settings: its length and segment are set over its drawing in the lower pane.
 bool settingShown(const Modulator& m, int index) {
+    if (m.type == ModulatorType::Curve)
+        return false;
     if (m.type != ModulatorType::Lfo || m.params.size() <= size_t(mods::knob::kSyncedRate))
         return true;
     bool synced = m.params[size_t(mods::knob::kSync)] >= 0.5f;
@@ -154,9 +157,31 @@ std::vector<float> stepsOf(const Modulator& m, int* count) {
 
 } // namespace
 
+namespace {
+
+/// Whether a part sits in the header, which never scrolls.
+bool inHeader(ModulatorPopover::Part::Kind k) {
+    using K = ModulatorPopover::Part::Kind;
+    return k == K::Close || k == K::DiceRoll || k == K::DiceFixed || k == K::DiceNew;
+}
+
+/// Whether a modulator plays by chance, so its header shows the dice: Random, and an LFO with a random shape.
+bool rollsDice(const Modulator& m) {
+    if (m.type == ModulatorType::Random)
+        return true;
+    if (m.type != ModulatorType::Lfo || m.params.empty())
+        return false;
+    const devices::ParamInfo* info = devices::paramInfo(m.type, mods::knob::kShape);
+    auto shape = mods::Shape(int(std::lround(info ? devices::display(*info, m.params[0]) : 0)));
+    return shape == mods::Shape::SampleHold || shape == mods::Shape::SmoothRandom;
+}
+
+} // namespace
+
 const Modulator* ModulatorPopover::modulator(ModulatorPlace* place) {
     TesseraModule* m = ctx.module();
-    return m && ctx.openModulator ? findModulator(m->song(), ModulatorId(ctx.openModulator), place) : nullptr;
+    return m && ctx.state().openModulator ? findModulator(m->song(), ModulatorId(ctx.state().openModulator), place)
+                                          : nullptr;
 }
 
 float ModulatorPopover::wantedHeight() {
@@ -173,6 +198,13 @@ void ModulatorPopover::layoutParts() {
         return;
     float w = kWidth;
     parts.push_back({Kind::Close, Rect(w - 26, 5, 18, 18)});
+    // A random modulator has the dice in its header, as random devices do (docs/DECISIONS.md §163).
+    if (rollsDice(*mod)) {
+        float r = w - 32;
+        parts.push_back({Kind::DiceNew, Rect(r - 34, 4, 34, 20)});
+        parts.push_back({Kind::DiceFixed, Rect(r - 64, 4, 30, 20)});
+        parts.push_back({Kind::DiceRoll, Rect(r - 88, 4, 20, 20)});
+    }
     float y = kHeader + 2;
     int n = int(devices::modulatorInfo(mod->type).params.size());
     // Two columns, so the popover stays short enough to sit over the notes.
@@ -210,7 +242,7 @@ void ModulatorPopover::layoutParts() {
     // Below the header everything scrolls together.
     scroll = std::clamp(scroll, 0.f, std::max(0.f, height - box.size.y));
     for (Part& p : parts)
-        if (p.kind != Kind::Close)
+        if (!inHeader(p.kind))
             p.rect.pos.y -= scroll;
     movesTitleY -= scroll;
 }
@@ -222,7 +254,7 @@ void ModulatorPopover::wheel(Vec pos, Vec delta, Modifiers mods) {
 const ModulatorPopover::Part* ModulatorPopover::partAt(Vec pos) const {
     for (const Part& p : parts) {
         // Content scrolled under the header can't be clicked.
-        if (p.kind != Kind::Close && pos.y < kHeader)
+        if (!inHeader(p.kind) && pos.y < kHeader)
             continue;
         if (p.rect.contains(pos))
             return &p;
@@ -231,8 +263,8 @@ const ModulatorPopover::Part* ModulatorPopover::partAt(Vec pos) const {
 }
 
 void ModulatorPopover::step() {
-    if (ctx.openModulator && !modulator())
-        ctx.openModulator = 0;
+    if (ctx.state().openModulator && !modulator())
+        ctx.state().openModulator = 0;
     layoutParts();
     InteractiveView::step();
 }
@@ -259,6 +291,8 @@ std::unique_ptr<DragGesture> ModulatorPopover::startGesture(Vec pos, int button,
             onClick);
     }
     case Kind::RouteAmount:
+        if (p.index == mods::drawnRoute(*mod))
+            return nullptr;
         return std::make_unique<RouteAmountDrag>(*this, ctx, mod->id, p.index, mod->routes[size_t(p.index)].amount,
                                                  pos);
     case Kind::StepBars: {
@@ -281,8 +315,19 @@ void ModulatorPopover::click(Vec pos, int button, Modifiers mods) {
         return;
     switch (hit->kind) {
     case Kind::Close:
-        ctx.openModulator = 0;
+        ctx.state().openModulator = 0;
         break;
+    case Kind::DiceRoll:
+    case Kind::DiceFixed:
+    case Kind::DiceNew: {
+        int32_t number = variationNumber(mod->variation);
+        int32_t next = hit->kind == Kind::DiceNew     ? -number
+                       : hit->kind == Kind::DiceFixed ? number
+                                                      : int32_t(1 + (rack::random::u32() % uint32_t(kMaxVariation)));
+        if (next != mod->variation)
+            m->perform(setModulatorVariation(m->song(), mod->id, next));
+        break;
+    }
     case Kind::Setting: {
         // Only toggles get here: they flip on a click.
         ParamRef ref = settingRef(hit->index);
@@ -295,7 +340,7 @@ void ModulatorPopover::click(Vec pos, int button, Modifiers mods) {
         break;
     case Kind::Map:
         ctx.mappingModulator = mod->id.value;
-        ctx.openModulator = 0;
+        ctx.state().openModulator = 0;
         break;
     case Kind::CvOut:
         deviceActions::openCvOutMenu(ctx, mod->id);
@@ -308,6 +353,10 @@ void ModulatorPopover::click(Vec pos, int button, Modifiers mods) {
 void ModulatorPopover::doubleClick(Vec pos, Modifiers mods) {
     const Part* hit = partAt(pos);
     const Modulator* mod = modulator();
+    if (hit && mod && hit->kind == Kind::DiceFixed) {
+        deviceActions::openVariationTyping(ctx, DeviceId(), mod->id, mod->variation);
+        return;
+    }
     if (!hit || !mod || hit->kind != Kind::Setting)
         return;
     if (const devices::ParamInfo* info = devices::paramInfo(mod->type, hit->index))
@@ -341,13 +390,14 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
     const Song& song = ctx.module()->song();
     NVGcolor color = deviceActions::colorOf(mod->id);
     Rect panel(Vec(), box.size);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, clipLeft, 0, std::max(0.f, box.size.x - clipLeft - clipRight), box.size.y);
+    // A column beside its section: a stripe in the modulator's colour on its left edge.
+    draw::roundedRect(vg, panel, 6, c.bg2);
     nvgBeginPath(vg);
-    nvgRect(vg, -10, -6, box.size.x + 20, box.size.y + 22);
-    nvgFillPaint(
-        vg, nvgBoxGradient(vg, 0, 4, box.size.x, box.size.y, 7, 14, nvgRGBAf(0, 0, 0, 0.55f), nvgRGBAf(0, 0, 0, 0)));
+    nvgRect(vg, 0, 0, 2, box.size.y);
+    nvgFillColor(vg, color);
     nvgFill(vg);
-    draw::roundedRect(vg, panel, 7, c.bg1);
-    draw::roundedRectStroke(vg, panel, 7, c.line1, 1);
 
     // Header: colour, name, what it is and what it reaches.
     float hy = kHeader / 2 + 2;
@@ -363,9 +413,9 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
     std::string reach = place.level == ModLevel::Song    ? "reaches every track"
                         : place.level == ModLevel::Track ? "reaches this track"
                                                          : "on " + deviceActions::whereName(song, place);
-    draw::text(
-        vg, sub, x, hy,
-        draw::ellipsize(vg, sub, std::string(devices::modulatorInfo(mod->type).name) + " · " + reach, kWidth - x - 30));
+    draw::text(vg, sub, x, hy,
+               draw::ellipsize(vg, sub, std::string(devices::modulatorInfo(mod->type).name) + " · " + reach,
+                               kWidth - x - (rollsDice(*mod) ? 122 : 30)));
 
     draw::TextStyle label{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle value{theme::fonts::mono(), 10.5f, c.text0, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
@@ -377,7 +427,7 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
         const Part& p = parts[i];
         bool hot = int(i) == hovered;
         Vec mid = p.rect.getCenter();
-        if (p.kind == Kind::Close)
+        if (inHeader(p.kind))
             continue; // in the header, which never scrolls
         switch (p.kind) {
         case Kind::Close:
@@ -431,6 +481,11 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
             float rowY = mid.y;
             draw::text(vg, label, kPad + 2, rowY,
                        draw::ellipsize(vg, label, deviceActions::targetName(song, route), p.rect.pos.x - kPad - 8));
+            if (p.index == mods::drawnRoute(*mod)) {
+                // Drawn in this setting's own values: nothing to scale.
+                draw::text(vg, value, p.rect.getRight() + 40, rowY, "as drawn");
+                break;
+            }
             Rect track(p.rect.pos.x, rowY - 3, p.rect.size.x, 6);
             draw::roundedRect(vg, track, 3, hot ? c.line1 : c.line0);
             float zero = track.getCenter().x;
@@ -497,25 +552,34 @@ void ModulatorPopover::drawView(const DrawArgs& args) {
     if (scroll < height - box.size.y - 1) {
         nvgBeginPath(vg);
         nvgRect(vg, 1, box.size.y - 18, box.size.x - 2, 17);
-        nvgFillPaint(vg, nvgLinearGradient(vg, 0, box.size.y - 18, 0, box.size.y - 1, nvgTransRGBAf(c.bg1, 0), c.bg1));
+        nvgFillPaint(vg, nvgLinearGradient(vg, 0, box.size.y - 18, 0, box.size.y - 1, nvgTransRGBAf(c.bg2, 0), c.bg2));
         nvgFill(vg);
     }
     for (size_t i = 0; i < parts.size(); i++) {
         const Part& p = parts[i];
+        if (p.kind == Kind::DiceRoll || p.kind == Kind::DiceFixed || p.kind == Kind::DiceNew) {
+            draw::dice(vg, p.rect,
+                       p.kind == Kind::DiceRoll    ? draw::DicePart::Roll
+                       : p.kind == Kind::DiceFixed ? draw::DicePart::Fixed
+                                                   : draw::DicePart::New,
+                       mod->variation, int(i) == hovered, color);
+            continue;
+        }
         if (p.kind != Kind::Close)
             continue;
         Vec mid = p.rect.getCenter();
         if (int(i) == hovered)
             draw::roundedRect(vg, p.rect, 3, c.line0);
+        // ◂: folds the column back into the section.
         nvgBeginPath(vg);
-        nvgMoveTo(vg, mid.x - 4, mid.y - 4);
-        nvgLineTo(vg, mid.x + 4, mid.y + 4);
-        nvgMoveTo(vg, mid.x + 4, mid.y - 4);
-        nvgLineTo(vg, mid.x - 4, mid.y + 4);
-        nvgStrokeColor(vg, c.text1);
-        nvgStrokeWidth(vg, 1.3f);
-        nvgStroke(vg);
+        nvgMoveTo(vg, mid.x + 2, mid.y - 4);
+        nvgLineTo(vg, mid.x - 3, mid.y);
+        nvgLineTo(vg, mid.x + 2, mid.y + 4);
+        nvgClosePath(vg);
+        nvgFillColor(vg, c.text1);
+        nvgFill(vg);
     }
+    nvgRestore(vg);
 }
 
 } // namespace tessera

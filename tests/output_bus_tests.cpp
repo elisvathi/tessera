@@ -1,5 +1,6 @@
 #include "doctest.h"
 
+#include "../src/engine/VoicePicker.hpp"
 #include "../src/module/AudioHandoff.hpp"
 #include "../src/module/OutputBus.hpp"
 
@@ -7,6 +8,7 @@
 #include <atomic>
 #include <functional>
 #include <random>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -151,4 +153,141 @@ TEST_CASE("AudioHandoff keeps a replaced object alive until process() moves past
     handoff.markProcessed(7);
     handoff.collect();
     CHECK(alive == 0);
+}
+
+TEST_CASE("a Track Out on All packs more than 16 voices: sticky, and the first playheads first") {
+    // Three channels of 8 voices each: 24 voices, more than an output's 16.
+    TrackFrame frame;
+    frame.channels = 24;
+    frame.byChannel = true;
+    for (int v = 0; v < 24; v++) {
+        frame.part[v] = uint8_t(1 + v / 8);
+        frame.used[v] = 1;
+    }
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    auto gates = [&](std::initializer_list<int> on) {
+        for (int v = 0; v < 24; v++)
+            frame.gate[v] = 0;
+        for (int v : on)
+            frame.gate[v] = 10;
+    };
+
+    // Channel 2 plays alone: its voices take the first free channels.
+    gates({8, 9});
+    CHECK(picker.pick(frame, 0, out) == kMaxVoices);
+    CHECK(out[0] == 8);
+    CHECK(out[1] == 9);
+    // Quiet a moment, then the same voice plays again: it goes back where it was.
+    gates({});
+    picker.pick(frame, 0, out);
+    gates({9});
+    picker.pick(frame, 0, out);
+    CHECK(out[1] == 9);
+
+    // All 24 sound: the 16 first in playhead order win, channel 3's last voices don't fit.
+    for (int v = 0; v < 24; v++)
+        frame.gate[v] = 10;
+    picker.pick(frame, 0, out);
+    std::set<int> sent(out.begin(), out.end());
+    for (int v = 0; v < 16; v++)
+        CHECK(sent.count(v) == 1);
+    CHECK(out[1] == 9); // channel 2's voice kept its place
+}
+
+TEST_CASE("a Track Out on one channel sends that channel's own voices when the track has more than 16") {
+    TrackFrame frame;
+    frame.channels = 24;
+    frame.byChannel = true;
+    for (int v = 0; v < 24; v++) {
+        frame.part[v] = uint8_t(1 + v / 8);
+        frame.used[v] = 1;
+    }
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    CHECK(picker.pick(frame, 3, out) == 8);
+    for (int i = 0; i < 8; i++)
+        CHECK(out[size_t(i)] == 16 + i);
+}
+
+TEST_CASE("a playhead channel sends only the voices it has needed: a one-note bass sends one") {
+    // Channel 1 (a bass) has 3 voices and has only ever needed its first; channel 2 has used all 3.
+    TrackFrame frame;
+    frame.channels = 6;
+    frame.byChannel = true;
+    for (int v = 0; v < 6; v++)
+        frame.part[v] = uint8_t(1 + v / 3);
+    frame.used[0] = 1;
+    frame.used[3] = frame.used[4] = frame.used[5] = 1;
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    CHECK(picker.pick(frame, 1, out) == 1);
+    CHECK(out[0] == 0);
+    CHECK(picker.pick(frame, 2, out) == 3);
+    CHECK(picker.pick(frame, 0, out) == 4); // All: the four voices in use, not six
+}
+
+TEST_CASE("a Track Out with 16 voices or fewer sends them as they are") {
+    TrackFrame frame;
+    frame.channels = 5;
+    VoicePicker picker;
+    std::array<int8_t, kMaxVoices> out;
+    CHECK(picker.pick(frame, 0, out) == 5);
+    for (int i = 0; i < 5; i++)
+        CHECK(out[size_t(i)] == i);
+}
+
+TEST_CASE("the return bus gives Tessera what each module wrote one sample before, in any order") {
+    OutputBus bus;
+    ReturnBus& returns = bus.returns();
+    int a = returns.claim(), b = returns.claim();
+    REQUIRE(a >= 0);
+    REQUIRE(b >= 0);
+    CHECK(a != b);
+    std::mt19937 rng(3);
+    std::vector<int> order = {0, 1, 2}; // 0 = Tessera, 1 and 2 = modules
+    for (int64_t n = 0; n < 3000; n++) {
+        std::shuffle(order.begin(), order.end(), rng);
+        for (int actor : order) {
+            if (actor == 1)
+                returns.write(n, a, kTrack, float(n), -float(n));
+            else if (actor == 2)
+                returns.write(n, b, TrackId(9), 1, 1);
+            else if (n > 0) {
+                float l, r;
+                REQUIRE(returns.read(n, a, kTrack, l, r));
+                CHECK(l == float(n - 1));
+                CHECK(r == -float(n - 1));
+                // A slot read for another track gives nothing.
+                CHECK_FALSE(returns.read(n, b, kTrack, l, r));
+                CHECK(l == 0);
+            }
+        }
+    }
+}
+
+TEST_CASE("a module that stops writing, or writes nonsense, drops out of the return bus") {
+    ReturnBus returns;
+    int slot = returns.claim();
+    returns.write(10, slot, kTrack, 1, 1);
+    float l, r;
+    CHECK(returns.read(11, slot, kTrack, l, r));
+    CHECK_FALSE(returns.read(12, slot, kTrack, l, r)); // nothing at sample 11
+    returns.write(12, slot, kTrack, std::nanf(""), 0);
+    CHECK_FALSE(returns.read(13, slot, kTrack, l, r));
+    CHECK(l == 0);
+    returns.release(slot);
+    CHECK(returns.claim() == slot);
+}
+
+TEST_CASE("audio OUT reads the previous sample, and nothing on samples without audio") {
+    OutputBus bus;
+    AudioOutFrame* out = bus.beginAudioWrite(4);
+    out[kSlot] = {kTrack.value, 0.5f, -0.5f};
+    bus.publishAudio(4);
+    const AudioOutFrame* f = bus.readAudio(5, kSlot, kTrack);
+    REQUIRE(f);
+    CHECK(f->l == 0.5f);
+    CHECK_FALSE(bus.readAudio(5, kSlot, TrackId(99)));
+    CHECK_FALSE(bus.readAudio(6, kSlot, kTrack)); // the player didn't run at sample 5
 }

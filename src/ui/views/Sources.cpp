@@ -2,14 +2,26 @@
 
 #include "../../model/Arrangement.hpp"
 #include "../../model/ArrangementEdits.hpp"
+#include "../../model/DeviceCommands.hpp"
+#include "../../model/DeviceTypes.hpp"
+#include "../../model/Playheads.hpp"
 
 #include "../../module/TesseraModule.hpp"
+#include "../editing/DeviceActions.hpp"
 
 #include <cmath>
 
 namespace tessera {
 
 namespace {
+
+/// The instance of `clip` playing at `tick`. Overlapping clips all play, so asking for "the" clip would miss some.
+const ArrangerClip* instanceOfClipAt(const Track& track, Tick tick, ClipId clip) {
+    for (const ArrangerClip& a : track.arrangement)
+        if (a.clip == clip && tick >= a.position && tick < instanceEnd(a))
+            return &a;
+    return nullptr;
+}
 
 constexpr int kSongMarginBars = 8;
 constexpr int kMinSongBars = 32;
@@ -175,9 +187,9 @@ double ClipSource::playhead() {
     if (status.playing >= 0 && status.playing < int(t->slots.size()) && t->slots[size_t(status.playing)].clip == clip)
         return status.position;
     // Arranger mode: where the timeline plays this clip right now.
-    if (m->playMode() == PlayMode::Arranger && !status.overridden) {
+    if (status.onTimeline) {
         double song = m->playheadTicks();
-        if (const ArrangerClip* a = instanceAt(*t, Tick(song)); a && a->clip == clip)
+        if (const ArrangerClip* a = instanceOfClipAt(*t, Tick(song), clip))
             if (std::optional<double> u = clipTimeAt(*current(), *a, song, lanes()))
                 return *u;
     }
@@ -192,13 +204,36 @@ double ClipSource::pendingSeek() {
     LauncherStatus status = m->launcherStatus(track);
     if (status.queued >= 0 && status.queued < int(t->slots.size()) && t->slots[size_t(status.queued)].clip == clip)
         return status.queuedClipTime;
-    if (m->playMode() == PlayMode::Arranger && !status.overridden) {
+    if (status.onTimeline) {
         double song = m->pendingSeekTicks();
         if (!std::isfinite(song))
             return NAN;
         if (const ArrangerClip* a = instanceAt(*t, Tick(song)); a && a->clip == clip)
             if (std::optional<double> u = clipTimeAt(*current(), *a, song, lanes()))
                 return *u;
+    }
+    return NAN;
+}
+
+double ClipSource::elapsed() {
+    TesseraModule* m = ctx.module();
+    const Track* track = m ? m->song().findTrack(this->track) : nullptr;
+    const Clip* clip = current();
+    if (!track || !clip)
+        return NAN;
+    LauncherStatus status = m->launcherStatus(track->id);
+    bool launched = status.playing >= 0 && status.playing < int(track->slots.size()) &&
+                    track->slots[size_t(status.playing)].clip == clip->id;
+    if (launched)
+        return status.elapsed;
+    if (status.onTimeline) {
+        // A timeline clip: it starts where it begins the clip, and runs slower when it is stretched.
+        double song = m->playheadTicks();
+        if (const ArrangerClip* a = instanceOfClipAt(*track, Tick(song), clip->id)) {
+            double stretch = a->stretch > 0 ? double(a->stretch) : 1.0;
+            return double(normalizeOffset(*clip, a->offset) - clipSpan(*clip).start) +
+                   (song - double(a->position)) / stretch;
+        }
     }
     return NAN;
 }
@@ -228,7 +263,7 @@ const ArrangerClip* ClipSource::seekInstance() {
         return nullptr;
     if (const ArrangerClip* a = instance())
         return a;
-    if (const ArrangerClip* a = instanceAt(*t, Tick(m->playheadTicks())); a && a->clip == clip)
+    if (const ArrangerClip* a = instanceOfClipAt(*t, Tick(m->playheadTicks()), clip))
         return a;
     for (const ArrangerClip& a : t->arrangement)
         if (a.clip == clip)
@@ -305,6 +340,91 @@ void ClipSource::setInstanceEnd(double end) {
         if (p.clip.id == a->id)
             p.clip.length = length;
     m->perform(arrange::replaceArrangement(m->song(), "Timeline clip length", before, after));
+}
+
+namespace {
+
+/// Where on the piano roll a playhead's region starts and how long it is, from its knobs, as the engine reads them.
+std::pair<double, double> regionOf(const Playhead& p, std::pair<Tick, Tick> span) {
+    const devices::TypeInfo& info = devices::playheadInfo();
+    return playheads::regionFrom(
+        devices::display(info.params[playheads::knob::kRegionStart], p.params[playheads::knob::kRegionStart]),
+        devices::display(info.params[playheads::knob::kRegionLength], p.params[playheads::knob::kRegionLength]),
+        double(span.first), double(span.second));
+}
+
+} // namespace
+
+std::vector<TimelineSource::PlayheadSegment> ClipSource::playheadSegments() {
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(track) : nullptr;
+    const Clip* c = current();
+    const Device* device = t && c ? activePlayheads(*t, c) : nullptr;
+    if (!device)
+        return {};
+    const Playhead* shown = deviceActions::shownPlayhead(ctx);
+    std::pair<Tick, Tick> span = playheadSpan(*c, lanes());
+    std::vector<PlayheadSegment> segments;
+    for (const Playhead& p : device->playheads) {
+        auto [regionStart, regionLength] = regionOf(p, span);
+        if (regionLength <= 0)
+            continue;
+        segments.push_back(
+            {p.id.value, regionStart, regionStart + regionLength, p.color, shown && shown->id == p.id, p.name});
+    }
+    return segments;
+}
+
+void ClipSource::setPlayheadSegment(uint64_t id, double start, double end) {
+    TesseraModule* m = ctx.module();
+    const Clip* c = current();
+    if (!m || !c)
+        return;
+    std::pair<Tick, Tick> follows = playheadSpan(*c, lanes());
+    double step = double(kPpq) / 4;
+    using namespace playheads::knob;
+    const devices::TypeInfo& info = devices::playheadInfo();
+    int from = std::clamp(int(std::lround(start / step)), 0, playheads::kMaxRegionSteps);
+    int length = std::clamp(int(std::lround((end - start) / step)), 1, playheads::kMaxRegionSteps);
+    // Covering exactly what "follow the clip" covers is stored as that, so it moves with the loop. Any other span must
+    // stay as dragged, so this compares with the same span the segment shows when it follows.
+    if (std::abs(start - double(follows.first)) < 1 && std::abs(end - double(follows.first + follows.second)) < 1)
+        from = length = 0;
+    Song work = m->song();
+    auto both = std::make_unique<CompoundCommand>("Move playhead segment");
+    for (auto [k, v] : {std::pair<int, int>{kRegionStart, from}, {kRegionLength, length}}) {
+        CommandPtr command = setParam(work, {ParamRef::Kind::Playhead, id, uint16_t(k)},
+                                      devices::normalize(info.params[size_t(k)], float(v)));
+        if (command)
+            command->apply(work);
+        both->add(std::move(command));
+    }
+    if (!both->empty())
+        m->perform(std::move(both));
+}
+
+void ClipSource::openPlayheadSegmentMenu(uint64_t id) {
+    TesseraModule* m = ctx.module();
+    const Playhead* p = m ? findPlayhead(m->song(), PlayheadId(id)) : nullptr;
+    if (!p)
+        return;
+    using namespace playheads::knob;
+    EditorContext* c = &ctx;
+    ParamRef start{ParamRef::Kind::Playhead, id, uint16_t(kRegionStart)};
+    ParamRef length{ParamRef::Kind::Playhead, id, uint16_t(kRegionLength)};
+    rack::ui::Menu* menu = rack::createMenu();
+    menu->addChild(rack::createMenuLabel(p->name + "'s segment"));
+    // A modulator on its start moves the segment as the song plays; one on its length makes it longer or shorter.
+    menu->addChild(rack::createMenuItem("Modulate, automate its start…", "",
+                                        [c, start] { deviceActions::openKnobMenu(*c, start); }));
+    menu->addChild(rack::createMenuItem("Modulate, automate its length…", "",
+                                        [c, length] { deviceActions::openKnobMenu(*c, length); }));
+    menu->addChild(new rack::ui::MenuSeparator);
+    PlayheadId playhead(id);
+    menu->addChild(rack::createMenuItem("Follow the clip's loop", "", [c, playhead] {
+        deviceActions::setPlayheadValues(*c, playhead, {{kRegionStart, 0}, {kRegionLength, 0}},
+                                         "Segment follows the clip");
+    }));
 }
 
 } // namespace tessera

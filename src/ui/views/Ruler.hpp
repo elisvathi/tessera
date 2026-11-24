@@ -36,7 +36,7 @@ class TimelineSource {
     /// The playhead in this timeline's time, or NaN when there is none to show.
     virtual double playhead() = 0;
     virtual bool canSeek() { return false; }
-    /// While playing, a seek waits for its beat (DECISIONS §96).
+    /// While playing, a seek waits for its beat (DECISIONS §150).
     virtual void seek(double tick, bool play) {}
     /// Where a seek waiting for its beat will land, in this timeline's time; NaN when none waits.
     virtual double pendingSeek() { return NAN; }
@@ -56,6 +56,21 @@ class TimelineSource {
     virtual void previewInstanceEnd(double end) {}
     /// Makes the timeline clip end at `end`, as one undo step.
     virtual void setInstanceEnd(double end) {}
+
+    /// A playhead's segment (docs/design/PLAYHEADS.md §12): the part of the clip it plays, where in it it starts, and
+    /// its colour. The selected playhead's shows as a bar with handles and its name; the others as thin lines.
+    struct PlayheadSegment {
+        uint64_t id;       // PlayheadId value
+        double start, end; // on the piano roll, which is a canvas: anywhere from its start, past the clip's end too
+        int color;
+        bool selected;
+        std::string name;
+    };
+    virtual std::vector<PlayheadSegment> playheadSegments() { return {}; }
+    /// Moves a playhead's segment to [start, end) (already snapped), as one undo step.
+    virtual void setPlayheadSegment(uint64_t id, double start, double end) {}
+    /// A right-click on a playhead's segment: curves and lanes that move it in time, back to the clip's loop.
+    virtual void openPlayheadSegmentMenu(uint64_t id) {}
 };
 
 /// The strip above a timeline: markers row, loop strip, time labels and the overview minimap (EDITOR_UX §3).
@@ -88,12 +103,27 @@ class Ruler : public InteractiveView {
     void step() override;
     void onLeave(const LeaveEvent& e) override;
 
+  public:
+    /// The playhead segment being dragged, if any, so the notes below can follow it.
+    const std::optional<TimelineSource::PlayheadSegment>& draggedSegment() const { return segmentPreview; }
+
   private:
-    enum class Zone { Markers, Loop, Time, Overview };
+    enum class Zone { Segments, Markers, Loop, Time, Overview };
     Zone zoneAt(float y);
     Strips strips() const { return stripsFor(ctx.surface); }
-    float markersBottom() { return source.hasMarkers() ? strips().markers : 0; }
-    float loopBottom() { return markersBottom() + strips().loop; }
+    /// The playhead segments' row sits on top, when there are segments to show.
+    float segmentsBottom() { return source.playheadSegments().empty() ? 0 : theme::metrics::kSegmentRow; }
+    float markersBottom() { return segmentsBottom() + (source.hasMarkers() ? strips().markers : 0); }
+    /// With playheads, they decide what plays and the clip's loop doesn't: its bar isn't drawn or dragged.
+    bool loopByPlayheads() { return !source.playheadSegments().empty(); }
+    /// The stretch between the markers around `at`: from the last marker at or before it (or the start) to the next
+    /// one after it (or the end of the content).
+    void sectionAround(Tick at, Tick& start, Tick& end);
+    /// A right-click on the ruler away from a marker: play from here, add a marker, the loop and this section.
+    void openRulerMenu(rack::math::Vec pos);
+    float loopBottom() { return markersBottom() + loopRow(source, strips()); }
+    /// The loop strip's height: none with playheads, unless it holds a timeline clip's end.
+    static float loopRow(TimelineSource& source, const Strips& s);
     float timeBottom() { return loopBottom() + strips().time; }
 
     /// The marker whose flag is under x, or -1.
@@ -114,6 +144,10 @@ class Ruler : public InteractiveView {
     void changeMarker(MarkerId id, const std::string& undoName,
                       const std::function<void(std::vector<Marker>&, size_t)>& change);
     void drawLoop(NVGcontext* vg);
+    void drawPlayheadSegments(NVGcontext* vg);
+    /// What a press at x on the loop strip grabs of the selected playhead's segment.
+    enum class SegmentGrab { None, Start, End, Move };
+    SegmentGrab segmentGrabAt(float x, TimelineSource::PlayheadSegment* segment);
     /// The handle at the end of the timeline clip this view was opened from (its right edge is the end).
     rack::math::Rect instanceTag();
     void drawTimeLabels(NVGcontext* vg);
@@ -124,12 +158,14 @@ class Ruler : public InteractiveView {
 
     // Live previews while a gesture runs; the source is only changed on release.
     std::optional<std::pair<Tick, Tick>> loopPreview;
+    std::optional<TimelineSource::PlayheadSegment> segmentPreview; // a playhead segment being dragged
     std::optional<std::vector<Marker>> markersPreview;
     // Explains a locked loop while the pointer rests on it.
     HoverTooltip tip{""};
-    bool tipOn = false;
+    enum class Tip { None, LockedLoop, Segment } tipOn = Tip::None; // which tooltip shows
 
     friend class LoopGesture;
+    friend class PlayheadSegmentGesture;
     friend class InstanceEndGesture;
     friend class MarkerGesture;
     friend class OverviewGesture;

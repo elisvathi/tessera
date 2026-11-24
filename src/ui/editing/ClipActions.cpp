@@ -1,11 +1,18 @@
 #include "ClipActions.hpp"
+
+#include "DeviceActions.hpp"
+
+#include "AudioActions.hpp"
+#include "BounceActions.hpp"
 #include "ImportMidi.hpp"
+#include "NextActionMenu.hpp"
 
 #include "ExportMidi.hpp"
 #include "TrackActions.hpp"
 
 #include "../../model/Arrangement.hpp"
 #include "../../model/ArrangementEdits.hpp"
+#include "../../model/DeviceLookup.hpp"
 #include "../../model/DrumKit.hpp"
 #include "../../model/LauncherCommands.hpp"
 #include "../../model/Serialize.hpp"
@@ -117,11 +124,18 @@ ClipId shownClip(EditorContext& ctx, const Track& track) {
     return song.findClip(id) ? id : ClipId();
 }
 
+bool fitsTrack(const Song& song, ClipId clip, TrackId track) {
+    const Clip* c = song.findClip(clip);
+    const Track* t = song.findTrack(track);
+    return c && t && c->audio.has_value() == (t->type == TrackType::Audio);
+}
+
 void select(EditorContext& ctx, TrackId track, ClipId clip) {
     EditorState& state = ctx.state();
     state.selectedTrack = track;
     state.selectedTracks = {track};
     state.selectedClip = clip;
+    ctx.state().mixerOpen = false;
 }
 
 void editTogether(EditorContext& ctx, const std::vector<ClipId>& clips, TrackId track, ClipId open) {
@@ -131,7 +145,7 @@ void editTogether(EditorContext& ctx, const std::vector<ClipId>& clips, TrackId 
             unique.push_back(id);
     ctx.state().layered = unique.size() > 1 ? unique : std::vector<ClipId>();
     select(ctx, track, open);
-    ctx.view().focus = Pane::Detail;
+    ctx.state().focus = Pane::Detail;
 }
 
 TrackId trackOf(const Song& song, ClipId clip) {
@@ -149,7 +163,8 @@ TrackId trackOf(const Song& song, ClipId clip) {
 void create(EditorContext& ctx, TrackId track, int slot) {
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
-    if (clipAt(song, track, slot))
+    const Track* onto = song.findTrack(track);
+    if (clipAt(song, track, slot) || !onto || onto->type == TrackType::Audio)
         return;
     m->perform(createClip(song, track, slot, ticksPerBar(song.timeSig), m->newId<ClipId>()));
     selectSlot(ctx, track, slot);
@@ -190,6 +205,11 @@ void remove(EditorContext& ctx, TrackId track, int slot) {
 void move(EditorContext& ctx, TrackId fromTrack, int fromSlot, TrackId toTrack, int toSlot, bool copy) {
     TesseraModule* m = ctx.module();
     const Song& song = m->song();
+    if (const Clip* moved = clipAt(song, fromTrack, fromSlot); moved && !fitsTrack(song, moved->id, toTrack)) {
+        ctx.toast(moved->audio ? "An audio clip can only go on an audio track"
+                               : "A note clip can't go on an audio track");
+        return;
+    }
     m->perform(copy ? copySlotClip(song, fromTrack, fromSlot, toTrack, toSlot, m->ids())
                     : moveSlotClip(song, fromTrack, fromSlot, toTrack, toSlot));
     selectSlot(ctx, toTrack, toSlot);
@@ -210,8 +230,8 @@ void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipI
     EditorContext* c = &ctx;
     auto setColor = [c, clips](uint32_t color) {
         TesseraModule* mod = c->module();
-        std::string name = clips.size() == 1 ? "Change clip colour" : "Change colour of " +
-                                                                          std::to_string(clips.size()) + " clips";
+        std::string name =
+            clips.size() == 1 ? "Change clip colour" : "Change colour of " + std::to_string(clips.size()) + " clips";
         auto all = std::make_unique<CompoundCommand>(name);
         for (ClipId id : clips)
             all->add(setClipField(mod->song(), id, &Clip::ownColor, color, name));
@@ -229,6 +249,84 @@ void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipI
                                                 [setColor, color] { setColor(color); }));
             }
         }));
+}
+
+void appendDevicesMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    clips.erase(std::remove_if(clips.begin(), clips.end(),
+                               [&](ClipId id) {
+                                   const Clip* c = m->song().findClip(id);
+                                   return !c || c->isAudio();
+                               }),
+                clips.end());
+    if (clips.empty())
+        return;
+    int own = 0, kept = 0;
+    for (ClipId id : clips) {
+        const Clip* c = m->song().findClip(id);
+        own += c->usesOwnChain();
+        kept += c->hasOwnChain;
+    }
+    std::string state = own == int(clips.size()) ? "own" : own == 0 ? "track's" : "mixed";
+    EditorContext* c = &ctx;
+    menu->addChild(rack::createSubmenuItem("Devices", state, [c, clips, own, kept](rack::ui::Menu* sub) {
+        // One undo step for all the clips.
+        auto each = [c, clips](const std::string& name, auto make) {
+            TesseraModule* mod = c->module();
+            if (!mod)
+                return;
+            // Each made on the song as the ones before left it.
+            Song work = mod->song();
+            auto all = std::make_unique<CompoundCommand>(name);
+            for (ClipId id : clips) {
+                CommandPtr one = make(work, id, mod);
+                if (one) {
+                    one->apply(work);
+                    all->add(std::move(one));
+                }
+            }
+            if (!all->empty())
+                mod->perform(std::move(all));
+            c->trackChainOpened = false;
+        };
+        int n = int(clips.size());
+        sub->addChild(rack::createCheckMenuItem(
+            "Play through the track's devices", "", [own] { return own == 0; },
+            [each] {
+                each("Play through the track's devices",
+                     [](const Song& song, ClipId id, TesseraModule*) { return playTrackChain(song, id); });
+            }));
+        sub->addChild(rack::createCheckMenuItem(
+            "Play through its own devices", kept < n ? "a copy of the track's" : "", [own, n] { return own == n; },
+            [each, c] {
+                each("Play through own devices", [](const Song& song, ClipId id, TesseraModule* mod) {
+                    return playOwnChain(song, id, mod->ids());
+                });
+                deviceActions::setStripOpen(*c, true);
+            }));
+        sub->addChild(new rack::ui::MenuSeparator);
+        if (n == 1 && kept == 1)
+            sub->addChild(rack::createMenuItem("Use its devices for the whole track", "", [c, clips] {
+                TesseraModule* mod = c->module();
+                if (!mod)
+                    return;
+                TrackId track = trackUsing(mod->song(), clips[0]);
+                CommandPtr command = useOwnChainForTrack(mod->song(), clips[0], track, mod->ids());
+                if (!command) {
+                    c->toast("The track has no room for the clip's modulators");
+                    return;
+                }
+                mod->perform(std::move(command));
+            }));
+        auto* drop = rack::createMenuItem(n == 1 ? "Delete its own devices" : "Delete their own devices", "", [each] {
+            each("Delete own devices",
+                 [](const Song& song, ClipId id, TesseraModule*) { return deleteOwnChain(song, id); });
+        });
+        drop->disabled = kept == 0;
+        sub->addChild(drop);
+    }));
 }
 
 void appendScaleMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip) {
@@ -393,6 +491,12 @@ std::string chipText(EditorContext& ctx, ClipId clip, bool shortText) {
     if (const Clip* cl = m ? m->song().findClip(clip) : nullptr) {
         text += "  ·  " + (cl->name.empty() ? std::string("Clip") : cl->name);
         text += "  ·  " + lengthLabel(m->song(), *cl);
+        if (cl->usesOwnChain())
+            text += "  ·  own devices";
+        if (const Device* d = t ? activePlayheads(*t, cl) : nullptr) {
+            size_t n = d->playheads.size();
+            text += "  ·  read by " + std::to_string(n) + (n == 1 ? " playhead" : " playheads");
+        }
     }
     return text;
 }
@@ -445,6 +549,12 @@ void openChipMenu(EditorContext& ctx, TrackId track, ClipId clip) {
                 mod->perform(setClipField(mod->song(), id, &Clip::loopMode, on ? LoopMode::Loop : LoopMode::Off,
                                           on ? "Loop clip" : "Play clip once"));
         }));
+    // An audio clip gets its audio settings here, as in the timeline; length, Double and the files below are for notes.
+    if (cl->isAudio()) {
+        audioActions::appendAudioClipMenu(menu, ctx, id);
+        return;
+    }
+    appendDevicesMenu(menu, ctx, {id});
     menu->addChild(new rack::ui::MenuSeparator);
     appendLengthItems(menu, ctx, id);
     menu->addChild(new rack::ui::MenuSeparator);
@@ -467,23 +577,31 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
         if (t.type == TrackType::Instrument)
             if (const Clip* other = clipAt(m->song(), t.id, slot))
                 scene.push_back(other->id);
-    if (scene.size() > 1)
+    if (scene.size() > 1 && !clip->isAudio())
         menu->addChild(rack::createMenuItem("Edit this scene's clips together", "",
                                             [c, scene, track, id] { editTogether(*c, scene, track, id); }));
     menu->addChild(rack::createMenuItem("Rename", "", [c, id] { startRename(*c, id); }));
     appendColorMenu(menu, ctx, {id});
-    appendScaleMenu(menu, ctx, id);
-    menu->addChild(rack::createMenuItem("Place in arrangement at playhead", "", [c, track, id] {
+    if (!clip->isAudio()) {
+        appendScaleMenu(menu, ctx, id);
+        appendDevicesMenu(menu, ctx, {id});
+    }
+    menu->addChild(rack::createMenuItem("Place on the timeline at the playhead", "", [c, track, id] {
         TesseraModule* mod = c->module();
         Tick bar = ticksPerBar(mod->song().timeSig);
         Tick at = Tick(mod->playheadTicks() / double(bar)) * bar;
         mod->perform(arrange::placeClip(
             mod->song(), track, id, at, [mod] { return mod->newId<ArrangementId>(); }, c->state().stackClips));
     }));
+    if (!clip->isAudio())
+        menu->addChild(rack::createMenuItem("Bounce notes to a new track…", "", [c, track, id, slot] {
+            bounceActions::openClipDialog(*c, track, id, slot);
+        }));
     menu->addChild(rack::createMenuItem("Duplicate", shortcutLabel(Action::Duplicate),
                                         [c, track, slot] { duplicate(*c, track, slot); }));
-    menu->addChild(
-        rack::createMenuItem("Export as MIDI…", "", [c, track, id] { exportMidi::openClips(*c, {{track, id}}); }));
+    if (!clip->isAudio())
+        menu->addChild(
+            rack::createMenuItem("Export as MIDI…", "", [c, track, id] { exportMidi::openClips(*c, {{track, id}}); }));
     menu->addChild(
         rack::createMenuItem("Delete", shortcutLabel(Action::Delete), [c, track, slot] { remove(*c, track, slot); }));
 
@@ -515,27 +633,42 @@ void appendClipMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int
             sub->addChild(
                 rack::createCheckMenuItem(quantizeLabel(q), "", [isSet, q] { return isSet(q); }, [set, q] { set(q); }));
     }));
+    menu->addChild(rack::createSubmenuItem("Next action", nextActionMenu::shortLabel(clip->next),
+                                           [c, id](rack::ui::Menu* sub) { nextActionMenu::appendMenu(sub, *c, id); }));
 
-    menu->addChild(new rack::ui::MenuSeparator);
-    menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "", [c, id] { exportClip(*c, id); }));
-    menu->addChild(
-        rack::createMenuItem("Replace with Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
+    // A clip file holds notes; an audio clip's sound lives in the patch.
+    if (!clip->isAudio()) {
+        menu->addChild(new rack::ui::MenuSeparator);
+        menu->addChild(rack::createMenuItem("Save as Tessera clip file…", "", [c, id] { exportClip(*c, id); }));
+        menu->addChild(rack::createMenuItem("Replace with Tessera clip file…", "",
+                                            [c, track, slot] { importClip(*c, track, slot); }));
+    }
+    audioActions::appendAudioClipMenu(menu, ctx, id);
 }
 
 void appendEmptySlotMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId track, int slot) {
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuLabel("Empty slot"));
-    menu->addChild(rack::createMenuItem("Create clip", "double-click", [c, track, slot] { create(*c, track, slot); }));
-    menu->addChild(
-        rack::createMenuItem("Load a Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
-    menu->addChild(
-        rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
-    menu->addChild(rack::createMenuItem("Stop track", "", [c, track] { c->module()->stopTrack(track); }));
     const Track* t = c->module()->song().findTrack(track);
+    bool audioTrack = t && t->type == TrackType::Audio;
+    if (!audioTrack)
+        menu->addChild(
+            rack::createMenuItem("Create clip", "double-click", [c, track, slot] { create(*c, track, slot); }));
+    // Tessera clip files and MIDI files hold notes, so an audio track offers only audio files.
+    if (!audioTrack)
+        menu->addChild(
+            rack::createMenuItem("Load a Tessera clip file…", "", [c, track, slot] { importClip(*c, track, slot); }));
+    if (!audioTrack)
+        menu->addChild(
+            rack::createMenuItem("Import MIDI file…", "", [c, track, slot] { importMidi::toSlot(*c, track, slot); }));
+    if (audioTrack)
+        menu->addChild(rack::createMenuItem("Import audio file…", "",
+                                            [c, track, slot] { audioActions::importToSlot(*c, track, slot); }));
+    menu->addChild(rack::createMenuItem("Stop the track now", "", [c, track] { c->module()->stopTrack(track); }));
     bool stop = !t || slot < 0 || slot >= int(t->slots.size()) || t->slots[size_t(slot)].stop;
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createCheckMenuItem(
-        "Stop button", "its scene stops the track", [stop] { return stop; },
+        "Has a stop button", "its scene stops the track", [stop] { return stop; },
         [c, track, slot, stop] { c->module()->perform(std::make_unique<SetSlotStop>(track, slot, !stop)); }));
 }
 
@@ -609,6 +742,16 @@ void appendSceneMenu(rack::ui::Menu* menu, EditorContext& ctx, int scene, std::f
             mod->perform(removeScene(mod->song(), scene));
         },
         song.scenes.size() <= 1));
+}
+
+void appendNextActionsSwitch(rack::ui::Menu* menu, EditorContext& ctx) {
+    EditorContext* c = &ctx;
+    menu->addChild(rack::createCheckMenuItem(
+        "Next actions", "clips move on by themselves", [c] { return c->module() && c->module()->nextActionsOn(); },
+        [c] {
+            if (TesseraModule* m = c->module())
+                m->setNextActionsOn(!m->nextActionsOn());
+        }));
 }
 
 void appendQuantizeMenu(rack::ui::Menu* menu, EditorContext& ctx) {

@@ -25,6 +25,7 @@ std::vector<ActionInfo> buildTable() {
     // Conflicts in EDITOR_UX §7 are resolved here; see docs/DECISIONS.md §12.
     return {
         {Ac::PlayStop, "Transport", "Play / stop", {K(GLFW_KEY_SPACE)}},
+        {Ac::Stop, "Transport", "Stop (again: back to the start)", {K(GLFW_KEY_ENTER), K(GLFW_KEY_KP_ENTER)}},
         {Ac::PlayFromMouse, "Transport", "Play from mouse / selection start", {K(GLFW_KEY_SPACE, S)}},
         {Ac::Record, "Transport", "Record (right-click the button for settings)", {C("r")}},
         {Ac::CaptureMidi, "Transport", "Capture what was just played as a clip", {C("r", Ctl | S)}},
@@ -56,16 +57,20 @@ std::vector<ActionInfo> buildTable() {
         {Ac::PasteAtMouse, "Edit", "Paste at mouse", {C("v", Ctl | S)}},
         {Ac::Duplicate, "Edit", "Duplicate", {C("d", Ctl)}},
         {Ac::Delete, "Edit", "Delete", {K(GLFW_KEY_DELETE), K(GLFW_KEY_BACKSPACE)}},
+        {Ac::DeleteClosingGap, "Edit", "Delete parts of a clip and close the gap", {K(GLFW_KEY_DELETE, S)}, Sc::DetailPane},
+        {Ac::ToggleTakes, "View", "Show or hide an audio clip's takes", {C("t", A)}, Sc::DetailPane},
         {Ac::SelectAll, "Edit", "Select all", {C("a", Ctl)}},
         {Ac::SelectNone, "Edit", "Select none", {C("a", Ctl | S)}},
         {Ac::SelectInvert, "Edit", "Invert selection", {C("i", Ctl)}},
         {Ac::Split, "Edit", "Split", {C("e", Ctl)}},
         {Ac::Glue, "Edit", "Glue", {C("j", Ctl)}},
+        {Ac::Tie, "Edit", "Tie notes: the next one plays on with no new gate (again: untie, keeping the glide)", {C("j")}, Sc::DetailPane},
         {Ac::MakeUnique, "Edit", "Make unique", {C("u", Ctl)}},
+        {Ac::Bounce, "Edit", "Bounce the selected track to a new track", {C("b", Ctl)}},
         {Ac::Quantize, "Edit", "Quantize", {C("q")}},
         {Ac::QuantizeDialog, "Edit", "Quantize…", {C("q", S)}},
-        {Ac::TransposeUp, "Edit", "Transpose up (a key step with scale snap)", {K(GLFW_KEY_UP)}},
-        {Ac::TransposeDown, "Edit", "Transpose down (a key step with scale snap)", {K(GLFW_KEY_DOWN)}},
+        {Ac::TransposeUp, "Edit", "Transpose up (a key step with scale snap); on a device tag, its next value", {K(GLFW_KEY_UP)}},
+        {Ac::TransposeDown, "Edit", "Transpose down (a key step with scale snap); on a device tag, its value before", {K(GLFW_KEY_DOWN)}},
         {Ac::OctaveUp, "Edit", "Octave up", {K(GLFW_KEY_UP, S)}},
         {Ac::OctaveDown, "Edit", "Octave down", {K(GLFW_KEY_DOWN, S)}},
         {Ac::NudgeLeft, "Edit", "Nudge left", {K(GLFW_KEY_LEFT)}},
@@ -97,8 +102,6 @@ std::vector<ActionInfo> buildTable() {
         {Ac::PageLeft, "View", "Scroll one screen left", {K(GLFW_KEY_PAGE_UP)}},
         {Ac::PageRight, "View", "Scroll one screen right", {K(GLFW_KEY_PAGE_DOWN)}},
         {Ac::FitAllTracks, "View", "Fit all tracks", {C("f", S)}, Sc::TopPane},
-        {Ac::ShowUsedLanes, "View", "Show used automation lanes", {C("a", S)}},
-        {Ac::MaximizeLane, "View", "Maximize automation lane", {C("a")}},
         {Ac::GridNarrower, "View", "Narrower grid", {C("1", Ctl)}},
         {Ac::GridWider, "View", "Wider grid", {C("2", Ctl)}},
         {Ac::GridTriplet, "View", "Triplet grid", {C("3", Ctl)}},
@@ -108,7 +111,9 @@ std::vector<ActionInfo> buildTable() {
         {Ac::SwitchPane, "View", "Switch pane", {K(GLFW_KEY_TAB)}},
         {Ac::MaximizePane, "View", "Maximize pane", {K(GLFW_KEY_TAB, S)}},
         {Ac::WidenClips, "View", "Widen / narrow the clips beside the timeline", {K(GLFW_KEY_F2)}},
-        {Ac::ToggleDevices, "View", "Device strip above the notes", {K(GLFW_KEY_F3)}},
+        {Ac::ShowNotes, "View", "Show the notes in the lower pane", {K(GLFW_KEY_F3)}},
+        {Ac::ToggleDevices, "View", "Devices: above the notes, or in their place in a short pane", {K(GLFW_KEY_F4)}},
+        {Ac::ToggleMixer, "View", "Show the mixer in the lower pane", {K(GLFW_KEY_F5)}},
         {Ac::ToggleDrumView, "View", "Drum lanes / keys", {C("g")}, Sc::DetailPane},
 
         {Ac::AddInstrumentTrack, "Tracks", "Add instrument track", {C("t", Ctl)}},
@@ -118,10 +123,13 @@ std::vector<ActionInfo> buildTable() {
         {Ac::PreviousTrack, "Tracks", "Select previous track", {K(GLFW_KEY_UP, Ctl)}},
         {Ac::MuteTracks, "Tracks", "Mute selected tracks", {C("m")}},
         {Ac::SoloTracks, "Tracks", "Solo selected tracks", {C("s", A)}},
+        {Ac::MutePlayhead, "Tracks", "Turn the shown playhead off or on", {C("m", S)}, Sc::DetailPane},
         {Ac::AddMarker, "Tracks", "Add marker", {C("m", Ctl)}},
 
         {Ac::Help, "General", "Shortcut help", {C("/", S)}},
         {Ac::ExportMidi, "General", "Export MIDI…", {C("e", Ctl | S)}},
+        {Ac::ExportAudio, "General", "Export audio…", {C("e", Ctl | A)}},
+        {Ac::ImportAudio, "General", "Import audio…", {C("o", Ctl | S)}},
         {Ac::Close, "General", "Close editor", {K(GLFW_KEY_ESCAPE)}},
     };
 }
@@ -142,6 +150,10 @@ std::string keyName(const KeyChord& c) {
     switch (c.key) {
     case GLFW_KEY_SPACE:
         return "Space";
+    case GLFW_KEY_ENTER:
+        return "Enter";
+    case GLFW_KEY_KP_ENTER:
+        return "Num Enter";
     case GLFW_KEY_DELETE:
         return "Delete";
     case GLFW_KEY_BACKSPACE:
@@ -176,6 +188,10 @@ std::string keyName(const KeyChord& c) {
         return "F2";
     case GLFW_KEY_F3:
         return "F3";
+    case GLFW_KEY_F4:
+        return "F4";
+    case GLFW_KEY_F5:
+        return "F5";
     default:
         return "?";
     }

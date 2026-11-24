@@ -1,7 +1,9 @@
 # 6. The timeline
 
 The timeline lays your song out from left to right, bar by bar. Each track is a row. Each clip on it is a tile with
-a coloured title bar and a small picture of its notes. Set **Plays** to **Timeline** to hear it.
+a coloured title bar and a small picture of its notes. Set **Plays** to **Timeline** to hear it. On a track with
+[playheads](13-devices.md#playheads), a tile shows where each playhead goes instead of the notes, one band per
+playhead: its notes as written aren't what plays.
 
 ![The timeline: three sections, an automation lane under Chords](images/timeline.png)
 
@@ -10,8 +12,9 @@ a coloured title bar and a small picture of its notes. Set **Plays** to **Timeli
 - **Drag a clip from the clips panel** onto a track. It lands where you drop it, snapped to the grid.
 - With the **Draw** tool (D): drag in an empty row to make an empty clip that long, or click for a one-bar clip.
 - **Double-click** an empty row for a one-bar clip.
-- Right-click an empty row for **Paste**, **Place launcher clip** and **Import MIDI file here…**.
-- In a clip's menu in the clips panel: **Place in arrangement at playhead**.
+- Right-click an empty row for **Paste**, **Place launcher clip**, and **Import MIDI file here…** (note and drum tracks) or
+  **Import audio file here…** (audio tracks).
+- In a clip's menu in the clips panel: **Place on the timeline at the playhead**.
 
 A clip on the timeline points to a clip, the same way a slot does. Many tiles can point to one clip: they are
 **linked**. A linked tile shows a link badge (∞) in its title bar. Edit the notes of one and every linked tile
@@ -27,12 +30,15 @@ changes.
 ## Moving and copying
 
 - **Drag** a clip to move it. Drag up or down to move it to another track.
+- A clip stays on tracks of its own kind: note clips never go on an audio track, or audio clips on a note track.
 - Clips snap to the grid, and also to nearby clip edges, markers, the loop ends and the playhead.
 - **Alt** while dragging: no snapping. **Shift**: move only across time, or only across tracks.
-- **Ctrl+drag**: a linked copy.
-- **Ctrl+Alt+drag**: an independent copy (its own clip).
-- **Ctrl+D**: a linked copy right after the selection.
+- **Ctrl+drag**: an independent copy (its own clip).
+- **Ctrl+Alt+drag**: a linked copy.
+- **Ctrl+D**: an independent copy right after the selection. **Paste** makes independent copies too.
 - **Ctrl+U** (**Make unique**): gives each selected tile its own copy of the clip, so you can change it alone.
+- **Link identical clips** (right-click a track; shown when there is something to link): tiles on that track that play exactly the same thing become linked.
+- **Splitting an audio clip** gives each piece its own clip. Pieces with the same settings still glue back together.
 - **Left / Right arrows** nudge by the grid. **Shift+Left / Right** nudge by a bar.
 
 ## Changing a clip's length and content
@@ -46,17 +52,20 @@ Hover a clip's edges and body. The mouse cursor shows what a drag will do.
 | **Left edge** | Trims the start. The notes stay where they are in time. |
 | **Alt + body** | Slips the notes inside the tile, without moving the tile. |
 | **Alt + right edge** | Time-stretches the tile. The readout shows the factor (×2, ×0.5…). |
-| **Title bar, up or down** | Changes the tile's velocity (shown as a percentage). Dragging sideways moves the clip. |
+| **Title bar** | Moves the clip, like its body: along the track or to another track. |
+| **Level line** (audio clips) | The clip's gain: see [Audio](17-audio.md). Note clips have no level line; change their notes' velocity in the piano roll, or with a **Velocity** device. A song from before Tessera 2.0.12 whose tiles had a velocity keeps its sound: the velocity is written into the notes, and a tile that played a shared clip differently gets its own copy of it. |
 
 With the keys: **Shift+Alt+Left / Right** makes the selection shorter or longer by one grid step. **Up / Down**
-transposes the selected tiles. Transpose, velocity and stretch change only that tile, not the clip.
+transposes the selected tiles. Transpose and stretch change only that tile, not the clip. On a track with
+[playheads](13-devices.md#playheads), a tile's transpose changes the notes the playheads read from it, in playback
+and in MIDI export.
 
 ## Cutting and joining
 
 - **Ctrl+E** splits the selected clips at the mouse (or at the playhead when the mouse is elsewhere).
 - The **Slice** tool (C) cuts a clip where you click. A line shows where the cut will go.
-- **Ctrl+J** (**Glue**) joins the selected clips into one new clip, with loops, stretch, transpose and velocity
-  baked in.
+- **Ctrl+J** (**Glue**) joins the selected clips into one new clip, with loops, stretch and transpose baked
+  in.
 - **Delete** removes the selected clips. **Ctrl+C**, **Ctrl+X** and **Ctrl+V** copy, cut and paste (at the
   playhead).
 
@@ -68,21 +77,23 @@ Right-click a clip on the timeline:
 
 | Item | What it does |
 |---|---|
-| **Open in piano roll** | Shows the clip's notes below (same as double-click). |
+| **Open in piano roll** (**Open in the audio editor** on an audio clip) | Shows the clip below (same as double-click), also when the lower pane was showing the mixer. |
 | **Rename**, **Duplicate**, **Delete** | As usual. |
 | **Colour** | **Track colour** or one of 16 colours, for every selected clip (and the clip's other copies and its slot). |
+| **Devices** | For every selected clip: play through the track's devices or its own, or delete its own (see [A clip's own devices](13-devices.md#a-clips-own-devices)). A tile with its own devices shows a small device-card mark in its title bar. |
 | **Move up a row**, **Move down a row** | For overlapping clips: swaps the clip with the one in the row above or below. |
 | **Export as MIDI…** | Saves the clip (or the selected clips) as a MIDI file. |
+| **Bounce audio to a new track…**, **Bounce notes to a new track…** | See [Audio](17-audio.md) and [Tracks](04-tracks.md#bounce-notes-to-a-new-track). |
 | **Split here**, **Glue**, **Make unique** | As above. |
 | **Mute** | Silences this tile. Muted tiles are drawn dim. |
-| **Transpose**, **Velocity** | Per tile. The clip itself doesn't change. |
+| **Transpose** | Per tile. The clip itself doesn't change. |
 | **Reset stretch** | Undoes a time-stretch. |
 | **Length** | ×2, ×½ or a percentage, for the clip itself and every place it is used. |
-| **Clip loops** | Turns the clip's loop on or off. |
+| **Loop** | Turns the clip's loop on or off. |
 | **Save as Tessera clip file…** | Saves the clip to reuse elsewhere. |
 
 When a timeline clip is selected, the inspector shows an **INSTANCE** section with its start, length, offset,
-transpose, velocity, stretch and mute.
+transpose, stretch and mute.
 
 ## Seeing a timeline clip in the piano roll
 
@@ -102,7 +113,8 @@ Click the **▾** next to Select and Draw (top left of the song pane):
 - **Stack** (on by default): clips may overlap on a track and all of them play. The row splits to show them. With
   Stack off, a clip you drop on another trims or replaces it. Right-click a stacked clip for **Move up a row** and
   **Move down a row** to change the order. Where stacked clips have automation on the same AUTO channel, the clip on
-  the lowest row plays it (a new take lands there).
+  the lowest row plays it (a new take lands there). Audio tracks never stack: there an overlap is a crossfade (see
+  [Audio](17-audio.md#overlaps-are-crossfades)).
 - **Automation follows clips** (on by default): moving or copying a clip takes the track's automation under it
   along.
 

@@ -46,9 +46,12 @@ class EditorWindow : public rack::widget::OpaqueWidget, public EditorHost {
     EditorPane* focusedPane() override;
     EditorPane* paneUnderMouse() override;
     ArrangerView* arrangerPane() override;
-    void escape() override { close(); }
+    /// Esc with nothing left to cancel: the first press says a second closes the editor, so a reflex Esc (after a
+    /// menu, say) never throws the user out.
+    void escape() override;
 
   private:
+    double lastEscape = -1e9; // when Esc last asked to close, for the second press
     bool learnBanner = false;
     std::vector<rack::widget::Widget*> hiddenForLearn;
     explicit EditorWindow(int64_t moduleId);

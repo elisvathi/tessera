@@ -1,10 +1,16 @@
 #include "TesseraModule.hpp"
 
+#include "OutputModuleBase.hpp"
+
+#include <patch.hpp>
+
 #include "../engine/ClockDivisions.hpp"
 #include "../model/DeviceCommands.hpp"
 #include "../model/DeviceLookup.hpp"
 #include "../model/Json.hpp"
+#include "../model/Sends.hpp"
 #include "../model/Serialize.hpp"
+#include "../ui/ModuleUndo.hpp"
 #include "CommandAction.hpp"
 #include "Registry.hpp"
 
@@ -20,11 +26,32 @@ constexpr float kBeatFlashSeconds = 0.05f;
 constexpr float kGateLow = 0.1f;
 constexpr float kGateHigh = 1.f;
 // Launcher state for the UI doesn't need every sample.
-constexpr uint32_t kLauncherStatusDivision = 32;
-constexpr uint32_t kMapDivision = 16; // mapped knobs follow automation at a 16th of the sample rate
+constexpr uint32_t kLauncherStatusDivision = 256; // about 190 times a second at 48 kHz: the screen needs no more
+constexpr uint32_t kSlowTickSamples = 32; // samples between rounds of settings, buttons and lights
+constexpr uint32_t kMapDivision = 16;     // mapped knobs follow automation at a 16th of the sample rate
 // Rack knob mappings of modulators are told apart from lanes' by this bit (IDs never reach it).
 constexpr uint64_t kModulatorKey = uint64_t(1) << 62;
 constexpr uint32_t kSongModulatorColor = 0xFF8A3D; // the accent: song modulators belong to no track
+
+} // namespace
+
+namespace {
+
+/// MAIN's tooltip, with the master's level as it plays.
+struct MainPortInfo : rack::engine::PortInfo {
+    std::string getDescription() override {
+        auto* m = static_cast<TesseraModule*>(module);
+        std::string text = "The master after its fader: every audio track mixed. 10 V is full scale (0 dB), as "
+                           "Rack's Audio module expects";
+        if (!m || !m->masterSounding())
+            return text;
+        const AudioPlayer& p = m->audioPlayer();
+        float peak = std::max(p.masterLevel(0), p.masterLevel(1));
+        char buf[96];
+        snprintf(buf, sizeof buf, "Master after its fader: %.1f dB peak. ", double(gainToDb(peak / kFullScaleVolts)));
+        return buf + text;
+    }
+};
 
 } // namespace
 
@@ -57,6 +84,8 @@ TesseraModule::TesseraModule() : clockDivisionIndex(kDefaultClockDivision) {
     configOutput(EOC_OUTPUT, "Loop end")->description = "Trigger each time the loop wraps";
     configOutput(BAR_OUTPUT, "Bar")->description = "Trigger on every bar";
     configOutput(CLICK_OUTPUT, "Click")->description = "Trigger on every beat: 10 V on the downbeat, 5 V otherwise";
+    configOutput<MainPortInfo>(MAIN_L_OUTPUT, "MAIN left");
+    configOutput<MainPortInfo>(MAIN_R_OUTPUT, "MAIN right");
 
     configLight(PLAY_LIGHT, "Playing");
     configLight(BEAT_LIGHT, "Beat");
@@ -66,6 +95,8 @@ TesseraModule::TesseraModule() : clockDivisionIndex(kDefaultClockDivision) {
         "Stopped: count in (menu) and record. Playing: punch in. Recording: punch out";
     configInput(REC_VOCT_INPUT, "Record V/OCT")->description = "Pitch of the notes to record, per poly channel";
     configInput(REC_GATE_INPUT, "Record gate")->description = "A note per poly channel while high (above 1 V)";
+    configInput(ROLL_IN_L_INPUT, "Audio IN left")->description = "For an audio track set to record from Roll IN";
+    configInput(ROLL_IN_R_INPUT, "Audio IN right")->description = "Follows left when only left is patched";
     configInput(REC_VEL_INPUT, "Record velocity")->description = "0-10 V per poly channel; 8 V without a cable";
     configInput(AUTO_REC_INPUT, "Automation record")->description =
         "Poly: channel N is recorded into armed lanes on AUTO channel N whose source is this input";
@@ -120,8 +151,12 @@ LauncherStatus TesseraModule::launcherStatus(TrackId track) const {
     status.queued = s.queued.load(std::memory_order_relaxed);
     status.position = s.position.load(std::memory_order_relaxed);
     status.overridden = s.overridden.load(std::memory_order_relaxed);
+    status.onTimeline = s.onTimeline.load(std::memory_order_relaxed);
     status.elapsed = s.elapsed.load(std::memory_order_relaxed);
+    status.actionElapsed = s.actionElapsed.load(std::memory_order_relaxed);
     status.queuedClipTime = s.queuedClipTime.load(std::memory_order_relaxed);
+    for (size_t k = 0; k < status.heads.size(); k++)
+        status.heads[k] = s.heads[k].load(std::memory_order_relaxed);
     return status;
 }
 
@@ -149,6 +184,8 @@ void TesseraModule::setRecordArrangement(bool on) {
 void TesseraModule::setRecordSettings(const RecordSettings& settings) {
     recorder.settings = settings;
     countInBars.store(settings.countInBars);
+    metronomeMode.store(int(settings.metronome));
+    metronomeGain.store(dbToGain(settings.metronomeDb));
     liveToKey.store(settings.toKey);
     newControlLanes.store(settings.newControlLanes);
     replaceTakes.store(settings.arranger == ArrangerRecordMode::Replace);
@@ -191,8 +228,9 @@ void TesseraModule::readRecordInputs(const ProcessArgs& args) {
         midiReaderMpe = mpe;
     }
     rack::midi::Message& msg = midiMessage;
-    std::array<MidiEvent, MidiReader::kMaxEvents> events;
-    while (midiIn.tryPop(&msg, args.frame)) {
+    // No device picked, nothing can arrive: the queue (which takes a lock) isn't asked.
+    while (midiIn.device && midiIn.tryPop(&msg, args.frame)) {
+        std::array<MidiEvent, MidiReader::kMaxEvents> events;
         int n = midiReader.read(msg.bytes.data(), int(msg.bytes.size()), events);
         for (int i = 0; i < n; i++)
             playMidiEvent(events[size_t(i)]);
@@ -244,8 +282,24 @@ void TesseraModule::playMidiEvent(const MidiEvent& e) {
     }
 }
 
+void TesseraModule::applyInputSolo() {
+    const std::vector<OutputModuleBase*>& outputs = Registry::get().outputsOf(id);
+    for (OutputModuleBase* o : outputs) {
+        const Track* t = songData.findTrack(o->boundTrack());
+        bool anySolo = t && t->clips.solo;
+        for (OutputModuleBase* other : outputs)
+            anySolo |= other->boundTrack() == o->boundTrack() && other->sourceSetting().solo;
+        o->setHeardBySolo(!anySolo || o->sourceSetting().solo);
+    }
+}
+
 void TesseraModule::uiStep() {
+    applyInputSolo();
+    clipControlStep();
     snapshots.collect();
+    sourcesStep();
+    audioStep();
+    captureStep();
     syncMappings();
     if (learning()) {
         learnMovedControl();
@@ -257,7 +311,10 @@ void TesseraModule::uiStep() {
     while (recordEvents.pop(recordEvent)) {
         // Every live note also comes once without a track (the capture copy): that one is what step input hears.
         constexpr size_t kMaxLiveInput = 256;
-        if (recordEvent.kind == RecordEvent::Kind::Note && recordEvent.track == 0 && liveInput.size() < kMaxLiveInput)
+        bool captureCopy = recordEvent.kind == RecordEvent::Kind::Note && recordEvent.track == 0;
+        if (captureCopy)
+            inputKeys.note(recordEvent.pitch, recordEvent.inPitch, recordEvent.on);
+        if (captureCopy && liveInput.size() < kMaxLiveInput)
             liveInput.push_back(recordEvent);
         recorder.handle(recordEvent);
     }
@@ -272,6 +329,487 @@ void TesseraModule::uiStep() {
         else if (captureSawPlaying)
             setRecordArrangement(false);
     }
+}
+
+void TesseraModule::setupAudioFolder() {
+    if (id < 0)
+        return;
+    std::string folder = createPatchStorageDirectory();
+    if (folder != audioFolder) {
+        audioFolder = folder;
+        // A pasted copy finds its files in the original's patch storage: Rack copies them on duplicate, not on
+        // paste (DECISIONS §102). A pasted module has no ID while its data loads, so this happens here, on add.
+        if (savedId >= 0 && savedId != id)
+            copyMissingFiles(songData, rack::system::join(APP->patch->autosavePath, "modules", std::to_string(savedId)),
+                             audioFolder);
+        // Loading a patch (nothing to undo yet) drops files no source uses: "Remove unused audio" leaves them for
+        // undo until then.
+        if (!APP->history->canUndo() && !savedByNewerVersion)
+            removeUnusedFiles(songData, audioFolder);
+    }
+    if (!audio)
+        audio = std::make_unique<AudioStore>();
+    audio->setFolder(audioFolder);
+}
+
+void TesseraModule::audioStep() {
+    audioSnapshots.collect();
+    MixPlan plan = currentMixPlan();
+    if (!audio) {
+        if (!hasAudio(songData) && plan.returns.empty()) {
+            // No snapshot will follow to end them, and the headers draw what a hold says.
+            if (releaseHolds) {
+                player->releaseHolds();
+                releaseHolds = false;
+            }
+            return;
+        }
+        setupAudioFolder();
+        if (!audio)
+            return;
+    }
+    if (float rate = audioRate.load(std::memory_order_relaxed); rate > 0)
+        audio->setEngineRate(rate);
+    if (revision != audioRevision)
+        audio->sync(songData);
+
+    // Renders follow the tempo once it has been steady for half a second (§5.2): while it moves, clips play the
+    // quick version, like tape.
+    double now = rack::system::getTime();
+    double t = tempo() > 0 ? tempo() : 120;
+    if (std::abs(t - tempoSeen) > 1e-6) {
+        tempoSeen = t;
+        tempoSettleAt = now;
+    }
+    bool settled = now - tempoSettleAt >= 0.5;
+    bool tempoMoved = settled && std::abs(t - audioTempo) > 1e-6;
+    // A cable on an output module's IN, or a track moving bus slot, changes what the player mixes.
+    uint64_t planKey = 0;
+    for (const MixPlan::Return& r : plan.returns)
+        planKey = planKey * 1000003u + r.track.value * 131u + uint64_t(r.slot + 1) * 16 + (r.source ? 1 : 0) +
+                  (r.hasIn ? 2 : 0) + (r.loop ? 4 : 0) + uint64_t(r.delay) * 7919u + uint64_t(r.lane + 1) * 104729u +
+                  uint64_t(r.module) * 37u;
+    for (const auto& [track, slot] : plan.busSlots)
+        planKey = planKey * 1000003u + track.value * 31u + uint64_t(slot + 1);
+    for (TrackId track : plan.inputSolo)
+        planKey = planKey * 1000003u + track.value * 17u + 1;
+    planKey = planKey * 1000003u + plan.hearClip.value * 7u + uint64_t(plan.hearTake + 2);
+    bool planChanged = planKey != audioPlanKey;
+    if (revision == audioRevision && audio->changes() == audioChanges && !tempoMoved && !planChanged) {
+        if (releaseHolds) {
+            player->releaseHolds();
+            releaseHolds = false;
+        }
+        return;
+    }
+    audioRevision = revision;
+    audioChanges = audio->changes();
+    audioPlanKey = planKey;
+    if (tempoMoved || audioTempo <= 0)
+        audioTempo = t;
+
+    // Keep a second longer what the last snapshot used and this one won't.
+    std::vector<std::shared_ptr<const AudioBuffer>> keep;
+    const AudioSnapshot* last = audioSnapshots.latest();
+    AudioBuild build =
+        buildAudioSnapshot(bounce ? songAsBounceHears(*bounce) : songData, *audio,
+                           double(audioRate.load()) > 0 ? audioRate.load() : 48000, audioTempo, {}, plan);
+    soundTracks.clear();
+    soundGroups.clear();
+    for (const GroupPlay& gp : build.snapshot->groups)
+        soundGroups.push_back(GroupId(gp.id));
+    for (const AudioTrackPlay& tp : build.snapshot->tracks)
+        soundTracks.push_back(tp.id);
+    if (last)
+        for (const auto& b : last->buffers)
+            if (!build.snapshot->holds(b.get()) && std::none_of(retiringBuffers.begin(), retiringBuffers.end(),
+                                                                [&](const auto& r) { return r.first == b; }))
+                retiringBuffers.push_back({b, now});
+    retiringBuffers.erase(std::remove_if(retiringBuffers.begin(), retiringBuffers.end(),
+                                         [&](const auto& r) { return now - r.second > 1.0; }),
+                          retiringBuffers.end());
+    for (const auto& r : retiringBuffers)
+        if (!build.snapshot->holds(r.first.get()))
+            build.snapshot->buffers.push_back(r.first);
+    audio->want(build.wanted);
+    if (std::any_of(build.snapshot->tracks.begin(), build.snapshot->tracks.end(),
+                    [](const AudioTrackPlay& tp) { return tp.delay > 0; }))
+        player->ensureDelays();
+    audioSnapshots.publish(std::move(build.snapshot));
+    if (releaseHolds) {
+        player->releaseHolds();
+        releaseHolds = false;
+    }
+}
+
+MixPlan TesseraModule::currentMixPlan() const {
+    MixPlan plan;
+    for (const Track& t : songData.tracks)
+        if (int slot = slots.slotOf(t.id); slot >= 0)
+            plan.busSlots.push_back({t.id, slot});
+    // Output modules whose jacks join their track's (or the master's) chain, in its order (§2, §8.3, DECISIONS §153).
+    for (OutputModuleBase* o : orderedOutputs()) {
+        for (const auto& [lane, slot] : o->activeSources())
+            plan.returns.push_back({o->boundTrack(), slot, true, true, false, 0, lane, o->id});
+        if (int slot = o->chainSlot(); slot >= 0) {
+            bool loop = o->isLoop();
+            plan.returns.push_back({o->boundTrack(), slot, false, o->activeReturn() >= 0, loop,
+                                    loop ? o->loopDelay() : 0, -1, o->id});
+        }
+        if (o->sourceSetting().solo)
+            plan.inputSolo.push_back(o->boundTrack());
+    }
+    plan.hearClip = heardClip;
+    plan.hearTake = heardTake;
+    return plan;
+}
+
+std::vector<OutputModuleBase*> TesseraModule::orderedOutputs() const {
+    struct Found {
+        int order;
+        rack::math::Vec pos;
+        OutputModuleBase* module;
+    };
+    std::vector<Found> found;
+    for (OutputModuleBase* o : Registry::get().outputsOf(id)) {
+        rack::math::Vec pos;
+        if (APP->scene && APP->scene->rack)
+            if (rack::app::ModuleWidget* w = APP->scene->rack->getModule(o->id))
+                pos = w->box.pos;
+        // Modules the user hasn't ordered yet come after the ordered ones.
+        found.push_back({o->chainOrder() >= 0 ? o->chainOrder() : INT32_MAX, pos, o});
+    }
+    std::stable_sort(found.begin(), found.end(), [](const Found& a, const Found& b) {
+        if (a.order != b.order)
+            return a.order < b.order;
+        return a.pos.y != b.pos.y ? a.pos.y < b.pos.y : a.pos.x < b.pos.x;
+    });
+    std::vector<OutputModuleBase*> out;
+    for (const Found& f : found)
+        out.push_back(f.module);
+    return out;
+}
+
+std::vector<OutputModuleBase*> TesseraModule::sourceModules(TrackId track) const {
+    std::vector<OutputModuleBase*> out;
+    for (OutputModuleBase* o : orderedOutputs())
+        if (o->boundTrack() == track && (o->activeReturn() >= 0 || o->activeSource() >= 0))
+            out.push_back(o);
+    return out;
+}
+
+std::vector<OutputModuleBase*> TesseraModule::chainModules(TrackId track) const {
+    std::vector<OutputModuleBase*> out;
+    for (OutputModuleBase* o : orderedOutputs())
+        if (o->boundTrack() == track && (o->chainSlot() >= 0 || o->activeSource() >= 0))
+            out.push_back(o);
+    return out;
+}
+
+void TesseraModule::loopsStep(const std::vector<std::pair<std::pair<int64_t, int>, std::pair<int64_t, int>>>& cables) {
+    const std::vector<OutputModuleBase*>& outputs = Registry::get().outputsOf(id);
+    // A loop's round trip: Tessera to its OUT is one sample, each cable one more, and its IN back to Tessera one.
+    // So 3 samples for a cable from OUT straight to IN, and one more for each module on the way.
+    std::map<int64_t, std::vector<int64_t>> next;
+    for (const auto& [from, to] : cables)
+        next[from.first].push_back(to.first);
+    for (OutputModuleBase* o : outputs) {
+        if (!o->isLoop())
+            continue;
+        std::set<int64_t> into; // modules with a cable into its IN
+        std::vector<int64_t> frontier;
+        bool direct = false;
+        for (const auto& [from, to] : cables) {
+            if (to.first == o->id && o->isInJack(to.second))
+                into.insert(from.first);
+            if (from.first == o->id && o->isOutJack(from.second)) {
+                if (to.first == o->id && o->isInJack(to.second))
+                    direct = true;
+                else
+                    frontier.push_back(to.first);
+            }
+        }
+        int modules = direct ? 0 : -1;
+        std::set<int64_t> seen{o->id};
+        for (int depth = 1; modules < 0 && depth <= 16 && !frontier.empty(); depth++) {
+            std::vector<int64_t> after;
+            for (int64_t m : frontier) {
+                if (!seen.insert(m).second)
+                    continue;
+                if (into.count(m)) {
+                    modules = depth;
+                    break;
+                }
+                for (int64_t n : next[m])
+                    after.push_back(n);
+            }
+            frontier = std::move(after);
+        }
+        // No way back found (IN fed from elsewhere): count one module, the usual case.
+        o->setLoopDelay(3 + (modules >= 0 ? modules : 1));
+    }
+
+    // Modules from a patch saved before the Mix existed played the dry sound and the return in full. Half Mix plays
+    // that; an audio track whose Clips were turned down (the old way to hear only the effect) gets its Clips back
+    // and a Mix that keeps the dry part where it was. Once a patch has settled, so the cables are there.
+    if (!sourcesSeeded || rack::system::getTime() - sourcesSeededAt < 0.5)
+        return;
+    std::set<uint64_t> clipsBack;
+    for (OutputModuleBase* o : outputs) {
+        if (o->status() != BindingStatus::Bound || !o->takeLegacyMix())
+            continue;
+        if (!o->isLoop() || o->activeReturn() < 0) {
+            o->setMix(1);
+            continue;
+        }
+        const Track* t = songData.findTrack(o->boundTrack());
+        if (!t)
+            continue; // the master: half Mix is what it played
+        if (t->type == TrackType::Audio) {
+            float g = t->clips.use ? dbToGain(t->clips.db) : 0.f;
+            if (g < 1) {
+                o->setMix(1 - g / 2);
+                clipsBack.insert(t->id.value);
+            }
+        } else if (!sendersTo(songData, t->id).empty()) {
+            o->setMix(1); // what it was sent was never heard straight
+        }
+    }
+    if (clipsBack.empty())
+        return;
+    for (Track& t : songData.tracks)
+        if (clipsBack.count(t.id.value)) {
+            t.clips.db = 0;
+            t.clips.use = true;
+        }
+    publish(ChangeSet::all());
+}
+
+void TesseraModule::sourcesStep() {
+    std::vector<OutputModuleBase*> outputs = Registry::get().outputsOf(id);
+    if (outputs.empty() && sourcesSeen.empty())
+        return;
+    // Which output port feeds each input: the same cable into two INs of one track counts once (§7.8).
+    std::map<std::pair<int64_t, int>, std::pair<int64_t, int>> feeds;
+    std::vector<std::pair<std::pair<int64_t, int>, std::pair<int64_t, int>>> cables;
+    for (int64_t cableId : APP->engine->getCableIds())
+        if (rack::engine::Cable* c = APP->engine->getCable(cableId))
+            if (c->inputModule && c->outputModule) {
+                feeds[{c->inputModule->id, c->inputId}] = {c->outputModule->id, c->outputId};
+                cables.push_back({{c->outputModule->id, c->outputId}, {c->inputModule->id, c->inputId}});
+            }
+    loopsStep(cables);
+    std::vector<TrackId> tracks;
+    for (const Track& t : songData.tracks)
+        tracks.push_back(t.id);
+    tracks.push_back(songData.master.id);
+    std::map<uint64_t, std::vector<int64_t>> seen;
+    for (TrackId track : tracks) {
+        std::vector<OutputModuleBase*> mods = sourceModules(track);
+        std::set<std::pair<int64_t, int>> ports;
+        std::vector<int64_t> counted;
+        for (OutputModuleBase* o : mods) {
+            std::optional<std::pair<int64_t, int>> port;
+            for (int input : {0, 1})
+                if (!port)
+                    if (auto it = feeds.find({o->id, input}); it != feeds.end())
+                        port = it->second;
+            bool twice = port && o->activeSource() < 0 && !o->isLoop() && !ports.insert(*port).second;
+            o->setCountedOnce(twice);
+            // An effect loop isn't a second source: it works on the sound, it doesn't add one.
+            if (!twice && !o->isLoop())
+                counted.push_back(o->id);
+        }
+        if (!counted.empty())
+            seen[track.value] = counted;
+    }
+    // A new second source plays at once, with a toast. Clips count as the first source of an audio track. Output
+    // modules of a patch that just loaded find their Tessera over the first frames: that is no news.
+    double now = rack::system::getTime();
+    if (!sourcesSeeded)
+        sourcesSeededAt = now;
+    if (sourcesSeeded && now - sourcesSeededAt > 1.5)
+        for (const auto& [track, mods] : seen) {
+            const Track* t = songData.findTrack(TrackId(track));
+            int clips = t && t->type == TrackType::Audio ? 1 : 0;
+            auto before = sourcesSeen.find(track);
+            size_t had = before == sourcesSeen.end() ? 0 : before->second.size();
+            int count = clips + int(mods.size());
+            if (mods.size() > had && count >= 2 && clips + int(had) >= 1) {
+                int64_t newest = -1;
+                for (int64_t m : mods)
+                    if (before == sourcesSeen.end() ||
+                        std::find(before->second.begin(), before->second.end(), m) == before->second.end())
+                        newest = m;
+                sourceNews = {sourceNews.serial + 1, TrackId(track), count, newest};
+            }
+        }
+    sourcesSeen = std::move(seen);
+    sourcesSeeded = true;
+}
+
+bool TesseraModule::makesSound() const {
+    if (hasAudio(songData))
+        return true;
+    MixPlan plan = currentMixPlan();
+    return std::any_of(plan.returns.begin(), plan.returns.end(),
+                       [](const MixPlan::Return& r) { return r.hasIn || r.source; });
+}
+
+int TesseraModule::soundIndex(TrackId track) const {
+    for (size_t i = 0; i < soundTracks.size(); i++)
+        if (soundTracks[i] == track)
+            return int(i);
+    return -1;
+}
+
+TesseraModule::AudioDropResult TesseraModule::importAudioFiles(const std::vector<std::string>& paths,
+                                                               AudioDropTarget target) {
+    AudioDropResult result;
+    setupAudioFolder();
+    if (!audio)
+        return result;
+    double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    std::vector<ImportedAudio> files;
+    std::vector<std::string> storedFiles;
+    bool firstLoop = songData.clips.empty();
+    for (const std::string& path : paths) {
+        AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
+        std::string name = rack::system::getFilename(path);
+        if (!imp.ok) {
+            result.failed.push_back(name);
+            continue;
+        }
+        ImportedAudio f;
+        f.source = imp.source;
+        f.loop = imp.guess.loop;
+        f.sound = imp.guess.sound;
+        f.follow = imp.guess.oneShot ? TempoFollow::Off : TempoFollow::Stretch;
+        f.tempo = imp.guess.bpm > 0 ? imp.guess.bpm : songTempo;
+        // The first loop in an empty song sets the song tempo, so the loop plays as it was made (§5.5).
+        if (firstLoop && files.empty() && !imp.guess.oneShot && imp.guess.loop && imp.guess.bpm > 0 &&
+            std::abs(imp.guess.bpm - songTempo) > 1e-6) {
+            result.tempoSet = true;
+            result.oldTempo = songTempo;
+            result.newTempo = std::clamp(imp.guess.bpm, Engine::kMinBpm, Engine::kMaxBpm);
+        }
+        files.push_back(f);
+        storedFiles.push_back(f.source.file);
+        result.imported.push_back(name);
+    }
+    if (files.empty())
+        return result;
+    CommandPtr command = importAudio(songData, files, target, ids(), &result.made);
+    if (!command)
+        return result;
+    NoteSelection before = editorState.selection;
+    command->apply(songData);
+    publish(command->changes());
+    // The new sources take the samples decoded at drop time, so they play at once.
+    audio->sync(songData);
+    auto* complex = new rack::history::ComplexAction;
+    complex->name = command->name();
+    complex->push(new CommandAction(id, std::move(command), before, editorState.selection));
+    if (result.tempoSet) {
+        params[BPM_PARAM].setValue(float(result.newTempo));
+        auto* change = new rack::history::ParamChange;
+        change->name = "set tempo";
+        change->moduleId = id;
+        change->paramId = BPM_PARAM;
+        change->oldValue = float(result.oldTempo);
+        change->newValue = float(result.newTempo);
+        complex->push(change);
+    }
+    APP->history->push(complex);
+    return result;
+}
+
+void TesseraModule::applyDawProject(dawImport::Imported& in, const std::map<uint64_t, std::string>& files) {
+    setupAudioFolder();
+    int unread = 0;
+    for (const dawImport::AudioFile& f : in.audio) {
+        auto path = files.find(f.source.value);
+        AudioSource* source = nullptr;
+        for (AudioSource& s : in.song.audioSources)
+            if (s.id == f.source)
+                source = &s;
+        if (!source)
+            continue;
+        AudioImport imp;
+        if (audio && path != files.end())
+            imp = audio->importFile(path->second, in.tempo, in.song.timeSig);
+        if (!imp.ok) {
+            unread++;
+            continue; // the clip stays, showing its file as missing, so Find in a folder can bring it back
+        }
+        // The project counted frames at the rate it names; the file's own rate wins.
+        double declared = f.sampleRate > 0 ? f.sampleRate : imp.source.sampleRate;
+        double ratio = declared > 0 ? imp.source.sampleRate / declared : 1;
+        AudioSourceId id = source->id;
+        std::string name = source->name;
+        *source = imp.source;
+        source->id = id;
+        source->name = name;
+        if (std::abs(ratio - 1) > 1e-9)
+            for (auto& [cid, clip] : in.song.clips)
+                if (clip.audio && clip.audio->source == id) {
+                    clip.audio->sourceStart = std::llround(double(clip.audio->sourceStart) * ratio);
+                    for (WarpMarker& w : clip.audio->warps)
+                        w.frame = std::llround(double(w.frame) * ratio);
+                }
+    }
+    if (unread > 0)
+        in.leftOut.push_back(unread == 1 ? "1 audio file couldn't be read: its clips show it missing"
+                                         : std::to_string(unread) + " audio files couldn't be read: their clips show "
+                                                                    "them missing");
+    json_t* data = dataToJson();
+    json_object_set_new(data, "song", songToJson(in.song));
+    json_object_set_new(data, "projectPath", json_string(""));
+    float bpm = float(std::clamp(in.tempo, Engine::kMinBpm, Engine::kMaxBpm));
+    // A project arranged on its timeline plays it; one with only scenes plays the clips.
+    bool timeline = std::any_of(in.song.tracks.begin(), in.song.tracks.end(),
+                                [](const Track& t) { return !t.arrangement.empty(); });
+    withModuleUndo(this, "import DAWproject", [&] {
+        dataFromJson(data);
+        params[BPM_PARAM].setValue(bpm);
+        params[MODE_PARAM].setValue(timeline ? 1.f : 0.f);
+    });
+    json_decref(data);
+    if (audio)
+        audio->sync(songData);
+}
+
+bool TesseraModule::relinkAudioSource(AudioSourceId id, const std::string& path) {
+    setupAudioFolder();
+    const AudioSource* before = songData.findSource(id);
+    if (!audio || !before)
+        return false;
+    double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
+    if (!imp.ok)
+        return false;
+    AudioSource after = imp.source;
+    after.id = id;
+    after.tempo = before->tempo;
+    after.volts = before->volts;
+    perform(std::make_unique<SetAudioSource>(*before, after));
+    return true;
+}
+
+bool TesseraModule::replaceAudioFile(ClipId clip, const std::string& path) {
+    setupAudioFolder();
+    if (!audio)
+        return false;
+    double songTempo = tempo() > 0 ? tempo() : params[BPM_PARAM].getValue();
+    AudioImport imp = audio->importFile(path, songTempo, songData.timeSig);
+    if (!imp.ok)
+        return false;
+    ImportedAudio f;
+    f.source = imp.source;
+    f.tempo = imp.guess.bpm > 0 ? imp.guess.bpm : 0;
+    perform(tessera::replaceAudioFile(songData, clip, f, ids()));
+    audio->sync(songData);
+    return true;
 }
 
 void TesseraModule::drainCapture() {
@@ -407,7 +945,59 @@ void TesseraModule::learnMovedControl() {
     perform(replaceLane(songData, owner, next, "Record " + midiControlName(control)));
 }
 
+bool TesseraModule::readPartSource(TrackId track, uint64_t part, bool pan, float& value) const {
+    std::optional<float> held;
+    for (int k = 0; k < kDrumInputs && !held; k++)
+        if (part == SendFrom::ofLane(k).key())
+            if (std::optional<Channel> c = drumInputHold(track, k))
+                held = pan ? c->pan : c->volumeDb;
+    if (!held && part == SendFrom::clips().key() && !pan) {
+        float gain;
+        if (player->heldClips(track.value, gain))
+            held = gainToDb(gain);
+    }
+    if (!held)
+        for (OutputModuleBase* o : sourceModules(track))
+            if (part == SendFrom::input(o->id).key())
+                held = pan ? o->heldSourcePan() : o->heldSourceLevel();
+    if (!held)
+        return false;
+    value = pan ? (*held + 1) / 2 : faderPosOfDb(*held);
+    return true;
+}
+
 bool TesseraModule::readAutomationSource(const AutomationEnvelope& lane, float& value) const {
+    if (lane.drive == LaneDrive::Send) {
+        // A send knob or a Show sends fader, only while the mouse drags it.
+        for (const Track& t : songData.tracks)
+            for (const AutomationEnvelope& l : t.automation)
+                if (l.id == lane.id) {
+                    float gain;
+                    if (!player->heldSend(t.id.value, lane.sendTo.value, gain, lane.part))
+                        return false;
+                    value = faderPosOfDb(gainToDb(gain));
+                    return true;
+                }
+        return false;
+    }
+    if (lane.drive == LaneDrive::Volume || lane.drive == LaneDrive::Pan) {
+        // The track's own fader or pan, only while the mouse drags it: let go, and the lane plays again.
+        bool pan = lane.drive == LaneDrive::Pan;
+        TrackId track;
+        for (const Track& t : songData.tracks)
+            for (const AutomationEnvelope& l : t.automation)
+                if (l.id == lane.id)
+                    track = t.id;
+        float held;
+        if (!track.valid())
+            return false;
+        if (lane.part != 0)
+            return readPartSource(track, lane.part, pan, value);
+        if (!player->held(track.value, pan, held))
+            return false;
+        value = pan ? (held + 1) / 2 : faderPosOfDb(gainToDb(held));
+        return true;
+    }
     if (lane.paramTarget.valid()) {
         // A device knob: where the mouse holds it; let go, it stays where the hand left it. Write mode also
         // records a knob nobody has touched yet, at the value it plays.
@@ -700,16 +1290,28 @@ float TesseraModule::knobBase(const ParamRef& ref) const {
     return snap->knobs[size_t(k)];
 }
 
-float TesseraModule::liveKnob(const ParamRef& ref) const {
+float TesseraModule::liveKnob(const ParamRef& ref) const { return knobNow(ref).value_or(0.f); }
+
+std::optional<float> TesseraModule::knobNow(const ParamRef& ref) const {
     const Snapshot* snap = snapshots.latest();
     int k = snap ? snap->knobIndex(ref) : -1;
     if (k < 0)
-        return 0;
+        return std::nullopt;
     bool moving = holds(ref);
     for (const KnobModulation& km : snap->modulated)
         moving |= km.knob == k;
     moving |= playing() && std::binary_search(snap->laneKnobs.begin(), snap->laneKnobs.end(), k);
     return moving ? engine.liveKnob(k) : snap->knobs[size_t(k)];
+}
+
+int64_t TesseraModule::arpStep(DeviceId id) const {
+    const Snapshot* snap = snapshots.latest();
+    return snap ? engine.arpStep(snap->arpSlotOf(id.value)) : -1;
+}
+
+int TesseraModule::arpHeld(DeviceId id) const {
+    const Snapshot* snap = snapshots.latest();
+    return snap ? engine.arpHeld(snap->arpSlotOf(id.value)) : 0;
 }
 
 float TesseraModule::modulatorOutput(ModulatorId id) const {
@@ -719,7 +1321,10 @@ float TesseraModule::modulatorOutput(ModulatorId id) const {
 void TesseraModule::publish(const ChangeSet& changes) {
     revision++;
     slots.sync(songData);
-    snapshots.publish(snapshotBuilder.build(songData, slots, changes));
+    if (bounce)
+        snapshots.publish(snapshotBuilder.build(songAsBounceHears(*bounce), slots, changes));
+    else
+        snapshots.publish(snapshotBuilder.build(songData, slots, changes));
 }
 
 void TesseraModule::perform(CommandPtr command, std::optional<NoteSelection> selectionAfter) {
@@ -752,37 +1357,84 @@ void TesseraModule::process(const ProcessArgs& args) {
         engineSampleRate = args.sampleRate;
         engine.setSampleRate(engineSampleRate);
         recCv.setSampleRate(engineSampleRate);
+        player->setSampleRate(engineSampleRate);
+        audioRate.store(engineSampleRate, std::memory_order_relaxed);
     }
-    if (const Snapshot* next = snapshots.poll())
-        engine.setSnapshot(next);
-    if (uint64_t held = heldKnobKey.load(std::memory_order_acquire)) {
-        ParamRef ref{held >> 63 ? ParamRef::Kind::Modulator : ParamRef::Kind::Device, held & 0xFFFFFFFFFFFFull,
-                     uint16_t((held >> 48) & 0x7FFF)};
-        engine.setKnobOverride(ref, heldKnobValue.load(std::memory_order_relaxed));
-    } else {
-        engine.clearKnobOverride();
+    // Settings, buttons, lights and what the UI reads run about 1500 times a second: nobody can press or see faster,
+    // and doing them on every sample was a fifth of this module's cost. Jacks that carry timing stay on every sample.
+    bool slowTick = slowTickCount == 0;
+    slowTickCount = (slowTickCount + 1) % kSlowTickSamples;
+    if (slowTick) {
+        if (const Snapshot* next = snapshots.poll())
+            engine.setSnapshot(next);
+        if (uint64_t held = heldKnobKey.load(std::memory_order_acquire)) {
+            ParamRef ref{held >> 63 ? ParamRef::Kind::Modulator : ParamRef::Kind::Device, held & 0xFFFFFFFFFFFFull,
+                         uint16_t((held >> 48) & 0x7FFF)};
+            engine.setKnobOverride(ref, heldKnobValue.load(std::memory_order_relaxed));
+        } else {
+            engine.clearKnobOverride();
+        }
+        engine.setPickedScene(sceneSelected.load(std::memory_order_relaxed));
+        // Before launches, so launches restored with a patch apply to the mode it was saved in.
+        engine.setPlayMode(params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher);
+        engine.setCapture(&captureEvents, captureArmed.load(std::memory_order_relaxed));
+        engine.setNextActions(nextActionsArmed.load(std::memory_order_relaxed));
     }
-    // Before launches, so launches restored with a patch apply to the mode it was saved in.
-    engine.setPlayMode(params[MODE_PARAM].getValue() > 0.5f ? PlayMode::Arranger : PlayMode::Launcher);
-    engine.setCapture(&captureEvents, captureArmed.load(std::memory_order_relaxed));
     writeTransportOutputs(args);
-    handleTransportControls(args);
-    handleUiRequests();
-    handleSceneControls();
-    engine.setLiveToKey(liveToKey.load(std::memory_order_relaxed));
-    engine.setNewControlLanes(newControlLanes.load(std::memory_order_relaxed));
-    engine.setReplaceTakes(replaceTakes.load(std::memory_order_relaxed));
-    bool fill = params[FILL_PARAM].getValue() > 0.5f || inputs[FILL_INPUT].getVoltage() > kGateHigh ||
-                editorFill.load(std::memory_order_relaxed);
-    engine.setFill(fill);
-    lights[FILL_LIGHT].setBrightness(fill);
+    handleTransportControls(args, slowTick);
+    if (slowTick)
+        handleUiRequests();
+    handleSceneControls(slowTick);
+    if (slowTick) {
+        engine.setLiveToKey(liveToKey.load(std::memory_order_relaxed));
+        engine.setNewControlLanes(newControlLanes.load(std::memory_order_relaxed));
+        engine.setReplaceTakes(replaceTakes.load(std::memory_order_relaxed));
+        bool fill = params[FILL_PARAM].getValue() > 0.5f || inputs[FILL_INPUT].getVoltage() > kGateHigh ||
+                    editorFill.load(std::memory_order_relaxed);
+        engine.setFill(fill);
+        lights[FILL_LIGHT].setBrightness(fill);
+    }
     readRecordInputs(args);
 
-    followClock(args);
-    engine.setLoopEnabled(params[LOOP_PARAM].getValue() > 0.5f);
-    engine.setClockDivision(kClockDivisions[clockDivisionIndex.load(std::memory_order_relaxed)].ticks);
+    followClock(args, slowTick);
+    if (slowTick) {
+        engine.setLoopEnabled(params[LOOP_PARAM].getValue() > 0.5f);
+        engine.setClockDivision(kClockDivisions[clockDivisionIndex.load(std::memory_order_relaxed)].ticks);
+    }
     engine.process(bus->beginWrite(args.frame), lastEvents);
     bus->publish(args.frame);
+    if (slowTick)
+        if (const AudioSnapshot* next = audioSnapshots.poll())
+            player->setSnapshot(next);
+    // A song without audio skips the player: it costs what it did before audio existed.
+    float mainL = 0, mainR = 0;
+    if (player->active()) {
+        AudioPlayer::Rack rack{&bus->returns(), bus->beginAudioWrite(args.frame), args.frame};
+        rack.parts = &bus->partLevels();
+        // A poly cable is summed to stereo; each side follows the other when only one is patched, as on Track Out.
+        bool hasL = inputs[ROLL_IN_L_INPUT].isConnected(), hasR = inputs[ROLL_IN_R_INPUT].isConnected();
+        float inL = hasL ? inputs[ROLL_IN_L_INPUT].getVoltageSum() : 0.f;
+        float inR = hasR ? inputs[ROLL_IN_R_INPUT].getVoltageSum() : 0.f;
+        rack.rollInL = hasL ? inL : inR;
+        rack.rollInR = hasR ? inR : inL;
+        player->process(engine, mainL, mainR, rack);
+        bus->publishAudio(args.frame);
+    }
+    // The metronome sounds on MAIN only: never on OUT, in bounces, exports or stems (§8.5).
+    auto mode = MetronomeMode(metronomeMode.load(std::memory_order_relaxed));
+    bool clicking = mode == MetronomeMode::Always      ? engine.isPlaying() || engine.countingIn()
+                    : mode == MetronomeMode::Recording ? engine.recording() || engine.countingIn()
+                    : mode == MetronomeMode::CountIn   ? engine.countingIn()
+                                                       : false;
+    if (clicking && lastEvents.beat)
+        metronome.trigger(lastEvents.bar);
+    if (mode != MetronomeMode::Off) {
+        float click = metronome.next(args.sampleRate) * metronomeGain.load(std::memory_order_relaxed);
+        mainL += click;
+        mainR += click;
+    }
+    outputs[MAIN_L_OUTPUT].setVoltage(mainL);
+    outputs[MAIN_R_OUTPUT].setVoltage(mainR);
     if (mapDivider.process()) {
         writeMappings();
         int channels = inputs[AUTO_REC_INPUT].getChannels();
@@ -795,6 +1447,9 @@ void TesseraModule::process(const ProcessArgs& args) {
     if (launcherStatusDivider.process())
         publishLauncherStatus();
 
+    if (!slowTick)
+        return;
+    mainConnected.store(outputs[MAIN_L_OUTPUT].isConnected(), std::memory_order_relaxed);
     uiPlayhead.store(engine.position(), std::memory_order_relaxed);
     uiPendingSeek.store(engine.pendingSeek(), std::memory_order_relaxed);
     uiPlayTick.store(engine.playPosition(), std::memory_order_relaxed);
@@ -804,25 +1459,27 @@ void TesseraModule::process(const ProcessArgs& args) {
     uiRecording.store(engine.recording(), std::memory_order_relaxed);
     uiCountingIn.store(engine.countingIn(), std::memory_order_relaxed);
 
+    float elapsed = args.sampleTime * float(kSlowTickSamples);
     lights[PLAY_LIGHT].setBrightness(engine.isPlaying());
     lights[LOOP_LIGHT].setBrightness(params[LOOP_PARAM].getValue());
     lights[MODE_LIGHT].setBrightness(params[MODE_PARAM].getValue());
-    lights[BEAT_LIGHT].setBrightness(beatFlash.process(args.sampleTime));
+    lights[BEAT_LIGHT].setBrightness(beatFlash.process(elapsed));
     // Steady while recording, blinking through the count-in.
-    recBlink = std::fmod(recBlink + args.sampleTime * 4.f, 1.f);
+    recBlink = std::fmod(recBlink + elapsed * 4.f, 1.f);
     lights[REC_LIGHT].setBrightness(engine.recording() ? 1.f : engine.countingIn() ? (recBlink < 0.5f) : 0.f);
 }
 
-void TesseraModule::handleTransportControls(const ProcessArgs& args) {
-    auto toggle = [this] { engine.isPlaying() ? engine.stop() : engine.play(); };
+void TesseraModule::handleTransportControls(const ProcessArgs& args, bool slowTick) {
+    auto toggle = [this] { engine.isPlaying() ? engine.stop() : engine.start(); };
 
-    if (playButton.process(params[PLAY_PARAM].getValue() > 0.f))
+    if (slowTick && playButton.process(params[PLAY_PARAM].getValue() > 0.f))
         toggle();
-    if (recButton.process(params[REC_PARAM].getValue() > 0.f))
+    if (slowTick && recButton.process(params[REC_PARAM].getValue() > 0.f))
         engine.toggleRecord(countInBars.load(std::memory_order_relaxed));
 
-    bool resetNow = resetButton.process(params[RESET_PARAM].getValue() > 0.f);
-    resetNow |= resetInput.process(inputs[RESET_INPUT].getVoltage(), kGateLow, kGateHigh);
+    bool resetNow = slowTick && resetButton.process(params[RESET_PARAM].getValue() > 0.f);
+    if (inputs[RESET_INPUT].isConnected())
+        resetNow |= resetInput.process(inputs[RESET_INPUT].getVoltage(), kGateLow, kGateHigh);
     if (resetNow) {
         engine.reset();
         clockSync.resetPhase();
@@ -836,22 +1493,24 @@ void TesseraModule::handleTransportControls(const ProcessArgs& args) {
                 toggle();
         } else if (runInput.isHigh() != wasHigh) {
             // Gate mode reacts to edges only, so the play button still works while a cable is patched.
-            runInput.isHigh() ? engine.play() : engine.stop();
+            runInput.isHigh() ? engine.start() : engine.stop();
         }
     }
 
-    if (tapButton.process(params[TAP_PARAM].getValue() > 0.f)) {
+    if (slowTick && tapButton.process(params[TAP_PARAM].getValue() > 0.f)) {
         double bpm = tapTempo.tap(double(args.frame) / args.sampleRate);
         if (bpm > 0)
             params[BPM_PARAM].setValue(float(std::clamp(bpm, Engine::kMinBpm, Engine::kMaxBpm)));
     }
 }
 
-void TesseraModule::followClock(const ProcessArgs& args) {
+void TesseraModule::followClock(const ProcessArgs& args, bool slowTick) {
     bool external = inputs[CLOCK_INPUT].isConnected();
-    uiExternalClock.store(external, std::memory_order_relaxed);
+    if (slowTick)
+        uiExternalClock.store(external, std::memory_order_relaxed);
     if (!external) {
-        engine.setTempo(params[BPM_PARAM].getValue());
+        if (slowTick)
+            engine.setTempo(params[BPM_PARAM].getValue());
         clockWasPlaying = engine.isPlaying();
         return;
     }
@@ -879,11 +1538,11 @@ void TesseraModule::handleUiRequests() {
     if (requests & kRequestReset)
         engine.reset();
     if (requests & kRequestToggle)
-        engine.isPlaying() ? engine.stop() : engine.play();
+        engine.isPlaying() ? engine.stop() : engine.start();
     if (requests & kRequestStop)
         engine.stop();
     if (requests & kRequestPlay)
-        engine.play();
+        engine.start();
     if (requests & kRequestRecord)
         engine.toggleRecord(countInBars.load(std::memory_order_relaxed));
     if (seekPending.load(std::memory_order_relaxed) && seekPending.exchange(false, std::memory_order_acquire))
@@ -904,26 +1563,31 @@ void TesseraModule::handleUiRequests() {
         engine.launch(launchEvent);
 }
 
-void TesseraModule::handleSceneControls() {
+void TesseraModule::handleSceneControls(bool slowTick) {
+    bool scenePatched = inputs[SCENE_INPUT].isConnected(), launchPatched = inputs[LAUNCH_INPUT].isConnected();
+    if (!slowTick && !scenePatched && !launchPatched)
+        return; // without cables nothing here can change between the rounds of buttons
     int count = std::max(1, engine.sceneCount());
     int scene = std::min(sceneSelected.load(std::memory_order_relaxed), count - 1);
-    if (scenePrevButton.process(params[SCENE_PREV_PARAM].getValue() > 0.f))
+    if (slowTick && scenePrevButton.process(params[SCENE_PREV_PARAM].getValue() > 0.f))
         scene = std::max(0, scene - 1);
-    if (sceneNextButton.process(params[SCENE_NEXT_PARAM].getValue() > 0.f))
+    if (slowTick && sceneNextButton.process(params[SCENE_NEXT_PARAM].getValue() > 0.f))
         scene = std::min(count - 1, scene + 1);
-    if (inputs[SCENE_INPUT].isConnected()) {
+    if (scenePatched) {
         float v = inputs[SCENE_INPUT].getVoltage();
         float perScene = sceneCv.load(std::memory_order_relaxed) == SceneCvMode::Semitone ? 1.f / 12.f : 0.1f;
         scene = rack::math::clamp(int(std::round(v / perScene)), 0, count - 1);
     }
     sceneSelected.store(scene, std::memory_order_relaxed);
-    uiSceneCount.store(count, std::memory_order_relaxed);
+    if (slowTick)
+        uiSceneCount.store(count, std::memory_order_relaxed);
 
-    bool launchNow = sceneLaunchButton.process(params[SCENE_LAUNCH_PARAM].getValue() > 0.f);
-    launchNow |= launchInput.process(inputs[LAUNCH_INPUT].getVoltage(), kGateLow, kGateHigh);
+    bool launchNow = slowTick && sceneLaunchButton.process(params[SCENE_LAUNCH_PARAM].getValue() > 0.f);
+    if (launchPatched)
+        launchNow |= launchInput.process(inputs[LAUNCH_INPUT].getVoltage(), kGateLow, kGateHigh);
     if (launchNow)
         engine.launch({LaunchEvent::Kind::Scene, 0, scene});
-    if (stopAllButton.process(params[STOP_ALL_PARAM].getValue() > 0.f))
+    if (slowTick && stopAllButton.process(params[STOP_ALL_PARAM].getValue() > 0.f))
         engine.launch({LaunchEvent::Kind::StopAll});
 }
 
@@ -940,7 +1604,11 @@ void TesseraModule::publishLauncherStatus() {
         s.queuedClipTime.store(engine.queuedClipTime(i), std::memory_order_relaxed);
         s.position.store(engine.clipPosition(i), std::memory_order_relaxed);
         s.overridden.store(engine.overridden(i), std::memory_order_relaxed);
+        s.onTimeline.store(engine.followsTimeline(i), std::memory_order_relaxed);
         s.elapsed.store(engine.clipElapsed(i), std::memory_order_relaxed);
+        s.actionElapsed.store(engine.actionElapsed(i), std::memory_order_relaxed);
+        for (size_t k = 0; k < s.heads.size(); k++)
+            s.heads[k].store(engine.playheadPosition(i, k), std::memory_order_relaxed);
         anyQueued |= engine.queuedSlot(i) != kNothingQueued;
     }
     lights[LAUNCH_LIGHT].setBrightness(anyQueued);
@@ -980,6 +1648,11 @@ void TesseraModule::writeTransportOutputs(const ProcessArgs& args) {
         clickLevel = ev.bar ? 10.f : 5.f;
         beatFlash.trigger(kBeatFlashSeconds);
     }
+    // Measuring the recording offset: one click, timed from this sample.
+    if (measureClick.load(std::memory_order_relaxed) && measureClick.exchange(false, std::memory_order_acq_rel)) {
+        clickPulse.trigger(kTriggerSeconds);
+        clickLevel = 10.f;
+    }
 
     outputs[CLOCK_OUTPUT].setVoltage(ev.clock ? 10.f : 0.f);
     outputs[RUN_OUTPUT].setVoltage(ev.running ? 10.f : 0.f);
@@ -990,6 +1663,8 @@ void TesseraModule::writeTransportOutputs(const ProcessArgs& args) {
 }
 
 void TesseraModule::onAdd(const AddEvent& e) {
+    if (hasAudio(songData))
+        setupAudioFolder();
     Registry& registry = Registry::get();
     // A duplicated module arrives with its original's name; give it its own so name lookups stay unambiguous.
     TesseraModule* sameName = registry.findSourceByName(name);
@@ -1003,7 +1678,170 @@ void TesseraModule::onAdd(const AddEvent& e) {
         registry.recordPaste(savedId, id);
 }
 
-void TesseraModule::onRemove(const RemoveEvent& e) { Registry::get().removeSource(this); }
+void TesseraModule::onRemove(const RemoveEvent& e) {
+    Registry::get().removeSource(this);
+    clipControlRelease();
+}
+
+const clipControl::Binding* TesseraModule::clipControlFor(const clipControl::Binding& action) const {
+    for (const clipControl::Binding& b : controlSettings.learned)
+        if (b.sameAction(action))
+            return &b;
+    return nullptr;
+}
+
+void TesseraModule::sendControl(const clipControl::Message& bytes) {
+    rack::midi::Message m;
+    m.bytes = bytes;
+    controlOut.sendMessage(m);
+}
+
+void TesseraModule::clipControlRelease() {
+    if (controlDeviceSent < 0)
+        return;
+    // Dark pads, then the controller's own mode back.
+    clipControl::Surface dark;
+    std::map<int, clipControl::Message> lit;
+    for (const clipControl::Message& m : clipControl::lights(controlLayoutSent, dark, lit))
+        sendControl(m);
+    for (const clipControl::Message& m : clipControl::leave(controlLayoutSent))
+        sendControl(m);
+    controlLit.clear();
+    controlDeviceSent = -1;
+}
+
+clipControl::Surface TesseraModule::clipControlSurface() const {
+    using clipControl::Cell;
+    using clipControl::kSize;
+    clipControl::Surface s;
+    const Song& song = songData;
+    int tracks = int(song.tracks.size()), scenes = int(song.scenes.size());
+    for (int col = 0; col < kSize; col++) {
+        int ti = controlWindow.track + col;
+        if (ti >= tracks)
+            continue;
+        const Track& t = song.tracks[size_t(ti)];
+        LauncherStatus st = launcherStatus(t.id);
+        s.trackPlays[size_t(col)] = st.playing != kNoSlot;
+        s.anyPlays |= st.playing != kNoSlot;
+        for (int row = 0; row < kSize; row++) {
+            int scene = controlWindow.scene + row;
+            if (scene >= scenes || scene >= int(t.slots.size()) || !t.slots[size_t(scene)].clip)
+                continue;
+            const Clip* clip = song.findClip(*t.slots[size_t(scene)].clip);
+            if (!clip)
+                continue;
+            Cell& c = s.cells[size_t(row)][size_t(col)];
+            c.color = clip->shownColor(t.color);
+            if (st.playing == scene)
+                c.state = recording() && t.armed ? Cell::State::Recording
+                          : st.queued == kNoSlot ? Cell::State::Stopping
+                                                 : Cell::State::Playing;
+            else if (st.queued == scene)
+                c.state = Cell::State::Queued;
+            else
+                c.state = Cell::State::Clip;
+            s.sceneHasClips[size_t(row)] = true;
+        }
+    }
+    s.up = controlWindow.scene > 0;
+    s.down = controlWindow.scene + kSize < scenes;
+    s.left = controlWindow.track > 0;
+    s.right = controlWindow.track + kSize < tracks;
+    return s;
+}
+
+void TesseraModule::clipControlDo(const clipControl::Action& a) {
+    using clipControl::Kind;
+    const Song& song = songData;
+    auto trackOf = [&]() -> const Track* {
+        if (a.track.valid())
+            return song.findTrack(a.track);
+        int i = controlWindow.track + a.column;
+        return a.column >= 0 && i < int(song.tracks.size()) ? &song.tracks[size_t(i)] : nullptr;
+    };
+    switch (a.kind) {
+    case Kind::Slot: {
+        const Track* t = trackOf();
+        if (!t || a.scene < 0 || a.scene >= int(t->slots.size()))
+            return;
+        // A pad with no clip stops its track, as an empty slot's stop square does (when it has one).
+        if (t->slots[size_t(a.scene)].clip)
+            launchSlot(t->id, a.scene);
+        else if (t->slots[size_t(a.scene)].stop)
+            stopTrack(t->id, a.scene);
+        return;
+    }
+    case Kind::Scene:
+        if (a.scene >= 0 && a.scene < int(song.scenes.size()))
+            launchScene(a.scene);
+        return;
+    case Kind::StopTrack:
+        if (const Track* t = trackOf())
+            stopTrack(t->id);
+        return;
+    case Kind::StopAll:
+        stopAllClips();
+        return;
+    case Kind::Up:
+    case Kind::Down:
+    case Kind::Left:
+    case Kind::Right:
+        controlWindow = clipControl::moved(controlWindow, a.kind, int(song.tracks.size()), int(song.scenes.size()));
+        return;
+    case Kind::None:
+        return;
+    }
+}
+
+void TesseraModule::clipControlStep() {
+    using namespace clipControl;
+    const Song& song = songData;
+    controlWindow = clamped(controlWindow, int(song.tracks.size()), int(song.scenes.size()));
+    rack::midi::Message msg;
+    while (controlIn.tryPop(&msg, INT64_MAX)) {
+        const uint8_t* bytes = msg.bytes.data();
+        int size = int(msg.bytes.size());
+        if (controlLearn) {
+            Binding seen;
+            if (!controlOf(bytes, size, seen))
+                continue;
+            Binding b = *controlLearn;
+            b.type = seen.type;
+            b.channel = seen.channel;
+            b.number = seen.number;
+            controlLearn.reset();
+            withModuleUndo(this, "learn MIDI control", [&] {
+                // One control does one thing, and one thing has one control.
+                std::vector<Binding>& list = controlSettings.learned;
+                list.erase(std::remove_if(list.begin(), list.end(),
+                                          [&](const Binding& o) { return o.sameControl(b) || o.sameAction(b); }),
+                           list.end());
+                list.push_back(b);
+            });
+            fileMessage = "Learned: that control now launches it";
+            continue;
+        }
+        clipControlDo(decode(controlSettings, controlWindow, controlState, bytes, size));
+    }
+    // A controller that came (or a layout picked) is put in the mode Tessera lights it in, and lit from scratch.
+    int device = controlOut.getDeviceId();
+    if (device != controlDeviceSent || controlSettings.layout != controlLayoutSent) {
+        if (controlDeviceSent >= 0 && device == controlDeviceSent)
+            for (const Message& m : leave(controlLayoutSent))
+                sendControl(m);
+        controlLit.clear();
+        controlDeviceSent = device;
+        controlLayoutSent = controlSettings.layout;
+        if (device >= 0)
+            for (const Message& m : enter(controlSettings.layout))
+                sendControl(m);
+    }
+    if (device < 0 || !hasLights(controlSettings.layout))
+        return;
+    for (const Message& m : clipControl::lights(controlSettings.layout, clipControlSurface(), controlLit))
+        sendControl(m);
+}
 
 void TesseraModule::onReset(const ResetEvent& e) {
     Module::onReset(e);
@@ -1012,6 +1850,7 @@ void TesseraModule::onReset(const ResetEvent& e) {
     clockDivisionIndex.store(kDefaultClockDivision);
     runMode.store(RunInputMode::Toggle);
     sceneCv.store(SceneCvMode::TenthVolt);
+    nextActionsArmed.store(true);
     sceneSelected.store(0);
     setRecordSettings(RecordSettings());
     // IDs keep counting up from the old song's, so nothing that still points at it (an editor's selection, an open
@@ -1036,6 +1875,7 @@ json_t* TesseraModule::dataToJson() {
     json_object_set_new(root, "runMode", json_string(runMode.load() == RunInputMode::Gate ? "gate" : "toggle"));
     json_object_set_new(root, "savedId", json_integer(id));
     json_object_set_new(root, "sceneCv", json_string(sceneCv.load() == SceneCvMode::Semitone ? "semitone" : "0.1v"));
+    json_object_set_new(root, "nextActions", json_boolean(nextActionsArmed.load()));
     json_object_set_new(root, "scene", json_integer(selectedScene()));
     // Which clip each track plays, as [trackId, slot] pairs, so a reloaded patch carries on where it was.
     json_t* launcherJ = json_array();
@@ -1049,6 +1889,10 @@ json_t* TesseraModule::dataToJson() {
     json_object_set_new(root, "ui", editorState.toJson());
     json_object_set_new(root, "record", recorder.settings.toJson());
     json_object_set_new(root, "midiInput", midiIn.toJson());
+    json_t* control = controlSettings.toJson();
+    json_object_set_new(control, "input", controlIn.toJson());
+    json_object_set_new(control, "output", controlOut.toJson());
+    json_object_set_new(root, "clipControl", control);
     if (!projectPath.empty())
         json_object_set_new(root, "projectPath", json_string(projectPath.c_str()));
     return root;
@@ -1057,7 +1901,7 @@ json_t* TesseraModule::dataToJson() {
 namespace {
 constexpr const char* kProjectFormat = "tessera-project";
 // Keys of the module data that belong to the patch, not the project.
-const char* const kPatchKeys[] = {"savedId", "midiInput", "projectPath"};
+const char* const kPatchKeys[] = {"savedId", "midiInput", "projectPath", "clipControl"};
 } // namespace
 
 json_t* TesseraModule::projectToJson() {
@@ -1130,12 +1974,14 @@ void TesseraModule::dataFromJson(json_t* root) {
     savedId = json::getInt(root, "savedId", -1);
     if (const char* mode = json_string_value(json_object_get(root, "sceneCv")))
         sceneCv.store(std::string(mode) == "semitone" ? SceneCvMode::Semitone : SceneCvMode::TenthVolt);
+    nextActionsArmed.store(!json_is_false(json_object_get(root, "nextActions")));
     selectScene(int(json::getInt(root, "scene", 0)));
 
     // Older patches without a song keep the current one.
     if (const json_t* songJ = json_object_get(root, "song")) {
         int schema = int(json::getInt(root, "schema", Song::kSchemaVersion));
-        if (schema > Song::kSchemaVersion)
+        savedByNewerVersion = schema > Song::kSchemaVersion;
+        if (savedByNewerVersion)
             WARN("Tessera: patch uses song schema %d, newer than this build (%d); loading what it can", schema,
                  Song::kSchemaVersion);
         songData = songFromJson(songJ, schema);
@@ -1151,6 +1997,13 @@ void TesseraModule::dataFromJson(json_t* root) {
     setRecordSettings(RecordSettings::fromJson(json_object_get(root, "record")));
     if (json_t* midiJ = json_object_get(root, "midiInput"))
         midiIn.fromJson(midiJ);
+    if (json_t* control = json_object_get(root, "clipControl")) {
+        controlSettings = clipControl::Settings::fromJson(control);
+        if (json_t* in = json_object_get(control, "input"))
+            controlIn.fromJson(in);
+        if (json_t* out = json_object_get(control, "output"))
+            controlOut.fromJson(out);
+    }
     const char* path = json_string_value(json_object_get(root, "projectPath"));
     projectPath = path ? path : "";
 }

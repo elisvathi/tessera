@@ -1,12 +1,17 @@
 #include "DawProject.hpp"
 
+#include "AudioRegions.hpp"
+
 #include "Arrangement.hpp"
+#include "AudioSource.hpp"
 #include "AutomationEdits.hpp"
+#include "NoteOperators.hpp"
 #include "Zip.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 
 namespace tessera::dawproject {
@@ -106,16 +111,70 @@ class Xml {
     int next = 0;
 };
 
-/// `channel` is the track's (0-based); with `noteChannels` each note goes on its own instead.
-void notesElement(Xml& x, const std::vector<ExportNote>& notes, double origin, int channel, bool noteChannels) {
+/// One of a note's curves as a per-note expression timeline: its times in beats from the note's start (the curve
+/// spans `span` ticks), pitch as "transpose" in semitones, timbre and pressure from 0 to 1 in the "linear" unit
+/// Bitwig Studio writes them in. A bent segment is written as several straight ones.
+void notePoints(Xml& x, const char* expression, const char* unit, const std::vector<ExprPoint>& curve, double span) {
+    x.open("Points", {{"id", x.id()}, {"unit", unit}});
+    x.leaf("Target", {{"expression", expression}});
+    auto point = [&](double pos, double value) {
+        x.leaf("RealPoint", {{"time", beats(pos * span)}, {"value", num(value)}, {"interpolation", "linear"}});
+    };
+    for (size_t i = 0; i < curve.size(); i++) {
+        const ExprPoint& p = curve[i];
+        point(p.pos, p.value);
+        if (i + 1 < curve.size() && p.tension != 0) {
+            constexpr int kSteps = 8;
+            for (int k = 1; k < kSteps; k++) {
+                float pos = p.pos + (curve[i + 1].pos - p.pos) * float(k) / kSteps;
+                point(pos, expressionAt(curve, pos, 0));
+            }
+        }
+    }
+    x.close("Points");
+}
+
+/// `channel` is the track's (0-based); with `noteChannels` each note goes on its own instead. Tied notes are
+/// written overlapping a little, their glides in their pitch curves (the format has no tie), so a mono instrument in
+/// legato mode plays them on. Each note's pitch, timbre and pressure curves go inside it: one curve as a direct
+/// child, several in a Lanes (the schema allows one child).
+void notesElement(Xml& x, const std::vector<ExportNote>& source, double origin, int channel, bool noteChannels) {
+    std::vector<ExportNote> notes = source;
+    render::overlapTies(notes, true);
     x.open("Notes", {{"id", x.id()}});
-    for (const ExportNote& n : notes)
-        x.leaf("Note", {{"time", beats(n.start - origin)},
-                        {"duration", beats(std::max(1.0, n.end - n.start))},
-                        {"channel", std::to_string(noteChannels ? std::clamp(int(n.channel), 1, 16) - 1 : channel)},
-                        {"key", std::to_string(std::clamp(n.pitch, 0, 127))},
-                        {"vel", num(std::clamp(n.velocity, 0.f, 1.f))},
-                        {"rel", num(std::clamp(n.release, 0.f, 1.f))}});
+    for (const ExportNote& n : notes) {
+        Attrs attrs = {{"time", beats(n.start - origin)},
+                            {"duration", beats(std::max(1.0, n.end - n.start))},
+                            {"channel", std::to_string(noteChannels ? std::clamp(int(n.channel), 1, 16) - 1 : channel)},
+                            {"key", std::to_string(std::clamp(n.pitch, 0, 127))},
+                            {"vel", num(std::clamp(n.velocity, 0.f, 1.f))},
+                            {"rel", num(std::clamp(n.release, 0.f, 1.f))}};
+        struct Curve {
+            const char* expression;
+            const char* unit;
+            const std::vector<ExprPoint>* points;
+        };
+        std::vector<Curve> curves;
+        if (!n.pitchExpr.empty())
+            curves.push_back({"transpose", "semitones", &n.pitchExpr});
+        if (!n.timbreExpr.empty())
+            curves.push_back({"timbre", "linear", &n.timbreExpr});
+        if (!n.pressureExpr.empty())
+            curves.push_back({"pressure", "linear", &n.pressureExpr});
+        if (curves.empty()) {
+            x.leaf("Note", attrs);
+            continue;
+        }
+        double span = n.span > 0 ? n.span : n.end - n.start;
+        x.open("Note", attrs);
+        if (curves.size() > 1)
+            x.open("Lanes", {{"id", x.id()}});
+        for (const Curve& c : curves)
+            notePoints(x, c.expression, c.unit, *c.points, span);
+        if (curves.size() > 1)
+            x.close("Lanes");
+        x.close("Note");
+    }
     x.close("Notes");
 }
 
@@ -170,6 +229,89 @@ void arrangementClips(Xml& x, const Song& song, const Track& t, const Options& o
     x.close("Clips");
 }
 
+/// The clips of an audio track's timeline: each instance a clip with the part of its file it plays, warped from
+/// the clip's beats to the file's seconds at the clip tempo (an Off clip keeps its own speed).
+void audioClips(Xml& x, const Song& song, const Track& t, const Options& o, double songTempo) {
+    std::map<uint64_t, std::string> paths = audioPaths(song);
+    x.open("Clips", {{"id", x.id()}});
+    for (const ArrangerClip& a : t.arrangement) {
+        if (a.muted && !o.includeMuted)
+            continue;
+        const Clip* clip = song.findClip(a.clip);
+        const AudioContent c = clip && clip->audio ? *clip->audio : AudioContent{};
+        const AudioSource* own = clip && clip->audio ? song.findSource(c.source) : nullptr;
+        if (!own)
+            continue;
+        double k = songTicksPerClipTick(c, songTempo);
+        double secondsPerClipTick = secondsPerTick(c.sourceTempo);
+        // One exported clip: `length` clip ticks from `playStart` at song tick `time`, reading the file from `contentStart`.
+        auto emit = [&](const AudioSource* src, double time, double length, double playStart, double contentStart,
+                        double contentLength, bool loops, Tick fadeIn, Tick fadeOut) {
+            Attrs attrs{{"time", beats(time)},
+                        {"duration", beats(length * k)},
+                        {"playStart", beats(playStart)},
+                        {"name", clip->name.empty() ? src->name : clip->name},
+                        {"color", color(clip->shownColor(t.color))},
+                        {"fadeTimeUnit", "beats"},
+                        {"fadeInTime", beats(double(fadeIn) * k)},
+                        {"fadeOutTime", beats(double(fadeOut) * k)}};
+            if (loops) {
+                attrs.push_back({"loopStart", beats(double(clip->loopStart))});
+                attrs.push_back({"loopEnd", beats(double(clip->loopEnd))});
+            }
+            if (a.muted)
+                attrs.push_back({"enable", "false"});
+            x.open("Clip", attrs);
+            x.open("Warps", {{"id", x.id()}, {"timeUnit", "beats"}, {"contentTimeUnit", "seconds"}});
+            x.open("Audio", {{"id", x.id()},
+                             {"algorithm", c.follow == TempoFollow::Repitch ? "repitch" : "stretch"},
+                             {"channels", std::to_string(src->channels)},
+                             {"duration", num(src->seconds())},
+                             {"sampleRate", std::to_string(int(src->sampleRate))},
+                             {"timeUnit", "seconds"}});
+            x.leaf("File", {{"path", paths[src->id.value]}});
+            x.close("Audio");
+            x.leaf("Warp", {{"time", "0.0"}, {"contentTime", num(contentStart)}});
+            x.leaf("Warp", {{"time", beats(contentLength)},
+                            {"contentTime", num(contentStart + contentLength * secondsPerClipTick)}});
+            x.close("Warps");
+            x.close("Clip");
+        };
+        bool looping = clip->loopMode == LoopMode::Loop && clip->loopEnd > clip->loopStart;
+        if (clip->audio->regions.empty()) {
+            emit(own, double(a.position), double(a.length), double(a.offset), double(c.sourceStart) / own->sampleRate,
+                 double(clip->length), looping, a.fadeIn.length, a.fadeOut.length);
+            continue;
+        }
+        // An edited clip goes across as what it plays: a clip for each stretch of a part, in each pass of a loop.
+        Tick done = 0, u = a.offset;
+        while (done < a.length) {
+            Tick passEnd = looping && u < clip->loopEnd ? clip->loopEnd : clip->length;
+            Tick stop = std::min(passEnd, u + a.length - done);
+            if (stop <= u)
+                break;
+            for (const AudioRegion& r : clip->audio->regions) {
+                Tick from = std::max(u, r.start), to = std::min(stop, r.end());
+                if (r.muted || r.reverse || to <= from)
+                    continue;
+                const AudioContent tc = takeContent(c, r.take);
+                const AudioSource* src = song.findSource(tc.source);
+                if (!src)
+                    continue;
+                double first = regions::frameAt(c, r, double(from), regions::filesOf(song, c));
+                emit(src, double(a.position) + double(done + from - u) * k, double(to - from), 0, first / src->sampleRate,
+                     double(to - from), false, from == r.start ? r.fadeIn.length : 0,
+                     to == r.end() ? r.fadeOut.length : 0);
+            }
+            done += stop - u;
+            u = looping ? clip->loopStart : stop;
+            if (!looping && u >= clip->length)
+                break;
+        }
+    }
+    x.close("Clips");
+}
+
 /// AUTO lanes as controller automation, sampled as in MIDI export and thinned.
 void automationPoints(Xml& x, const Song& song, const Track& t, const Options& o, int channel) {
     if (o.automation == render::AutomationMode::Off)
@@ -191,6 +333,26 @@ void automationPoints(Xml& x, const Song& song, const Track& t, const Options& o
         x.leaf("Target", {{"expression", "channelController"},
                           {"channel", std::to_string(channel)},
                           {"controller", std::to_string(std::clamp(o.laneCc[size_t(output)], 0, 119))}});
+        for (const AutoPoint& p : points)
+            x.leaf("RealPoint", {{"time", beats(double(p.t))}, {"value", num(p.value)}, {"interpolation", "linear"}});
+        x.close("Points");
+    }
+    // Pitch bend and channel pressure lanes, as the raw MIDI value: bend 0..1 around 0.5, pressure 0..1.
+    for (auto [drive, expression] : {std::pair{LaneDrive::Pitch, "pitchBend"},
+                                     std::pair{LaneDrive::Pressure, "channelPressure"}}) {
+        std::vector<std::pair<Tick, float>> samples = render::controlSamples(song, t, drive, o, 0, end);
+        if (samples.empty())
+            continue;
+        autoEdits::Points points;
+        for (const auto& [tick, v] : samples) {
+            AutoPoint p;
+            p.t = tick;
+            p.value = v;
+            points.push_back(p);
+        }
+        points = autoEdits::simplify(points, kCurveTolerance);
+        x.open("Points", {{"id", x.id()}, {"unit", "normalized"}});
+        x.leaf("Target", {{"expression", expression}, {"channel", std::to_string(channel)}});
         for (const AutoPoint& p : points)
             x.leaf("RealPoint", {{"time", beats(double(p.t))}, {"value", num(p.value)}, {"interpolation", "linear"}});
         x.close("Points");
@@ -224,11 +386,20 @@ std::string projectXml(const Song& song, const Options& o, const render::Context
     for (const Track* t : tracks) {
         std::string id = x.id();
         trackIds[t->id.value] = id;
-        x.open(
-            "Track",
-            {{"id", id}, {"name", t->name}, {"color", color(t->color)}, {"contentType", "notes"}, {"loaded", "true"}});
+        bool audio = t->type == TrackType::Audio;
+        x.open("Track", {{"id", id},
+                         {"name", t->name},
+                         {"color", color(t->color)},
+                         {"contentType", audio ? "audio" : "notes"},
+                         {"loaded", "true"}});
         x.open("Channel", {{"id", x.id()}, {"role", "regular"}, {"solo", t->solo ? "true" : "false"}});
         x.leaf("Mute", {{"id", x.id()}, {"name", "Mute"}, {"value", t->mute ? "true" : "false"}});
+        if (audio) {
+            x.leaf("Volume", {{"id", x.id()}, {"name", "Volume"}, {"unit", "linear"},
+                              {"value", num(dbToGain(t->channel.volumeDb))}});
+            x.leaf("Pan", {{"id", x.id()}, {"name", "Pan"}, {"unit", "normalized"},
+                           {"value", num((t->channel.pan + 1) / 2)}});
+        }
         x.close("Channel");
         x.close("Track");
     }
@@ -239,7 +410,10 @@ std::string projectXml(const Song& song, const Options& o, const render::Context
     for (const Track* t : tracks) {
         int channel = render::channelOf(song, o, t->id) - 1;
         x.open("Lanes", {{"id", x.id()}, {"track", trackIds[t->id.value]}});
-        arrangementClips(x, song, *t, o, ctx, channel);
+        if (t->type == TrackType::Audio)
+            audioClips(x, song, *t, o, ctx.tempo);
+        else
+            arrangementClips(x, song, *t, o, ctx, channel);
         automationPoints(x, song, *t, o, channel);
         x.close("Lanes");
     }
@@ -266,7 +440,7 @@ std::string projectXml(const Song& song, const Options& o, const render::Context
         x.open("Lanes", {{"id", x.id()}, {"timeUnit", "beats"}});
         for (const Track* t : tracks) {
             const Clip* clip = s < t->slots.size() && t->slots[s].clip ? song.findClip(*t->slots[s].clip) : nullptr;
-            if (!clip)
+            if (!clip || clip->audio)
                 continue;
             ClipSpan span = clipSpan(*clip);
             int channel = render::channelOf(song, o, t->id) - 1;
@@ -299,8 +473,31 @@ std::string metadataXml(const render::Context& ctx) {
            "</Title>\n</MetaData>\n";
 }
 
-std::string build(const Song& song, const Options& o, const render::Context& ctx, const std::string& version) {
-    return zip::store({{"project.xml", projectXml(song, o, ctx, version)}, {"metadata.xml", metadataXml(ctx)}});
+std::map<uint64_t, std::string> audioPaths(const Song& song) {
+    std::map<uint64_t, std::string> out;
+    std::map<std::string, int> taken;
+    for (const AudioSource& s : song.audioSources) {
+        std::string name = s.name.empty() ? "audio.wav" : s.name;
+        for (char& ch : name)
+            if (std::strchr("/\\:*?\"<>|", ch))
+                ch = '_';
+        // Two files with one name get "name 2", "name 3" before the extension.
+        if (int n = taken[name]++; n > 0) {
+            size_t dot = name.rfind('.');
+            name = dot == std::string::npos ? name + " " + std::to_string(n + 1)
+                                            : name.substr(0, dot) + " " + std::to_string(n + 1) + name.substr(dot);
+        }
+        out[s.id.value] = "audio/" + name;
+    }
+    return out;
+}
+
+std::string build(const Song& song, const Options& o, const render::Context& ctx, const std::string& version,
+                  const std::vector<std::pair<std::string, std::string>>& audioFiles) {
+    std::vector<std::pair<std::string, std::string>> files{{"project.xml", projectXml(song, o, ctx, version)},
+                                                           {"metadata.xml", metadataXml(ctx)}};
+    files.insert(files.end(), audioFiles.begin(), audioFiles.end());
+    return zip::store(files);
 }
 
 } // namespace tessera::dawproject

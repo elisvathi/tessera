@@ -2,9 +2,15 @@
 
 #include "../../model/ExpressionEdits.hpp"
 #include "../../model/NoteFields.hpp"
+#include "../../model/Render.hpp"
+#include "../../model/Ties.hpp"
 #include "../editing/NoteGestures.hpp"
 #include "../editing/NoteHitTest.hpp"
 #include "TimelineView.hpp"
+
+#include <optional>
+#include <set>
+#include <tuple>
 
 namespace tessera {
 
@@ -26,6 +32,29 @@ class NoteGrid : public TimelineView {
     void zoomToFit() override;
 
     void step() override;
+
+    /// A playhead playing now: where it is on the canvas, and its colour.
+    struct HeadNow {
+        double pos;
+        NVGcolor color;
+        bool shown; // the playhead the editor shows: drawn bolder
+    };
+    /// A note a playhead is reading now: the pitch it sounds at (moved, for the shown playhead), its colour, and how
+    /// far in the playhead is (for the bright start of its glow).
+    struct ReadNow {
+        uint64_t note;
+        int pitch;
+        NVGcolor color;
+        double into;
+    };
+    /// The pitch note `index` of the shown clip sounds at now: moved by its Motion, or by the shown playhead when
+    /// `shownPlayhead`; else as written. Lights the keyboard's keys.
+    int heardPitch(size_t index, bool shownPlayhead) const;
+    /// Whether playheads play the shown clip: then they, not the clip's own playhead, light notes and keys.
+    bool playheadsPlay() const { return playheadsOn; }
+    /// The playheads playing now and the notes they read, worked out once a frame in step().
+    const std::vector<HeadNow>& headsNow() const { return heads; }
+    const std::vector<ReadNow>& readingNow() const { return reading; }
 
   protected:
     std::unique_ptr<DragGesture> startGesture(rack::math::Vec pos, int button, Modifiers mods) override;
@@ -106,6 +135,26 @@ class NoteGrid : public TimelineView {
     const Ghost* ghostAt(rack::math::Vec pos);
     /// The step input cursor, and a banner while step input or keyboard play is on.
     void drawLivePlay(NVGcontext* vg);
+    /// The track's playheads as lines in their colours, while they read this clip (docs/design/PLAYHEADS.md §3.2).
+    /// True when it drew them: the clip's own playhead then shows faint, for reference.
+    bool drawPlayheadLines(NVGcontext* vg);
+    /// The selected playhead's segment through the notes: a line at each end.
+    void drawSegmentEdges(NVGcontext* vg);
+    /// A small corner in its Motion device's colour on every note that moves with one (docs/design/PLAYHEADS.md §6.2).
+    void drawMotionMarks(NVGcontext* vg);
+    /// One moved note: its written place see-through with a dashed outline, a line from its middle to the middle of
+    /// where it plays (`move`: another pitch, later, longer or shorter), and the note there in `color` with what
+    /// changed ("+7 st · +2 steps").
+    void drawMovedNote(NVGcontext* vg, const Note& n, const render::MotionMove& move, NVGcolor color);
+    /// Notes a Motion device moves with its knobs and curves, where they play now (with playheads, wherever its
+    /// curves are; else the pass playing, the first when stopped). In the Motion's colour.
+    void drawMotionGhosts(NVGcontext* vg);
+    /// Works out motionCurrent and motionNow; returns the pass.
+    int updateMotionMoved();
+
+    /// Works out `moved` again when the song, clip or shown playhead changed; the shown playhead when it moves notes
+    /// (a pitched track whose Playheads device is on), else nullptr.
+    const Playhead* updateMoved();
     /// Operator marks on a note: repeat ticks, chance and occurrence text, recurrence dots (EDITOR_UX §4.5).
     void drawBadges(NVGcontext* vg, const Note& note, rack::math::Rect r, float labelRight);
     /// The note's expression curve, small, inside its body (EDITOR_UX §4.6).
@@ -121,17 +170,54 @@ class NoteGrid : public TimelineView {
     /// Every note's pitch curve, drawn at the pitch it plays, with its points while the Bend tool is on or the
     /// note is selected.
     void drawBends(NVGcontext* vg);
+    /// A tie as the grid draws it (docs/design/TIES_VOICES.md): where its joint dot and glide handles are.
+    struct TieMark {
+        NoteId tied;
+        bool broken = false;   // nothing to continue: an open dot at the note's start
+        bool samePitch = false;
+        bool glides = false;   // the pitch moves along a line, not a jump
+        bool shown = false;    // one of its notes is selected: its handles show and can be dragged
+        ties::Glide glide;
+        rack::math::Vec joint, start, end, middle;
+    };
+    /// The ties of the shown notes, in view coordinates.
+    std::vector<TieMark> tieMarks();
+    /// The tie part under pos. With `anyTie`, same-pitch and broken ties count too (for the right-click menu).
+    std::optional<std::pair<NoteId, noteGestures::GlideGrab>> tieAt(rack::math::Vec pos, bool anyTie = false);
+    /// Every tie: a dot on the joint and the jump or glide line; a selected glide shows its two end handles and a
+    /// hollow middle one (which bends it) instead of the dot.
+    void drawTies(NVGcontext* vg);
+    void openTieMenu(NoteId tied);
     /// The timbre or pressure strips above the selection.
     void drawStrips(NVGcontext* vg);
     /// Notes being recorded into this clip right now.
     void drawTakeNotes(NVGcontext* vg);
     void drawTransformFrame(NVGcontext* vg);
     void drawHoverGuide(NVGcontext* vg);
+    /// A faint band along the row of each key held on a live input, so you see where the note you play would go.
+    void drawInputRows(NVGcontext* vg);
     void drawEmptyState(NVGcontext* vg);
 
     PianoRollView& owner;
     CachedLayer* layer;
     std::vector<Ghost> ghosts;
+    // The pitches the shown playhead plays the clip's notes at (render::heardPitches), for the keys it lights, and
+    // what they were worked out for: the song revision, clip, playhead and pass.
+    std::vector<int> moved;
+    std::tuple<uint64_t, uint64_t, uint64_t, int64_t> movedFor{~uint64_t(0), 0, 0, 0};
+    // Worked out in step(): see headsNow and readingNow.
+    void updateHeads();
+    bool playheadsOn = false;
+    std::vector<HeadNow> heads;
+    std::vector<ReadNow> reading;
+    // Where each note's Motion moves it now (render::motionMoveLive), and the notes moved now: drawn see-through where
+    // they are written.
+    std::vector<render::MotionMove> motionCurrent;
+    std::set<uint64_t> motionNow;
+    /// The song tick where `n` of `clip` plays in `pass`: in the launched clip, the timeline clip under the song, or
+    /// else the first timeline clip that plays it. Where a Motion's lanes and modulators are read for that note.
+    double noteSongTick(const Track& track, const Clip& clip, const Note& n, int pass, double songTick,
+                        double elapsed, bool launched) const;
     std::vector<CurveStrip> strips; // from the last stripAt, which points into it
     std::vector<std::pair<rack::math::Rect, ClipId>> layerChips;
     rack::math::Rect layerClose;

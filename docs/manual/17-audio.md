@@ -1,0 +1,378 @@
+# 17. Audio
+
+Tessera plays audio files too: drum loops, breaks, vocals, one-shot hits, whole recordings. They sit on **audio
+tracks**, next to your note tracks, and play out of the **MAIN L** and **MAIN R** jacks on the Roll panel.
+
+![An audio track playing a drum loop on the timeline](images/audio-timeline.png)
+
+## Bringing in a file
+
+Drag one or more files from your computer and drop them:
+
+| Drop them on | What happens |
+|---|---|
+| The Roll panel | One new audio track per file. With **Plays = Timeline** the clip goes on the timeline at bar 1; with **Plays = Clips** it goes in the new track's first slot. |
+| An audio track in the timeline | At the drop point, snapped to the beat. Several files go end to end. |
+| A launcher slot of an audio track | Into that slot. Several files fill the slots below it. |
+| An audio clip, holding **Ctrl** (**Cmd** on a Mac) | Replaces the clip's file (see [Replacing a file](#replacing-a-file)). |
+| A note track | A new audio track just below it. |
+| Empty space in the timeline or the launcher | New audio tracks at the end, at the bar you dropped on (timeline) or in their first slot (launcher). |
+
+Or use **File → Import audio…** (**Ctrl+Shift+O**): the file goes on a new track at the playhead's bar.
+
+You can also pick a file from a menu. Right-click an audio track for **Import audio file…**, an empty spot on its
+timeline for **Import audio file here…**, or an empty slot for **Import audio file…**.
+
+Tessera reads **WAV, AIFF, FLAC and MP3**. A file with more than two channels is mixed down to stereo; its clip says
+"6→2" (six channels into two). A file Tessera can't read is skipped, and a message says which one.
+
+Every drop is one undo step. **Ctrl+Z** takes it all back.
+
+### The file is copied into the patch
+
+Tessera copies each file into the patch, so a saved patch always has its audio with it. You can move, rename or
+delete the original: the patch keeps playing. Copying a Roll keeps its audio too.
+
+A very long file takes a lot of memory (a 4-minute stereo file needs about 100 MB). Before importing a file longer
+than 20 minutes, or files that need more than 1 GB together, Tessera asks first.
+
+## Tempo: how a clip keeps time with the song
+
+When you drop a file, Tessera works out the tempo it was played at. It looks, in this order, at:
+
+1. a tempo stored in the file (many loop libraries write one into their WAV files);
+2. the file name, such as "drums_92bpm.wav" or "Loop 120 BPM.aif";
+3. the length: a loop that lasts exactly 8 beats at 92 BPM is a 92 BPM loop;
+4. the beats in the sound itself, for longer files.
+
+A short single hit (a kick, a clap) is a **one-shot**: it plays once, at its own speed.
+
+**The first loop sets the song tempo.** Drop a loop into a song that has no clips yet, and the song takes the loop's
+tempo, so the loop plays exactly as it was made. The message offers **Keep 120 BPM** (or whatever the tempo was) to
+put the song tempo back.
+
+Every audio clip shows its tempo after its name, like **92 ▾**. Right after a drop, the clips you dropped on the
+timeline say more, like **92 BPM · 2 bars · Stretch ▾**, until you click elsewhere. A clip's menu (right-click it)
+has **Clip settings ▸**, which sums them up on the right (**92 BPM · Stretch**) and holds:
+
+- **Tempo**: the guess, double, half, or a tempo you type. This is the one place a clip's speed is set.
+- **Follow**: how the clip meets the song tempo.
+  - **Stretch**: the clip follows the song tempo and keeps its pitch. The default for loops.
+  - **Repitch**: the clip follows the song tempo like tape: faster is higher.
+  - **Off**: the clip plays at its own speed and pitch, whatever the song does. The default for one-shots. The clip
+    shows **own speed** instead of a tempo.
+- **Sound**: what the clip holds, so stretching treats it right: **Drums** keeps attacks sharp, **Melody** is
+  smooth for one instrument, **Voice** keeps a voice's character, **Full mix** balances for finished music.
+- **Pitch** (Stretch clips only): moves the pitch in semitones without changing the speed. Pick a step, or type one
+  such as **-3** or **2.5** (two and a half semitones).
+
+**Quantize** (warp markers, see [Warp markers](#warp-markers-putting-hits-on-the-beat)) and **Gain back to 0 dB** sit
+in the same submenu. The header, the inspector and this menu use the same words. Beside it, the menu has **Reverse** (the clip plays back
+to front; its title shows ◀. A clip you have split keeps its cuts: each part plays its own audio backwards, where it
+is), **Process ▸** with **Normalise** (sets the clip's gain so its loudest sample reaches full scale), **Render to new
+file**, **Split at transients** and **Make triggers from audio** (see [Hits](#hits-transients-splitting-triggers)),
+and **Replace file…** (see below).
+
+![The audio part of a clip's menu](images/audio-clip-menu.png)
+
+### Moving the tempo sounds like tape
+
+Stretching or pitch-shifting a clip well takes a moment of work. While Tessera makes the new version, a thin bar along
+the clip fills from left to right and its title shows how far along it is ("… 40%"). The audio editor says it in words
+("Shifting pitch 40%"). Until then a stretched clip plays a quick version that runs faster or slower like tape, and a
+pitch-shifted clip plays at its old pitch. When the clean version is ready, it takes over without a click. Turning the **TEMPO** knob does the same: while the tempo moves,
+clips follow it like tape, and half a second after it settles they get their clean stretched version.
+
+Alt+drag a clip's right edge to change its clip tempo by hand: a clip made twice as long plays at half the speed.
+
+## Editing audio clips on the timeline
+
+Audio clips move, copy, trim, loop and split with the same gestures as note clips (see
+[The timeline](06-timeline.md)). Audio clips have a few more:
+
+| Gesture | What it does |
+|---|---|
+| Drag the level line up or down | The clip's gain. Hover the clip: a faint line just under its title is 0 dB (three quarters of the height, as on a fader). A selected clip always shows its line, with a small tab at its right end that reads the gain ("0 dB"); drag the tab too. The waveform grows and shrinks while you drag. Every selected audio clip changes by the same amount. Snaps to 0 dB; Alt skips the snap. A clip whose gain isn't 0 dB always shows its line, shaded above; **double-click** it to go back to 0 dB. |
+| Drag a top corner of the clip body | The fade in (left) or fade out (right). The fade shades the waveform. |
+| Drag the dot in the middle of a fade up or down | Bends the fade's curve: up rises fast then levels off, down starts slowly. It catches at straight; Alt skips that. |
+| Alt+drag the right edge | The clip tempo (see above). |
+| Drag an edge of a clip that doesn't loop | Trims it. It stops at the start or end of the file and says **Start of file** or **End of file**. |
+
+**Glue** (**Ctrl+J**) joins audio clips on one track. Parts of one clip side by side, such as the two halves of a
+split, simply become one clip again. Clips from different files, or with gaps between them, are played into one new
+file (with their gains and fades, quicker than real time) that takes their place: "Bass glued". Either way it is one
+undo step.
+
+The clip's settings (gain, follow tempo, sound type, tempo) belong to the clip, so every linked copy of it changes
+together. The inspector says **all 3 copies** when there are several.
+
+Cutting an audio clip always makes separate clips. After a **Split**, a clip dropped inside another, or a deleted
+range, each part has its own settings: turn one part down and the others stay as they were. If the clip you cut was
+linked, its parts leave the link and the other copies stay linked to each other.
+
+### Overlaps are crossfades
+
+An audio track always has one row of clips: its clips never stack. Where two clips overlap, the overlap is a
+crossfade: one fades out while the other fades in, drawn as an X. Drag a clip over another, or drag an edge into its
+neighbour, to make one; move them apart and it is gone.
+
+![Two audio clips crossfading; the second plays reversed](images/audio-crossfade.png)
+
+- **Drag the diamond on top of the X** sideways: right makes the crossfade longer, left shorter, evenly around its
+  middle. It reaches only as far as both clips have audio.
+- **Drag the dot in the middle of the X** up or down to bend both curves. Straight in the middle is "equal power":
+  the level stays even through the crossfade.
+
+- **Drop a clip inside another** and the outer clip splits around it, crossfading at each end.
+- **At most two clips sound at once.** Move a clip so a third would join in, and the earliest of the three stops
+  where the third begins.
+- **A clip that covers another completely** replaces it.
+- Clips that only touch get no crossfade. Every clip edge gets a tiny fade, so a cut never clicks.
+
+These rules hold for audio tracks whatever the **Stack** setting says (Stack is for note clips). Recording in
+Recording over an audio clip adds takes to it, see [Takes and comping](#takes-and-comping).
+
+### Replacing a file
+
+To give a clip another file, hold **Ctrl** (**Cmd** on a Mac) while you drop the file on the clip, or choose
+**Replace file…** in its menu. The clip keeps its place, length, gain and fades and plays the new file from its
+start at the new file's tempo. The old file stays in the patch until **Remove unused audio**.
+
+## The audio editor
+
+Select an audio clip and the notes pane becomes the **audio editor**. It has the same header as the piano roll: the
+clip's name and menu on the left, the maximize button on the right.
+
+![The audio editor with a drum loop](images/audio-editor.png)
+
+- **Across the pane runs the clip's own time.** The ruler on top shows its beats and bars, and beat 1 has a **1** flag
+  where the clip starts. The rest of the file shows dim before and after the clip, so you can see what a trim would
+  bring back.
+- **The header holds the clip's settings**, in words: **Tempo 112 BPM**, **Follow Stretch**, **Sound Drums**,
+  **Pitch 0 st**, **Gain 0 dB**, **Reverse** (lit while on), **Quantize**, **Takes**, and **∞ 3 linked copies** with
+  **Make unique**. Then the same tools as the notes header: **Select**, **Slice** and **▾** (with **Mute** and
+  **Erase**), and **Snap**, which sets what splits, part edges and warp markers stick to. As the pane narrows, the
+  settings drop their names ("112 BPM", "Stretch"), then fold into one **Clip settings ▾** menu, then Snap moves
+  into that menu.
+- **The clip's menu** (the ▾ beside its name) has the same audio items as its right-click menu on the timeline:
+  **Reverse**, **Clip settings ▸**, **Process ▸** and **Replace file…**, after **Rename** and **Loop**.
+- **The ruler sets the clip tempo.** Drag any beat line, low in the ruler, other than beat 1: the beats stretch from beat 1 so that the
+  beat you hold lands where you let go ("112 → 103 BPM"). Use it to line the grid up with the drum hits.
+- **Click in the ruler** to play from there: the song plays from that point of the clip's timeline copy (the selected
+  copy, or the first). While the timeline plays it, a green line shows where it is.
+- **Hear a clip alone while stopped:** **Alt+click** the ruler, or just click it on a clip that isn't on the timeline. The clip
+  plays through its track's fader. Click again, or start the song, to stop.
+- A loop over part of the clip shows as two amber lines.
+- **Scroll** to move, **Ctrl+scroll** to zoom, **double-click** the ruler to see the whole file.
+
+### Cutting and shaping a clip
+
+Nothing here changes your audio file. Tessera keeps a list of which part of the file plays when, so you can undo or
+change any of it later. If you split the clip on the timeline, you get separate clips; if you split it here, it stays
+one clip.
+
+| Do this | How |
+|---|---|
+| Split | Press **C** for the Slice tool and click, or **Ctrl+E** with the mouse where you want the split. Right-click a part ▸ **Split here** does the same. The line shows where. |
+| Split many times | Right-click a part ▸ **Split at…**: every hit, every 1/16, every 1/8, every beat. **Shift+click** with the Slice tool opens the same menu. |
+| Select | Click a part. **Shift+click** adds or removes one. **Ctrl+A** selects them all. |
+| Move a part | Drag it. It snaps to the grid; **Alt** moves it freely. |
+| Trim a part | Drag its edge. Trimming back out brings back the audio you hid. |
+| Slip | **Alt+drag** a part: it stays where it is and plays another stretch of its file. |
+| Delete | **Delete** leaves a gap, so the timing stays. **Shift+Delete** closes the gap and makes the clip shorter. |
+| Level | Drag the strip along a part's top up or down. |
+| Fade | Drag a part's top corner. The dot in the middle of a fade bends it. |
+| Crossfade | Drag one part over another, or drag the small handle where two parts meet. |
+| Mute or reverse | Right-click a part. The Mute tool (**T**) mutes with a click, the Erase tool deletes with a click. |
+| Pick a time range | Drag along the top of the ruler. **Delete** empties it, **Shift+Delete** closes it up. |
+| Copy and paste | **Ctrl+C**, **Ctrl+X**, **Ctrl+V** (at the mouse) and **Ctrl+D**, on the range or the selected parts. Pasted parts work in this clip, or one with the same file and tempo. |
+| Keep only a stretch | Right-click ▸ **Crop to selection**. |
+| Bake it in | Clip menu ▸ **Process ▸ Render to new file** plays the clip's edits into a new file, which becomes a take the whole clip plays. Its gain and pitch stay settings. Undo brings the edits back, and the old file stays until **Remove unused audio**. |
+
+A clip you haven't cut works as one piece: dragging its body plays another part of the file, just as long, and its edges
+start or end the clip elsewhere in the file. **Shift** moves finely, and edges catch the beat lines.
+
+### Linked copies
+
+These edits belong to the clip, so every linked copy of it changes too. The header says **∞ 3 copies**, with **Make unique** beside
+it. An independent copy has its own list and changes alone. It still
+plays the same file, so it takes no extra space.
+
+## The inspector
+
+With an audio clip selected, the inspector shows its **Tempo**, **Follow**, **Sound**, **Pitch** (Stretch clips),
+**Gain** and **Reverse** (click one to change it), its length and loop, and its file: name, length, sample rate, mono or stereo. With a
+timeline copy selected, it shows that copy's fade in and fade out too; where the copy crossfades with a neighbour,
+that side says **Crossfade** and with which clip.
+
+For the track, it shows its **Volume**, **Pan** and **Output** (MAIN).
+
+## What a clip's marks mean
+
+| Mark | Meaning | What plays |
+|---|---|---|
+| **Loading 40%** | The file is being read. | Silence until it is read, then the clip at once. |
+| **… 40%** | The stretched version is being made. | The quick, tape-like version. |
+| Amber **!** | The stretched version couldn't be made. The clip menu has **Try again**. | The quick version. |
+| **Missing file**, stripes | The file isn't in the patch any more. The clip menu has **Find in a folder…**. | Silence. |
+| **6→2** | The file had six channels, mixed down to stereo. | The stereo mix. |
+| **own speed** | Follow is Off. | The clip at its own speed. |
+
+When a patch loads with files missing, a message says how many, with **Find…** (see
+[Finding missing audio](#finding-missing-audio)).
+
+## Hearing it: MAIN L and MAIN R
+
+Audio tracks play out of the **MAIN L** and **MAIN R** jacks on the Roll panel (see
+[The modules](02-modules.md#9-outputs)). Patch them into Rack's **Audio** module, or into any effect first.
+
+If the patch has an Audio module, right-click Roll and choose **Connect MAIN to Audio module**: it patches MAIN
+into the Audio module's first two inputs, as one undo step. If those inputs are taken, it says so and changes nothing.
+
+Full scale (0 dB) is 10 V, the level Rack's Audio module sends to your sound card at full volume. A file comes in at
+5 V (−6 dB), the level of most rack oscillators.
+
+## Recording audio
+
+An audio track records what comes in on its Track Out's **IN**: a microphone or an instrument through Rack's Audio
+module, or any module's output. To record from the jacks on Roll instead, right-click the track and set **Record from** to
+**Roll IN L and R**. If only one of those two is patched, the other follows it. Roll IN is heard while the track is armed
+and **Monitor while armed** is on. **Record from** can also take **Another track**, before its fader, or the **Master mix**. Its clips are never recorded into the take.
+
+1. Patch the sound into the **IN** of a Track Out bound to the audio track.
+2. **Arm** the track (the ring in its header turns red).
+3. Press **record**, then play (or set a count-in, see [Recording](11-recording.md)).
+
+While it records, a red box grows on the track with the sound's waveform. When you stop, or each time a loop goes
+round, the take becomes an audio clip: on the timeline where the take started, or, playing clips, in the track's
+first empty slot. Each take is one undo step. Takes are stored in the patch, like imported files, and play back at
+the level they came in.
+
+Several armed audio tracks record at once. An armed audio track never records notes.
+
+### Takes and comping
+
+Record over an audio clip in a loop and every pass is kept. A pass that starts where the clip starts becomes its next
+**take**: take 2, take 3 and so on, whatever **Recording over timeline clips** says. The clip plays the newest take,
+and its title shows which one ("take 3"). Takes need the clip to be at the song tempo the take was recorded at.
+
+To pick the best parts of each pass (comping), select the clip and press **Alt+T** or click **Takes** at the right end
+of the header. The takes show as rows under the waveform, newest first, lined up with the clip.
+
+![Three takes in the audio editor, comped](images/audio-takes.png)
+
+- The top of the pane shows the **Comp**: what plays. Each part has the colour and number of its take.
+- **Drag across a take's row** to make that stretch play that take. Neighbouring parts on the same take join up. Each drag is
+  one undo step. The seams get the same short fade as any cut; to crossfade one, drag its handle.
+- **Hear** on a row plays that take in place of the comp, in time with the song, so you can compare passes. It changes
+  nothing in the song. Click it again to go back.
+- **Up** and **Down** switch the selected parts to the take above or below.
+- A row is hatched where that pass has no audio, because it stopped early.
+- Right-click a row to **Use for the whole clip**, name the take, or **Delete this take**. A deleted take's file stays
+  until **Remove unused audio**.
+
+The clip holds the comp, so every linked copy plays it. Timeline clips that used to pick their own take keep playing it when an
+older song opens: copies of a clip that played different takes become separate clips. Right-click a clip on the timeline ▸ **Take**
+to make the whole clip play one take. Each take keeps its own warp markers.
+
+## Bouncing a track to audio
+
+**Bounce** records a track's sound, with the effects patched on its Track Out, onto a new audio track: a synth part
+becomes audio you can cut and move, and the rack is free for something else. Right-click the track (or one of its
+clips on the timeline) ▸ **Bounce audio to a new track…**, or press **Ctrl+B** with the track selected.
+
+- **Length**: **Selected clips** (from the first selected clip's start to the last one's end), **Selected area**
+  (the timeline range you drew), or **Until silent** (from the selection or the playhead, on past the end until the
+  sound stays quiet for a second, at most 8 bars: for endings and reverb tails). Only the choices that apply are
+  listed; what you selected is picked for you.
+- **Mute the original afterwards** (on by default).
+- It plays in real time, from a bar before the start so delays and reverbs are already sounding, and records the
+  track's sound before its fader. A message says how far it is ("Bouncing Bass · bar 3 of 8") with **Stop**;
+  the new track appears at once, with a red box growing on it. **Stop** ends it early and keeps what was played so
+  far. To throw it away, press **Ctrl+Z** afterwards. While it runs, only this track plays, with **Selected clips** only those clips, and the loop is
+  off; it comes back afterwards. Your solo and mute buttons are left alone.
+- **The tracks that feed it play into it, even when muted**: the tracks whose sends reach it (bounce a reverb return
+  with its dry tracks muted, and you get the reverb) and the track its **Input** listens to. They stay out of MAIN
+  while it runs. **Until silent** counts their clips too, so a track with no clips of its own still has a length.
+- Devices and clips on **New** (their dice) roll once for the bounce; the message after it offers **Keep it**, which
+  fixes their switches to what was recorded.
+- The result is a new audio track under the original, "Bass (bounce)", in one undo step.
+
+## Exporting audio
+
+**File → Export audio…** (**Ctrl+Alt+E**) records the song as WAV files.
+
+- **The master**, or **The master and every track (stems)**: a file for the master, and beside it one per track
+  that makes sound, after its fader, named "Song - Bass.wav". Muted tracks have no stem; the message at the end
+  says how many were left out.
+- **24-bit WAV** (with dither), **32-bit float WAV**, or **24-bit FLAC**: the same sound as the 24-bit WAV, in about
+  half the space.
+- **It follows Plays.** With **Timeline**, it plays the song from the start to the end of the last clip, or the loop
+  when the loop is on. With **Clips**, it records the master from now until you press **Stop**, so a live clip
+  performance becomes a file.
+- It plays in real time, with "Exporting · bar 3 of 20" and **Cancel**. Stopping the timeline before the end
+  cancels; nothing is left. You can keep editing: what you change is heard in the file.
+- The metronome is never in an export.
+
+## Hits: transients, splitting, triggers
+
+Tessera finds where each hit starts in a file (its **transients**) once it has loaded it. The audio editor marks them
+with small triangles under the waveform.
+
+- **Split at transients** (an audio clip's right-click menu on the timeline ▸ **Process**) cuts the clip at every hit, so each hit
+  is its own clip to move, mute or reorder. One undo step; the pieces stay selected.
+- **Make triggers from audio** (same menu) adds a drum track under the audio track, "Loop triggers", with a clip
+  that hits its **Hits** lane wherever the audio has a hit, louder for louder hits. Patch its Drum Out into a rack
+  drum to double the loop, or replace it.
+
+## Warp markers: putting hits on the beat
+
+A loop played by hand drifts a little against the grid. **Warp markers** pin a moment of the file to a beat, and the
+audio between markers stretches (keeping its pitch) so each pinned hit lands where it should.
+
+- In the audio editor, a short line under each hit shows how far it is from the grid: dim when close, amber when more
+  than 15 ms off. **Q** (the same key as for notes) moves every hit toward the grid with warp markers, and works on selected
+  audio clips on the timeline too. **Shift+Q** or the header's **Quantize** menu sets the **Grid**, the **Strength** (75% moves
+  each hit three quarters of the way) and **Hits louder than**, so ghost notes stay put.
+- **Double-click a hit** on the waveform: a marker pins it to the nearest 1/16 note (hold **Alt** to pin it where it is).
+  The first marker also pins the part's start, so only that hit moves. Markers show as a line through the hit with a handle
+  in the ruler, and the audio between them stretches to fit.
+- **Drag a marker's handle** left or right to move the beat it pins its hit to, in 1/16 steps (**Alt** for free).
+- **Right-click a marker's handle** to remove it, or all of them.
+- While a clip has markers, its tempo can't be dragged in the audio editor: remove the markers
+  first. A reversed clip ignores its markers.
+
+## Latency and the recording offset
+
+A recording comes back a little late: the sound card takes a few milliseconds to send a sound out and bring it back
+in. Tessera moves every take earlier by that much, so it lines up with the song.
+
+- **Record ▾ Recording offset** sets it for the whole Roll. **Measure it** does it for you: patch **CLICK** to the
+  sound card's output, loop that output back into an input, and that input into the **IN** of a Track Out on an
+  armed audio track. Tessera plays four clicks, times each, and keeps the middle value. You can also type it in
+  milliseconds.
+- **A track's latency**: when one track's sound is late for its own reason (an effect that delays, a long path of
+  modules), right-click its name in the mixer and type its **Latency** in samples. Its takes and bounces move earlier
+  by that much too, and while the song plays every other track waits that long on its way to the Master, so they all
+  line up (delay compensation, up to about 170 ms).
+
+## The Audio files list
+
+**File → Audio files…** lists every file the song holds: its length, mono or stereo, sample rate, its size in the
+patch and how many clips use it. Missing files come first, in the list's "missing" note, with **Find in a folder…**.
+**Select its clips** selects the clips that play a file. At the bottom: how much audio the patch holds, and **Remove
+unused audio**.
+
+## Finding missing audio
+
+**Find…** brings back every missing file at once. It looks in the other Rolls in this patch first. If that isn't
+enough, it asks for a folder and searches it and the folders inside it.
+
+- A file counts when it holds the same recording, even if it has been renamed.
+- A file with the right name but different audio doesn't count on its own. Roll asks first: cuts and timing may not
+  line up. Undo points the clip back.
+
+## Removing audio you don't use
+
+**File → Remove unused audio** removes the files no clip plays any more. It is one undo step; the files themselves
+go when the patch is next loaded.

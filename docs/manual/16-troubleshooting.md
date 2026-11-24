@@ -14,13 +14,18 @@ Check these in order:
 4. **Is the track muted, or another track soloed?** Look at **M** and **S** in the track headers.
 5. **Is a note muted?** Muted notes are hatched. Right-click them and choose **Mute / unmute**.
 6. **Is Roll bypassed?** A bypassed Roll sends no gates.
+7. **An audio track?** Audio comes out of **MAIN L** and **MAIN R** on the Roll panel: patch them into the Audio
+   module (right-click Roll: **Connect MAIN to Audio module**). An amber dot beside MAIN, and **MAIN not patched**
+   in the mixer, mean nothing is patched there. A clip marked **Missing file** has lost its file: right-click it,
+   **Find in a folder…**.
 
-## The output module says "No source" or "Track missing"
+## The output module says "No source", "Track deleted" or "Roll bypassed"
 
 - **No source**: it can't find its Roll. Right-click it and pick one under **Source**. This happens when the
   Roll was deleted, or after pasting the output module alone into another patch.
-- **Track missing**: its track was deleted. Undo the delete, or pick another track with the arrows or the **Track**
+- **Track deleted**: its track was deleted. Undo the delete, or pick another track with the arrows or the **Track**
   menu. Output modules never switch tracks by themselves.
+- **Roll bypassed**: its Roll is bypassed (Ctrl+E on it, or its menu). Turn it on again.
 
 ## A key does nothing (or does something else)
 
@@ -74,7 +79,7 @@ While the transport plays, clips wait for the next **launch line** (by default t
 
 ## Recording over the timeline deleted or doubled my notes
 
-**Recording over arranger clips** (the ▾ next to the record button) decides: **Merge** adds to the clip that is
+**Recording over timeline clips** (the ▾ next to the record button) decides: **Merge** adds to the clip that is
 there, **Stack** puts a new clip on top and keeps the old one, **Replace** cuts the old clip where you recorded. Press
 **Ctrl+Z** to undo the take. See [Where the recording goes](11-recording.md#where-the-recording-goes).
 
@@ -105,17 +110,32 @@ Give each Roll its own **Instance name** (module menu). Output modules show the 
 | Time signature | **4/4 ▾** in the transport bar |
 | The key | The key chip in the notes header |
 | Count-in | The ▾ next to the record button |
+| Devices for one clip only | **CLIP** on the upright switch at the left of the device strip, or a clip's menu › **Devices** |
 | Ghost notes | **View ▾** in the notes header |
 | Flats instead of sharps | **View ▾ → Name notes with flats** |
 | Colour scheme | **Roll ▾ → Colour scheme** |
 | Quantize | **Notes ▾ → Quantize…**, or **Q** |
 | Clip length | The clip chip at the left of the notes header |
 | Launch quantize | **Launch 1 bar ▾** above the track names |
+| A clip that plays the next one by itself | A clip's menu › **Next action**, or **NEXT ACTION** in the inspector |
+| Holding every clip where it is | **Launch 1 bar ▾ → Next actions** off |
+| Back to the timeline after launching a clip | One track: the ↩ at the end of its row in the clips panel. All: the ↩ at the top of that column, or **↩ Timeline** on the Plays switch |
 | Ripple, Stack, Automation follows clips | The ▾ next to Select and Draw in the song pane |
 | MPE input | The ▾ next to the record button |
-| Merge, Stack or Replace when recording on the timeline | The ▾ next to the record button: **Recording over arranger clips** |
+| Merge, Stack or Replace when recording on the timeline | The ▾ next to the record button: **Recording over timeline clips** |
 | Whether moved MIDI controls get a lane | The ▾ next to the record button: **MIDI controls with no lane** |
 | Recording a lane (the old lane arm) | Arm the track; the lane menu's **Records from** picks the source |
 | Automating a rack knob | **Add automation lane → Automate a knob: touch it in the rack** |
 | A sustain, mod wheel or other CC lane | **Add automation lane → MIDI control** |
+| A playhead coming in and dropping out | A chip's right-click menu → **On** → **Modulate, automate…** (a Curve modulator) |
+| A curve, a modulation or a lane on a device setting | Click its tag: **Modulate, automate…** in its panel |
+| How far a lane or modulator moves a setting | The thin bar under its tag; hover the tag for the values |
+| A playhead's rarer settings (Notes, Invert, Length, Path…) | Right-click its chip on the Playheads card |
+| Devices in the small editor | **Devices** in the **Notes · Devices · Mixer** switch at the left of the lower pane's header, as in the full editor |
+| A playhead's segment moving as the song plays | Right-click the segment on the piano roll's ruler |
+| What a Curve moves, its CV out | **Moves ▾** in the curve pane's top row |
 | Every shortcut | Press **?** in the editor |
+| The mixer | The **Mixer** bar under the notes pane (only when the song has an audio track), or **F4** |
+| Where audio comes out | **MAIN L** and **MAIN R** on the Roll panel |
+| Launching clips from a MIDI controller | **Roll ▾ → Clip control**, or right-click the Roll panel → **Clip control** |
+| A clip's tempo, follow tempo, sound type | Right-click the audio clip, or the inspector |

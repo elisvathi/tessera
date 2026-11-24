@@ -1,0 +1,565 @@
+#include "doctest.h"
+
+#include "../src/model/ArrangementEdits.hpp"
+#include "../src/model/AudioEdits.hpp"
+#include "../src/model/AudioRegions.hpp"
+#include "../src/model/Json.hpp"
+#include "../src/model/LauncherCommands.hpp"
+#include "../src/model/Serialize.hpp"
+
+using namespace tessera;
+
+namespace {
+
+constexpr double kRate = 48000;
+constexpr double kFramesPerTick = 25; // 120 BPM at 48 kHz, 960 ticks a beat
+
+/// A song with one audio clip of a 10-second file, 4 seconds (7680 ticks) of it from the file's start, on the timeline.
+struct Parts {
+    Song song;
+    TrackId track;
+    ClipId clip;
+    int64_t frames = int64_t(10 * kRate);
+    regions::NewId newId = [this] { return AudioRegionId(song.nextId++); };
+    NextId next = [this] { return song.nextId++; };
+
+    Parts() {
+        song = makeDefaultSong();
+        ImportedAudio file;
+        file.source.name = "test.wav";
+        file.source.sampleRate = kRate;
+        file.source.channels = 1;
+        file.source.frames = frames;
+        file.tempo = 120;
+        AudioDropTarget target;
+        target.index = int(song.tracks.size());
+        ImportResult made;
+        importAudio(song, {file}, target, next, &made)->apply(song);
+        track = made.tracks[0];
+        clip = made.clips[0];
+        Clip& c = *song.findClip(clip);
+        c.length = 7680;
+        c.loopEnd = 7680;
+        song.findTrack(track)->arrangement[0].length = 7680;
+    }
+    regions::Files files() const { return regions::Files(kRate, frames); }
+    const Clip& theClip() const { return *song.findClip(clip); }
+    const AudioContent& audio() const { return *theClip().audio; }
+    /// The clip cut at each of `at` and stored; returns its parts.
+    regions::List cutAt(std::vector<Tick> at) {
+        regions::List list = regions::of(theClip(), kRate);
+        for (AudioRegion& r : list)
+            if (!r.id.valid())
+                r.id = newId();
+        for (Tick t : at)
+            list = regions::cut(list, audio(), t, kRate, newId);
+        regions::setRegions(song, clip, list, "Cut", next)->apply(song);
+        return audio().regions;
+    }
+};
+
+} // namespace
+
+TEST_CASE("an unedited clip has one part over the whole clip") {
+    Parts p;
+    regions::List list = regions::of(p.theClip(), kRate);
+    REQUIRE(list.size() == 1);
+    CHECK(list[0].start == 0);
+    CHECK(list[0].length == 7680);
+    CHECK(list[0].sourceFrame == 0);
+    CHECK_FALSE(list[0].id.valid());
+    CHECK(p.audio().regions.empty());
+}
+
+TEST_CASE("a cut makes two parts that play on from each other") {
+    Parts p;
+    regions::List list = p.cutAt({1920});
+    REQUIRE(list.size() == 2);
+    CHECK(list[0].length == 1920);
+    CHECK(list[1].start == 1920);
+    CHECK(list[1].length == 5760);
+    CHECK(list[1].sourceFrame == 1920 * 25);
+    CHECK(list[0].id != list[1].id);
+    SUBCASE("a cut right at a part's edge does nothing") {
+        CHECK(regions::cut(list, p.audio(), 1930, kRate, p.newId).size() == 3);
+        CHECK(regions::cut(list, p.audio(), 1925, kRate, p.newId).size() == 2);
+        CHECK(regions::cut(list, p.audio(), 1920, kRate, p.newId).size() == 2);
+    }
+}
+
+TEST_CASE("a backwards part keeps the right audio when it is cut") {
+    Parts p;
+    Clip& c = *p.song.findClip(p.clip);
+    c.audio->reverse = true;
+    regions::List list = p.cutAt({1920});
+    CHECK_FALSE(p.audio().reverse);
+    REQUIRE(list.size() == 2);
+    CHECK(list[0].reverse);
+    // The clip plays frame 192000 first, going down: the left part plays the file's upper stretch.
+    CHECK(regions::frameAt(p.audio(), list[0], 0, kRate) == doctest::Approx(7680 * kFramesPerTick));
+    CHECK(regions::frameAt(p.audio(), list[0], 1920, kRate) == doctest::Approx(5760 * kFramesPerTick));
+    CHECK(regions::frameAt(p.audio(), list[1], 1920, kRate) == doctest::Approx(5760 * kFramesPerTick));
+    CHECK(regions::frameAt(p.audio(), list[1], 7680, kRate) == doctest::Approx(0));
+}
+
+TEST_CASE("trims bring back hidden audio and stop at the file's ends") {
+    Parts p;
+    regions::List list = p.cutAt({1920, 3840});
+    AudioRegionId middle = list[1].id;
+    SUBCASE("shorter from the left") {
+        regions::List out = regions::trimStart(list, middle, 2400, p.audio(), p.files());
+        CHECK(out[1].start == 2400);
+        CHECK(out[1].length == 1440);
+        CHECK(out[1].sourceFrame == 2400 * 25);
+    }
+    SUBCASE("longer to the left, into the audio before it") {
+        regions::List out = regions::trimStart(list, middle, 1440, p.audio(), p.files());
+        CHECK(out[1].sourceFrame == 1440 * 25);
+    }
+    SUBCASE("the file's start stops it") {
+        regions::List out = regions::trimStart(list, list[0].id, -500, p.audio(), p.files());
+        CHECK(out[0].start == 0);
+        CHECK(out[0].sourceFrame == 0);
+    }
+    SUBCASE("the file's end stops it") {
+        regions::List out = regions::trimEnd(list, list[2].id, 999999, p.audio(), p.files());
+        CHECK(out[2].end() == 19200);
+    }
+    SUBCASE("a part keeps a little length") {
+        regions::List out = regions::trimStart(list, middle, 3840, p.audio(), p.files());
+        CHECK(out[1].length == regions::kMinLength);
+    }
+}
+
+TEST_CASE("a slip changes what a part plays, not where it sits") {
+    Parts p;
+    regions::List list = p.cutAt({1920});
+    regions::List out = regions::slip(list, list[1].id, 1000, p.audio(), p.files());
+    CHECK(out[1].sourceFrame == 1920 * 25 + 1000);
+    CHECK(out[1].start == 1920);
+    regions::List early = regions::slip(list, list[0].id, -5000, p.audio(), p.files());
+    CHECK(early[0].sourceFrame == 0);
+}
+
+TEST_CASE("moves stay inside the clip") {
+    Parts p;
+    regions::List list = p.cutAt({1920, 3840});
+    regions::Ids mid{list[1].id};
+    CHECK(regions::move(list, mid, 100, 7680)[1].start == 2020);
+    CHECK(regions::move(list, mid, -99999, 7680)[0].start == 0);
+    CHECK(regions::move(list, mid, 99999, 7680)[2].end() == 7680);
+}
+
+TEST_CASE("the overlap rule inside a clip matches the timeline's") {
+    Parts p;
+    regions::List list = p.cutAt({1920, 3840});
+    regions::Ids last{list[2].id};
+    SUBCASE("a part dropped over a whole other part removes it") {
+        regions::List over = list;
+        over[2].start = 1800;
+        over[2].length = 2200;
+        regions::List out = regions::settle(over, last, p.audio(), kRate, p.newId);
+        CHECK(out.size() == 2);
+    }
+    SUBCASE("a part dropped inside another splits it, reaching a little in") {
+        regions::List inside = {list[0], list[2]};
+        inside[0].length = 7680;
+        inside[1].start = 2000;
+        inside[1].length = 1000;
+        regions::List out = regions::settle(inside, last, p.audio(), kRate, p.newId);
+        REQUIRE(out.size() == 3);
+        CHECK(out[0].end() > 2000);
+        CHECK(out[2].start < 3000);
+        CHECK(out[2].sourceFrame == out[2].start * 25);
+    }
+    SUBCASE("a plain overlap stays: it is a crossfade") {
+        regions::List over = list;
+        over[1].length = 2100;
+        regions::Ids changed{list[1].id};
+        CHECK(regions::settle(over, changed, p.audio(), kRate, p.newId).size() == 3);
+    }
+}
+
+TEST_CASE("an edit reaches linked copies, and an independent copy keeps its own") {
+    Parts p;
+    ArrangerClip first = p.song.findTrack(p.track)->arrangement[0];
+    ArrangerClip linked = first;
+    linked.id = ArrangementId(p.song.nextId++);
+    linked.position = 20000;
+    p.song.findTrack(p.track)->arrangement.push_back(linked);
+
+    Clip copy = copyClip(p.theClip(), p.next);
+    ClipId own = copy.id;
+    AddClip(std::move(copy)).apply(p.song);
+
+    regions::List list = p.cutAt({1920});
+    CHECK(p.song.findClip(linked.clip)->audio->regions.size() == 2);
+    CHECK(p.song.findClip(own)->audio->regions.empty());
+
+    Clip second = copyClip(p.theClip(), p.next);
+    ClipId other = second.id;
+    AddClip(std::move(second)).apply(p.song);
+    regions::setRegions(p.song, other, {list[0]}, "Keep one", p.next)->apply(p.song);
+    CHECK(p.song.findClip(other)->audio->regions.size() == 1);
+    CHECK(p.audio().regions.size() == 2);
+}
+
+TEST_CASE("storing parts is one undo step, and a part past the end makes the clip longer") {
+    Parts p;
+    regions::List list = p.cutAt({1920});
+    regions::List longer = regions::trimEnd(list, list[1].id, 9000, p.audio(), p.files());
+    CommandPtr cmd = regions::setRegions(p.song, p.clip, longer, "Trim", p.next);
+    REQUIRE(cmd);
+    Song before = p.song;
+    cmd->apply(p.song);
+    CHECK(p.theClip().length == 9000);
+    CHECK(p.theClip().loopEnd == 9000);
+    cmd->revert(p.song);
+    CHECK(p.song == before);
+    CHECK_FALSE(regions::setRegions(p.song, p.clip, list, "Same", p.next));
+}
+
+TEST_CASE("Shift+Delete closes the gap and shortens what played the whole clip") {
+    Parts p;
+    regions::List list = p.cutAt({1920, 3840});
+    CommandPtr cmd = regions::removeClosingGaps(p.song, p.clip, {list[1].id}, p.next);
+    REQUIRE(cmd);
+    Song before = p.song;
+    cmd->apply(p.song);
+    REQUIRE(p.audio().regions.size() == 2);
+    CHECK(p.audio().regions[1].start == 1920);
+    CHECK(p.audio().regions[1].sourceFrame == 3840 * 25);
+    CHECK(p.theClip().length == 5760);
+    CHECK(p.theClip().loopEnd == 5760);
+    CHECK(p.song.findTrack(p.track)->arrangement[0].length == 5760);
+    cmd->revert(p.song);
+    CHECK(p.song == before);
+    CHECK_FALSE(regions::removeClosingGaps(p.song, p.clip, {list[0].id, list[1].id, list[2].id}, p.next));
+}
+
+TEST_CASE("parts survive saving and loading, and bad ones are cleaned up") {
+    Parts p;
+    regions::List list = p.cutAt({1920});
+    list[1].gainDb = -3;
+    list[1].muted = true;
+    list[1].reverse = true;
+    list[1].fadeIn = {100, 0.5f};
+    regions::setRegions(p.song, p.clip, list, "Set", p.next)->apply(p.song);
+    json_t* j = clipToJson(p.theClip());
+    Clip back = clipFromJson(j);
+    json_decref(j);
+    CHECK(back.audio->regions == p.audio().regions);
+
+    Clip messy = p.theClip();
+    messy.audio->regions[1].start = 7000;
+    messy.audio->regions[1].length = 99999;
+    messy.audio->regions.push_back(AudioRegion{});
+    messy.audio->regions.back().length = 0;
+    Song s = p.song;
+    *s.findClip(p.clip) = messy;
+    normalize(s);
+    CHECK(s.findClip(p.clip)->audio->regions.size() == 2);
+    CHECK(s.findClip(p.clip)->audio->regions[1].end() == 7680);
+}
+
+TEST_CASE("clip-wide edits keep the parts playing what they played") {
+    Parts p;
+    p.cutAt({1920});
+    SUBCASE("a higher clip tempo scales their places, not their audio") {
+        setClipTempo(p.song, p.clip, 240)->apply(p.song);
+        CHECK(p.audio().regions[1].start == 3840);
+        CHECK(p.audio().regions[1].sourceFrame == 1920 * 25);
+    }
+    SUBCASE("reversing mirrors the parts and turns each round") {
+        reverseAudio(p.song, p.clip)->apply(p.song);
+        REQUIRE(p.audio().regions.size() == 2);
+        CHECK_FALSE(p.audio().reverse);
+        CHECK(p.audio().regions[0].start == 0);
+        CHECK(p.audio().regions[0].length == 5760);
+        CHECK(p.audio().regions[0].reverse);
+        reverseAudio(p.song, p.clip)->apply(p.song);
+        CHECK_FALSE(p.audio().regions[0].reverse);
+        CHECK(p.audio().regions[1].start == 1920);
+    }
+}
+
+TEST_CASE("hits follow the part that plays them") {
+    Parts p;
+    regions::List list = p.cutAt({1920});
+    list[1].start = 3000;
+    list[1].length = 4680;
+    regions::setRegions(p.song, p.clip, list, "Move", p.next)->apply(p.song);
+    ArrangerClip at = p.song.findTrack(p.track)->arrangement[0];
+    // A hit at frame 50000 is 2000 ticks into the file: inside the moved part, 80 ticks after where it begins.
+    std::vector<Tick> hits = hitTicks(p.theClip(), at, {50000}, kRate, 120);
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0] == 3080);
+}
+
+namespace {
+
+/// `p`'s clip with two more takes: take 2 (index 0) as long as the file, and take 3 (index 1) half a second shorter
+/// than the clip, a pass that stopped early.
+void addTakes(Parts& p) {
+    AudioSource a = p.song.audioSources[0], b = a;
+    a.id = p.song.newId<AudioSourceId>();
+    b.id = p.song.newId<AudioSourceId>();
+    b.frames = 7680 * 25 - 24000;
+    p.song.audioSources.push_back(a);
+    p.song.audioSources.push_back(b);
+    regions::addTake(p.song, p.clip, AudioTake{a.id, 0, "", {}}, p.next)->apply(p.song);
+    regions::addTake(p.song, p.clip, AudioTake{b.id, 0, "", {}}, p.next)->apply(p.song);
+}
+
+} // namespace
+
+TEST_CASE("a new take plays the whole clip, and a comp stays as it is") {
+    Parts p;
+    addTakes(p);
+    REQUIRE(p.audio().regions.size() == 1);
+    CHECK(p.audio().regions[0].take == 1);
+    CHECK(regions::playingText(p.theClip()) == "take 3");
+
+    regions::Files files = regions::filesOf(p.song, p.audio());
+    regions::List mixed = regions::comp(p.audio().regions, p.audio(), 0, 1000, 2000, files, p.newId);
+    regions::setRegions(p.song, p.clip, mixed, "Comp", p.next)->apply(p.song);
+    CHECK(regions::playingText(p.theClip()) == "comp");
+    size_t parts = p.audio().regions.size();
+    AudioSourceId more = p.song.audioSources[1].id;
+    regions::addTake(p.song, p.clip, AudioTake{more, 0, "", {}}, p.next)->apply(p.song);
+    CHECK(p.audio().regions.size() == parts);
+    CHECK(regions::playingText(p.theClip()) == "comp");
+}
+
+TEST_CASE("comping: a stretch plays another take, and what is left around it keeps its audio") {
+    Parts p;
+    addTakes(p);
+    regions::useTake(p.song, p.clip, -1, p.next)->apply(p.song);
+    regions::Files files = regions::filesOf(p.song, p.audio());
+    regions::List whole = regions::of(p.theClip(), files);
+    regions::List out = regions::comp(whole, p.audio(), 0, 1920, 3840, files, p.newId);
+    REQUIRE(out.size() == 3);
+    CHECK(out[0].take == -1);
+    CHECK(out[0].length == 1920);
+    CHECK(out[1].take == 0);
+    CHECK(out[1].start == 1920);
+    CHECK(out[1].sourceFrame == 1920 * 25);
+    CHECK(out[2].take == -1);
+    CHECK(out[2].sourceFrame == 3840 * 25);
+
+    SUBCASE("a neighbour on the same take joins up") {
+        regions::List more = regions::comp(out, p.audio(), 0, 3840, 4800, files, p.newId);
+        REQUIRE(more.size() == 3);
+        CHECK(more[1].length == 2880);
+        CHECK(more[2].start == 4800);
+    }
+    SUBCASE("comping over a part replaces it and fills a gap") {
+        regions::List gap = {out[0], out[2]};
+        regions::List more = regions::comp(gap, p.audio(), 1, 1000, 4000, files, p.newId);
+        REQUIRE(more.size() == 3);
+        CHECK(more[1].take == 1);
+        CHECK(more[1].length == 3000);
+    }
+    SUBCASE("the part's ID stays when a comp only trims it") {
+        regions::List right = regions::comp(whole, p.audio(), 0, 0, 1000, files, p.newId);
+        REQUIRE(right.size() == 2);
+        CHECK(right[1].id == whole[0].id);
+    }
+}
+
+TEST_CASE("a take that stopped early has no audio past its end") {
+    Parts p;
+    addTakes(p);
+    regions::Files files = regions::filesOf(p.song, p.audio());
+    auto span = regions::takeSpan(p.theClip(), 1, files);
+    CHECK(span.first == 0);
+    CHECK(span.second == 7680 - 960);
+    CHECK(regions::takeSpan(p.theClip(), 0, files).second == 7680);
+}
+
+TEST_CASE("changing takes: use one, delete one, rename one") {
+    Parts p;
+    addTakes(p);
+    regions::Files files = regions::filesOf(p.song, p.audio());
+    regions::List whole = regions::of(p.theClip(), files);
+    regions::List three = regions::comp(whole, p.audio(), -1, 1000, 2000, files, p.newId);
+    regions::setRegions(p.song, p.clip, three, "Comp", p.next)->apply(p.song);
+
+    SUBCASE("use the clip's own take brings the plain clip back") {
+        regions::useTake(p.song, p.clip, -1, p.next)->apply(p.song);
+        CHECK(p.audio().regions.empty());
+        CHECK(p.audio().takes.size() == 2);
+    }
+    SUBCASE("deleting a take moves its parts to take 1 and renumbers the rest") {
+        CommandPtr cmd = regions::removeTake(p.song, p.clip, 0);
+        REQUIRE(cmd);
+        Song before = p.song;
+        cmd->apply(p.song);
+        CHECK(p.audio().takes.size() == 1);
+        for (const AudioRegion& r : p.audio().regions)
+            CHECK(r.take >= -1);
+        CHECK(p.audio().regions.front().take == 0);
+        CHECK(unusedSources(p.song).size() == 1); // its file stays until Remove unused audio
+        cmd->revert(p.song);
+        CHECK(p.song == before);
+        CHECK_FALSE(regions::removeTake(p.song, p.clip, -1));
+    }
+    SUBCASE("a take has a name") {
+        CHECK(regions::takeName(p.audio(), 0) == "Take 2");
+        regions::renameTake(p.song, p.clip, 0, "Best verse")->apply(p.song);
+        CHECK(regions::takeName(p.audio(), 0) == "Best verse");
+        json_t* j = clipToJson(p.theClip());
+        Clip back = clipFromJson(j);
+        json_decref(j);
+        CHECK(back.audio->takes[0].name == "Best verse");
+    }
+    SUBCASE("a selected part can use another take") {
+        regions::List out = regions::retake(p.audio().regions, {p.audio().regions[1].id}, 0, p.audio(), files);
+        CHECK(out[1].take == 0);
+        CHECK(out[1].sourceFrame == 1000 * 25);
+    }
+}
+
+TEST_CASE("linked copies play the same comp, because the clip holds it") {
+    Parts p;
+    addTakes(p);
+    ArrangerClip linked = p.song.findTrack(p.track)->arrangement[0];
+    linked.id = ArrangementId(p.song.nextId++);
+    linked.position = 20000;
+    p.song.findTrack(p.track)->arrangement.push_back(linked);
+    regions::useTake(p.song, p.clip, 0, p.next)->apply(p.song);
+    CHECK(p.song.findClip(linked.clip)->audio->regions[0].take == 0);
+}
+
+TEST_CASE("older songs keep playing the take each timeline copy picked") {
+    Parts p;
+    addTakes(p);
+    regions::useTake(p.song, p.clip, -1, p.next)->apply(p.song);
+    ArrangerClip second = p.song.findTrack(p.track)->arrangement[0];
+    second.id = ArrangementId(p.song.nextId++);
+    second.position = 20000;
+    p.song.findTrack(p.track)->arrangement.push_back(second);
+
+    json::Ref j(songToJson(p.song));
+    json_t* tracks = json_object_get(j.get(), "tracks");
+    size_t index;
+    json_t* track;
+    json_array_foreach(tracks, index, track) {
+        json_t* arrangement = json_object_get(track, "arrangement");
+        if (json_array_size(arrangement) != 2)
+            continue;
+        json_object_set_new(json_array_get(arrangement, 0), "take", json_integer(0));
+        json_object_set_new(json_array_get(arrangement, 1), "take", json_integer(1));
+    }
+    Song back = songFromJson(j.get(), Song::kSchemaVersion);
+    const auto& arr = back.findTrack(p.track)->arrangement;
+    REQUIRE(arr.size() == 2);
+    CHECK(arr[0].clip == p.clip);
+    CHECK(arr[1].clip != p.clip);
+    CHECK(back.findClip(arr[0].clip)->audio->regions[0].take == 0);
+    CHECK(back.findClip(arr[1].clip)->audio->regions[0].take == 1);
+    CHECK(back.findClip(arr[1].clip)->audio->takes.size() == 2);
+}
+
+TEST_CASE("a time range can be cleared, copied, pasted and closed up") {
+    Parts p;
+    regions::Files files = p.files();
+    regions::NewId newId = p.newId;
+    regions::List whole = regions::of(p.theClip(), files);
+    SUBCASE("clearing cuts the parts back and leaves a gap") {
+        regions::List out = regions::clearRange(whole, p.audio(), 1000, 2000, files, newId);
+        REQUIRE(out.size() == 2);
+        CHECK(out[0].end() == 1000);
+        CHECK(out[1].start == 2000);
+        CHECK(out[1].sourceFrame == 2000 * 25);
+    }
+    SUBCASE("copy and paste plays the same audio somewhere else") {
+        regions::Copied copied = regions::copyRange(whole, p.audio(), 1000, 2000, files, newId);
+        REQUIRE(copied.parts.size() == 1);
+        CHECK(copied.length == 1000);
+        CHECK(copied.parts[0].start == 0);
+        CHECK(copied.parts[0].sourceFrame == 1000 * 25);
+        regions::List list = regions::clearRange(whole, p.audio(), 4000, 5000, files, newId);
+        regions::Ids pasted;
+        REQUIRE(regions::paste(list, p.audio(), copied, 4000, files, newId, &pasted));
+        CHECK(pasted.size() == 1);
+        REQUIRE(list.size() == 3);
+        CHECK(list[1].start == 4000);
+        CHECK(list[1].sourceFrame == 1000 * 25);
+    }
+    SUBCASE("a clip with other files or another tempo can't take the paste") {
+        regions::Copied copied = regions::copyRange(whole, p.audio(), 1000, 2000, files, newId);
+        copied.sources[0] = AudioSourceId(99999);
+        regions::List list = whole;
+        CHECK_FALSE(regions::paste(list, p.audio(), copied, 0, files, newId));
+        copied = regions::copyRange(whole, p.audio(), 1000, 2000, files, newId);
+        copied.tempo = 90;
+        CHECK_FALSE(regions::paste(list, p.audio(), copied, 0, files, newId));
+    }
+    SUBCASE("closing a range shortens the clip and its whole timeline copies") {
+        CommandPtr cmd = regions::closeRange(p.song, p.clip, 1000, 2000, p.next);
+        REQUIRE(cmd);
+        Song before = p.song;
+        cmd->apply(p.song);
+        CHECK(p.theClip().length == 6680);
+        CHECK(p.theClip().loopEnd == 6680);
+        REQUIRE(p.audio().regions.size() == 2);
+        CHECK(p.audio().regions[1].start == 1000);
+        CHECK(p.audio().regions[1].sourceFrame == 2000 * 25);
+        CHECK(p.song.findTrack(p.track)->arrangement[0].length == 6680);
+        cmd->revert(p.song);
+        CHECK(p.song == before);
+    }
+    SUBCASE("crop keeps only the range, from tick 0") {
+        CommandPtr cmd = regions::cropToRange(p.song, p.clip, 1000, 3000, p.next);
+        REQUIRE(cmd);
+        cmd->apply(p.song);
+        CHECK(p.theClip().length == 2000);
+        REQUIRE(p.audio().regions.size() == 1);
+        CHECK(p.audio().regions[0].start == 0);
+        CHECK(p.audio().regions[0].sourceFrame == 1000 * 25);
+    }
+}
+
+TEST_CASE("Quantize moves hits toward the grid by its strength, and leaves quiet ones alone") {
+    Parts p;
+    // Hits 20 ticks after beat 2 (500 frames late) and 8 ticks after beat 4.
+    regions::TakeHits hits{{960 * 25 + 500, 2880 * 25 + 200}, {1.f, 0.2f}};
+    SUBCASE("full strength") {
+        regions::quantize(p.song, p.clip, {{-1, hits}}, {kPpq, 1, 0})->apply(p.song);
+        REQUIRE(p.audio().warps.size() == 3); // the part's start, pinned, then the two hits
+        CHECK(p.audio().warps[0].tick == doctest::Approx(0));
+        CHECK(p.audio().warps[1].tick == doctest::Approx(960));
+        CHECK(p.audio().warps[2].tick == doctest::Approx(2880));
+    }
+    SUBCASE("half strength goes half way") {
+        regions::quantize(p.song, p.clip, {{-1, hits}}, {kPpq, 0.5f, 0})->apply(p.song);
+        CHECK(p.audio().warps[1].tick == doctest::Approx(970));
+    }
+    SUBCASE("quiet hits stay out") {
+        regions::quantize(p.song, p.clip, {{-1, hits}}, {kPpq, 1, 0.5f})->apply(p.song);
+        CHECK(p.audio().warps.size() == 2);
+    }
+    SUBCASE("a moved part's hit lands on the grid where the part now is") {
+        regions::List list = p.cutAt({1920});
+        list[1].start = 3000;
+        list[1].length = 4680;
+        regions::setRegions(p.song, p.clip, list, "Move", p.next)->apply(p.song);
+        // 860 ticks into the part: clip tick 3860, 20 past the grid line at 3840.
+        regions::TakeHits late{{(1920 + 860) * 25}, {}};
+        regions::quantize(p.song, p.clip, {{-1, late}}, {kPpq, 1, 0})->apply(p.song);
+        REQUIRE(p.audio().warps.size() == 2);
+        const AudioRegion& moved = p.audio().regions[1];
+        CHECK(regions::shift(p.audio(), moved, p.files()) == doctest::Approx(1920 - 3000)); // the part stayed put
+        double clipTick = p.audio().warps[1].tick - regions::shift(p.audio(), moved, p.files());
+        CHECK(clipTick == doctest::Approx(3840).epsilon(0.001));
+    }
+    SUBCASE("a grid line outside the part leaves the hit alone") {
+        regions::List list = p.cutAt({1920});
+        list[1].start = 3000;
+        list[1].length = 4680;
+        regions::setRegions(p.song, p.clip, list, "Move", p.next)->apply(p.song);
+        regions::TakeHits early{{(1920 + 40) * 25}, {}};
+        CHECK_FALSE(regions::quantize(p.song, p.clip, {{-1, early}}, {kPpq, 1, 0}));
+    }
+}

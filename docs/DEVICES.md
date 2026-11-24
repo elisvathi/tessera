@@ -33,6 +33,12 @@ a later feature).
 
 ### 1.1 The device strip
 
+> **Since 14 Nov 2026 the cards are pictures with tags, not knobs: see DECISIONS §154.** The knob layout below is the
+> earlier design; the strip, browser, modulator list and mapping still work as described, with tags in place of knobs.
+> As built: `ui/views/DeviceStrip` (cards, tags, frame, rows), `ui/views/DeviceTiles` (the pictures, cached per
+> picture), `ui/widgets/TagPanel` (a tag's panel), `ui/interaction/DeviceTags` (what goes on which picture, value
+> lists, typing, captions; no Rack, unit tested).
+
 Agreed with the user on a design canvas (claude.ai artifact "Tessera Devices view"). The devices sit in a strip of
 fixed height (about 128 px) **above the piano roll** (and above the drum step grid), so notes and what shapes them
 are seen together and the pane never shows empty space. The **Devices** button in the detail pane's header opens
@@ -58,7 +64,7 @@ Velocity · 3 modulators"; clicking it opens the strip. The in-panel editor star
 - **+ between cards** (faint until hovered) and the **Add device** tile at the end open the **device browser**:
   a searchable list. Typing filters by name and by purpose ("delay" finds Echo, "loose" finds Humanize); ↑ ↓
   choose, Enter adds, Esc closes; each entry has a one-line description; groups Pitch (Transpose, Scale, Chord),
-  Rhythm (Arpeggiator, Echo, Note Length), Feel (Velocity, Humanize, Random, Note Filter); the footer says where the device
+  Rhythm (Arpeggiator, Echo, Note Length, Note Repeat), Feel (Velocity, Humanize, Random, Note Filter); the footer says where the device
   will go. Drag a card by its header to reorder; Ctrl/Cmd+drag copies; Delete removes the selected card.
 - **Knobs:** drag up/down (Shift fine), double-click resets, click the value to type it, right-click for a menu
   (reset, type a value, modulate with ▸, remove modulation ▸, and automation once it is built). The knob draws
@@ -68,7 +74,7 @@ Velocity · 3 modulators"; clicking it opens the strip. The in-panel editor star
 - **Modulators** are one list at the left of the strip, whatever their level. Each row: colour, name, where it
   lives ("song", "track", or its device's name), a live mini graph, and the ↗ map arrow. "+ Add" asks for the
   level (the whole song, this track, or one of its devices) and the type. Clicking a row (or a device's dot)
-  opens the modulator's **popover** over the notes: its settings, the Steps editor for Steps, and its "Moves"
+  opens the modulator's settings in a column beside its section (DECISIONS §163; it used to be a **popover** over the notes): its settings, the Steps editor for Steps, and its "Moves"
   list (target, amount, ×), with "Map to knobs" and "CV out ▾" (an AUTO output, or a Rack knob by learn).
   Right-click a row: rename, remove.
 - **Mapping:** click a modulator's ↗; the pane header shows "Mapping LFO 1 · drag a lit knob up
@@ -154,8 +160,9 @@ append-only so saved patches keep working. Values are stored normalized (0..1) a
 | **Velocity** | shapes velocity | curve (soft…hard), min, max, random ±, fixed value |
 | **Note Length** | shapes gate | scale %, fixed length (sync), legato (to next note) |
 | **Chord** | adds notes | chord type (or intervals), inversion, spread (close / open / drop-2), in key |
-| **Arpeggiator** | plays held notes one at a time | pattern (up, down, up-down, random, as played, chord), rate (sync, triplet, dotted), gate, octaves, steps, swing, velocity (as played / accent pattern), hold |
+| **Arpeggiator** | plays held notes one at a time | pattern (up, down, up-down, up-down full (the ends twice), down-up, down-up full, converge, diverge, as played, random, walk, shuffled, pattern, chord), rate (sync, triplet, dotted), gate, octaves, swing, velocity (as played / accent pattern), hold |
 | **Echo** | repeats notes (MIDI delay) | time (sync), repeats, velocity decay, pitch per repeat, gate |
+| **Note Repeat** | plays every note again while it lasts, chords included | rate, gate 5–100%, decay 0–100% |
 | **Humanize** | loosens the feel each pass | timing (later only, up to 1/32), velocity ±, length ± |
 | **Random** | varies notes each pass | pitch ± (in key), chance to drop |
 | **Note Filter** | lets some notes through | pitch range, velocity range, every Nth / skip pattern, channel (Any or 1–16: one part of a clip) |

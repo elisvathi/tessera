@@ -6,6 +6,9 @@
 #include <jansson.h>
 
 #include <array>
+#include <functional>
+#include <optional>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -21,6 +24,9 @@ enum class ExpressionMode { Off, Mpe, Flatten }; // per-note curves as MPE, or f
 enum class RangeMode { Song, Loop, Selection };
 enum class Split { OneFile, PerTrack, PerClip };
 enum class DeviceMode { Applied, Bypassed }; // Applied: the notes the tracks' device chains play
+/// How tied notes are written (docs/design/TIES_VOICES.md §4): overlapping a little, so a mono instrument in legato
+/// mode plays on without a new attack; or, with MPE, a chain of tied notes as one note with its glides as bend.
+enum class TieMode { Overlap, Bend };
 
 constexpr int kLanes = 8;
 
@@ -35,6 +41,10 @@ struct Options {
     DeviceMode devices = DeviceMode::Applied;
     bool includeMuted = false;
     bool noteChannels = false; // each note on its own channel instead of its track's (not with MPE)
+    TieMode ties = TieMode::Overlap; // Bend only with MPE expressions
+    // With devices applied, a track whose Input is another track's notes plays those too, through its own devices, as
+    // it does live; the track it listens to feeds it even when muted. For a bounce, not for exports (it isn't saved).
+    bool followInput = false;
     Tick from = 0, to = 0;     // RangeMode::Selection
     Tick ccStep = kPpq / 16;   // how often curves are sampled (1/64)
     int bendRange = 48;        // MPE pitch bend range in semitones
@@ -73,15 +83,85 @@ struct ExportNote {
     int pitch;
     float velocity, release;
     uint8_t channel = 1;
+    std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr; // the note's own curves, across its length
+    double span = 0; // the length its curves stretch across: the note as it plays, before a tie's overlap
+    // It continues the note before it, with this glide (as Note's own fields).
+    bool tied = false;
+    Tick glideBefore = 0, glideAfter = 0;
+    float glideShape = 0;
 };
+/// The overlap a tie is written with: the earlier note ends this long after the tied one starts.
+constexpr Tick kTieOverlap = kPpq / 32;
+/// Makes each note a tie continues run on past the tied note's start by kTieOverlap (and no further than it
+/// ends), so programs that know no ties play the pair legato. With `glides`, each tie's glide is written into the two
+/// notes' pitch curves first, so it plays there too. For DAWproject; MIDI export does the same itself.
+void overlapTies(std::vector<ExportNote>& notes, bool glides = false);
+/// A track's pitch bend or channel pressure lanes (`drive` says which) over [from, to) as the raw MIDI value
+/// (0..1; bend rests at 0.5, pressure at 0 where no lane plays), one entry per change, sampled every ccStep. Empty
+/// when the track has no such lane. `range` (when given) gets the bend range of its first bend lane, in semitones.
+std::vector<std::pair<Tick, float>> controlSamples(const Song& song, const Track& t, LaneDrive drive,
+                                                    const Options& o, Tick from, Tick to, int* range = nullptr);
 /// Every note a track plays on the timeline with the chosen timing, operators and devices: what MIDI export writes
 /// for it (the whole song; muted clips only with `includeMuted`).
 std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Options& o, const Context& ctx);
 /// One clip played once from its start on its track, with the same choices (as renderClip).
 std::vector<ExportNote> clipNotes(const Song& song, TrackId track, ClipId clip, const Options& o, const Context& ctx);
-/// An AUTO channel's value (0..1) over [from, to) as MIDI export samples it, one entry per change; empty when no
-/// lane plays on the channel.
+/// An AUTO channel's value (0..1) over [from, to) as MIDI export samples it, one entry per change: its lanes, plus the
+/// modulators sent to it that move with the song. Empty when nothing plays on the channel.
 std::vector<std::pair<Tick, float>> laneSamples(const Song& song, TrackId track, int output, const Options& o,
                                                 Tick from, Tick to);
+/// The same for `clip` played once from its start on its track, ticks counted from there.
+std::vector<std::pair<Tick, float>> clipLaneSamples(const Song& song, TrackId track, ClipId clip, int output,
+                                                    const Options& o, Tick to);
+/// Whether a modulator that moves with the song is sent to AUTO channel `output` of `track`.
+bool modulatedOutput(const Song& song, TrackId track, int output);
+/// A track's pitch or pressure lane (`drive` says which) over [from, to), sampled as laneSamples does.
+std::vector<std::pair<Tick, float>> driveSamples(const Song& song, TrackId track, LaneDrive drive, const Options& o,
+                                                 Tick from, Tick to);
+
+/// The pitch playhead `p` first plays each of `clip`'s notes at, over pass `pass` of the clip (as if launched at the
+/// song's start, so synced modulators line up), by note index; -1 for notes it doesn't reach then. For the piano
+/// roll to show where a playhead moves notes to, pass by pass while it plays.
+std::vector<int> heardPitches(const Song& song, const Track& track, const Device& device, const Playhead& p,
+                              const Clip& clip, int64_t pass = 0);
+
+/// The most passes motionPitches works out for one note.
+constexpr int kMaxGhostPasses = 16;
+/// Where a Motion device moves a note: the pitch it plays, how much later it starts (ticks) and how its length
+/// scales. pitch -1: the note is in no Motion.
+struct MotionMove {
+    int pitch = -1;
+    double delay = 0;
+    double lengthScale = 1;
+};
+/// For each of `clip`'s notes that moves with a Motion device on `track`: where it moves on each pass of the clip,
+/// pass 1 first, over one cycle of the curves on that Motion (Per pass ones and ones that count in time), as the
+/// clip plays straight; empty for the other notes. For the piano roll's ghosts of notes a Motion moves.
+std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& track, const Clip& clip);
+/// Where note `index` of `clip` moves when its Motion device reads it on `pass` at `songTick`, its curves read
+/// there (playheads may read a note at any moment). `sinceClip` is how long the track's clip has played (launched,
+/// or the timeline clip under the song), which Curves count from as the engine does; NaN counts from the song's start.
+MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
+                        double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN());
+/// What the engine holds right now, for the piano roll's pictures of moved notes. Any part may be left empty.
+struct EngineNow {
+    /// A knob (a device's or a modulator's setting) as the engine plays it now: its lanes, a knob held by the mouse,
+    /// and every modulator on it except a Motion's "Per pass" ones. Nothing when the engine doesn't know it yet: its
+    /// saved value stands in.
+    std::function<std::optional<float>(const ParamRef&)> knob;
+    /// A modulator's output now.
+    std::function<float(ModulatorId)> output;
+    /// The engine's roll, which modulators on "New every play" draw their random values from.
+    uint32_t roll = 0;
+};
+/// Where note `index` of `clip` moves on `pass`, as the engine moves it, through the Motion device in the chain the
+/// clip plays through (its own while it plays one, else its track's). With `now` (playheads may read the note at any
+/// moment) the Motion's knobs are the engine's own right now. Otherwise they are worked out for when the note plays,
+/// at song tick `at`, `sinceClip` ticks into its clip: lanes, and modulators that depend on the song alone (Curves,
+/// synced LFOs, Steps, Ramps, Random, Macros), are read then; the others (a free LFO, one restarting on each note, an
+/// Envelope, a Note follower) can't be known ahead and give what they give now. "Per pass" modulators step with the
+/// pass either way.
+MotionMove motionMoveLive(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass, double at,
+                          double sinceClip, const EngineNow& engine = {}, bool now = false);
 
 } // namespace tessera::render

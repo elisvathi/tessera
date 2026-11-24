@@ -1,5 +1,7 @@
 #include "LauncherCommands.hpp"
 
+#include "DeviceCommands.hpp"
+
 #include <algorithm>
 #include <cassert>
 
@@ -93,6 +95,7 @@ Clip copyClip(const Clip& clip, const NextId& nextId) {
         n.id = NoteId(nextId());
     for (AutomationEnvelope& a : copy.automation)
         a.id = AutomationId(nextId());
+    renewClipChain(copy, nextId);
     return copy;
 }
 

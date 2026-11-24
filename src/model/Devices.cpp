@@ -66,6 +66,7 @@ void warmUp() {
         devices::deviceInfo(DeviceType(t));
     for (int t = 0; t < kModulatorTypeCount; t++)
         devices::modulatorInfo(ModulatorType(t));
+    devices::playheadInfo();
 }
 
 // ---- The message queue ----------------------------------------------------------------------------------------
@@ -77,7 +78,125 @@ void Chain::clear() {
         s.heldCount = 0;
         s.running = false;
         s.steps = 0;
+        s.played = -1;
     }
+}
+
+void Chain::dropLane(uint8_t lane) {
+    if (lane == 0)
+        return;
+    int kept = 0;
+    for (int i = 0; i < count; i++) {
+        const Message& m = messages[size_t(i)];
+        if ((m.kind == Kind::On || m.kind == Kind::Echo) && m.note.lane == lane)
+            continue;
+        messages[size_t(kept++)] = m;
+    }
+    count = kept;
+    for (DeviceState& s : states) {
+        int held = 0;
+        for (int i = 0; i < s.heldCount; i++)
+            if (s.held[size_t(i)].note.lane != lane)
+                s.held[size_t(held++)] = s.held[size_t(i)];
+        s.heldCount = held;
+    }
+}
+
+void Chain::restructure(const uint64_t* oldIds, const bool* oldOn, int oldCount, const uint64_t* newIds,
+                        const bool* newOn, int newCount, double now, Output& out) {
+    oldCount = std::clamp(oldCount, 0, kMaxDevices);
+    newCount = std::clamp(newCount, 0, kMaxDevices);
+    // Where each old stage is now (-1: it left); one past the last device is the output.
+    std::array<int, kMaxDevices + 1> to;
+    for (int i = 0; i < oldCount; i++) {
+        to[size_t(i)] = -1;
+        for (int j = 0; j < newCount; j++)
+            if (newIds[j] == oldIds[i]) {
+                to[size_t(i)] = j;
+                break;
+            }
+    }
+    to[size_t(oldCount)] = newCount;
+    // Where what waited at a device that left goes: the next device after it that stayed.
+    auto after = [&](int i) {
+        for (int k = i + 1; k <= oldCount; k++)
+            if (to[size_t(k)] >= 0)
+                return to[size_t(k)];
+        return newCount;
+    };
+    auto switchedOff = [&](int i) { return to[size_t(i)] >= 0 && oldOn[i] && !newOn[to[size_t(i)]]; };
+
+    int kept = 0;
+    for (int i = 0; i < count; i++) {
+        Message m = messages[size_t(i)];
+        int s = std::min<int>(m.stage, oldCount);
+        if (to[size_t(s)] >= 0) {
+            m.stage = uint8_t(to[size_t(s)]);
+        } else {
+            // A device's own reminders leave with it; an expiry becomes the plain end the next device understands.
+            if (m.kind == Kind::Tick || m.kind == Kind::Echo)
+                continue;
+            if (m.kind == Kind::Expire)
+                m.kind = Kind::End;
+            m.stage = uint8_t(after(s));
+        }
+        messages[size_t(kept++)] = m;
+    }
+    count = kept;
+
+    for (int i = 0; i < oldCount; i++) {
+        bool left = to[size_t(i)] < 0;
+        if (!left && !switchedOff(i))
+            continue;
+        int next = left ? after(i) : to[size_t(i)] + 1;
+        DeviceState& s = states[size_t(i)];
+        for (int k = 0; k < s.count; k++) {
+            const OpenNote& o = s.open[size_t(k)];
+            ChainNote e;
+            if (o.action == Action::Children)
+                for (int c = 0; c < o.childCount; c++) {
+                    e.id = o.children[size_t(c)];
+                    post(next, Kind::End, e, now, out);
+                }
+            else if (o.action == Action::Legato) {
+                e.id = o.id;
+                post(next, Kind::End, e, now, out);
+            }
+        }
+        // An arpeggiator's chord sounds on as it is; its end still comes from before it.
+        for (int k = 0; k < s.heldCount; k++) {
+            const Held& h = s.held[size_t(k)];
+            if (!h.down || h.note.end <= now)
+                continue;
+            ChainNote n = h.note;
+            n.start = now;
+            post(next, Kind::On, n, now, out);
+        }
+    }
+
+    // Each state that stays moves to its device's new place; the rest start empty.
+    std::array<int, kMaxDevices> from, slotOf, inSlot;
+    from.fill(-1);
+    for (int i = 0; i < oldCount; i++)
+        if (to[size_t(i)] >= 0 && !switchedOff(i))
+            from[size_t(to[size_t(i)])] = i;
+    for (int k = 0; k < kMaxDevices; k++)
+        slotOf[size_t(k)] = inSlot[size_t(k)] = k;
+    for (int j = 0; j < newCount; j++) {
+        int i = from[size_t(j)];
+        if (i < 0)
+            continue;
+        int k = slotOf[size_t(i)];
+        if (k == j)
+            continue;
+        std::swap(states[size_t(j)], states[size_t(k)]);
+        std::swap(inSlot[size_t(j)], inSlot[size_t(k)]);
+        slotOf[size_t(inSlot[size_t(j)])] = j;
+        slotOf[size_t(inSlot[size_t(k)])] = k;
+    }
+    for (int j = 0; j < kMaxDevices; j++)
+        if (j >= newCount || from[size_t(j)] < 0)
+            states[size_t(j)] = DeviceState();
 }
 
 void Chain::push(const ChainNote& note) {
@@ -141,7 +260,8 @@ void Chain::dispatch(const Message& m, const Context& c, Output& out) {
         return;
     }
     const DeviceSlot& d = c.devices[m.stage];
-    if (!d.on) {
+    // Another playhead's branch: its notes skip it. Ends carry no lane and pass devices that never saw the note.
+    if (!d.on || (d.lane != 0 && m.note.lane != d.lane && (m.kind == Kind::On || m.kind == Kind::Echo))) {
         forward(m, out);
         return;
     }
@@ -167,6 +287,9 @@ void Chain::dispatch(const Message& m, const Context& c, Output& out) {
     case DeviceType::Echo:
         echo(m, d, c, out);
         break;
+    case DeviceType::NoteRepeat:
+        noteRepeat(m, d, c, out);
+        break;
     case DeviceType::Random:
         random(m, d, c, out);
         break;
@@ -178,6 +301,9 @@ void Chain::dispatch(const Message& m, const Context& c, Output& out) {
         break;
     case DeviceType::NoteFilter:
         noteFilter(m, d, c, out);
+        break;
+    case DeviceType::Motion:
+        motion(m, d, c, out);
         break;
     default:
         forward(m, out);
@@ -283,7 +409,7 @@ void Chain::velocity(const Message& m, const DeviceSlot& d, const Context& c, Ou
     v = lo + v * (hi - lo);
     float spread = shown(d, knob::kRandom) / 100;
     if (spread > 0) {
-        double r = operators::random(c.seed, d.id, n.pass, noteKey(n), kVelocitySalt);
+        double r = operators::random(variationSeed(d.variation, c.roll, d.id), d.id, n.pass, noteKey(n), kVelocitySalt);
         v += float(r * 2 - 1) * spread;
     }
     n.velocity = std::clamp(v, 0.f, 1.f);
@@ -430,6 +556,114 @@ void Chain::release(int stage, uint32_t id, bool hold) {
     }
 }
 
+namespace {
+
+/// A well-mixed number from `seed` (splitmix64): a few multiplies, no tables, so it runs on the audio thread.
+uint64_t mixed(uint64_t seed) {
+    uint64_t z = seed + 0x9E3779B97F4A7C15ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+
+/// A number in [0, 1) for step `k` of the line `seed` picks: the same every time.
+double chance(uint64_t seed, uint64_t k) { return double(mixed(seed ^ mixed(k)) >> 11) * 0x1.0p-53; }
+
+} // namespace
+
+uint8_t generatedLineStep(uint64_t seed, int k) {
+    double r = chance(seed ^ 0x51A7E0F1ull, uint64_t(k));
+    int row = r < 0.4 ? 1 : 2 + std::min(2, int((r - 0.4) / 0.2));
+    return stepOf(row);
+}
+
+std::vector<uint8_t> generatedLine(uint64_t seed, int length) {
+    std::vector<uint8_t> line;
+    for (int k = 0; k < std::clamp(length, 1, kMaxLineSteps); k++)
+        line.push_back(generatedLineStep(seed, k));
+    return line;
+}
+
+namespace {
+
+/// The `k`-th note (0..count-1) a Shuffled arpeggio plays: a fixed shuffle of the notes, one for each `seed`.
+int shuffledIndex(int k, int count, uint64_t seed) {
+    std::array<uint8_t, 64> order;
+    count = std::clamp(count, 1, int(order.size()));
+    for (int i = 0; i < count; i++)
+        order[size_t(i)] = uint8_t(i);
+    for (int i = count - 1; i > 0; i--)
+        std::swap(order[size_t(i)], order[size_t(mixed(seed + uint64_t(i)) % uint64_t(i + 1))]);
+    return order[size_t(k % count)];
+}
+
+constexpr uint64_t kPatternSteps = 16; // how long the line a Pattern arpeggio makes is
+
+} // namespace
+
+int arpOrderIndex(ArpPattern pattern, int count, uint64_t into) {
+    if (count <= 0)
+        return -1;
+    auto at = [](uint64_t k, int period) { return int(k % uint64_t(std::max(1, period))); };
+    auto outsideIn = [count](int k) { return k % 2 == 0 ? k / 2 : count - 1 - k / 2; };
+    // Up through `n` places and back without playing the ends twice: 0 1 2 1, 0 1 2 1…
+    auto bounce = [](int k, int n) {
+        int period = n > 1 ? 2 * n - 2 : 1;
+        int j = k % period;
+        return j < n ? j : period - j;
+    };
+    switch (pattern) {
+    case ArpPattern::Up:
+    case ArpPattern::AsPlayed:
+        return at(into, count);
+    case ArpPattern::Down:
+        return count - 1 - at(into, count);
+    case ArpPattern::UpDown:
+    case ArpPattern::DownUp: {
+        int i = bounce(at(into, count > 1 ? 2 * count - 2 : 1), count);
+        return pattern == ArpPattern::DownUp ? count - 1 - i : i;
+    }
+    case ArpPattern::UpAndDown:
+    case ArpPattern::DownAndUp: {
+        // Up and back, each end played twice: a round is twice the notes long, so four notes fill eight steps.
+        int j = at(into, 2 * count);
+        int i = j < count ? j : 2 * count - 1 - j;
+        return pattern == ArpPattern::DownAndUp ? count - 1 - i : i;
+    }
+    case ArpPattern::Converge:
+        return outsideIn(at(into, count));
+    case ArpPattern::Diverge: {
+        // From the middle out; with an even count the lower middle note first.
+        int step = at(into, count);
+        if (count % 2 == 1)
+            return step == 0 ? count / 2 : count / 2 + (step % 2 == 1 ? -(step + 1) / 2 : step / 2);
+        return step % 2 == 0 ? count / 2 - 1 - step / 2 : count / 2 + step / 2;
+    }
+    case ArpPattern::ConvergeDiverge:
+        return outsideIn(bounce(at(into, count > 1 ? 2 * count - 2 : 1), count));
+    case ArpPattern::ThumbUp:
+    case ArpPattern::ThumbUpDown:
+    case ArpPattern::PinkyUp:
+    case ArpPattern::PinkyUpDown: {
+        // Every other step is the thumb (the lowest note) or the pinky (the highest); the steps between go through
+        // the rest, up, or up and back down.
+        if (count == 1)
+            return 0;
+        bool thumb = pattern == ArpPattern::ThumbUp || pattern == ArpPattern::ThumbUpDown;
+        bool upDown = pattern == ArpPattern::ThumbUpDown || pattern == ArpPattern::PinkyUpDown;
+        int others = count - 1;
+        int round = upDown && others > 1 ? 2 * others - 2 : others;
+        int j = at(into, 2 * round);
+        if (j % 2 == (thumb ? 0 : 1))
+            return thumb ? 0 : count - 1;
+        int i = upDown ? bounce(j / 2, others) : j / 2;
+        return thumb ? 1 + i : i;
+    }
+    default:
+        return -1;
+    }
+}
+
 void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
     int stage = m.stage;
     DeviceState& s = states[size_t(stage)];
@@ -441,9 +675,11 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         release(stage, m.note.id, hold);
         return; // the held notes themselves never sound: the steps do
     case Kind::On: {
+        // A note ending right as this one starts has let go: chords back to back come in as the new one's starts
+        // before the old one's ends.
         bool anyDown = false;
         for (int i = 0; i < s.heldCount; i++)
-            anyDown |= s.held[size_t(i)].down;
+            anyDown |= s.held[size_t(i)].down && s.held[size_t(i)].note.end > m.time + 1e-6;
         if (hold && !anyDown)
             s.heldCount = 0; // new notes after letting go replace the latched ones
         if (s.heldCount == kMaxHeld) {
@@ -460,6 +696,7 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
             // Steps fall on the song's grid: the first one on the next line (at once when the note is on one).
             s.running = true;
             s.steps = 0;
+            s.patternStart = 0;
             double song = m.time + c.songOffset;
             double line = std::ceil(song / rate - 1e-6) * rate - c.songOffset;
             post(stage, Kind::Tick, ChainNote(), std::max(line, m.time), out);
@@ -490,6 +727,14 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
         std::sort(order.begin(), order.begin() + s.heldCount,
                   [](const Held* a, const Held* b) { return a->order < b->order; });
     int count = s.heldCount * octaves;
+    // A new chord (most of what is held arrived since the last step) starts the pattern from its beginning; one
+    // voice moving inside a chord doesn't. As with the Arpeggiate command (DECISIONS §45).
+    int fresh = 0;
+    for (int i = 0; i < s.heldCount; i++)
+        fresh += s.held[size_t(i)].order >= s.stepArrivals;
+    if (s.steps > s.patternStart && fresh * 2 > s.heldCount)
+        s.patternStart = s.steps;
+    s.stepArrivals = s.arrivals;
     auto at = [&](int index) {
         const Held* h = order[size_t(index % s.heldCount)];
         return std::make_pair(h, int(h->note.pitch) + 12 * (index / s.heldCount));
@@ -499,22 +744,36 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
     double swing = (s.steps % 2 == 1) ? double(shown(d, knob::kSwing)) / 100 * rate / 3 : 0;
     double gate = std::max(1.0, rate * double(shown(d, knob::kGate)) / 100);
     ArpVelocity velMode = ArpVelocity(choiceOf(d, knob::kArpVelocity));
-    auto play = [&](const Held* h, int pitch) {
+    // A Pattern line step brings its own length and velocity scale; the other patterns use the Gate and Velocity
+    // settings.
+    auto play = [&](const Held* h, int pitch, double length = -1, float scale = -1) {
         if (pitch < 0 || pitch > 127)
             return;
         ChainNote note = h->note;
         note.id = newId();
         note.pitch = int8_t(pitch);
+        note.tied = false; // a step of its own, even when the held note was tied
         note.start = t + swing;
-        note.end = note.start + gate;
+        note.end = note.start + (length > 0 ? length : gate);
         note.origin = t + c.songOffset;
-        if (velMode == ArpVelocity::Fixed)
+        if (scale >= 0)
+            note.velocity = std::clamp(note.velocity * scale, 0.f, 1.f);
+        else if (velMode == ArpVelocity::Fixed)
             note.velocity = 0.8f;
         else if (velMode == ArpVelocity::Accent)
             note.velocity = std::clamp(note.velocity * (s.steps % 4 == 0 ? 1.25f : 0.85f), 0.f, 1.f);
         post(stage + 1, Kind::On, note, note.start, out);
     };
-    int step = int(s.steps % uint64_t(std::max(1, count)));
+    uint64_t into = s.steps - s.patternStart; // steps since the pattern started
+    int step = int(into % uint64_t(std::max(1, count)));
+    // The patterns that choose for themselves choose the same way for the same held notes, so a loop sounds the
+    // same every pass: what plays is what was heard last time.
+    auto heldSeed = [&] {
+        uint64_t seed = variationSeed(d.variation, c.roll, d.id) ^ (d.id * 0x9E3779B97F4A7C15ull) ^ uint64_t(octaves);
+        for (int i = 0; i < count; i++)
+            seed = seed * 1099511628211ull ^ uint64_t(at(i).second + 1);
+        return seed;
+    };
     switch (pattern) {
     case ArpPattern::Chord:
         for (int i = 0; i < count; i++) {
@@ -522,37 +781,110 @@ void Chain::arpeggiator(const Message& m, const DeviceSlot& d, const Context& c,
             play(h, p);
         }
         break;
-    case ArpPattern::Down: {
-        auto [h, p] = at(count - 1 - step);
+    case ArpPattern::Walk: {
+        // From the lowest note: half the time on to the next, a quarter the same again, a quarter back one, wrapping
+        // round at the ends.
+        if (into == 0) {
+            s.walk = 0;
+        } else {
+            double r = chance(heldSeed(), into);
+            s.walk += r < 0.5 ? 1 : r < 0.75 ? 0 : -1;
+        }
+        s.walk = ((s.walk % count) + count) % count;
+        auto [h, p] = at(s.walk);
         play(h, p);
         break;
     }
-    case ArpPattern::UpDown:
-    case ArpPattern::DownUp: {
-        // Up and back without repeating the ends.
-        int period = count > 1 ? 2 * count - 2 : 1;
-        int j = int(s.steps % uint64_t(period));
-        int index = j < count ? j : period - j;
-        if (pattern == ArpPattern::DownUp)
-            index = count - 1 - index;
-        auto [h, p] = at(index);
+    case ArpPattern::Pattern: {
+        if (d.lineLength > 0) {
+            // Its own line. Each step lights the held notes it plays (from the lowest; none is a rest). Each value
+            // row has its own length, so the rows drift against each other: velocity scales the held note's (0% is
+            // a rest), gate sets how long the note is, octaves and the Move row (semitones, steps of the key or
+            // notes of the chord) move it. On New a fresh notes row plays instead.
+            auto valueAt = [&](ArpLane lane) {
+                int length = std::clamp(int(std::lround(shown(d, arpLaneSteps(lane)))), 1, kMaxLineSteps);
+                int k = arpLaneFirst(lane) + int(into % uint64_t(length));
+                const devices::ParamInfo& step = *devices::paramInfo(d.type, k);
+                return std::clamp(shown(d, k) + shown(d, arpLaneShift(lane)), step.min, step.max);
+            };
+            int k = int(into % uint64_t(d.lineLength));
+            uint8_t notes = d.variation >= 1 ? d.line[k] : generatedLineStep(variationSeed(d.variation, c.roll, d.id), k);
+            float scale = valueAt(ArpLane::Velocity) / 100;
+            if (notes == 0 || scale <= 0)
+                break; // a rest, or a step at 0% velocity
+            double length = std::max(1.0, rate * double(valueAt(ArpLane::Gate)) / 100);
+            int octave = int(std::lround(valueAt(ArpLane::Octave)));
+            int move = int(std::lround(valueAt(ArpLane::Move)));
+            auto unit = ArpMove(std::clamp(int(std::lround(shown(d, knob::kArpMoveUnit))), 0, 2));
+            int held = s.heldCount;
+            uint32_t played = 0; // the held notes this step already played: a note twice plays once
+            for (int row = 1; row <= kMaxLineNotes; row++) {
+                if (!stepHas(notes, row))
+                    continue;
+                // Rows past the notes held, and Chord moves past either end, wrap around in the same octave.
+                int index = row - 1 + (unit == ArpMove::Chord ? move : 0);
+                index = ((index % held) + held) % held;
+                if (played & (1u << index))
+                    continue;
+                played |= 1u << index;
+                const Held* h = order[size_t(index)];
+                int p = h->note.pitch;
+                if (unit == ArpMove::Semitones)
+                    p += move;
+                else if (unit == ArpMove::Key && move != 0)
+                    p = c.keyOf(h->note.key).stepBy(std::clamp(p, 0, 127), move);
+                play(h, p + 12 * octave, length, scale);
+            }
+            break;
+        }
+        // Made from the held notes: any note on each of its 16 steps, the lowest one twice as likely as each other.
+        int pick = int(chance(heldSeed(), into % kPatternSteps) * double(count + 1));
+        auto [h, p] = at(pick >= count ? 0 : pick);
+        play(h, p);
+        break;
+    }
+    case ArpPattern::RandomOnce: {
+        auto [h, p] = at(shuffledIndex(step, count, heldSeed()));
+        play(h, p);
+        break;
+    }
+    case ArpPattern::Shuffle: {
+        // Each note once per round, mixed again for every round.
+        uint64_t round = into / uint64_t(std::max(1, count));
+        auto [h, p] = at(shuffledIndex(step, count, heldSeed() + mixed(round + 1)));
         play(h, p);
         break;
     }
     case ArpPattern::Random: {
-        double r = operators::random(c.seed, d.id, int64_t(s.steps), uint64_t(std::llround(t)), 0xA4B9u);
+        double r = operators::random(variationSeed(d.variation, c.roll, d.id), d.id, int64_t(s.steps),
+                                     uint64_t(std::llround(t)), 0xA4B9u);
         auto [h, p] = at(std::min(count - 1, int(r * count)));
         play(h, p);
         break;
     }
-    case ArpPattern::Up:
-    case ArpPattern::AsPlayed:
+    case ArpPattern::RandomOther: {
+        // Any note but the one just played.
+        double r = operators::random(variationSeed(d.variation, c.roll, d.id), d.id, int64_t(s.steps),
+                                     uint64_t(std::llround(t)), 0x5C1Du);
+        int pick = std::min(count - 1, int(r * count));
+        if (count > 1 && into > 0 && s.lastPick >= 0 && s.lastPick < count) {
+            pick = std::min(count - 2, int(r * (count - 1)));
+            if (pick >= s.lastPick)
+                pick++;
+        }
+        s.lastPick = pick;
+        auto [h, p] = at(pick);
+        play(h, p);
+        break;
+    }
     default: {
-        auto [h, p] = at(step);
+        int index = arpOrderIndex(pattern, count, into);
+        auto [h, p] = at(index >= 0 ? index : step);
         play(h, p);
         break;
     }
     }
+    s.played = int64_t(into);
     s.steps++;
     post(stage, Kind::Tick, ChainNote(), t + rate, out);
 }
@@ -592,6 +924,49 @@ void Chain::echo(const Message& m, const DeviceSlot& d, const Context& c, Output
         post(stage, Kind::Echo, m.note, m.time + time, out, uint8_t(k + 1));
 }
 
+// ---- Note Repeat ----------------------------------------------------------------------------------------------
+
+void Chain::noteRepeat(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
+    int stage = m.stage;
+    DeviceState& s = states[size_t(stage)];
+    double rate = std::max(1.0, double(devices::rateTicks(choiceOf(d, knob::kRepeatRate), c.timeSig)));
+    double hit = std::max(1.0, rate * double(shown(d, knob::kRepeatGate)) / 100);
+    auto heldAt = [&](uint32_t id) {
+        for (int i = 0; i < s.heldCount; i++)
+            if (s.held[size_t(i)].note.id == id)
+                return i;
+        return -1;
+    };
+    if (m.kind == Kind::End || m.kind == Kind::Expire) {
+        // Only a note still being played has an end to wait for; the repeats it made are short notes of their own.
+        if (int i = heldAt(m.note.id); i >= 0) {
+            std::move(s.held.begin() + i + 1, s.held.begin() + s.heldCount, s.held.begin() + i);
+            s.heldCount--;
+        }
+        return;
+    }
+    if (m.kind != Kind::On && m.kind != Kind::Echo) {
+        forward(m, out);
+        return;
+    }
+    bool first = m.kind == Kind::On;
+    double at = first ? m.note.start : m.time;
+    if (first && m.note.open() && s.heldCount < kMaxHeld)
+        s.held[size_t(s.heldCount++)] = {m.note, s.arrivals++, true};
+    bool going = m.note.open() ? heldAt(m.note.id) >= 0 : at < m.note.end - 1e-6;
+    if (!going)
+        return;
+    int k = first ? 0 : m.step;
+    ChainNote note = m.note;
+    note.id = newId();
+    note.velocity = m.note.velocity * std::pow(1 - shown(d, knob::kRepeatDecay) / 100, float(k));
+    note.start = at;
+    note.end = m.note.open() ? at + hit : std::min(m.note.end, at + hit);
+    note.origin = m.note.origin + double(k) * rate;
+    post(stage + 1, Kind::On, note, note.start, out);
+    post(stage, Kind::Echo, m.note, at + rate, out, uint8_t(std::min(k + 1, 255)));
+}
+
 // ---- Random ---------------------------------------------------------------------------------------------------
 
 void Chain::random(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
@@ -600,7 +975,9 @@ void Chain::random(const Message& m, const DeviceSlot& d, const Context& c, Outp
         return;
     }
     ChainNote n = m.note;
-    auto roll = [&](uint32_t salt) { return operators::random(c.seed, d.id, n.pass, noteKey(n), salt); };
+    auto roll = [&](uint32_t salt) {
+        return operators::random(variationSeed(d.variation, c.roll, d.id), d.id, n.pass, noteKey(n), salt);
+    };
     if (roll(0xD509u) * 100 < shown(d, knob::kDrop))
         return; // dropped this pass; its end, if one follows, finds no note downstream
     int steps = int(shown(d, knob::kRandomPitch));
@@ -620,7 +997,9 @@ void Chain::humanize(const Message& m, const DeviceSlot& d, const Context& c, Ou
         return;
     }
     ChainNote n = m.note;
-    auto roll = [&](uint32_t salt) { return operators::random(c.seed, d.id, n.pass, noteKey(n), salt); };
+    auto roll = [&](uint32_t salt) {
+        return operators::random(variationSeed(d.variation, c.roll, d.id), d.id, n.pass, noteKey(n), salt);
+    };
     float spread = shown(d, knob::kHumanizeVelocity) / 100;
     if (spread > 0)
         n.velocity = std::clamp(n.velocity + float(roll(0x7E10u) * 2 - 1) * spread, 0.f, 1.f);
@@ -660,6 +1039,34 @@ void Chain::groove(const Message& m, const DeviceSlot& d, const Context& /*c*/, 
     post(m.stage + 1, Kind::On, n, n.start, out);
 }
 
+// ---- Motion -----------------------------------------------------------------------------------------------------
+
+void Chain::motion(const Message& m, const DeviceSlot& d, const Context& c, Output& out) {
+    if (m.kind != Kind::On || m.note.motion != d.id) {
+        forward(m, out);
+        return;
+    }
+    ChainNote n = m.note;
+    int64_t pass = n.lane > 0 ? n.pass / 16 : n.pass;
+    auto value = [&](int k) {
+        float v = c.passKnob ? c.passKnob(c.passUser, d, k, pass) : d.knobs[k];
+        return devices::display(devices::deviceInfo(DeviceType::Motion).params[size_t(k)], v);
+    };
+    int steps = int(std::lround(value(knob::kMotionPitch)));
+    if (steps != 0) {
+        int pitch = value(knob::kMotionInKey) > 0.5f ? c.keyOf(n.key).stepBy(n.pitch, steps) : n.pitch + steps;
+        n.pitch = int8_t(std::clamp(pitch, 0, 127));
+    }
+    n.velocity = std::clamp(n.velocity + value(knob::kMotionVelocity) / 100, 0.f, 1.f);
+    // Held keys keep their own start and end: their end is the release.
+    if (!n.open()) {
+        double length = std::max(1.0, (n.end - n.start) * (1 + double(value(knob::kMotionLength)) / 100));
+        n.start += double(value(knob::kMotionTime)) * double(kPpq / 4);
+        n.end = n.start + length;
+    }
+    post(m.stage + 1, Kind::On, n, n.start, out);
+}
+
 // ---- Note Filter ----------------------------------------------------------------------------------------------
 
 void Chain::noteFilter(const Message& m, const DeviceSlot& d, const Context& /*c*/, Output& out) {
@@ -676,8 +1083,9 @@ void Chain::noteFilter(const Message& m, const DeviceSlot& d, const Context& /*c
         std::swap(vlo, vhi);
     if (m.note.pitch < lo || m.note.pitch > hi || v < vlo - 0.5f || v > vhi + 0.5f)
         return;
-    int channel = choiceOf(d, knob::kChannel); // 0 = any
-    if (channel > 0 && m.note.channel != channel)
+    // A set of channels, bit n for channel n + 1; none picked passes every channel.
+    int channels = int(shown(d, knob::kChannel));
+    if (channels != 0 && (m.note.channel < 1 || m.note.channel > 16 || !(channels & (1 << (m.note.channel - 1)))))
         return;
     DeviceState& s = states[size_t(m.stage)];
     int every = std::max(1, int(shown(d, knob::kEvery)));

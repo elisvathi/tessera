@@ -17,6 +17,7 @@ double positiveMod(double x, double m) {
 
 TakeNote Recorder::finish(const Open& o, int pitch, double playTick, float release) {
     TakeNote n{o.start, openLength(o, playTick), int8_t(pitch), o.velocity, release, o.channel};
+    n.tied = o.tied;
     double length = double(n.length);
     n.pitchExpr = noteCurve(NoteCurve::Pitch, o.pitch, o.playStart, length);
     n.timbreExpr = noteCurve(NoteCurve::Timbre, o.timbre, o.playStart, length);
@@ -122,6 +123,7 @@ Recorder::Session* Recorder::start(const RecordEvent& e) {
         return nullptr;
     Session s;
     s.track = t->id;
+    s.mono = t->type == TrackType::Instrument && t->polyphony == 1;
     const ClipSlot* playing = e.slot >= 0 && e.slot < int(t->slots.size()) ? &t->slots[size_t(e.slot)] : nullptr;
     const Clip* clip = playing && playing->clip ? song.findClip(*playing->clip) : nullptr;
     if (clip) {
@@ -222,6 +224,7 @@ void Recorder::commit(Session& s, double endPlay, double endSong, bool playing) 
     take.lanes = takeLanes(s);
     filterControls(s.track, take.lanes, s.reported);
     s.done.clear();
+    s.lastOff = -1; // the note it ended is committed: a note-on now has nothing left to continue
     s.controls.clear();
     s.songControls.clear();
     for (Session::LaneRecording& r : s.lanes)
@@ -395,7 +398,28 @@ void Recorder::handle(const RecordEvent& e) {
             return;
     }
     if (e.on) {
-        s->open[e.pitch] = Open{e.playTick, targetTick(*s, e), e.velocity, e.channel};
+        // One voice: a key pressed while another is held takes over its note, as a mono synth plays legato.
+        bool tied = s->mono && e.playTick == s->lastOff && !s->done.empty();
+        size_t continued = tied ? s->done.size() - 1 : s->done.size();
+        if (s->mono)
+            for (auto it = s->open.begin(); it != s->open.end();) {
+                if (it->first == e.pitch) {
+                    ++it;
+                    continue;
+                }
+                s->done.push_back(finish(it->second, it->first, e.playTick, 0.5f));
+                it = s->open.erase(it);
+                tied = true;
+            }
+        Open o{e.playTick, targetTick(*s, e), e.velocity, e.channel};
+        o.tied = tied;
+        // A note's start and the end of the note it continues round to ticks apart, and can land a tick apart: a
+        // tie needs them to meet, or it finds nothing to continue and plays a new gate (issue #12).
+        if (tied)
+            for (size_t i = continued; i < s->done.size(); i++)
+                if (s->done[i].start < o.start)
+                    s->done[i].length = o.start - s->done[i].start;
+        s->open[e.pitch] = o;
         return;
     }
     auto it = s->open.find(e.pitch);
@@ -403,6 +427,7 @@ void Recorder::handle(const RecordEvent& e) {
         return;
     s->done.push_back(finish(it->second, e.pitch, e.playTick, e.velocity));
     s->open.erase(it);
+    s->lastOff = e.playTick;
 }
 
 void Recorder::handleValue(const RecordEvent& e) {

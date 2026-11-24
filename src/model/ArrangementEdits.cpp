@@ -99,11 +99,17 @@ std::vector<TrackId> trackOrder(const Song& song) {
 
 } // namespace
 
-Stacking stackOf(const Layout& layout, TrackId track) {
+Stacking stackOf(const Layout& layout, TrackId track, bool flat) {
     std::vector<const ArrangerClip*> mine;
     for (const Placed& p : layout)
         if (p.track == track)
             mine.push_back(&p.clip);
+    if (flat) {
+        Stacking out;
+        for (const ArrangerClip* a : mine)
+            out.row[a->id] = 0;
+        return out;
+    }
     std::sort(mine.begin(), mine.end(), [](const ArrangerClip* a, const ArrangerClip* b) {
         if (a->layer != b->layer)
             return a->layer < b->layer;
@@ -289,7 +295,9 @@ Layout split(const Layout& layout, const IdSet& ids, Tick at, const ClipPool& cl
         }
         Placed left = p, right = p;
         left.clip.length = at - a.position;
+        left.clip.fadeOut = Fade{};
         right.clip.id = newId();
+        right.clip.fadeIn = Fade{};
         trimStartTo(right.clip, at, clips);
         if (rightParts)
             rightParts->insert(right.clip.id);
@@ -308,8 +316,108 @@ Layout transpose(const Layout& layout, const IdSet& ids, int semitones) {
                    [&](ArrangerClip& a) { a.transpose = int8_t(std::clamp(a.transpose + semitones, -48, 48)); });
 }
 
-Layout setVelocityScale(const Layout& layout, const IdSet& ids, float scale) {
-    return forEach(layout, ids, [&](ArrangerClip& a) { a.velocityScale = std::clamp(scale, 0.f, 2.f); });
+
+/// Whether instance `a` plays an audio clip.
+static bool isAudioInstance(const ArrangerClip& a, const ClipPool& clips) {
+    const Clip* c = clipOf(clips, a.clip);
+    return c && c->audio;
+}
+
+Layout settleAudio(const Layout& layout, const IdSet& changed, const ClipPool& clips, const IdSource& newId) {
+    std::vector<TrackId> tracks;
+    for (const Placed& p : layout)
+        if (changed.count(p.clip.id) && isAudioInstance(p.clip, clips) &&
+            std::find(tracks.begin(), tracks.end(), p.track) == tracks.end())
+            tracks.push_back(p.track);
+    if (tracks.empty())
+        return layout;
+    Layout out;
+    for (const Placed& p : layout)
+        if (std::find(tracks.begin(), tracks.end(), p.track) == tracks.end())
+            out.push_back(p);
+    for (TrackId track : tracks) {
+        std::vector<ArrangerClip> mine, moved;
+        for (const Placed& p : layout)
+            if (p.track == track)
+                (changed.count(p.clip.id) ? moved : mine).push_back(p.clip);
+        // A clip the changed ones cover goes; one a changed clip sits inside is split around it, its parts reaching
+        // a little into the changed clip so each seam crossfades.
+        for (const ArrangerClip& c : moved) {
+            Tick cs = c.position, ce = instanceEnd(c);
+            std::vector<ArrangerClip> next;
+            for (ArrangerClip& p : mine) {
+                Tick ps = p.position, pe = instanceEnd(p);
+                if (ce <= ps || cs >= pe) {
+                    next.push_back(p);
+                    continue;
+                }
+                if (cs <= ps && pe <= ce)
+                    continue;
+                Tick seam = std::min<Tick>(kSeamCrossfade, (ce - cs) / 4);
+                if (ps < cs && pe > ce) {
+                    ArrangerClip left = p, right = p;
+                    left.length = cs + seam - ps;
+                    left.fadeOut = Fade{};
+                    right.id = newId();
+                    right.fadeIn = Fade{};
+                    trimStartTo(right, ce - seam, clips);
+                    next.push_back(left);
+                    next.push_back(right);
+                } else if (ps == cs) {
+                    // Starting together the whole changed clip would be one long crossfade: the other starts later.
+                    trimStartTo(p, ce - seam, clips);
+                    p.fadeIn = Fade{};
+                    next.push_back(p);
+                } else if (pe == ce) {
+                    p.length = cs + seam - ps;
+                    p.fadeOut = Fade{};
+                    next.push_back(p);
+                } else {
+                    next.push_back(p); // a plain overlap: the crossfade
+                }
+            }
+            mine = std::move(next);
+        }
+        for (const ArrangerClip& c : moved)
+            mine.push_back(c);
+        std::sort(mine.begin(), mine.end(), [](const ArrangerClip& x, const ArrangerClip& y) {
+            return x.position != y.position ? x.position < y.position : x.id.value < y.id.value;
+        });
+        // At most two clips sound at once: where a third begins, the earliest of the three stops. A changed clip
+        // keeps its length; then the third starts where the earliest ends instead.
+        for (int pass = 0; pass < 8; pass++) {
+            bool fixed = true;
+            for (size_t i = 0; i + 2 < mine.size(); i++) {
+                ArrangerClip& first = mine[i];
+                ArrangerClip& third = mine[i + 2];
+                if (instanceEnd(first) <= third.position)
+                    continue;
+                fixed = false;
+                if (!changed.count(first.id)) {
+                    first.length = third.position - first.position;
+                    first.fadeOut = Fade{};
+                } else if (!changed.count(third.id)) {
+                    trimStartTo(third, instanceEnd(first), clips);
+                    third.fadeIn = Fade{};
+                } else {
+                    fixed = true; // several changed clips overlap each other: they are what the user placed
+                }
+            }
+            mine.erase(std::remove_if(mine.begin(), mine.end(), [](const ArrangerClip& a) { return a.length <= 0; }),
+                       mine.end());
+            std::sort(mine.begin(), mine.end(), [](const ArrangerClip& x, const ArrangerClip& y) {
+                return x.position != y.position ? x.position < y.position : x.id.value < y.id.value;
+            });
+            if (fixed)
+                break;
+        }
+        for (const ArrangerClip& a : mine) {
+            ArrangerClip q = a;
+            q.layer = 0;
+            out.push_back({track, q});
+        }
+    }
+    return out;
 }
 
 Layout resolveOverlaps(const Layout& layout, const IdSet& changed, const ClipPool& clips, const IdSource& newId) {
@@ -319,10 +427,11 @@ Layout resolveOverlaps(const Layout& layout, const IdSet& changed, const ClipPoo
             out.push_back(p);
             continue;
         }
-        // Cut away every part of this instance that a changed instance on the same track covers.
+        // Cut away every part of this instance that a changed instance on the same track covers. Audio clips follow
+        // their own rule below: their overlaps are crossfades.
         std::vector<ArrangerClip> pieces{p.clip};
         for (const Placed& c : layout) {
-            if (!changed.count(c.clip.id) || c.track != p.track)
+            if (!changed.count(c.clip.id) || c.track != p.track || isAudioInstance(c.clip, clips))
                 continue;
             Tick cs = c.clip.position, ce = instanceEnd(c.clip);
             std::vector<ArrangerClip> next;
@@ -353,7 +462,7 @@ Layout resolveOverlaps(const Layout& layout, const IdSet& changed, const ClipPoo
             out.push_back(q);
         }
     }
-    return out;
+    return settleAudio(out, changed, clips, newId);
 }
 
 // ---- Commands -----------------------------------------------------------------------------------------------
@@ -424,6 +533,64 @@ CommandPtr replaceArrangement(const Song& song, const std::string& name, const L
     return compound;
 }
 
+IdSet audioPieces(const Layout& before, const Layout& cut, const ClipPool& clips) {
+    IdSet old, pieces;
+    for (const Placed& p : before)
+        old.insert(p.clip.id);
+    for (const Placed& p : cut) {
+        const Clip* clip = old.count(p.clip.id) ? nullptr : clipOf(clips, p.clip.clip);
+        if (!clip || !clip->audio)
+            continue;
+        std::optional<double> plays = clipTimeAt(*clip, p.clip, double(p.clip.position));
+        for (const Placed& b : before) {
+            if (b.track != p.track || b.clip.clip != p.clip.clip || p.clip.position < b.clip.position ||
+                p.clip.position >= instanceEnd(b.clip))
+                continue;
+            std::optional<double> wasPlaying = clipTimeAt(*clip, b.clip, double(p.clip.position));
+            if (plays && wasPlaying && std::fabs(*plays - *wasPlaying) < 1) {
+                pieces.insert(p.clip.id);
+                pieces.insert(b.clip.id);
+            }
+        }
+    }
+    return pieces;
+}
+
+std::vector<Clip> separatePieces(Layout& layout, const IdSet& pieces, const Song& song, const NextId& nextId) {
+    std::vector<Clip> made;
+    std::map<ClipId, int> uses;
+    for (const Placed& p : layout)
+        uses[p.clip.clip]++;
+    for (auto& [clip, count] : uses) {
+        for (const Track& t : song.tracks)
+            for (const ClipSlot& s : t.slots)
+                count += s.clip == clip;
+    }
+    // From the end, so a plain split leaves the left part on the clip it had.
+    for (auto p = layout.rbegin(); p != layout.rend(); ++p) {
+        const Clip* clip = pieces.count(p->clip.id) ? song.findClip(p->clip.clip) : nullptr;
+        if (!clip || !clip->audio || uses[clip->id] <= 1)
+            continue;
+        uses[clip->id]--;
+        made.push_back(copyClip(*clip, nextId));
+        p->clip.clip = made.back().id;
+    }
+    return made;
+}
+
+CommandPtr replaceArrangement(const Song& song, const std::string& name, const Layout& before, Layout after,
+                              const NextId& nextId) {
+    std::vector<Clip> made = separatePieces(after, audioPieces(before, after, song.clips), song, nextId);
+    CommandPtr edit = replaceArrangement(song, name, before, after);
+    if (made.empty())
+        return edit;
+    auto compound = std::make_unique<CompoundCommand>(name);
+    for (Clip& c : made)
+        compound->add(std::make_unique<AddClip>(std::move(c)));
+    compound->add(std::move(edit));
+    return compound;
+}
+
 CommandPtr placeClip(const Song& song, TrackId track, ClipId clip, Tick position, const IdSource& newId, bool stack) {
     const Clip* c = song.findClip(clip);
     if (!c || !song.findTrack(track))
@@ -440,9 +607,9 @@ CommandPtr placeClip(const Song& song, TrackId track, ClipId clip, Tick position
     Layout before = layoutOf(song);
     Layout after = before;
     after.push_back(p);
-    if (!stack)
-        after = resolveOverlaps(after, {p.clip.id}, song.clips, newId);
-    return replaceArrangement(song, "Place clip", before, after);
+    after = stack ? settleAudio(after, {p.clip.id}, song.clips, newId)
+                  : resolveOverlaps(after, {p.clip.id}, song.clips, newId);
+    return replaceArrangement(song, "Place clip", before, after, [&] { return newId().value; });
 }
 
 CommandPtr drawClip(const Song& song, TrackId track, Tick position, Tick length, ClipId clip, ArrangementId instance,
@@ -471,11 +638,21 @@ CommandPtr placeNewClip(const Song& song, TrackId track, Tick position, Clip cli
     Layout before = layoutOf(song);
     Layout after = before;
     after.push_back(p);
-    if (!stack)
+    if (clip.audio) {
+        // The new clip isn't in the pool yet, and the audio rule asks the pool what kind it is.
+        ClipPool pool;
+        for (const Placed& q : after)
+            if (q.track == track)
+                if (const Clip* c = song.findClip(q.clip.clip))
+                    pool.emplace(c->id, *c);
+        pool[clip.id] = clip;
+        after = settleAudio(after, {instance}, pool, newId);
+    } else if (!stack) {
         after = resolveOverlaps(after, {instance}, song.clips, newId);
+    }
     auto compound = std::make_unique<CompoundCommand>(name);
     compound->add(std::make_unique<AddClip>(std::move(clip)));
-    compound->add(replaceArrangement(song, name, before, after));
+    compound->add(replaceArrangement(song, name, before, after, [&] { return newId().value; }));
     return compound;
 }
 
@@ -492,6 +669,35 @@ CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId) {
     const Clip* first = song.findClip(chosen.front().clip.clip);
     if (!first || end <= start)
         return nullptr;
+    if (first->audio) {
+        // Audio glues without rendering only where the parts are pieces of one recording with the same settings, end
+        // to end, each playing on from where the last stopped (a split undone by hand). Split pieces are separate
+        // clips, so they are compared by what they play. Other audio waits for rendering (Phase 3).
+        std::sort(chosen.begin(), chosen.end(),
+                  [](const Placed& a, const Placed& b) { return a.clip.position < b.clip.position; });
+        for (size_t i = 0; i < chosen.size(); i++) {
+            const ArrangerClip& a = chosen[i].clip;
+            const Clip* part = song.findClip(a.clip);
+            if (!part || !(part->audio == first->audio) || part->length != first->length || a.muted)
+                return nullptr;
+            if (i > 0) {
+                const ArrangerClip& prev = chosen[i - 1].clip;
+                if (a.position != instanceEnd(prev) || a.offset != prev.offset + prev.length)
+                    return nullptr;
+            }
+        }
+        if (chosen.size() < 2)
+            return nullptr;
+        Placed whole = chosen.front();
+        whole.clip.length = end - start;
+        whole.clip.fadeOut = chosen.back().clip.fadeOut;
+        Layout after;
+        for (const Placed& p : before)
+            if (!ids.count(p.clip.id))
+                after.push_back(p);
+        after.push_back(whole);
+        return replaceArrangement(song, "Glue " + countClips(chosen.size()), before, after);
+    }
 
     Clip glued;
     glued.id = ClipId(nextId());
@@ -532,6 +738,45 @@ CommandPtr glue(const Song& song, const IdSet& ids, const NextId& nextId) {
     compound->add(std::make_unique<AddClip>(std::move(glued)));
     compound->add(replaceArrangement(song, "Glue clips", before, after));
     return compound;
+}
+
+namespace {
+
+/// A clip with its IDs, name and colour taken out, so two clips compare equal when they play the same.
+Clip contentOf(Clip clip) {
+    clip.id = ClipId();
+    clip.name.clear();
+    clip.color = {};
+    clip.ownColor = {};
+    uint64_t index = 0;
+    for (Note& n : clip.notes)
+        n.id = NoteId(++index);
+    for (AutomationEnvelope& a : clip.automation)
+        a.id = AutomationId(++index);
+    return clip;
+}
+
+} // namespace
+
+CommandPtr linkIdenticalClips(const Song& song, TrackId track) {
+    Layout before = layoutOf(song);
+    Layout after = before;
+    std::vector<std::pair<ClipId, Clip>> kept;
+    bool changed = false;
+    for (Placed& p : after) {
+        const Clip* c = p.track == track ? song.findClip(p.clip.clip) : nullptr;
+        if (!c)
+            continue;
+        Clip content = contentOf(*c);
+        auto same = std::find_if(kept.begin(), kept.end(), [&](const auto& k) { return k.second == content; });
+        if (same == kept.end()) {
+            kept.emplace_back(c->id, std::move(content));
+        } else if (same->first != c->id) {
+            p.clip.clip = same->first;
+            changed = true;
+        }
+    }
+    return changed ? replaceArrangement(song, "Link identical clips", before, after) : nullptr;
 }
 
 CommandPtr makeUnique(const Song& song, const IdSet& ids, const NextId& nextId) {

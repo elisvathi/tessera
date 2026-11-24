@@ -29,15 +29,20 @@ Don't read these up front. Open the part that matches the task, and search with 
 - **Never leave a gate high** after stop, loop wrap, mute or a snapshot swap.
 - **An output module never rebinds silently** to another track or Tessera when its target disappears.
 - **`src/model/` and `src/engine/` build without Rack**, so they can be unit tested.
+- **Never cache a drawing in a plain `FramebufferWidget`.** Use `CachedLayer` or `GuardedFramebuffer`
+  (`src/ui/widgets/`). Rack makes a new texture each time the size in pixels changes (a pane drag, a zoom step), up
+  to 140 MB each on a Retina screen; a pane drag that did this froze a Mac (DECISIONS §168). The guard draws
+  directly while the size or zoom is changing and when the texture would be huge. Also never make NanoVG images or
+  framebuffers per frame.
 - **Colours and sizes live in `src/ui/Theme.hpp`.** Never hard-code them in a view.
 - **Never name other DAWs** (or their makers) in code, docs, the manual or the UI. Describe the behaviour instead.
 
 ## Build and test
 
 ```sh
-RACK_DIR=~/Rack-SDK make -j16           # build the plugin
-RACK_DIR=~/Rack-SDK make -j16 test      # unit tests (doctest, no Rack needed)
-RACK_DIR=~/Rack-SDK make -j16 install   # install into the local Rack; restart Rack to load it
+RACK_DIR=~/Rack-SDK make           # build the plugin (uses every core by itself)
+RACK_DIR=~/Rack-SDK make test      # unit tests (doctest, no Rack needed)
+RACK_DIR=~/Rack-SDK make install   # install into the local Rack; restart Rack to load it
 ```
 
 ## Conventions

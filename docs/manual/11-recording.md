@@ -8,20 +8,21 @@ Roll records them into clips.
 | Source | How to set it up |
 |---|---|
 | **MIDI** | Right-click the Roll panel, **MIDI input (for recording)**, and pick the driver, device and channel. The record button's ▾ menu has the same item. |
-| **CV** | Patch the **V/OCT**, **GATE** and (optionally) **VEL** inputs in the panel's lower box. They are polyphonic: each channel is one voice. A note starts when its gate rises above 1 V. If V/OCT moves to another note while the gate stays high (a mono keyboard played legato), that starts a new note too. Without a VEL cable, notes get 80%. |
+| **CV** | Patch the **V/OCT**, **GATE** and (optionally) **VEL** inputs in the panel's lower box. They are polyphonic: each channel is one voice. A note starts when its gate rises above 1 V. If V/OCT moves to another note while the gate stays high (a mono keyboard played legato), that starts a new note too (tied to the one before on a one-voice track). Without a VEL cable, notes get 80%. |
 | **Computer keyboard** | Press **Ctrl+K** in the editor. See [Keyboard play](#keyboard-play). |
 
 ## Arming a track
 
 A track records only when it is **armed**.
 
-- Click the **ring** in the track header, or choose **Armed for recording** in the track menu (also in the
-  inspector's **Recording** chip). The ring turns red.
+- Click the **ring** in the track header, or choose **Recording ▸ Armed for recording** in the track menu (also in
+  the inspector's **Recording** chip). The ring turns red.
 - Arming one track disarms the others. **Ctrl+click** arms more than one.
 
-In the track menu (or the inspector's **Recording** chip):
+In the track menu's **Recording ▸** (or the inspector's **Recording** chip):
 
-- **Record from**: **Any** (CV and MIDI), **REC CV inputs**, or **MIDI**.
+- **Record from**: **Any** (CV and MIDI), **REC CV inputs**, or **MIDI**. Audio tracks have their own choices: see
+  [Recording audio](17-audio.md#recording-audio).
 - **MIDI channel**: all channels, or one channel from 1 to 16. So two players on two MIDI channels can record to two
   tracks.
 - **Monitor while armed** (on by default): an armed track plays what comes in through its own outputs and devices, so
@@ -52,8 +53,10 @@ Click the **▾** next to the record button.
 | Setting | Choices |
 |---|---|
 | **Count-in** | **Off**, **1 bar** or **2 bars**. The record button blinks and the **CLICK** output clicks during the count-in. |
+| **Metronome** | **Off**, **Count-in only**, **While recording** or **Always** (whenever the song plays), and a **Level**. A soft click, higher on the first beat of the bar, on **MAIN** only: never on a Track Out's OUT, in bounces, exports or stems. The **CLICK** output keeps its trigger either way. |
+| **Recording offset** | How late audio comes back through the sound card; audio takes are moved earlier by it. **Measure it**, type it in ms, or **None**. See [Latency and the recording offset](17-audio.md#latency-and-the-recording-offset). |
 | **New launcher clips** | **As long as played** (rounded up to whole bars when you stop), or a fixed **1, 2, 4 or 8 bars**. A fixed-length clip is finished when full; then it loops and the next passes are added to it. |
-| **Recording over arranger clips** | **Merge** (the default: the take is added to the clip that is there), **Stack** (the take is a new clip on top, and the old one stays as it was) or **Replace** (the take replaces what was there). See below. |
+| **Recording over timeline clips** | **Merge** (the default: the take is added to the clip that is there), **Stack** (the take is a new clip on top, and the old one stays as it was) or **Replace** (the take replaces what was there). See below. For notes only: on an audio track, a pass over a clip always becomes one of its [takes](17-audio.md#takes-and-comping). |
 | **Input quantize** | **Off**, or a grid from 1/4 to 1/32, with a strength from 50% to 100%. |
 | **Snap incoming notes to the key** | Keeps played notes in the song's key, both what you hear and what is recorded. |
 | **MIDI controls with no lane** | **Add a lane in the clip** (the default) or **Leave out**. See [Expression and controls](#expression-and-controls). |
@@ -69,7 +72,7 @@ It depends on what the armed track is doing when your first note arrives:
   round, that pass is added (one undo step per pass). You hear the new notes on the next pass.
 - **Plays is set to Clips, and the track plays nothing:** a new clip is made in an empty slot (the selected scene's
   slot, or the next empty one). It starts at the bar where recording started, and keeps playing when you punch out.
-- **Plays is set to Timeline:** it depends on **Recording over arranger clips**. With the song loop on, each pass is
+- **Plays is set to Timeline:** it depends on **Recording over timeline clips**. With the song loop on, each pass is
   its own undo step.
   - **Merge** (the default): what you play goes into the clip that plays at that moment, as if you had drawn it in.
     So you can record the notes first, then go back and record only the mod wheel over them. Nothing new appears
@@ -79,13 +82,19 @@ It depends on what the armed track is doing when your first note arrives:
     the other ends, so it doesn't cover it. It ends at the end of the last note. A clip that is placed more than once shares
     its notes, so the new notes show in every copy.
   - **Stack**: a new clip is made from exactly punch-in to punch-out, stacked over what was there. You can
-    move, mute or delete each take on its own. Where stacked clips have a lane on the same AUTO channel, the clip on
+    move, mute or delete each take on its own. On an audio track, a pass that starts where an audio clip starts
+    becomes another take inside that clip instead ([Takes and comping](17-audio.md#takes-and-comping)). Where stacked clips have a lane on the same AUTO channel, the clip on
     top plays it.
   - **Replace**: a new clip is made from exactly punch-in to punch-out, and old clips are cut only there. Notes
     outside that stretch stay, even in the same bar. While you record, the track's timeline clips are silent, so
     you hear only what you play. With Merge and Stack you hear them as you play along.
 
 If you played nothing, nothing is made.
+
+On a track set to one voice (**Voices → 1**), a key you press while another is still held plays on legato, with no
+new attack, and records as a [tie](08-shaping-notes.md#ties-and-glides). Keys you play apart record as separate
+notes. The same goes for the REC V/OCT input: a pitch change while the gate stays high plays on with no new gate,
+and records as a tie. On other tracks, overlapping keys record as chords.
 
 While recording you see it happen: the target slot is red, a clip being added to has a red outline and its new notes
 show in red, and timeline takes grow as a red region.
@@ -153,7 +162,9 @@ Press **Ctrl+K** in the editor to play notes with your computer keyboard. A bann
 - **C** and **V** make notes softer and louder.
 - **Ctrl+K** again turns it off.
 
-While keyboard play is on, the letter keys don't switch tools. Armed tracks play and record the notes, like MIDI. If
+While keyboard play is on, no letter, digit or punctuation key does anything else in the editor (a stray Q won't
+quantize, R won't record): only **Space** (play/stop), **Enter** (stop), **Escape**, the arrows, Backspace and shortcuts with Ctrl or
+Alt still work. Armed tracks play and record the notes, like MIDI. If
 the selected track isn't armed, you still hear the notes on it.
 
 ## Step input

@@ -14,10 +14,11 @@ namespace knob {
 enum Lfo { kShape, kSync, kRate, kSyncedRate, kPhase, kBipolar, kRestart };
 enum Macro { kValue };
 enum Envelope { kAttack, kDecay, kSustain, kRelease };
-enum Steps { kStepCount, kStepRate, kStepSmooth, kStepBipolar };
+enum Steps { kStepCount, kStepRate, kStepSmooth, kStepBipolar, kStepPerPass };
 enum Random { kRandomRate, kRandomSmooth, kRandomBipolar };
-enum Ramp { kBars, kDirection, kThen, kCurve };
+enum Ramp { kBars, kDirection, kThen, kCurve, kRampPerPass };
 enum NoteFollow { kFollows, kSmooth };
+enum Curve { kCurveSync, kCurveRate, kCurveRestart, kCurvePerPass }; // kept for saved songs; none is read
 } // namespace knob
 
 enum class Shape : uint8_t { Sine, Triangle, SawUp, SawDown, Square, SampleHold, SmoothRandom };
@@ -36,6 +37,7 @@ struct State {
     bool noteNow = false; // a note started since the last block
     int64_t bar = INT64_MIN;
     float out = 0;
+    float applied = 0; // the output the knob table holds now: the one before this block's
     // Envelope: seconds since the note started, how long it is held (infinite while a key is down), the level when
     // it was let go.
     double envTime = 1e9, envHold = 0;
@@ -50,12 +52,54 @@ struct Clock {
     TimeSig timeSig;
     uint32_t seed = 1;
     double ticksPerSecond = 1920; // the tempo, for envelopes timing a note's length
+    /// The pass a note is on, for Steps and Ramp set to "Per pass" (one step per pass); -1 when there is no note,
+    /// and they step once a bar instead.
+    int64_t pass = -1;
+    /// Ticks since the modulator's track started its clip (launched, or reached on the timeline). A Curve counts
+    /// from there; NaN (a song modulator, or no clip playing) counts from the song's start instead.
+    double sinceClip = NAN;
 };
 
-/// The modulator's output: -1..1 when bipolar, else 0..1. `steps` are a Steps modulator's drawn values.
+/// Curves saved when they could count passes drew this many ticks per pass.
+constexpr Tick kPassTicks = 4 * kPpq;
+
+/// A Curve modulator's drawn shape: points over `length` ticks, of which the segment [from, to) plays.
+struct Drawn {
+    const AutoPoint* points = nullptr;
+    int count = 0;
+    Tick length = 0;
+    Tick from = 0, to = 0;
+};
+
+/// The shape of Curve modulator `m`, for evaluate().
+inline Drawn drawnOf(const Modulator& m) {
+    return {m.points.data(), int(m.points.size()), m.length, m.segmentStart, m.segmentEnd};
+}
+/// The route a Curve is drawn in: its first route to a setting, which turns that setting all the way and has no
+/// amount of its own (a point's height is the setting's value). -1 for other modulators, or a Curve without one.
+inline int drawnRoute(const Modulator& m) {
+    if (m.type != ModulatorType::Curve)
+        return -1;
+    for (size_t i = 0; i < m.routes.size(); i++)
+        if (m.routes[i].kind == Modulation::Kind::Param)
+            return int(i);
+    return -1;
+}
+/// Where in its drawing a Curve reads `elapsed` ticks after it started: from the segment's start, round and round.
+double drawnPlace(const Drawn& drawn, double elapsed);
+
+/// The modulator's output: -1..1 when bipolar, else 0..1. `steps` are a Steps modulator's drawn values, `drawn` a
+/// Curve modulator's shape.
 float evaluate(ModulatorType type, uint64_t id, const float* knobs, State& state, const Clock& clock,
-               const float* steps = nullptr, int stepCount = 0);
+               const float* steps = nullptr, int stepCount = 0, const Drawn* drawn = nullptr);
+/// A Curve's value (0..1) at `t` ticks into its cycle.
+float drawnAt(const Drawn& drawn, double t);
 bool bipolar(ModulatorType type, const float* knobs);
+/// Whether a Steps or Ramp modulator counts passes instead of time.
+bool perPass(ModulatorType type, const float* knobs);
+/// A "Per pass" modulator's value on pass `pass` of a note (pure: no state, no time), for drifting notes.
+float passValue(ModulatorType type, uint64_t id, const float* knobs, int64_t pass, TimeSig ts, const float* steps,
+                int stepCount, const Drawn* drawn = nullptr);
 /// A note started on the modulator's track, lasting `lengthTicks` (infinite while a key is held).
 void trigger(State& state, double songTick, double lengthTicks, const NoteValues& values, const Clock& clock);
 /// A held key was let go: an envelope still holding starts its release now.

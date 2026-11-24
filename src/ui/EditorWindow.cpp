@@ -1,5 +1,7 @@
 #include "EditorWindow.hpp"
 
+#include "views/MixerPane.hpp"
+
 #include "../module/TesseraModule.hpp"
 #include "Theme.hpp"
 #include "interaction/Cursors.hpp"
@@ -67,6 +69,7 @@ EditorWindow::EditorWindow(int64_t moduleId) : EditorHost(moduleId, Surface::Ove
     detailArea->addChild(detail);
     detailArea->addChild(inspector);
     panes = new PaneStack(ctx, top, detailArea, kMinPaneHeight, [this] { runAction(Action::MaximizePane); });
+    detail->setMixer(new MixerPane(ctx, false));
 
     content->addChild(panes);
     content->addChild(transport);
@@ -97,7 +100,7 @@ void EditorWindow::close() {
 }
 
 EditorPane* EditorWindow::focusedPane() {
-    if (ctx.view().focus == Pane::Top && top->visible)
+    if (ctx.state().focus == Pane::Top && top->visible)
         return top;
     return detailArea->visible ? static_cast<EditorPane*>(detail) : top;
 }
@@ -120,10 +123,10 @@ void EditorWindow::layout() {
     panes->layout();
 
     rack::math::Vec area = detailArea->box.size;
-    float inspectorWidth = view.inspectorOpen ? kInspectorWidth : 0;
+    float inspectorWidth = ctx.state().inspectorOpen ? kInspectorWidth : 0;
     detail->box = rack::math::Rect(0, 0, area.x - inspectorWidth, area.y);
     inspector->box = rack::math::Rect(area.x - inspectorWidth, 0, inspectorWidth, area.y);
-    inspector->visible = view.inspectorOpen;
+    inspector->visible = ctx.state().inspectorOpen;
     detail->layout();
 }
 
@@ -256,6 +259,17 @@ void EditorWindow::onHoverScroll(const HoverScrollEvent& e) {
     OpaqueWidget::onHoverScroll(e);
     if (!e.isConsumed())
         e.consume(this);
+}
+
+void EditorWindow::escape() {
+    constexpr double kAgainSeconds = 1.5;
+    double now = EditorContext::now();
+    if (now - lastEscape < kAgainSeconds) {
+        close();
+        return;
+    }
+    lastEscape = now;
+    ctx.toast("Press Esc again to close the editor");
 }
 
 } // namespace tessera

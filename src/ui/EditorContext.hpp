@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../model/ParamRef.hpp"
 #include "EditorState.hpp"
 #include "interaction/Gesture.hpp"
 
@@ -28,9 +29,12 @@ class EditorContext {
 
     /// The Tessera being edited, or nullptr once it has been deleted.
     TesseraModule* module() const;
-    /// Valid only while module() is not null. Settings shared by every surface (selection, follow).
+    /// Settings shared by every surface: what you work on and what is open. Defaults when there is no module.
     EditorState& state() const;
-    /// This surface's own layout and views.
+    /// Whether this editor is the one in use, so its views move and the other's copy them: the full editor while it
+    /// is open, else the panel. Two editors moving one view would fight, since each fits and follows for its own size.
+    bool drivesView() const;
+    /// This surface's own pane layout.
     ViewState& view() const { return state().view(surface); }
     /// Selects the next (+1) or previous (-1) track, stopping at the ends.
     void selectTrackOffset(int delta) const;
@@ -73,9 +77,12 @@ class EditorContext {
     bool showHelp = false; // the "?" overlay: every shortcut, generated from the shortcut table
     // The device strip (docs/DEVICES.md §1.1): IDs, so nothing points into the song across frames.
     uint64_t mappingModulator = 0; // ModulatorId being mapped onto knobs; 0 = not mapping
-    uint64_t openModulator = 0;    // ModulatorId whose settings popover is open
-    uint64_t selectedDevice = 0;   // DeviceId of the selected card (Delete removes it)
-    uint64_t stripOpenedFor = 0;   // TrackId whose empty device strip was opened by hand
+    /// The open device strip fills the notes pane (a short pane: devices in place of the notes). Set by the pane
+    /// each frame; a curve opening then switches to the notes, where the curve is drawn.
+    bool devicesFillPane = false;
+    /// The device strip shows the track's chain although the shown clip plays through its own (opened from the
+    /// folded block); back to the clip's when another clip is shown.
+    bool trackChainOpened = false;
     bool clipsOpenNarrow = false;  // a narrow song pane shows the clips although the timeline plays
     double toastUntil = 0;
     static constexpr double kToastSeconds = 4;

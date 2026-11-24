@@ -1,6 +1,7 @@
 #include "Arrangement.hpp"
 
 #include "DrumKit.hpp"
+#include "Ties.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -28,6 +29,13 @@ ClipSpan clipSpan(const Clip& clip, const std::vector<DrumLane>* lanes) {
     return {false, 0, end, end};
 }
 
+std::pair<Tick, Tick> playheadSpan(const Clip& clip, const std::vector<DrumLane>* lanes) {
+    ClipSpan span = clipSpan(clip, lanes);
+    if (!span.looping && clip.loopEnd > clip.loopStart)
+        return {clip.loopStart, clip.loopEnd - clip.loopStart};
+    return {span.start, span.length()};
+}
+
 double ClipSpan::patternTime(double u) const {
     if (!cycles() || pattern <= 0)
         return u;
@@ -53,7 +61,7 @@ TimedNote timed(const ArrangerClip& a, const Note& n, double on, double off, int
     tn.start = a.position + roundTick(on);
     tn.end = std::max(tn.start + 1, a.position + roundTick(off));
     tn.pitch = int8_t(std::clamp(int(n.pitch) + int(a.transpose) + transpose, 0, 127));
-    tn.velocity = std::clamp(n.velocity * a.velocityScale, 0.f, 1.f);
+    tn.velocity = n.velocity;
     tn.releaseVelocity = n.releaseVelocity;
     tn.source = &n;
     return tn;
@@ -83,6 +91,9 @@ void renderInstance(const Clip& clip, const ArrangerClip& a, std::vector<TimedNo
     // Walk the instance pass by pass: from the offset to the span end, then whole loops. In a lane cycle the notes
     // repeat on the clip's loop instead, like a lane (below).
     const double offset = double(normalizeOffset(clip, a.offset, lanes));
+    // A note a tie continues keeps its whole length and runs a hair past it, so the tied note takes its voice over.
+    const std::vector<char> continued =
+        ties::continued(ties::partners(clip.notes, span.looping ? span.start : 0, span.looping ? span.end : 0));
     double u = offset; // clip time
     double t = 0;      // timeline ticks from the instance start
     int pass = 0;
@@ -99,8 +110,11 @@ void renderInstance(const Clip& clip, const ArrangerClip& a, std::vector<TimedNo
             double on = t + (double(n.start) - u) * stretch;
             if (on >= total)
                 break;
-            double noteEnd = std::min(double(n.start) + double(n.length) * double(gateScale), segEnd);
-            out.push_back(timed(a, n, on, std::min(t + (noteEnd - u) * stretch, total), transpose));
+            bool held = continued[size_t(it - clip.notes.begin())];
+            double over = held ? double(ties::kTieOverlap) : 0;
+            double noteEnd = held ? std::min(double(n.end()), segEnd)
+                                  : std::min(double(n.start) + double(n.length) * double(gateScale), segEnd);
+            out.push_back(timed(a, n, on, std::min(t + (noteEnd - u) * stretch + over, total + over), transpose));
             out.back().pass = pass;
         }
         t += (segEnd - u) * stretch;

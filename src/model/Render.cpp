@@ -3,13 +3,21 @@
 #include "Arrangement.hpp"
 #include "Automation.hpp"
 #include "ChainRender.hpp"
+#include "DeviceLookup.hpp"
+#include "DeviceTypes.hpp"
+#include "Devices.hpp"
+#include "DrumKit.hpp"
 #include "Json.hpp"
+#include "Modulators.hpp"
 #include "NoteOperators.hpp"
+#include "Playheads.hpp"
 #include "Scale.hpp"
 #include "Swing.hpp"
+#include "Ties.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 
 namespace tessera::render {
@@ -25,6 +33,7 @@ const char* const kExpressionNames[] = {"off", "mpe", "flatten"};
 const char* const kRangeNames[] = {"song", "loop", "selection"};
 const char* const kSplitNames[] = {"one", "track", "clip"};
 const char* const kDeviceNames[] = {"applied", "bypassed"};
+const char* const kTieNames[] = {"overlap", "bend"};
 
 template <typename E, size_t N>
 E named(const json_t* j, const char* key, const char* const (&names)[N], E fallback) {
@@ -49,6 +58,10 @@ struct Played {
     double origin = 0;
     uint8_t key = 0; // 0 = the song's key, k = the clip key k - 1
     uint8_t channel = 1;
+    uint8_t lane = 0; // the playhead that read it (1..16), for its branch
+    // A chain of tied notes written as one (TieMode::Bend): the pitch curve across all of it, in semitones.
+    std::vector<ExprPoint> mergedPitch;
+    bool merged = false;
 };
 
 /// The channel a clip note plays on; 1 for notes made by the export itself.
@@ -62,61 +75,197 @@ Tick songEnd(const Song& song) {
     return end;
 }
 
-/// Every note `t` plays on the timeline, with the chosen timing and operators applied. Clips with their own key
-/// add it to `keys`.
-std::vector<Played> playedNotes(const Song& song, const Track& t, const Options& o, std::vector<Scale>& keys) {
-    struct Item {
-        TimedNote note;
-        ClipId clip;
+/// A note on its way to the file: where it came from, before timing and operators.
+struct Item {
+    TimedNote note;
+    ClipId clip;
+    uint8_t key = 0;     // 0 = the song's key, k = the clip key k - 1
+    uint8_t channel = 0; // 0 = the clip note's own
+    uint8_t lane = 0;    // the playhead that read it (1..16)
+};
+
+/// Whether modulator `m` depends only on where the song is (synced waves and curves, steps, random, ramps, macros), so
+/// its value can be worked out without playing. Free-running ones and those that follow notes can't.
+bool movesWithSong(const Modulator& m) {
+    const float* k = m.params.data();
+    auto shown = [&](int i) { return devices::display(devices::modulatorInfo(m.type).params[size_t(i)], k[i]); };
+    return m.type == ModulatorType::Curve ||
+           (m.type == ModulatorType::Lfo && shown(mods::knob::kSync) > 0.5f && shown(mods::knob::kRestart) < 1.5f) ||
+           ((m.type == ModulatorType::Steps || m.type == ModulatorType::Ramp) && !mods::perPass(m.type, k)) ||
+           m.type == ModulatorType::Random || m.type == ModulatorType::Macro;
+}
+
+/// The settings of `owner` (a playhead or a device, by `kind`) at `songTick` as the engine plays them: `base` plus
+/// the modulators that reach them and move with the song alone (synced waves and curves, steps, random, ramps,
+/// macros). Free-running ones and those that follow notes are left out: a file has no wall clock or live notes to
+/// follow. `count` settings are written to `out`.
+void knobsAt(const Song& song, const Track& track, ParamRef::Kind kind, uint64_t owner, const float* base, size_t count,
+             double songTick, float* out, double sinceClip = std::numeric_limits<double>::quiet_NaN()) {
+    std::copy(base, base + count, out);
+    mods::Clock clock;
+    clock.songTick = songTick;
+    clock.timeSig = song.timeSig;
+    auto add = [&](const std::vector<Modulator>& list) {
+        for (const Modulator& m : list) {
+            const float* k = m.params.data();
+            if (!movesWithSong(m))
+                continue;
+            bool reaches = std::any_of(m.routes.begin(), m.routes.end(), [&](const Modulation& r) {
+                return r.kind == Modulation::Kind::Param && r.target.kind == kind && r.target.owner == owner;
+            });
+            if (!reaches)
+                continue;
+            mods::State state;
+            mods::Drawn drawn = mods::drawnOf(m);
+            clock.seed = variationSeed(m.variation, 0, m.id.value); // New: songRolled() fixed it for a bake
+            float v = mods::evaluate(m.type, m.id.value, k, state, clock, m.steps.data(), int(m.steps.size()), &drawn);
+            for (const Modulation& r : m.routes)
+                if (r.kind == Modulation::Kind::Param && r.target.kind == kind && r.target.owner == owner &&
+                    r.target.param < count)
+                    out[r.target.param] += r.amount * v;
+        }
     };
-    std::map<ClipId, uint8_t> keyOf;
-    auto keyIndex = [&](const Clip& clip) -> uint8_t {
-        if (!clip.scaleOverride || keys.size() >= 255)
-            return 0;
-        auto it = keyOf.find(clip.id);
-        if (it != keyOf.end())
-            return it->second;
-        keys.push_back(resolveScale(*clip.scaleOverride, song.customScales));
-        return keyOf[clip.id] = uint8_t(keys.size());
+    // Song curves count from the song's start; the track's and its devices' from the timeline clip under the song.
+    add(song.modulators);
+    clock.sinceClip = sinceClip;
+    add(track.modulators);
+    for (const Device& d : track.devices)
+        add(d.modulators);
+    for (size_t i = 0; i < count; i++)
+        out[i] = std::clamp(out[i], 0.f, 1.f);
+}
+
+/// Writes into `values` what the knob lanes on `owner`'s settings hold at `songTick`, as they set a knob's base while
+/// the song plays.
+void applyLanes(const Song& song, const Track& track, ParamRef::Kind kind, uint64_t owner, double songTick,
+                std::vector<float>& values) {
+    std::vector<char> setByLane(values.size(), 0);
+    chainrender::forEachKnobLane(song, track, songTick, [&](const AutomationEnvelope& lane, float v, bool modulate) {
+        if (lane.paramTarget.kind != kind || lane.paramTarget.owner != owner || lane.paramTarget.param >= values.size())
+            return;
+        size_t param = lane.paramTarget.param;
+        values[param] = modulate && setByLane[param] ? std::clamp(values[param] + v - 0.5f, 0.f, 1.f) : v;
+        if (!modulate)
+            setByLane[param] = 1;
+    });
+}
+
+/// A playhead's settings at `songTick` as the engine plays them (knobsAt).
+void playheadKnobsAt(const Song& song, const Track& track, const Playhead& p, double songTick, float* out) {
+    knobsAt(song, track, ParamRef::Kind::Playhead, p.id.value, p.params.data(), p.params.size(), songTick, out);
+}
+
+/// How a Motion device before the playheads moves its notes on `pass` of the clip: its knobs, with the "Per pass"
+/// modulators routed to them stepped to that pass, as the engine reads them. With `songTick`, Curves that count in
+/// time add their value at that moment too.
+struct MovedBy {
+    int steps = 0;
+    bool inKey = true;
+    double delay = 0;
+    double lengthScale = 1;
+    float velocity = 0;
+};
+
+/// The move `knobs` make once the "Per pass" modulators on `motion` (and timed Curves, given `songTick`) are added.
+MovedBy movedFrom(const Song& song, const Track& track, const Device& motion, std::vector<float> knobs, int64_t pass,
+                  double songTick, double sinceClip = std::numeric_limits<double>::quiet_NaN()) {
+    auto add = [&](const std::vector<Modulator>& list) {
+        for (const Modulator& m : list) {
+            bool passes = mods::perPass(m.type, m.params.data());
+            bool timed = !passes && m.type == ModulatorType::Curve && std::isfinite(songTick);
+            if (!passes && !timed)
+                continue;
+            mods::Drawn drawn = mods::drawnOf(m);
+            float value = 0;
+            if (passes) {
+                value = mods::passValue(m.type, m.id.value, m.params.data(), pass, song.timeSig, m.steps.data(),
+                                        int(m.steps.size()), &drawn);
+            } else {
+                mods::State state;
+                mods::Clock clock;
+                clock.songTick = songTick;
+                clock.sinceClip = sinceClip;
+                clock.timeSig = song.timeSig;
+                value = mods::evaluate(m.type, m.id.value, m.params.data(), state, clock, nullptr, 0, &drawn);
+            }
+            for (const Modulation& r : m.routes)
+                if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
+                    r.target.owner == motion.id.value && r.target.param < knobs.size())
+                    knobs[r.target.param] += r.amount * value;
+        }
     };
-    std::vector<Item> items;
-    for (const ArrangerClip& a : t.arrangement) {
-        if (a.muted && !o.includeMuted)
-            continue;
-        const Clip* clip = song.findClip(a.clip);
-        if (!clip)
-            continue;
-        std::vector<TimedNote> notes;
-        renderInstance(*clip, a, notes, t.transpose, t.gateLengthScale,
-                       t.type == TrackType::Drum ? &t.drumLanes : nullptr);
-        for (const TimedNote& n : notes)
-            items.push_back({n, a.clip});
+    add(song.modulators);
+    add(track.modulators);
+    for (const Device& d : track.devices)
+        add(d.modulators);
+    auto value = [&](int k) {
+        return devices::display(devices::motionInfo().params[size_t(k)], std::clamp(knobs[size_t(k)], 0.f, 1.f));
+    };
+    MovedBy out;
+    out.steps = int(std::lround(value(chain::knob::kMotionPitch)));
+    out.inKey = value(chain::knob::kMotionInKey) > 0.5f;
+    out.delay = double(value(chain::knob::kMotionTime)) * double(kPpq / 4);
+    out.lengthScale = 1 + double(value(chain::knob::kMotionLength)) / 100;
+    out.velocity = value(chain::knob::kMotionVelocity) / 100;
+    return out;
+}
+
+/// The piano roll's picture of a move: the knobs as set, with "Per pass" modulators and timed Curves.
+MovedBy movedAt(const Song& song, const Track& track, const Device& motion, int64_t pass,
+                double songTick = std::numeric_limits<double>::quiet_NaN(),
+                double sinceClip = std::numeric_limits<double>::quiet_NaN()) {
+    return movedFrom(song, track, motion, motion.params, pass, songTick, sinceClip);
+}
+
+/// A move as it sounds at `songTick`: the knobs as the engine holds them then (lanes set them, modulators that move
+/// with the song add to them), with the "Per pass" modulators on top.
+MovedBy movedPlaying(const Song& song, const Track& track, const Device& motion, int64_t pass, double songTick,
+                     double sinceClip) {
+    std::vector<float> base = motion.params, knobs(base.size());
+    applyLanes(song, track, ParamRef::Kind::Device, motion.id.value, songTick, base);
+    knobsAt(song, track, ParamRef::Kind::Device, motion.id.value, base.data(), base.size(), songTick, knobs.data(),
+            sinceClip);
+    return movedFrom(song, track, motion, std::move(knobs), pass, std::numeric_limits<double>::quiet_NaN());
+}
+
+/// The Motion devices before a track's Playheads device (switched on): the playheads read their notes moved.
+std::vector<const Device*> readMotions(const Track& track) {
+    std::vector<const Device*> out;
+    for (const Device& d : track.devices) {
+        if (d.type == DeviceType::Playheads)
+            return out;
+        if (d.type == DeviceType::Motion && d.on)
+            out.push_back(&d);
     }
+    return {};
+}
+
+/// The items with the chosen timing and operators applied, sorted by start. Operators run exactly as the engine runs
+/// them: the same seed, clip and pass give the same result, and "previous note" restarts with each pass.
+std::vector<Played> applyOperators(const Song& song, const Track& track, const Options& o, std::vector<Item>& items) {
     std::stable_sort(items.begin(), items.end(),
                      [](const Item& a, const Item& b) { return a.note.start < b.note.start; });
-
     std::vector<Played> out;
-    // Operators run exactly as the engine runs them: the same seed, clip and pass give the same result, and
-    // "previous note" restarts with each pass.
     int lastPass = -1;
     bool previousPlayed = true;
     Tick beat = ticksPerBeat(song.timeSig);
     for (const Item& item : items) {
         const TimedNote& n = item.note;
         const Note* src = n.source;
+        uint8_t channel = item.channel > 0 ? item.channel : noteChannel(src);
         double start = double(n.start), end = double(n.end);
         if (o.timing == Timing::Played) {
             double micro = src ? operators::microTicks(*src) : 0;
             // With devices bypassed a Groove device plays nothing, so the song's swing stands in for it.
-            float swing = o.devices == DeviceMode::Applied ? songSwingFor(song, t) : song.swing;
+            float swing = o.devices == DeviceMode::Applied ? songSwingFor(song, track) : song.swing;
             start = swung(start, swing, song.swingStep) + micro;
             end = swung(end, swing, song.swingStep) + micro;
         }
-        const Clip* clip = song.findClip(item.clip);
-        uint8_t key = clip ? keyIndex(*clip) : 0;
+        int pitch = n.pitch;
+        float velocity = n.velocity;
         if (o.operators == OperatorMode::Written || !src) {
-            out.push_back({start, end, n.pitch, n.velocity, n.releaseVelocity, src, n.pass, double(n.start), key,
-                           noteChannel(src)});
+            out.push_back({start, end, pitch, velocity, n.releaseVelocity, src, n.pass, double(n.start), item.key,
+                           channel, item.lane});
             continue;
         }
         if (n.pass != lastPass) {
@@ -124,7 +273,8 @@ std::vector<Played> playedNotes(const Song& song, const Track& t, const Options&
             previousPlayed = true;
         }
         operators::PassContext ctx;
-        ctx.seed = song.seed;
+        const Clip* source = song.findClip(item.clip);
+        ctx.seed = variationSeed(source ? source->variation : 1, 0, item.clip.value);
         ctx.clip = item.clip.value;
         ctx.pass = n.pass;
         ctx.previousPlayed = previousPlayed;
@@ -142,13 +292,331 @@ std::vector<Played> playedNotes(const Song& song, const Track& t, const Options&
             double hitStart = start + offset + h.start * scale;
             double hitEnd = count > 1 ? hitStart + h.length * scale : hitStart + length;
             float shape = src->velocity > 0 ? h.velocity / src->velocity : 1;
-            float v = std::clamp(n.velocity * shape + spread, 0.f, 1.f);
-            out.push_back({std::max(0.0, hitStart), hitEnd, n.pitch, v, n.releaseVelocity, src, n.pass,
-                           double(n.start) + i, key, noteChannel(src)});
+            float v = std::clamp(velocity * shape + spread, 0.f, 1.f);
+            out.push_back({std::max(0.0, hitStart), hitEnd, pitch, v, n.releaseVelocity, src, n.pass,
+                           double(n.start) + i, item.key, channel, item.lane});
         }
     }
     std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
     return out;
+}
+
+/// The key index of a clip with its own key (added to `keys` the first time), or 0 for the song's.
+uint8_t keyIndexOf(const Song& song, const Clip& clip, std::vector<Scale>& keys, std::map<ClipId, uint8_t>& keyOf) {
+    if (!clip.scaleOverride || keys.size() >= 255)
+        return 0;
+    auto it = keyOf.find(clip.id);
+    if (it != keyOf.end())
+        return it->second;
+    keys.push_back(resolveScale(*clip.scaleOverride, song.customScales));
+    return keyOf[clip.id] = uint8_t(keys.size());
+}
+
+/// Every note `t` plays on the timeline, with the chosen timing and operators applied. Clips with their own key
+/// add it to `keys`.
+std::vector<Played> playedNotes(const Song& song, const Track& t, const Options& o, std::vector<Scale>& keys) {
+    std::map<ClipId, uint8_t> keyOf;
+    std::vector<Item> items;
+    for (const ArrangerClip& a : t.arrangement) {
+        if (a.muted && !o.includeMuted)
+            continue;
+        const Clip* clip = song.findClip(a.clip);
+        if (!clip)
+            continue;
+        std::vector<TimedNote> notes;
+        renderInstance(*clip, a, notes, t.transpose, t.gateLengthScale,
+                       t.type == TrackType::Drum ? &t.drumLanes : nullptr);
+        uint8_t key = keyIndexOf(song, *clip, keys, keyOf);
+        for (const TimedNote& n : notes)
+            items.push_back({n, a.clip, key});
+    }
+    return applyOperators(song, t, o, items);
+}
+
+/// What the track's playheads play from its timeline clips (docs/design/PLAYHEADS.md), with the code the engine
+/// uses: each timeline clip read from where it begins the clip, slower when stretched.
+std::vector<Played> playheadNotes(const Song& song, const Track& t, const Device& device, const Options& o,
+                                  std::vector<Scale>& keys) {
+    struct Readable {
+        double start, end;
+        const Note* source;
+        int pitch;
+        uint8_t role = 3; // lowest and/or highest of the notes starting with it
+    };
+    std::map<ClipId, uint8_t> keyOf;
+    bool once =
+        std::lround(devices::display(devices::deviceInfo(DeviceType::Playheads).params[playheads::knob::kSameNote],
+                                     device.params[playheads::knob::kSameNote])) == 1;
+    bool solo = playheads::soloDecides(device.playheads);
+    std::vector<Item> items;
+    for (const ArrangerClip& a : t.arrangement) {
+        if (a.muted && !o.includeMuted)
+            continue;
+        const Clip* clip = song.findClip(a.clip);
+        if (!clip)
+            continue;
+        uint8_t key = keyIndexOf(song, *clip, keys, keyOf);
+        const std::vector<DrumLane>* drumLanes = t.type == TrackType::Drum ? &t.drumLanes : nullptr;
+        // The region is the whole span (a drum clip's lane cycle); the pattern and each lane with its own length
+        // repeat inside it, as in the engine.
+        ClipSpan span = clipSpan(*clip, drumLanes);
+        std::pair<Tick, Tick> segment = playheadSpan(*clip, drumLanes);
+        double playStart = double(span.start), playEnd = double(span.end);
+        double patternEnd = playStart + double(span.pattern);
+        int transpose = t.type == TrackType::Drum ? 0 : t.transpose + a.transpose;
+        struct Group {
+            double base, period;
+            std::vector<Readable> notes;
+            std::vector<uint32_t> byEnd;
+            const Device* motion = nullptr; // a Motion device before the playheads: its notes, read moved
+            bool repeats = true;            // false: read where written on the canvas (base and period unused)
+        };
+        std::vector<Group> groups;
+        std::vector<int> ownLoopPitches;
+        auto readable = [&](const Note& n, double end) {
+            return Readable{double(n.start),
+                            std::min(double(n.start) + std::max(1.0, double(n.length) * t.gateLengthScale), end), &n,
+                            std::clamp(n.pitch + transpose, 0, 127)};
+        };
+        if (drumLanes)
+            for (const DrumLane& lane : *drumLanes) {
+                if (!hasOwnLoop(lane, *clip))
+                    continue;
+                LaneRegion region = laneRegion(lane, *clip);
+                Group g{double(region.start), double(region.length), {}, {}};
+                for (const Note& n : clip->notes)
+                    if (!n.muted && n.pitch == lane.pitch && n.start >= region.start &&
+                        n.start < region.start + region.length)
+                        g.notes.push_back(readable(n, double(region.start + region.length)));
+                groups.push_back(std::move(g));
+                ownLoopPitches.push_back(lane.pitch);
+            }
+        // The piano roll is a canvas: the notes not on a lane of their own are read where they are written, uncut,
+        // unless they repeat inside a longer lane cycle.
+        Group main{playStart, double(span.pattern), {}, {}};
+        main.repeats = span.cycles();
+        for (const Note& n : clip->notes)
+            if (!n.muted && (!main.repeats || (n.start >= playStart && n.start < patternEnd)) &&
+                std::find(ownLoopPitches.begin(), ownLoopPitches.end(), n.pitch) == ownLoopPitches.end())
+                main.notes.push_back(readable(n, main.repeats ? patternEnd : std::numeric_limits<double>::max()));
+        groups.push_back(std::move(main));
+        int lowest = 127, highest = 0;
+        for (Group& g : groups) {
+            g.byEnd = playheads::orderByEnd(g.notes);
+            playheads::markChordRoles(g.notes, [](Readable& n) -> uint8_t& { return n.role; });
+            for (const Readable& n : g.notes) {
+                lowest = std::min(lowest, n.pitch);
+                highest = std::max(highest, n.pitch);
+            }
+        }
+        // Notes of a Motion device before the playheads leave the main list for their own, read shifted by its Time
+        // (chord roles stay as the whole clip gives them).
+        for (const Device* motion : readMotions(t)) {
+            Group moved{groups.back().base, groups.back().period, {}, {}, motion, groups.back().repeats};
+            std::vector<Readable>& rest = groups.back().notes;
+            for (auto it = rest.begin(); it != rest.end();)
+                if (it->source && it->source->motion == motion->id) {
+                    moved.notes.push_back(*it);
+                    it = rest.erase(it);
+                } else {
+                    ++it;
+                }
+            if (moved.notes.empty())
+                continue;
+            groups.back().byEnd = playheads::orderByEnd(rest);
+            moved.byEnd = playheads::orderByEnd(moved.notes);
+            groups.insert(groups.end() - 1, std::move(moved));
+        }
+        Scale scale = clip->scaleOverride ? resolveScale(*clip->scaleOverride, song.customScales)
+                                          : resolveScale(song.scale, song.customScales);
+
+        double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
+        double begin = double(normalizeOffset(*clip, a.offset)) - double(clipSpan(*clip).start);
+        double length = double(instanceEnd(a) - a.position) / stretch;
+        for (size_t index = 0; index < device.playheads.size(); index++) {
+            const Playhead& p = device.playheads[index];
+            if (solo && !p.solo)
+                continue;
+            // Small steps, so no window needs more sweeps than one call gives; each step reads the modulators anew.
+            constexpr double kStep = double(kPpq) / 8;
+            std::vector<float> knobs(p.params.size()), deviceKnobs(device.params.size());
+            double ownTime = NAN, lastRestart = NAN, lastPos = NAN, readUntil = NAN;
+            // Its On as it plays (a curve or a lane can switch it): off, it reads nothing, and what it sounds stops
+            // there, as in the engine. Its own time runs on meanwhile.
+            size_t firstItem = items.size();
+            std::vector<double> offAt;
+            bool wasOn = true;
+            for (double e = begin; e < begin + length; e += kStep) {
+                double to = std::min(begin + length, e + kStep);
+                double songAt = double(a.position) + (e - begin) * stretch;
+                std::vector<float> base = p.params, deviceBase = device.params;
+                applyLanes(song, t, ParamRef::Kind::Playhead, p.id.value, songAt, base);
+                knobsAt(song, t, ParamRef::Kind::Playhead, p.id.value, base.data(), base.size(), songAt, knobs.data(),
+                        (e - begin) * stretch);
+                applyLanes(song, t, ParamRef::Kind::Device, device.id.value, songAt, deviceBase);
+                knobsAt(song, t, ParamRef::Kind::Device, device.id.value, deviceBase.data(), deviceBase.size(), songAt,
+                        deviceKnobs.data(), (e - begin) * stretch);
+                bool on = knobs.size() <= size_t(playheads::knob::kOn) || playheads::playsNow(knobs.data());
+                if (!on && wasOn)
+                    offAt.push_back(double(a.position) + (e - begin) * stretch);
+                wasOn = on;
+                playheads::Motion m = playheads::motionFrom(knobs.data(), deviceKnobs.data(), double(segment.first),
+                                                            double(segment.second), song.timeSig);
+                if (playheads::wantsDrawnPath(knobs.data()))
+                    m.path = &p.path;
+                playheads::NoteShape shape = playheads::noteShapeFrom(knobs.data());
+                // The playhead's own time is counted step by step, as the engine counts it, so a Rate a curve moves
+                // carries on from where the playhead is instead of jumping to where the new Rate would have taken it
+                // from the clip's start.
+                double rate = m.rate, restartEvery = m.restartEvery;
+                playheads::Motion ownM = m;
+                ownM.rate = 1;
+                ownM.restartEvery = 0;
+                ownM.offset = 0;
+                playheads::Motion timed = ownM;
+                timed.rate = rate;
+                // Offset, as in the engine: it reads that much earlier (or later) than now, only inside the timeline
+                // clip, and never the same place twice when the Offset moves.
+                double shift = m.offset / stretch;
+                double readA = std::max(e - shift, begin), readB = std::min(to - shift, begin + length);
+                if (std::isfinite(readUntil))
+                    readA = std::max(readA, readUntil);
+                for (double segA = readA; segA < readB;) {
+                    double restart = restartEvery > 0 ? std::floor(segA / restartEvery) * restartEvery : 0;
+                    double segB = restartEvery > 0 ? std::min(readB, restart + restartEvery) : readB;
+                    if (std::isnan(ownTime) || restart != lastRestart || !(std::abs(segA - readUntil) <= 1e-6)) {
+                        ownTime = rate * (segA - restart);
+                        lastPos = NAN;
+                    }
+                    lastRestart = restart;
+                    double ownA = ownTime;
+                    ownTime += rate * (segB - segA);
+                    readUntil = segB;
+                    playheads::Sweep sweeps[playheads::kMaxSweeps];
+                    int count = playheads::sweeps(ownM, ownA, ownTime, sweeps, playheads::kMaxSweeps, lastPos);
+                    if (count > 0)
+                        lastPos = sweeps[count - 1].to;
+                    for (int i = 0; i < count && on; i++)
+                        for (const Group& g : groups) {
+                            MovedBy moved;
+                            int64_t clipPass = int64_t(std::floor(e / std::max(1.0, playEnd - playStart)));
+                            if (g.motion) // its pass is the clip's
+                                moved = movedPlaying(song, t, *g.motion, clipPass, songAt, (e - begin) * stretch);
+                            // `rest`: how much of the note is left to play, when a jump landed inside it.
+                            auto onHit = [&](const Readable& n, double pos, double rest = -1) {
+                                if (!playheads::picked(shape.pick, n.role))
+                                    return;
+                                double own = playheads::timeAt(ownM, sweeps[i], pos);
+                                double elapsed = segA + (own - ownA) / rate + shift;
+                                double at = double(a.position) + (elapsed - begin) * stretch;
+                                // Read again at the moment it is met: a step drawn inside this block reaches it.
+                                MovedBy hit =
+                                    g.motion ? movedPlaying(song, t, *g.motion, clipPass, at, at - double(a.position))
+                                             : moved;
+                                double travel = sweeps[i].travelFrom + std::abs(pos - sweeps[i].from);
+                                double len =
+                                    playheads::noteLength(knobs.data(), timed, rest >= 0 ? rest : n.end - n.start,
+                                                          song.timeSig, travel) *
+                                    stretch * std::max(0.01, hit.lengthScale);
+                                if (playheads::retriggers(knobs.data())) {
+                                    // Retrigger: the note stops where the playhead next jumps, as in the engine.
+                                    double jump = playheads::nextJump(ownM, own, len / stretch * rate + 1);
+                                    if (std::isfinite(jump))
+                                        len = std::min(len, (jump - own) / rate * stretch);
+                                }
+                                // The pass as the engine counts it: the playhead's own time over its region, its place
+                                // mixed in.
+                                int pass = int(std::floor(own / std::max(1.0, m.regionLength))) * 16 + int(index);
+                                Tick start = Tick(std::llround(at));
+                                int written = n.pitch;
+                                if (hit.steps != 0)
+                                    written = std::clamp(
+                                        hit.inKey ? scale.stepBy(written, hit.steps) : written + hit.steps, 0, 127);
+                                int pitch = playheads::shapedPitch(shape, written, lowest, highest, scale);
+                                TimedNote note{start,
+                                               std::max(start + 1, Tick(std::llround(at + len))),
+                                               int8_t(pitch),
+                                               std::clamp(n.source->velocity + shape.velocity + hit.velocity, 0.f, 1.f),
+                                               n.source->releaseVelocity,
+                                               n.source,
+                                               pass};
+                                items.push_back({note, a.clip, key, p.channel, uint8_t(index + 1)});
+                            };
+                            if (g.repeats)
+                                playheads::crossedRepeating(sweeps[i], playStart, g.base - moved.delay, g.period,
+                                                            g.notes, g.byEnd, onHit);
+                            else
+                                playheads::crossedShifted(sweeps[i], moved.delay, g.notes, g.byEnd, onHit);
+                            // Retrigger: a jump plays again the notes it lands inside (on the canvas, unmoved).
+                            if (sweeps[i].jumped && !g.repeats && !g.motion && playheads::retriggers(knobs.data()))
+                                playheads::landedIn(sweeps[i], g.notes, [&](const Readable& n, double rest) {
+                                    onHit(n, sweeps[i].from, rest);
+                                });
+                        }
+                    segA = segB;
+                }
+            }
+            for (size_t i = firstItem; i < items.size() && !offAt.empty(); i++) {
+                TimedNote& n = items[i].note;
+                auto off = std::upper_bound(offAt.begin(), offAt.end(), double(n.start));
+                if (off != offAt.end())
+                    n.end = std::max(n.start + 1, std::min(n.end, Tick(std::llround(*off))));
+            }
+        }
+    }
+    std::vector<Played> out = applyOperators(song, t, o, items);
+    if (once) {
+        // Two playheads on one note at the same moment play it once, as in the engine.
+        std::vector<Played> kept;
+        for (const Played& n : out)
+            if (std::none_of(kept.begin(), kept.end(), [&](const Played& k) {
+                    return k.pitch == n.pitch && k.channel == n.channel && std::abs(k.start - n.start) < 1e-6;
+                }))
+                kept.push_back(n);
+        out = std::move(kept);
+    }
+    return out;
+}
+
+/// The notes a track plays before its device chain: its clips as written, or what its playheads read from them when
+/// devices are applied.
+std::vector<Played> sourceNotes(const Song& song, const Track& t, const Options& o, std::vector<Scale>& keys) {
+    if (o.devices == DeviceMode::Applied)
+        if (const Device* device = activePlayheads(t))
+            return playheadNotes(song, t, *device, o, keys);
+    return playedNotes(song, t, o, keys);
+}
+
+/// The parts of a track by the chain they play through (docs/DECISIONS.md §157): the track with the timeline clips that
+/// use its devices, then for each clip with its own chain a copy of the track holding that chain's devices and
+/// modulators and only that clip's timeline copies. A track whose clips all use its devices is one part.
+std::vector<Track> chainParts(const Song& song, const Track& t) {
+    std::vector<ClipId> own;
+    for (const ArrangerClip& a : t.arrangement)
+        if (const Clip* c = song.findClip(a.clip);
+            c && c->usesOwnChain() && std::find(own.begin(), own.end(), a.clip) == own.end())
+            own.push_back(a.clip);
+    if (own.empty())
+        return {t};
+    std::vector<Track> parts;
+    parts.push_back(t);
+    auto& base = parts.back().arrangement;
+    base.erase(std::remove_if(base.begin(), base.end(),
+                              [&](const ArrangerClip& a) {
+                                  return std::find(own.begin(), own.end(), a.clip) != own.end();
+                              }),
+               base.end());
+    for (ClipId id : own) {
+        const Clip& clip = *song.findClip(id);
+        Track part = t;
+        part.devices = clip.devices;
+        part.modulators = clip.modulators;
+        part.arrangement.erase(std::remove_if(part.arrangement.begin(), part.arrangement.end(),
+                                              [&](const ArrangerClip& a) { return a.clip != id; }),
+                               part.arrangement.end());
+        parts.push_back(std::move(part));
+    }
+    return parts;
 }
 
 /// The notes a track's device chain plays from `notes` (docs/DEVICES.md §6), with the same code as playback.
@@ -157,11 +625,196 @@ std::vector<Played> throughChain(const Song& song, const Track& t, const std::ve
     std::vector<chainrender::Note> in;
     in.reserve(notes.size());
     for (const Played& p : notes)
-        in.push_back({p.start, p.end, p.pitch, p.velocity, p.release, p.source, p.pass, p.origin, p.key, p.channel});
+        in.push_back(
+            {p.start, p.end, p.pitch, p.velocity, p.release, p.source, p.pass, p.origin, p.key, p.channel, p.lane});
     std::vector<Played> out;
     for (const chainrender::Note& n : chainrender::run(song, t, in, until, tempo, keys))
         out.push_back({n.start, n.end, n.pitch, n.velocity, n.release, n.source, n.pass, n.origin, n.key, n.channel});
     return out;
+}
+
+/// What a track plays: its clips as written, or with devices applied what each of its chains plays (a clip with its
+/// own chain through that chain), in time order.
+std::vector<Played> trackPlayed(const Song& song, const Track& t, const Options& o, double until, double tempo,
+                                int depth = 0);
+
+/// The notes a track's Input brings it from the track it listens to: that track's notes after its devices, or its
+/// clips before them. Muted or not, as live. Empty without an Input from a track, or past a few listeners in a row.
+std::vector<Played> inputNotes(const Song& song, const Track& t, const Options& o, double until, double tempo,
+                               int depth) {
+    constexpr int kMaxListenDepth = 4;
+    if (!o.followInput || depth >= kMaxListenDepth ||
+        (t.listen != ListenSource::TrackAfter && t.listen != ListenSource::TrackBefore))
+        return {};
+    const Track* from = song.findTrack(t.listenTrack);
+    if (!from || from->id == t.id || from->type == TrackType::Audio)
+        return {};
+    if (t.listen == ListenSource::TrackAfter)
+        return trackPlayed(song, *from, o, until, tempo, depth + 1);
+    Options before = o;
+    before.devices = DeviceMode::Bypassed;
+    std::vector<Scale> keys;
+    return sourceNotes(song, *from, before, keys);
+}
+
+std::vector<Played> trackPlayed(const Song& song, const Track& t, const Options& o, double until, double tempo,
+                                int depth) {
+    if (o.devices != DeviceMode::Applied) {
+        std::vector<Scale> keys;
+        return sourceNotes(song, t, o, keys);
+    }
+    std::vector<Track> parts = chainParts(song, t);
+    std::vector<Played> out;
+    for (size_t i = 0; i < parts.size(); i++) {
+        const Track& part = parts[i];
+        std::vector<Scale> keys;
+        std::vector<Played> source = sourceNotes(song, part, o, keys);
+        // What the Input brings goes through the track's own devices, never a clip's (as live).
+        if (i == 0) {
+            std::vector<Played> fed = inputNotes(song, t, o, until, tempo, depth);
+            if (!fed.empty()) {
+                source.insert(source.end(), fed.begin(), fed.end());
+                std::stable_sort(source.begin(), source.end(),
+                                 [](const Played& a, const Played& b) { return a.start < b.start; });
+            }
+        }
+        std::vector<Played> played = throughChain(song, part, source, until, tempo, keys);
+        out.insert(out.end(), played.begin(), played.end());
+    }
+    if (parts.size() > 1 || o.followInput)
+        std::stable_sort(out.begin(), out.end(), [](const Played& a, const Played& b) { return a.start < b.start; });
+    return out;
+}
+
+/// For each of `notes` (sorted by start), the earlier note its tie continues, or -1: on the same channel, starting
+/// before it and still sounding at its start, the nearest in pitch, each continued once (as ties::partners).
+template <typename N, typename Tied>
+std::vector<int> tiePartners(const std::vector<N>& notes, Tied tied) {
+    std::vector<int> out(notes.size(), -1);
+    std::vector<char> taken(notes.size(), 0);
+    for (size_t i = 0; i < notes.size(); i++) {
+        if (!tied(notes[i]))
+            continue;
+        const N& b = notes[i];
+        int best = -1;
+        for (size_t j = 0; j < notes.size() && notes[j].start < b.start; j++) {
+            const N& a = notes[j];
+            if (taken[j] || a.channel != b.channel || a.end < b.start - 0.5 || a.end >= b.end)
+                continue;
+            if (best < 0 || std::abs(a.pitch - b.pitch) < std::abs(notes[size_t(best)].pitch - b.pitch))
+                best = int(j);
+        }
+        if (best >= 0) {
+            out[i] = best;
+            taken[size_t(best)] = 1;
+        }
+    }
+    return out;
+}
+
+/// Where a note a tie continues ends when written with an overlap: kTieOverlap past the tied note's start, but
+/// before that note ends.
+double overlappedEnd(double end, double nextStart, double nextEnd) {
+    double over = std::min(nextStart + double(kTieOverlap), (nextStart + nextEnd) / 2);
+    return std::max(end, over);
+}
+
+/// Folds each chain of tied notes in `notes` into its first note: as long as the whole chain, its pitch curve
+/// running through every note's pitch and glide, sampled every `step`.
+void mergeTies(std::vector<Played>& notes, const std::vector<int>& partners, Tick step) {
+    std::vector<int> head(notes.size(), -1), next(notes.size(), -1);
+    for (size_t i = 0; i < notes.size(); i++) {
+        int p = partners[i];
+        if (p < 0)
+            continue;
+        next[size_t(p)] = int(i);
+        head[i] = head[size_t(p)] >= 0 ? head[size_t(p)] : p;
+    }
+    std::vector<char> drop(notes.size(), 0);
+    for (size_t h = 0; h < notes.size(); h++) {
+        if (head[h] >= 0 || next[h] < 0)
+            continue;
+        std::vector<size_t> chain{h};
+        while (next[chain.back()] >= 0)
+            chain.push_back(size_t(next[chain.back()]));
+        Played& first = notes[h];
+        double start = first.start, end = notes[chain.back()].end;
+        // The pitch at song tick t, in semitones above the first note.
+        auto pitchAt = [&](double t) {
+            for (size_t k = 0; k < chain.size(); k++) {
+                const Played& n = notes[chain[k]];
+                bool last = k + 1 == chain.size();
+                double until = last ? end : notes[chain[k + 1]].start;
+                if (t >= until && !last)
+                    continue;
+                const Note* src = n.source;
+                double length = std::max(1.0, n.end - n.start);
+                float own = src ? expressionAt(src->pitchExpr, float((t - n.start) / length), 0) : 0.f;
+                double pitch = n.pitch;
+                // Inside a glide into this note or out of it into the next.
+                auto glide = [&](const Played& a, const Played& b) -> std::optional<double> {
+                    const Note* bs = b.source;
+                    if (!bs || a.pitch == b.pitch)
+                        return std::nullopt;
+                    double from = b.start - double(std::max<Tick>(0, bs->glideBefore));
+                    double to = b.start + double(std::max<Tick>(0, bs->glideAfter));
+                    if (t <= from || t >= to || to <= from)
+                        return std::nullopt;
+                    return a.pitch + (b.pitch - a.pitch) * ties::shaped(bs->glideShape, (t - from) / (to - from));
+                };
+                if (k > 0)
+                    if (auto g = glide(notes[chain[k - 1]], n))
+                        pitch = *g;
+                if (!last)
+                    if (auto g = glide(n, notes[chain[k + 1]]))
+                        pitch = *g;
+                return pitch + own - first.pitch;
+            }
+            return 0.0;
+        };
+        std::vector<double> at;
+        for (double t = start; t < end; t += double(std::max<Tick>(1, step)))
+            at.push_back(t);
+        for (size_t k = 1; k < chain.size(); k++) {
+            double joint = notes[chain[k]].start;
+            at.push_back(joint - 1); // a jump stays a jump
+            at.push_back(joint);
+        }
+        std::sort(at.begin(), at.end());
+        std::vector<ExprPoint> curve;
+        for (double t : at)
+            if (t >= start && t < end)
+                curve.push_back({float((t - start) / (end - start)), std::clamp(float(pitchAt(t)), -96.f, 96.f), 0});
+        first.end = end;
+        first.release = notes[chain.back()].release;
+        first.mergedPitch = std::move(curve);
+        first.merged = true;
+        for (size_t k = 1; k < chain.size(); k++)
+            drop[chain[k]] = 1;
+    }
+    size_t kept = 0;
+    for (size_t i = 0; i < notes.size(); i++) {
+        if (drop[i])
+            continue;
+        if (kept != i) // never onto itself: a moved-from vector may come back empty
+            notes[kept] = std::move(notes[i]);
+        kept++;
+    }
+    notes.resize(kept);
+}
+
+/// Writes ties the way the options ask: overlapping, or (with MPE) merged into one note with bend.
+void writeTies(std::vector<Played>& notes, const Options& o) {
+    std::vector<int> partners = tiePartners(notes, [](const Played& n) { return n.source && n.source->tied; });
+    if (std::all_of(partners.begin(), partners.end(), [](int p) { return p < 0; }))
+        return;
+    if (o.ties == TieMode::Bend && o.expressions == ExpressionMode::Mpe) {
+        mergeTies(notes, partners, o.ccStep);
+        return;
+    }
+    for (size_t i = 0; i < notes.size(); i++)
+        if (int p = partners[i]; p >= 0)
+            notes[size_t(p)].end = overlappedEnd(notes[size_t(p)].end, notes[i].start, notes[i].end);
 }
 
 int bend14(float semitones, int range) {
@@ -223,7 +876,7 @@ void emitNotes(smf::Track& out, const std::vector<Played>& notes, int ch, Tick f
         }
         const Note* src = n.source;
         static const std::vector<ExprPoint> none;
-        const std::vector<ExprPoint>& pitchCurve = src ? src->pitchExpr : none;
+        const std::vector<ExprPoint>& pitchCurve = n.merged ? n.mergedPitch : src ? src->pitchExpr : none;
         const std::vector<ExprPoint>& timbreCurve = src ? src->timbreExpr : none;
         const std::vector<ExprPoint>& pressureCurve = src ? src->pressureExpr : none;
         if (o.expressions == ExpressionMode::Mpe) {
@@ -266,12 +919,13 @@ void emitNotes(smf::Track& out, const std::vector<Played>& notes, int ch, Tick f
     }
 }
 
-/// One AUTO channel's value at a song tick, as the engine combines track and clip lanes; nothing when no lane
-/// covers it.
-std::optional<float> laneValue(const Song& song, const Track& t, int output, const Options& o, Tick tick) {
+/// One lane target's value at a song tick (`which` picks its lanes), as the engine combines track and clip lanes;
+/// nothing when no lane covers it.
+template <typename Which>
+std::optional<float> laneValue(const Song& song, const Track& t, const Which& which, const Options& o, Tick tick) {
     std::optional<float> v;
     for (const AutomationEnvelope& lane : t.automation)
-        if (drivesOutput(lane) && lane.outputIndex == output && !lane.mute && !lane.points.empty()) {
+        if (which(lane) && !lane.mute && !lane.points.empty()) {
             v = evaluate(lane, double(tick));
             break;
         }
@@ -282,7 +936,7 @@ std::optional<float> laneValue(const Song& song, const Track& t, int output, con
     if (!clip)
         return v;
     for (const AutomationEnvelope& lane : clip->automation) {
-        if (!drivesOutput(lane) || lane.outputIndex != output || lane.mute || lane.points.empty())
+        if (!which(lane) || lane.mute || lane.points.empty())
             continue;
         std::optional<double> ct = clipTimeAt(*clip, *inst, double(tick));
         if (!ct)
@@ -297,16 +951,58 @@ std::optional<float> laneValue(const Song& song, const Track& t, int output, con
     return v;
 }
 
-std::vector<std::pair<Tick, float>> samplesOf(const Song& song, const Track& t, int output, const Options& o, Tick from,
+/// A modulator sent to an AUTO channel: how much it adds, and the track whose clip its curve counts from.
+struct AutoRoute {
+    const Modulator* modulator;
+    float amount;
+    const Track* owner; // null: a song modulator, counted from the song's start
+};
+
+/// The modulators that move with the song and are sent to AUTO channel `output` of track `t`.
+std::vector<AutoRoute> routesTo(const Song& song, const Track& t, int output) {
+    std::vector<AutoRoute> out;
+    forEachModulator(song, [&](const Modulator& m, const ModulatorPlace& place) {
+        if (!movesWithSong(m))
+            return;
+        for (const Modulation& r : m.routes)
+            if (r.kind == Modulation::Kind::AutoChannel && r.track == t.id && r.channel == output)
+                out.push_back({&m, r.amount, place.level == ModLevel::Song ? nullptr : song.findTrack(place.track)});
+    });
+    return out;
+}
+
+/// What `routes` add to an AUTO channel at `tick`.
+float addedAt(const Song& song, const std::vector<AutoRoute>& routes, Tick tick) {
+    float added = 0;
+    for (const AutoRoute& r : routes) {
+        mods::Clock clock;
+        clock.songTick = double(tick);
+        clock.timeSig = song.timeSig;
+        clock.seed = variationSeed(r.modulator->variation, 0, r.modulator->id.value);
+        if (const ArrangerClip* under = r.owner ? instanceAt(*r.owner, tick) : nullptr; under && !under->muted)
+            clock.sinceClip = double(tick - under->position);
+        mods::State state;
+        mods::Drawn drawn = mods::drawnOf(*r.modulator);
+        const Modulator& m = *r.modulator;
+        added += r.amount * mods::evaluate(m.type, m.id.value, m.params.data(), state, clock, m.steps.data(),
+                                           int(m.steps.size()), &drawn);
+    }
+    return added;
+}
+
+/// The value over [from, to) of the lanes `which` picks, with what `routes` add on top, one entry per change.
+template <typename Which>
+std::vector<std::pair<Tick, float>> samplesOf(const Song& song, const Track& t, const Which& which,
+                                              const std::vector<AutoRoute>& routes, const Options& o, Tick from,
                                               Tick to) {
     std::vector<std::pair<Tick, float>> out;
-    bool any = false;
+    bool any = !routes.empty();
     for (const AutomationEnvelope& lane : t.automation)
-        any |= drivesOutput(lane) && lane.outputIndex == output && !lane.mute && !lane.points.empty();
+        any |= which(lane) && !lane.mute && !lane.points.empty();
     for (const ArrangerClip& a : t.arrangement)
         if (const Clip* clip = song.findClip(a.clip))
             for (const AutomationEnvelope& lane : clip->automation)
-                any |= drivesOutput(lane) && lane.outputIndex == output && !lane.mute && !lane.points.empty();
+                any |= which(lane) && !lane.mute && !lane.points.empty();
     if (!any)
         return out;
     // Sample on a grid, plus at every track lane point so corners land exactly.
@@ -314,18 +1010,27 @@ std::vector<std::pair<Tick, float>> samplesOf(const Song& song, const Track& t, 
     for (Tick tick = from; tick < to; tick += std::max<Tick>(1, o.ccStep))
         ticks.push_back(tick);
     for (const AutomationEnvelope& lane : t.automation)
-        if (drivesOutput(lane) && lane.outputIndex == output)
+        if (which(lane))
             for (const AutoPoint& p : lane.points)
                 if (p.t >= from && p.t < to)
                     ticks.push_back(p.t);
     std::sort(ticks.begin(), ticks.end());
     ticks.erase(std::unique(ticks.begin(), ticks.end()), ticks.end());
     for (Tick tick : ticks) {
-        std::optional<float> v = laneValue(song, t, output, o, tick);
+        std::optional<float> v = laneValue(song, t, which, o, tick);
+        if (!routes.empty())
+            v = std::clamp(v.value_or(0.f) + addedAt(song, routes, tick), 0.f, 1.f);
         if (v && (out.empty() || out.back().second != *v))
             out.push_back({tick, *v});
     }
     return out;
+}
+
+/// The samples of AUTO channel `output` of `t`.
+std::vector<std::pair<Tick, float>> outputSamples(const Song& song, const Track& t, int output, const Options& o,
+                                                  Tick from, Tick to) {
+    auto which = [output](const AutomationEnvelope& lane) { return drivesOutput(lane) && lane.outputIndex == output; };
+    return samplesOf(song, t, which, routesTo(song, t, output), o, from, to);
 }
 
 void emitAutomation(smf::Track& out, const Song& song, const Track& t, int ch, Tick from, Tick to, const Options& o) {
@@ -334,7 +1039,7 @@ void emitAutomation(smf::Track& out, const Song& song, const Track& t, int ch, T
     for (int output = 0; output < kLanes; output++) {
         int cc = std::clamp(o.laneCc[size_t(output)], 0, 119);
         int last = -1;
-        for (const auto& [tick, v] : samplesOf(song, t, output, o, from, to)) {
+        for (const auto& [tick, v] : outputSamples(song, t, output, o, from, to)) {
             if (o.automation == AutomationMode::Cc14 && cc < 32) {
                 int x = std::clamp(int(std::lround(double(v) * 16383)), 0, 16383);
                 if (x == last)
@@ -349,6 +1054,41 @@ void emitAutomation(smf::Track& out, const Song& song, const Track& t, int ch, T
                 out.events.push_back(smf::controlChange(tick - from, ch, cc, x));
                 last = x;
             }
+        }
+    }
+}
+
+/// The track's pitch bend and channel pressure lanes as MIDI pitch bend and channel pressure on each of `channels`,
+/// after a bend range message (RPN 0) saying the bend lane's range, so the receiving instrument bends as far.
+void emitControlLanes(smf::Track& out, const Song& song, const Track& t, const std::vector<int>& channels, Tick from,
+                      Tick to, const Options& o) {
+    if (o.automation == AutomationMode::Off)
+        return;
+    int range = 2;
+    std::vector<std::pair<Tick, float>> bend = controlSamples(song, t, LaneDrive::Pitch, o, from, to, &range);
+    std::vector<std::pair<Tick, float>> pressure = controlSamples(song, t, LaneDrive::Pressure, o, from, to);
+    for (int c : channels) {
+        if (!bend.empty()) {
+            out.events.push_back(smf::controlChange(0, c, 101, 0));
+            out.events.push_back(smf::controlChange(0, c, 100, 0));
+            out.events.push_back(smf::controlChange(0, c, 6, range));
+            out.events.push_back(smf::controlChange(0, c, 38, 0));
+            out.events.push_back(smf::controlChange(0, c, 101, 127));
+            out.events.push_back(smf::controlChange(0, c, 100, 127));
+        }
+        int last = INT32_MIN;
+        for (const auto& [tick, v] : bend) {
+            int b = std::clamp(int(std::lround((double(v) * 2 - 1) * 8192)), -8192, 8191);
+            if (b != last)
+                out.events.push_back(smf::pitchBend(tick - from, c, b));
+            last = b;
+        }
+        last = INT32_MIN;
+        for (const auto& [tick, v] : pressure) {
+            int x = smf::value7(v);
+            if (x != last)
+                out.events.push_back(smf::channelPressure(tick - from, c, x));
+            last = x;
         }
     }
 }
@@ -387,6 +1127,85 @@ smf::Track conductor(const Song& song, const Context& ctx, Tick from, Tick to) {
 }
 
 } // namespace
+
+std::vector<int> heardPitches(const Song& song, const Track& track, const Device& device, const Playhead& p,
+                              const Clip& clip, int64_t pass) {
+    struct Readable {
+        double start, end;
+        int pitch;
+        uint8_t role = 0;
+        size_t index;
+    };
+    std::vector<int> heard(clip.notes.size(), -1);
+    double playStart = double(clip.playStart()), playEnd = double(clip.playEnd());
+    std::pair<Tick, Tick> segment = playheadSpan(clip, track.type == TrackType::Drum ? &track.drumLanes : nullptr);
+    if (playEnd <= playStart)
+        return heard;
+    std::vector<Readable> notes;
+    int lowest = 127, highest = 0;
+    for (size_t i = 0; i < clip.notes.size(); i++) {
+        const Note& n = clip.notes[i];
+        if (n.muted)
+            continue;
+        notes.push_back({double(n.start), double(n.start + n.length), n.pitch, 0, i});
+        lowest = std::min<int>(lowest, n.pitch);
+        highest = std::max<int>(highest, n.pitch);
+    }
+    std::vector<uint32_t> byEnd = playheads::orderByEnd(notes);
+    playheads::markChordRoles(notes, [](Readable& n) -> uint8_t& { return n.role; });
+    Scale scale = clip.scaleOverride ? resolveScale(*clip.scaleOverride, song.customScales)
+                                     : resolveScale(song.scale, song.customScales);
+    constexpr double kStep = double(kPpq) / 8;
+    std::vector<float> knobs(p.params.size());
+    std::vector<const Device*> before = readMotions(track);
+    double from = double(std::max<int64_t>(0, pass)) * (playEnd - playStart);
+    for (double e = from; e < from + (playEnd - playStart); e += kStep) {
+        playheadKnobsAt(song, track, p, e, knobs.data());
+        playheads::Motion m = playheads::motionFrom(knobs.data(), device.params.data(), double(segment.first),
+                                                    double(segment.second), song.timeSig);
+        if (playheads::wantsDrawnPath(knobs.data()))
+            m.path = &p.path;
+        playheads::NoteShape shape = playheads::noteShapeFrom(knobs.data());
+        playheads::Sweep sweeps[playheads::kMaxSweeps];
+        int count = playheads::sweeps(m, e, e + kStep, sweeps);
+        for (int i = 0; i < count; i++)
+            playheads::crossed(sweeps[i], notes, byEnd, [&](const Readable& n, double) {
+                if (heard[n.index] >= 0 || !playheads::picked(shape.pick, n.role))
+                    return;
+                // A Motion device before the playheads moves the note's pitch first, on this pass.
+                int pitch = n.pitch;
+                for (const Device* motion : before)
+                    if (clip.notes[n.index].motion == motion->id) {
+                        MovedBy moved = movedAt(song, track, *motion, pass, from + n.start - playStart);
+                        if (moved.steps != 0)
+                            pitch = std::clamp(moved.inKey ? scale.stepBy(pitch, moved.steps) : pitch + moved.steps, 0,
+                                               127);
+                    }
+                pitch = playheads::shapedPitch(shape, pitch, lowest, highest, scale);
+                // Then the Transpose devices in the playhead's own chain, with their curves at this moment.
+                for (const Device& b : p.branch) {
+                    if (!b.on || b.type != DeviceType::Transpose)
+                        continue;
+                    float bk[8] = {};
+                    size_t count = std::min(b.params.size(), std::size(bk));
+                    knobsAt(song, track, ParamRef::Kind::Device, b.id.value, b.params.data(), count, e, bk);
+                    const auto& info = devices::deviceInfo(DeviceType::Transpose).params;
+                    int semis =
+                        int(std::lround(devices::display(info[chain::knob::kSemitones], bk[chain::knob::kSemitones])));
+                    int octaves =
+                        int(std::lround(devices::display(info[chain::knob::kOctaves], bk[chain::knob::kOctaves])));
+                    int steps =
+                        int(std::lround(devices::display(info[chain::knob::kKeySteps], bk[chain::knob::kKeySteps])));
+                    pitch += semis + 12 * octaves;
+                    if (steps != 0)
+                        pitch = scale.stepBy(pitch, steps);
+                    pitch = std::clamp(pitch, 0, 127);
+                }
+                heard[n.index] = pitch;
+            });
+    }
+    return heard;
+}
 
 std::pair<Tick, Tick> rangeOf(const Song& song, const Options& o) {
     switch (o.range) {
@@ -435,12 +1254,21 @@ smf::File renderSong(const Song& song, const Options& o, const Context& ctx, con
         int ch = channelOf(song, o, t.id) - 1;
         smf::Track out;
         out.events.push_back(smf::trackName(0, t.name));
-        std::vector<Scale> keys;
-        std::vector<Played> played = playedNotes(song, t, o, keys);
-        if (o.devices == DeviceMode::Applied)
-            played = throughChain(song, t, played, double(to), ctx.tempo, keys);
+        std::vector<Played> played = trackPlayed(song, t, o, double(to), ctx.tempo);
+        writeTies(played, o);
         emitNotes(out, played, ch, from, to, o);
         emitAutomation(out, song, t, ch, from, to, o);
+        // Bend and pressure lanes act on the channel: with MPE on its master channel, which every note follows;
+        // with note channels on each channel the notes use.
+        std::vector<int> channels{o.expressions == ExpressionMode::Mpe ? kMasterChannel : ch};
+        if (o.noteChannels && o.expressions != ExpressionMode::Mpe) {
+            channels.clear();
+            for (const Played& p : played)
+                if (int c = std::clamp(int(p.channel), 1, 16) - 1;
+                    std::find(channels.begin(), channels.end(), c) == channels.end())
+                    channels.push_back(c);
+        }
+        emitControlLanes(out, song, t, channels, from, to, o);
         file.tracks.push_back(std::move(out));
     }
     return file;
@@ -464,17 +1292,48 @@ smf::File renderClip(const Song& song, const Options& o, const Context& ctx, Tra
     return renderSong(solo, clipOptions, ctx);
 }
 
+void overlapTies(std::vector<ExportNote>& notes, bool glides) {
+    std::vector<int> partners = tiePartners(notes, [](const ExportNote& n) { return n.tied; });
+    for (size_t i = 0; glides && i < notes.size(); i++) {
+        int p = partners[i];
+        if (p < 0)
+            continue;
+        ExportNote& a = notes[size_t(p)];
+        ExportNote& b = notes[i];
+        ties::Glide g;
+        g.joint = Tick(std::llround(b.start));
+        g.from = std::max(Tick(std::llround(a.start)), g.joint - std::max<Tick>(0, b.glideBefore));
+        g.to = g.joint + std::min<Tick>(std::max<Tick>(0, b.glideAfter), Tick(std::llround(b.span)));
+        g.p0 = a.pitch;
+        g.p1 = b.pitch;
+        g.shape = b.glideShape;
+        ties::addGlide(a.pitchExpr, a.start, a.span, b.pitchExpr, b.start, b.span, g);
+    }
+    for (size_t i = 0; i < notes.size(); i++)
+        if (int p = partners[i]; p >= 0)
+            notes[size_t(p)].end = overlappedEnd(notes[size_t(p)].end, notes[i].start, notes[i].end);
+}
+
 std::vector<ExportNote> trackNotes(const Song& song, TrackId track, const Options& o, const Context& ctx) {
     std::vector<ExportNote> out;
     const Track* t = song.findTrack(track);
     if (!t)
         return out;
-    std::vector<Scale> keys;
-    std::vector<Played> played = playedNotes(song, *t, o, keys);
-    if (o.devices == DeviceMode::Applied)
-        played = throughChain(song, *t, played, double(songEnd(song)), ctx.tempo, keys);
-    for (const Played& p : played)
-        out.push_back({p.start, p.end, p.pitch, p.velocity, p.release, p.channel});
+    std::vector<Played> played = trackPlayed(song, *t, o, double(songEnd(song)), ctx.tempo);
+    for (const Played& p : played) {
+        out.push_back({p.start, p.end, p.pitch, p.velocity, p.release, p.channel, {}, {}, {}});
+        out.back().span = p.end - p.start;
+        if (p.source) {
+            ExportNote& n = out.back();
+            n.pitchExpr = p.source->pitchExpr;
+            n.timbreExpr = p.source->timbreExpr;
+            n.pressureExpr = p.source->pressureExpr;
+            n.tied = p.source->tied;
+            n.glideBefore = p.source->glideBefore;
+            n.glideAfter = p.source->glideAfter;
+            n.glideShape = p.source->glideShape;
+        }
+    }
     return out;
 }
 
@@ -493,7 +1352,69 @@ std::vector<ExportNote> clipNotes(const Song& song, TrackId track, ClipId clipId
 std::vector<std::pair<Tick, float>> laneSamples(const Song& song, TrackId track, int output, const Options& o,
                                                 Tick from, Tick to) {
     const Track* t = song.findTrack(track);
-    return t ? samplesOf(song, *t, output, o, from, to) : std::vector<std::pair<Tick, float>>();
+    return t ? outputSamples(song, *t, output, o, from, to) : std::vector<std::pair<Tick, float>>();
+}
+
+std::vector<std::pair<Tick, float>> clipLaneSamples(const Song& song, TrackId track, ClipId clipId, int output,
+                                                    const Options& o, Tick to) {
+    const Track* t = song.findTrack(track);
+    const Clip* clip = song.findClip(clipId);
+    if (!t || !clip)
+        return {};
+    Song solo = soloSong(song, *t, *clip);
+    return outputSamples(solo, solo.tracks[0], output, o, 0, to);
+}
+
+bool modulatedOutput(const Song& song, TrackId track, int output) {
+    const Track* t = song.findTrack(track);
+    return t && !routesTo(song, *t, output).empty();
+}
+
+std::vector<std::pair<Tick, float>> controlSamples(const Song& song, const Track& t, LaneDrive drive,
+                                                    const Options& o, Tick from, Tick to, int* range) {
+    auto which = [drive](const AutomationEnvelope& lane) { return !lane.paramTarget.valid() && lane.drive == drive; };
+    std::vector<std::pair<Tick, float>> out;
+    const AutomationEnvelope* first = nullptr;
+    for (const AutomationEnvelope& lane : t.automation)
+        if (!first && which(lane) && !lane.mute && !lane.points.empty())
+            first = &lane;
+    for (const ArrangerClip& a : t.arrangement)
+        if (const Clip* clip = song.findClip(a.clip))
+            for (const AutomationEnvelope& lane : clip->automation)
+                if (!first && which(lane) && !lane.mute && !lane.points.empty())
+                    first = &lane;
+    if (!first)
+        return out;
+    if (range)
+        *range = std::clamp(int(std::lround(std::max(std::fabs(first->rangeMin), std::fabs(first->rangeMax)) * 12)),
+                            1, 96);
+    // Where no lane plays, the engine rests the bend in the middle and the pressure at 0.
+    float rest = drive == LaneDrive::Pitch ? 0.5f : 0.f;
+    std::vector<Tick> ticks;
+    for (Tick tick = from; tick < to; tick += std::max<Tick>(1, o.ccStep))
+        ticks.push_back(tick);
+    for (const AutomationEnvelope& lane : t.automation)
+        if (which(lane))
+            for (const AutoPoint& p : lane.points)
+                if (p.t >= from && p.t < to)
+                    ticks.push_back(p.t);
+    std::sort(ticks.begin(), ticks.end());
+    ticks.erase(std::unique(ticks.begin(), ticks.end()), ticks.end());
+    for (Tick tick : ticks) {
+        float v = laneValue(song, t, which, o, tick).value_or(rest);
+        if (out.empty() ? v != rest : out.back().second != v)
+            out.push_back({tick, v});
+    }
+    return out;
+}
+
+std::vector<std::pair<Tick, float>> driveSamples(const Song& song, TrackId track, LaneDrive drive, const Options& o,
+                                                 Tick from, Tick to) {
+    const Track* t = song.findTrack(track);
+    if (!t)
+        return {};
+    auto which = [drive](const AutomationEnvelope& lane) { return !lane.paramTarget.valid() && lane.drive == drive; };
+    return samplesOf(song, *t, which, {}, o, from, to);
 }
 
 // ---- Options ------------------------------------------------------------------------------------------------
@@ -509,6 +1430,7 @@ json_t* Options::toJson() const {
     setString(j, "devices", kDeviceNames[int(devices)]);
     setBool(j, "includeMuted", includeMuted);
     setBool(j, "noteChannels", noteChannels);
+    setString(j, "ties", kTieNames[int(ties)]);
     setInt(j, "ccStep", ccStep);
     setInt(j, "bendRange", bendRange);
     json_t* ccs = json_array();
@@ -535,6 +1457,7 @@ Options Options::fromJson(const json_t* j) {
     o.devices = named(j, "devices", kDeviceNames, o.devices);
     o.includeMuted = getBool(j, "includeMuted", o.includeMuted);
     o.noteChannels = getBool(j, "noteChannels", o.noteChannels);
+    o.ties = named(j, "ties", kTieNames, o.ties);
     o.ccStep = std::clamp<Tick>(getInt(j, "ccStep", o.ccStep), 1, kPpq);
     o.bendRange = int(std::clamp<int64_t>(getInt(j, "bendRange", o.bendRange), 1, 96));
     const json_t* ccs = get(j, "laneCc");
@@ -552,8 +1475,235 @@ Options Options::fromJson(const json_t* j) {
 bool Options::operator==(const Options& o) const {
     return timing == o.timing && operators == o.operators && automation == o.automation &&
            expressions == o.expressions && range == o.range && split == o.split && devices == o.devices &&
-           includeMuted == o.includeMuted && noteChannels == o.noteChannels && from == o.from && to == o.to &&
+           includeMuted == o.includeMuted && noteChannels == o.noteChannels && ties == o.ties && from == o.from && to == o.to &&
            ccStep == o.ccStep && bendRange == o.bendRange && laneCc == o.laneCc && channels == o.channels;
+}
+
+namespace {
+
+/// Every Motion device of a track: in its chain, and in each playhead's own devices (its branch).
+std::vector<const Device*> motionsOf(const Track& track) {
+    std::vector<const Device*> out;
+    for (const Device& d : track.devices) {
+        if (d.type == DeviceType::Motion)
+            out.push_back(&d);
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                if (b.type == DeviceType::Motion)
+                    out.push_back(&b);
+    }
+    return out;
+}
+
+/// The longest cycle of the modulators on Motion device `motion`: how many passes its Per pass Steps and Ramps take,
+/// and how many ticks the longest Curve segment lasts (0 when none).
+std::pair<int, Tick> motionCycle(const Song& song, const Track& track, const Device& motion) {
+    int passes = 1;
+    Tick ticks = 0;
+    auto measure = [&](const std::vector<Modulator>& list) {
+        for (const Modulator& m : list) {
+            bool routed = std::any_of(m.routes.begin(), m.routes.end(), [&](const Modulation& r) {
+                return r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device &&
+                       r.target.owner == motion.id.value;
+            });
+            if (!routed)
+                continue;
+            if (m.type == ModulatorType::Curve) {
+                ticks = std::max(ticks, m.segmentEnd - m.segmentStart);
+            } else if (mods::perPass(m.type, m.params.data())) {
+                // Steps go round their steps, a Ramp over its length in passes.
+                const devices::TypeInfo& info = devices::modulatorInfo(m.type);
+                int knob = m.type == ModulatorType::Steps ? int(mods::knob::kStepCount) : int(mods::knob::kBars);
+                if (size_t(knob) < m.params.size())
+                    passes = std::max(
+                        passes, int(std::lround(devices::display(info.params[size_t(knob)], m.params[size_t(knob)]))));
+            }
+        }
+    };
+    measure(song.modulators);
+    measure(track.modulators);
+    for (const Device& d : track.devices) {
+        measure(d.modulators);
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                measure(b.modulators);
+    }
+    return {std::clamp(passes, 1, kMaxGhostPasses), ticks};
+}
+
+/// The key a clip's notes are moved in.
+Scale keyOf(const Song& song, const Clip& clip) {
+    return clip.scaleOverride ? resolveScale(*clip.scaleOverride, song.customScales)
+                              : resolveScale(song.scale, song.customScales);
+}
+
+} // namespace
+
+MotionMove motionMoveAt(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass,
+                        double songTick, double sinceClip) {
+    if (index >= clip.notes.size())
+        return {};
+    const Note& n = clip.notes[index];
+    const Device* motion = nullptr;
+    for (const Device* d : motionsOf(track))
+        if (d->id == n.motion)
+            motion = d;
+    if (!motion || n.muted)
+        return {};
+    MovedBy moved = movedAt(song, track, *motion, pass, songTick, sinceClip);
+    int pitch = n.pitch;
+    if (moved.steps != 0)
+        pitch = moved.inKey ? keyOf(song, clip).stepBy(pitch, moved.steps) : pitch + moved.steps;
+    return {std::clamp(pitch, 0, 127), moved.delay, std::max(0.01, moved.lengthScale)};
+}
+
+namespace {
+
+/// Motion device `id` in `devices`, or in a playhead's own devices among them; nullptr when it isn't there.
+const Device* findMotion(const std::vector<Device>& devices, DeviceId id) {
+    for (const Device& d : devices) {
+        if (d.type == DeviceType::Motion && d.id == id)
+            return &d;
+        for (const Playhead& p : d.playheads)
+            for (const Device& b : p.branch)
+                if (b.type == DeviceType::Motion && b.id == id)
+                    return &b;
+    }
+    return nullptr;
+}
+
+/// Calls `visit(modulator, song level)` for every modulator that may reach a device of `track` or `clip`: the song's,
+/// the track's and the clip's own, and those of every device in either chain (playheads' own devices too).
+template <typename Visit> void forEachReachingModulator(const Song& song, const Track& track, const Clip& clip, Visit visit) {
+    for (const Modulator& m : song.modulators)
+        visit(m, true);
+    auto chain = [&](const std::vector<Modulator>& own, const std::vector<Device>& devices) {
+        for (const Modulator& m : own)
+            visit(m, false);
+        for (const Device& d : devices) {
+            for (const Modulator& m : d.modulators)
+                visit(m, false);
+            for (const Playhead& p : d.playheads)
+                for (const Device& b : p.branch)
+                    for (const Modulator& m : b.modulators)
+                        visit(m, false);
+        }
+    };
+    chain(track.modulators, track.devices);
+    chain(clip.modulators, clip.devices);
+}
+
+} // namespace
+
+MotionMove motionMoveLive(const Song& song, const Track& track, const Clip& clip, size_t index, int64_t pass, double at,
+                          double sinceClip, const EngineNow& engine, bool now) {
+    if (index >= clip.notes.size())
+        return {};
+    const Note& n = clip.notes[index];
+    const Device* motion = n.muted ? nullptr : findMotion(clip.usesOwnChain() ? clip.devices : track.devices, n.motion);
+    if (!motion)
+        return {};
+    uint64_t owner = motion->id.value;
+    size_t count = motion->params.size();
+    auto routes = [&](const Modulator& m, auto add) {
+        for (const Modulation& r : m.routes)
+            if (r.kind == Modulation::Kind::Param && r.target.kind == ParamRef::Kind::Device && r.target.owner == owner &&
+                r.target.param < count)
+                add(r.target.param, r.amount);
+    };
+    // A modulator's settings as they are now: another modulator or a lane may be moving them.
+    auto settingsOf = [&](const Modulator& m) {
+        std::vector<float> settings = m.params;
+        if (engine.knob)
+            for (size_t k = 0; k < settings.size(); k++)
+                settings[k] = engine.knob(ParamRef{ParamRef::Kind::Modulator, m.id.value, uint16_t(k)}).value_or(m.params[k]);
+        return settings;
+    };
+    std::vector<float> knobs = motion->params;
+    if (now && engine.knob) {
+        for (size_t p = 0; p < count; p++)
+            knobs[p] = engine.knob(ParamRef{ParamRef::Kind::Device, owner, uint16_t(p)}).value_or(knobs[p]);
+    } else {
+        // Lanes: the track's in song time, the clip's own in clip time, where the note is.
+        std::vector<char> setByLane(count, 0);
+        auto lane = [&](const AutomationEnvelope& l, double t, bool modulate) {
+            if (l.mute || l.paramTarget.kind != ParamRef::Kind::Device || l.paramTarget.owner != owner ||
+                l.paramTarget.param >= count)
+                return;
+            size_t p = l.paramTarget.param;
+            float v = evaluate(l, t);
+            knobs[p] = modulate && setByLane[p] ? std::clamp(knobs[p] + v - 0.5f, 0.f, 1.f) : v;
+            if (!modulate)
+                setByLane[p] = 1;
+        };
+        for (const AutomationEnvelope& l : track.automation)
+            lane(l, at, false);
+        for (const AutomationEnvelope& l : clip.automation)
+            lane(l, double(n.start), l.combine == CombineMode::Modulate);
+        forEachReachingModulator(song, track, clip, [&](const Modulator& m, bool songLevel) {
+            if (mods::perPass(m.type, m.params.data()))
+                return;
+            float v = 0;
+            if (movesWithSong(m)) {
+                std::vector<float> settings = settingsOf(m);
+                mods::State state;
+                mods::Clock clock;
+                clock.songTick = at;
+                clock.sinceClip = songLevel ? std::numeric_limits<double>::quiet_NaN() : sinceClip;
+                clock.timeSig = song.timeSig;
+                clock.seed = variationSeed(m.variation, engine.roll, m.id.value);
+                mods::Drawn drawn = mods::drawnOf(m);
+                v = mods::evaluate(m.type, m.id.value, settings.data(), state, clock, m.steps.data(),
+                                   int(m.steps.size()), &drawn);
+            } else if (engine.output) {
+                v = engine.output(m.id);
+            }
+            routes(m, [&](size_t p, float amount) { knobs[p] += amount * v; });
+        });
+        for (float& k : knobs)
+            k = std::clamp(k, 0.f, 1.f);
+    }
+    // "Per pass" modulators step with the note's pass, on top, as the engine adds them (Engine::motionKnob).
+    forEachReachingModulator(song, track, clip, [&](const Modulator& m, bool) {
+        if (!mods::perPass(m.type, m.params.data()))
+            return;
+        mods::Drawn drawn = mods::drawnOf(m);
+        std::vector<float> settings = settingsOf(m);
+        float v = mods::passValue(m.type, m.id.value, settings.data(), pass, song.timeSig, m.steps.data(),
+                                  int(m.steps.size()), &drawn);
+        routes(m, [&](size_t p, float amount) { knobs[p] += amount * v; });
+    });
+    auto value = [&](int k) {
+        return devices::display(devices::motionInfo().params[size_t(k)], std::clamp(knobs[size_t(k)], 0.f, 1.f));
+    };
+    int steps = int(std::lround(value(chain::knob::kMotionPitch)));
+    int pitch = n.pitch;
+    if (steps != 0)
+        pitch = value(chain::knob::kMotionInKey) > 0.5f ? keyOf(song, clip).stepBy(pitch, steps) : pitch + steps;
+    double delay = double(value(chain::knob::kMotionTime)) * double(kPpq / 4);
+    double lengthScale = 1 + double(value(chain::knob::kMotionLength)) / 100;
+    return {std::clamp(pitch, 0, 127), delay, std::max(0.01, lengthScale)};
+}
+
+std::vector<std::vector<MotionMove>> motionMoves(const Song& song, const Track& track, const Clip& clip) {
+    std::vector<std::vector<MotionMove>> out(clip.notes.size());
+    ClipSpan span = clipSpan(clip);
+    double loop = std::max(1.0, double(span.length()));
+    for (const Device* m : motionsOf(track)) {
+        const Device& motion = *m;
+        auto [passes, ticks] = motionCycle(song, track, motion);
+        int cycle = std::clamp(std::max(passes, int(std::ceil(double(ticks) / loop))), 1, kMaxGhostPasses);
+        for (size_t i = 0; i < clip.notes.size(); i++) {
+            const Note& n = clip.notes[i];
+            if (n.muted || n.motion != motion.id)
+                continue;
+            // The clip plays straight: on pass k the note is met at its own place, k loops in.
+            for (int k = 0; k < cycle; k++)
+                out[i].push_back(
+                    motionMoveAt(song, track, clip, i, k, double(k) * loop + double(n.start - span.start)));
+        }
+    }
+    return out;
 }
 
 } // namespace tessera::render

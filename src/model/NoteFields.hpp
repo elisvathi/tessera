@@ -30,6 +30,10 @@ enum class Field {
     Bend,
     Timbre,
     Pressure,
+    // A tied note's glide (docs/design/TIES_VOICES.md §2): how long before the joint it starts and after it it
+    // arrives, in beats. Only tied notes take them.
+    GlideBefore,
+    GlideAfter,
     Count
 };
 

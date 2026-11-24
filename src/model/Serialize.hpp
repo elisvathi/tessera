@@ -6,6 +6,12 @@
 
 namespace tessera {
 
+/// Whether `file` is safe to join to the patch storage folder: a relative path that can't climb out of it. A song can
+/// come from anyone, and its files are written where this name says.
+bool isSafeAudioFile(const std::string& file);
+/// `file` when it is safe, else just its last part, under "audio/".
+std::string safeAudioFile(const std::string& file);
+
 /// Song <-> JSON. Notes are stored as compact arrays to keep patches small:
 /// [start, length, pitch, velocity, releaseVelocity, microOffset, flags, id, {extras}?]
 /// where flags bit 0 = muted, bits 8-15 = color tag, and the optional extras object holds operators and

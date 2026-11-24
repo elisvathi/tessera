@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Clip.hpp"
 #include "Device.hpp"
 
 #include <string>
@@ -11,7 +12,9 @@
 namespace tessera::devices {
 
 struct ParamInfo {
-    enum class Kind : uint8_t { Number, Integer, Exponential, Choice, Toggle };
+    /// Mask: a set of up to 16 things (the Note Filter's channels), bit n for the n-th; stored as the set's number
+    /// over 65535, which a float holds exactly. Modulators, lanes and curves never move it.
+    enum class Kind : uint8_t { Number, Integer, Exponential, Choice, Toggle, Mask };
     const char* name;
     Kind kind = Kind::Number;
     float min = 0, max = 1; // display units; Exponential needs min > 0
@@ -21,6 +24,8 @@ struct ParamInfo {
 
     /// Knobs that can go below zero draw from their middle.
     bool bipolar() const { return kind != Kind::Choice && kind != Kind::Toggle && min < 0 && max > 0; }
+    /// Whether modulators, automation lanes and curves may move it.
+    bool movable() const { return kind != Kind::Mask; }
 };
 
 struct TypeInfo {
@@ -35,6 +40,11 @@ struct TypeInfo {
 
 const TypeInfo& deviceInfo(DeviceType type);
 const TypeInfo& modulatorInfo(ModulatorType type);
+/// The settings every playhead in a Playheads device has (docs/design/PLAYHEADS.md §4).
+const TypeInfo& playheadInfo();
+const ParamInfo* playheadParamInfo(int param);
+/// A Motion device's knobs (docs/design/PLAYHEADS.md §6): the same as deviceInfo(DeviceType::Motion).
+const TypeInfo& motionInfo();
 /// The parameter list a reference points into, or nullptr when the type is unknown.
 const ParamInfo* paramInfo(DeviceType type, int param);
 const ParamInfo* paramInfo(ModulatorType type, int param);
@@ -49,10 +59,18 @@ std::string format(const ParamInfo& p, float normalized);
 /// A new device or modulator with every knob at its default and the type's name.
 Device makeDevice(DeviceType type, DeviceId id);
 Modulator makeModulator(ModulatorType type, ModulatorId id);
+/// The `index`-th playhead of a device (from 0): named "Playhead 1"…, on channel 1…, every setting at its default.
+Playhead makePlayhead(PlayheadId id, int index);
 
-/// Rates and lengths offered by synced knobs, from 8 bars down to 1/64, with triplets and dotted values.
+/// The lengths and rates note devices offer (Note Length, Arpeggiator, Note Repeat, Echo): 1/64 to 8 bars with the
+/// triplets and dotted values, short to long (Lengths.hpp).
 const std::vector<std::string>& rateNames();
 /// The length of rate choice `index` in ticks (bars follow the time signature).
 Tick rateTicks(int index, TimeSig ts);
+/// The synced rates modulators offer (LFO, Steps, Random): the same, on to 32 bars.
+const std::vector<std::string>& slowRateNames();
+Tick slowRateTicks(int index, TimeSig ts);
+/// The choice of length `name` ("1/16", "1/8 T", "2 bars") in either list: they agree up to 8 bars.
+int rateIndex(const std::string& name);
 
 } // namespace tessera::devices

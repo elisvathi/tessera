@@ -1,10 +1,16 @@
 #include "ArrangerLanes.hpp"
 
+#include "DeviceTiles.hpp"
+
+#include "../../model/Arrangement.hpp"
+#include "../../model/DeviceLookup.hpp"
 #include "../../model/LauncherCommands.hpp"
+#include "../../model/Playheads.hpp"
 #include "../../model/RangeEdits.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ArrangeActions.hpp"
+#include "../editing/AudioActions.hpp"
 #include "../editing/ClipActions.hpp"
 #include "../editing/ClipGestures.hpp"
 #include "../editing/TrackActions.hpp"
@@ -14,6 +20,8 @@
 #include "../widgets/CachedLayer.hpp"
 #include "../widgets/Draw.hpp"
 #include "Arranger.hpp"
+#include "SlotDraw.hpp"
+#include "AudioClipDraw.hpp"
 #include "TimelineDraw.hpp"
 
 #include <cmath>
@@ -40,6 +48,29 @@ float headerHeight(float rowHeight) {
 }
 
 /// Two linked rings: this clip plays in more than one place.
+/// Whether an audio clip's gain is off 0 dB: then its level line is always drawn.
+bool levelChanged(float gainDb) { return std::fabs(gainDb) >= 0.05f; }
+
+/// Where an audio clip's level line sits across its body, 0 (bottom) to 1 (top): 0 dB at three quarters (just under
+/// the title) as on a fader, kMaxClipGainDb at the top.
+float levelOf(float gainDb) {
+    constexpr float k = kZeroDbFaderPos;
+    if (gainDb > 0)
+        return k + (1 - k) * std::min(gainDb, kMaxClipGainDb) / kMaxClipGainDb;
+    return k * std::pow(dbToGain(gainDb), 0.25f);
+}
+
+/// The level line's y in a body from `top` to `bottom`, kept off its edges.
+float levelY(float level, float top, float bottom) {
+    return std::round(bottom - 2 - level * (bottom - top - 4)) + 0.5f;
+}
+
+constexpr float kGainTabInset = 12; // the gain tab keeps clear of the clip's resize edge
+constexpr float kGainTabHit = 40;   // how far left of its right end a press still lands on the tab
+
+/// The gain tab's centre y beside a level line at `y`: above it, or below when the line runs along the body's top.
+float gainTabY(float y, float bodyTop) { return y - 7 - 6 >= bodyTop ? y - 7 : y + 7; }
+
 void drawLinkBadge(NVGcontext* vg, float x, float cy, NVGcolor color) {
     nvgStrokeColor(vg, color);
     nvgStrokeWidth(vg, 1.2f);
@@ -65,7 +96,7 @@ double ArrangerLanes::verticalScroll() { return owner.tracks.scroll(); }
 
 void ArrangerLanes::setVerticalScroll(double px) {
     owner.tracks.scrollTo(px);
-    ctx.view().trackScroll = owner.tracks.scroll();
+    ctx.state().trackScroll = owner.tracks.scroll();
 }
 
 void ArrangerLanes::zoomVertical(double y, double factor) { owner.zoomTracksAt(y, factor); }
@@ -76,7 +107,7 @@ void ArrangerLanes::showVerticalRange(double y0, double y1) {
     owner.tracks.zoomAt(y0, box.size.y / (y1 - y0));
     owner.tracks.scrollByPx(y0);
     owner.writeHeights();
-    ctx.view().trackScroll = owner.tracks.scroll();
+    ctx.state().trackScroll = owner.tracks.scroll();
 }
 
 void ArrangerLanes::zoomToFit() {
@@ -90,7 +121,7 @@ void ArrangerLanes::zoomToFit() {
     if (selection().empty()) {
         owner.tracks.fitAll();
         owner.writeHeights();
-        ctx.view().trackScroll = owner.tracks.scroll();
+        ctx.state().trackScroll = owner.tracks.scroll();
     }
 }
 
@@ -152,9 +183,26 @@ const arrange::Stacking& ArrangerLanes::stackingOf(TrackId track) {
         stacksKey = key;
     }
     auto it = stacks.find(track);
-    if (it == stacks.end())
-        it = stacks.emplace(track, arrange::stackOf(shown(), track)).first;
+    if (it == stacks.end()) {
+        const Track* t = m ? m->song().findTrack(track) : nullptr;
+        bool flat = t && t->type == TrackType::Audio;
+        it = stacks.emplace(track, arrange::stackOf(shown(), track, flat)).first;
+    }
     return it->second;
+}
+
+double ArrangerLanes::shownEnd(const ArrangerClip& a) {
+    TesseraModule* m = ctx.module();
+    const Clip* clip = m ? m->song().findClip(a.clip) : nullptr;
+    if (!clip || !clip->audio)
+        return double(instanceEnd(a));
+    double tempo = m->tempo() > 0 ? m->tempo() : 120;
+    return double(a.position) + double(a.length) * songTicksPerClipTick(*clip->audio, tempo);
+}
+
+void ArrangerLanes::previewGain(std::vector<std::pair<ClipId, float>> gains) {
+    gainPreview = std::move(gains);
+    gainPreviewGeneration++;
 }
 
 std::pair<float, float> ArrangerLanes::instanceSpan(int row, const arrange::Placed& p) {
@@ -168,12 +216,59 @@ std::pair<float, float> ArrangerLanes::instanceSpan(int row, const arrange::Plac
     return {top + each * float(sub), each};
 }
 
+std::vector<ArrangerLanes::Crossfade> ArrangerLanes::crossfadesOn(TrackId track) {
+    std::vector<Crossfade> out;
+    TesseraModule* m = ctx.module();
+    const Track* t = m ? m->song().findTrack(track) : nullptr;
+    if (!t || t->type != TrackType::Audio)
+        return out;
+    std::vector<const ArrangerClip*> mine;
+    for (const arrange::Placed& p : shown())
+        if (p.track == track && !p.clip.muted)
+            mine.push_back(&p.clip);
+    std::sort(mine.begin(), mine.end(), [](const ArrangerClip* x, const ArrangerClip* y) {
+        return x->position != y->position ? x->position < y->position : x->id.value < y->id.value;
+    });
+    for (size_t i = 0; i + 1 < mine.size(); i++) {
+        double end = std::min(shownEnd(*mine[i]), shownEnd(*mine[i + 1]));
+        if (end > double(mine[i + 1]->position))
+            out.push_back({mine[i]->id, mine[i + 1]->id, double(mine[i + 1]->position), end});
+    }
+    return out;
+}
+
 ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
     Hit hit;
     hit.row = rowAt(pos.y);
     TrackId track = trackOfRow(hit.row);
     if (!track.valid())
         return hit;
+    // A crossfade's handle and curve dot come first, then both clips' edges, then the bodies (§6.1 hit map).
+    if (ctx.state().tool == Tool::Pointer || ctx.state().tool == Tool::Draw) {
+        float top = rowTop(hit.row), h = rowHeight(hit.row);
+        float bodyTop = top + 1 + (h >= kMinHeightForStrip ? kHeaderStrip : headerHeight(h));
+        float bodyH = top + h - 1 - bodyTop;
+        float reach = theme::metrics::kAudioHandleHit / 2;
+        if (bodyH >= theme::metrics::kAudioHandleMinBody)
+            for (const Crossfade& x : crossfadesOn(track)) {
+                float xa = float(time().tickToX(x.start)), xb = float(time().tickToX(x.end));
+                float cx = (xa + xb) / 2;
+                if (std::fabs(pos.x - cx) > std::max(reach, (xb - xa) / 2))
+                    continue;
+                if (std::fabs(pos.x - cx) <= reach && pos.y >= bodyTop - 2 &&
+                    pos.y < bodyTop + theme::metrics::kAudioHandleTopZone) {
+                    hit.part = Part::Crossfade;
+                } else if (xb - xa >= 2 * reach && std::fabs(pos.x - cx) <= reach &&
+                           std::fabs(pos.y - (bodyTop + bodyH / 2)) <= reach) {
+                    hit.part = Part::CrossfadeCurve;
+                } else {
+                    continue;
+                }
+                hit.id = x.second;
+                hit.other = x.first;
+                return hit;
+            }
+    }
     float edge = theme::metrics::kEdgeHit;
     const arrange::IdSet& sel = selection();
     // Selected clips win where clips overlap (EDITOR_UX §9 hit priority). Clips the mouse is inside come before
@@ -188,17 +283,79 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
             if (pos.y < top || pos.y >= top + h)
                 continue; // another sub-row of stacked clips
             float x0 = float(time().tickToX(double(p.clip.position)));
-            float x1 = float(time().tickToX(double(instanceEnd(p.clip))));
+            float x1 = float(time().tickToX(shownEnd(p.clip)));
             // Edge zones reach a little outside, so even a very narrow clip can be resized.
             float inner = std::min(edge, (x1 - x0) / 3);
             float reach = reachOut ? edge / 2 : 0;
             if (pos.x < x0 - reach || pos.x > x1 + reach)
                 continue;
             hit.id = p.clip.id;
-            if (pos.x >= x1 - inner)
+            // An audio clip's fade handles sit at the top corners of its body and win over the edges there
+            // (docs/design/AUDIO_MIXER.md §6.1 hit map).
+            float bodyTop = top + 1 + (h >= kMinHeightForStrip ? kHeaderStrip : headerHeight(h));
+            const Clip* clip = ctx.module()->song().findClip(p.clip.clip);
+            if (clip && clip->audio && h - (bodyTop - top) >= theme::metrics::kAudioHandleMinBody &&
+                x1 - x0 >= theme::metrics::kAudioHandleMinWidth) {
+                // The curve dots in the middle of each fade, on its curve.
+                double perClipTick =
+                    songTicksPerClipTick(*clip->audio, ctx.module()->tempo() > 0 ? ctx.module()->tempo() : 120);
+                float bodyBottom = top + h - 1;
+                float reachDot = theme::metrics::kAudioHandleHit / 2;
+                auto dot = [&](double fromTick, double toTick, float curve, Part part) {
+                    float xa = float(time().tickToX(fromTick)), xb = float(time().tickToX(toTick));
+                    if (xb - xa < 2 * reachDot)
+                        return false;
+                    float y = bodyBottom - fadeShape(0.5f, curve, false) * (bodyBottom - bodyTop);
+                    if (std::fabs(pos.x - (xa + xb) / 2) <= reachDot && std::fabs(pos.y - y) <= reachDot) {
+                        hit.part = part;
+                        return true;
+                    }
+                    return false;
+                };
+                double start = double(p.clip.position), end = shownEnd(p.clip);
+                if (p.clip.fadeIn.length > 0 && dot(start, start + double(p.clip.fadeIn.length) * perClipTick,
+                                                    p.clip.fadeIn.curve, Part::FadeInCurve))
+                    return hit;
+                if (p.clip.fadeOut.length > 0 && dot(end - double(p.clip.fadeOut.length) * perClipTick, end,
+                                                     p.clip.fadeOut.curve, Part::FadeOutCurve))
+                    return hit;
+            }
+            if (clip && clip->audio && h - (bodyTop - top) >= theme::metrics::kAudioHandleMinBody &&
+                x1 - x0 >= theme::metrics::kAudioHandleMinWidth && pos.y >= bodyTop &&
+                pos.y < bodyTop + theme::metrics::kAudioHandleTopZone) {
+                double perClipTick = songTicksPerClipTick(*clip->audio, ctx.module()->tempo() > 0 ? ctx.module()->tempo() : 120);
+                float xIn = float(time().tickToX(double(p.clip.position) + double(p.clip.fadeIn.length) * perClipTick));
+                float xOut = float(time().tickToX(shownEnd(p.clip) - double(p.clip.fadeOut.length) * perClipTick));
+                float reachHandle = theme::metrics::kAudioHandleHit / 2;
+                xIn = std::max(xIn, x0 + 3);
+                xOut = std::min(xOut, x1 - 3);
+                if (std::fabs(pos.x - xIn) <= reachHandle && std::fabs(pos.x - xIn) <= std::fabs(pos.x - xOut)) {
+                    hit.part = Part::FadeIn;
+                    return hit;
+                }
+                if (std::fabs(pos.x - xOut) <= reachHandle) {
+                    hit.part = Part::FadeOut;
+                    return hit;
+                }
+            }
+            float bodyBottom = top + h - 1;
+            // The level line is there at the default too (shown on hover): a drag on it sets the level.
+            std::optional<float> level;
+            if (clip && clip->audio && bodyBottom - bodyTop >= theme::metrics::kLevelLineMinBody)
+                level = levelOf(clip->audio->gainDb);
+            // A selected clip's gain tab, at the right end of its level line, drags the level too.
+            float tabRight = std::min(x1, box.size.x) - kGainTabInset;
+            bool onTab = level && selection().count(p.clip.id) && pos.x <= tabRight &&
+                         pos.x >= tabRight - kGainTabHit && tabRight - std::max(x0, 0.f) >= kGainTabHit + 24 &&
+                         std::fabs(pos.y - gainTabY(levelY(*level, bodyTop, bodyBottom), bodyTop)) <= 6;
+            if (onTab)
+                hit.part = Part::Level;
+            else if (pos.x >= x1 - inner)
                 hit.part = Part::RightEdge;
             else if (pos.x <= x0 + inner)
                 hit.part = Part::LeftEdge;
+            else if (level && std::fabs(pos.y - levelY(*level, bodyTop, bodyBottom)) <= theme::metrics::kLevelLineHit)
+                hit.part = Part::Level;
             else if (h >= kMinHeightForStrip && pos.y < top + 1 + kHeaderStrip)
                 hit.part = Part::Header;
             else
@@ -214,8 +371,10 @@ ArrangerLanes::Hit ArrangerLanes::hitTest(Vec pos) {
 arrange::Layout ArrangerLanes::settle(const arrange::Layout& layout, const arrange::IdSet& changed,
                                       const arrange::IdSource& newId) {
     TesseraModule* m = ctx.module();
-    if (!m || ctx.state().stackClips)
+    if (!m)
         return layout;
+    if (ctx.state().stackClips)
+        return arrange::settleAudio(layout, changed, m->song().clips, newId);
     return arrange::resolveOverlaps(layout, changed, m->song().clips, newId);
 }
 
@@ -247,7 +406,7 @@ void ArrangerLanes::commit(const std::string& name, const arrange::Layout& befor
     if (!m)
         return;
     auto compound = std::make_unique<CompoundCommand>(name);
-    CommandPtr edit = arrange::replaceArrangement(m->song(), name, before, after);
+    CommandPtr edit = arrange::replaceArrangement(m->song(), name, before, after, m->ids());
     if (!edit)
         return;
     for (Clip& c : newClips)
@@ -409,6 +568,17 @@ bool ArrangerLanes::clipAction(Action action) {
     case Action::Glue:
         arrangeActions::glueSelected(*this);
         return true;
+    case Action::Quantize: {
+        // Selected audio clips: their hits to the grid, each clip once however many copies are selected.
+        std::set<uint64_t> clips;
+        for (const arrange::Placed& p : committed())
+            if (selection().count(p.clip.id))
+                if (const Clip* c = m->song().findClip(p.clip.clip); c && c->audio)
+                    clips.insert(c->id.value);
+        for (uint64_t id : clips)
+            audioActions::quantizeClip(ctx, ClipId(id));
+        return !clips.empty();
+    }
     case Action::MakeUnique:
         arrangeActions::makeUniqueSelected(*this);
         return true;
@@ -488,7 +658,7 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
         return nullptr;
     Tool tool = ctx.state().tool;
     // Ctrl/Cmd+drag (with or without Alt) from empty space selects with any tool. From a clip, Ctrl/Cmd+drag makes
-    // a linked copy and Ctrl/Cmd+Alt+drag an independent one (DECISIONS §41).
+    // an independent copy and Ctrl/Cmd+Alt+drag a linked one (DECISIONS §136).
     if (mods.ctrl && hit.part == Part::None)
         return clipGestures::rubberBand(*this, pos, mods);
     if (tool == Tool::Erase)
@@ -501,6 +671,13 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
         if (tool == Tool::Draw && trackOfRow(hit.row).valid())
             return clipGestures::draw(*this, pos);
         return clipGestures::rubberBand(*this, pos, mods);
+    }
+
+    // A crossfade belongs to two clips: its drags leave the selection alone.
+    if (hit.part == Part::Crossfade || hit.part == Part::CrossfadeCurve) {
+        owner.target = ArrangerView::Target::Clips;
+        return hit.part == Part::Crossfade ? clipGestures::crossfade(*this, pos, hit.other, hit.id)
+                                           : clipGestures::crossfadeCurve(*this, pos, hit.other, hit.id);
     }
 
     // A press selects at once, so a drag moves what was grabbed; a click in place adjusts the selection.
@@ -527,11 +704,19 @@ std::unique_ptr<DragGesture> ArrangerLanes::startGesture(Vec pos, int button, Mo
     case Part::RightEdge:
         inner = clipGestures::resizeEnd(*this, pos, id, mods.alt);
         break;
+    case Part::FadeIn:
+    case Part::FadeOut:
+        inner = clipGestures::fade(*this, pos, id, hit.part == Part::FadeIn);
+        break;
+    case Part::FadeInCurve:
+    case Part::FadeOutCurve:
+        inner = clipGestures::fadeCurve(*this, pos, id, hit.part == Part::FadeInCurve);
+        break;
     case Part::LeftEdge:
         inner = clipGestures::trimStart(*this, pos, id);
         break;
-    case Part::Header:
-        inner = clipGestures::header(*this, pos, id);
+    case Part::Level:
+        inner = clipGestures::gain(*this, pos, id);
         break;
     default:
         inner = mods.alt && !mods.ctrl ? clipGestures::slip(*this, pos, id)
@@ -577,6 +762,8 @@ void ArrangerLanes::click(Vec pos, int button, Modifiers mods) {
             menu->addChild(rack::createMenuItem(
                 "Drum track", shortcutLabel(Action::AddDrumTrack), [c] { trackActions::add(*c, TrackType::Drum); },
                 full));
+            menu->addChild(rack::createMenuItem(
+                "Audio track", "or drop audio files", [c] { trackActions::add(*c, TrackType::Audio); }, full));
         }
         return;
     }
@@ -614,12 +801,24 @@ void ArrangerLanes::doubleClick(Vec pos, Modifiers mods) {
     if (row >= 0 && owner.rows[size_t(row)].isLane())
         return;
     Hit hit = hitTest(pos);
+    // On a changed level line a double-click resets it; at the default it opens the clip as anywhere else.
+    if (hit.id.valid() && hit.part == Part::Level)
+        if (const arrange::Placed* p = arrange::find(shown(), hit.id))
+            if (const Clip* clip = m->song().findClip(p->clip.clip);
+                clip && clip->audio && levelChanged(clip->audio->gainDb)) {
+                if (!selection().count(hit.id))
+                    selection() = {hit.id};
+                arrangeActions::resetLevel(*this);
+                return;
+            }
     if (hit.id.valid()) {
         arrangeActions::openInEditor(*this, hit.id);
         return;
     }
     TrackId track = trackOfRow(hit.row);
     if (!track.valid())
+        return;
+    if (const Track* onto = m->song().findTrack(track); !onto || onto->type == TrackType::Audio)
         return;
     // A one-bar clip in the bar that was double-clicked.
     Tick bar = ticksPerBar(owner.source.timeSig());
@@ -659,9 +858,16 @@ CursorShape ArrangerLanes::hoverCursor(Vec pos, Modifiers mods) {
     switch (hover.part) {
     case Part::LeftEdge:
     case Part::RightEdge:
+    case Part::FadeIn:
+    case Part::FadeOut:
+    case Part::Crossfade:
         return CursorShape::ResizeH;
+    case Part::FadeInCurve:
+    case Part::FadeOutCurve:
+    case Part::CrossfadeCurve:
+    case Part::Level:
+        return CursorShape::ResizeV;
     case Part::Header:
-        return mods.alt ? CursorShape::Move : CursorShape::ResizeV;
     case Part::Body:
         return CursorShape::Move;
     default:
@@ -676,7 +882,7 @@ std::optional<LaneFrame> ArrangerLanes::laneFrame(int row) {
     const TrackRow& r = owner.rows[size_t(row)];
     const Track* track = m->song().findTrack(r.track);
     const AutomationEnvelope* lane = findLane(m->song(), LaneOwner::ofTrack(r.track), r.lane);
-    if (!track || !lane)
+    if (!lane || (!track && r.track != m->song().master.id))
         return std::nullopt;
     LaneFrame f;
     f.owner = LaneOwner::ofTrack(r.track);
@@ -685,7 +891,7 @@ std::optional<LaneFrame> ArrangerLanes::laneFrame(int row) {
     f.time = &time();
     f.snap = snapStep();
     f.playhead = m->playing() ? playhead() : NAN;
-    f.color = theme::track(lane->color ? lane->color : track->color);
+    f.color = theme::track(lane->color ? lane->color : track ? track->color : theme::kMasterColor);
     return f;
 }
 
@@ -847,6 +1053,47 @@ void ArrangerLanes::drawLanes(NVGcontext* vg) {
     }
 }
 
+void ArrangerLanes::onPathDrop(const PathDropEvent& e) {
+    // Files dropped on the timeline (§6.5): onto an audio track at the drop point, snapped to the beat; onto a note
+    // track as a new audio track just below it; onto empty space as new tracks at the drop bar.
+    TesseraModule* m = ctx.module();
+    if (!m) {
+        TimelineView::onPathDrop(e);
+        return;
+    }
+    const Song& song = m->song();
+    // Ctrl/Cmd+drop on an audio clip replaces its file.
+    if ((APP->window->getMods() & RACK_MOD_MASK) == RACK_MOD_CTRL && !e.paths.empty()) {
+        Hit hit = hitTest(e.pos);
+        const arrange::Placed* p = hit.id.valid() ? arrange::find(committed(), hit.id) : nullptr;
+        const Clip* clip = p ? song.findClip(p->clip.clip) : nullptr;
+        if (clip && clip->audio) {
+            audioActions::replaceFile(ctx, clip->id, e.paths.front());
+            e.consume(this);
+            return;
+        }
+    }
+    Tick beat = ticksPerBeat(song.timeSig);
+    double tick = std::max(0.0, time().xToTick(e.pos.x));
+    AudioDropTarget target;
+    target.at = Tick(std::llround(tick / double(beat))) * beat;
+    int row = rowAt(e.pos.y);
+    TrackId track = trackOfRow(row);
+    const Track* t = song.findTrack(track);
+    if (t && t->type == TrackType::Audio) {
+        target.kind = AudioDropTarget::Kind::Track;
+        target.track = track;
+    } else {
+        target.kind = AudioDropTarget::Kind::NewTracks;
+        target.index = t ? song.trackIndex(track) + 1 : int(song.tracks.size());
+        target.at = Tick(std::floor(tick / double(ticksPerBar(song.timeSig)))) * ticksPerBar(song.timeSig);
+        target.timeline = true;
+    }
+    std::string note = t && t->type != TrackType::Audio ? "Added an audio track: " + t->name + " plays notes" : "";
+    audioActions::dropAudio(ctx, e.paths, target, note);
+    e.consume(this);
+}
+
 void ArrangerLanes::onLeave(const LeaveEvent& e) {
     automation.leave();
     hover = Hit();
@@ -863,12 +1110,20 @@ uint64_t ArrangerLanes::clipsKey() {
     key = hashMix(key, time().pxPerTick());
     key = hashMix(key, owner.tracks.scroll());
     key = hashMix(key, double(previewGeneration));
+    key = hashMix(key, double(gainPreviewGeneration));
+    // Waveforms fill in, states and renders change, and Off clips follow the tempo.
+    if (AudioStore* store = m->audioStore()) {
+        key = hashMix(key, double(store->changes()));
+        key = hashMix(key, double(store->renderProgressSteps()));
+        key = hashMix(key, m->tempo());
+    }
     for (double h : owner.tracks.heights())
         key = hashMix(key, h);
     uint64_t selected = 0;
     for (ArrangementId id : selection())
         selected += id.value * 0x9E3779B97F4A7C15ull; // order-independent
     key = hashMix(key, double(selected));
+    key = hashMix(key, double(ctx.state().freshAudio.size()));
     uint64_t overridden = 0;
     const Song& song = m->song();
     for (size_t i = 0; i < song.tracks.size(); i++) {
@@ -881,6 +1136,10 @@ uint64_t ArrangerLanes::clipsKey() {
 }
 
 void ArrangerLanes::step() {
+    // A just-dropped clip keeps its big title form only until the selection moves on (§5.5).
+    EditorState& state = ctx.state();
+    if (!state.freshAudio.empty() && state.freshAudio != state.clipSelection)
+        state.freshAudio.clear();
     grid->setSize(box.size);
     clips->setSize(box.size);
     if (TesseraModule* m = ctx.module()) {
@@ -944,7 +1203,7 @@ void ArrangerLanes::paintClips(NVGcontext* vg, Vec size) {
         const TrackRow& row = owner.rows[i];
         if (row.kind == TrackRow::Kind::Group) {
             // A folded group shows its members' clips flattened into its row.
-            if (!ctx.view().foldedGroups.count(row.group.value))
+            if (!ctx.state().foldedGroups.count(row.group.value))
                 continue;
             const TrackGroup* g = song.findGroup(row.group);
             for (const arrange::Placed& p : layout)
@@ -961,11 +1220,20 @@ void ArrangerLanes::paintClips(NVGcontext* vg, Vec size) {
         // Taken over by the launcher, or about to be: a stop waiting for the launch quantize dims it already.
         LauncherStatus st = m->launcherStatus(track->id);
         bool dim = arranger && (st.overridden || st.queued == kNoSlot);
+        std::vector<Crossfade> crossfades = crossfadesOn(track->id);
+        overlaps.clear();
+        for (const Crossfade& x : crossfades) {
+            overlaps[x.first].second = x.end - x.start;
+            overlaps[x.second].first = x.end - x.start;
+        }
         for (const arrange::Placed& p : layout)
             if (p.track == row.track) {
                 auto [subTop, subHeight] = instanceSpan(int(i), p);
                 drawInstance(vg, song, *track, p.clip, subTop, subHeight, dim);
             }
+        for (const Crossfade& x : crossfades)
+            drawCrossfade(vg, x, top, h, dim ? kOverriddenAlpha : 1.f);
+        overlaps.clear();
     }
 }
 
@@ -973,11 +1241,20 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
                                  float h, bool dim) {
     const theme::Palette& c = theme::colors();
     float x0 = float(time().tickToX(double(a.position)));
-    float x1 = float(time().tickToX(double(instanceEnd(a))));
+    float x1 = float(time().tickToX(shownEnd(a)));
     if (x1 < 0 || x0 > box.size.x)
         return;
     Rect r(x0, top + 1, std::max(2.f, x1 - x0), h - 2);
     const Clip* clip = song.findClip(a.clip);
+    audioDraw::ClipState audioState;
+    float gainDb = 0;
+    if (clip && clip->audio) {
+        audioState = audioDraw::stateOf(*ctx.module(), *clip);
+        gainDb = clip->audio->gainDb;
+        for (const auto& [id, db] : gainPreview)
+            if (id == clip->id)
+                gainDb = db;
+    }
     uint32_t color = clip ? clip->shownColor(track.color) : track.color;
     float alpha = (a.muted ? kMutedAlpha : 1.f) * (dim ? kOverriddenAlpha : 1.f);
     float radius = theme::metrics::kRadiusItem;
@@ -1011,8 +1288,29 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             nvgFillColor(vg, theme::track(color, 0.25f * alpha));
             nvgFill(vg);
         }
+        if (clip->audio) {
+            drawAudioBody(vg, *clip, a, body, audioState, gainDb, color, alpha);
+            if (audioDraw::rendering(audioState))
+                audioDraw::drawRenderBar(
+                    vg, Rect(r.pos.x, r.getBottom() - theme::metrics::kStatusBar, r.size.x, theme::metrics::kStatusBar),
+                    audioState, c.text0);
+        }
+        // Read by playheads: where they go, not the notes as written. Each timeline clip starts its playheads from
+        // where it begins the clip, slower when stretched (as the engine reads it).
+        const Device* readers = clip->audio ? nullptr : activePlayheads(track, clip);
+        if (readers && body.size.y >= 2) {
+            double t0 = std::max(double(a.position), time().xToTick(std::max(0.f, body.pos.x)));
+            double t1 = std::min(double(instanceEnd(a)), time().xToTick(std::min(box.size.x, body.getRight())));
+            double stretch = a.stretch > 0 ? double(a.stretch) : 1.0;
+            double begin = double(normalizeOffset(*clip, a.offset)) - double(clipSpan(*clip).start);
+            if (t1 > t0)
+                slotDraw::drawPlayheadPaths(vg, song, track, *readers, *clip, body, float(time().tickToX(t0)),
+                                            float(time().tickToX(t1)), begin + (t0 - double(a.position)) / stretch,
+                                            begin + (t1 - double(a.position)) / stretch,
+                                            theme::track(color, 0.22f * alpha), alpha);
+        }
         // The notes it plays, in miniature.
-        if (body.size.y >= 6 && !clip->notes.empty()) {
+        if (!readers && body.size.y >= 6 && !clip->notes.empty()) {
             int lo = 127, hi = 0;
             for (const Note& n : clip->notes) {
                 lo = std::min<int>(lo, n.pitch);
@@ -1050,12 +1348,46 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             nvgFill(vg);
         }
 
+        // Its level when changed from the default: a line across the body, which a double-click puts back.
+        if (body.size.y >= theme::metrics::kLevelLineMinBody)
+            if (clip->audio && levelChanged(gainDb)) {
+                float y = levelY(levelOf(gainDb), body.pos.y, body.getBottom());
+                // Shaded above the line, so it reads as a level and not as one more note.
+                nvgBeginPath(vg);
+                nvgRect(vg, body.pos.x, body.pos.y, body.size.x, y - body.pos.y);
+                nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.3f * alpha));
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, body.pos.x, y);
+                nvgLineTo(vg, body.getRight(), y);
+                nvgStrokeColor(vg, nvgTransRGBAf(c.text0, alpha));
+                nvgStrokeWidth(vg, 1.5f);
+                nvgStroke(vg);
+            }
+
+        if (body.size.y >= 8)
+            slotDraw::drawPlayheadMark(vg, activePlayheads(track, clip), Vec(r.getRight() - 4, body.pos.y + 3),
+                                       body.size.y - 6);
+
         // Name, then what makes this instance different from its clip, then the link badge.
         std::string extras;
+        if (clip->audio) {
+            extras = audioDraw::titleMarks(*clip, audioState, gainDb);
+            if (std::string mark = regions::playingText(*clip); !mark.empty())
+                extras = extras.empty() ? mark : mark + " · " + extras;
+            if (ctx.state().freshAudio.count(a.id)) {
+                // The big form only where it still leaves room for the name.
+                std::string big = audioDraw::bigTitleMarks(*clip, audioState, gainDb, song.timeSig);
+                draw::TextStyle mono{theme::fonts::mono(), theme::metrics::kTextRuler, c.onTile, NVG_ALIGN_LEFT};
+                if (draw::textWidth(vg, mono, big) < r.size.x - 70)
+                    extras = big;
+            }
+            std::string state = audioDraw::stateText(audioState);
+            if (!state.empty())
+                extras = state + "  " + extras;
+        }
         if (a.transpose != 0)
             extras += (a.transpose > 0 ? " +" : " ") + std::to_string(a.transpose);
-        if (std::fabs(a.velocityScale - 1.f) > 0.005f)
-            extras += " " + std::to_string(int(std::lround(a.velocityScale * 100))) + "%";
         if (std::fabs(a.stretch - 1.f) > 0.001f) {
             char text[16];
             snprintf(text, sizeof(text), " ×%.2g", double(a.stretch));
@@ -1070,6 +1402,12 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
             right -= 10;
             drawLinkBadge(vg, right, cy, c.onTile);
             right -= 3;
+        }
+        // Its own devices: filled while it plays through them, hollow while it keeps them off.
+        if (clip->hasOwnChain && r.size.x > 50) {
+            right -= theme::metrics::kOwnMarkWidth;
+            tiles::drawOwnMark(vg, right, cy, clip->usesOwnChain());
+            right -= 4;
         }
         if (!extras.empty() && r.size.x > 60) {
             draw::TextStyle small = label;
@@ -1087,6 +1425,145 @@ void ArrangerLanes::drawInstance(NVGcontext* vg, const Song& song, const Track& 
         draw::roundedRectStroke(vg, r, radius, c.select, 1.5f);
 }
 
+void ArrangerLanes::drawAudioBody(NVGcontext* vg, const Clip& clip, const ArrangerClip& a, Rect body,
+                                  const audioDraw::ClipState& state, float gainDb, uint32_t color, float alpha) {
+    const theme::Palette& c = theme::colors();
+    const AudioContent& audio = *clip.audio;
+    double tempo = ctx.module()->tempo() > 0 ? ctx.module()->tempo() : 120;
+    double perClipTick = songTicksPerClipTick(audio, tempo);
+    // The clip tick playing at song tick t: like clipTimeAt(), with Off clips at their own speed.
+    auto clipTick = [&](double t, double& u) {
+        u = double(a.offset) + (t - double(a.position)) / perClipTick;
+        if (u < 0 || t >= double(a.position) + double(a.length) * perClipTick)
+            return false;
+        if (clip.loopMode == LoopMode::Loop && clip.loopEnd > clip.loopStart) {
+            if (u >= double(clip.loopEnd))
+                u = double(clip.loopStart) + std::fmod(u - double(clip.loopStart), double(clip.loopEnd - clip.loopStart));
+        } else if (u >= double(clip.length)) {
+            return false;
+        }
+        return true;
+    };
+    NVGcolor wave = nvgLerpRGBA(theme::track(color), c.text0, 0.35f);
+    wave.a = theme::metrics::kWaveformAlpha * alpha;
+    const AudioSource* src = state.source;
+    audioDraw::drawWaveform(vg, body, 0, box.size.x, state, gainDb, wave, [&](float x, audioDraw::Column& column) {
+        double u0, u1;
+        if (!src || !clipTick(time().xToTick(x), u0))
+            return false;
+        if (!clipTick(time().xToTick(x + 1), u1) || u1 < u0)
+            u1 = clip.loopMode == LoopMode::Loop ? double(clip.loopEnd) : double(clip.length);
+        return audioDraw::framesOfTicks(clip, state, u0, u1, column);
+    });
+
+    // Fades shade what they hide: the area over the curve.
+    auto shade = [&](float xa, float xb, bool in, float curve) {
+        if (xb - xa < 1)
+            return;
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, xa, body.pos.y);
+        for (int i = 0; i <= 16; i++) {
+            float f = float(i) / 16;
+            float g = fadeShape(in ? f : 1 - f, curve, false);
+            nvgLineTo(vg, xa + (xb - xa) * f, body.getBottom() - g * body.size.y);
+        }
+        nvgLineTo(vg, xb, body.pos.y);
+        nvgClosePath(vg);
+        nvgFillColor(vg, nvgTransRGBAf(c.bg0, 0.45f * alpha));
+        nvgFill(vg);
+    };
+    float xStart = float(time().tickToX(double(a.position)));
+    float xEnd = float(time().tickToX(shownEnd(a)));
+    float xIn = float(time().tickToX(double(a.position) + double(a.fadeIn.length) * perClipTick));
+    float xOut = float(time().tickToX(shownEnd(a) - double(a.fadeOut.length) * perClipTick));
+    // Where the clip overlaps a neighbour, the crossfade takes the place of that side's fade (drawCrossfade).
+    auto shared = overlaps.find(a.id);
+    bool crossIn = shared != overlaps.end() && shared->second.first > 0;
+    bool crossOut = shared != overlaps.end() && shared->second.second > 0;
+    if (!crossIn)
+        shade(xStart, xIn, true, a.fadeIn.curve);
+    if (!crossOut)
+        shade(xOut, xEnd, false, a.fadeOut.curve);
+    // The fade handles, small and dim, at the top corners of the body, and a curve dot in the middle of each fade.
+    if (body.size.y >= theme::metrics::kAudioHandleMinBody && body.size.x >= theme::metrics::kAudioHandleMinWidth) {
+        float s = theme::metrics::kAudioHandle;
+        NVGcolor handle = nvgTransRGBAf(c.onTile, 0.55f * alpha);
+        for (int side = 0; side < 2; side++) {
+            if (side == 0 ? crossIn : crossOut)
+                continue;
+            float x = side == 0 ? std::max(xIn, xStart + 3) : std::min(xOut, xEnd - 3);
+            nvgBeginPath(vg);
+            nvgRect(vg, x - s / 2, body.pos.y, s, s / 2 + 1);
+            nvgFillColor(vg, handle);
+            nvgFill(vg);
+            float xa = side == 0 ? xStart : xOut, xb = side == 0 ? xIn : xEnd;
+            const Fade& f = side == 0 ? a.fadeIn : a.fadeOut;
+            if (f.length > 0 && xb - xa >= theme::metrics::kAudioHandleHit) {
+                float y = body.getBottom() - fadeShape(0.5f, f.curve, false) * body.size.y;
+                nvgBeginPath(vg);
+                nvgCircle(vg, (xa + xb) / 2, y, s / 2);
+                nvgFillColor(vg, handle);
+                nvgFill(vg);
+            }
+        }
+    }
+}
+
+void ArrangerLanes::drawCrossfade(NVGcontext* vg, const Crossfade& x, float top, float h, float alpha) {
+    const arrange::Placed* first = arrange::find(shown(), x.first);
+    const arrange::Placed* second = arrange::find(shown(), x.second);
+    if (!first || !second)
+        return;
+    float xa = float(time().tickToX(x.start)), xb = float(time().tickToX(x.end));
+    if (xb < 0 || xa > box.size.x || xb - xa < 1)
+        return;
+    const theme::Palette& c = theme::colors();
+    float bodyTop = top + 1 + (h >= kMinHeightForStrip ? kHeaderStrip : headerHeight(h));
+    Rect body(xa, bodyTop, xb - xa, top + h - 1 - bodyTop);
+    if (body.size.y < 4)
+        return;
+    nvgBeginPath(vg);
+    nvgRect(vg, body.pos.x, body.pos.y, body.size.x, body.size.y);
+    nvgFillColor(vg, nvgTransRGBAf(c.bg0, 0.25f * alpha));
+    nvgFill(vg);
+    // The X: the earlier clip's gain falling, the later one's rising, each on its own curve.
+    for (int side = 0; side < 2; side++) {
+        float curve = side == 0 ? first->clip.fadeOut.curve : second->clip.fadeIn.curve;
+        nvgBeginPath(vg);
+        for (int i = 0; i <= 24; i++) {
+            float f = float(i) / 24;
+            float g = fadeShape(side == 0 ? 1 - f : f, curve, true);
+            float px = body.pos.x + body.size.x * f, py = body.getBottom() - g * body.size.y;
+            if (i == 0)
+                nvgMoveTo(vg, px, py);
+            else
+                nvgLineTo(vg, px, py);
+        }
+        nvgStrokeColor(vg, nvgTransRGBAf(c.onTile, 0.8f * alpha));
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+    }
+    if (body.size.y < theme::metrics::kAudioHandleMinBody)
+        return;
+    float s = theme::metrics::kAudioHandle;
+    float cx = body.getCenter().x;
+    // The handle on top: a small diamond, so it reads as different from the square fade handles.
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, cx, body.pos.y);
+    nvgLineTo(vg, cx + s / 2, body.pos.y + s / 2);
+    nvgLineTo(vg, cx, body.pos.y + s);
+    nvgLineTo(vg, cx - s / 2, body.pos.y + s / 2);
+    nvgClosePath(vg);
+    nvgFillColor(vg, nvgTransRGBAf(c.onTile, 0.85f * alpha));
+    nvgFill(vg);
+    if (xb - xa >= theme::metrics::kAudioHandleHit) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, body.getCenter().y, s / 2);
+        nvgFillColor(vg, nvgTransRGBAf(c.onTile, 0.85f * alpha));
+        nvgFill(vg);
+    }
+}
+
 void ArrangerLanes::drawView(const DrawArgs& args) {
     nvgBeginPath(args.vg);
     nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
@@ -1099,6 +1576,28 @@ void ArrangerLanes::drawRecording(NVGcontext* vg) {
     const theme::Palette& c = theme::colors();
     double now = m->playheadTicks();
     drawTakes(vg, now);
+    // Audio being recorded: a red box growing from where the take started, with its waveform.
+    for (const TesseraModule::LiveTake& take : m->liveTakes()) {
+        int row = rowOf(take.track);
+        if (row < 0 || take.lengthTicks <= 0)
+            continue;
+        float x0 = float(time().tickToX(take.startTick));
+        float x1 = float(time().tickToX(take.startTick + take.lengthTicks));
+        Rect r(x0, rowTop(row) + 1, std::max(1.f, x1 - x0), rowHeight(row) - 2);
+        draw::roundedRect(vg, r, theme::metrics::kRadiusItem, nvgTransRGBAf(c.record, 0.25f));
+        if (!take.peaks.empty()) {
+            float mid = r.getCenter().y, half = r.size.y / 2 - 2;
+            float step = r.size.x / float(take.peaks.size());
+            nvgBeginPath(vg);
+            for (size_t i = 0; i < take.peaks.size(); i++) {
+                float h = std::min(1.f, take.peaks[i]) * half;
+                nvgRect(vg, r.pos.x + float(i) * step, mid - h, std::max(1.f, step), 2 * h);
+            }
+            nvgFillColor(vg, nvgTransRGBAf(c.record, 0.8f));
+            nvgFill(vg);
+        }
+        draw::roundedRectStroke(vg, r, theme::metrics::kRadiusItem, c.record, 1);
+    }
     if (!m->recordingArrangement())
         return;
     for (const auto& [track, segment] : m->capture().active()) {
@@ -1160,6 +1659,83 @@ void ArrangerLanes::drawTakes(NVGcontext* vg, double now) {
     }
 }
 
+void ArrangerLanes::drawLevelHover(NVGcontext* vg, const arrange::Placed& p, float x0, float x1, float top, float h,
+                                   bool onLine) {
+    const Clip* clip = ctx.module()->song().findClip(p.clip.clip);
+    float bodyTop = top + 1 + headerHeight(h), bodyBottom = top + h - 1;
+    if (!clip || !clip->audio || bodyBottom - bodyTop < theme::metrics::kLevelLineMinBody ||
+        (ctx.state().tool != Tool::Pointer && ctx.state().tool != Tool::Draw))
+        return;
+    float gainDb = clip->audio->gainDb;
+    const theme::Palette& c = theme::colors();
+    float y = levelY(levelOf(gainDb), bodyTop, bodyBottom);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x0, y);
+    nvgLineTo(vg, x1, y);
+    // Faint on the hovered tile, so the line can be found at its default too; bold under the mouse.
+    nvgStrokeColor(vg, onLine ? c.text0 : nvgTransRGBAf(c.text0, 0.45f));
+    nvgStrokeWidth(vg, onLine ? 2.5f : 1);
+    nvgStroke(vg);
+    if (!onLine)
+        return;
+    std::string text = "Gain " + audioDraw::dbText(gainDb) +
+                       (levelChanged(gainDb) ? " \u00b7 double-click for 0 dB" : " \u00b7 drag to change");
+    draw::TextStyle style{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    float w = draw::textWidth(vg, style, text) + 10;
+    float lx = std::clamp(localMouse().x - w / 2, std::max(0.f, x0), std::max(0.f, box.size.x - w));
+    // Above the line, or below it when it runs along the top of the body.
+    float ly = y - 9 - 7 >= bodyTop ? y - 9 : y + 9;
+    Rect pill(lx, ly - 7, w, 14);
+    draw::roundedRect(vg, pill, 3, c.bg2);
+    draw::roundedRectStroke(vg, pill, 3, c.line1, 1);
+    draw::text(vg, style, lx + 5, ly, text);
+}
+
+void ArrangerLanes::drawSelectedLevels(NVGcontext* vg) {
+    if (ctx.state().tool != Tool::Pointer && ctx.state().tool != Tool::Draw)
+        return;
+    const Song& song = ctx.module()->song();
+    const theme::Palette& c = theme::colors();
+    draw::TextStyle style{theme::fonts::ui(), theme::metrics::kTextRuler, c.text0, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE};
+    for (auto id : selection()) {
+        const arrange::Placed* p = arrange::find(shown(), id);
+        const Clip* clip = p ? song.findClip(p->clip.clip) : nullptr;
+        int row = p ? rowOf(p->track) : -1;
+        if (!clip || !clip->audio || row < 0)
+            continue;
+        float x0 = float(time().tickToX(double(p->clip.position)));
+        float x1 = float(time().tickToX(double(instanceEnd(p->clip))));
+        if (x1 < 0 || x0 > box.size.x)
+            continue;
+        auto [top, h] = instanceSpan(row, *p);
+        float bodyTop = top + 1 + headerHeight(h), bodyBottom = top + h - 1;
+        if (bodyBottom - bodyTop < theme::metrics::kLevelLineMinBody)
+            continue;
+        float gainDb = clip->audio->gainDb;
+        float y = levelY(levelOf(gainDb), bodyTop, bodyBottom);
+        // A changed level already draws its line with the clip.
+        if (!levelChanged(gainDb)) {
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x0, y);
+            nvgLineTo(vg, x1, y);
+            nvgStrokeColor(vg, nvgTransRGBAf(c.text0, 0.45f));
+            nvgStrokeWidth(vg, 1);
+            nvgStroke(vg);
+        }
+        // A small tab at the visible right end reads the gain, when the clip is wide enough to hold it.
+        std::string text = levelChanged(gainDb) ? audioDraw::dbText(gainDb) : "0 dB";
+        float w = draw::textWidth(vg, style, text) + 8;
+        float right = std::min(x1, box.size.x) - kGainTabInset;
+        if (right - std::max(x0, 0.f) < w + 24)
+            continue;
+        float ty = gainTabY(y, bodyTop);
+        Rect tab(right - w, ty - 6, w, 12);
+        draw::roundedRect(vg, tab, 3, c.bg2);
+        draw::roundedRectStroke(vg, tab, 3, c.line1, 1);
+        draw::text(vg, style, tab.getCenter().x, ty, text);
+    }
+}
+
 void ArrangerLanes::drawForeground(const DrawArgs& args) {
     TesseraModule* m = ctx.module();
     if (!m)
@@ -1179,6 +1755,8 @@ void ArrangerLanes::drawForeground(const DrawArgs& args) {
         nvgFill(vg);
     }
 
+    drawSelectedLevels(vg);
+
     // Hover: a light outline on the clip a click would grab.
     if (hover.id.valid() && !ctx.dragging) {
         if (const arrange::Placed* p = arrange::find(shown(), hover.id)) {
@@ -1189,6 +1767,7 @@ void ArrangerLanes::drawForeground(const DrawArgs& args) {
                 auto [top, h] = instanceSpan(row, *p);
                 draw::roundedRectStroke(vg, Rect(x0, top + 1, x1 - x0, h - 2), theme::metrics::kRadiusItem,
                                         nvgTransRGBAf(c.text0, 0.35f), 1);
+                drawLevelHover(vg, *p, x0, x1, top, h, hover.part == Part::Level);
                 // The Slice tool shows where a click would cut, snapped as the click is (Trello, 13 Oct).
                 if (ctx.state().tool == Tool::Slice) {
                     bool free = Modifiers::fromGlfw(APP->window->getMods()).alt;

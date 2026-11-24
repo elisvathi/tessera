@@ -18,7 +18,10 @@ ClipId shownClip(EditorContext& ctx, const Track& track);
 /// The scene index holding `clip` on `track`, or -1.
 int slotOf(const Track& track, ClipId clip);
 
-/// Selects a clip (and its track) for the detail editor.
+/// Whether a clip may go on a track: audio clips only on audio tracks, note clips only on note tracks.
+bool fitsTrack(const Song& song, ClipId clip, TrackId track);
+
+/// Selects a clip (and its track) for the detail editor, and shows that editor if the mixer had the pane.
 void select(EditorContext& ctx, TrackId track, ClipId clip);
 /// Creates a one-bar clip in an empty slot and selects it.
 void create(EditorContext& ctx, TrackId track, int slot);
@@ -31,9 +34,14 @@ void rename(EditorContext& ctx, ClipId clip, const std::string& name);
 /// "Length ▸": makes the clip twice as long, half as long, or a typed percentage (notes, loop, automation and
 /// every timeline use), as one undo step.
 void appendScaleMenu(rack::ui::Menu* menu, EditorContext& ctx, ClipId clip);
+/// "Next actions": on, clips with a next action move on by themselves; off, every clip holds where it is.
+void appendNextActionsSwitch(rack::ui::Menu* menu, EditorContext& ctx);
 /// "Colour": Track colour (the default, which follows the track) or one of the 16 colours, for every clip in `clips`
 /// as one undo step.
 void appendColorMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips);
+/// "Devices ▸": whether the note clips play through their track's devices or their own (docs/DECISIONS.md §157), and
+/// throwing their own away; for one clip, making its own the track's too.
+void appendDevicesMenu(rack::ui::Menu* menu, EditorContext& ctx, std::vector<ClipId> clips);
 /// Opens a name field for the clip under the mouse; Enter or closing it renames the clip (one undo step).
 void startRename(EditorContext& ctx, ClipId clip);
 

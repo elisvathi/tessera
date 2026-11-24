@@ -1,6 +1,11 @@
 #include "TrackActions.hpp"
+#include "SendActions.hpp"
 
+#include "../Theme.hpp"
 #include "../widgets/MenuTextField.hpp"
+#include "AudioActions.hpp"
+#include "BounceActions.hpp"
+#include "Sources.hpp"
 
 #include "../../model/TrackColors.hpp"
 #include "../../module/TesseraModule.hpp"
@@ -13,8 +18,27 @@
 namespace tessera::trackActions {
 
 std::string voicesLabel(const Song& song, const Track& track) {
-    std::string count = std::to_string(song.voicesOf(track));
-    return track.polyphony == kAutoVoices ? "Auto (" + count + ")" : count;
+    std::string total = std::to_string(song.voicesOf(track));
+    std::string how = track.allocation == VoiceAllocation::Rotate ? "" : std::string(" · ") + allocationName(track.allocation);
+    if (track.polyphony == kAutoVoices)
+        return "Auto (" + total + ")" + how;
+    // With playheads a fixed count is for each channel, so the track sends more in all.
+    std::string set = std::to_string(std::clamp(track.polyphony, 1, kMaxVoices));
+    return (set == total ? set : set + " per channel (" + total + ")") + how;
+}
+
+const char* allocationName(VoiceAllocation a) {
+    switch (a) {
+    case VoiceAllocation::Reuse:
+        return "Reuse";
+    case VoiceAllocation::Reset:
+        return "Reset";
+    case VoiceAllocation::Channel:
+        return "Channel";
+    case VoiceAllocation::Rotate:
+    default:
+        return "Rotate";
+    }
 }
 
 namespace {
@@ -204,7 +228,7 @@ AutomationId addAutomationLane(EditorContext& ctx, TrackId track) {
         return AutomationId(); // all 8 AUTO channels have a lane
     AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
     m->perform(addLane(m->song(), LaneOwner::ofTrack(track), lane));
-    ctx.view().openAutomation.insert(track.value);
+    ctx.state().showLaneRows(track.value, false);
     return lane.id;
 }
 
@@ -233,9 +257,9 @@ void addMidiLane(EditorContext& ctx, TrackId track, LaneOwner owner, MidiControl
         return;
     auto show = [&](AutomationId id) {
         if (owner.clip.valid())
-            ctx.view().lowerLane = id.value;
+            ctx.state().lowerLane = id.value;
         else
-            ctx.view().openAutomation.insert(track.value);
+            ctx.state().showLaneRows(track.value, false);
     };
     for (const AutomationEnvelope& l : *lanes)
         if (l.midi == control) {
@@ -269,11 +293,16 @@ void appendAddLaneItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track,
             return;
         AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), output, 0);
         m->perform(addLane(m->song(), owner, lane));
-        c->view().lowerLane = lane.id.value;
+        c->state().lowerLane = lane.id.value;
     }));
     if (owner.track.valid())
         menu->addChild(
             rack::createMenuItem("Automate a knob: touch it in the rack", "", [c, track] { automateKnob(*c, track); }));
+    // A track that makes sound can move its own fader and pan (§7.3).
+    if (TesseraModule* m = ctx.module(); m && owner.track.valid() && m->soundIndex(track) >= 0) {
+        menu->addChild(rack::createMenuItem("Volume (the fader)", "", [c, track] { automateMix(*c, track, false); }));
+        menu->addChild(rack::createMenuItem("Pan", "", [c, track] { automateMix(*c, track, true); }));
+    }
     menu->addChild(rack::createSubmenuItem("MIDI control", "", [c, track, owner](rack::ui::Menu* sub) {
         sub->addChild(rack::createMenuLabel("Records it when the track records"));
         for (MidiControl control : commonMidiControls())
@@ -290,6 +319,43 @@ void appendAddLaneItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId track,
                 c->toast("A CC number is 0 to 127");
         }));
     }));
+}
+
+void automateMix(EditorContext& ctx, TrackId track, bool pan, SendFrom part) {
+    TesseraModule* m = ctx.module();
+    if (!m)
+        return;
+    const Song& song = m->song();
+    const Track* t = song.findTrack(track);
+    bool master = track == song.master.id;
+    if (!t && !(master && !pan))
+        return;
+    if (master && !part.whole())
+        return;
+    LaneDrive drive = pan ? LaneDrive::Pan : LaneDrive::Volume;
+    ctx.state().showLaneRows(track.value, master, part.key());
+    for (const AutomationEnvelope& l : *lanesOf(song, LaneOwner::ofTrack(track)))
+        if (l.drive == drive && l.part == part.key())
+            return;
+    AutomationEnvelope lane = makeLane(m->newId<AutomationId>(), 0, t ? t->color : theme::kMasterColor);
+    std::string what = pan ? "Pan" : "Volume";
+    lane.name = part.whole() ? what : sendActions::partName(*m, *t, part) + " " + (pan ? "pan" : "volume");
+    lane.drive = drive;
+    lane.part = part.key();
+    lane.rangeMin = 0;
+    lane.rangeMax = 1;
+    // It starts where the control is now, so adding it changes nothing until points are drawn.
+    Channel now = t ? t->channel : Channel{song.master.volumeDb, 0};
+    if (t && part.kind == SendFrom::Kind::Lane && part.lane >= 0 && part.lane < kDrumInputs)
+        now = t->drumInputs[size_t(part.lane)];
+    else if (t && part.kind == SendFrom::Kind::Clips)
+        now = {t->clips.db, t->clips.pan};
+    else if (t && part.kind == SendFrom::Kind::Input) {
+        SourceLevel level = sources::inputLevel(ctx, track, part.module);
+        now = {level.db, level.pan};
+    }
+    lane.points = {{0, pan ? (now.pan + 1) / 2 : faderPosOfDb(now.volumeDb)}};
+    m->perform(addLane(song, LaneOwner::ofTrack(track), lane));
 }
 
 void automateKnob(EditorContext& ctx, TrackId track) {
@@ -382,8 +448,8 @@ void appendInputItems(rack::ui::Menu* menu, EditorContext& ctx, TrackId id) {
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuLabel("Another track's notes"));
     for (const Track& other : m->song().tracks) {
-        if (other.id == id)
-            continue;
+        if (other.id == id || other.type == TrackType::Audio)
+            continue; // audio tracks have no notes to take
         TrackId from = other.id;
         bool loops = listensTo(m->song(), from, id);
         std::string current = track->listenTrack == from && track->listen == ListenSource::TrackAfter ? "after devices"
@@ -416,10 +482,39 @@ void appendVoicesItems(rack::ui::Menu* menu, EditorContext& ctx, const std::vect
         "Auto", "", [has] { return has(kAutoVoices); },
         [c, ids] { setField(*c, ids, &Track::polyphony, kAutoVoices, "Set voices to auto"); }));
     menu->addChild(new rack::ui::MenuSeparator);
-    for (int v = 1; v <= kMaxVoices; v++)
-        menu->addChild(rack::createCheckMenuItem(
-            std::to_string(v), "", [has, v] { return has(v); },
-            [c, ids, v] { setField(*c, ids, &Track::polyphony, v, "Set voices to " + std::to_string(v)); }));
+    for (int v = 1; v <= kMaxVoices; v++) {
+        rack::ui::MenuItem* item = rack::createCheckMenuItem(
+            std::to_string(v), v == 1 ? "mono: legato keys record as ties" : "", [has, v] { return has(v); },
+            [c, ids, v] { setField(*c, ids, &Track::polyphony, v, "Set voices to " + std::to_string(v)); });
+        menu->addChild(item);
+    }
+    menu->addChild(new rack::ui::MenuSeparator);
+    const Track* first = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+    menu->addChild(rack::createSubmenuItem(
+        "Allocation", first ? allocationName(first->allocation) : "", [c, ids](rack::ui::Menu* sub) {
+            struct Choice {
+                VoiceAllocation a;
+                const char* hint;
+            };
+            static const Choice choices[] = {
+                {VoiceAllocation::Rotate, "next free voice: release tails ring out"},
+                {VoiceAllocation::Reuse, "each pitch keeps its voice"},
+                {VoiceAllocation::Reset, "lowest free voice; chords low to high"},
+                {VoiceAllocation::Channel, "note channel N plays on poly channel N"}};
+            for (const Choice& ch : choices) {
+                VoiceAllocation a = ch.a;
+                sub->addChild(rack::createCheckMenuItem(
+                    allocationName(a), ch.hint,
+                    [c, ids, a] {
+                        const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+                        return t && t->allocation == a;
+                    },
+                    [c, ids, a] {
+                        setField(*c, ids, &Track::allocation, a,
+                                 std::string("Set voice allocation to ") + allocationName(a));
+                    }));
+            }
+        }));
 }
 
 void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vector<TrackId>& ids) {
@@ -431,32 +526,84 @@ void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vecto
     menu->addChild(rack::createCheckMenuItem(
         "Armed for recording", "", [c, ids] { return trackFlag(*c, ids.front(), &Track::armed); },
         [c, ids] { toggleArm(*c, ids.front(), true); }));
-    static const char* const inputs[] = {"Any (CV and MIDI)", "REC CV inputs", "MIDI"};
-    std::string channel = track->midiChannel == 0 ? "all channels" : "channel " + std::to_string(track->midiChannel);
-    menu->addChild(
-        rack::createSubmenuItem("Record from", inputs[int(track->recordInput)], [c, ids](rack::ui::Menu* sub) {
-            for (int i = 0; i < 3; i++) {
-                RecordInput input = RecordInput(i);
+    if (track->type == TrackType::Audio) {
+        static const std::pair<RecordInput, const char*> sources[] = {{RecordInput::Any, "Its Track Out IN"},
+                                                                      {RecordInput::RollIn, "Roll IN L and R"}};
+        std::string now = track->recordInput == RecordInput::RollIn ? "Roll IN" : "Track Out IN";
+        if (track->recordInput == RecordInput::OtherTrack) {
+            const Song& song = c->module()->song();
+            const Track* from = song.findTrack(track->recordFrom);
+            now = from ? from->name : track->recordFrom == song.master.id ? "Master mix" : "Missing track";
+        }
+        menu->addChild(rack::createSubmenuItem("Record from", now, [c, ids](rack::ui::Menu* sub) {
+            for (const auto& [input, name] : sources) {
+                RecordInput value = input;
                 sub->addChild(rack::createCheckMenuItem(
-                    inputs[i], "",
-                    [c, ids, input] {
+                    name, "",
+                    [c, ids, value] {
                         const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
-                        return t && t->recordInput == input;
+                        return t && t->recordInput == value;
                     },
-                    [c, ids, input] { setField(*c, ids, &Track::recordInput, input, "Set record input"); }));
+                    [c, ids, value] { setField(*c, ids, &Track::recordInput, value, "Set record input"); }));
+            }
+            sub->addChild(new rack::ui::MenuSeparator);
+            sub->addChild(rack::createMenuLabel("Another track, before its fader"));
+            TrackId self = ids.front();
+            auto addSource = [c, sub, self](TrackId from, const std::string& name) {
+                sub->addChild(rack::createCheckMenuItem(
+                    name, "",
+                    [c, self, from] {
+                        const Track* t = c->module() ? c->module()->song().findTrack(self) : nullptr;
+                        return t && t->recordInput == RecordInput::OtherTrack && t->recordFrom == from;
+                    },
+                    [c, self, from] {
+                        TesseraModule* m = c->module();
+                        if (!m)
+                            return;
+                        auto compound = std::make_unique<CompoundCommand>("Set record input");
+                        compound->add(setTrackField(m->song(), self, &Track::recordInput, RecordInput::OtherTrack,
+                                                    "Set record input"));
+                        compound->add(setTrackField(m->song(), self, &Track::recordFrom, from, "Set record input"));
+                        if (!compound->empty())
+                            m->perform(std::move(compound));
+                    }));
+            };
+            TesseraModule* module = c->module();
+            for (const Track& other : module->song().tracks)
+                if (other.id != self && module->soundIndex(other.id) >= 0)
+                    addSource(other.id, other.name);
+            addSource(module->song().master.id, "Master mix");
+        }));
+    }
+    if (track->type != TrackType::Audio) {
+        static const char* const inputs[] = {"Any (CV and MIDI)", "REC CV inputs", "MIDI"};
+        std::string channel =
+            track->midiChannel == 0 ? "all channels" : "channel " + std::to_string(track->midiChannel);
+        menu->addChild(
+            rack::createSubmenuItem("Record from", inputs[int(track->recordInput)], [c, ids](rack::ui::Menu* sub) {
+                for (int i = 0; i < 3; i++) {
+                    RecordInput input = RecordInput(i);
+                    sub->addChild(rack::createCheckMenuItem(
+                        inputs[i], "",
+                        [c, ids, input] {
+                            const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+                            return t && t->recordInput == input;
+                        },
+                        [c, ids, input] { setField(*c, ids, &Track::recordInput, input, "Set record input"); }));
+                }
+            }));
+        menu->addChild(rack::createSubmenuItem("MIDI channel", channel, [c, ids](rack::ui::Menu* sub) {
+            for (int ch = 0; ch <= 16; ch++) {
+                sub->addChild(rack::createCheckMenuItem(
+                    ch == 0 ? "All channels" : "Channel " + std::to_string(ch), "",
+                    [c, ids, ch] {
+                        const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
+                        return t && t->midiChannel == ch;
+                    },
+                    [c, ids, ch] { setField(*c, ids, &Track::midiChannel, int8_t(ch), "Set MIDI channel"); }));
             }
         }));
-    menu->addChild(rack::createSubmenuItem("MIDI channel", channel, [c, ids](rack::ui::Menu* sub) {
-        for (int ch = 0; ch <= 16; ch++) {
-            sub->addChild(rack::createCheckMenuItem(
-                ch == 0 ? "All channels" : "Channel " + std::to_string(ch), "",
-                [c, ids, ch] {
-                    const Track* t = c->module() ? c->module()->song().findTrack(ids.front()) : nullptr;
-                    return t && t->midiChannel == ch;
-                },
-                [c, ids, ch] { setField(*c, ids, &Track::midiChannel, int8_t(ch), "Set MIDI channel"); }));
-        }
-    }));
+    }
     menu->addChild(rack::createCheckMenuItem(
         "Monitor while armed", "", [c, ids] { return trackFlag(*c, ids.front(), &Track::monitor); },
         [c, ids] {
@@ -468,6 +615,20 @@ void appendRecordMenu(rack::ui::Menu* menu, EditorContext& ctx, const std::vecto
 void toggleSolo(EditorContext& ctx, TrackId clicked, bool additive) {
     TesseraModule* m = ctx.module();
     m->perform(soloCommand(m->song(), targets(ctx, clicked), additive));
+}
+
+void soloOnly(EditorContext& ctx, TrackId track) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    const Track* t = song.findTrack(track);
+    if (!t)
+        return;
+    auto compound = std::make_unique<CompoundCommand>("Solo only " + t->name);
+    for (const Track& other : song.tracks)
+        if (other.solo != (other.id == track))
+            compound->add(setTrackField(song, other.id, &Track::solo, other.id == track, "Solo"));
+    if (!compound->empty())
+        m->perform(std::move(compound));
 }
 
 void rename(EditorContext& ctx, TrackId id, const std::string& name) {
@@ -498,21 +659,11 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
     std::string what = ids.size() == 1 ? track->name : countTracks(ids.size());
     menu->addChild(rack::createMenuLabel(what));
 
+    // This track first (name, colour, copy, delete), then how it plays and records, its lanes, where its sound goes,
+    // grouping, and adding new tracks last.
     bool full = !canAdd(song, 1);
-    menu->addChild(rack::createMenuItem(
-        "Add instrument track", shortcutLabel(Action::AddInstrumentTrack), [c] { add(*c, TrackType::Instrument); },
-        full));
-    menu->addChild(rack::createMenuItem(
-        "Add drum track", shortcutLabel(Action::AddDrumTrack), [c] { add(*c, TrackType::Drum); }, full));
-    menu->addChild(rack::createMenuItem(
-        "Duplicate", shortcutLabel(Action::Duplicate), [c] { duplicateSelected(*c); }, !canAdd(song, ids.size())));
-    if (full)
-        menu->addChild(rack::createMenuLabel(kTracksFull));
-    menu->addChild(rack::createMenuItem(
-        "Delete", shortcutLabel(Action::Delete), [c] { deleteSelected(*c); }, ids.size() >= song.tracks.size()));
     if (ids.size() == 1)
         menu->addChild(rack::createMenuItem("Rename", "double-click", startRename));
-
     menu->addChild(rack::createSubmenuItem("Colour", "", [c, ids](rack::ui::Menu* sub) {
         const Track* t = c->module()->song().findTrack(ids.front());
         for (int i = 0; i < 16; i++) {
@@ -522,26 +673,64 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
                                   [c, ids, color] { setField(*c, ids, &Track::color, color, "Change colour"); }));
         }
     }));
+    menu->addChild(rack::createMenuItem(
+        "Duplicate", shortcutLabel(Action::Duplicate), [c] { duplicateSelected(*c); }, !canAdd(song, ids.size())));
+    menu->addChild(rack::createMenuItem(
+        "Delete", shortcutLabel(Action::Delete), [c] { deleteSelected(*c); }, ids.size() >= song.tracks.size()));
+
+    menu->addChild(new rack::ui::MenuSeparator);
     if (track->type == TrackType::Instrument) {
         menu->addChild(rack::createSubmenuItem("Voices", voicesLabel(song, *track),
                                                [c, ids](rack::ui::Menu* sub) { appendVoicesItems(sub, *c, ids); }));
     }
+    if (track->type != TrackType::Audio)
+        menu->addChild(
+            rack::createSubmenuItem("Input", inputLabel(song, *track), [c, first = ids.front()](rack::ui::Menu* sub) {
+                appendInputItems(sub, *c, first);
+            }));
+    menu->addChild(rack::createSubmenuItem("Recording", track->armed ? "Armed" : "",
+                                           [c, ids](rack::ui::Menu* sub) { appendRecordMenu(sub, *c, ids); }));
 
     TrackId first = ids.front();
+    menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createCheckMenuItem(
-        "Show automation lanes", "", [c, first] { return c->view().openAutomation.count(first.value) > 0; },
+        "Show lanes, parts and sends", "",
+        [c, first] { return c->state().openMix.count({first.value, 0}) > 0; },
         [c, first] {
-            std::set<uint64_t>& open = c->view().openAutomation;
-            if (!open.erase(first.value))
-                open.insert(first.value);
+            std::set<std::pair<uint64_t, uint64_t>>& open = c->state().openMix;
+            if (!open.erase({first.value, 0}))
+                open.insert({first.value, 0});
         }));
     menu->addChild(rack::createSubmenuItem("Add automation lane", "", [c, first](rack::ui::Menu* sub) {
         appendAddLaneItems(sub, *c, first, LaneOwner::ofTrack(first));
     }));
-    menu->addChild(
-        rack::createSubmenuItem("Input", inputLabel(song, *track),
-                                [c, first = ids.front()](rack::ui::Menu* sub) { appendInputItems(sub, *c, first); }));
-    appendRecordMenu(menu, ctx, ids);
+
+    menu->addChild(new rack::ui::MenuSeparator);
+    if (ids.size() == 1) {
+        TrackId id = clicked;
+        audioActions::appendOutputItems(menu, *c, id);
+        // Sends here too, not only in the mixer: what it sends, and Send to ▸ (DECISIONS §164).
+        if (m->soundIndex(id) >= 0 || track->type == TrackType::Audio)
+            menu->addChild(
+                rack::createSubmenuItem("Sends", track->sends.empty() ? "" : std::to_string(track->sends.size()),
+                                        [c, id](rack::ui::Menu* sub) { sendActions::appendTrackSends(sub, *c, id); }));
+        if (m->soundIndex(id) >= 0)
+            menu->addChild(rack::createMenuItem("Bounce audio to a new track…", shortcutLabel(Action::Bounce),
+                                                [c, id] { bounceActions::openAudioDialog(*c, id); }));
+        if (track->type != TrackType::Audio)
+            menu->addChild(rack::createMenuItem("Bounce notes to a new track…", "",
+                                                [c, id] { bounceActions::openNotes(*c, id); }));
+    }
+    if (track->type == TrackType::Audio)
+        menu->addChild(
+            rack::createMenuItem("Import audio file…", "", [c, clicked] { audioActions::importToTrack(*c, clicked); }));
+    // Shown only when the track has copies to link: greyed out, it was noise in nearly every menu.
+    if (arrange::linkIdenticalClips(song, clicked))
+        menu->addChild(rack::createMenuItem("Link identical clips", "", [c, clicked] {
+            if (TesseraModule* mod = c->module())
+                if (CommandPtr command = arrange::linkIdenticalClips(mod->song(), clicked))
+                    mod->perform(std::move(command));
+        }));
 
     menu->addChild(new rack::ui::MenuSeparator);
     menu->addChild(rack::createMenuItem("Group", shortcutLabel(Action::GroupTracks), [c] { groupSelected(*c); }));
@@ -563,6 +752,17 @@ void appendTrackMenu(rack::ui::Menu* menu, EditorContext& ctx, TrackId clicked, 
             mod->perform(ungroup(mod->song(), gid));
         }));
     }
+    menu->addChild(new rack::ui::MenuSeparator);
+    menu->addChild(rack::createSubmenuItem("Add track", full ? "full" : "", [c, full](rack::ui::Menu* sub) {
+        sub->addChild(rack::createMenuItem(
+            "Instrument track", shortcutLabel(Action::AddInstrumentTrack), [c] { add(*c, TrackType::Instrument); },
+            full));
+        sub->addChild(rack::createMenuItem(
+            "Drum track", shortcutLabel(Action::AddDrumTrack), [c] { add(*c, TrackType::Drum); }, full));
+        sub->addChild(rack::createMenuItem("Audio track", "", [c] { add(*c, TrackType::Audio); }, full));
+        if (full)
+            sub->addChild(rack::createMenuLabel(kTracksFull));
+    }));
 }
 
 void appendGroupMenu(rack::ui::Menu* menu, EditorContext& ctx, GroupId group, std::function<void()> startRename) {
@@ -576,16 +776,18 @@ void appendGroupMenu(rack::ui::Menu* menu, EditorContext& ctx, GroupId group, st
     EditorContext* c = &ctx;
     menu->addChild(rack::createMenuLabel(g->name));
     menu->addChild(rack::createMenuItem("Rename", "double-click", startRename));
-    bool folded = ctx.view().foldedGroups.count(group.value) > 0;
+    bool folded = ctx.state().foldedGroups.count(group.value) > 0;
     menu->addChild(rack::createMenuItem(folded ? "Unfold" : "Fold", "", [c, group] {
-        std::set<uint64_t>& f = c->view().foldedGroups;
+        std::set<uint64_t>& f = c->state().foldedGroups;
         if (!f.erase(group.value))
             f.insert(group.value);
     }));
     menu->addChild(rack::createSubmenuItem("Colour", "", [c, group](rack::ui::Menu* sub) {
+        const TrackGroup* g = c->module() ? c->module()->song().findGroup(group) : nullptr;
+        uint32_t now = g ? g->color : 0;
         for (int i = 0; i < 16; i++) {
             uint32_t color = kTrackColors[i];
-            sub->addChild(new ColorMenuItem("Colour " + std::to_string(i + 1), color, false, [c, group, color] {
+            sub->addChild(new ColorMenuItem("Colour " + std::to_string(i + 1), color, color == now, [c, group, color] {
                 changeGroup(*c, group, "Change group colour", [&](TrackGroup& g) { g.color = color; });
             }));
         }

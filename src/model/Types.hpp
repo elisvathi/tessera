@@ -10,13 +10,18 @@ using Tick = int64_t;
 constexpr Tick kPpq = 960;
 constexpr int kMaxTracks = 64;
 constexpr int kMaxVoices = 16;
+// Voices a track holds in all: with playheads, each channel has up to kMaxVoices of its own.
+constexpr int kMaxTrackVoices = 64;
 constexpr int kMaxAutomationLanes = 8;
 constexpr int kMaxKnobLanes = 16; // lanes that turn device knobs, per track and per clip
 // Lanes played into the voices instead of an AUTO channel: pitch bend (on V/OCT) and pressure (on PRESS). The
 // engine keeps them after the AUTO channels, at these slots.
 constexpr int kPitchLaneSlot = kMaxAutomationLanes;
 constexpr int kPressureLaneSlot = kMaxAutomationLanes + 1;
-constexpr int kMaxPlayedLanes = kMaxAutomationLanes + 2;
+// Lanes that move a track's mixer strip (docs/design/AUDIO_MIXER.md §7.3): its fader and its pan.
+constexpr int kVolumeLaneSlot = kMaxAutomationLanes + 2;
+constexpr int kPanLaneSlot = kMaxAutomationLanes + 3;
+constexpr int kMaxPlayedLanes = kMaxAutomationLanes + 4;
 
 /// A strongly typed ID. The Tag keeps a TrackId from being passed where a ClipId is expected.
 /// Value 0 means "no ID".
@@ -42,6 +47,9 @@ using GroupId = Id<struct GroupTag>;
 using MarkerId = Id<struct MarkerTag>;
 using DeviceId = Id<struct DeviceTag>;
 using ModulatorId = Id<struct ModulatorTag>;
+using PlayheadId = Id<struct PlayheadTag>;
+using AudioSourceId = Id<struct AudioSourceTag>;
+using AudioRegionId = Id<struct AudioRegionTag>;
 
 struct TimeSig {
     int num = 4;
@@ -69,6 +77,14 @@ inline BarBeatTick toBarBeatTick(Tick t, TimeSig ts) {
     Tick inBar = t - barIndex * bar;
     return {barIndex + 1, int(inBar / beat) + 1, inBar % beat};
 }
+
+/// Which voice (poly channel) a new note takes (docs/design/TIES_VOICES.md §3).
+enum class VoiceAllocation : uint8_t {
+    Rotate, // the next free voice after the last one used
+    Reuse,  // the voice that played this pitch last, even while it still sounds
+    Reset,  // the lowest free voice; notes starting together go low to high
+    Channel // note channel N plays on voice N (wrapping past the voice count)
+};
 
 } // namespace tessera
 

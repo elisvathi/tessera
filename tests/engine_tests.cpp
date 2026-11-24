@@ -192,6 +192,72 @@ TEST_CASE("VoiceAllocator: lowering polyphony releases the voices above it") {
     CHECK(v.gate(0));
 }
 
+TEST_CASE("VoiceAllocator: each channel's block of voices steals only from itself") {
+    VoiceAllocator v;
+    // Channel 1 gets voices 0-1, channel 2 voices 2-4, in that order (playhead order).
+    VoiceAllocator::Block blocks[] = {{1, 0, 2}, {2, 2, 3}};
+    v.setBlocks(blocks, 2);
+    CHECK(v.polyphony() == 5);
+    CHECK(v.noteOn(60, 1, 0.5f, 1000, 1, 1) == 0);
+    CHECK(v.noteOn(62, 1, 0.5f, 1000, 2, 1) == 1);
+    for (int i = 0; i < 3; i++)
+        CHECK(v.noteOn(int8_t(70 + i), 1, 0.5f, 1000, uint32_t(10 + i), 2) == 2 + i);
+    // Channel 2 is full: its next note takes its own oldest voice, never one of channel 1's.
+    CHECK(v.noteOn(80, 1, 0.5f, 1000, 20, 2) == 2);
+    CHECK(v.voice(0).pitch == 60);
+    CHECK(v.voice(1).pitch == 62);
+    // A note on a channel with no block of its own goes to the first block.
+    CHECK(v.noteOn(90, 1, 0.5f, 1000, 30, 7) < 2);
+}
+
+TEST_CASE("VoiceAllocator: a new layout moves each channel's sounding voices to its new block") {
+    VoiceAllocator v;
+    VoiceAllocator::Block before[] = {{1, 0, 2}, {2, 2, 2}};
+    v.setBlocks(before, 2);
+    v.noteOn(60, 1, 0.5f, 1000, 1, 1);
+    v.noteOn(64, 1, 0.5f, 1000, 2, 2);
+    v.advance();
+    REQUIRE(v.gate(2));
+    // Channel 3 comes first now: channel 2's block moves from voices 2-3 to 4-5, channel 1's from 0-1 to 2-3.
+    VoiceAllocator::Block after[] = {{3, 0, 2}, {1, 2, 2}, {2, 4, 2}};
+    std::array<int8_t, kMaxTrackVoices> moved;
+    CHECK(v.setBlocks(after, 3, &moved));
+    CHECK(moved[0] == 2);
+    CHECK(moved[2] == 4);
+    CHECK(v.gate(4));
+    CHECK(v.voice(4).pitch == 64);
+    CHECK(v.gate(2));
+    CHECK(v.voice(2).pitch == 60);
+    CHECK_FALSE(v.gate(0)); // channel 3's new voices start empty
+    // The same layout again changes nothing.
+    CHECK_FALSE(v.setBlocks(after, 3, &moved));
+}
+
+TEST_CASE("VoiceAllocator: a channel's notes take its first free voice, and it remembers how many it has used") {
+    VoiceAllocator v;
+    VoiceAllocator::Block blocks[] = {{1, 0, 4}, {2, 4, 4}};
+    v.setBlocks(blocks, 2);
+    CHECK(v.used(0));       // a channel always sends at least one voice
+    CHECK_FALSE(v.used(1)); // none of the others yet
+    // A line of single notes on channel 1: each one back on its first voice.
+    for (int i = 0; i < 4; i++) {
+        CHECK(v.noteOn(int8_t(40 + i), 1, 0.5f, 1000, uint32_t(1 + i), 1) == 0);
+        v.release(0);
+    }
+    CHECK_FALSE(v.used(1));
+    // A chord on channel 2 fills its first three voices: now three are in use.
+    for (int i = 0; i < 3; i++)
+        CHECK(v.noteOn(int8_t(60 + i), 1, 0.5f, 1000, uint32_t(10 + i), 2) == 4 + i);
+    CHECK(v.used(6));
+    CHECK_FALSE(v.used(7));
+    // Notes ending don't make it forget; stopping does.
+    v.releaseAll();
+    CHECK(v.used(6));
+    v.forgetUse();
+    CHECK_FALSE(v.used(6));
+    CHECK(v.used(4));
+}
+
 TEST_CASE("clips loop, including notes right at the loop end") {
     Harness h(songWith({{0, 100, 60}, {kPpq - 1, 1, 67}}, kPpq, 2));
     int64_t loop = kPpq * kSamplesPerTick;
@@ -705,10 +771,14 @@ TEST_CASE("launching in arranger mode takes the track over until back to arrange
     CHECK(h.engine.overridden(0)); // stopped: the arrangement is silent on this track
     CHECK(h.risingEdges(0, 3 * kPpq * kSamplesPerTick).empty());
 
+    // Back to the timeline waits for the launch line (the next bar), as a launch does.
     h.engine.launch({LaunchEvent::Kind::BackToArrangement});
+    CHECK(h.engine.overridden(0));
+    int64_t nextBar = 4 * kPpq * kSamplesPerTick;
+    std::vector<int64_t> edges = h.risingEdges(0, nextBar);
+    REQUIRE_FALSE(edges.empty());
+    CHECK(edges.back() == nextBar);
     CHECK_FALSE(h.engine.overridden(0));
-    int64_t nextBeat = 4 * kPpq * kSamplesPerTick;
-    CHECK(h.risingEdges(0, nextBeat).back() == nextBeat);
 }
 
 TEST_CASE("a reset clears launches queued before it, so a loaded arranger patch plays every track") {
@@ -1080,4 +1150,32 @@ TEST_CASE("a jump on a playing clip's ruler waits for the same point in the song
     CHECK(h.frame().voct[0] == doctest::Approx(1.f));
     CHECK(h.engine.queuedSlot(0) == kNothingQueued);
     CHECK(h.engine.clipPosition(0) == doctest::Approx(7 * kPpq + 11.0 / kSamplesPerTick));
+}
+
+TEST_CASE("a stopped engine sleeps once its lanes settle, and a seek wakes it to the lane's new value") {
+    Song song = songWith({}, 4 * kPpq, 1);
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.outputIndex = 0;
+    lane.rangeMin = 0;
+    lane.rangeMax = 10;
+    lane.points = {{0, 0.2f, CurveType::Hold, 0}, {4 * kPpq, 0.8f, CurveType::Hold, 0}};
+    song.tracks[0].automation.push_back(lane);
+    Harness h(std::move(song));
+    h.engine.stop();
+    // Two frame buffers taken in turn, as the output bus does, so idle tracks can sleep.
+    std::array<std::array<TrackFrame, kMaxTracks>, 2> buffers{};
+    int64_t n = 0;
+    auto run = [&](int samples) {
+        for (int k = 0; k < samples; k++, n++)
+            h.engine.process(buffers[size_t(n & 1)].data(), h.events);
+    };
+    auto volts = [&] { return buffers[size_t((n - 1) & 1)][size_t(h.slots.slotOf(h.song.tracks[0].id))].automation[0]; };
+    run(48000); // a second: far past the settling time
+    CHECK(volts() == doctest::Approx(2.f));
+    h.engine.seek(double(4 * kPpq + 10));
+    run(4800);
+    CHECK(volts() == doctest::Approx(8.f));
+    run(48000);
+    CHECK(volts() == doctest::Approx(8.f));
 }

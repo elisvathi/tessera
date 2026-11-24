@@ -30,9 +30,13 @@ struct TrackGroup {
     std::string name;
     uint32_t color = 0;
     std::vector<TrackId> tracks;
+    // Its mixer strip (§3.5): the sum of its tracks that make sound passes through it on the way to the master.
+    Channel channel;
+    bool mute = false;
 
     bool operator==(const TrackGroup& o) const {
-        return id == o.id && name == o.name && color == o.color && tracks == o.tracks;
+        return id == o.id && name == o.name && color == o.color && tracks == o.tracks && channel == o.channel &&
+               mute == o.mute;
     }
 };
 
@@ -54,7 +58,9 @@ struct Marker {
 /// Invariants (normalize() restores them): 1..kMaxTracks tracks, every track has one slot per scene,
 /// notes are sorted, and nextId is above every ID in use.
 struct Song {
-    static constexpr int kSchemaVersion = 6;
+    // 7 was taken twice, on two branches: the Playheads device and audio. 8: more playhead rates and lengths.
+    // 9: more Arpeggiator patterns.
+    static constexpr int kSchemaVersion = 16;
 
     TimeSig timeSig;
     float swing = 0;           // 0..1, shown as 50..75% (Swing.hpp)
@@ -71,6 +77,8 @@ struct Song {
     ClipPool clips;
     std::vector<Marker> markers;       // sorted by position
     std::vector<Modulator> modulators; // song level: reach every track (docs/DEVICES.md)
+    std::vector<AudioSource> audioSources; // sorted by id; kept while the session runs, so undo can bring clips back
+    MasterChannel master;
     uint64_t nextId = 1;               // one counter for every kind of ID, so IDs never repeat
 
     template <typename IdT>
@@ -84,6 +92,9 @@ struct Song {
     int trackIndex(TrackId id) const; // -1 when not found
     Clip* findClip(ClipId id);
     const Clip* findClip(ClipId id) const;
+    const AudioSource* findSource(AudioSourceId id) const;
+    /// The source an audio clip plays; null for note clips and for a source that isn't in the song.
+    const AudioSource* sourceOf(const Clip& clip) const;
 
     /// The clip a track plays. Until the launcher exists this is the clip in the track's first filled slot.
     const Clip* activeClip(const Track& track) const;
@@ -94,6 +105,24 @@ struct Song {
     /// The poly channels a track sends: its fixed voice count, or for kAutoVoices the most notes its clips
     /// ever play at once (at least 1).
     int voicesOf(const Track& track) const;
+
+    /// A channel's own voices: notes on channel `part` (0: any channel with none of its own) play in `size` voices.
+    struct VoiceBlock {
+        uint8_t part;
+        int size;
+    };
+    /// The track's voices as blocks, in the order an output stacks them: with a Playheads device, one per channel of
+    /// its playheads (muted ones too, so muting moves nothing), in playhead order, each up to 16 (its Auto count, or
+    /// the fixed count); else one block of voicesOf. At most kMaxTrackVoices in all.
+    std::vector<VoiceBlock> voiceBlocks(const Track& track) const;
+    /// The highest note channel any of the track's clips uses (at least 1): Channel allocation sends that many.
+    int highestNoteChannel(const Track& track) const;
+    /// The most notes the track's clips ever play at once (at least 1), before its devices.
+    int mostNotesAtOnce(const Track& track) const;
+    /// The most notes that reach a device at once, for an Arpeggiator's Pattern rows: the most the clips feeding its
+    /// chain play together (`ownClip`'s alone when the chain is that clip's), through `before`, the devices ahead of
+    /// it (a Chord device makes each note several).
+    int notesInto(const Track& track, const Clip* ownClip, const std::vector<Device>& before) const;
 
     /// Whether any clip in the track's slots or on its timeline has a note: the track has something to play.
     bool hasNotes(const Track& track) const;
@@ -106,10 +135,14 @@ struct Song {
         return timeSig == o.timeSig && swing == o.swing && swingStep == o.swingStep && scale == o.scale &&
                customScales == o.customScales && loopStart == o.loopStart && loopEnd == o.loopEnd && seed == o.seed &&
                launchQuantize == o.launchQuantize && tracks == o.tracks && groups == o.groups && scenes == o.scenes &&
-               clips == o.clips && markers == o.markers && modulators == o.modulators && nextId == o.nextId;
+               clips == o.clips && markers == o.markers && modulators == o.modulators &&
+               audioSources == o.audioSources && master == o.master && nextId == o.nextId;
     }
     bool operator!=(const Song& o) const { return !(*this == o); }
 };
+
+/// Whether any track is an audio track: the mixer, MAIN and the master only work then (§7.9 of the audio design).
+bool hasAudio(const Song& song);
 
 /// Repairs a song loaded from outside (old or hand-edited patches) so every invariant holds.
 /// Values are clamped to their ranges; nothing valid is ever dropped.

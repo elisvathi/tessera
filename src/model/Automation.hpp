@@ -46,7 +46,9 @@ enum class AutoRecordMode : uint8_t { Touch, Latch, Write };
 
 /// Where a lane's value goes: an AUTO channel, or into every voice of the track (pitch bend added to V/OCT,
 /// pressure on PRESS where it is above the note's own).
-enum class LaneDrive : uint8_t { Auto, Pitch, Pressure };
+/// What a lane plays: an AUTO channel, the voices' pitch bend or pressure, or the track's fader or pan (a lane value
+/// of 0..1 is the fader's travel, or pan from hard left to hard right).
+enum class LaneDrive : uint8_t { Auto, Pitch, Pressure, Volume, Pan, Send };
 
 /// The MIDI control a lane records from (docs/design/EXPRESSION_INPUT.md).
 struct MidiControl {
@@ -81,13 +83,18 @@ struct AutomationEnvelope {
     MidiControl midi;      // the MIDI control a take records into this lane; set, it is the lane's source
     int recInput = -1;     // the AUTO REC channel a CV lane records, 0..7; -1 = its own AUTO channel
     bool noRecord = false; // "Don't record this lane": takes leave it as it is
+    TrackId sendTo;        // a Send lane: the level of the track's send to this track, as a fader position
+    /// The part of the track a Volume, Pan or Send lane moves (SendFrom::key()): a drum lane, an input or the clips,
+    /// or 0 for the whole track. A Send lane's part is the one that sends.
+    uint64_t part = 0;
 
     bool operator==(const AutomationEnvelope& o) const {
         return id == o.id && name == o.name && color == o.color && outputIndex == o.outputIndex &&
                rangeMin == o.rangeMin && rangeMax == o.rangeMax && bipolar == o.bipolar && mute == o.mute &&
                slewMs == o.slewMs && combine == o.combine && source == o.source && recInput == o.recInput &&
                recordMode == o.recordMode && targets == o.targets && points == o.points &&
-               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && noRecord == o.noRecord;
+               paramTarget == o.paramTarget && drive == o.drive && midi == o.midi && noRecord == o.noRecord &&
+               sendTo == o.sendTo && part == o.part;
     }
 };
 
@@ -101,6 +108,10 @@ inline bool sameTarget(const AutomationEnvelope& a, const AutomationEnvelope& b)
         return a.paramTarget == b.paramTarget;
     if (a.drive != b.drive)
         return false;
+    if (a.drive == LaneDrive::Send)
+        return a.sendTo == b.sendTo && a.part == b.part;
+    if (a.drive == LaneDrive::Volume || a.drive == LaneDrive::Pan)
+        return a.part == b.part;
     return a.drive != LaneDrive::Auto || a.outputIndex == b.outputIndex;
 }
 

@@ -5,12 +5,16 @@
 #include <algorithm>
 #include <array>
 #include <climits>
+#include <cstdlib>
 
 namespace tessera {
 
-/// Assigns notes to a track's poly channels: round-robin, stealing the oldest note when all voices are busy.
-/// When a voice is reused while its gate is high (or was high only moments ago), the gate is held low for a
-/// short gap first so downstream envelopes see a fresh rising edge.
+/// Assigns notes to a track's voices, as its allocation says (Rotate, Reuse, Reset or Channel), stealing the oldest note
+/// when all voices are busy. A tied note takes over the voice of the note it continues, with no new gate. The voices
+/// come in blocks, one per channel (a Playheads device gives each playhead channel its own, in playhead order), and a
+/// note only ever takes a voice in its channel's block, so one busy channel can't cut another's notes. A track
+/// without playheads has a single block. When a voice is reused while its gate is high (or was high only moments
+/// ago), the gate is held low for a short gap first so downstream envelopes see a fresh rising edge.
 ///
 /// Per sample, call order is: release / noteOn, read gate(), then advance().
 class VoiceAllocator {
@@ -23,25 +27,121 @@ class VoiceAllocator {
         double endTick = 0;       // when the owning note releases, on the engine's clock (infinite while open)
         uint32_t id = 0;          // the note's chain ID, so an open note can be ended later; 0 = none
         uint64_t startOrder = 0;  // larger = newer
+        double startTick = 0;     // when the owning note started, on the engine's clock
+        bool tieable = false;     // a tied note may continue it (not once cut by a stop or a loop wrap)
         int64_t gateFrom = 0;     // the sample from which the gate may rise
         int64_t lowSince = -kFar; // the first sample of the gate's current low stretch
     };
 
+    /// A channel's voices: `size` of them from `start`. Part 0 takes the notes of channels with no block of their own.
+    struct Block {
+        uint8_t part;
+        uint8_t start, size;
+    };
+    static constexpr int kMaxBlocks = 17;
+
+    /// One block of `n` voices for every note.
     void setPolyphony(int n) {
-        if (std::clamp(n, 1, kMaxVoices) != poly)
-            changes++;
-        poly = std::clamp(n, 1, kMaxVoices);
-        for (int v = poly; v < kMaxVoices; v++)
-            release(v);
-        next %= poly;
+        Block one{0, 0, uint8_t(std::clamp(n, 1, kMaxVoices))};
+        setBlocks(&one, 1);
     }
+    /// The voices, as blocks laid end to end (at most kMaxTrackVoices in all). When the layout changes, each
+    /// channel's voices move to its new block with whatever they play, so no note is cut; a channel that is gone, or
+    /// a block that shrank, lets its extra voices go. `moved` (when given) gets each old voice's new place, -1 for
+    /// gone. Returns whether the layout changed.
+    bool setBlocks(const Block* list, int count, std::array<int8_t, kMaxTrackVoices>* moved = nullptr) {
+        count = std::clamp(count, 1, kMaxBlocks);
+        std::array<Block, kMaxBlocks> next{};
+        int total = 0;
+        bool same = count == blockCount;
+        for (int b = 0; b < count; b++) {
+            Block block = list[b];
+            block.start = uint8_t(std::min(total, kMaxTrackVoices - 1));
+            block.size = uint8_t(std::clamp(int(block.size), 1, std::min(kMaxVoices, kMaxTrackVoices - block.start)));
+            same =
+                same && block.part == blocks[b].part && block.start == blocks[b].start && block.size == blocks[b].size;
+            next[b] = block;
+            total = block.start + block.size;
+        }
+        if (same)
+            return false;
+        std::array<Voice, kMaxTrackVoices> old = voices;
+        std::array<int8_t, kMaxTrackVoices> place;
+        place.fill(-1);
+        for (Voice& voice : voices)
+            voice = Voice();
+        for (int ob = 0; ob < blockCount; ob++)
+            for (int nb = 0; nb < count; nb++) {
+                if (next[nb].part != blocks[ob].part)
+                    continue;
+                for (int i = 0; i < std::min(blocks[ob].size, next[nb].size); i++) {
+                    place[blocks[ob].start + i] = int8_t(next[nb].start + i);
+                    voices[next[nb].start + i] = old[blocks[ob].start + i];
+                }
+                break;
+            }
+        // Voices left with no place stop: their gates fall now.
+        for (int v = 0; v < kMaxTrackVoices; v++)
+            if (place[v] < 0 && gate(old[v]))
+                changes++;
+        // Each channel remembers how many voices it has needed, in its new block too.
+        std::array<uint8_t, kMaxBlocks> nextPeaks{};
+        for (int nb = 0; nb < count; nb++)
+            for (int ob = 0; ob < blockCount; ob++)
+                if (blocks[ob].part == next[nb].part)
+                    nextPeaks[nb] = std::min(peaks[ob], next[nb].size);
+        peaks = nextPeaks;
+        blocks = next;
+        blockCount = count;
+        poly = total;
+        nexts.fill(0);
+        nextEnd = kNoEnd;
+        nextRise = kNever;
+        for (int v = 0; v < poly; v++) {
+            if (voices[v].held)
+                nextEnd = std::min(nextEnd, voices[v].endTick);
+            if (voices[v].held && voices[v].gateFrom > now)
+                nextRise = std::min(nextRise, voices[v].gateFrom);
+        }
+        changes++;
+        if (moved)
+            *moved = place;
+        return true;
+    }
+    /// All the voices, over every block.
     int polyphony() const { return poly; }
+    /// How many voices the notes of channel `part` play on.
+    int sizeFor(uint8_t part) const { return blocks[blockFor(part)].size; }
+    /// Whether voice `v` is one its channel has needed since play started (or its first): a playhead channel only
+    /// sends those, so a one-note line sends one voice. Every voice of the shared block counts.
+    bool used(int v) const {
+        for (int b = 0; b < blockCount; b++)
+            if (v >= blocks[b].start && v < blocks[b].start + blocks[b].size)
+                return blocks[b].part == 0 || v - blocks[b].start < std::max<int>(1, peaks[b]);
+        return false;
+    }
+    /// The blocks, in order, and how many voices each has needed: for walking every voice once.
+    int blockTotal() const { return blockCount; }
+    const Block& block(int b) const { return blocks[b]; }
+    int usedIn(int b) const { return blocks[b].part == 0 ? blocks[b].size : std::max<int>(1, peaks[b]); }
+    /// Forgets how many voices each channel has needed (the song stopped): each sends one again.
+    void forgetUse() {
+        peaks.fill(0);
+        changes++;
+    }
 
     void setRetriggerGap(int samples) { gap = std::max(1, samples); }
+    /// Which voice new notes take (the track's Allocation).
+    void setAllocation(VoiceAllocation a) { allocation = a; }
+    /// Rotation starts again from each block's first voice (play started), so every play lands the same way.
+    void restartRotation() { nexts.fill(0); }
 
-    /// Returns the voice index used.
-    int noteOn(int8_t pitch, float velocity, float releaseVelocity, double endTick, uint32_t id = 0) {
-        int v = pickVoice();
+    /// Returns the voice index used. `lowerLater`: under Reset, lower notes of its chord still to come, which
+    /// each leave a free voice below it.
+    int noteOn(int8_t pitch, float velocity, float releaseVelocity, double endTick, uint32_t id = 0, uint8_t part = 0,
+               double startTick = 0, int lowerLater = 0) {
+        int b = blockFor(part);
+        int v = pickVoice(b, pitch, lowerLater, part);
         Voice& voice = voices[v];
         if (gate(v)) {
             // Reused while sounding: the gate drops now and rises again after the gap.
@@ -58,12 +158,51 @@ class VoiceAllocator {
         voice.endTick = endTick;
         voice.id = id;
         voice.startOrder = ++order;
-        next = (v + 1) % poly;
+        voice.startTick = startTick;
+        voice.tieable = true;
+        nexts[b] = (v - blocks[b].start + 1) % blocks[b].size;
+        if (v - blocks[b].start + 1 > peaks[b]) {
+            peaks[b] = uint8_t(v - blocks[b].start + 1);
+            changes++;
+        }
         nextEnd = std::min(nextEnd, endTick);
         if (voice.gateFrom > now)
             nextRise = std::min(nextRise, voice.gateFrom);
         changes++;
         return v;
+    }
+
+    /// The voice a tied note of channel `part` starting at `startTick` continues, or -1: in its block, a voice whose
+    /// note started before it and still sounds at its start (or ended on this very sample), the nearest in pitch.
+    int continued(int8_t pitch, uint8_t part, double startTick, double hair) const {
+        const Block& block = blocks[blockFor(part)];
+        int best = -1;
+        for (int v = block.start; v < block.start + block.size; v++) {
+            const Voice& x = voices[v];
+            bool sounding = x.held || (x.lowSince == now && now >= x.gateFrom);
+            if (!x.tieable || !sounding || x.startTick >= startTick - hair || x.endTick < startTick - hair)
+                continue;
+            if (best < 0 || std::abs(x.pitch - pitch) < std::abs(voices[best].pitch - pitch))
+                best = v;
+        }
+        return best;
+    }
+    /// A tied note takes voice `v` over (see continued()): its gate stays high, the note is now this one.
+    void takeOver(int v, int8_t pitch, float velocity, float releaseVelocity, double endTick, uint32_t id,
+                  double startTick) {
+        Voice& voice = voices[v];
+        if (!voice.held && voice.lowSince == now)
+            voice.lowSince = -kFar; // it was released this sample, so its gate never went low
+        voice.held = true;
+        voice.pitch = pitch;
+        voice.velocity = velocity;
+        voice.releaseVelocity = releaseVelocity;
+        voice.endTick = endTick;
+        voice.id = id;
+        voice.startOrder = ++order;
+        voice.startTick = startTick;
+        nextEnd = std::min(nextEnd, endTick);
+        changes++;
     }
 
     /// Releases every voice whose note ends before `tick`.
@@ -91,9 +230,15 @@ class VoiceAllocator {
         voice.held = false;
     }
 
+    /// Releases voice `v` so that no tied note continues it: a stop, a loop wrap or a clip switch ends the line.
+    void cut(int v) {
+        release(v);
+        voices[v].tieable = false;
+    }
+
     void releaseAll() {
-        for (int v = 0; v < kMaxVoices; v++)
-            release(v);
+        for (int v = 0; v < kMaxTrackVoices; v++)
+            cut(v);
         nextEnd = kNoEnd;
     }
 
@@ -140,14 +285,51 @@ class VoiceAllocator {
   private:
     bool gate(const Voice& voice) const { return voice.held && now >= voice.gateFrom; }
 
-    int pickVoice() const {
-        for (int i = 0; i < poly; i++) {
-            int v = (next + i) % poly;
-            if (!voices[v].held)
-                return v;
+    /// The block a note of channel `part` plays in: its own, else the shared one (part 0), else the first.
+    int blockFor(uint8_t part) const {
+        int shared = 0;
+        for (int b = 0; b < blockCount; b++) {
+            if (blocks[b].part == part)
+                return b;
+            if (blocks[b].part == 0)
+                shared = b;
         }
-        int oldest = 0;
-        for (int v = 1; v < poly; v++)
+        return shared;
+    }
+
+    /// The voice in block `b` for a new note of `pitch`, by the allocation: Rotate takes the next free one after
+    /// the last used (a playhead channel's first free one), Reuse the one that played this pitch last (else as Rotate), Reset the lowest free one past
+    /// `skip` others, Channel the voice of note channel `part` in the shared block; when none is free, the oldest.
+    int pickVoice(int b, int8_t pitch, int skip, uint8_t part) const {
+        const Block& block = blocks[b];
+        if (allocation == VoiceAllocation::Channel && part >= 1 && block.part == 0)
+            return block.start + (part - 1) % block.size;
+        if (allocation == VoiceAllocation::Reuse)
+            for (int v = block.start; v < block.start + block.size; v++)
+                if (voices[v].startOrder > 0 && voices[v].pitch == pitch)
+                    return v;
+        if (allocation == VoiceAllocation::Reset) {
+            int lastFree = -1;
+            for (int v = block.start; v < block.start + block.size; v++) {
+                if (voices[v].held)
+                    continue;
+                if (skip-- <= 0)
+                    return v;
+                lastFree = v;
+            }
+            if (lastFree >= 0)
+                return lastFree;
+        } else {
+            // A playhead channel takes its first free voice, so a line of single notes stays on one voice and sends
+            // one channel.
+            for (int i = 0; i < block.size; i++) {
+                int v = block.start + (block.part ? i : (nexts[b] + i) % block.size);
+                if (!voices[v].held)
+                    return v;
+            }
+        }
+        int oldest = block.start;
+        for (int v = block.start + 1; v < block.start + block.size; v++)
             if (voices[v].startOrder < voices[oldest].startOrder)
                 oldest = v;
         return oldest;
@@ -163,10 +345,14 @@ class VoiceAllocator {
     uint64_t changes = 0;
     double nextEnd = kNoEnd; // no held voice ends before this
     int poly = 1;
-    int next = 0;
     int gap = 48;
     uint64_t order = 0;
-    std::array<Voice, kMaxVoices> voices{};
+    VoiceAllocation allocation = VoiceAllocation::Rotate;
+    std::array<Block, kMaxBlocks> blocks{{{0, 0, 1}}};
+    std::array<uint8_t, kMaxBlocks> nexts{};
+    std::array<uint8_t, kMaxBlocks> peaks{}; // per block: the most voices its notes have needed at once
+    int blockCount = 1;
+    std::array<Voice, kMaxTrackVoices> voices{};
 };
 
 } // namespace tessera

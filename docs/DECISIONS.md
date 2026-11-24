@@ -916,7 +916,7 @@ The review sorted every control by how often a producer uses it (artifact "Tesse
   timeline clip, else the one under the playhead, else the first on the track; in the loop pass the playhead is in,
   else the first pass that plays it (`songTickAt`, the inverse of `clipTimeAt`).
 - Nothing happens when the clip is in neither place for what plays.
-- **While playing, both jumps wait for their beat** (§96 replaces "at once" above).
+- **While playing, both jumps wait for their beat** (§150 replaces "at once" above).
 
 ## 62. New song (14 Oct)
 
@@ -1441,7 +1441,769 @@ Why: Trello "Swing: let's research properly"; proposal https://claude.ai/artifac
 
 Why: the user found the old jack area messy (two plates of different sizes, inputs on a plate, uneven spacing).
 
-## 94. Output module slugs and names without the "Tessera" prefix (5 Nov)
+## 94. Audio tracks and a mixer (2-3 Nov)
+
+- **Tessera gets audio tracks, a mixer and a master**, built in phases (P0 decide, P1a a loop in time, P1b editing,
+  P2a the rack round trip, P2b sends and sources, P3 record/bounce/export, P4 deeper). The full design is
+  `docs/design/AUDIO_MIXER.md` (revision 7); its §12 lists every answer. This replaces DESIGN.md §1's non-goal "No
+  audio recording, no audio clips" and its "no external dependencies": the libraries are in `dep/` with their licences.
+- **The first loop in an empty song sets the tempo.** Setup helpers ("Connect to Audio module", "Add a Track Out for
+  this track", "Show in the rack") are each one Rack undo step.
+
+Why: the user confirmed the whole design on 3 Nov ("let's start") after seven revisions and two reviews.
+
+## 95. One Track Out for every track kind (2 Nov)
+
+- **Track Out binds to any track and to the master.** It gains OUT L/R and IN L/R next to the note jacks. Jacks that do
+  nothing for the bound track are drawn at about 35% and their tooltips say why. There is no separate audio output
+  module. Drum Out gets one stereo kit IN; Auto Out doesn't change.
+- New jacks are appended to the port lists, so saved cables stay on their jacks.
+
+Why: the user's idea; one module to learn, and the same patching for every track.
+
+## 96. Every source is mixed within its track (2 Nov)
+
+- **A track's sound is all its sources mixed, always, each at its own level.** The clips are one source (the
+  master's mix is its source); every Track Out IN is another. Nothing switches: arming, cables or an effect loop never
+  turn a source off or replace another. For a pure insert, turn Clips down to −∞.
+- **A level and a Use box per source**, shown only when needed (two sources or more, or one that is off or not at
+  0 dB). A new second source plays at once, with a toast. One output port patched into two INs counts once.
+
+Why: the user: "it should be mixed within that track. PERIOD." Rules that worked out a job from the cables were
+rejected as hard to predict.
+
+## 97. No effect track kind: any track receives sends (2 Nov)
+
+- **A "reverb track" is an ordinary track** the user named Reverb. No effect-track name, helper or shortcut.
+- A dim **+** on each strip adds a send to any track (tracks that would make a loop are greyed). A receiving track
+  shows **← 3**; clicking it turns every fader into its send (Show sends). Receiving strips get an OUT meter; the
+  inspector has a Sends section. Sends leave on OUT and come back on IN; with nothing on OUT, an amber "Sends go
+  nowhere". Solo follows the sends.
+
+Why: the user asked for an argument for a separate kind and none held up.
+
+## 98. Audio tracks never layer; overlaps crossfade (2 Nov)
+
+- Two audio clips on one track never play on top of each other. Where they overlap, Tessera crossfades them
+  automatically.
+
+Why: the user's answer; an audio track is one stream, like a tape track.
+
+## 99. The mixer: a third pane, levels in the track headers, a Master row (2 Nov)
+
+- **The mixer is a third pane** under the notes pane, folded to a tab; F4 maximises it.
+- **Volume and pan also sit in the track headers** (layout A), and a thin **Master** row sits at the bottom of the song
+  pane.
+- **Tracks that make no sound show no level controls**, so Tessera looks as it does today until audio reaches a track.
+  Hidden values are kept.
+- "Follow the selected track" stays; in that mode Track Out's audio jacks are dim.
+
+Why: the user's answers; the mixer must not clutter a MIDI-only song.
+
+## 100. Levels: 0 dB = 10 V, a metronome on MAIN only (2 Nov)
+
+- **0 dB means 10 V everywhere**: MAIN, Track Out OUT and IN, meters. Only the level of imported files stays open (5 V
+  for now), to be decided by ear before release.
+- **A metronome** (Off / Count-in only / While recording / Always) plays on MAIN only: never on OUT, in bounces,
+  exports or stems. The CLICK jack keeps its trigger.
+
+Why: the review's recommendation, which the user took.
+
+## 101. Time stretching: Signalsmith Stretch only, pitch by resampling (2-3 Nov)
+
+- **One `TimeStretcher` interface** (`src/audio/TimeStretcher.hpp`) with one adapter, Signalsmith Stretch 1.4.0
+  (MIT), in `src/audio/stretch/`. Nothing outside the adapter includes the library's header, so another library could
+  replace it later without other code changing.
+- **Signalsmith Stretch is the only library.** The user picked it after a blind listening test against Rubber Band
+  (https://claude.ai/artifact/PFYRHnkf9JGJaff1ABcgw3): 8 sounds x 6 changes, loudness-matched. Tally 18 Signalsmith,
+  17 Rubber Band, 13 the same; Signalsmith won the drum loop 6-0, Rubber Band the bass and full mix 5-1. Signalsmith also
+  renders about 4x faster (0.3 s against 1.2 s per 8-second clip) and keeps clicks on the beat within 0.5 ms; Rubber
+  Band puts them 2.5 ms early at 1.33x.
+- **A library only changes length. Pitch is done by stretching by ratio x pitch factor, then resampling** with
+  libsamplerate's best sinc (`src/audio/Resample.hpp`). For Voice, the stretch moves formants the other way so a voice
+  keeps its character. Notes land within 1 cent, down to 55 Hz.
+- **Rubber Band is removed** (3 Nov, the user's call): its code, its adapter, the Makefile's `STRETCHERS` switch and
+  the planned Settings ▸ Audio engine picker are gone. Only one library ships, so there is nothing to pick.
+- `tests/stretch_tests.cpp` holds the checks a stretcher must pass (length, pitch, clicks on the beat within 1 ms,
+  short sounds, silence, the same output twice, cancel).
+
+Why: Signalsmith's own pitch shifting tuned low notes 15-25 cents sharp, which is audible on bass. The user chose
+stretch-then-resample (2 Nov), Signalsmith (3 Nov), and then to keep only Signalsmith: one library is less code to
+build and ship, and its MIT licence fits any product.
+
+## 102. Audio files live in patch storage; a paste copies them from the source (3 Nov)
+
+Checked in a hidden Rack 2.6 with a probe module, and in Rack's source:
+
+| Action | The module's storage folder |
+|---|---|
+| Save and reload | kept: packed into the .vcv |
+| Duplicate | copied by Rack |
+| Copy and paste (onto a module, or as a new one) | not copied: the paste starts with an empty folder |
+| Delete, then undo | kept, unless the patch was saved in between (save and quit delete folders of removed modules) |
+| Two Tesseras | one folder each |
+
+- Tessera saves its own module id in its data. **After a paste, Tessera copies the files it needs from the source
+  module's folder**, found by that id and the file's content hash, while that folder still exists. A pasted module has
+  no id while its data is read, so the copy happens when the module is added.
+- **Anything still missing shows as "Missing file"** with Find…. No shared cache outside the patch.
+
+Why: the user picked the spec's approach over a shared cache that would cost disk space and need a clean-up.
+
+## 103. MAIN on the Tessera panel: 26 HP, a ninth jack column (3 Nov)
+
+- **The panel grows from 24 to 26 HP.** MAIN L over MAIN R become a ninth column of the jack grid (13 mm on, like
+  every jack) at the right end of the output plate, set apart by a thin line, with a two-bar level meter at the edge.
+  The display grows with the panel and TEMPO moves 8 mm right.
+- An amber dot shows while the master has sound but MAIN has no cable. A saved patch pushes the module to Tessera's
+  right aside once, on load, the way the in-panel editor already does.
+
+Why: the user picked option A of the mockup (https://claude.ai/artifact/YNyhpxzcvtYPW6XDEwSt6B). The 8 x 2 grid (§93)
+has no free spot, and squeezing MAIN beside FILL left no room for a meter.
+
+## 104. Recording takes the INs; bounce has three lengths (2 Nov)
+
+- **Recording captures a track's INs**, never its clips. **Bounce captures the whole sound** at IN, before the fader.
+- **Bounce length**: the selected clips, a selected area, or "until silent" (below −60 dB for a second, at most 8 bars
+  after the last note), each offered only when it applies.
+
+Why: the user's answers.
+
+## 105. Audio performance budgets (2 Nov)
+
+- **A song with no sound costs what it costs today.** 16 busy audio tracks stay under 1% of one core, 64 under 3%.
+- A flat mix plan built on the UI thread, fixed memory, per-block maths, return slots on separate cache lines, and a
+  benchmark test that fails above budget (`AUDIO_MIXER.md` §8.8).
+
+Why: the user: "PAY ATTENTION TO PERFORMANCE". Tessera shares Rack's audio thread with every other module.
+
+## 106. Audio Phase 1a as built (3 Nov)
+
+Choices made while building the first audio phase (docs/design/AUDIO_MIXER.md §11, Phase 1a):
+
+- **An audio clip is a `Clip` with an `audio` part** (`std::optional<AudioContent>`), not a separate kind field: one
+  source of truth. Audio clips have no notes. Normalize keeps clips on tracks of their kind.
+- **Off clips store their length in clip ticks at the clip tempo.** That is the same as a length in source frames (the
+  clip tempo is fixed for the clip), and keeps one representation for every audio clip. The timeline draws and
+  hit-tests an Off clip at `length × song tempo ÷ clip tempo`; the engine plays it at its own speed.
+- **Decoding**: dr_wav (WAV and AIFF, with the "acid" tempo chunk), dr_flac, dr_mp3, vendored in `dep/dr_libs`. Files up
+  to a minute are decoded at drop time, so their full tempo guess (onsets, one-shot, sound type) is ready before the
+  first sound; longer files load on a worker.
+- **Tempo guess**: the onset curve is 30 ms windows every 5 ms, loudness and brightness rises; an onset counts from
+  about 5 dB (a steady chord's ripple stays below). The tempo comes from autocorrelation, then a straight-line fit
+  through the onsets; a loop's length tempo wins when the onsets agree with it within 4% (or its double or half).
+- **Playback**: the player reads prepared buffers (the file at Rack's rate) or a whole-file stretched render. Exact
+  speeds copy samples; other speeds use the 16-tap sinc reader. Every jump inside a clip (loop seam, seek, render
+  switch) crossfades; a seam with no audio after it dips 2 ms each side instead. Where an edge fade and a seam dip
+  meet, the lower counts. A block of 32 samples with nothing happening skips the per-sample bookkeeping: 16 playing
+  tracks cost about 1.5% of a core.
+- **Pan is a constant-power balance** on the track's stereo sound: centre leaves both sides at 1.
+- **Renders are kept per (source, length factor, pitch, sound type)** at Rack's rate; the nearest ready one stands in.
+  Spare renders above 512 MB go, least recently wanted first.
+- **Buffers a snapshot drops stay one more second** in the next snapshots, so fades reading them finish; a voice whose
+  buffer a new snapshot doesn't hold is dropped (only after a long audio stall).
+- **Patch storage**: files are stored as `audio/<8 hex of hash>-<name>`. Loading a patch removes unreferenced files only
+  when there is nothing to undo, so undoing a delete or a paste never loses audio.
+- **Project files carry audio in a folder beside them** ("Song audio" for "Song.tessera"); opening copies the files
+  back. The project file stays plain JSON.
+- **No mixer at all when nothing makes sound.** The spec folds the mixer to a tab; with no audio tracks it is hidden, so
+  Tessera looks and behaves as before audio, and no existing screenshot changed. The user agreed (3 Nov): with no
+  audio tracks and no inputs, a mixer makes no sense.
+- **The tempo badge for Off clips reads "own speed"**: the UI fonts have no lock symbol.
+- **The Master row sits under "+ Add track"**, in the scrolled list, not pinned to the bottom: pinned, it would hide
+  the last track's header while that track's lane still showed beside it. A click on its name opens the mixer.
+- **The big badge is text only**: "92 BPM · 2 bars · Stretch ▾" on just-dropped timeline clips, for as long as they
+  are what is selected, and only where the clip is wide enough. "Keep 120 BPM" stays in the toast, which already
+  has a button for it. Launcher slots are too small for it and keep the short form.
+- **Not yet in 1a**: Tab cycling to the mixer, crossfade handles and curve dots, the audio editor: all built in
+  Phase 1b (§107).
+
+Why: built to the spec; these are the places it left open or where the code suggested a simpler way.
+
+## 107. Audio Phase 1b as built (3 Nov)
+
+- **Reverse plays a reversed copy of the file.** The store makes it on its loader thread the first time a reversed
+  clip asks, and drops it when no clip plays that file reversed. The player reads it forwards like any buffer, so
+  seams, loops and crossfades need no second code path. A reversed Stretch clip is stretched from the reversed file.
+  Cost: the file's memory twice while a clip plays it reversed.
+- **Normalise** sets the clip gain so the loudest sample of the clip's window reaches the file's full scale (the
+  import level, 5 V), read from the waveform cache.
+- **Pitch** (semitones and cents) shows only for Stretch clips: Repitch and Off clips change pitch with their speed.
+- **Replace file** keeps place, length, gain, follow tempo, sound type and fades; the clip plays the new file from its
+  start at the new file's guessed tempo. The old file stays until Remove unused audio.
+- **The audio overlap rule** (`arrange::settleAudio`) runs whether Stack is on or off; audio tracks never stack and
+  always draw on one row. A clip dropped inside another splits it; each part reaches 1/32 note (at most a quarter of
+  the dropped clip) into it, so both seams crossfade. Where three would sound, the earliest stops where the third
+  starts; if the earliest is the one being dragged, the third starts later instead. The rule works on stored lengths,
+  so an Off clip at a song tempo other than its own can still overlap a third clip a little (one-shots rarely do).
+- **Crossfade handle**: dragging right makes it longer, left shorter, both clips moving evenly; it snaps to the grid
+  beyond one step. The X's curve dot bends both sides together.
+- **Trims of a clip that doesn't loop stop at the file's start and end**, saying so in the readout. No bright tick.
+- **The audio editor has one ruler**, the clip's beats and bars: for Stretch and Repitch clips the song's bars fall on
+  the same lines. Beat 1's flag drags like the window (a slip). A click in the ruler plays the song from that point of
+  the clip's selected (or first) timeline copy; a launcher-only clip says so instead. Not built yet: the Slice tool,
+  fades and gain in the editor. Dropped: dim copies of a loop's repeats after the window. In file time the file's
+  own audio sits there, so copies would cover it, and the timeline already shows the repeats.
+- **Glue on audio** joins only the parts of one clip that lie end to end, each playing on from the last (a split
+  undone); they become one instance of that clip. Anything else says why and does nothing: gluing other audio needs
+  rendering (Phase 3).
+- **Split (Ctrl+E) is not nudged to a zero crossing.** A tick is about 25 samples at 120 BPM, so the nudge could only
+  land near one, and every clip edge already gets a 2 ms fade: a split never clicks.
+- **The mixer is a pane** (`Pane::Mixer`) like the song and notes: the same maximize button, focus ring, Tab (while it
+  is open) and Shift+Tab. F4 stays as a direct key. With the mixer focused only keys that work everywhere act. A
+  patch saved with the old mixer-only maximise flag opens with the mixer maximized.
+
+## 108. Audio Phase 2a: the buses first (3 Nov)
+
+- **The return bus** (`ReturnBus`, in `src/engine/AudioBus.hpp`) lives inside the output bus, so output modules reach
+  it through the handoff they already have. 128 slots, one per module, claimed on the UI thread. A module writes
+  {sample, track, L, R} into buffer n & 1; Tessera reads (n − 1) & 1 and uses a slot only when its sample and track
+  match, so module order never matters and a missing, bypassed or removed module drops out. NaN or infinity reads as
+  silence.
+- **Audio OUT** is an array on the output bus, one stereo sample per track slot plus the master's, stamped only on
+  samples where the audio player ran: without audio, OUT reads silence instead of a stale sample.
+- **The player writes OUT and mixes returns** at the point §8.4 gives: a track's OUT is its clips before the fader;
+  its returns join before the fader at 0 dB; the master's OUT is the mix before the master fader, then the master's
+  own returns join. One sample of latency each way. A muted (or soloed-away) track's clips fade out of OUT over the
+  same 32 samples as its fader, so its effect stops too without a click (§4.5).
+- **The mix plan** (`MixPlan`) says which return slots feed which track and each track's bus slot; any track with a
+  return makes sound and joins the audio snapshot (`makesSound`). The mixer and the track headers find a track's
+  meter by its place in the last snapshot (`soundIndex`). A change of plan rebuilds the snapshot.
+- **Wired to Track Out and Drum Out** (§110, §111).
+
+## 109. Fader and pan automation (3 Nov)
+
+- **Two more lane kinds**, `LaneDrive::Volume` and `LaneDrive::Pan`, played at their own engine slots after pitch
+  and pressure. A lane's value 0..1 is the fader's travel (the mixer's curve, now in the model: `faderPosOfDb`) or
+  pan from hard left to hard right. With no such lane playing, the strip's own setting applies.
+- **The audio player reads them at each 32-sample block**, so automation ramps like a fader move; a control held
+  in a drag wins over its lane. The player publishes what it plays, so the mixer and the track rows move with it.
+- **A ring in the lane's colour** marks a control that has a lane, playing or not.
+- **Not built yet**: writing a fader move into the lane while the track is armed (§7.3); master automation; fader
+  and pan lanes for note tracks whose sound comes back on IN (they wait for the IN jacks).
+
+## 110. Track Out with an audio section (3 Nov)
+
+- **The user picked option A** of the panel mockup (https://claude.ai/artifact/6DdGVAETuSucSDk7wknADk), after first
+  picking B (8 HP): Track Out stays **6 HP**, the note jacks and AUTO on one plate, an **AUDIO** plate below with OUT
+  L/R over IN L/R and the IN light between IN L and IN R. The display is 18 mm tall (was 30) and note rows sit 13.2 mm
+  apart (were 16). Saved patches keep their places and cables: the new ports come after the old ones.
+- **Binding**: any track kind and the master (listed last in the Track menu, "M" on the screen). A new Track Out
+  takes the selected track when nothing plays it, else the first note track without an output; never an audio track
+  or the master unless it is the selected one.
+- **Each Track Out holds its own return slot** on its Tessera's bus, claimed on the UI thread when its source is
+  found and released when it goes or changes source. Tessera's mix plan lists the slots whose IN has a cable.
+- **IN**: one side patched feeds both; a poly cable is summed; following the editor's selection turns OUT and IN off;
+  bypass never routes IN to OUT. The light is green while audio arrives (a peak that falls slowly), red above 10 V.
+- **Dim jacks** are drawn by a veil over the jack and its label in the plate's colour, so the cached panel art stays
+  as it is; a cable on a dim jack gets an amber ring; tooltips say why. AUTO is never dim. OUT on a note track is dim
+  until sends exist (Phase 2b).
+
+## 111. Drum Out: an IN per lane and a kit audio block (3 Nov)
+
+- **The user chose** (mockup https://claude.ai/artifact/49LUhQWoBuDcwVaDiqKEDV, after one stereo kit IN seemed too
+  little and several Drum Outs per kit too many): a **mono IN in every lane strip** (option A's columns, not the
+  transposed rows) and a **kit OUT L/R and IN L/R** like Track Out's audio section. Still 20 HP: the display is
+  narrower, the AUDIO block sits beside it, the lane rows are 9.7 mm apart, the poly row moved down 4 mm.
+- **Sources and returns**: the lane INs are the track's own sound, so they go into its OUT (the kit OUT); the kit IN
+  is a return and joins after OUT, so an effect loop never feeds back. The mix plan marks each slot (`source`), and
+  a Drum Out holds two return slots: its lane INs summed (mono, in the middle) and its kit IN.
+- **Each lane IN has its own level and pan** (§112).
+- A Track Out bound to a drum track no longer dims OUT: it carries the lane INs. Strips fed by IN say "IN" where
+  audio tracks say "Clips".
+
+## 112. Drum lane strips (3 Nov)
+
+- **The user wanted a level and pan per drum lane IN.** They live on the drum track (`Track::drumInputs`, one per
+  Drum Out output 1–8), saved only when not at 0 dB / centre, each change one undo step (`setDrumInput`).
+- **The Drum Out applies them** before it mixes the lanes into its source slot: the UI thread hands it each lane's
+  gains (or what a mixer drag holds), the audio thread ramps toward them over about 5 ms and measures each lane's
+  level after its fader and pan. Tessera still gets one stereo source per Drum Out, so the player and the mix plan are
+  unchanged.
+- **In the mixer**, every lane with a cable gets a 40 px strip right after its drum track's strip: the lane's colour
+  and name, pan, fader, meter, level. Same gestures as the big strips; lanes aren't part of the track selection, so a
+  multi-strip fader drag never moves them. No mute, solo or automation per lane yet.
+
+## 113. Track Out states, the source chip and Add a Track Out (3 Nov)
+
+- **Display states** (spec §8.1): "Track deleted" in amber (was "Track missing" in red), with IN ignored and the IN
+  light amber while a cable still brings audio; "Tessera bypassed" when its Tessera is bypassed; "No source" as before.
+- **Add a Track Out for this track** (§8.2) places a Track Out (a Drum Out for a drum track) in the first free space
+  right of Tessera, bound to the track or the master, as one Rack undo step, its screen flashing. Besides the strip's
+  source chip (the spec's place), it is in the track menu, and a click on a row's amber "no output" jack runs it:
+  that jack is where a missing module is first noticed.
+- **Show in the rack** came forward from Phase 2b, since the chip menu already lists the modules: it scrolls the rack
+  to the module at the same zoom and flashes its screen.
+- **The source chip** says "IN · Track Out" / "IN · Drum Out", "2 sources" (an audio track with IN too; the sources
+  list itself stays in 2b), "Missing file", or **"Bypassed"** in amber: "Track Out bypassed" doesn't fit a 64 px
+  strip, so the chip menu names the bypassed module.
+- **The panel editor's transport and Full editor** sit in the maximised mixer's tab, which grows to 22 px there and
+  keeps room for them; before, they were drawn over its label and readout.
+
+## 114. Recording fader and pan moves (3 Nov)
+
+- **A Volume or Pan lane records the track's own control** (§7.3): on an armed, recording track, a drag of the fader
+  (mixer or level bar) or pan writes into the lane through the same take as knob lanes (§73-74), in the lane's
+  record mode (Touch by default). It reads the control only while the mouse holds it; let go, and the lane plays.
+- **A hold names the control it holds** (`AudioPlayer::kHoldVolume` / `kHoldPan`). Before, a pan drag also held the
+  fader at its strip value, which froze a playing Volume lane during the drag.
+
+## 115. Master automation (3 Nov)
+
+- **The user chose the order**: tracks, then the **Master row with its lane under it**, then "+ Add track" at the
+  very end (the Master row used to sit under "+ Add track"). The Master row is now a row of the track list
+  (`TrackRow::Kind::Master`), so its lane is drawn and edited like any other.
+- **One Volume lane** (`MasterChannel::automation`, saved with the master; normalize drops anything else). It is
+  added from the Master level bar's or the Master fader's "Automate in the timeline", and a lanes arrow beside
+  "Master" shows or hides it. There is no add-lane row and no recording: the master has no arm.
+- **The audio player plays it**, reading the lane at the song position each 32-sample block (the master isn't an
+  engine track); a drag of the master fader wins, a muted lane gives the fader back.
+
+## 116. Phase 2b, sources as built (3 Nov)
+
+- **Level and Use** (spec §7.8): `SourceLevel` on an audio track (`Track::clips`) and on the master
+  (`MasterChannel::mix`), song edits (`setSongSource`); on a Track Out or Drum Out in its patch data ("level",
+  "use"), a Rack undo step. A module's setting scales everything it brings in (IN, and a Drum Out's lane INs) before
+  the return bus, ramped over 5 ms; Clips and Mix are scaled in the player. Drags play through holds.
+- **The list** opens from the strip's source chip whenever it is needed (two sources, or one off or not at 0 dB):
+  per source a Use tick, a live meter, a Rack Level slider (the mixer's fader taper) and Show in the rack. The chip
+  reads "2 sources" (no ▾: the fonts lack it) or "No source in use".
+- **Names**: one module of a kind is "Track Out"; several are numbered by place in the rack (top row first, left to
+  right).
+- **Counted once** compares the output port on each Track Out's IN L (or IN R) among the track's sources; the later
+  one in rack order adds nothing (its gain is 0) and shows no level.
+- **The toast** has one button, "Use only the new one" (the toast holds one action; the chip is where the list
+  is). It fires when a track's counted sources grow past one; loading a patch never fires it.
+- **The Track Out screen** shows "IN OFF" or "IN -6.0 dB" in place of the Tessera's name: the screen is too narrow
+  for both.
+
+## 117. Phase 2b, sends as built (3 Nov)
+
+- **Model**: `Track::sends` ({to, dB, before the fader}), saved only when there are some; `addSend`, `setSend`,
+  `removeSend`, `whyNoSend` (self, repeat, "Would feed back into …"), `sendOrder`, `sendersTo`
+  (`src/model/Sends.hpp`). Normalize drops sends to missing tracks, repeats and anything that closes a loop.
+  Deleting tracks removes the sends to them in the same undo step.
+- **Player**: the audio snapshot lists tracks senders first, so each send lands in its receiver's OUT the same
+  sample (a fixed send bus, at most 16 sends per track). A track's own sound, what comes back on IN, and its
+  sends each pass through one ramp, so mute and solo never click. A track that receives sends makes sound.
+- **Mute and solo** as the spec says (§4.5): mute stops a track's sound and sends; a muted receiver's OUT still
+  carries what it is sent. Solo: tracks a soloed track sends to stay heard but their own sound is off; tracks
+  that feed a soloed track keep sending but aren't heard dry.
+- **Strip**: "← N" under the name, a knob per send (two letters of the target in its colour, "pre"), a dim "+" in a
+  fixed spot; every strip keeps the same room for sends so faders stay level. **Show sends**: band with × and
+  "Esc to go back", hollow caps in the target colour, "send -15.5 dB", "pre" toggle beside the fader, master and
+  loop strips dimmed, 120 ms glide, Esc leaves it first (before clearing the selection), folding the mixer leaves
+  it. Not saved.
+- **"No OUT cable"** replaces the spec's "Sends go nowhere": that does not fit a 64 px chip.
+- **Also built (3 Nov, later)**: the inspector's SENDS section (rows open the knob's menu; a level bar there was
+  left out: one menu, one place to drag, the knob); Send lanes (`LaneDrive::Send` + `sendTo`, played by the audio
+  player like the master's lane, recorded from a knob or Show sends drag while armed, a ring on the knob); in Show
+  sends each strip's meter shows its send. The menus live in `sendActions` for the mixer and the inspector.
+
+## 118. The mixer shares the lower pane (3 Nov)
+
+- **The user**: the mixer as a third pane under the notes was "a bit unusable"; they switch between the two and
+  never need both in view, and the app should have the same window language everywhere. A full UX overhaul comes
+  later; this is the minimal fix.
+- The lower pane (`DetailPane`) shows the notes (or audio editor) **or** the mixer. A **Notes | Mixer** switch at the
+  left of its header, shown once something makes sound; F4 switches (`Action::ToggleMixer`, was "maximise the
+  mixer"). `ViewState::mixerOpen` now means "the lower pane shows the mixer".
+- The mixer's header is the pane header: the pane's maximise button, splitter, focus ring and Tab. Gone: the
+  folded tab, its height drag, its own maximise and `Pane::Mixer` as a focus or maximised pane (older saves load
+  into the lower pane). While the mixer shows, only keys that work everywhere act (no note keys).
+- Leaving the mixer (Notes, F4) leaves Show sends.
+
+## 119. Phase 3: the metronome and audio recording (3 Nov)
+
+- **Metronome** (spec §8.5): Record ▾ Metronome Off / Count-in only / While recording / Always, and a level
+  (-24..0 dB, default -12). A 25 ms sine click (1760 Hz on the bar, 1320 Hz otherwise) added to MAIN after the
+  player, so it never reaches OUT, taps, bounces or exports.
+- **Capture path**: the audio player has 24 **taps** (a track's IN, its sound before the fader, its stem after the
+  fader as heard, or the master). A tap waits for its start (playing, recording for takes, a song tick), copies into
+  a `FrameRing` (5 s, sized on the UI thread), and ends on its end tick, a stop, recording ending or a jump back (a
+  loop wrap). A `CaptureWriter` thread writes the rings to WAV (32-bit float, or 24-bit with TPDF dither for
+  exports) at V/10, keeps a coarse waveform, and makes no file for a capture that got no sound.
+- **Recording**: each armed audio track keeps a tap on its IN. A finished pass becomes a clip through the import
+  path (source at 10 V per full scale, clip tempo = song tempo, Stretch, no loop): on the timeline at the take's
+  start, moved earlier by 2 samples (Tessera's own delay) + the recording offset + the track's latency, or in the
+  first empty slot while the launcher plays. Takes finishing together are one undo step. A loop wrap ends a pass,
+  so each pass is a clip and the overlap rules settle them. The live take draws as a red box with its waveform.
+- An armed audio track no longer takes notes into the note recorder.
+- A loaded patch's output modules find their Tessera over the first frames: the "N sources now" toast waits 1.5 s.
+
+## 120. Bounce as built (3 Nov)
+
+- **The dialog is a menu** (Rack's own): Length choices as check items that keep it open, Mute the original
+  afterwards, an estimate that follows the choice, Bounce. From the track menu, an audio or note clip's menu on
+  the timeline, and Ctrl+B (the selected track). Only tracks that make sound offer it.
+- **It runs on the timeline**: Plays switches to Timeline for the bounce and back after. The playhead jumps a bar
+  early and plays; the tap (the track's sound before its fader) is armed once the jump happened, and the result is
+  placed by the tick the tap really started at, moved back by Tessera's 2 samples and the track's latency.
+- **Until silent** watches the tap's level once past the end: below -60 dB for a second, or 8 bars on.
+- **Progress** is a toast with Cancel, renewed each frame, in both editors (there is no progress strip in the panel
+  editor's transport). Stop before the end cancels.
+- The result is one undo step: the new track (named "<track> (bounce)", a looping clip unless until silent) and
+  the original's mute.
+
+## 121. Export audio as built (3 Nov)
+
+- **A menu dialog** like Bounce: what it will play (it follows Plays: the song from bar 1 to the last clip's end,
+  rounded up to the bar, or the loop; with the clips, from now until Stop), the master or the master and stems, 24-bit
+  (TPDF dither) or 32-bit float, then Export… asks where to save. The last choice is kept while Rack runs.
+- Stems are every track that makes sound after its fader as heard ("<file> - <track>.wav"); muted tracks are left
+  out and counted in the result toast. Mute and solo are not locked during an export (the spec asked for it); a
+  change is heard in the file, like any edit.
+- **On the timeline the taps arm at once** with `startWithin`: a tap starts only within 64 samples after its start
+  tick, so it starts exactly at the jump to the start and never at the old playhead. Verified: 8 bars at 112 BPM
+  gave 17.143 s, exactly.
+- Stopping the timeline before the end cancels and deletes the files; with the clips, Stop finishes the file.
+
+## 122. Phase 3 finished: offset, latency, the Audio files list, glue across files (3 Nov)
+
+- **Recording offset** (`RecordSettings::recordOffsetSamples`): Record ▾ Recording offset shows it in ms, Measure it,
+  type ms, None. **Measuring**: four clicks on CLICK, 0.3 s apart, each timed by the player from that sample until the
+  first armed audio track's IN goes above 1 V (a second at most); the middle two averaged, less Tessera's own 2
+  samples. A straight cable from CLICK into IN measures 0 ms.
+- **Track latency** (`Track::latencySamples`, saved when not 0) is typed in the mixer strip's name menu; it is not
+  yet used for delay compensation while playing (Phase 4).
+- **The Audio files list** is a menu, not a window (the coming UX overhaul may make it one): per file the facts, Find
+  file… (missing), Select its clips; the total and Remove unused audio.
+- **Glue across files**: when the usual glue can't join the selected audio clips, they are rendered (one track's
+  clips only, at 0 dB, no fader, sends or lanes) by a private engine and player on a worker thread into one WAV,
+  imported in their place: the old instances go and the new clip lands at the first one's start, one undo step.
+  Stretched clips render through the render cache when ready, else the varispeed reader.
+
+## 123. Phase 4: transients, Split at transients, Make triggers (3 Nov)
+
+- **Transients** (`findTransients`) are the onset curve's peaks: above a floor (35% of the loudest at the default
+  sensitivity) and 1.8 times the 0.2 s average around them, local maxima within 20 ms, at least 60 ms apart. The
+  start is padded with the curve's window so a hit at frame 0 is found and none shows early. Computed with the
+  waveform when a file loads (`SourceStatus::transients`, file frames).
+- **`hitTicks`** puts them on the timeline for one instance: its window, offset, loop passes (a looping clip plays
+  its loop from its start) and an Off clip's speed. Reversed clips have none yet.
+- **Split at transients** splits left to right, each time the right part, skipping a 1/128 note at the start.
+- **Make triggers from audio**: a new drum track right under the audio track, named "<track> triggers", given a
+  "Hits" lane (pitch 36, output 1) when it has none, and one clip spanning the instance with a 1/32 note per hit;
+  velocity from the waveform's peak in the 20 ms after the hit against the loudest hit (at least 20%). One undo step.
+  Only from the timeline for now (no slot version).
+
+## 124. FLAC export (3 Nov)
+
+- Rack ships no FLAC encoder, so Tessera has a small one (`FlacWriter`): 24-bit, 4096-frame blocks, fixed
+  second-order prediction, Rice codes with 5-bit parameters in one partition, frame CRCs, no MD5 (allowed by the
+  format). Tested lossless by reading back with dr_flac. Exports offer "24-bit FLAC" beside the two WAV formats,
+  with the same dither as 24-bit WAV; stems take the export's extension. Recordings stay 32-bit float WAV.
+
+## 125. DAWproject export of audio (3 Nov)
+
+- Audio tracks export with `contentType="audio"`, a Volume (linear) and Pan (normalized). Each timeline instance is
+  a Clip (time, duration in song beats, playStart = its offset, loop, fades in beats) holding Warps from clip beats to
+  file seconds at the clip tempo: two Warp points, the clip's start and end; algorithm "stretch" or "repitch". Every
+  source's file goes in the zip as "audio/<name>" (repeated names numbered), read from patch storage.
+- Not yet: audio launcher clips, reverse, clip gain, pitch shift.
+
+## 126. Automatic delay compensation (3 Nov)
+
+- Every track that makes sound waits (latest latency − its own) samples after its fader, before the master: a
+  delay line per bus slot (the slot never moves, so reordering tracks never mixes up the lines), 8192 samples at most
+  (about 170 ms at 48 kHz). The lines (4 MB) are made once, on the UI thread, the first time a snapshot needs them.
+  Stems are taken after the delay, so exported stems line up too. Sends leave before it.
+
+## 127. Group strips (3 Nov)
+
+- `TrackGroup` gets a `channel` (level, pan) and `mute`, saved when not default; `setGroupChannel`, `setGroupMute`.
+  No new track kind (the spec). A group with a track that makes sound gets a strip after its last such track; its
+  tracks go into its bus after their faders (and delay compensation) instead of the master.
+- The strip: name and colour, "Group · N", pan, M (no solo: solo stays per track), fader, meter, level, "→ Master".
+  Holds use the group's ID like a track's. In Show sends groups step back like the master. No group automation
+  lanes yet.
+
+## 128. Warp markers (4 Nov)
+
+- `AudioContent::warps`: (clip tick, source frame), both rising. With markers, the file position at a tick comes from
+  them (`warpedFrame`, inverse `warpedTick`), at the clip tempo past the first and last; sourceStart only matters
+  without markers. Reversed clips ignore them.
+- **Playback**: a warped clip always asks for a render, made **straight**: each piece between markers stretched at its
+  own ratio (Signalsmith, one stretcher per piece) so render frame (startFrame + tick × framesPerTick) × factor plays
+  that tick, and the player's render formula is unchanged. The render key carries the markers (prepared frames),
+  startFrame and framesPerTick; a stand-in render must have the same markers. Until it is ready the player reads the
+  prepared buffer through the markers (pitch follows the speed there, like tape).
+- **Editor**: double-click a hit (nearest transient within 12 px) pins it to the nearest 1/16 (Alt: where it is); the
+  first marker also pins tick 0 where it is. Drag a marker: its tick moves in 1/16 steps (Alt: free), between its
+  neighbours. Right-click: remove one, or all. Double-click the ruler fits the view (it used to be any empty space).
+  With markers, window, edge and tempo drags are off. **Clip menu**: Pin every hit to the nearest 1/16
+  (`quantizeAudio`, a marker per hit from the transients) and Remove warp markers. Hit detection follows warps.
+
+## 129. Takes and comping (4 Nov)
+
+- `AudioContent::takes`: the other takes of a clip (source + sourceStart); the clip's own content is take 1.
+  `ArrangerClip::take` picks what a timeline copy plays (-1 take 1, k `takes[k]`); `takeContent` makes that content.
+  Takes play without the clip's warp markers. Comping is split + a take per part: no comp lanes, no layers.
+- **Recording**: in Stack mode, a timeline take whose start is within 1/32 of a beat of an audio clip's start (offset
+  0, not reversed, clip tempo = song tempo) becomes that clip's next take, from the frame at the clip's start, and
+  that copy plays it: one undo step. Anything else becomes a new clip as before.
+- **Clip menu** ▸ Take: pick per copy, or "Every copy plays this take". Title shows "take N" when a clip has takes.
+- Takes count as in use (Remove unused audio, the Audio files list), export to DAWproject as the picked file, and
+  drive hits for Split at transients. Glue without rendering needs one take for all parts, so a comp glues by
+  rendering. The audio editor still shows take 1. (§148 moves the take choice into the clip.)
+
+## 130. Reverse keeps a split clip's cuts (5 Nov, Trello "Reverse of a sliced clip doesn't keep the cuts")
+
+- A reversed clip plays clip tick u from the end of its window, so the parts of a split clip (copies of one clip at
+  different offsets) swapped their audio. `reverseAudio` flips the clip and mirrors every copy's offset
+  (o → length − o − n) in the same undo step: each part plays its own audio backwards, in place. Copies that wrap
+  round a loop (or a loop that isn't the whole clip) keep their offsets.
+
+## 131. Playheads: a source device, channels and a Track Out picker (29 Oct, first version)
+
+Numbered 94 on the playheads branch, which grew alongside the audio branch's §94–130; renumbered when the two
+were merged (5 Nov).
+
+Design: `docs/design/PLAYHEADS.md`.
+
+- **One Playheads device per track, always first.** It holds the playheads; each is a set of knobs (ParamRef kind
+  Playhead), so modulators and lanes reach them like device knobs. The chain doesn't run it: the engine reads the
+  clip through it instead of the clip's own playhead.
+- **A playhead's place is a pure function of the time since the clip started** (`model/Playheads`): sweeps through the
+  clip with exact positions at wraps, turns and repeats, so a window of any size plays the same notes. Going
+  backward a note plays at its end. Ping-pong doesn't replay the note at a turn.
+- **Rows became chips.** The device strip is 128 px tall, so a Playheads card shows its playheads as chips and the
+  selected one's knobs in the card's knob row, instead of one row of knobs per playhead.
+- **Bend shapes always rise** (Ease in, Ease out, Ease in-out, Swing, Stairs). Bounce and Elastic, which would run time
+  backwards inside a cycle, are left out; a reverse or drawn path does that job.
+- **A playhead channel sends the voices it needs** (30 Oct). Its block size is still an estimate (the clip's biggest
+  chord, times rules per device), which overshoots: a Notes: Highest bass got 3, an Echo 9. Instead of measuring
+  ahead, the count comes from playing: a playhead channel's notes take its first free voice (not round-robin), the
+  allocator remembers the most voices each channel has needed, and a Track Out sends only those (on All, packed as
+  before). It grows during playback and resets on stop. Tracks without playheads are unchanged.
+- **Playing with playheads live never cuts the others** (30 Oct). Muting or unmuting a playhead used to rebuild the
+  voice blocks without it, shifting every block after it, so the other playheads' sounding notes stopped. Muted
+  playheads now keep their block (the layout, and the voice count sent, stay put), and when the layout does change
+  (a playhead added, removed or moved, an Echo needing more), each channel's sounding voices move to its new block
+  with their note, and what the engine keeps per voice moves along.
+- **A segment no longer moves when a note is added** (2 Nov). A playhead without a segment of its own read a clip
+  that doesn't loop up to its last note, so drawing a note past it stretched the segment (and a last note ending
+  before the bar line made the segment end there too). It now reads the clip's loop range, which notes don't move;
+  only a clip with no loop range at all falls back to its last note. Looping clips are unchanged. One rule,
+  `playheadSpan`, serves the engine, MIDI export, the ruler's segments and the piano roll.
+- **Curve spaces the repeats; one REPEAT block** (2 Nov). The bend (Ease in, Ease out, Ease in-out, Swing, Stairs)
+  worked in the engine with no control. A trial used a dropdown, an Amount knob and a cycle; a second a "Feel" cell
+  with its own lower-pane editor. Both were dropped: the amount ("weight") confused, and a separate editor was too
+  much for one setting. The user's rule: 8 repeats over 8 seconds come one a second when straight; the Curve changes
+  that spacing and nothing else. So the Curve always spans one repeat group (Piece × Times), keeping the group's
+  length and its first hit, and does nothing without Repeat. It is one list of ready shapes with the strength in
+  the name (Ease in soft / Ease in / Ease in hard = t², t³, t⁴), each drawn beside its name; no amount, no cycle.
+  The card groups its settings as MOVE (Rate, Direction) and REPEAT, a block that draws where one group's hits land
+  (dots where they would land straight) over Piece × Times and Curve (picked from three mockups: Curve beside Rate
+  with its own rate, Curve as a third Repeat cell, this block). "Repeat" became **Piece** inside it. The old Bend
+  amount and cycle knobs stay in the list, unread. With Follows playhead a note lasts until the next repeat.
+- **Direction, Repeat and Times take curves; Notes moves to More** (2 Nov). Repeat was one dropdown for its piece
+  size and its times, so neither could have a curve; they are now two controls, Piece (a choice) and Times (a number),
+  each with the underlined name that opens its curve. Direction keeps its dropdown (it also holds the step orders);
+  its name opens a curve on the direction alone, so a curve never picks a step order. Notes is set once per
+  playhead, so it moved into More and freed the cell (Trello).
+- **Repeated pieces all retrigger and get the same length** (2 Nov). Moving from one repeated piece to the next is a
+  retrigger boundary too, not only jumping back for another pass. Before, the last pass of a piece rang on into the
+  next piece, so it lasted twice as long and a straight bass line sounded swung (Trello). Each piece now has equal
+  timing.
+- **Timeline playheads read ahead** (30 Oct). On the timeline the playheads read on every sample, which made one track
+  cost several percent of a core. They now read a control block ahead in song ticks and queue what they find, like a
+  launched clip's playheads, never past the song loop's end; an edit (which clears the queue) or a jump reads again
+  from the song's place. A Track Out with 16 voices or fewer on All copies them in one go again.
+- **A note lasts while its playhead is on it** (30 Oct). Length defaulted to "As written", so at ½× a note stopped
+  halfway while the playhead still swept across it: the picture and the sound disagreed. "Follows playhead" is now the
+  default, and songs saved as schema 6 (only this branch wrote it; 2.0.5 then released schema 6 for Transpose, §86, whose songs have
+  no playheads) switch their As written playheads to it. The Playheads device is schema 7.
+- **A note's curves keep pace with the playhead** (2 Nov). Pitch, timbre and pressure curves played over the note's
+  written length, so at ½× a bend finished halfway across the note while the playhead was still on it (Trello "the
+  timing in the sound doesn't match what I see"). A curve now plays at the speed of the playhead that read the note,
+  taken when the note starts, for voices and drum lanes alike. It still runs from the note's start to its end, also
+  for a playhead going backwards.
+- **The editor draws playheads where the engine has them** (2 Nov). The piano roll worked each playhead's place out
+  from its saved settings, so a Curve or modulator on Rate (or Start) moved the sound but not the line (Trello). The
+  engine now hands each playhead's place to the editor with the clip's own status, a few times a millisecond; the
+  settings are only the fallback while it isn't reading. The time map still draws the planned path.
+- **Each playhead channel has its own voices** (30 Oct). Playheads shared one set of at most 16 voices, so a busy one
+  (an Echo in its chain) took voices from the others and cut their notes. Now a track with playheads holds a block of
+  voices per channel (Auto for that playhead, or the fixed count, up to 16 each; past 64 in all the biggest shrink, so every channel
+  keeps voices of its own), and a note only
+  steals inside its block. A Track Out on one channel sends that block. On All, more than 16 voices are packed into
+  16: sticky (a voice returns to its last poly channel when free), the first playheads first (one may take a channel
+  from a voice later in the order, never earlier); what doesn't fit isn't sent. Chosen over fixed blocks, which waste
+  channels while a playhead rests, and over plain packing, which moves playheads around.
+- **Pitch and loudness leave the playhead** (30 Oct). Octave, Steps and Velocity duplicated the Transpose and Velocity
+  devices, which a playhead's own chain already holds. They are gone from the card; on load, a playhead that set
+  them gets those devices at the start of its chain, and curves and lanes on Octave and Steps move to the Transpose
+  (velocity curves are dropped: the Velocity device has no plain offset). Ghosts read the chain's Transposes.
+- **Retrigger on a jump** (30 Oct). A jump (repeat, wrap, order step, restart, drawn step; not a ping-pong turn)
+  used to start only notes beginning where it landed and let the sounding one ring, so a repeat over a long note was
+  silent. Now, by default, a note's length is cut at its playhead's next jump and the notes it lands inside play
+  again for what is left of them: a stutter. "Let ring" keeps the old way. The cut is worked out when the note
+  starts (the path is known ahead), so nothing in the device chain has to be stopped later.
+- **A Curve runs with the song** (30 Oct). Its timing was Sync, Rate (Hz), Restart and Per pass, which overlapped and
+  confused. Now one bar sets its length on the grid and one switch says what it counts in: Time or Passes. The old
+  knobs stay stored (the list only grows) but are not read; free-running speed in Hz is the LFO's job.
+- **The piano roll is a canvas for playheads** (29 Oct). A segment is a place on the piano roll, counted from its
+  start, not from the clip's loop: it can sit past the clip's end and reads the notes written there; empty space is
+  silent. The clip's loop only gives a new segment its first place. **Start and Offset are no longer read**: a
+  playhead begins at its segment's start, and a round is two segments a beat apart.
+- **New playheads start where their segment starts.** They first started a beat apart for an instant canon, but a
+  playhead starting later than its segment read as a fault: the segment alone says where a new playhead reads.
+- **Channels, not outputs per playhead.** Each playhead tags its notes with a channel; each voice remembers its note's
+  channel (`TrackFrame::part`); a Track Out plays All or one channel. A filtered Track Out keeps the track's voice
+  count and holds a voice's last values while another channel uses it, so voices never move between cables (the
+  design's voice groups per channel can come later).
+- **Timeline and export** (added the same day): each timeline clip restarts the playheads from where it begins the
+  clip, slower when stretched. MIDI export with devices applied reads the clips with the same code, from the knobs'
+  saved values (no modulation or knob lanes on playhead settings in the file yet).
+- **Branches** (added the same day): branch devices run as the first stages of the track's chain, each marked with
+  its playhead's place (a "lane"); a note carries the lane of the playhead that read it and skips other lanes'
+  stages. So one chain and one message queue per track still serve every branch. The strip shows only the selected
+  playhead's branch, on a band in its colour; branch cards can't be dragged and have no modulators of their own yet.
+- **Rate is applied before bend, and the engine counts each playhead's own time** (added the same day): a bend cycle
+  is counted in the playhead's time, and the engine adds up rate × time sample by sample, so a modulated or
+  automated Rate changes speed from where the playhead is. A jump (launch, seek, restart, a new timeline clip)
+  starts the count again from the pure formula. Lines in the editor and MIDI export use the pure formula.
+- **Drum lane cycles, operators and curves** (added the same day): the region is the clip's whole span (its lane
+  cycle); the pattern and each lane with its own length are folded onto their own period, so polymeter survives
+  every playhead. Notes playheads play run through note operators; a playhead's pass is its own time over its
+  region, with its place mixed in, so two playheads make their own chance choices.
+- **Drum Out picker** (added the same day): each drum lane output remembers the channel of its last hit
+  (`TrackFrame::part`); a Drum Out on one channel sends only those hits and holds the lane's velocity otherwise.
+  An output shows "nothing" for a channel only when its track has playheads and none plays there.
+- **Start marks on the ruler** (added the same day): each playhead's start is a triangle in its colour on the piano
+  roll's loop strip, dragged to set its Start knob in one undo step. Region edges aren't dragged there yet.
+- **Time map and drawn paths** (added the same day): a lower-pane choice (lowerLane = kTimeMapLane) with one row per
+  playhead; across is time since the clip started, so rate shows as slope. A drawn path is a list of AutoPoints in
+  the playhead's own time over its Path cycle (two knobs appended to the table); between points the place moves
+  one way, so sweeps stay exact, and a hit's time is found by halving. "Draw this path" samples the settings every
+  1/16, keeps only the corners and picks the shortest cycle covering the clip. Offset, start, repeat, bend and
+  direction don't apply to a drawn path. Path points are their own small editor here, not the automation editor
+  (its lane menus are about AUTO outputs and recording, which a path doesn't have).
+- **Note motion** (added the same day): motion groups live in the clip (up to 8), notes point at one by ID, and
+  the knobs are ParamRef kind Motion. Steps and Ramp get a "Per pass" switch; a per-pass modulator is left out of
+  motion knobs as it runs and added when a note starts, at that note's pass (a playhead's own pass). Time only
+  delays (0 to 1 bar), so notes never need to be read ahead. Export applies the knobs plus per-pass modulators;
+  other modulation of motion knobs isn't in the file yet. No moving ghost of a note is drawn yet.
+- **Redesign after trying it** (30 Oct, agreed on canvas board J): the Playheads card shows one row of the settings
+  reached for every few seconds (Rate, Direction, Repeat, Octave, Steps, Notes, Velocity, Channel, More); defaults
+  draw faint. Direction merges direction and step order; Repeat merges size and times; Bend and Start left the row
+  (a curve on Rate bends; the start is a tick in the segment). The segment is its own row on top of the ruler, with
+  ▶ ◀ handles. Any setting can have a curve (its own length, repeating), opened from the knob's label in the lower
+  pane. Pitch moved into the playhead (octave, key steps, lowest/highest notes, invert, velocity), reversing §4.3 of
+  the design: bass and melody from one piano roll.
+- **On/off and the branch look** (30 Oct, board K): the dot on a playhead's chip is its on/off switch (hollow when
+  off; Alt-click solos), and Shift+M toggles the shown playhead (plain M already mutes tracks). The coloured band
+  behind a playhead's own devices is gone: each of those cards gets a 3 px cap in the playhead's colour and its dot
+  in the title, so every card sits the same way in the strip.
+- **Vsync** (30 Oct): Rack opens its window with vsync off and never sets it again, so a module-menu switch can turn
+  it on with glfwSwapInterval(1) from the UI thread. It is a plugin-wide setting (it changes the whole window), off
+  by default, kept in the plugin settings next to the colour scheme.
+- **Curves are modulators** (30 Oct, board K): the per-setting playhead curves became a Curve modulator type, an
+  editable LFO: points over one cycle of `length` ticks (kept on the modulator, not a knob, so the cycle bar can set
+  any length), Sync / Rate / Restart knobs with the LFO's timing, bipolar around 0.5 ("no change"). Clicking a
+  playhead knob's label opens a pending curve; the first point adds a track Curve modulator routed to that setting
+  (animateWithCurve, one undo step). A setting with more than 7 steps gets amount 7/span so its rows stay drawable.
+  Old songs' playhead curves load as Curve modulators with amount 1 (values remapped, so they play the same). The
+  playheads read synced Curve modulators at the time they read the clip (Snapshot PlayheadPlayback::exact): the knob
+  table runs a block behind and the playheads a block ahead, so a step drawn on a bar line would miss that bar's
+  first note otherwise. MIDI export applies modulators on playhead settings that depend on the song position only.
+  "Bend while a note sounds" is not built: playhead settings apply when a note starts. An automation lane used as a
+  modulator ("Lane…") is left for later.
+- **Moved notes in the piano roll** (30 Oct): for the shown playhead, render::heardPitches works out the pitch of each
+  note's first hit over one pass from the clip's start (modulators taken at song tick = clip time), cached by song
+  revision. Moved notes are drawn again at their played pitch in the playhead's colour; the written note keeps its
+  place (it is what you edit) and gets a dashed outline.
+- **Motion becomes a device** (30 Oct, board L): a clip's motion groups became the Motion device type (Pitch, Time,
+  Length, Velocity, In key; a colour). A note points at its Motion device by ID (Note::motion is a DeviceId), so notes
+  of any clip on the track can share one. Old groups load as Motion devices with the group's ID, after the Playheads
+  device, where they used to act; routes to "motion" knobs read as device knobs. The inspector keeps one line (which
+  Motion the notes move with); the knobs live on the card. In the chain it is a device like Humanize (ChainNote carries
+  the note's motion ID); "Per pass" modulators reach its knobs per note through Context::passKnob.
+- **Before Playheads** (30 Oct): Motion is the only device allowed before Playheads, and a new one goes there. Its
+  notes leave the playheads' main list for a list of their own (ClipPlayback::motions; export does the same), which
+  the playheads cross shifted by the device's Time for the clip's pass: a whole group shifts together, so the list
+  stays sorted and nothing is rebuilt while playing. Pitch, length and velocity apply as the note is read; chord roles
+  (Lowest/Highest) stay as written. Such a Motion device is not in the chain.
+- **Per pass curves** (30 Oct): a Curve gets a "Per pass" knob (appended): one value per pass of a note (per bar
+  without one), kPassTicks of drawing per pass; the editor then lays passes across the pane instead of following the
+  piano roll's time, and draws steps.
+- **Knob names open curves on every device card**, not only on the Playheads card.
+- **Curves you can aim** (31 Oct, canvas board U; Trello "impossible to control a note where I want it"). A curve's
+  first route to a setting (mods::drawnRoute) turns it all the way and has no amount (setRouteAmount refuses it, the
+  popover says "as drawn"): one row is one step of the setting, over everything it can reach, and the curve adds to
+  the knob. The 7/span weight (curveAmount) is gone. A Curve has a `length` (1/16 to 256 bars) and a segment
+  [segmentStart, segmentEnd) that plays, round and round from when its track's clip started (Clock::sinceClip:
+  launched, or the timeline clip under the song; a song modulator, or no clip, counts from the song's start). Points
+  past the end are kept. Points are Step (Hold) or Ramp (Linear), switched by right-click; a new point copies the
+  kind before it. Time | Passes is gone: a playhead's clip loop repeats nothing, so a per-pass curve under playheads
+  only played its first pass; the Motion drift per pass stays with Steps (Drift per pass). The pane zooms and
+  scrolls on its own, opens with the segment's start under the clip's start, and its row labels sit in the keys'
+  column. Curves are read for the end of the control block and used in it (as knob lanes are), so a step drawn
+  where a note starts reaches that note; before, every modulator was a block late. Old songs: a curve saved without
+  a segment is drawn at full scale (its first route's amount folded into the points, other routes rescaled), with
+  the segment the whole length; one that counted passes becomes a Per pass Steps modulator with its values.
+- **Picked curve points** (1 Nov). The curve pane edits a picked set of points, not one at a time. Click picks (a
+  press on a picked point keeps the set, and a drag moves every picked point by the same delta, clamped between the
+  unpicked neighbours and to the reachable rows); Shift+click toggles one in or out; a drag from empty space picks
+  the points a box touches (Shift adds), while a plain click there still adds a point (ClickOrDrag). The header's
+  Step | Ramp make every picked point that kind in one undo step, with the picked count between them; a point's
+  right-click menu picks it first, then acts on the picked. The pane's height drags from its top edge
+  (ViewState::curveHeight, per view, 0 = the default) and a × closes it back to the note lane. Dragging the segment
+  past the drawing's end grows Length with it, so the segment is never stuck at the end.
+
+## 132. Playheads: On is a setting, finer choices, and their own look on the timeline (5 Nov)
+
+Numbered 95 on the playheads branch.
+
+From the Trello list "Playheads Feedback" (#135 to #137) and the user's notes on the same day.
+
+- **Turning a playhead off stops it at once** (Trello #135: "the current gate continues"). It used to stop reading
+  only, so the note it was playing rang to its end, and an Echo in its own chain kept repeating. The engine now
+  remembers which playhead started each voice and each drum lane's last hit (`TrackState::voiceReader`,
+  `laneReader`, numbered by place and renumbered by ID when playheads are added or removed before it); turning one off releases those voices and cuts those drum gates, and drops its waiting notes (read
+  ahead, delayed by operators) and its On and Echo messages in the chain (`Chain::dropLane`; ends stay, so nothing
+  waits for a note that never ends). The others play on. An off playhead still runs its own time, so turned on again
+  it is where it would have been and plays what it reaches next, not the note it cut.
+- **On is a setting, not a switch of its own.** The playhead's `mute` flag became the appended knob `kOn` (a toggle,
+  on by default), so curves, other modulators and knob lanes reach it like Rate: a playhead can come in for bars 5
+  to 8 only. The chip's dot, Shift+M and the chip menu's **On** set it (one undo step, "Turn Bass off"); the dot and
+  the card show it as it plays now (`TesseraModule::liveKnob`). The engine reads it where the playheads read, a
+  control block at a time (the knob table with the exact curves), so a curve switches it within a block; a snapshot
+  swap stops a playhead that is off as set at once unless something moves its On (`onIsDriven`), so editing while a
+  lane holds it on never cuts it. Solo stays a switch (listening, not music) and counts the playheads on as set.
+  Voice counts count off playheads too (a curve may turn one on; switching never moves the others' voices). Songs
+  saved with `"mute": true` load with On off. MIDI export reads On where it reads the other settings and cuts the
+  notes a playhead plays where it turns off. Echoes still to come from its own chain are dropped by the engine but not
+  by export yet.
+- **The card shows On first in MOVE** (MOVE is "whether and how it travels": On, Rate, Direction), drawn as a switch
+  with its name underlined like the other settings, so the curve is one click away. The chip menu adds **Switch it on
+  and off in time…**; every rarer setting under More gets **Draw a curve for it** and **Automate or modulate…**;
+  right-clicking the segment on the ruler offers curves on its start and length (the segment moving or growing as the
+  song plays), their lanes, and **Follow the clip's loop**. Every playhead setting can now move in time from where it
+  is shown.
+- **Finer choices; schema 8** (Trello #136: "1/32, the multiplier, same for repeats and the other knobs"). Rate goes
+  from 1/32x to 32x with thirds, dotted speeds and fives; Piece from 1/64 to 4 bars with triplet (T) and dotted (D)
+  sizes; Order step 1/32 to 2 bars with triplets; Fixed length 1/64 to 2 bars with triplets and dotted; Path cycle
+  1/4 bar to 64 bars. Each list runs short to long, so a curve walks through it in order (appending at the end would
+  have kept saved values but made curves jump from 32x to 1/32x). A choice is saved as 0..1 of its list, so songs
+  before schema 8 are remapped by name on load (`growPlayheadChoices`): the settings, lanes on them, a curve drawn in
+  one (each point keeps reaching the same choice from the setting as set) and other modulators' amounts (their reach
+  from the setting as set). Times stays 2 to 16.
+- **A Curve modulator opens no popover** (Trello #137: clicking it opened the dialog and the lower pane together, and
+  the dialog had to be closed by hand). A Curve has no settings of its own (its length and segment are over the
+  drawing), so its row now only shows or hides its drawing; the popover's other parts moved into the curve pane's top
+  row as **Moves ▾** (what it moves, each to remove; Map to more knobs; CV out…), and its row's right-click menu adds
+  Show its curve and CV out…. A new Curve from the browser opens the same way. Other modulators keep their popover.
+- **A clip read by playheads draws where they go, not its notes** (the user: "doesn't make sense to display the
+  notes since what is playing is different"). On the timeline and in launcher slots it gets fine diagonal lines (the
+  ground of a clip its playheads decide) and one band per playhead with its path in its colour, the time map's
+  picture in miniature: across is time (on the timeline, as each clip restarts its playheads and stretches them),
+  up is the place in its segment. Paths come from the settings as set, so curves on them play but aren't drawn there
+  (the time map draws the same). Off playheads draw faint. Chosen over a plain background or the notes dimmed: the
+  paths say at a glance that the clip is played by playheads, how many, and how they move. The stripe mark stays.
+
+## 133. Output module slugs and names without the "Tessera" prefix (5 Nov)
 
 VCV's library review asked for the redundant plugin name to come out of the module slugs and names, since
 a module is already identified by its plugin. So `TesseraTrackOut`/`TesseraDrumOut`/`TesseraAutoOut` became
@@ -1453,7 +2215,7 @@ Why: the library displays a module as "<plugin> <name>", so the old names read a
 Impact: patches saved before this change lose their Track Out, Drum Out and Auto Out modules (the main
 Tessera module kept its slug). The plugin was not yet in the library, so no user patches exist.
 
-## 95. The flagship module is "Roll"; "Tessera" stays the plugin and brand name (7 Nov)
+## 134. The flagship module is "Roll"; "Tessera" stays the plugin and brand name (7 Nov)
 
 VCV's library review (issue #989) reopened the plugin because the plugin slug and name matched the main
 module's slug and name: the library and Rack's browser would show "Tessera Tessera". Instead of renaming
@@ -1470,7 +2232,195 @@ module (its slug changed from `Tessera` to `Roll`); the plugin was not yet in th
 patches exist. The song-title default in MIDI/DAWproject export stays "Tessera" (the product name);
 instance-name fallbacks and the panel title follow the module name.
 
-## 96. Ruler jumps wait for their beat while playing (10 Nov, issue #11)
+## 135. Small editor and menu changes (9 Nov)
+
+- **Vsync is gone.** The module-menu switch did nothing the user could see.
+- **Editor size moved** from the module's right-click menu to the full editor's Roll menu, where its effect can be seen.
+- **Clicking any clip leaves the mixer** and shows that clip. The tab reads "Audio" when an audio track is selected.
+- **Whole-number device knobs snap** while dragged, so the knob shows the value that plays.
+- **A new timeline opens on bar 1**, even when the song doesn't fit in the view.
+
+## 136. Copies are independent by default (9 Nov)
+
+This replaces "Linked by default" in the timeline section.
+
+- **Ctrl/Cmd+drag, Ctrl/Cmd+D and Paste make independent copies.** Ctrl/Cmd+Alt+drag makes a linked one. A clip dragged
+  between the clips panel and the timeline stays linked, as before.
+- **Link identical clips** (a track's menu) links the timeline clips on that track that play the same thing. Names and
+  colours don't count.
+- **Every cut of an audio clip gives each piece its own clip**, so changing one leaves the others alone: Split, Split at
+  transients, a clip dropped inside another, Delete range, Delete time and Insert silence. A piece of a linked clip
+  leaves the link too, and the other copies keep the clip. Glue compares what the pieces play, so pieces with the same
+  settings still rejoin.
+
+## 137. A bounce shows its track from the start, and Stop keeps it (9 Nov)
+
+- **The new track is made when the bounce starts**, with the recording growing on it like a take. Undo takes away the
+  track and its clip in one step.
+- **Stop keeps what was played so far**, on the bounce message and the transport alike. Undo discards it.
+- **Only the bounced track plays during a bounce**, so nothing else reaches the effects patched after it. This is a
+  copy of the song given to the engine: the song's own solo and mute never change, so a save during a bounce is safe. With **Selected clips**, the track's other clips are silent too.
+- **A track that makes sound opens tall enough for its level line**, which shows from 40 px. A height the user set
+  stays, even when it is shorter.
+
+## 138. Audio and notes stay apart (9 Nov)
+
+- **Clips only go on tracks of their own kind**: moving, copying, pasting and dragging to a slot all stop at the wrong
+  kind. Note clips can't be created on an audio track.
+- **Menus show what fits the track.** An audio track has no Input, Record from (notes), MIDI channel, Create clip or
+  Import MIDI items. A note track's Input lists only note and drum tracks.
+- An audio track can still take sound from a note track that makes sound: that is audio, not notes.
+
+## 139. Bounce notes; Record is for what comes from outside (9 Nov)
+
+- **Record takes what comes from outside; Bounce sends a track or clip to another track.** So Record from has no
+  "Another track" entry. Card "record from another track" is met by Bounce.
+- **Notes bounce is instant**, from the code MIDI export uses: nothing has to play, and clips you didn't select stay out.
+- **One clip on a new track**, no devices, each playhead on its own channel, or one playhead alone. A panel clip lands in
+  the same scene on the new track. There is no "mute afterwards": that is for the audio bounce.
+- **Automation:** lanes on device and playhead knobs are baked into the notes. Lanes on AUTO jacks are copied to the new
+  track, one per jack, sampled with clip lanes combined; a panel clip keeps its own lanes. Copies don't take over the
+  other modules' knobs that the source lane maps.
+- **Limit:** it can't capture live moves (knobs turned or clips launched while playing).
+
+## 140. Roll IN and the 30 HP panel (9 Nov)
+
+- **Roll is 30 HP**, with IN L and R as a third column in the RECORD box, on the same even grid. Old patches widen to 30 HP
+  and may overlap the module beside Roll.
+- **The meter sits about 3 mm clear of the MAIN jacks.**
+- **An audio track records its Track Out IN or Roll IN** (Record from). Roll IN is heard while armed with monitoring on.
+
+## 141. Every input of a track has its own strip (9 Nov)
+
+Replaces the list behind "2 sources" for tracks, and the "turn Clips down for a pure insert" note in §96.
+
+- **A track with two or more inputs shows a narrow strip for each**, with fader, pan, mute, solo and meter. Its own strip is
+  the master amount.
+- **OUT takes the clips before their Level.** The Clips strip changes what is heard directly, so an effect keeps
+  playing with the dry sound off.
+- **Solo on an input plays it alone and solos its track**, as one undo step.
+- **Below 200 px tall the mixer uses knob strips**, so every track still fits.
+
+## 142. Playhead bands, Note Repeat, recording another track (9 Nov)
+
+- **A timeline clip read by playheads shows one band per playhead**, with a block wherever that playhead is over a note.
+  When the bands would be too thin, the path lines stay.
+- **Note Repeat** is its own device, because repeating a held chord should be easy to find. It replays every note at its
+  Rate for as long as the note lasts.
+- **An audio track can also record another track or the master mix**, before its fader, alongside Track Out IN and Roll IN.
+
+## 143. Bounce notes equals recording the track (9 Nov)
+
+Replaces the Automation line of §139.
+
+- **As it plays matches what recording the track's outputs would capture**: pitch, gate, velocity at each note's own moment. Checked
+  against the engine on a real song: same notes, gates within a tick.
+- **Curves, lanes and song-following modulators count on every route**: Motion before Playheads, Motion in the chain, playhead settings
+  and the Playheads device. Curves in the chain are read for the block they play in, as in the engine.
+- **Other signals come along**: each note's bend, timbre and pressure curves, pitch bend and pressure lanes, and curves sent to AUTO
+  jacks (sampled, with a lane made when the jack had none).
+- **Limit:** free-running and note-following modulators can't be worked out without playing (§139).
+
+## 144. The two editors show the same thing (9 Nov)
+
+Changes §15, where each surface kept its own views.
+
+- **Shared by the full editor and the panel editor:** what is open (device strip, lower pane and curve, note lane, mixer, drum view, Show
+  sends, selected device, playhead and modulator), the panes (maximised pane, splitter, focus, inspector, wide clips), zoom and scroll (timeline, notes, curve pane), track and lane heights, folded groups and
+  open automation lanes.
+- **One editor drives, the other copies:** the full editor while it is open, else the panel. Two editors moving one view would fight, since
+  each fits and follows for its own width. So only the one in use fits a clip or follows the playhead.
+- **The notes view stays centred on the same rows** when the heights differ.
+- **Per editor, because the windows differ:** sizes in pixels: header width, clips width, mixer and curve pane height.
+- **One default track height, 48 px.** The panel used to start at 24 px.
+- **Old patches:** the full editor's views win; devices open in either stay open.
+- **A curve belongs to the track it was opened on:** selecting another track closes the curve pane.
+
+## 145. A short mixer has two layouts (9 Nov)
+
+Adds to §141.
+
+- **Under 200 px the strips use knobs, as before. From 80 px they stack**, level above pan, spaced evenly so no gap collects, with the dB when
+  there is room. **Under 80 px they sit side by side**, and under 62 px M and S drop off.
+
+## 146. Roll does less on each sample (9 Nov)
+
+- **Settings, buttons, lights and what the UI reads run every 32 samples.** Jacks that carry timing (clock, reset, run, launch, scene CV, record
+  gates and MIDI) stay on every sample. A one-sample event such as a tempo change is still read every sample.
+- **A silent audio track rests for the rest of its block** when it has no voice, input, send reaching it or delay, and no clip starts before the
+  block ends. It still writes silence to OUT and its delay line, and its fader ramps jump to the block's end.
+- A transport change, a jump, a tempo change or a launch wakes it at once.
+
+## 147. A project with audio is one file; Find looks for all missing files (9 Nov)
+
+This replaces "Project files carry audio in a folder beside them" and "The project file stays plain JSON" in §106.
+
+- **A `.tessera` with audio is a ZIP** holding `project.json` and `audio/<hash>-<name>`, not compressed, ZIP64 past 4 GB.
+  Saving and opening run on a worker thread. Saving goes through a temporary file, so a failure leaves the old project
+  whole.
+- **Nothing existing breaks.** Plain JSON projects and their `<name> audio` folders open as before. A song with no audio
+  still saves as plain JSON. The first save of an old project with audio makes the one file and leaves the folder alone.
+- **A project holds every source the song lists**, so a project matches what the Audio files list shows.
+- **Find asks for a folder** and handles every missing file at once: by name and hash, then by hash alone for renamed
+  files. Other Tesseras in the patch come first. A file with the right name and other content needs a yes, and then the
+  source points at that file as one undo step (`SetAudioSource`). No original paths are saved, so a shared patch doesn't
+  reveal your folders.
+- **A file name read from a song can't leave the storage folder** (`safeAudioFile`), and extraction refuses such names.
+- **A patch from a newer Tessera never has files cleaned up** on load: audio it lists in a way this version can't read
+  would count as unused.
+
+Why: the user wants projects to survive being moved and renamed, without breaking existing files. Rack's own source
+confirms that presets, selections and copy and paste carry JSON only (`ModuleWidget::save`, `RackWidget::saveSelection`).
+
+## 148. Audio edits live in the clip; takes too (9 Nov, agreed, not built yet)
+
+- Del in the audio editor leaves a gap; Shift+Del closes it.
+- Every loop pass on an audio track is kept as a take, whatever the record mode: a take that starts where an audio
+  clip starts joins that clip. This replaces §119's "passes replace each other".
+- **The clip holds the take choice**, so linked copies play one comp. `ArrangerClip::take`, "Every copy plays this
+  take" and comping by splitting are gone (§129). Loading an older song moves each copy's take into its clip; copies of a
+  clip that picked different takes get clips of their own.
+- **Each part names its take** (`AudioRegion::take`). A clip playing one take from end to end is a single whole-clip
+  part. A new take moves such a clip on to itself; a comp stays as it is, so a late pass can't undo your work.
+- **Each take has its own warp markers** and a name (`AudioTake`). `regions::Files` holds each take's sample rate and
+  length, since a take can be recorded at another rate than the clip's own file.
+- **Hear** goes through the mix plan (`MixPlan::hearClip`), so it rebuilds what plays without changing the song.
+- The timeline's clip menu keeps **Take** for the whole clip; the rows do the mixing.
+- **Built (phase 2): parts.** `AudioContent::regions`: empty means one part over the whole clip. With parts, `reverse`
+  is off and each part says for itself. A clip's parts play through one table per clip (`AudioClipPlay::regions`), and
+  a part played backwards reads a second entry for the reversed buffer. A plain cut joins back up in the snapshot, so
+  it changes nothing you can hear.
+- **The editor's x axis is the clip's time**, for all clips: one code path. Warp marker handles are grabbed in the
+  ruler only, so a part can be dragged under its markers. This replaces §128's "window and edge drags are off with
+  markers"; the tempo drag stays off.
+- **A plain clip keeps its old gestures.** While a clip has no cuts, reverse or markers, dragging its body slips it
+  through the file and its edges change where it starts and ends (`setAudioWindow`). Top-strip gain on such a clip is the
+  clip's gain, so one concept stays one control.
+- **A part reaching past the clip's end makes the clip longer.** Its left edge stops at tick 0. Timeline copies keep
+  their length, as they do for an edge drag on a plain clip.
+- A clip always keeps at least one part: deleting the last says how to remove the clip, because an empty list means
+  "the whole clip".
+- **Budget**: 16 tracks with 100 parts each add at most 1.5% of a core (measured 0.5 to 1.1%, mostly the seam fades).
+
+- **Built (phase 4).** The header chips (`AudioHeader`), a time range in the ruler's upper strip (beat lines moved to its
+  lower strip), Copy, Paste, Duplicate, Crop, Render to new file (a new take; the clip's gain and pitch stay settings, so
+  they aren't baked in), preview while stopped, and Quantize with a grid, a strength and a loudness threshold. Quantize
+  places markers in the part's own place in the clip, per take. Paste needs the same file and clip tempo, since a
+  part holds frames.
+
+Details: `docs/design/AUDIO_EDITING.md`.
+
+## 149. A clip being rendered shows a bar, not a spinner (9 Nov)
+
+AUDIO_MIXER §6.6 asked for a spinner. Clips on the timeline are drawn into a cached layer, so a spinner would redraw
+that layer every frame for as long as a render runs. A bar that fills up only needs a redraw when the percentage moves
+(`AudioStore::renderProgressSteps()`), and it says how long is left. Clips and launcher slots show the bar; the audio
+editor and the inspector also say "Shifting pitch 40%" or "Stretching 40%".
+
+Faders and pan knobs read a drag's value from `AudioPlayer::held()`, so the track headers, the mixer and the inspector
+all move together, whichever one is dragged.
+
+## 150. Ruler jumps wait for their beat while playing (10 Nov, issue #11)
 
 A click on the song's ruler, a marker, or a playing clip's ruler used to jump at once (§61). With one track on
 the launcher and another on the timeline, the two then played different beats.
@@ -1490,3 +2440,1051 @@ the launcher and another on the timeline, the two then played different beats.
 Why: launched clips are timed against the song's grid; a jump that keeps the song's place in the grid keeps
 them in time. The user who reported it asked for this behaviour, and it is the usual one for clip-based
 sequencers.
+
+## 151. A playhead's Offset moves when its notes play (12 Nov)
+
+- **Offset is a time setting on the playhead, the fourth MOVE cell.** A device in the playhead's chain could only
+  delay notes; Offset also plays early, because a playhead's place is worked out from time alone and can read ahead.
+  Motion's Time was close but only moves the notes that joined it. The old Offset slot (it moved the place, and the
+  segment does that now) stays in the list as "Old offset", unread; the new one is appended, so older songs that saved
+  a value there don't start shifting.
+- **Quantized to note values, both ways**: 1/64 to a bar, with triplet and dotted values and every 1/16 between,
+  mirrored around 0. One choice list, short to long, so a curve or a lane sweeps it in order.
+- **It shifts the playhead's whole time**, not just its notes: where it is, its sweeps, retrigger cuts, note lengths
+  and restarts all happen that much later. So its line in the piano roll crosses each note when it sounds.
+- **A clip's ends are hard cuts.** It reads only between where the clip begins and ends: a late note that would sound
+  past a timeline clip's end (or a launched clip that doesn't loop) doesn't play, and an early playhead doesn't read
+  past the end. At the start a late playhead waits; an early one skips what would come before the clip started. A
+  loop is no edge: notes carry over it. The song loop on the timeline is a jump, as before.
+- **Moved while playing, it never plays a note twice.** Moved later, the playhead waits until the time catches up;
+  moved earlier, it skips ahead. The engine tells the two apart by whether the track reads on from where it left off.
+
+## 152. More Arpeggiator patterns, and a new chord starts the pattern again (12 Nov)
+
+Research: `docs/design/ARP_PATTERNS.md`.
+
+- **Four patterns join the list**: Up-down full (the ends twice; the most common one missing: four notes fill eight steps),
+  Converge (outside in: C G E, C B E G), Diverge (middle out, the lower note of each pair first: E C G, E G C B) and
+  Shuffled (each note once per round, in an order fixed by the held pitches, so a loop sounds the same every pass).
+  The sources disagree on Converge's and Diverge's order; these start low, like the other patterns. Pedal low and
+  high, rests and rhythm patterns are left for later (rests need a new step control and a mockup).
+- **Down-up full, Walk and Pattern** were added the same day. Down-up full is Up-down full from the top; with the
+  restart on a new chord, where it starts is heard. Walk (on, stay or back one: 50/25/25) and Pattern (a 16-step line,
+  the lowest note twice as likely) come from two well-known hardware arps; both choose from the held pitches, so the
+  same notes always play the same line, unlike Random.
+- **The list keeps related patterns together** (Up, Down, Up-down, Up-down full, Down-up, Down-up full, Converge,
+  Diverge, As played, Random, Walk, Shuffled, Pattern, Chord), so schema 9 moves saved patterns, lanes and curves on Pattern to the same
+  choice by name, as schema 8 did for the playhead lists. That code is now one helper for both.
+- **A new chord starts the pattern from its beginning** when most of the held notes arrived since the last step, as
+  the Arpeggiate command does (§45). Before, only silence reset it, so a chord change with Hold or without a gap
+  began mid-pattern. Swing and Accent keep counting from the first step, so they stay on the grid.
+
+## 153. Effect loops: every track has an ordered chain of Track Outs (13 Nov)
+
+Replaces "an effect loop never turns one source off or replaces another" (§96, spec §2 rev 7), "OUT takes the clips
+before their Level" (§141), "the send never joins the receiver's sound directly" and "No OUT cable" (§117). Builds the
+chain agreed on 3 Nov (spec "Agreed: an ordered effect chain inside a track") with Track Out itself, not a new module:
+the user asked "why can't Track Out simply be that solution?", and it can.
+
+- **A track's Track Outs run in order**: the sound before the chain (clips at their Level, a Drum Out's lane INs, what
+  other tracks send, Roll IN while monitored) goes through them one by one, then the fader, pan and sends. The master
+  works the same way on the mix.
+- **The OUT cable decides the job**: OUT not patched, the module adds its IN (a source, as before). OUT patched, it is
+  an **effect loop**: its OUT carries the sound so far and what comes back on IN replaces it by its **Mix**. A loop with
+  nothing coming back (no IN cable, bypassed, removed) lets the sound pass untouched: a cable never silences a track.
+- **The Mix law** is a dry/wet balance: dry = min(1, 2(1 − mix)), wet = min(1, 2·mix). 50% plays both in full, which is
+  exactly what loops played before, so old patches can be converted without a gain stage. New loops start at 100%.
+- **The dry part waits for the return**: 3 samples for a cable from OUT straight to IN (Tessera to OUT is one sample,
+  each cable one, IN back to Tessera one) plus one per module on the shortest cable path, found from the cables on
+  the UI thread. Checked in a hidden Rack with a temporary probe: the return lined up at 3 samples, and 50% Mix on a
+  cable loop raised the level by 6 dB. The loops' round trips count in delay compensation.
+- **Wiring**: each module's return bus slot also carries its OUT (Tessera writes the sound so far there) and, with
+  each return, its dry gain, whether it is a loop and its round trip. So a Mix drag ramps in the module and never
+  rebuilds the snapshot, and a missing module drops out by itself. Solo among a track's inputs and "counted once" only
+  concern sources; loops ignore them.
+- **Order** is saved in each module ("chain"), set by dragging a loop strip's name sideways in the mixer or **Move
+  left / right** in its name menu, one Rack undo step. Modules never ordered come after, in rack order (top to bottom,
+  then left to right). The input strips show the chain in order.
+- **The mixer**: a loop strip is named after the module patched into its OUT; its fader is the Mix (linear, 0–100%,
+  double-click 100%, scroll 5%), with **M** for off, no pan or solo. The master now has input strips too (**Mix** and
+  its Track Outs, left of the Master strip; the arrow on MAIN folds them): the user's report that started this was a
+  master effect with no amount control. A drum track shows loop strips after its lane strips. The chip reads
+  "1 in · 1 fx". OUT on a note track is no longer dim.
+- **Sends join the receiver's sound before its chain**, so a reverb track is a track with a reverb loop at 100%. Without
+  a loop its sends are heard dry.
+- **Mute** fades the heard sound first, then the own sound going into the chain (unmute the other way round): ramping
+  both at once multiplied two fades into one twice as steep.
+- **Old patches** (a Track Out without "mix") open at 50%. Once the patch settles, a loop on an audio track whose Clips
+  were down at gain g < 1 (the old way to hear only the effect) gets Clips back at 0 dB and Mix 1 − g/2; a loop on a
+  note or drum track that receives sends gets 100% (its sends were never heard dry). Two old loops on one track were
+  parallel and are now in series: not exact, accepted.
+- Not done: a Mix lane for automation; a loop's own latency beyond its cable path (type it as the track's Latency).
+
+## 154. Devices show what they do as pictures, with their settings as tags (14 Nov)
+
+Agreed on a working page (claude.ai artifact "Tessera Device Pictures"), after knobs, phone-style wheels and a grid of
+equal value boxes were turned down. Where the page and the earlier design disagree, the page wins.
+
+- **Pictures.** Each card holds one to three small pictures (100 px tall, widths per device from the page). One idea
+  each, a few bold shapes: grey outlines for notes going in, the card's colour for notes coming out. No grids, no mini
+  piano rolls. Each has a caption that says what the picture can't, and follows the values ("A fifth up", "On C: C E
+  G", "A canon, 1/8 behind"); never the obvious ("One note in, a chord out" was turned down). Scale's caption names the
+  notes of the key it works in now (song or clip), not a stand-in.
+- **Tags.** Every setting is a pill on its picture; the first on a picture is tinted. Drag any way, wheel and arrow
+  keys step it; double-click resets; one drag is one undo step. Click or right-click opens a panel: type to find the
+  closest choice, lengths in straight / triplet / dotted rows, curves drawn, directions with pictures, rates as faster /
+  normal / slower; hover previews only the picture. The panel opens below (or above) the picture, not over it as on the
+  page, so the preview can be seen. Today's right-click items stay reachable from the panel (**Draw a curve**,
+  **Modulate, automate…**). A tag that doesn't fit widens its picture.
+- **What moves a setting.** A lane washes its tag in the lane's colour with an **A** on the corner (click: show the
+  lane); a modulator or curve puts a dot in its colour there. A thin bar under the tag shows how far each moves it
+  (a lane's lowest to highest point, a modulation's reach from where it is set) and a dot where it is now (user: "I
+  can't see the automation depth").
+- **Colours.** A card wears its track's colour (not the clip's: devices belong to the track and must not change as clips
+  do). The Playheads card and a playhead's own devices wear the playhead's colour; Motion keeps its own.
+- **Playheads card.** Three pictures: how it moves (Direction with the step orders in its panel, Rate), where it starts
+  (Offset), the repeat (Piece × Times, Curve). Chips in the title, the shown playhead's On switch after them. The
+  rarer settings stay in a chip's right-click menu (the More button is gone).
+- **A playhead's own devices** sit in a frame in its colour, "<Name> only" down its side, a round + at its end; with none,
+  a slim dashed slot. No big empty box.
+- **Resizing.** One row scrolls sideways (the user's pick). Dragging the bottom edge adds rows, up to the rows the cards
+  need at this width and never so deep the notes lose their room; then cards wrap. A pane too short for one row plus
+  the notes shows the devices in place of the notes, with **Devices** as a tab beside **Notes | Mixer** (a second click
+  goes back to the notes). The rows are a size, kept per editor (ViewState::stripRows).
+- **Note Filter channels are a set.** The Channel choice (Any, 1–16) became a 16-bit set (ParamInfo::Kind::Mask,
+  stored as the set over 65535, which a float holds exactly); none picked means any channel. Schema 10: Any becomes
+  the empty set, channel n only bit n−1, and lanes or modulations on the old choice are dropped. A set is only picked by
+  hand: `movable()` keeps it out of modulation, lanes and curves.
+- **Performance.** Each picture is drawn once into its own framebuffer and redrawn only when what it shows changes
+  (values are snapped to the tags' steps, so a modulated setting redraws per step, not per frame). Budget: the strip
+  under 0.5 ms of UI time a frame, a picture redraw under 0.3 ms. Measured in the hidden Rack with 11 devices: about
+  0.05 ms layout and 0.1 ms drawing a frame, no redraws while playing or scrolling, about 0.16 ms per redraw. (These
+  figures were wrong: measured again on 15 Nov the strip took about 1 ms a frame. See §158.)
+- Still open: clip-level devices (a separate task).
+
+## 155. A playhead's Speed curve bends its speed over a length, and it stays in step (14 Nov)
+
+- **What.** Two playhead settings, appended to the list: **Speed curve** (the same ready shapes as the repeat Curve,
+  Straight first) and **Over** (1/8, 1/4, 1/2, 1, 2, 4, 8 bars; default 1 bar). Over each Over length the playhead's
+  place follows the shape, then it is back where a steady playhead would be. Straight is off: one control turns it on,
+  so Over is only faint while the curve is Straight, with no Off in its list.
+- **Song time, not the playhead's.** Over counts song ticks from the clip start (and each Restart), so "over 1/2" is
+  half a bar of the song at any Rate, and the playhead meets the bar line at the end of every length. (The repeat
+  Curve counts the playhead's own time, because it spans one repeat group.) Motion bends elapsed time first
+  (`sped`), then the rate, then the repeat Curve (`bent`); `timeAt` and Follows-playhead note lengths undo both.
+- **On the card.** A fourth picture after Move, built like the Repeat picture: eight notes where this playhead meets
+  them over one length, dots where a steady one would, the dotted curve. Tags: the shape (curve panel) and "Over 1/2"
+  (length panel). Captions name the feel: "Starts slow, catches up each 1/2".
+- **Not for drawn paths.** A drawn path ignores it, like the other movement settings, so the time map keeps showing
+  where the playhead really is.
+- Old songs read the new settings at their defaults (Straight), so nothing changes for them; no schema bump.
+
+## 156. One scale of lengths for every speed and length setting (14 Nov)
+
+- **What.** `src/model/Lengths.hpp` holds one scale: straight 1/64 to 64 bars, triplet (T) and dotted (D) 1/32 to 1/2,
+  short to long, with one name per length ("1/8 T", "2 bars"). Every setting that picks a length or a synced rate takes
+  a stretch of it: note devices' Length, Rate and Time 1/64–8 bars; LFO, Steps and Random synced rates 1/64–32 bars;
+  a playhead's Piece Off + 1/64–8 bars, Order step 1/32–4 bars, Fixed length 1/64–4 bars (a note never lasts longer),
+  Speed over 1/16–16 bars; a drum lane's step 1/64–1/2 (it was 1/4–1/32 with "1/8 triplet" names).
+- **Short to long everywhere.** Device rates used to be stored 8 bars first, then triplets and dotted, so a curve on
+  Echo's Time jumped about. Now a curve or a drag moves through every list in order.
+- **A playhead's Rate** gets each speed's opposite: 1/24x and 24x, 8/3x beside 3/8x.
+- **Left as they were:** a drawn path's cycle (whole bars, odd ones like 3 and 6 make sense there), Offset (every 1/16
+  for canons), the CLOCK jack's divisions (pulses, PPQN), and the grids for snapping and quantizing (a grid, not a
+  speed).
+- **Schema 11.** Saved choices keep their length by name (`unifyLengths`, the same as schema 8), lanes and curves on
+  them too. Playhead choices of songs before 8 are already found by name in today's lists, so only 8–10 remap them.
+
+## 157. A clip can play through its own devices instead of its track's (14 Nov)
+
+- **The rule (the user's).** A clip with its own chain plays only through it; the track's chain is skipped for that
+  clip. Nothing mixes. Devices stay track-level by default. Proposal page with stories and mockup:
+  https://claude.ai/artifact/1WHadjkGyB39zR8r8d9SfG
+- **Model.** `Clip` has `devices`, `modulators`, `hasOwnChain` and `playsOwnChain` (schema 12; older songs have none).
+  A chain belongs to a `ChainOwner` (a track or a clip); every lookup by device, playhead or modulator ID searches clip
+  chains too (`ownerOf`, `trackUsing`), and the device commands take an owner. `ModLevel::Clip` modulators reach only
+  their clip's chain; a track's modulators reach the own chains of its clips.
+- **Switching never deletes.** The first **Own** copies the track's devices (new IDs) with the track modulators that
+  move them, and points the clip's notes that move with a Motion device at the copy, so it sounds the same until
+  changed (the user: "starts with track always"). **Track** keeps the clip's chain for later. Deleting it, and making
+  it the track's (`useOwnChainForTrack`), are separate menu items.
+- **Engine.** The snapshot builds a chain per track and per clip that plays its own; each track has a second runtime
+  for the playing clip's own chain, from a fixed pool (2 per track, nothing allocated). A clip's notes go through its
+  own chain; live keys and notes from a listened track go through the track's (the user's pick). Switching clips cuts
+  what the old own chain held, as a launch already did. On the timeline, overlapping stacked clips share one own
+  chain at a time: the first that covers a moment decides (a second concurrent chain per track would be a larger
+  change). Measured: a clip's own chain costs what the same devices on the track cost.
+- **Automation.** A clip's own devices are automated from the clip's lanes and modulators ("Automate in the arranger"
+  is off for them), so everything travels with the clip. Copying a clip renews its chain's IDs and points its lanes,
+  routes and notes at the copies.
+- **Voices.** A track's voice blocks cover every chain it plays: the track's, then each clip's own (a clip's own
+  Playheads adds its channels).
+- **Export.** MIDI export splits a track into parts by chain (the track with the clips that use it, one per clip with
+  its own) and renders each through its chain.
+- **Editor.** A source card at the chain's start ("Notes from Fill, play through Track | Own") with a sentence under it;
+  the chain not shown folds into a dashed block at the end that opens it or switches to it; a clip's own devices
+  wear its colour on a wash of it. The mark (a tiny device card, light = plays its own, outlined = kept; on slots a dot,
+  see §158) on slots, timeline tiles and the closed bar; "own devices" in the clip chip; clip menus get **Devices ▸**.
+- **Not done yet:** the "Now playing … through its own devices" line in the pane header and an inspector row from the
+  proposal; audio clips have no chains.
+
+## 158. The "Own" mark, no hatch on slots, and a cached device strip (15 Nov)
+
+- **The mark of a clip with its own devices** was three linked squares in the tile's text colour. The user found it
+  black on light clips and unclear. It became a small "Own" pill; the user didn't like the word on the mark (the
+  switch keeps it), so it is now a tiny device card with two tags, like the strip's cards: light with dark ink while
+  the clip plays through its own devices, dark with a light outline while it keeps them off. Its colours
+  are fixed (`theme::ownMarkColors`), not the tile's text colour, so it reads on any clip colour. A launcher slot is
+  too narrow for the mark and its name (the name shrank to "…"), so a slot under 100 px shows the mark as a dot in its
+  top-right corner, left of any playhead stripes. The source card's switch no longer repeats the mark beside "Own".
+  Options page: https://claude.ai/artifact/C4i9xeBX1YLRiEm3bxgNxW
+- **No diagonal lines under a playhead clip's bands in launcher slots** (the user agreed). The bands alone say a
+  clip is played by playheads, as on the timeline. The stripe mark on a slot now counts the playheads of the chain
+  the clip plays through (its own or the track's).
+- **The device strip caches its drawing.** It drew every card and tag again on every frame: about 1 ms a frame
+  (0.35 ms layout, 0.35 ms drawing, 0.5 ms tags), against a 0.5 ms budget. Now:
+  - the chain under the pictures (frames, links, cards, the source card) and the tags over them are each painted into
+    one framebuffer, repainted only when their key changes: the song revision, the layout's parts, focus, previews,
+    mapping, and what is hovered (a tag's hover repaints only the tags, a button's only the chain);
+  - a tag that a modulator or a lane moves is drawn live over the layer, and keeps its widest width so it and its
+    neighbours hold still while it plays (they used to shift by a pixel as its label changed);
+  - a picture that changes again within 30 frames (a value a modulator moves) is drawn straight to the screen instead
+    of repainting its framebuffer every frame, and goes back to its framebuffer once it holds still.
+  - Measured in the hidden Rack (software drawing, devices.vcv, an LFO on the Arpeggiator's Gate): stopped, about
+    0.15 ms layout and 0.03–0.05 ms drawing a frame; playing, 0.2 ms layout and 0.19 ms drawing (was 0.88 ms, and
+    1.16 ms with only the layers cached); the mouse sweeping across the tags, 0.45 ms drawing. Layout still runs
+    every frame.
+
+## 159. Playheads play a tile's velocity and transpose; a level line on changed tiles (15 Nov)
+
+- **The bug.** On a track with playheads, timeline tiles are read from the shared clip
+  (`Engine::playInstancesByPlayheads`), so a tile's velocity scale and transpose were ignored in playback; MIDI
+  export applied the transpose but not the velocity. Now each `InstanceLanes` carries its tile's `transpose` (0 on a
+  drum track, as export does) and `velocityScale`, and `playPlayheads` applies them to each written note before the
+  playhead shapes it (the shaping's pitch range moves with the transpose), as export does. Nothing allocates.
+- **The level line (the user's ask).** A tile whose velocity isn't 100% (or an audio clip whose gain isn't 0 dB)
+  draws its level as a line across its body, shaded above so it doesn't read as a note. The default sits at three
+  quarters of the height, as 0 dB does on a fader: velocity 0–100% below it, 100–200% above; gain follows the
+  fader curve below 0 dB and reaches the top at +24 dB. No line at the default. Hovering it makes it bold with a
+  pill ("Velocity 70% · double-click for 100%"); dragging it is the title bar's up/down; a **double-click** resets
+  the selection (velocity 100%, audio gain 0 dB). Launcher slots have no velocity scale, so no line there.
+- **The title bar only moves (the user: "dragging clips should be extremely easy").** Its drag used to choose by
+  the first pixels: up/down set velocity (an audio clip's gain), sideways moved; so a clip couldn't be dragged by its
+  title to another track, and a slightly vertical start changed velocity instead. Now the title bar moves like the
+  body, and velocity and gain live only on the level line, which is there at the default too: just under the title
+  (three quarters of the body), drawn faint on the hovered tile, bold with "Velocity 100% · drag to change" under the
+  mouse. Its grab zone is ±3 px; a double-click there resets a changed level and otherwise opens the clip as before.
+
+## 160. Note clips have no velocity scale (15 Nov)
+
+- **The user: "remove velocity completely from midi clips, it messes with clip drag a lot."** A timeline tile's
+  velocity scale is gone: `ArrangerClip::velocityScale`, its saving ("velScale" in older songs is ignored on load, so
+  such tiles now play their notes' own velocities), its Velocity menu and inspector row, the percentage in the title,
+  its level line, and the engine and export paths that applied it (§159's playhead part keeps the transpose only).
+  Glue no longer bakes it. Velocity is changed on the notes (the piano roll) or with a Velocity device.
+- **Audio clips keep the level line** for their gain (§159): faint under the title on hover, drag it, double-click to
+  0 dB. A note tile's title bar and body only move it.
+
+
+## 161. Menus after the UX review: one menu per thing, one word per idea (15 Nov)
+
+The user asked for a UX review of the whole app (audio, mixer, playheads, every context menu) and then said "You
+decide and implement". Built from it:
+
+- **A mixer strip's name opens its track's header menu**, with a "Mixer" part on top (Show sends to this track,
+  Latency). A group strip's name opens the group menu; the Master's name has Connect MAIN, Automate its volume and
+  the master's Track Out items. The mixer has no inline name field, so Rename there opens a small field menu.
+- **Only the source chip's arrow folds input strips** (replaced by the name arrow, §162); its words open the sources list. The Master's "MAIN not
+  patched" chip was also the fold switch, so clicking a warning hid strips; now it opens Connect MAIN.
+- **A send return gets its Mix strip.** A track whose only Track Out is an effect loop showed "IN · Track Out" and no
+  Mix strip (the list of inputs only appeared from two inputs). Any effect loop now gives input strips; the chip says
+  "1 fx".
+- **Words:** the master's first input is "Tracks" (it was "Mix", next to effects whose readout says "mix"); the clip
+  light says "max -4.1" / "over +2.3" (it said "no clip", and a clip is music here); the short mixer prints the fader
+  setting, not the meter; "arranger"/"arrangement" became "timeline" in every label and undo name; the audio editor's
+  "Cut here" / "Cut at…" became "Split", as on the timeline; "Clip loops" became "Loop"; "Reset knobs" became "Reset
+  all settings"; a drum lane's pan menu names the lane.
+- **Audio clip menus:** the clip chip menu of an audio clip had the note clip's items (Double, Halve, clip file, MIDI
+  export); it now has the audio items. The audio part of every audio clip menu (timeline, chip, inspector, narrow
+  header) is Reverse, **Clip settings ▸** (tempo, follow, sound type, pitch, warp, gain to 0 dB; the right column
+  sums it up), **Process ▸** (Normalise, Render to new file, and on the timeline Split at transients and Make triggers),
+  Replace file…. "Open in the audio editor" joined the timeline menu, and opening a clip leaves the mixer for its editor.
+- **Track header menu order:** the track itself (Rename, Colour, Duplicate, Delete), then Voices, Input, **Recording
+  ▸** (arm, record from, MIDI channel, monitor), lanes, outputs and bounces, Group, and **Add track ▸** last. "Link
+  identical clips" shows only when there is something to link. One shared helper writes the output items everywhere:
+  "Show Track Out in the rack", then "Add a Track Out for this track", or "Add another Track Out" once there is one.
+- **The inspector's Output row** names the module ("Track Out + 1 more") and opens the same items; with none it is a
+  "+ Add Track Out" button (it was amber text that did nothing).
+- **The ruler has a right-click menu** (Play from here, Add marker here, Loop, Loop this section from marker to
+  marker), and a marker's menu has Loop this section.
+- **Esc with nothing left to cancel asks first**: "Press Esc again to close the editor", and a second Esc within 1.5 s
+  closes the editor window. The review lost the editor to a reflex Esc after a menu.
+- Smaller: output modules' Track submenu shows the bound track ("5 Loop"); group colour is ticked; the device ⋯ menu
+  shows the card's name; launcher audio clips lose "Edit this scene's clips together"; audio tracks' empty slots lose
+  "Load a Tessera clip file…"; "Stop the track now" and "Has a stop button" no longer read alike.
+- **Not built, left for a talk with the user:** placeholders for note tracks in the mixer (§99 says no mixer without
+  sound), a different shape for the Mix control, a SENDS block with full names, Devices in the left switch in both
+  windows, one On control on the Playheads card, the audio header's words and tools, the gain line on selected clips.
+
+## 162. The second UX batch: agreed mockups, a mixer that scrolls and folds, bounces that follow their feeders (15 Nov)
+
+The user agreed M4, M5, M6, M8, M11 and M12 of the 15 Nov review, asked that every new control fit narrow and short
+panes, turned down note-track placeholders in the mixer (§99 stands), and then asked for a mixer that scrolls and
+folds with a clear parent for each fold.
+
+- **One lower-pane switch, Notes · Devices · Mixer**, in both windows (M11). The Devices pill after the clip chip is
+  gone. In a tall pane Devices opens the strip above the notes (both lit); in a short pane it switches. A narrow pane
+  folds the switch into one button that names what shows. Audio tracks grey Devices and never show the strip.
+- **The audio header speaks words and has the notes header's tools** (M4): Tempo, Follow, Sound, Pitch, Gain,
+  Reverse, Quantize (was Warp), Takes, "∞ 3 linked copies". Select · Slice · ▾ (Mute, Erase) and Snap. It narrows in
+  steps: values alone, then one Clip settings menu, then Snap moves into that menu. The inspector and the clip menu
+  use the same words ("Linked 3 copies" in the inspector).
+- **A selected audio clip always shows its gain line** with a tab at its right end that reads the gain and drags it
+  (M5); the tab hides on clips too narrow for it.
+- **An effect's Mix is a dry-to-wet bar**, not a fader (M6). The Master says "→ MAIN" where it showed memory use, which
+  moved to File ▸ Audio files; the header drops its peak text. With no Audio module in the patch, "Add an Audio module
+  and connect MAIN" places one and cables MAIN in one undo step (mixer, Master menu, Roll's module menu).
+- **Sends are named rows** (M8): SENDS, then the receiving track's full name over a level bar, dragged sideways; dots
+  when the pane is too short; "+ Send" with the "cables don't" sentence in its tooltip. The Send to list puts tracks
+  with an effect loop first, named by the effect (inside §97: no new track kind). Show sends dims every strip whose
+  fader isn't a send there: the receiver, groups, input and lane strips, the Master.
+- **The Playheads card has one On control per playhead: the chip's dot** (M12). The switch after the chips is gone;
+  the dot and the name have tooltips.
+- **The mixer scrolls sideways** when the strips don't fit, with the Master and its inputs pinned at the right: Shift+
+  wheel, a trackpad swipe, a plain wheel off the levels, middle-drag, Space+drag; a thin bar shows the view. Fine wheel
+  steps on a level move from Shift to Ctrl, so Shift+wheel scrolls everywhere as in the other panes.
+- **A parent comes first and what it holds opens to its right**, everywhere: a group's strip now comes before its
+  tracks (was after the last, §3.5), the Master's inputs sit right of the Master (were left), a track's inputs and
+  lanes after it as before. A frame in the parent's colour holds each family: filled for a track's strips, an
+  outline for a group. One fold arrow, left of the parent's name, folds lanes and inputs together, or a group's tracks
+  (session only, like the input folds). The source chip's arrow is gone: one control per concept (supersedes §161's
+  chip arrow).
+- **Bounces follow what feeds the track.** A notes bounce "as it plays" includes the notes its Input takes from
+  another track, through its own devices, muted source or not, as live (render::Options::followInput, bounces only;
+  exports are unchanged). An audio bounce unmutes the tracks that feed it, its Input's source and the tracks whose
+  sends reach it, so muting the dry tracks to hear an effect return doesn't leave the bounce empty; the solo keeps
+  them out of MAIN. "Whole track" and "Until silent" count the feeders' clips.
+- **Not built:** "Add output modules" in Roll's menu (not discussed yet).
+
+## 163. Modulators in three places, Macros you drag, one dice for randomness, an editable arp Pattern, copy and paste in the strip (15 Nov)
+
+Agreed with the user on the canvas https://claude.ai/artifact/PQ8zCxou1mn6AjKJSccqFC (D1-D7). It replaces the
+single modulator list of §36 and the modulator popover.
+
+- **One modulator section, three places.** Left to right in the strip: **SONG** (the same on every track), a slim
+  upright **TRACK | CLIP** switch (rotated words, the side that plays filled in the track's colour, an arrow into the
+  next section; "Own" is now called CLIP), the **TRACK · name** or **CLIP · name** section, then the cards. Each card
+  has its own **DEVICE** section on its left edge. Every section looks the same: a header with a fold arrow, the
+  level and **+**; rows with a colour dot, name and live graph; folded, a 30 px rail with a dot per modulator and an
+  upright fader per Macro. Where you press + decides the level: the browser's "where it lives" chips go.
+- **Nothing gets narrower.** Opening a section, or a modulator's settings, adds room and pushes what follows to the
+  right; the strip scrolls sideways as it does for many cards. A card's own controls keep their size.
+- **Settings beside the section, not a popover.** A click on a row opens its settings (values, a picture, MOVES, Map
+  to knobs, CV out) just right of its section, with a stripe in its colour; a second click or ◂ closes it. One per
+  section. A device's modulator opens inside its card, between the section and the card's contents. A Curve still
+  draws in the lower pane.
+- **A Macro is a fader.** Its row is the control: drag sideways, wheel, double-click resets, Shift (drag) or Ctrl
+  (wheel) for fine; armed and playing, a drag records into its lane. Right-click: type a value, learn a MIDI control,
+  map, automate, rename, delete. Folded, it is an upright fader in the rail.
+- **One dice for randomness**: Random and Humanize devices, the arpeggiator's Random, Walk, Shuffled and Pattern, the
+  Random modulator, an LFO's random shapes, and per clip the notes' chance (on the Chance lane label and the
+  inspector's CLIP section). No menu: a dice button and a two-part switch **[17 | New]**. The dice rolls another
+  number and keeps it; **17** is the same every time (double-click to type a number); **New** rolls on every play and
+  every loop pass (the user's "seed −1"). New devices start on **New**. A bake, bounce or export of something on New
+  rolls fresh; its message offers **Keep it**, which sets the switch to that roll. The song-wide seed goes.
+- **The arpeggiator's Pattern is editable.** Picking Pattern turns the card's picture into a step grid: rows all / 4 /
+  3 / 2 / 1 (held notes, low to high; a row past the held count plays from the bottom an octave up), an octave row
+  (0, +1, −1) and a length row (1-16). The dice writes a new line; once edited by hand the switch reads **Yours**.
+  A tie step comes later. As built: until a step is edited the line stays the one made from the held notes (Pattern
+  shipped in v2.0.7, so songs keep their sound); the first edit fills the grid from the dice; New with an own line
+  plays a fresh dice line each play; right-click the grid to go back to the held-notes line.
+- **Select, copy and paste in the strip.** A click selects a card, a modulator row, or a whole section (its header,
+  without lighting each row): accent outline and a light tint, no check boxes. Ctrl+click adds or removes, Shift+click
+  takes the run, as with tracks and clips; empty space or Esc clears. Copy and paste by right-click or Ctrl+C / Ctrl+V
+  (Ctrl+D duplicates, Delete deletes); the menu names what it copies and pastes. Devices may be selected with track or
+  clip modulators, so a modulator travels with what it moves; song modulators never mix. A paste goes into the chain
+  the switch shows, after the right-clicked card or at the end; modulators into that track's or clip's section; a
+  card's own modulators go with it; moves between copied things are kept, others out of reach are dropped with a
+  message. It works into another Roll in the same patch. No dragging to copy for now.
+- **Built in stages**, each committed on its own: the sections and settings beside them; the dice; copy and paste;
+  the Pattern editor.
+
+## 164. Sends easier to find, no Show sends mode, a track that only sends, a mixer that zooms (15 Nov)
+
+The user searched ten minutes for sends (only in the mixer), found the Show sends band ("Faders show sends to Reverb ·
+Esc to go back") extremely confusing, wanted a track that feeds an effect without reaching the Master, and a mixer that
+scrolls and zooms like the piano roll.
+
+- **Sends in the track menu**: right-click a track header ▸ **Sends**: where the track goes after its fader, its sends
+  (level, then each send's menu), and **Send to ▸** (effect returns first). The mixer's SENDS rows and the inspector
+  keep theirs.
+- **Show sends is gone** (supersedes §97's mode): faders always mean volume. With a SENDS row per send there is no
+  need to flip every fader. "← 2" (or the strip name menu ▸ Sends to this track) lists who sends there, each with its
+  level and menu. A new send starts at -12 dB, so it is heard at once, instead of -inf with the faders flipped.
+- **Only its sends**: a track's `toMaster` (saved only when off). Off, its sound after the fader goes nowhere but its
+  sends, so it feeds a reverb without being heard dry. Its meter still shows its level after the fader; mute and solo
+  work as before. Chosen from the strip's "→ Master" label (then "sends only") or the track menu's Sends.
+- **Mixer zoom**: Ctrl+wheel widens or narrows the strips around the mouse, = and - step, F and Shift+F fit them,
+  Home / End and Page keys scroll. Fine wheel steps on a fader or send move from Ctrl to Alt, so Ctrl+wheel means zoom
+  everywhere, as in the piano roll.
+- **Not done yet**: modulators moving volume, pan and send levels (they are automatable with lanes already), and a
+  lane for the to-Master switch.
+
+## 165. A bigger Pattern grid, Oct repeats your line, one row of cards, new modulators on their device (16 Nov)
+
+- **The Pattern grid is a picture of its own** (replaced by §166: one view), after the picture with Pattern on it (380 px wide, the full picture
+  height). Under the tags it had about 8 px per row; now about 13 px, with "+1 / −1" in the oct row and a "len" row,
+  closer to the mockup (§163). The mockup's 17 px rows would need a taller card, and every card shares one height.
+  The first picture then shows the held chord pointing at the grid ("Plays the line in the grid").
+- **Oct with your own line plays the line once per octave** (replaced by §166: octaves per step), each pass an octave higher. Before, rows 1 to 4 only
+  reached the held notes, so Oct did nothing. "all" plays the held notes (plus the pass's octave), not every octave
+  at once.
+- **The device strip is always one row** (supersedes the strip's rows grip): it scrolls sideways. The grip, the
+  wrapping and the up-down scroll are gone; the saved "stripRows" setting is no longer read.
+- **Modulate with › A new modulator…** on a device's setting lights that device's chip, so the new modulator lives
+  on the device, not the track. The other chips are still there to pick.
+- **Live edits to a chain keep it playing.** Adding, removing, moving or switching a device used to clear the whole
+  chain (an arpeggiator went silent until the next note). Now the chain is rearranged by device ID
+  (`Chain::restructure`): each device that stays keeps its state at its new place, waiting notes at a removed device go
+  on to the next one, and a removed or switched-off device hands its held notes on and ends only the notes it alone
+  would end (chord notes, legato notes). A new device starts with the next notes.
+- **A card's DEVICE section sits inside the card's outline**: left corners follow the card, the right side is square
+  against the divider, so the outline and the selection colour run all the way round.
+
+## 166. The Pattern line in one view, taller pictures for every card (16 Nov)
+
+The user found the Pattern grid tiny and the octave row unreadable, and asked for gate, velocity and semitones per
+step, every step automatable, each row its own length, a reset to a normal arpeggio, and the grid to show what plays.
+Two mockups on the design canvas (D8 with tabs per row, rejected: "edit everything quick and fast in one view"; D9,
+agreed with changes): one view, no lower pane.
+- **Every card's picture is 150 px tall** (was 100), so the strip never changes height when Pattern shows. Today's
+  drawings are centred in the taller space; they can grow into it later.
+- **On Pattern the card shows a slim column of settings** (Pattern, Rate, Swing, Hold) **and the line's grid**. Oct,
+  Gate and Velocity hide: the line sets them per step. Every other pattern keeps its pictures.
+- **The grid**: five note rows (all, 4..1), then four value rows: Vel (scales the held note's velocity, 0-100%), Gate
+  (5-200% of a step), Oct (-3..+3), Semi (-12..+12; its label switches to Key: steps of the key). Values are cells you
+  drag up or down; dragging across paints a run; wheel steps; double-click resets. Oct and Semi show numbers in an up
+  or down colour (theme `stepUp`, `stepDown`).
+- **Each value row has its own length** (1-16), shown on its right; the notes row's length is the line's. Shorter rows
+  end in a white line; drag it or the number.
+- **Every step is a setting** (Arpeggiator knobs 12-75: "Step 5 velocity"...), so lanes, curves and modulators work
+  as for any setting, from the cell's right-click menu. A device may now have 80 settings (modulators stay at 16).
+- **Animated**: the engine reports each Arpeggiator's last step (`Engine::arpStep`, a slot per Arpeggiator in the
+  snapshot); each row outlines its own step.
+- **Reset** in the header writes notes 1 2 3 4 over 16 steps and every row's default.
+- **The card's Oct no longer repeats an own line** (replaces the rule from §165): octaves are per step.
+- **Schema 13**: a line saved before kept its octave inside each step and played the card's Gate; both move into the
+  step settings on load.
+- **Auto voices** count a second voice when a step's gate is over 100%.
+- **A value drag picks its way on its first move** (after the user found a gate drag changing the next gate too): up
+  or down changes only the pressed step; sideways paints a run, except on Gate, where sideways makes that step longer
+  (its bar grows to the right). A click steps the value: up on the cell's top half, down on its bottom half, as in the
+  mockup. Steps past a row's end are fainter (their alpha scaled, not set).
+- **Pattern steps take modulators like tags do**: while mapping, the value steps a modulator can reach are lit in its
+  colour (note steps fade: a modulator can't move them); a click adds +50%, a drag sets how far. A modulated step is
+  outlined in its modulator's colour and has the tags' depth bar along its bottom (how far each modulator and lane
+  moves it, and where it is now), so the amount shows without a tooltip. A cell's tooltip hides while a menu is open.
+
+## 167. Folded SONG and TRACK rails with icons; no count on Devices (16 Nov)
+
+The user found the strip's left side broken in a short in-panel editor: the rails' turned words cut to "S…", the
+TRACK | CLIP switch's words gone or overflowing. They asked for the sections folded by default, rejected three new
+layouts (one flat column, the switch in the pane header, a hidden Modulators button) because they like the upright
+bars, and picked D1 from the mockups: the bars stay, with icons.
+- **SONG and TRACK (or CLIP) start folded** to their 30 px rails, at every strip width (replaces "open unless the
+  strip is narrow" from §163). The fold arrow or the icon opens one; adding a modulator opens its section; a section
+  stays open while one of its modulators shows its settings. A device's section still starts open when it has
+  modulators, and its rail is unchanged (no icon: a card is always tall enough for its word).
+- **Every rail and switch half has an icon**: the song as clips spread over time, a track as a lane with its header,
+  a clip as a block with notes (`drawLevelIcon`). On a rail it sits beside the fold arrow, at the top.
+- **Words only whole, and all or none**: SONG, TRACK and the switch's TRACK and CLIP show under their icons only when
+  every one of them fits, so the bars always match. In practice: words in a tall strip, icons only from about 120 px
+  down.
+- **Short rails list modulators as small dots** in rows of three when a dot (or Macro fader) each, one under
+  another, doesn't fit; a small Macro dot still drags up and down. The rail's **+** goes when there's no room left
+  for it; open the rail to add.
+- **The Devices tab shows no count** (was "Devices 2"): the user didn't like it; the strip shows the devices.
+
+## 168. Every cached picture goes through one guarded framebuffer (16 Nov)
+
+On 15 Nov a Mac (M4, Retina) froze while the user dragged the editor's pane divider. 2.0.10 (main, 39a7462) made
+`CachedLayer` draw directly while its size changes and when it would be huge: measured on a Retina-sized test Rack,
+a 40-step pane drag asked for 3.2 GB of textures before and 0.1 GB after. Merging main into this branch, two holes
+were left, and one rule was too loose:
+- **Zooming the rack** made a new texture per zoom step for every cached layer, since the size in pixels changes
+  even when the widget's doesn't.
+- **The modules' panel artwork** sat in a plain `FramebufferWidget`. Zooming in on Tessera's 30 HP panel made a new
+  texture of up to 140 MB at every step.
+- **The huge-texture limit** checked the transformed size, but Rack's texture is that times the pixel ratio again
+  (measured: 4x the point size per side at pixel ratio 2), so 8192 let through 16384 px textures on Retina.
+
+So `GuardedFramebuffer` (`src/ui/widgets/GuardedFramebuffer.hpp`) holds the rule, and both `CachedLayer` and the
+panel art use it: it draws directly while its size or zoom changed in the last 0.25 s, or when the real texture's
+longest side is over 8192 px; once settled it caches again, one texture per change. Measured after: a 10-step zoom
+makes no Tessera textures (only Rack's own rail tile, which we can't change); a 40-step pane drag asks for 94 MB in
+total. The branch has no other framebuffers or NanoVG images. CLAUDE.md now forbids plain `FramebufferWidget`.
+
+## 169. No "Made from the held notes again" (16 Nov)
+
+The Pattern grid's right-click menu lost **Made from the held notes again**: the user found it pointless, and the dice
+beside it already writes a line from the held notes (one control per idea). The menu keeps **Reset**; undo still
+brings back an untouched line.
+
+## 170. Arpeggiator Hold: the next chord replaces the last one, also back to back (16 Nov)
+
+The user saw Hold "still changing notes" and asked whether it makes sense. It is a latch: the last chord plays on
+through rests until new notes come. A bug made it look broken: chords back to back start on the tick the old ones
+end, and the new notes arrived before the old ones' ends, so Hold took the old chord as still held and added the new
+notes to it, an arpeggio over both chords. A note ending at the new note's start now counts as let go. Kept, since
+rests and live playing need it; the manual now says what it does.
+
+## 171. Pattern rows for up to 8 held notes (16 Nov)
+
+The user asked why Pattern had only 4 note rows when a chord can have more; notes 5 and up only sounded on "all"
+steps. Agreed from the mockup ("Pattern rows follow the chord"):
+- **Up to 8 note rows.** The grid shows a row per note of the biggest chord the arpeggio gets, at least 4: the most
+  notes its clips send at once through the devices before it (`Song::notesInto`, counted again only after an edit),
+  the most it has held while playing this session (`Engine::arpHeld`, reported beside the step), and the highest row
+  its line already uses, so a written step never hides.
+- **The card keeps its 150 px picture.** Up to 4 notes nothing changes (note rows 11 px, value rows 16). With 5-6 the
+  value rows are 14 px, with 7-8 13 px, and the note rows share what is left (about 7 px at 8). Note labels shrink
+  with them.
+- **Schema 14**: a step's row has 4 bits (0 rest, 1-8, 9 all). Lines saved before had "all" at row 5; it moves to 9
+  on load.
+- The line the dice writes still uses rows 1-4; a row past the notes held still plays from the lowest an octave up.
+
+## 172. Pattern steps light any notes; Vel 0 is a rest; Move counts semitones, key steps or chord notes (16 Nov)
+
+The user wanted a step that can be switched off (and modulated), and the note per step modulated, and asked to
+rethink the grid. Agreed on the "Free cells" mockup, with the user's own rule for notes past the chord:
+- **Every cell is its own switch.** A step is a set of rows (a bit per held note, `chain::stepOf`): several lit is a
+  chord, none a rest. The "all" row is gone. Drag along a row to light or clear a run (`PatternNoteDrag`, one undo
+  step). The first click on an untouched line still fills it from the dice; the clicked step plays only that note.
+- **Rows past the notes held wrap around in the same octave** (user rule; replaces "an octave up" from §166). A note
+  twice in one step plays once, so a full step is exactly the chord. Octaves come only from Oct.
+- **No On/Off row: Vel 0% is a rest.** The step's notes stay written and show as outlines. Modulating Vel switches
+  steps on and off.
+- **The Semi row is the Move row**, its unit a chip by the name (`kArpMoveUnit`: semi, key, chord). In chord, +1 moves
+  every note of the step to the next held note, wrapping around; the grid outlines where a moved step plays now (only
+  when the Move row is as long as the notes, so columns line up; the wrap count is what the arpeggio holds, or while
+  stopped what its clips send it).
+- **A whole-row setting per value row** (`arpLaneShift`, "Move, every step"...), added to each step and clamped to the
+  step's range. Mapping a row's name maps it: one route for the whole row (a modulator reaches at most 8 settings, so
+  16 step routes were not an option). Wheel and right-click on the name set or automate it. The Arpeggiator now has
+  80 settings, the limit; devices load with defaults for settings their saved song didn't have.
+- **Schema 15**: old steps (one row, 9 all) become bits, all every row; the key switch's 1 becomes Move by key steps.
+
+## 173. The Pattern grid lights what plays now (16 Nov)
+
+The user didn't see notes move when Move counted chord notes, and didn't see that a 0% Vel step is a rest. An On row
+per step was designed and dropped again: the user settled on Vel 0 as the rest (no note, no gate) and asked for the
+chord moves to show. Now the note cells are what each step plays in the current pass of the line: every value row
+read at its own place (rows have their own lengths), modulators as they are now, chord moves wrapped around what the
+arpeggio holds (the engine's count, so the grid matches what sounds; while stopped, what the clips send it). Notes
+written but playing elsewhere or resting are outlines; a 0% Vel cell reads "rest". This replaces the outline-only
+display of §172, which only worked when the Move and Vel rows were as long as the notes.
+
+## 174. QA fixes, 17 Nov
+
+From the QA pass of 16 Nov (Trello BUGS):
+- **The device strip owns its keys while it has the focus**: Ctrl+X cuts the selected cards and modulators (it used to
+  cut the clip's notes), Ctrl+A selects every card, Ctrl+Shift+A clears the strip's selection. Messages say Cut,
+  Duplicated, Deleted, not Pasted for everything; the menu gains Cut.
+- **No Devices tab on an audio track**: the switch is Audio | Mixer (it has no devices; the tab did nothing).
+- **The mixer header lost its per-track mini meters**, left from when the mixer was a folded pane of its own: the
+  strips under it show the same, and empty they looked like a stray line.
+- **A and Shift+A left the shortcut table**: nothing handled them (Maximize automation lane, Show used lanes), so the
+  help overlay promised keys that did nothing. They come back with the feature.
+- **Audio editor: gaps are hatched**, and the faint rest of the file only shows outside the clip. Deleting the last
+  part used to look exactly like the clip ending there.
+- **The audio editor's name or "Comp" label sits on a backing**, readable over the waveform's first peaks.
+
+## 175. Sends from drum lanes and inputs; sends as sliders; FROM on the receiving track (17 Nov)
+
+- **The user asked for sends from a drum lane or from one input** of a track with several. A `Send` now says where it
+  comes from (`SendFrom`: the whole track, the clips, a lane IN, or one Track Out's IN by module ID), kept with the
+  track's other sends, so undo, saving and the no-loop rule are unchanged: a part's send counts as its track's.
+- **A part sends what it adds to its track**: after its own level and pan, never through the track's fader, so the kit
+  can go down while the snare's reverb stays. The track's mute and solo stop it, as for the track's own sends. No
+  before/after choice and no Send lane for a part yet.
+- **Each Drum Out lane IN writes its own return slot** (claimed while it has a cable, so eight per Drum Out don't
+  crowd the 128 slots); Tessera sums them for the kit and reads one again for a lane's send. An input's send reads
+  its Track Out's return slot again. A part whose cable is gone keeps its place in the player's sends and plays
+  nothing, so meters and Send lanes, found by index, still line up.
+- **Sends are sliders**: a dot was rejected because nobody could tell it could be dragged. Every send row has a
+  groove, a fill in the other track's colour, a 0 dB tick and a handle; the level shows on the right when it fits,
+  else while pointed at or dragged. Dots stay only for panes too short for rows.
+- **FROM on the receiving track**: the user wanted to set send levels on the reverb itself. A track that receives
+  sends, or has an effect loop, lists a slider per incoming send (named "Drums · Snare" for a part) and **+ From**;
+  it is the same send as on the sender, so both always agree. It replaces the "← N" count and its list.
+
+## 176. Ties, glides and voice allocation (17 Nov)
+
+Design: docs/design/TIES_VOICES.md, agreed with the user on the canvas boards "Ties" and "Voices".
+
+- **A tie is a mark on the note** (`Note::tied`: "continues the note before it"), not an overlap rule, so what you
+  see is what plays. Its partner is found by one rule (`ties::partners`): same channel, starts earlier, still
+  sounding at its start, nearest pitch, each continued once; round a clip's loop, the loop's last note. No partner:
+  an open dot, and it plays as a normal note.
+- **The engine takes the partner's voice over** (`VoiceAllocator::continued` / `takeOver`) instead of starting a gate.
+  The snapshot plays a continued note one tick past its end (and never shortens it by the gate scale), so the tied
+  note always finds it still sounding: ends and starts are worked out apart and may round a sample apart, and a
+  single low sample would start an envelope. Stop, the song loop wrap and clip switches `cut` voices, so no tie
+  carries over them; a clip's own loop does carry one.
+- **The glide is a pitch line across the joint, owned by the tie** (the user: "adjustable on both ends"):
+  `glideBefore` inside the first note, `glideAfter` inside the second, `glideShape` as a curve's tension. No
+  track-wide glide time: a slew limiter does that, as long as nothing retriggers. The engine runs it per voice
+  (`VoiceGlide`): the first note starts moving from the snapshot's `GlideOut`, and the tied note carries on from
+  wherever the voice is, so a device that changes the interval never makes a jump.
+- **Untie keeps the glide by default** (J), written into both notes' pitch curves, so nothing is lost; the tie's
+  right-click menu also removes it. Slicing a tied note leaves its right part untied.
+- **Voice allocation is about which channel a note lands on**, as Rack's MIDI-CV: Rotate (default, today's), Reuse,
+  Reset. The user dropped a Mono/Poly switch, note priority, per-playhead voices and a track glide: the voice count
+  stays Auto or 1-16, and playheads keep deciding their own. "Low to high" was agreed as a fourth option, then folded
+  into Reset (notes starting within 1/32 go low to high, from `NoteEvent::lowerLater`), which gives the same result.
+  Under Rotate a playhead's voices keep their first-free rule, or a one-note playhead would send several channels.
+  Rotation restarts when play starts, so every play lands the same.
+- **One voice is the mono case**: overlapping live keys play legato and record as ties (also a CV pitch change with
+  the gate held, DECISIONS §24); other tracks record chords as before.
+- **Export**: no format has ties. MIDI writes a 1/128 overlap, or with MPE and "Ties as: One note with bend" one note
+  whose glides are bend. DAWproject writes the overlap only: a DAWproject note may hold "transpose" points, but its
+  reference doesn't say whether their times count from the note or the clip, so they wait until that is checked.
+  MIDI import ties a one-line part's hand-over overlaps, so Tessera's own files come back tied.
+
+## 177. Note curves, bend and pressure lanes in MIDI and DAWproject export (17 Nov)
+
+- **The user asked whether pitch, timbre and pressure reach DAWproject: they didn't**, and neither export wrote the
+  pitch bend and pressure lanes a bend wheel, aftertouch or MIDI import makes. Both do now.
+- **MIDI**: a bend lane goes out as pitch bend, its 0..1 value straight as the wheel position (0.5 = middle, the
+  inverse of what import and recording store), after an RPN 0 message giving the lane's range (±2 by default), so the
+  receiving synth bends as far as Tessera did. A pressure lane is channel pressure. With MPE both go on the master
+  channel; with note channels on each channel the notes use. They follow the Automation choice, like CC lanes.
+- **DAWproject per-note curves**: the reference names the expressions but gives no units, ranges or time base. We
+  followed what the tools that meet real Bitwig files agree on: an importer tested on Bitwig 6 projects (point times
+  in beats from the note's start, pressure written by Bitwig as "linear" 0..1, timbre 0..1, one curve as the note's
+  direct child and several in a Lanes), DawVert's writer (per-note pitch is "transpose" in "semitones") and the
+  official schema (a note holds one timeline child). Our files validate against the official Project.xsd.
+- **DAWproject bend and pressure lanes**: "pitchBend" and "channelPressure" Points on the track, "normalized", the
+  raw 0..1 value (0.5 = no bend), as the same importer reads Bitwig's. The bend range has nowhere to go in the format.
+- **Ties in DAWproject**: the overlap stays, and each glide is written into the two notes' "transpose" curves (the
+  untie-keep math, `ties::addGlide`), so a legato instrument elsewhere plays the glide too.
+- Still untested in Bitwig itself: we found no Bitwig file with note expressions to compare against. QA step below.
+
+## 178. DAWproject import (17 Nov)
+
+- **The user asked for it, "the same way as MIDI import", and agreed it replaces the song**: a project brings its own
+  tempo, markers and scenes, which half-merged into a song would only confuse. Roll ▾ → Import DAWproject…, after the
+  same OK as Open project; one undo step brings the old song back (the module's JSON, as Open project).
+- **No library**: a DEFLATE unpacker (`inflate::raw`, with a 9-bit look-up table so audio unpacks quickly), a zip
+  reader that follows the central directory (stored and DEFLATE, up to 4 GB; `zip::list`, `zip::extract`), and a
+  small XML reader (`xml::parse`, numbers read in the C locale). Unpacking runs as a file job on a worker; the files
+  go into the patch on the UI thread (AudioStore::importFile, as dropped files), from a folder each so the patch keeps
+  their names.
+- **Mapping** (`dawImport::readProject`, pure and unit tested against projects in the shapes Bitwig 5 writes, and a
+  round trip through our export): note tracks → instrument, audio and effect tracks → audio tracks (an effect track
+  keeps the sends to it), a group track → a group with its level and pan (deeper groups flatten), the master's
+  channel → the master. Volume "linear" is gain (1 = 0 dB), pan "normalized" 0..1. A send at -inf that no lane moves
+  is left out: some programs list one from every track to every effect track. Timeline clips keep place, length,
+  playStart (the instance's offset), loop and fades; nested clips (audio sits one level down in Bitwig's files) are
+  read through. Times in seconds count at the project tempo.
+- **Audio**: warps that are a straight line give the clip tempo (48 beats over 19.2 s = 150) and its start; bent
+  ones become warp markers. The project's sample rate counts the frames; the file's own rate wins when it differs.
+  A file that can't be read leaves its clips showing it missing, so Find in a folder can bring it back.
+- **Notes**: channel 0..15 → 1..16; per-note "transpose" (semitones), "timbre" and "pressure" (0..1, "linear" or
+  "normalized"), times from the note's start (as §177 writes them). A one-line part's hand-over overlaps become
+  ties (`ties::tieHandovers`, as MIDI import), so our own exports come back tied.
+- **Lanes**: CC, pitch bend and channel pressure → MIDI control lanes (each CC one AUTO channel per track, eight at
+  most); volume, pan and send parameters → mixer lanes on their track (master volume on the master).
+- **The report** lists what had no place: plugins by track (the sound is rebuilt in Rack), plugin and mute lanes,
+  gain/pan/formant note curves, tempo and time signature changes (Roll has one of each), and what passed a limit.
+  Plays switches to Timeline when the project has timeline clips.
+- Checked in the hidden Rack with real Bitwig 5 projects found online (a Canon arrangement with a warped guitar,
+  the reference mixer demo), through a stand-in for the dialog tool (zenity draws nothing on the hidden display).
+
+## 179. Clip control: launching clips from a MIDI controller (17 Nov)
+
+- **User requests**: launching launcher clips from a MIDI controller. Looked at how it is done: pad grids that show a
+  window of the launcher and light up to match it, MIDI learn for any control, and program changes for scenes. The
+  user asked for all three ("industry standard, and flexibility"); the picks were agreed: Launchpad X, Launchpad
+  Mini MK3, APC mini MK2, a generic 8x8 note grid, learn, and program changes.
+- **One place**: Roll's own menu (Clip control), with its own MIDI input and output, beside the recording input. No
+  new module: the Roll carries it (§153's lesson). Settings, learned controls and the devices are saved with the
+  patch, not in project files (devices belong to a setup, like the recording input).
+- **Pure logic** (`clipControl::decode`, `lights`, `moved`; unit tested): the module only owns the ports and calls
+  the same launch, stop and scene functions a click calls, on the UI thread once a frame, so launches follow the
+  launch quantize exactly as clicks do. A frame of delay (about 16 ms) is below any quantize; with quantize Off it is
+  the same as a click's.
+- **Protocols from the makers' programming guides**: Launchpads in Programmer mode (SysEx `F0 00 20 29 02 0C|0D 0E
+  01 F7`, back with `00`), pads 11-88, right column CC 89-19, top row CC 91-98, channel 1 steady / 2 flashing / 3
+  pulsing; APC mini MK2 pads 0-63 from the bottom left, track buttons 100-107, scene buttons 112-119, Shift 122,
+  the channel picking brightness (2 = 50%), pulsing (9) or blinking (13). Both share one 128-colour list: a clip's
+  colour lights the pad nearest it.
+- **Layout**: pads launch (an empty pad stops its track when its slot has a stop square, as a click does); the right
+  column or scene buttons launch scenes; APC track buttons stop tracks; arrows (APC: Shift + the last four track
+  buttons) move the window a step; a Launchpad's top-right button stops all. Lights: a waiting clip dim in its
+  colour, playing pulses, queued flashes, recording pulses red, a stop that waits flashes.
+- **Learn**: a slot's or scene's menu → Learn MIDI; the next pressed note, CC or program change is bound. One
+  control does one thing and one thing has one control (learning again replaces). A learned control wins over the
+  grid. The learned slot shows a dot. Program change n launches scene n (first = 1 in the menus' counting).
+- Only lights are sent; Tessera never moves a controller's faders. Checked in the hidden Rack with Rack's computer
+  keyboard as the controller (grid and learn); the lights are unit tested only, no controller here.
+
+## 180. Live input lights the keys; playheads never move the notes view (17 Nov)
+
+- **Input lights.** A key held on any live input (MIDI, REC CV, keyboard play) lights on the piano roll keyboard
+  with an accent outline (a faint accent fill when the clip isn't also playing it), and a faint accent band runs
+  along its grid row. Drum lane names light the same way. The user chose: every incoming note lights, armed or not
+  (it also shows the controller works); a look apart from playback, so playing along reads apart from the clip;
+  and the row band, to show where the note would go.
+- The engine's capture copy of each live note (sent always, track 0) now carries `inPitch`, the pitch before the
+  song's key snapped it. Instrument tracks light the played pitch; drum tracks the incoming one, since that picks
+  the lane. `HeldInput` counts holds on the UI thread, so a key held on two inputs stays lit until both let go.
+- **Follow.** With playheads on the open clip, the piano roll never follows, whatever the follow setting: each
+  playhead reads its own place, and following the clip's own position made the view jump. The View menu says so.
+
+## 181. Hidden panes get a zero size; axes refuse sizes that aren't real numbers (17 Nov)
+
+- Freeze, seen twice by the user: in-panel editor with the notes pane maximized (device strip open), then restore
+  (top-right button) froze Rack, with memory growing to 8 GB. A crash dump showed `Ruler::drawTimeLabels` drawing
+  lines without end: the arranger's time axis had an infinite width.
+- Cause: `PaneStack::layout` never set the hidden pane's box, so it kept Rack's default infinite size. Hidden widgets
+  still step, so the arranger fitted its time axis to that width. After restore with a short top pane
+  (`topFraction` 0), the arranger's lanes were under `kMinViewSize`, so it skipped refitting, and the ruler drew to
+  an infinite right edge.
+- Fix: a hidden pane gets a zero-size box, and every axis takes view sizes through `viewSize()`, which turns
+  anything not finite (or under 1 px) into 1. Reproduced and checked in the hidden Rack with the user's patch.
+- Audit of the same kind of fault (17 Nov): every loop that steps through space or time, and every hidden widget
+  that keeps stepping. Loops over ticks step by guarded amounts (grid spacing, snap, region length, playhead cycle,
+  all checked > 0) and end at a guarded axis edge. Two more hidden views kept Rack's infinite size until first
+  shown, the mixer in the lower pane and the audio editor (it fitted a zoom of 0 from it): both now get a zero size
+  while hidden, and the audio editor ignores a size that isn't finite. Two drawings stepped a float along a whole
+  note or clip, not just the part in view (a moved note's dashed outline, a missing file's stripes): a long one
+  zoomed in took millions of steps, and past 2^24 px a float stops moving; both now draw only what is in view.
+  `main` has none of these views; the pane and axis fix covers it (PR #21).
+
+## 182. Copied modulators paste into any section (17 Nov)
+
+- The user copied an LFO from the track and wanted to paste it into a device: a paste only went into the shown
+  track's or clip's section (song modulators only into the song). Now the section you paste into decides:
+  right-click a section or a modulator row in it → **Paste … into …**; right-click a card with only modulators
+  copied → that card's DEVICE section; Ctrl+V uses the selected section, row or card the same way. Without such a
+  target the old places hold, so copied devices with their track modulators still keep their moves.
+- `pasteChainItems` takes an optional `into` place; every pasted modulator, song ones too, goes there, up to that
+  section's limit. Moves out of reach from the new place go, counted in the message (a device's own modulator
+  reaches only its device). Pasted names are numbered afresh where taken ("LFO 2").
+
+## 183. Track Out inputs can be named (17 Nov)
+
+- The mixer called each Track Out input strip "IN", "IN 1", "IN 2"; the user wanted to rename them, from the mixer
+  and from the module. The name lives on the output module (`inputName`, saved in its patch data, like its Level),
+  so it moves with the module; set from the strip's right-click **Rename…** or the module menu's **Input name**,
+  one Rack undo step each. Empty goes back to the numbered name. Used by the input strip, the sends' FROM rows and
+  the sources list. Effect loops keep the name of the module they feed.
+- Same day: "N tracks play notes only" in the mixer was drawn over the Master strip's name when the tracks filled
+  the width; it now takes only the free room after the last strip (shorter, or hidden, when there is none).
+
+## 184. Next actions: clips that move on by themselves (17 Nov)
+
+- **User request** (GitHub issue #20): after a few loops a clip plays the next one, a random one, and more. The user
+  asked for as much flexibility as we can give. Agreed from a mockup with three boards (slot tag, clip menu,
+  inspector).
+- **Actions**: Keep looping (the default), Play next, Play previous, Play first, Play last, Play random (this clip
+  too), Play other (never this clip), Round robin (next, wrapping to the first), Go back (the clip that played
+  before), Stop. "Next" is the slot to the right: tracks are rows, scenes columns. Next and Previous stop at the ends;
+  Round robin wraps. Play other with no other clip keeps playing.
+- **Settings per clip** (`NextActionSettings`, saved in the clip as `next` only when it differs from the default):
+  After a count of loops (default 4) or bars; How often (a chance, default Always) with an Otherwise action; Pick from
+  the whole track or the clip's block (a run of clips between empty slots). A clip that plays once does its action
+  when it ends, whatever the count. "How often" is not called "Chance": the CLIP section's dice row already is.
+- **Engine**: the count runs from the launch. One launch line before it ends (the clip's own launch quantize, else the
+  song's; at most the whole count), the action is rolled and its target goes into the track's queue as an ordinary
+  launch for the count's end. So the target blinks yellow as any launch does, a random pick shows before it plays,
+  stop and reset carry it out as they do any queued launch, and a launch by hand replaces it. A roll that comes out
+  Keep looping starts a new count at the old one's end. The pick (`pickNextAction`) is pure model code with tests;
+  the dice is the engine's own counter mixed with the play roll, so it allocates nothing.
+- **Next actions switch** in the Launch ▾ menu (beside Record into timeline, and in the song menu when the header has
+  no room): off holds every clip where it is, calls off a next action already waiting, and fades the slot tags. It is
+  a performance switch saved with the patch, like Record into timeline, not an undo step. The mockup drew it as a
+  header pill; the header has no room for a third control, so it joined the menu that holds the other launch switch.
+- **Slot tag**: the action's icon and count at the slot's right ("→ 4", "↻ 8 bars"), counting while it plays ("2/4");
+  the icon alone on a narrow slot, nothing when the name would lose its last 36 px.
+- Not done: scene follow actions (a scene that launches the next scene), which the launcher design (S4) also plans;
+  the timeline ignores next actions; MIDI and DAWproject export don't write them.
+
+## 185. Back to the timeline: per track, from the Plays switch, or as a next action (18 Nov)
+
+- **User report**: after launching a clip over the timeline, getting back took a trip through Clips and back to
+  Timeline. The "Back to timeline" button on the ruler was added before the ruler, so the ruler covered it and took
+  its clicks (since 2.0.0); shown, the user found it ugly and all-or-nothing.
+- **Looked at** the reference app: each track's launcher row ends with a "switch playback to the timeline" button,
+  mirroring its stop button at the row's start, plus one for all tracks at the end of the scene row; both act at once,
+  not on the launch quantize. A clip's next action can also return the track to the timeline.
+- **One track**: a ↩ per track row at the clips panel's right edge, only while the timeline plays (Plays on
+  Timeline). It sits in a fixed column, not after the last scene, because the panel is usually narrower than its
+  scenes and the end of the row would be scrolled away. Lit while the track plays a launched clip; faint (not hidden)
+  while it plays the timeline, so the column never jumps. Acts at once, like the reference.
+- **All tracks**: the user's idea. The Plays switch keeps its job (Clips silences the timeline on tracks with nothing
+  launched; the panel's PLAYS and its CV map use it), and its lit Timeline half, which a click used to ignore, now
+  brings every track back while any is away. The editor's half wears ↩ instead of ▶ then. On the panel the arrow
+  squeezed the word against the pill's edges (the user: "doesn't look that good"), so there TIMELINE is outlined
+  instead of filled: the timeline plays, but not on every track. No second all-tracks button: one control per job.
+  The ruler button is gone.
+- **Next action "Back to timeline"**: queued like any next action (kBackToTimeline in the track's queue), carried out
+  at the end of the count; while Plays is on Clips there is no timeline to go back to, so the track stops.
+
+## 186. Clips with nothing launched start the picked scene (18 Nov)
+
+- **User report**: back on Clips after the timeline, nothing played; Play in Clips did nothing either. Going back to
+  the timeline clears what each track launched, so Clips had nothing to play.
+- **Rule**: while the clips play and no track plays or waits for a launched clip, the scene picked on the panel
+  (PREV / NEXT / SCENE; the first by default) comes in: when the Plays switch moves to Clips (on the launch line while
+  playing, ready to start while stopped), and when the transport's own start runs (the play button, RUN, the
+  editor's play and play-from-here: `Engine::start`). Starts from a launch or a count-in call `play()` and are left
+  alone, so a recording count-in never launches clips by itself. With anything launched, nothing changes.
+
+## 187. Back to the timeline on the launch line, and per track while the clips play (18 Nov)
+
+- **User requests**: "back to timeline" in Clips mode too, per track and for all, in the clip launcher; and it should
+  respect the launch timing "just like the normal clip launcher". (The reference app returns at once; Tessera's
+  launches wait for the launch quantize, so the return does too, for one rule.)
+- **Per track state**: a track can follow the timeline in Clips mode (`onTimeline`), so one track plays the timeline
+  while the others play clips. `followsArrangement` is: Timeline mode and not taken over, or Clips mode and sent back.
+  Launching or stopping the track takes it off; switching the Plays switch starts afresh (Timeline: every track
+  follows; Clips: none does). Reset clears it. The audio player, the piano roll's playhead and the editor's "plays the
+  timeline" checks all read the same state (LauncherStatus::onTimeline).
+- **Timing**: BackToArrangement events queue `kBackToTimeline` at the next line of the song's launch quantize (now
+  while stopped, or with `immediate`), as a stop does; the ↩ blinks yellow while it waits. The timeline restarts from
+  the line itself, so a note right on it plays. Setting the Plays switch to Timeline still switches at once.
+- **Controls**: the ↩ column shows in both modes; a ↩ at its top (in the scene header row) sends every track back.
+  The Timeline half of the Plays switch stays the all-back in Timeline mode (both are the same event). In Clips mode
+  the all-back keeps the switch on Clips: every track follows the timeline on its own until the switch moves.
+- **Display**: in Clips mode the timeline dims row by row, and a track on the timeline keeps its row (and the ruler)
+  lit; its slots step back as in Timeline mode.
+- The next action "Back to timeline" now does the same in Clips mode (it stopped the track before).
+
+## 188. The clips panel as a grid; a title bar in taller slots; the own-devices card at every size (18 Nov)
+
+- **User request**: "why is there a gap between tracks in the clip launcher, can't that be more like a grid?" Rows
+  are track rows (48 px by default) but slots stopped at 30 px; an automation lane left a blank band.
+- **Agreed from mockups** (canvas boards 4 and 5): a slot fills its row, kSlotGap (1 px) from its neighbours, with no
+  height cap. From kSlotTitleBarFrom (52 px) a slot has a title bar kSlotTitleBar (22 px) high with the launch button
+  and the name, and its notes take the full width below, as timeline clips look; shorter slots keep one line. A
+  square button in the corner of a tall slot (board 5, A) was turned down: it left a hole under it.
+- **Default track height 32 px** (was 48): the user showed the look they wanted, one line of slots like the old 30 px
+  ones, as a grid. A 48 px row made 46 px slots whose square launch button squeezed the name. Tracks never resized
+  (old patches too) take the new default; resized ones keep their height. Under 40 px an audio track's header hides
+  its level line, as it did for short tracks before.
+- **Lane rows** keep their height so the clips line up with the timeline, drawn as a quiet band with the column lines
+  running through.
+- **Own-devices mark** (board 6, the user read the old dot as MIDI): the same device card as wide slots, at 12 × 9 px
+  on narrow ones, at the name row's right end (the name gives up its room); a tooltip says what it means, on or off.
+  The dot is gone.
+
+## 189. Emptying a clip's own chain sends it back to the track's devices (18 Nov)
+
+- **User report**: after deleting a clip's devices the own-devices card still showed. Deleting them one by one left
+  an own chain with nothing in it, which plays dry (skips the track's devices): a hidden state.
+- **Rule**: removing or moving away the last device and modulator of a clip's own chain also turns the clip's own
+  chain off (`hasOwnChain` false) in the same undo step, so the clip plays the track's devices and the card goes; a
+  toast says "<clip> plays through the track's devices again". Devices ▸ Delete its own devices did this already.
+  A clip can no longer play dry on purpose through an empty chain; an explicit choice for that can come later.
+
+## 190. Moving between panes: ⟷ for the clips, folded bars, one key per view (18 Nov)
+
+- **User requests**: a button to maximize the clip launcher across (in both editors), used with the pane maximize
+  for a clips-only view; "very simple to navigate between the panes"; Notes and Mixer showed the same key (F4 was one
+  toggle for both). Agreed from mockups (canvas boards 7 to 9).
+- **⟷** (Icon::Widen / Narrow) does what F2 did: the clips take the room their scenes need at their usual column
+  width, and the timeline keeps the rest, because a next action can send a track back to it (the user asked to keep
+  it visible; stretching columns was turned down). With more scenes than fit, the timeline folds to a strip; the
+  strip is drawn plain with the word TIMELINE and brings the timeline back on a click. The button sits beside the
+  song pane's maximize in both editors (the panel editor has no room above the scene buttons; there it sits left
+  of the full-editor button, and the folded strip is wider by that button so nothing covers the clips' ↩ column).
+- **Folded bars**: a maximized pane no longer hides the other one completely. It folds to a kFoldedPaneBar (22 px)
+  bar with its switch: Notes (Audio) · Devices · Mixer at the bottom, Clips · Timeline at the top (Clips brings the
+  song pane back widened), and a restore arrow. Built into PaneStack, so both editors have it.
+- **Revised the same day** (canvas board 10): the corner ⟷ was hard to read and crowded the narrow strip's ruler in
+  the panel editor. It became a handle on the clips' right edge, in the scene buttons' row, half over each side: ›
+  widens, ‹ narrows, in both editors and both states, shown only while widening reveals more scenes (or to narrow
+  back). Folded past the room, the timeline is one tab from top to bottom (PaintedButton): the pane's maximize at its
+  top, the panel editor's full-editor button stacked under it, then ‹ and TIMELINE; a click anywhere brings it back.
+- **Keys**: F2 clips, F3 notes, F4 devices (was F3), F5 mixer: one key per view in screen order. A view key always
+  shows its view, restoring a folded pane first; F2 with the song pane folded brings it back widened. Tab and
+  Shift+Tab are unchanged.
+
+## 191. Release bug batch: paste keeps notes, part lanes, one look per setting menu (23 Nov)
+
+- **Paste and Duplicate remove nothing** (Trello: "I lose the original notes, VERY BAD"). The overlap rule (EDITOR_UX
+  §4.3) still applies to a note dropped by a drag, but pasted or duplicated notes sit on top of what is there, so
+  dragging them away leaves the notes under them.
+- **A Curve modulator opens its settings column too**, beside its section like every modulator, as well as its drawing
+  in the lower pane; a second click closes both. This undoes "A Curve modulator opens no popover" from §132: that
+  complaint was about a floating dialog, and settings now open inline (D6), so the Curve gets the same amounts, Map to
+  knobs and CV out as the others (Trello: "I don't see the same options for the curve").
+- **Clips slots: the launch button is a strip down the slot's left side** (canvas board 5, option B), at most
+  kSlotLaunchWidth wide, square in a short slot. From kSlotNameRowFrom tall the name sits at the top, right of the
+  strip, and the notes fill the room below. Revises the title bar of §188.
+- **Everything in the mixer can be automated** except groups (a lane belongs to a track). A Volume, Pan or Send lane
+  has a `part` (SendFrom::key()): 0 for the whole track, else a drum lane, an input or the clips. The engine never
+  plays part lanes as the track's fader; the audio player evaluates them once a block, plays the clips' own, and
+  publishes the others in PartLevels on the output bus, which each output module reads every 32 samples in place of
+  its saved level (a mixer drag still wins). Cost: one atomic load per lookup for a slot without lanes; slots are
+  cleared only on a snapshot swap.
+- **Playhead On is a setting like the others**: in the chip menu it is a submenu (Off / On, then Draw a curve and
+  Modulate, automate…), and every playhead setting submenu uses the tags' two words. "Switch it on and off in time"
+  is gone (the user: "that language should be unified").
+- **No "Draw a curve" anywhere** (the user: "remove completely… we already have modulators"). A setting moves only
+  through **Modulate, automate…**; a Curve is a modulator picked like the others. Picking Curve under Modulate with ›
+  A new modulator… makes it turn the setting all the way and names it after the setting (animateWithCurve, now for
+  any modulator section). The lower pane's "empty curve waiting for a first point" state is gone with it.
+- **Enter is Stop** (stopped: back to the start), as the ■ button.
+- **DAWproject clips that `reference` another clip's timeline** are read through it (a real project had 38).
+
+## 192. The mix's per-sample work packed for a busy rack (23 Nov)
+
+- **Measured with Rack's meters** on a real patch (9 tracks back on Track Out IN, a drum track's lane INs, synths
+  and a reverb between them): Roll 7.2% stopped, 9.0% playing; timers inside it put 1,250 ns of each sample (of
+  20,833 at 48 kHz) in the audio player while stopped. Alone (the same song, no output modules) it was 1.8%.
+- **Why**: between two of Tessera's samples Rack runs every other module, so the player's state is fetched from
+  memory again each sample. A warm cache halves the cost (benchmark: "mixing what comes back on Track Out IN").
+- **What changed**: each track's per-sample state comes first in TrackRun (two cache lines), the snapshot carries
+  one MixHot line per track with its slots inline, a track without audio clips skips the clip work and its six
+  voice records (an `anyVoice` flag), and the delay lines are written only while some track needs a delay.
+- **Result**: about 6.2% stopped and 7.3% playing on the same patch (averages of five meter readings on a loaded
+  machine); the benchmark went from about 1,600 to 1,000 ns a sample. Further gains need the player's state laid
+  out by field across tracks; left for after the release.
+
+## 193. Seven more Arpeggiator patterns, related ones side by side (23 Nov)
+
+- **User request** (a list of patterns from another program): added Converge & diverge, Thumb up, Thumb up-down,
+  Pinky up, Pinky up-down, Random other and Shuffle; renamed Up-down full / Down-up full to **Up & down** / **Down &
+  up**, and Shuffled to **Random once** (it keeps one order per set of notes; Shuffle mixes again every round).
+- The order keeps related patterns together, so the list was reordered: schema 16, and growArpPatterns finds each
+  saved pattern by name (lanes, modulators and curves on it too).
+- The patterns that keep an order share one function, chain::arpOrderIndex, with the card's picture, so the picture
+  always draws what plays.
+
+## 194. Modulators move by drag, copy with Ctrl (23 Nov)
+
+- Agreed from canvas board 4: drag a row (a Macro by its colour dot) to another section to move it, keeping its ID;
+  Ctrl+drag copies, with a green "+ Copy" on the dragged row. The section under the pointer lights up; amber with a
+  count when moves would go out of reach (modulatorLanding). A copied Curve keeps only moves to things copied with it.
+
+## 195. Idle costs next to nothing: sleeping tracks, listening rests, quiet flags (23 Nov)
+
+- **User**: "Performance on idle is not tolerable." Measured with cycle counters inside Roll and Rack's meters on a
+  real patch (9 tracks back on Track Out IN, effect loops, a Track Out on the master).
+- **Engine**: stopped, a track's lanes hold still, so once nothing has woken it for kSettleTicks control ticks (past
+  the longest slew) a track whose modulators send no CV out sleeps (idleUntil = kAsleep) until wakeAll(). Knob lanes
+  are skipped while stopped, and settled modulators run at an eighth of the control rate (their graphs and the knobs
+  live notes read; a live note wakes everything).
+- **Mixer**: a track rests once its whole sound (clips, INs, what is sent to it) has been under kQuietVolts (1 mV,
+  80 dB under 10 V; synths leave a noise floor of a fraction of that) for a block, longer than its delay
+  compensation or an effect loop's round trip. Resting, it listens: output modules raise a per-slot "loud" flag on the
+  return bus when they write sound, the flags share one cache line, and a resting track wakes on the sample they rise.
+  A send counts as feeding its receiver only while it carries sound. With every track resting the track loop is
+  skipped; the master's chain rests the same way; stopped with no INs at all, whole samples are skipped inside a
+  block. A resting track's delay line is marked empty instead of written, and its OUT frame written only until both
+  halves of the double buffer hold silence.
+- **Module**: launcher status publishes at 256 samples (about 190 Hz), the MIDI queue is only asked while a device is
+  picked, and the scene, launch and reset jacks are only read with a cable.
+- **Result**: the patch's Roll went from about 6.2% to 2.3% of a sample stopped, and 7.3% to about 5% playing (Rack's
+  meter, five readings each); about the level of a Drum Out on the same machine.
+- **Fixed after review**: slowed modulators move by the time that passed (a free LFO, an envelope and a Note
+  follower ran 8 times slower while stopped), and a modulator that turns another module's knob keeps the full rate,
+  like one that sends CV out (DEVICES.md §3), so the mapped knob moves as smoothly as before.
+
+## 196. A device card folds to a rail; both folds are saved (23 Nov)
+
+- Agreed from canvas board 3: two folds, each with its own arrow. The arrow before a card's power dot folds the whole
+  device to a 30 px rail (arrow, power dot, name up the rail, a dot per modulator at its foot; a dot opens that
+  modulator's settings beside the rail). The arrow at the top of the DEVICE section folds only the modulators, as
+  before. Opening the card brings the section back as it was.
+- Both are view settings, not song data, so they never land in undo; unlike the other strip folds they are saved with
+  the patch (EditorState foldedDevices, deviceModsOpen), because a long chain is folded on purpose and should stay so.
+- Folding a card closes its open modulator's settings, the same as folding a section.
+
+## 197. Parts, sends and receives as rows under a track (23 Nov)
+
+- **User** (Trello): "sub-tracks in the main track header, so the user can mix them without opening the mixer". Agreed
+  from canvas board 5: a track opens to its parts (the mixer's lane and input strips), its own sends and the sends it
+  receives; a part with sends has its own arrow and opens to them one step further in. 24 px rows. No counts in
+  words: a dot per row the fold would open, in that row's colour.
+- The rows are TrackRow::Kind::Mix, built by buildTrackRows from a MixRowsSpec (the parts per track, from
+  sendActions::sendingParts, and the open folds), so they scroll and line up with the arranger like lane rows.
+- **One fold for the headers and the mixer**: EditorState::openMix, (track, part key), saved with the patch. The
+  mixer's track strips now start folded too (they started open); the master keeps its own fold.
+- A part has the same controls as its mixer strip: level and pan, and M and S on an input (drum lanes have none).
+  Input solo moved into sources::toggleInputSolo so both places behave the same. Effect loops stay in the mixer: their
+  fader is a Mix, not a level.
+- The dots sit three to a line, at most two lines, so a big kit's fold leaves the track name its room in a narrow
+  column; the names of the rows under a track line up past the widest fold among its parts.
+
+## 198. A track says where its notes or sound come from, in words (23 Nov)
+
+- **User** (Trello): "If a track has input from another track there should be some kind of visibility in the track."
+  Agreed from canvas board 6, option A, after "icons only" was turned down: small grey words with an arrow in the
+  source's colour, "← Bass" for a track whose Input is another track's notes, "← 2 sends (Drums, Keys)" for one that
+  receives sends. A click opens the menu that sets it (Input, then who sends).
+- The default header column (190 px) leaves no room for words after a name, so a track that plays another track's
+  notes opens one line taller (like the level line rule: unless the user set its height) and the words get a line of
+  their own, under the name or under the level line. Receiving tracks don't grow: their sends already show as mix
+  rows and dots (§197); their words show only where there is room.
+
+## 199. Header column width, renaming parts, inputs named after what feeds them (23 Nov)
+
+- **User**: no fader on part rows in the in-panel editor; the headers should resize sideways; parts should be
+  renameable and named automatically; input names didn't say which device feeds them.
+- A part row keeps its level first: in a narrow column the pan goes (it stays in the mixer), then the name shortens
+  to 26 px; the level stays at least 36 px.
+- The column's right edge drags its width (100 to 400 px, ViewState::headerWidth, per editor, saved); double-click
+  goes back to the usual width.
+- A drum lane's or an input's name is edited in place (double-click, or Rename… in its menu), through the same
+  commands as the piano roll lane and the mixer strip.
+- An input with no name given is named after the module whose cable goes into its IN (sources::patchedFrom), else IN;
+  an unnamed drum lane after the module patched into its lane IN. The name follows the cable, so swapping a synth
+  renames it; a typed name stays.
+- **User**: no automation in a part row's right-click menu. A part's menu now has Automate its level / its pan in the
+  timeline (the part lanes of §191); a part's or send's row follows its lane while it plays and wears the lane's ring,
+  as the mixer strip does.
+- **User**: meters on every header row, without much cost. A part row reads the meter its mixer strip reads (lane IN
+  and input meters the audio thread keeps anyway); a send row shows its sender's (or part's) level times the send's
+  gain, worked out on the UI thread, so the audio thread does no new work. An estimate for a send, not a measurement.
+
+## 200. Old tile velocity scales go into the notes (23 Nov)
+
+- **Found** replaying songs saved by 2.0.0-2.0.10 in main's engine and this branch's: tiles with a velocity scale
+  (§160 dropped it, and "velScale" was ignored) played louder or softer than before. **User** agreed to convert them.
+- On load, each scale is multiplied into the velocities of the notes the tile plays (clamped to 0..1, as main did).
+  The clip itself takes it when no use plays the clip at 100%; tiles with another scale, or sharing the clip with a
+  launcher slot or a 100% tile, get a copy (as Make unique makes), one per scale. Copies are taken before any clip is
+  scaled. The three real songs that had scales now play note for note as on main.
+
+## 201. One arrow per track: lanes, parts and sends in one tree (23 Nov)
+
+- **User**: "when i expand a track for subtrack i should be able to view automations in the same view (because right
+  now is confusing with two different expansions)". Agreed with my suggestion: one arrow, lanes under what they move.
+- The arrow after the track number (the mix fold of §197, still shared with the mixer) opens, in order: the track's
+  own lanes, each part (behind its own arrow: the part's Volume and Pan lanes, then its sends, each send with its
+  Send lane right under it), the track's sends (each with its Send lane), the sends it receives, "+ Add automation
+  lane". A lane whose part or send went sits with the track's own lanes, so nothing hides.
+- The lanes arrow between Arm and M is gone; Arm moves next to M. The track's arrow is always drawn, dim while only
+  the add-lane row is under it. Dots count lanes too.
+- Every way of making or showing a lane opens the track, and the part when the lane is a part's
+  (EditorState::showLaneRows). The track menu's "Show automation lanes" is "Show lanes, parts and sends".
+- The Master row keeps its own lanes button. A patch saved with a track's lanes open opens that track once.
+
+## 202. A Motion's moved notes show whatever moves its settings (23 Nov)
+
+- **User**: a lane on a Motion setting, then an LFO on it, moved the sound but not the note in the piano roll;
+  "this should be generalized. I don't want to go back to this issue".
+- One model function draws every moved note, render::motionMoveLive, mirroring Engine::motionKnob: the Motion's knob
+  (lanes, every modulator except "Per pass" ones) plus its "Per pass" modulators at the note's pass, through the Motion
+  in the chain the clip plays through (its own chain while it plays one).
+- When playheads may read the note at any moment, the knob is the engine's own right now (TesseraModule::knobNow), so
+  anything that moves it shows. Otherwise it is worked out for when the note plays: track lanes at the song tick,
+  the clip's own lanes at the note's place, and modulators that depend on the song alone (Curve, synced LFO not
+  restarting per note, Steps, Ramp, Random with the engine's roll, Macro) read then with their settings as the engine
+  holds them now; the others (free LFO, LFO restarting per note, Envelope, Note) give their output now.
+- A new modulator type must be sorted into one of those groups in movesWithSong / mods::perPass; the test "the piano
+  roll moves a Motion's note as the engine does, whatever moves its settings" walks through every type.

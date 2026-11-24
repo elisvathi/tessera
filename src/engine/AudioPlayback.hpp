@@ -1,0 +1,209 @@
+#pragma once
+
+#include "../model/AudioSource.hpp"
+#include "../model/Automation.hpp"
+#include "../model/Types.hpp"
+
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+/// What the audio thread needs to play audio clips and mix them: immutable, built on the UI thread, swapped in
+/// through an atomic pointer like the note snapshot (docs/design/AUDIO_MIXER.md §8.3).
+namespace tessera {
+
+/// Samples ready to play, at the engine's sample rate: a source resampled from its file, or a stretched render
+/// of one. Never changed once built; freed on the UI thread only.
+struct AudioBuffer {
+    int channels = 0; // 1 or 2; a mono buffer plays the same samples on both sides
+    int64_t frames = 0;
+    double rate = 0; // its sample rate; 0 = the engine's. After a rate change, old buffers play on until new ones are ready
+    std::array<std::vector<float>, 2> data;
+
+    /// Channel `c`'s samples; the first channel again for a mono buffer.
+    const float* channel(int c) const { return data[size_t(c < channels ? c : 0)].data(); }
+};
+
+/// Where a warped clip plays in its prepared buffer at clip tick `tick`, and how many prepared frames a tick lasts
+/// there (§3.5): through the markers, at `framesPerTick` past the first and the last.
+inline double warpedPrepared(const std::vector<std::pair<double, double>>& warps, double framesPerTick, double tick,
+                             double* slope = nullptr) {
+    if (tick <= warps.front().first || tick >= warps.back().first) {
+        const auto& end = tick <= warps.front().first ? warps.front() : warps.back();
+        if (slope)
+            *slope = framesPerTick;
+        return end.second + (tick - end.first) * framesPerTick;
+    }
+    size_t i = 1;
+    while (warps[i].first < tick)
+        i++;
+    double dt = warps[i].first - warps[i - 1].first;
+    double s = dt > 0 ? (warps[i].second - warps[i - 1].second) / dt : framesPerTick;
+    if (slope)
+        *slope = s;
+    return warps[i - 1].second + (tick - warps[i - 1].first) * s;
+}
+
+/// A timeline instance of an audio clip, in song ticks, with its fades and the overlaps it crossfades over.
+struct AudioInstancePlay {
+    uint64_t id = 0; // ArrangementId value
+    int clip = -1;   // index into AudioSnapshot::clips
+    double position = 0;
+    double length = 0;  // clip ticks (song ticks for every clip but Off ones, §5.4)
+    double offset = 0;  // clip tick at the start
+    Fade fadeIn, fadeOut;
+    // Song ticks shared with the instance before and after it: the overlap is the crossfade.
+    double overlapIn = 0, overlapOut = 0;
+};
+
+/// One part of a clip's edit list as the engine plays it (docs/design/AUDIO_EDITING.md §2). `span` holds its place in
+/// clip ticks, its fades and its crossfades, so it shares the timeline's envelope code.
+struct AudioRegionPlay {
+    AudioInstancePlay span;
+    int clip = -1;      // index into AudioSnapshot::clips: what it plays (another entry when it plays backwards)
+    double shift = 0;   // added to the clip tick, it gives the tick to read from `clip`
+    float gain = 1;     // the part's own gain, on top of the clip's
+};
+
+/// One audio clip as the engine plays it.
+struct AudioClipPlay {
+    uint64_t clip = 0; // ClipId value
+    const AudioBuffer* prepared = nullptr; // the source at the engine rate; null while it decodes, or when missing
+    const AudioBuffer* render = nullptr;   // stretched for `renderTempo`, or null
+    double renderTempo = 0;
+    double renderStart = 0;  // render frame of the clip window's start (clip tick 0)
+    double framesPerTick = 0; // prepared frames per clip tick, at the clip tempo
+    double startFrame = 0;    // prepared frame at clip tick 0
+    double clipTempo = 120;
+    TempoFollow follow = TempoFollow::Stretch;
+    float gain = 1; // clip gain times the source's volts per full scale: samples become volts
+    bool looping = false;
+    double loopStart = 0, loopEnd = 0; // clip ticks
+    double length = 0;                 // clip ticks: where a clip without a loop ends
+    // The file ends at (or just after) the loop end, so a seam has nothing to crossfade with: it dips instead.
+    bool seamDip = false;
+    // Warp markers as (clip tick, prepared frame); empty when none. The render, when there is one, is straight.
+    std::vector<std::pair<double, double>> warps;
+    // The clip's unmuted parts, by start; empty for a clip with no edits, which plays straight through.
+    std::vector<AudioRegionPlay> regions;
+
+    /// The prepared frame clip tick `tick` plays when not rendered, and prepared frames per tick there.
+    double framesAt(double tick, double& rate) const {
+        if (warps.empty()) {
+            rate = framesPerTick;
+            return startFrame + tick * framesPerTick;
+        }
+        return warpedPrepared(warps, framesPerTick, tick, &rate);
+    }
+
+    /// Song ticks one clip tick lasts at `songTempo` (Off clips play at their own speed).
+    double songTicksPerTick(double songTempo) const {
+        return follow == TempoFollow::Off && clipTempo > 0 ? songTempo / clipTempo : 1.0;
+    }
+};
+
+/// The most sends one track plays; more are kept in the song but not heard.
+constexpr int kMaxSendsPerTrack = 16;
+
+/// One send as the player works it out: into the OUT of the track at index `to` of the snapshot. A send from a part
+/// of the track (DECISIONS §175) takes the clips, or what return slot `slot` brings (a lane IN or one input), after
+/// their own level and pan, never the track's fader.
+struct SendPlay {
+    int to = -1;
+    float gain = 0;
+    bool preFader = false;
+    uint64_t toId = 0; // the receiving TrackId value, for a drag that holds this send
+    std::vector<AutoPoint> lane; // its Send lane as fader positions over song ticks; empty when none plays
+    bool part = false;    // from a part: the clips, or `slot`; nothing when neither is there
+    bool clips = false;   // from the track's clips
+    int slot = -1;        // from this return slot
+    uint64_t fromKey = 0; // SendFrom::key(), for a drag that holds this send
+};
+
+/// A Volume or Pan lane on one part of a track (a drum lane IN, a Track Out's IN, the clips), as fader positions or
+/// pan (0..1) over song ticks.
+struct PartLanePlay {
+    uint64_t key = 0; // SendFrom::key() of the part
+    bool pan = false;
+    std::vector<AutoPoint> points;
+};
+
+/// One track that makes sound: an audio track's clips, and for any track the return slots its output modules' IN
+/// jacks fill, with its mixer strip.
+struct AudioTrackPlay {
+    TrackId id;
+    int busSlot = -1;           // where its sound before its chain goes on the output bus
+    std::vector<int> sources;   // return bus slots that are the track's own sound (Drum Out's lane INs)
+    std::vector<int> returns;   // its output modules' return slots, in the order of its chain (DECISIONS §153)
+    std::vector<uint8_t> loops; // per entry of `returns`: 1 for an effect loop (its OUT has a cable)
+    std::vector<AudioInstancePlay> instances; // sorted by position
+    std::vector<int> slots;                    // clip index per launcher slot, -1 when empty or not audio
+    bool hasClips = false;                     // any audio clip, on the timeline or in a slot: else no voices start
+    float clipsPan = 0;                        // the clips' own place left and right, as an input of the track
+    float clipsGain = 1;                       // the clips as a source (§7.8): their Level, 0 when not in use
+    bool clipsOn = true;                       // the clips in use and not soloed away, so a lane can set their Level
+    std::vector<PartLanePlay> partLanes;       // lanes on its parts' levels and pans, at most PartLevels::kPerSlot
+    float volume = 1;                          // the fader as a gain
+    float pan = 0;
+    bool audible = true; // heard: its fader output reaches the master (mute and solo applied)
+    bool toMaster = true;    // off: only its sends carry it (its meter still shows its level after the fader)
+    bool rollIn = false;     // it records Roll's own IN jacks instead of its Track Out IN
+    bool hearRollIn = false; // armed and monitoring, so those jacks are heard on this track
+    bool own = true;     // its own sound (clips, lane INs) plays; off when muted or soloed away (§4.5)
+    bool sending = true; // its sends play
+    std::vector<SendPlay> sends; // receivers always come later in `tracks`
+    int delay = 0; // samples it waits on its way to the master, so tracks with latency line up (§3.5)
+    int group = -1; // its group strip (index into AudioSnapshot::groups), which it goes through to the master
+};
+
+/// What the mix reads of one track on every sample, in one cache line, parallel to AudioSnapshot::tracks. Between two
+/// of Tessera's samples Rack runs every other module, so the track's full entry and the lists it points to would be
+/// fetched from memory again each sample; this keeps that to one line in the common case.
+struct alignas(64) MixHot {
+    static constexpr int kInline = 8;
+    uint64_t id = 0;
+    int32_t busSlot = -1, delay = 0, group = -1;
+    uint8_t sources = 0, returns = 0, sends = 0;
+    bool hasClips = false, toMaster = true, hearRollIn = false, rollIn = false;
+    bool inlined = true; // its sources and returns fit here and none is an effect loop; else read its full entry
+    bool listens = false; // it has lane INs or Track Out INs: resting, it still reads them
+    int16_t source[kInline]{}, ret[kInline]{};
+};
+
+/// A group's strip: its tracks are summed into it, then its fader and pan, then the master.
+struct GroupPlay {
+    uint64_t id = 0; // GroupId value
+    float volume = 1, pan = 0;
+    bool audible = true;
+};
+
+/// Everything the audio thread plays, for one Tessera.
+struct AudioSnapshot {
+    uint64_t generation = 0;
+    std::vector<AudioClipPlay> clips;
+    std::vector<AudioTrackPlay> tracks;
+    std::vector<MixHot> hot; // one per entry of `tracks`
+    std::vector<GroupPlay> groups;
+    float masterVolume = 1;
+    float masterMixGain = 1; // the mix as a source of the master (§7.8)
+    uint64_t masterId = 0; // the master's TrackId value
+    /// The master's Volume lane as fader positions (0..1) over song ticks; empty when none plays (muted or absent).
+    std::vector<AutoPoint> masterLane;
+    std::vector<int> masterReturns;   // the master's chain: its output modules' return slots, in order
+    std::vector<uint8_t> masterLoops; // per entry of `masterReturns`: 1 for an effect loop
+    bool anyDelay = false;            // some track waits for another (§3.5): only then are the delay lines written
+    /// Every buffer the clips point at, and recently dropped ones kept a little longer so a fade-out that started
+    /// before this snapshot can finish reading them.
+    std::vector<std::shared_ptr<const AudioBuffer>> buffers;
+
+    /// Whether `b` is one of this snapshot's buffers.
+    bool holds(const AudioBuffer* b) const {
+        for (const auto& p : buffers)
+            if (p.get() == b)
+                return true;
+        return false;
+    }
+};
+
+} // namespace tessera

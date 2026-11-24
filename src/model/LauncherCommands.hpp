@@ -109,7 +109,8 @@ class RemoveClip : public Command {
     Clip clip;
 };
 
-/// An independent copy of a clip: new IDs for the clip, its notes and its automation lanes.
+/// An independent copy of a clip: new IDs for the clip, its notes, its automation lanes and its own devices and
+/// modulators (its lanes, routes and notes point at the copies).
 Clip copyClip(const Clip& clip, const NextId& nextId);
 
 CommandPtr insertScene(const Song& song, int index);

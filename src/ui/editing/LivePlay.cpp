@@ -28,6 +28,11 @@ const KeyNote kKeys[] = {
 
 // ---- Keyboard play ------------------------------------------------------------------------------------------
 
+bool KeyboardPlay::typingKey(int key) {
+    // Letters, digits and punctuation; Space, Escape, the arrows, Backspace and the F keys keep their jobs.
+    return key > GLFW_KEY_SPACE && key <= GLFW_KEY_GRAVE_ACCENT;
+}
+
 bool KeyboardPlay::heldDown(int key, int action) {
     double now = rack::system::getTime();
     if (action == GLFW_RELEASE) {
@@ -68,7 +73,7 @@ bool KeyboardPlay::handleKey(EditorContext& ctx, const rack::widget::Widget::Key
     if (e.action == GLFW_RELEASE) {
         auto it = held.find(e.key);
         if (it == held.end())
-            return settingKey || pitchFor(e.key, 0).has_value();
+            return settingKey || pitchFor(e.key, 0).has_value() || typingKey(e.key);
         m->playLive(it->second, 0, false);
         if (heardOn.valid())
             m->audition(heardOn, it->second, 0, false);
@@ -76,7 +81,7 @@ bool KeyboardPlay::handleKey(EditorContext& ctx, const rack::widget::Widget::Key
         return true;
     }
     if (e.action == GLFW_REPEAT)
-        return settingKey || pitchFor(e.key, 0);
+        return settingKey || pitchFor(e.key, 0) || typingKey(e.key);
     switch (e.key) {
     case GLFW_KEY_Z:
         state.keyboardOctave = std::max(-5, state.keyboardOctave - 1);
@@ -95,7 +100,7 @@ bool KeyboardPlay::handleKey(EditorContext& ctx, const rack::widget::Widget::Key
     }
     std::optional<int> pitch = pitchFor(e.key, state.keyboardOctave);
     if (!pitch)
-        return false;
+        return typingKey(e.key); // the other letters do nothing: a stray Q mustn't quantize while you play
     if (held.count(e.key))
         return true;
     held[e.key] = *pitch;

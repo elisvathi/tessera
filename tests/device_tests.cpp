@@ -2,6 +2,7 @@
 
 #include "../src/model/DeviceCommands.hpp"
 #include "../src/model/DeviceTypes.hpp"
+#include "../src/model/Devices.hpp"
 #include "../src/model/Json.hpp"
 #include "../src/model/Serialize.hpp"
 #include "RandomSong.hpp"
@@ -84,8 +85,17 @@ TEST_CASE("device and modulator tables are complete and consistent") {
         const devices::TypeInfo& info = devices::modulatorInfo(ModulatorType(t));
         CAPTURE(t);
         REQUIRE(info.name != nullptr);
-        CHECK(info.params.size() <= size_t(kMaxDeviceParams));
+        CHECK(info.params.size() <= size_t(kMaxModulatorParams));
     }
+    // The Pattern line's settings sit where the knob names say.
+    const auto& arp = devices::deviceInfo(DeviceType::Arpeggiator).params;
+    REQUIRE(arp.size() == size_t(chain::knob::kArpParamCount));
+    CHECK(std::string(arp[chain::knob::kArpMoveUnit].name) == "Move by");
+    CHECK(std::string(arp[chain::arpLaneSteps(chain::ArpLane::Gate)].name) == "Gate steps");
+    CHECK(std::string(arp[chain::knob::kArpStepVel + 4].name) == "Step 5 velocity");
+    CHECK(std::string(arp[chain::knob::kArpStepMove + 15].name) == "Step 16 move");
+    CHECK(std::string(arp[chain::arpLaneShift(chain::ArpLane::Move)].name) == "Move, every step");
+    CHECK(arp[chain::arpLaneFirst(chain::ArpLane::Octave)].min == -3);
 
     auto checkParam = [](const devices::ParamInfo& p) {
         CAPTURE(p.name);
@@ -135,11 +145,13 @@ TEST_CASE("knob values read as the user expects") {
     CHECK(devices::display(*lfoRate, 0) == doctest::Approx(0.01));
     CHECK(devices::display(*lfoRate, 1) == doctest::Approx(50));
 
-    CHECK(devices::rateTicks(3, TimeSig{4, 4}) == 4 * kPpq);
-    CHECK(devices::rateTicks(3, TimeSig{3, 4}) == 3 * kPpq);
-    CHECK(devices::rateTicks(7, TimeSig{}) == kPpq / 4);
-    CHECK(devices::rateTicks(12, TimeSig{}) == kPpq / 3);
-    CHECK(devices::rateTicks(15, TimeSig{}) == kPpq * 3 / 4);
+    CHECK(devices::rateTicks(devices::rateIndex("1 bar"), TimeSig{4, 4}) == 4 * kPpq);
+    CHECK(devices::rateTicks(devices::rateIndex("1 bar"), TimeSig{3, 4}) == 3 * kPpq);
+    CHECK(devices::rateTicks(devices::rateIndex("1/16"), TimeSig{}) == kPpq / 4);
+    CHECK(devices::rateTicks(devices::rateIndex("1/8 T"), TimeSig{}) == kPpq / 3);
+    CHECK(devices::rateTicks(devices::rateIndex("1/8 D"), TimeSig{}) == kPpq * 3 / 4);
+    CHECK(devices::rateTicks(devices::rateIndex("1/32 T"), TimeSig{}) == kPpq / 12);
+    CHECK(devices::slowRateTicks(devices::rateIndex("32 bars"), TimeSig{}) == 32 * 4 * kPpq);
     CHECK(devices::paramInfo(DeviceType::Transpose, 99) == nullptr);
 }
 
@@ -530,6 +542,76 @@ TEST_CASE("songs from before devices load with empty chains") {
     }
 }
 
+TEST_CASE("an Arpeggiator keeps its pattern when the pattern list grows (schema 16)") {
+    Song song = makeDefaultSong();
+    addDemoClip(song);
+    DeviceId shuffled = addDeviceTo(song, 0, DeviceType::Arpeggiator);
+    DeviceId played = addDeviceTo(song, 0, DeviceType::Arpeggiator);
+    DeviceId chord = addDeviceTo(song, 0, DeviceType::Arpeggiator);
+    // Schema 15 saved the choice as 0..1 of its 14 places: Shuffled was the 12th, As played the 9th, Chord the last.
+    song.tracks[0].devices[0].params[chain::knob::kPattern] = 11.f / 13;
+    song.tracks[0].devices[1].params[chain::knob::kPattern] = 8.f / 13;
+    song.tracks[0].devices[2].params[chain::knob::kPattern] = 1;
+    json::Ref j(songToJson(song));
+    Song loaded = songFromJson(j.get(), 15);
+    const devices::ParamInfo& info = devices::deviceInfo(DeviceType::Arpeggiator).params[chain::knob::kPattern];
+    auto patternOf = [&](DeviceId id) {
+        const Device* d = findDevice(loaded, id);
+        REQUIRE(d);
+        return chain::ArpPattern(int(std::lround(devices::display(info, d->params[chain::knob::kPattern]))));
+    };
+    CHECK(patternOf(shuffled) == chain::ArpPattern::RandomOnce);
+    CHECK(patternOf(played) == chain::ArpPattern::AsPlayed);
+    CHECK(patternOf(chord) == chain::ArpPattern::Chord);
+}
+
+TEST_CASE("a Note Filter's one channel becomes a set of channels in older songs") {
+    Song song = makeDefaultSong();
+    addDemoClip(song);
+    DeviceId any = addDeviceTo(song, 0, DeviceType::NoteFilter);
+    DeviceId ten = addDeviceTo(song, 0, DeviceType::NoteFilter);
+    // Schema 9 saved the choice Any, 1..16 as 0..1 of its 17 places.
+    song.tracks[0].devices[0].params[chain::knob::kChannel] = 0;
+    song.tracks[0].devices[1].params[chain::knob::kChannel] = 10.f / 16;
+    ModulatorId lfo = addModulatorAt(song, songLevel());
+    song.modulators[0].routes.push_back(toKnob(ten, chain::knob::kChannel));
+    song.modulators[0].routes.push_back(toKnob(ten, chain::knob::kLowest));
+    AutomationEnvelope lane;
+    lane.id = song.newId<AutomationId>();
+    lane.paramTarget = {ParamRef::Kind::Device, ten.value, uint16_t(chain::knob::kChannel)};
+    lane.points = {{0, 0.5f, CurveType::Linear, 0}};
+    song.tracks[0].automation.push_back(lane);
+    json::Ref j(songToJson(song));
+    Song loaded = songFromJson(j.get(), 9);
+
+    const devices::ParamInfo& info = devices::deviceInfo(DeviceType::NoteFilter).params[chain::knob::kChannel];
+    const Device* a = findDevice(loaded, any);
+    const Device* b = findDevice(loaded, ten);
+    REQUIRE(a);
+    REQUIRE(b);
+    CHECK(devices::display(info, a->params[chain::knob::kChannel]) == 0); // any channel
+    CHECK(devices::display(info, b->params[chain::knob::kChannel]) == float(1 << 9)); // only channel 10
+    // A set is picked by hand: what moved the old choice is gone, the rest stays.
+    const Modulator* m = findModulator(loaded, lfo);
+    REQUIRE(m);
+    REQUIRE(m->routes.size() == 1);
+    CHECK(m->routes[0].target.param == chain::knob::kLowest);
+    CHECK(loaded.tracks[0].automation.empty());
+
+    // A song saved now keeps its set as it is.
+    Song again = throughJson(loaded);
+    CHECK(devices::display(info, findDevice(again, ten)->params[chain::knob::kChannel]) == float(1 << 9));
+}
+
+TEST_CASE("a channel set is never moved by a modulator") {
+    Song song = makeDefaultSong();
+    addDemoClip(song);
+    DeviceId filter = addDeviceTo(song, 0, DeviceType::NoteFilter);
+    ModulatorId lfo = addModulatorAt(song, songLevel());
+    CHECK(!reachable(song, songLevel(), lfo, toKnob(filter, chain::knob::kChannel)));
+    CHECK(reachable(song, songLevel(), lfo, toKnob(filter, chain::knob::kLowest)));
+}
+
 TEST_CASE("copying a device to another place makes an independent copy") {
     Song song = makeDefaultSong();
     addDemoClip(song);
@@ -585,4 +667,259 @@ TEST_CASE("swing picks the grid the notes need, and a track's swing comes from i
     SwingFeel feel = swingFeelOf(song, song.tracks[0]);
     CHECK(feel.step == kPpq / 2);
     CHECK(feel.amount == doctest::Approx(0.32f)); // its own 58%, not the song's
+}
+
+TEST_CASE("the dice: a rolled song fixes New, Keep it stores the same numbers, saving keeps the switch") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    DeviceId arp;
+    std::unique_ptr<Command> add =
+        addDevice(song, ChainOwner(track), DeviceType::Random, -1, [&] { return song.nextId++; }, &arp);
+    REQUIRE(add);
+    add->apply(song);
+    const Device* d = findDevice(song, arp);
+    REQUIRE(d);
+    CHECK(d->variation < 0); // a new device starts on New
+
+    uint32_t roll = 12345;
+    Song rolled = songRolled(song, roll);
+    const Device* fixed = findDevice(rolled, arp);
+    CHECK(fixed->variation == int32_t(rolledVariation(roll, arp.value)));
+    CHECK(fixed->variation >= 1);
+    CHECK(fixed->variation <= kMaxVariation);
+    // A rolled number plays exactly what New played on that roll.
+    CHECK(variationSeed(fixed->variation, 0, arp.value) == variationSeed(d->variation, roll, arp.value));
+
+    CommandPtr keep = keepRoll(song, track, roll);
+    REQUIRE(keep);
+    keep->apply(song);
+    CHECK(findDevice(song, arp)->variation == fixed->variation);
+    CHECK_FALSE(keepRoll(song, track, roll)); // nothing left on New on the device
+    keep->revert(song);
+    CHECK(findDevice(song, arp)->variation < 0);
+
+    // New remembers its number: switching to it and back keeps 17.
+    CommandPtr seventeen = setDeviceVariation(song, arp, 17);
+    seventeen->apply(song);
+    CommandPtr fresh = setDeviceVariation(song, arp, -17);
+    fresh->apply(song);
+    CHECK(variationNumber(findDevice(song, arp)->variation) == 17);
+    CHECK(findDevice(song, arp)->variation < 0);
+
+    json_t* j = songToJson(song);
+    Song back = songFromJson(j, Song::kSchemaVersion);
+    CHECK(findDevice(back, arp)->variation == -17);
+    json_decref(j);
+    // Songs from before the dice play every random thing on the number 1, as they did.
+    json_t* old = songToJson(song);
+    json_t* tracks = json_object_get(old, "tracks");
+    json_t* devs = json_object_get(json_array_get(tracks, 0), "devices");
+    json_object_del(json_array_get(devs, json_array_size(devs) - 1), "variation");
+    CHECK(findDevice(songFromJson(old, Song::kSchemaVersion), arp)->variation == 1);
+    json_decref(old);
+}
+
+TEST_CASE("pasting strip items: new IDs, moves between copies kept, moves out of reach dropped") {
+    Song song = makeDefaultSong();
+    TrackId from = song.tracks[0].id, to = song.tracks[1].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId arp, echo;
+    CommandPtr c1 = addDevice(song, ChainOwner(from), DeviceType::Arpeggiator, -1, next, &arp);
+    c1->apply(song);
+    CommandPtr c2 = addDevice(song, ChainOwner(from), DeviceType::Echo, -1, next, &echo);
+    c2->apply(song);
+    ModulatorId env;
+    CommandPtr c3 =
+        addModulator(song, {ModLevel::Track, from, DeviceId(), ClipId()}, ModulatorType::Envelope, next, &env);
+    c3->apply(song);
+    // The envelope moves the arpeggiator's gate and the echo's decay.
+    for (auto [dev, knob] : {std::pair<DeviceId, int>{arp, chain::knob::kGate}, {echo, chain::knob::kDecay}}) {
+        Modulation r;
+        r.target = {ParamRef::Kind::Device, dev.value, uint16_t(knob)};
+        r.amount = 0.5f;
+        CommandPtr add = addRoute(song, env, r);
+        add->apply(song);
+    }
+    // Copy the arpeggiator with the envelope (the echo stays behind), paste on the other track.
+    std::vector<Device> devices = {*findDevice(song, arp)};
+    std::vector<Modulator> mods = {*findModulator(song, env)};
+    int dropped = -1;
+    CommandPtr paste = pasteChainItems(song, ChainOwner(to), -1, devices, mods, {}, next, &dropped);
+    REQUIRE(paste);
+    paste->apply(song);
+    const Track& t = *song.findTrack(to);
+    REQUIRE(t.devices.size() == 1);
+    REQUIRE(t.modulators.size() == 1);
+    CHECK(t.devices[0].id != arp);
+    CHECK(t.modulators[0].id != env);
+    // The move onto the copied arpeggiator follows the copy; the one onto the echo left behind is out of reach.
+    REQUIRE(t.modulators[0].routes.size() == 1);
+    CHECK(t.modulators[0].routes[0].target.owner == t.devices[0].id.value);
+    CHECK(dropped == 1);
+    // The originals are untouched.
+    CHECK(findModulator(song, env)->routes.size() == 2);
+    paste->revert(song);
+    CHECK(song.findTrack(to)->devices.empty());
+}
+
+TEST_CASE("a copied modulator pastes into any section: a device's, the song's, a clip's") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId arp, echo;
+    addDevice(song, ChainOwner(track), DeviceType::Arpeggiator, -1, next, &arp)->apply(song);
+    addDevice(song, ChainOwner(track), DeviceType::Echo, -1, next, &echo)->apply(song);
+    ModulatorId env;
+    addModulator(song, {ModLevel::Track, track, DeviceId(), ClipId()}, ModulatorType::Envelope, next, &env)
+        ->apply(song);
+    for (auto [dev, knob] : {std::pair<DeviceId, int>{arp, chain::knob::kGate}, {echo, chain::knob::kDecay}}) {
+        Modulation r;
+        r.target = {ParamRef::Kind::Device, dev.value, uint16_t(knob)};
+        r.amount = 0.5f;
+        addRoute(song, env, r)->apply(song);
+    }
+    std::vector<Modulator> copied = {*findModulator(song, env)};
+
+    // Into the arpeggiator's own section: it keeps the move on the arpeggiator, the echo is out of its reach.
+    int dropped = -1;
+    CommandPtr intoDevice = pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, &dropped,
+                                            ModulatorPlace{ModLevel::Device, TrackId(), arp, ClipId()});
+    REQUIRE(intoDevice);
+    intoDevice->apply(song);
+    const Device& a = *findDevice(song, arp);
+    REQUIRE(a.modulators.size() == 1);
+    CHECK(a.modulators[0].id != env);
+    REQUIRE(a.modulators[0].routes.size() == 1);
+    CHECK(a.modulators[0].routes[0].target.owner == arp.value);
+    CHECK(dropped == 1);
+    CHECK(song.findTrack(track)->modulators.size() == 1); // nothing went to the track
+    intoDevice->revert(song);
+    CHECK(findDevice(song, arp)->modulators.empty());
+
+    // Into the song: both moves are in reach.
+    CommandPtr intoSong = pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, &dropped,
+                                          ModulatorPlace{ModLevel::Song, TrackId(), DeviceId(), ClipId()});
+    REQUIRE(intoSong);
+    intoSong->apply(song);
+    REQUIRE(song.modulators.size() == 1);
+    CHECK(song.modulators[0].routes.size() == 2);
+    CHECK(dropped == 0);
+
+    // A song modulator pastes back onto the track, numbered afresh beside the original.
+    std::vector<Modulator> fromSong = {song.modulators[0]};
+    CommandPtr intoTrack = pasteChainItems(song, ChainOwner(track), -1, {}, {}, fromSong, next, &dropped,
+                                           ModulatorPlace{ModLevel::Track, track, DeviceId(), ClipId()});
+    REQUIRE(intoTrack);
+    intoTrack->apply(song);
+    const Track& t = *song.findTrack(track);
+    REQUIRE(t.modulators.size() == 2);
+    CHECK(t.modulators[1].name != t.modulators[0].name);
+    CHECK(t.modulators[1].routes.size() == 2);
+
+    // A device's section holds kMaxDeviceModulators: the rest is left out, and a full section pastes nothing.
+    std::vector<Modulator> many(size_t(kMaxDeviceModulators + 2), copied[0]);
+    CommandPtr fill = pasteChainItems(song, ChainOwner(track), -1, {}, many, {}, next, &dropped,
+                                      ModulatorPlace{ModLevel::Device, TrackId(), echo, ClipId()});
+    REQUIRE(fill);
+    fill->apply(song);
+    CHECK(int(findDevice(song, echo)->modulators.size()) == kMaxDeviceModulators);
+    CHECK_FALSE(pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, &dropped,
+                                ModulatorPlace{ModLevel::Device, TrackId(), echo, ClipId()}));
+}
+
+TEST_CASE("a dragged modulator moves to another section with its ID, losing only moves out of reach") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId arp, echo;
+    addDevice(song, ChainOwner(track), DeviceType::Arpeggiator, -1, next, &arp)->apply(song);
+    addDevice(song, ChainOwner(track), DeviceType::Echo, -1, next, &echo)->apply(song);
+    ModulatorId lfo;
+    addModulator(song, {ModLevel::Track, track, DeviceId(), ClipId()}, ModulatorType::Lfo, next, &lfo)->apply(song);
+    addRoute(song, lfo, toKnob(arp, chain::knob::kGate))->apply(song);
+    addRoute(song, lfo, toKnob(echo, chain::knob::kDecay))->apply(song);
+    ModulatorPlace intoArp{ModLevel::Device, TrackId(), arp, ClipId()};
+
+    // Hovering the arpeggiator's section warns that the move on the echo will go.
+    ModulatorLanding landing = modulatorLanding(song, lfo, intoArp);
+    CHECK(landing.room);
+    CHECK_FALSE(landing.same);
+    CHECK(landing.lost == 1);
+    CHECK(modulatorLanding(song, lfo, {ModLevel::Track, track, DeviceId(), ClipId()}).same);
+    CHECK(modulatorLanding(song, lfo, songLevel()).lost == 0);
+
+    int dropped = -1;
+    CommandPtr move = moveModulator(song, lfo, intoArp, &dropped);
+    REQUIRE(move);
+    move->apply(song);
+    CHECK(dropped == 1);
+    CHECK(song.findTrack(track)->modulators.empty());
+    const Device& a = *findDevice(song, arp);
+    REQUIRE(a.modulators.size() == 1);
+    CHECK(a.modulators[0].id == lfo); // the same modulator, so lanes on its settings still find it
+    REQUIRE(a.modulators[0].routes.size() == 1);
+    CHECK(a.modulators[0].routes[0].target.owner == arp.value);
+    move->revert(song);
+    REQUIRE(song.findTrack(track)->modulators.size() == 1);
+    CHECK(song.findTrack(track)->modulators[0].routes.size() == 2);
+    CHECK_FALSE(moveModulator(song, lfo, {ModLevel::Track, track, DeviceId(), ClipId()})); // already there
+}
+
+TEST_CASE("a copied Curve keeps its drawing but not what it moves, unless that was copied too") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    NextId next = [&] { return song.nextId++; };
+    DeviceId echo;
+    addDevice(song, ChainOwner(track), DeviceType::Echo, -1, next, &echo)->apply(song);
+    ModulatorPlace onTrack{ModLevel::Track, track, DeviceId(), ClipId()};
+    ParamRef decay{ParamRef::Kind::Device, echo.value, uint16_t(chain::knob::kDecay)};
+    ModulatorId curve;
+    animateWithCurve(song, onTrack, decay, "Echo Decay", std::nullopt, next, &curve)->apply(song);
+    std::vector<Modulator> copied = {*findModulator(song, curve)};
+    CommandPtr paste = pasteChainItems(song, ChainOwner(track), -1, {}, copied, {}, next, nullptr, onTrack);
+    REQUIRE(paste);
+    paste->apply(song);
+    const Track& t = *song.findTrack(track);
+    REQUIRE(t.modulators.size() == 2);
+    CHECK(t.modulators[1].points == t.modulators[0].points);
+    CHECK(t.modulators[1].routes.empty());
+    CHECK(t.modulators[0].routes.size() == 1);
+    // Copied with the device it moves, it moves the copy.
+    Device withCurve = *findDevice(song, echo);
+    withCurve.modulators = {*findModulator(song, curve)};
+    withCurve.modulators[0].routes[0].target.owner = echo.value;
+    CommandPtr both = pasteChainItems(song, ChainOwner(track), -1, {withCurve}, {}, {}, next, nullptr);
+    REQUIRE(both);
+    both->apply(song);
+    const Device& copy = song.findTrack(track)->devices.back();
+    REQUIRE(copy.modulators.size() == 1);
+    REQUIRE(copy.modulators[0].routes.size() == 1);
+    CHECK(copy.modulators[0].routes[0].target.owner == copy.id.value);
+}
+
+TEST_CASE("an arpeggiator's own Pattern line saves with the song, and the dice writes lines") {
+    Song song = makeDefaultSong();
+    TrackId track = song.tracks[0].id;
+    DeviceId arp;
+    CommandPtr add =
+        addDevice(song, ChainOwner(track), DeviceType::Arpeggiator, -1, [&] { return song.nextId++; }, &arp);
+    add->apply(song);
+    std::vector<uint8_t> line = chain::generatedLine(42, 12);
+    REQUIRE(line.size() == 12);
+    CHECK(line == chain::generatedLine(42, 12)); // the same seed, the same line
+    CHECK(line != chain::generatedLine(43, 12));
+    for (uint8_t step : line)
+        CHECK((step == chain::stepOf(1) || step == chain::stepOf(2) || step == chain::stepOf(3) ||
+               step == chain::stepOf(4)));
+    line[3] = uint8_t(chain::stepOf(1) | chain::stepOf(3));
+    CommandPtr set = setArpLine(song, arp, line, 5, "Edit the line");
+    REQUIRE(set);
+    set->apply(song);
+    json_t* j = songToJson(song);
+    Song back = songFromJson(j, Song::kSchemaVersion);
+    json_decref(j);
+    CHECK(findDevice(back, arp)->line == line);
+    CHECK(findDevice(back, arp)->variation == 5);
+    set->revert(song);
+    CHECK(findDevice(song, arp)->line.empty());
 }

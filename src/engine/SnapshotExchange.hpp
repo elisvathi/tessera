@@ -8,16 +8,19 @@
 
 namespace tessera {
 
-/// Hands snapshots from the UI thread to the engine without locks or audio-thread frees.
+/// Hands snapshots (any type with a `generation` field) from the UI thread to the engine without locks or
+/// audio-thread frees.
 ///
 /// The UI publishes a new snapshot by swapping one atomic pointer. The engine picks up the newest one and
 /// acknowledges its generation. Only snapshots older than the acknowledged one can no longer be reached by
 /// the engine, so the UI frees exactly those, on the UI thread.
-class SnapshotExchange {
+template <typename T>
+class Exchange {
   public:
     // UI thread
 
-    void publish(std::unique_ptr<Snapshot> snapshot) {
+    /// Hands `snapshot` to the engine; it picks it up on its next poll().
+    void publish(std::unique_ptr<T> snapshot) {
         snapshot->generation = nextGeneration++;
         latestPublished = snapshot.get();
         pending.store(snapshot.get(), std::memory_order_release);
@@ -33,14 +36,14 @@ class SnapshotExchange {
     }
 
     /// The newest snapshot published, as the UI last built it.
-    const Snapshot* latest() const { return latestPublished; }
+    const T* latest() const { return latestPublished; }
     size_t liveCount() const { return live.size(); }
 
     // Audio thread
 
     /// The newest snapshot if it changed since the last call, otherwise nullptr.
-    const Snapshot* poll() {
-        const Snapshot* s = pending.load(std::memory_order_acquire);
+    const T* poll() {
+        const T* s = pending.load(std::memory_order_acquire);
         if (s == current)
             return nullptr;
         current = s;
@@ -49,16 +52,18 @@ class SnapshotExchange {
     }
 
   private:
-    std::atomic<const Snapshot*> pending{nullptr};
+    std::atomic<const T*> pending{nullptr};
     std::atomic<uint64_t> acknowledged{0};
 
     // UI thread
-    std::deque<std::unique_ptr<Snapshot>> live; // in publish order, oldest first
+    std::deque<std::unique_ptr<T>> live; // in publish order, oldest first
     uint64_t nextGeneration = 1;
-    const Snapshot* latestPublished = nullptr;
+    const T* latestPublished = nullptr;
 
     // Audio thread
-    const Snapshot* current = nullptr;
+    const T* current = nullptr;
 };
+
+using SnapshotExchange = Exchange<Snapshot>;
 
 } // namespace tessera

@@ -10,10 +10,11 @@ namespace tessera {
 
 class EditorPane;
 class Splitter;
+class FoldedBar;
 
 /// The top pane (launcher or arranger) above, the detail area below, a draggable splitter between them, and either one
 /// maximized. The overlay and the in-panel editor both use it, so panes behave the same everywhere. Layout comes from
-/// the surface's ViewState (topFraction, maximized).
+/// EditorState (topFraction, maximized), so both editors show the same panes.
 class PaneStack : public rack::widget::Widget {
   public:
     /// The stack takes ownership of both panes. `minPaneHeight` keeps either pane from collapsing.
@@ -29,6 +30,7 @@ class PaneStack : public rack::widget::Widget {
     EditorPane* top;
     rack::widget::Widget* bottom;
     Splitter* splitter;
+    FoldedBar* bar; // the folded pane's switch while the other pane is maximised
     float minPaneHeight;
 };
 

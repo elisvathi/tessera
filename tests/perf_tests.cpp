@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include "../src/engine/Engine.hpp"
+#include "../src/model/DeviceTypes.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -9,8 +10,13 @@ using namespace tessera;
 
 namespace {
 
-/// `tracks` tracks, each looping a bar of 4-note chords on every 1/16, with automation, all launched.
-double secondOfAudio(int tracks, bool busy = true, bool automation = true) {
+/// Where a test's Transpose and Echo go: nowhere, on each track, or in each clip's own chain.
+enum class Devices { None, OnTrack, OnClip };
+
+/// `tracks` tracks, each looping a bar of 4-note chords on every 1/16, with automation, all launched; with
+/// `playheads`, a Playheads device reads each clip with that many playheads.
+double secondOfAudio(int tracks, bool busy = true, bool automation = true, int playheads = 0,
+                     Devices chain = Devices::None) {
     Song song;
     for (int t = 0; t < tracks; t++) {
         Track track;
@@ -38,6 +44,18 @@ double secondOfAudio(int tracks, bool busy = true, bool automation = true) {
         if (automation)
             clip.automation.push_back(lane);
         track.slots[0].clip = clip.id;
+        if (playheads > 0) {
+            Device d = devices::makeDevice(DeviceType::Playheads, song.newId<DeviceId>());
+            for (int i = 0; i < playheads; i++)
+                d.playheads.push_back(devices::makePlayhead(song.newId<PlayheadId>(), i));
+            track.devices.push_back(d);
+        }
+        if (chain != Devices::None) {
+            std::vector<Device>& list = chain == Devices::OnTrack ? track.devices : clip.devices;
+            list.push_back(devices::makeDevice(DeviceType::Transpose, song.newId<DeviceId>()));
+            list.push_back(devices::makeDevice(DeviceType::Echo, song.newId<DeviceId>()));
+            clip.hasOwnChain = clip.playsOwnChain = chain == Devices::OnClip;
+        }
         song.clips.emplace(clip.id, clip);
         song.tracks.push_back(track);
     }
@@ -49,30 +67,56 @@ double secondOfAudio(int tracks, bool busy = true, bool automation = true) {
     engine.setTempo(140);
     engine.setSnapshot(snapshot.get());
     engine.launch({LaunchEvent::Kind::Scene, 0, 0, true});
-    std::array<TrackFrame, kMaxTracks> frames{};
+    // Two buffers, written in turn, as the module's output bus does: a quiet track only rests once both hold its
+    // outputs, so a single buffer would keep every track busy on every sample.
+    std::array<std::array<TrackFrame, kMaxTracks>, 2> frames{};
     TransportEvents events;
     auto start = std::chrono::steady_clock::now();
     for (int s = 0; s < 48000; s++) {
         engine.setPlayMode(PlayMode::Launcher); // the module sets the mode on every sample
-        engine.process(frames.data(), events);
+        engine.process(frames[size_t(s & 1)].data(), events);
     }
     double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     return seconds * 100; // share of one core, in percent, for one second of audio
 }
 
+/// The best of three runs: other work on the machine only ever makes a run slower.
+double bestOf3(int tracks, bool busy = true, bool automation = true, int playheads = 0, Devices chain = Devices::None) {
+    double best = secondOfAudio(tracks, busy, automation, playheads, chain);
+    for (int i = 0; i < 2; i++)
+        best = std::min(best, secondOfAudio(tracks, busy, automation, playheads, chain));
+    return best;
+}
+
 } // namespace
 
 TEST_CASE("performance: the engine stays inside its CPU budget (DESIGN.md §18)") {
-    double busy16 = secondOfAudio(16);
-    double busy64 = secondOfAudio(64);
-    double idle64 = secondOfAudio(64, false, false);
-    double notesOnly64 = secondOfAudio(64, true, false);
+    double busy16 = bestOf3(16);
+    double busy64 = bestOf3(64);
+    double idle64 = bestOf3(64, false, false);
+    double notesOnly64 = bestOf3(64, true, false);
+    double heads16 = bestOf3(16, true, true, 4);
+    double heads16x16 = bestOf3(16, true, true, 16);
+    MESSAGE("16 busy tracks with 4 playheads each: " << heads16 << "%, with 16 each: " << heads16x16 << "%");
     MESSAGE("16 busy tracks: " << busy16 << "% of a core, 64: " << busy64 << "%; 64 without automation: " << notesOnly64
                                << "%, 64 idle: " << idle64 << "%");
 #if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
     CHECK(busy16 < 1);
     CHECK(busy64 < 3);
+    CHECK(heads16 < 8); // four playheads read four times the notes: about four busy tracks' worth, no more
 #else
     CHECK(busy64 < 400); // unoptimized with sanitizers: only a guard against something quadratic
+#endif
+}
+
+TEST_CASE("performance: a clip's own chain costs what the same devices on its track cost") {
+    double onTrack = bestOf3(16, true, true, 0, Devices::OnTrack);
+    double onClip = bestOf3(16, true, true, 0, Devices::OnClip);
+    MESSAGE("16 busy tracks through a Transpose and an Echo: " << onTrack << "% of a core on the tracks, " << onClip
+                                                              << "% in each clip's own chain");
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
+    CHECK(onClip < onTrack * 1.3 + 0.1);
+#else
+    CHECK(onClip < onTrack * 2 + 5);
 #endif
 }

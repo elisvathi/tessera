@@ -2,9 +2,14 @@
 
 ## Saving with the patch
 
-Roll saves everything inside your Rack patch: the song, the transport settings, the editor layout and the output
-modules' tracks. Save the patch as usual. Rack's module presets (right-click → **Preset**) also save and load the
-whole song.
+Roll saves everything inside your Rack patch: the song, the transport settings, the editor layout, the output
+modules' tracks and the audio files your audio clips play. Save the patch as usual. You can move, rename or send the
+patch file: the audio is inside it.
+
+Rack's module presets (right-click → **Preset**) also save and load the whole song, except its audio files. Rack saves
+only settings in a preset, in a saved selection, and when you copy and paste into another patch. Load one in another
+patch and its clips show **Missing file**, with [**Find…**](17-audio.md#finding-missing-audio) to bring them back. To
+take a song with its audio to another patch, use a project file.
 
 ## The File menu
 
@@ -20,7 +25,12 @@ so you can use them without opening the editor.
 | **Save project** | Saves to the project file you opened or saved last (its name shows in the menu). |
 | **Save project as…** | Saves a new `.tessera` file. |
 | **Import MIDI file as tracks…** | Adds a track for each part of a MIDI file. See [Importing MIDI](#importing-midi-files). |
+| **Import DAWproject…** | Opens a project from another music program as the song (it replaces the current one). See [Importing DAWproject](#importing-dawproject). |
+| **Import audio…** | Ctrl+Shift+O. Adds an audio file on a new audio track. See [Audio](17-audio.md). |
+| **Audio files…** | Lists the audio files the song holds. See [Audio](17-audio.md#the-audio-files-list). |
+| **Remove unused audio** | Removes the audio files no clip plays. See [Audio](17-audio.md#removing-audio-you-dont-use). |
 | **Export MIDI…** | Ctrl+Shift+E. See [Exporting MIDI](#exporting-midi). |
+| **Export audio…** | Ctrl+Alt+E. The song as WAV or FLAC, with stems if you like. See [Audio](17-audio.md#exporting-audio). |
 | **Export DAWproject…** | For other music programs that read DAWproject. See [Exporting DAWproject](#exporting-dawproject). |
 | **Colour scheme** | See [The editor](03-editor.md#colour-schemes). |
 
@@ -31,6 +41,14 @@ tempo, loop, Plays, the instance name and the editor layout. Use it to keep song
 another patch.
 
 It doesn't hold what belongs to the patch: the MIDI device, the panel's width and the editor size.
+
+A song with audio keeps its audio files inside the project file, so it is one file you can move, rename or send
+anywhere. Saving happens in the background, and the message at the bottom shows how far it is. If something goes wrong
+while saving, the older copy of the project stays as it was. A song with no audio is saved as plain text, as before.
+
+**Projects from before.** A project saved with an older version has its audio in a folder next to it: "Song.tessera"
+with "Song audio". It opens as it always did. The next time you save it, the audio goes inside the project file. The
+folder is left where it is, and you can delete it yourself once you've saved.
 
 Opening a project is one undo step. Output modules in the same patch keep their tracks.
 
@@ -46,6 +64,8 @@ Export your music as a Standard MIDI File, to open it in any music program.
 - **The song** (or the tracks selected in the headers): **Roll ▾ → Export MIDI…** or **Ctrl+Shift+E**.
 - **One clip, or the selected clips**: right-click a clip in the clips panel or on the timeline and choose **Export as
   MIDI…**. You choose one file per clip, or one file with a track per clip.
+- Devices, modulators and clips on **New** (see the dice in [Devices](13-devices.md#using-a-device-card)) make fresh
+  choices for each export; the message offers **Keep it** to fix them to what the file holds.
 
 ![The Export MIDI dialog](images/export-dialog.png)
 
@@ -56,8 +76,9 @@ Export your music as a Standard MIDI File, to open it in any music program.
 | **Timing** | **As written** (on the grid), or **As played** (with swing and micro-timing). |
 | **Note operators** | **As written** (every note, ignoring chance and repeats), or **Rendered** (each loop pass as it really plays, with chance, repeats and conditions). |
 | **Devices** | **Applied** (what the devices play: arpeggios, echoes, chords), or **Bypassed** (the clips as written). |
-| **Automation** | **Off**, **As CC** (each AUTO lane as a MIDI controller), or **As CC + 14-bit** (finer steps). |
+| **Automation** | **Off**, **As CC** (each AUTO lane as a MIDI controller), or **As CC + 14-bit** (finer steps). Pitch bend and pressure lanes (what a bend wheel and aftertouch record) go out as pitch bend and channel pressure, with a bend range message that matches the lane's range. With **MPE** they go on the master channel, so every note follows them. |
 | **Expressions** | **Off**, **MPE** (each note on its own channel, with its bend, timbre and pressure), or **Flatten** (timbre as CC74, pressure as polyphonic aftertouch; bends are dropped). |
+| **Ties as** | MIDI files have no ties. **Overlapping notes** (the default): the first note of a tie ends a 1/128 after the next one starts, so an instrument in mono legato mode plays on with no new attack (its own glide setting makes the slide). **One note with bend (MPE)**: with **Expressions** on **MPE**, a chain of tied notes becomes one note, its glides written as pitch bend, exactly as drawn. Without MPE, ties go out overlapping. |
 | **Include muted tracks and clips** | Off by default. Muted notes are never exported. |
 | **Use note channels** | Each note goes out on its own MIDI channel. Off: each track uses one channel. |
 | **Automation as controllers** | The CC number for each AUTO lane in use (1, 2, 11, 16… by default). |
@@ -81,10 +102,46 @@ writes:
   operators and Devices choices);
 - the clips panel's clips as scenes (looping);
 - tempo, time signature and markers;
-- AUTO lanes as automation (with Automation set to As CC).
+- AUTO lanes as automation (with Automation set to As CC);
+- audio tracks as audio tracks, with their volume and pan: each timeline clip plays its part of its file at the
+  clip's tempo, with its fades and loop, and every audio file goes inside the project so it opens with its sound.
+  Audio clips in the clips panel, reversed clips, clip gain and pitch don't go across yet.
 
-Per-note bends, timbre and pressure, and the devices themselves, don't go across (with Devices applied, their notes
-do).
+- each note's own **Pitch**, **Timbre** and **Pressure** curves, inside the note (pitch in semitones, timbre and
+  pressure from 0 to 1, as Bitwig Studio writes them);
+- pitch bend and pressure lanes as the track's pitch bend and channel pressure (with Automation set to As CC).
+
+Ties go across as notes that overlap by a 1/128, with each glide written into the two notes' pitch curves, so an
+instrument in mono legato mode plays the glide with no new attack. DAWproject has no ties either. The devices
+themselves don't go across (with Devices applied, their notes do).
+
+## Importing DAWproject
+
+**Roll ▾ → Import DAWproject…** opens a `.dawproject` file that another music program saved, as the song. It
+replaces the current song (Roll asks first); **Undo** (Ctrl+Z) brings the old one back. What comes across:
+
+| In the project | In Roll |
+|---|---|
+| Tempo, time signature, markers | the same; Plays switches to **Timeline** when the project has clips on its timeline |
+| Note tracks, audio tracks, effect tracks | instrument, audio and audio tracks; an effect track keeps the sends coming to it |
+| Group tracks | groups, with their level and pan (a group inside a group: its tracks go in the outer one) |
+| Volume, pan, mute, solo, sends, the master's level | the same in the mixer (sends that send nothing are left out) |
+| Timeline clips: place, length, start offset, loop, fades | timeline clips |
+| Scenes and their clip slots | scenes and slots |
+| Notes with velocity, release velocity, channel, and pitch, timbre and pressure curves | the same; a line of notes that overlap where one hands over to the next comes in [tied](08-shaping-notes.md#ties-and-glides) |
+| Audio clips | audio clips: each file is copied into the patch, and plays at the tempo the project's warps give it (with warp markers where they bend) |
+| Volume, pan and send automation, controller (CC), pitch bend and pressure lanes | mixer lanes, MIDI control lanes on AUTO channels, bend and pressure lanes |
+
+Unpacking a big project takes a moment; the editor shows how far it is. When something doesn't come across, a
+message lists it:
+
+- **Instruments and effects** are plugins Roll can't play: each track keeps its notes, and the message names the
+  instrument it used, so you can rebuild the sound in Rack.
+- Automation of instrument or effect knobs, mute automation, and gain, pan or formant curves on notes.
+- **Tempo and time signature changes**: Roll plays one tempo and one time signature, the project's first.
+- Anything past 64 tracks or 64 scenes, a track's ninth controller lane, and a second audio part inside one clip.
+- An audio file the project names but doesn't hold: its clips show the file as missing, and **Find in a folder…**
+  in the clip's menu brings it back.
 
 ## Importing MIDI files
 
@@ -101,6 +158,8 @@ There are three ways in. Each is one undo step.
 - Channel 10 becomes a drum track, with a lane for each drum sound used (General MIDI names where known, up to 16
   lanes).
 - Notes keep their timing, velocity and release velocity. Clips are whole bars long and loop.
+- A part that plays one line, whose notes only overlap where one hands over to the next (as playing legato on a mono
+  keyboard writes them), comes in with those notes [tied](08-shaping-notes.md#ties-and-glides). Chords stay chords.
 - Poly aftertouch and MPE come in as each note's **Pressure**, **Timbre** and **Pitch** curves. Pitch bend, channel
   aftertouch and controllers become clip lanes (see [Expression and controls](11-recording.md#expression-and-controls)).
 - Only controllers that move get a lane, such as the mod wheel or expression. Setup a file sends once and never

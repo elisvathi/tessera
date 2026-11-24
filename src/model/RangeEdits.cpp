@@ -1,5 +1,7 @@
 #include "RangeEdits.hpp"
 
+#include "LauncherCommands.hpp"
+
 #include <algorithm>
 #include <map>
 
@@ -25,6 +27,15 @@ Layout splitAt(const Layout& layout, const std::vector<TrackId>& tracks, Tick at
     if (across.empty())
         return layout;
     return arrange::split(layout, across, at, clips, [&] { return ArrangementId(nextId()); });
+}
+
+/// Adds the edit from `before` to `after` to `out`, where `cut` is the layout just after the cuts, before anything
+/// moved: pieces are only recognised while they still sit where they were cut.
+void addCutLayout(CompoundCommand& out, const Song& song, const std::string& name, const Layout& before,
+                  const Layout& cut, Layout after, const NextId& nextId) {
+    for (Clip& c : arrange::separatePieces(after, arrange::audioPieces(before, cut, song.clips), song, nextId))
+        out.add(std::make_unique<AddClip>(std::move(c)));
+    out.add(arrange::replaceArrangement(song, name, before, after));
 }
 
 /// Track lanes of `tracks` rewritten by `change`, as replaceLane commands added to `out`.
@@ -104,7 +115,7 @@ CommandPtr clearRange(const Song& song, const std::vector<TrackId>& tracks, Tick
         if (!(contains(tracks, p.track) && p.clip.position >= from && instanceEnd(p.clip) <= to))
             after.push_back(p);
     auto out = std::make_unique<CompoundCommand>("Delete range");
-    out->add(arrange::replaceArrangement(song, "Delete range", before, after));
+    out->add(arrange::replaceArrangement(song, "Delete range", before, after, nextId));
     editLanes(*out, song, tracks, [&](const Points& p, float rest) { return clearSpan(p, rest, from, to); });
     return out->empty() ? nullptr : std::move(out);
 }
@@ -126,7 +137,7 @@ CommandPtr deleteTime(const Song& song, const std::vector<TrackId>& tracks, Tick
         after.push_back(p);
     }
     auto out = std::make_unique<CompoundCommand>("Delete time");
-    out->add(arrange::replaceArrangement(song, "Delete time", before, after));
+    addCutLayout(*out, song, "Delete time", before, cut, std::move(after), nextId);
     editLanes(*out, song, tracks, [&](const Points& p, float rest) {
         if (p.empty())
             return p;
@@ -157,12 +168,13 @@ CommandPtr insertSilence(const Song& song, const std::vector<TrackId>& tracks, T
     if (length <= 0)
         return nullptr;
     Layout before = arrange::layoutOf(song);
-    Layout after = splitAt(before, tracks, at, song.clips, nextId);
+    Layout cut = splitAt(before, tracks, at, song.clips, nextId);
+    Layout after = cut;
     for (Placed& p : after)
         if (contains(tracks, p.track) && p.clip.position >= at)
             p.clip.position += length;
     auto out = std::make_unique<CompoundCommand>("Insert silence");
-    out->add(arrange::replaceArrangement(song, "Insert silence", before, after));
+    addCutLayout(*out, song, "Insert silence", before, cut, std::move(after), nextId);
     editLanes(*out, song, tracks, [&](const Points& p, float rest) {
         if (p.empty())
             return p;
@@ -201,7 +213,7 @@ CommandPtr duplicateRange(const Song& song, const std::vector<TrackId>& tracks, 
     // The pieces inside the range come from the split layout; the originals stay whole.
     after = arrange::resolveOverlaps(after, copies, song.clips, [&] { return ArrangementId(nextId()); });
     auto out = std::make_unique<CompoundCommand>("Duplicate range");
-    out->add(arrange::replaceArrangement(song, "Duplicate range", before, after));
+    out->add(arrange::replaceArrangement(song, "Duplicate range", before, after, nextId));
     editLanes(*out, song, tracks, [&](const Points& p, float rest) {
         if (p.empty())
             return p;

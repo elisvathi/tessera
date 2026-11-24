@@ -36,6 +36,8 @@ enum class PlayMode : uint8_t { Launcher, Arranger };
 /// Launcher slot values: a track with no clip playing, and a track with nothing queued.
 constexpr int kNoSlot = -1;
 constexpr int kNothingQueued = -2;
+/// A queued "back to the timeline": a next action's (docs/DECISIONS.md §184), at the end of its count.
+constexpr int kBackToTimeline = -3;
 
 /// A clip-launcher action (DESIGN.md §7 "Launcher mode", §10).
 struct LaunchEvent {
@@ -43,7 +45,7 @@ struct LaunchEvent {
     /// still queued from before the load (the default song's) can't take tracks off the arrangement.
     enum class Kind : uint8_t { Slot, StopTrack, Scene, StopAll, BackToArrangement, Reset };
     Kind kind = Kind::Slot;
-    uint64_t track = 0;     // TrackId value, for Slot and StopTrack
+    uint64_t track = 0;     // TrackId value, for Slot and StopTrack; for BackToArrangement one track (0: all)
     int index = 0;          // the slot (Slot) or the scene (Scene)
     bool immediate = false; // ignore launch quantize
     bool start = true;      // launching a clip or scene while stopped starts the transport
@@ -106,6 +108,7 @@ struct RecordEvent {
     Kind kind = Kind::Note;
     uint64_t track = 0; // TrackId value; 0 = not routed to a track
     int8_t pitch = 60;
+    int8_t inPitch = -1; // Note: the pitch as it came in, before the song's key snapped it (drum lanes go by this)
     float velocity = 0.8f;
     uint8_t channel = 1; // the MIDI channel it came in on, 1..16 (1 for CV and the computer keyboard)
     bool on = true;
@@ -162,6 +165,12 @@ class Engine {
     void setClockDivision(Tick ticks) { clockDivision = ticks > 0 ? ticks : 1; }
     /// Switching to Arranger brings every track back to the arrangement.
     void setPlayMode(PlayMode mode);
+    /// The scene the panel has picked (PREV / NEXT / SCENE): what starts when Clips has nothing to play.
+    void setPickedScene(int scene) { pickedScene = scene; }
+    /// The transport's own start (the play button, RUN, the editor's play): while the clips play and none is
+    /// launched, the picked scene starts with it, so play always plays something (docs/DECISIONS.md §186). Other
+    /// starts (a launch, a count-in) call play().
+    void start();
     PlayMode playMode() const { return mode; }
     /// While on, clip starts and stops go to `queue` (which must outlive the engine's use of it).
     void setCapture(CaptureQueue* queue, bool on);
@@ -171,16 +180,26 @@ class Engine {
     void setSnapshot(const Snapshot* snapshot);
 
     void play() {
+        // Every play rolls again for what is set to "New every play" (docs/DECISIONS.md §163), and lands its notes on
+        // the same voices.
+        if (!playing) {
+            roll++;
+            for (TrackState& t : tracks)
+                t.voices.restartRotation();
+        }
         playing = true;
         wakeAll();
     }
+    /// The roll devices, modulators and clips on "New every play" play on now: it changes on every play and every
+    /// pass of the song loop.
+    uint32_t currentRoll() const { return roll; }
     void stop();
     /// Back to the loop start when looping, otherwise to the song start. Clips restart from their beginning.
     void reset();
 
     /// Moves the song position (the arranger playhead) at once. Clips keep their own phase.
     void seek(double songTick);
-    /// Moves the song position the way a click on the ruler does (DECISIONS §96). While playing with launch
+    /// Moves the song position the way a click on the ruler does (DECISIONS §150). While playing with launch
     /// quantize on, the jump waits until the song reaches the target's place in the quantize grid, so launched
     /// clips stay on the same beat; stopped, or with launch quantize Off, it jumps at once. A newer call replaces
     /// a waiting one.
@@ -236,6 +255,14 @@ class Engine {
     TrackId trackAt(size_t i) const { return tracks[i].id; }
     int busSlotAt(size_t i) const { return snapshot->tracks[i]->busSlot; }
     int playingSlot(size_t i) const { return tracks[i].playing; }
+    /// Track `i`'s fader lane (`pan` false) or pan lane value (0..1) while one plays now; false when the strip's
+    /// own setting applies (§7.3).
+    bool mixLane(size_t i, bool pan, float& value) const {
+        if (!tracks[i].mixAutomated[pan ? 1 : 0])
+            return false;
+        value = tracks[i].autoValue[size_t(pan ? kPanLaneSlot : kVolumeLaneSlot)];
+        return true;
+    }
     /// kNothingQueued, kNoSlot (a stop is queued) or the queued slot.
     int queuedSlot(size_t i) const { return tracks[i].queued; }
     /// The clip time a queued jump inside the playing clip lands on (a click on its ruler); NaN for a plain launch.
@@ -244,10 +271,28 @@ class Engine {
     }
     /// In Arranger mode: the launcher has taken this track over, so its arrangement is silent.
     bool overridden(size_t i) const { return mode == PlayMode::Arranger && tracks[i].overridden; }
+    /// Whether track `i` plays the timeline now: in Timeline mode unless a launched clip took it over, in Clips mode
+    /// when it was sent back to the timeline (docs/DECISIONS.md §187).
+    bool followsTimeline(size_t i) const { return followsArrangement(tracks[i]); }
     /// Where the playing clip is, in clip ticks. NaN when nothing plays or a one-shot clip has ended.
     double clipPosition(size_t i) const;
     /// Clip ticks played since the playing clip started (not wrapped by its loop). NaN when nothing plays.
     double clipElapsed(size_t i) const { return tracks[i].playing != kNoSlot ? playTick - tracks[i].launchTick : NAN; }
+    /// Ticks the playing clip of track `i` has counted toward its next action (from its launch, or from the last
+    /// roll that kept it playing); NaN when it has none.
+    double actionElapsed(size_t i) const {
+        return tracks[i].playing != kNoSlot && std::isfinite(tracks[i].actionFrom) ? playTick - tracks[i].actionFrom
+                                                                                   : NAN;
+    }
+    /// Next actions on (the default) or held: while held every clip keeps looping, and a next action already
+    /// waiting for its launch line is called off.
+    void setNextActions(bool on);
+    bool nextActions() const { return nextActionsOn; }
+    /// Where playhead `head` of track `i` has read its clip to (clip ticks), as its settings and their curves and
+    /// modulators moved it; NaN while it isn't reading. For the editor's playhead lines. Audio thread.
+    double playheadPosition(size_t i, size_t head) const {
+        return i < kMaxTracks && head < size_t(playheads::kMaxPlayheads) ? (*playheadClocks)[i][head].lastPos : NAN;
+    }
 
     /// A track's automation value (0..1) on an AUTO channel after this sample, for parameter mapping. Includes
     /// what modulators add to the channel.
@@ -280,6 +325,15 @@ class Engine {
         return slot >= 0 && slot < kMaxModulatorSlots ? liveModulators[size_t(slot)].load(std::memory_order_relaxed)
                                                       : 0.f;
     }
+    /// The step the Arpeggiator in report slot `slot` (Snapshot::arpSlotOf) played last, counted from where its
+    /// pattern started; -1 while it plays nothing. Any thread.
+    int64_t arpStep(int slot) const {
+        return slot >= 0 && slot < kMaxArpSlots ? liveArpSteps[size_t(slot)].load(std::memory_order_relaxed) : -1;
+    }
+    /// How many notes the Arpeggiator in report slot `slot` holds while it runs; 0 when it doesn't. Any thread.
+    int arpHeld(int slot) const {
+        return slot >= 0 && slot < kMaxArpSlots ? liveArpHeld[size_t(slot)].load(std::memory_order_relaxed) : 0;
+    }
     /// Notes the device chains had to drop because too many were in flight.
     int chainOverflows() const;
 
@@ -287,6 +341,29 @@ class Engine {
     void process(TrackFrame* frames, TransportEvents& events);
 
   private:
+    /// A voice's glides (docs/design/TIES_VOICES.md §2), in play ticks. `in`: the move into a tied note, from the
+    /// pitch the voice had at the joint (`a`, V/OCT, at `startAt`) to the note's (`b`), along the curve that runs
+    /// from `from` to `to` and stood at `e0` at `startAt`. `out`: the move a tied note after this one starts
+    /// while this one plays, `volts` up or down over [from, to].
+    struct VoiceGlide {
+        struct In {
+            double from = 0, to = 0, startAt = 0;
+            float e0 = 0, a = 0, b = 0, shape = 0;
+            bool on = false;
+        } in;
+        struct Out {
+            double from = 0, to = 0;
+            float volts = 0, shape = 0;
+            bool on = false;
+        } out;
+        bool any() const { return in.on || out.on; }
+    };
+    /// Where voice glide `g` puts a voice's V/OCT at play tick `t`, given the note's own `volts`.
+    static float glidedVolts(const VoiceGlide& g, float volts, double t);
+    /// The glides of note `n` as it starts on a voice: into it when it `continues` a tied note (from `joinedAt`,
+    /// the V/OCT the voice had), and out of it toward a tied note after it. `scale`: play ticks per written tick.
+    VoiceGlide glideFor(const chain::ChainNote& n, const NoteExtras* extras, bool continues, float joinedAt,
+                        double scale) const;
     struct TrackState {
         TrackState() {
             audition.fill(-1);
@@ -297,7 +374,8 @@ class Engine {
 
         // Output frames: what changed since each bus buffer was last written (DESIGN.md §18).
         uint64_t autoChanges = 0;
-        int curvedVoices = 0; // voices playing expression curves change their outputs every sample
+        int curvedVoices = 0;  // voices playing expression curves change their outputs every sample
+        int glidingVoices = 0; // so do voices with a glide (VoiceGlide)
         int auditions = 0;    // voices with an audition, so the per-sample countdown is skipped when there are none
         int busSlot = -1;     // the track's frame on the bus (a copy of TrackPlayback::busSlot, kept close at hand)
         std::array<uint64_t, 2> written{~uint64_t(0), ~uint64_t(0)};
@@ -305,7 +383,7 @@ class Engine {
         VoiceAllocator voices;
         TrackId id;
         // Per voice: -1 = clip note or idle, 0 = audition held until note-off, > 0 = audition samples left.
-        std::array<int32_t, kMaxVoices> audition;
+        std::array<int32_t, kMaxTrackVoices> audition;
         size_t cursor = 0; // next note to consider in the playing clip
         int playing = kNoSlot;
         ClipId playingClip; // to find the clip again when slots move (a scene inserted above it)
@@ -314,6 +392,15 @@ class Engine {
         double queuedAt = 0;     // playTick when the queued change happens
         double queuedClipTime = NAN; // the queued clip starts from this clip time (a ruler click); NaN = its start
         double launchTick = 0;   // playTick when the playing clip started
+        // Next actions (docs/DECISIONS.md §184): where the playing clip's count started (NaN: it has no next action),
+        // the clip that played before it, whether the queued launch is one a next action picked, and whether this
+        // count's roll came out "keep looping" (the count starts over when it ends).
+        double actionFrom = NAN;
+        ClipId previousClip;
+        bool queuedByAction = false;
+        bool actionKept = false;
+        // Clips mode: the track was sent back to the timeline and plays it while the others play clips.
+        bool onTimeline = false;
         bool overridden = false; // launched or stopped by the launcher since the last "back to arrangement"
         size_t arrangementCursor = 0;
         // Automation per AUTO channel: the smoothed value (0..1), its volts, and where each lane list was.
@@ -322,6 +409,7 @@ class Engine {
         std::array<float, kMaxPlayedLanes> autoOut{}; // with modulators added
         int autoChannels = 0;                         // the lanes' channels and the modulated ones
         std::array<float, kMaxPlayedLanes> autoVolts{};
+        std::array<bool, 2> mixAutomated{}; // a fader lane, a pan lane plays now (their values are in autoValue)
         std::array<float, kMaxPlayedLanes> autoLow{}, autoHigh{};
         std::array<float, kMaxPlayedLanes> slewMs{}, slewAlpha{};
         std::array<size_t, kMaxPlayedLanes> trackLaneCursor{}, clipLaneCursor{};
@@ -340,20 +428,49 @@ class Engine {
             int64_t pass;
             uint8_t key;
             uint8_t channel;
+            uint8_t lane; // the playhead that read it, for its branch; 0 = none
+            bool tied = false;      // continues the note before it (only a note's first hit)
+            uint8_t lowerLater = 0; // NoteEvent::lowerLater
         };
         std::array<PendingHit, kMaxPendingHits> pending{};
+        /// How far ahead the playheads have read the launched clip (ticks since it started): they read a control
+        /// block at a time and queue its notes, so the track sleeps between notes instead of waking every sample.
+        struct PlayheadLook {
+            double until = NAN;
+            double last = NAN; // the window start seen last, to notice a jump back
+            const ClipPlayback* clip = nullptr;
+            double launch = NAN;
+        };
+        PlayheadLook playheadLook;
+        // The same on the timeline, in song ticks: how far its playheads have read the timeline clips.
+        struct SongLook {
+            double until = NAN;
+            double last = NAN;
+        };
+        SongLook songLook;
         int pendingCount = 0;
         int64_t lastPass = -1;
         bool previousPlayed = true;
-        // Per voice: the expression curves of the note it plays, and when that note started and how long it is.
-        std::array<const NoteExtras*, kMaxVoices> voiceExtras{};
-        std::array<double, kMaxVoices> voiceStart{}, voiceLength{};
+        // Per voice: the expression curves of the note it plays, when that note started and how long it is, and
+        // the play ticks its curve takes per written tick (a timeline clip's stretch over the reading playhead's
+        // speed), so a curve found again in a new snapshot keeps its pace.
+        std::array<const NoteExtras*, kMaxTrackVoices> voiceExtras{};
+        std::array<double, kMaxTrackVoices> voiceStart{}, voiceLength{}, voiceScale{};
+        std::array<VoiceGlide, kMaxTrackVoices> glide{};
+        std::array<uint8_t, kMaxTrackVoices> voicePart{}; // the channel of each voice's note
+        std::array<uint8_t, kMaxDrumLanes> lanePart{};    // the channel of each drum lane's last hit
+        // The playhead (1..16; 0 = none) that read each voice's note and each drum lane's last hit, so turning a
+        // playhead off stops what it sounds at once.
+        std::array<uint8_t, kMaxTrackVoices> voiceReader{};
+        std::array<uint8_t, kMaxDrumLanes> laneReader{};
+        // The playhead ID behind each of those numbers (number - 1), to follow a playhead that moved in a new snapshot.
+        std::array<uint64_t, playheads::kMaxPlayheads> readerIds{};
         // Which written note a curved voice plays (clip and note ID values), to find its curves again in a new
         // snapshot; 0 = none.
-        std::array<uint64_t, kMaxVoices> voiceClip{}, voiceNote{};
+        std::array<uint64_t, kMaxTrackVoices> voiceClip{}, voiceNote{};
         // What the record inputs play now: per voice its key's own bend (semitones), timbre and pressure (0..1),
         // and for the track the values its channel shares, in volts (AUTO channels in `liveAutoMask`).
-        std::array<float, kMaxVoices> liveBend{}, liveTimbre{}, livePress{};
+        std::array<float, kMaxTrackVoices> liveBend{}, liveTimbre{}, livePress{};
         float liveChannelBend = 0, liveChannelPress = 0;
         std::array<float, kMaxAutomationLanes> liveAuto{};
         uint8_t liveAutoMask = 0;
@@ -366,6 +483,7 @@ class Engine {
         struct DrumCurve {
             const NoteExtras* extras = nullptr;    // set only while the curve plays
             double start = 0, length = 1;          // play ticks
+            double scale = 1;                      // play ticks per written tick, as for voices
             uint64_t clip = 0, note = 0;           // find a playing curve again in a new snapshot
             float bend = 0, timbre = 0, press = 0; // what the outputs send now: semitones, 0..1, 0..1
         };
@@ -375,6 +493,13 @@ class Engine {
         // The device chain: what the snapshot says, and the runtime (an index into `chains`, -1 for none).
         const ChainPlayback* chainInfo = nullptr;
         int chain = -1;
+        // While a clip with its own chain plays (docs/DECISIONS.md §157), that chain and its runtime: the clip's notes
+        // go through it instead of the track's. Live keys and notes from a listened track keep the track's chain.
+        const ChainPlayback* ownInfo = nullptr;
+        uint64_t ownClip = 0;
+        int ownChain = -1;
+        /// The chain the playing clip's notes go through: what its playheads and its note modulators come from.
+        const ChainPlayback* readInfo() const { return ownInfo ? ownInfo : chainInfo; }
         uint64_t outputVersion(uint64_t epoch) const {
             return voices.changeCount() + drums.changeCount() + autoChanges + epoch;
         }
@@ -401,6 +526,12 @@ class Engine {
         state.voiceClip[size_t(voice)] = extras ? extras->clip : 0;
         state.voiceNote[size_t(voice)] = extras ? extras->note.id.value : 0;
     }
+    /// Sets voice `v`'s glides, keeping the count of gliding voices.
+    static void setGlide(TrackState& state, int v, const VoiceGlide& g) {
+        VoiceGlide& slot = state.glide[size_t(v)];
+        state.glidingVoices += int(g.any()) - int(slot.any());
+        slot = g;
+    }
     /// After a snapshot swap: sounding voices find their notes' curves in the new snapshot (edited or not), so a
     /// long note keeps bending instead of going flat until it starts again.
     static void reattachCurves(const TrackPlayback& tp, TrackState& state);
@@ -410,6 +541,8 @@ class Engine {
             catchUp(i, clockAt);
         wakeAt.fill(-INFINITY);
         idleUntil.fill(0);
+        earliestWake = -INFINITY;
+        earliestIdleEnd = 0;
         controlNow = true; // and automation catches up at once (a seek, a launch, a new snapshot)
     }
     /// Counts the samples track `i` skipped while idle, so its voices' clock reads `sample`.
@@ -419,6 +552,8 @@ class Engine {
         catchUp(i, clockAt);
         wakeAt[i] = -INFINITY;
         idleUntil[i] = 0;
+        earliestWake = -INFINITY;
+        earliestIdleEnd = 0;
     }
     void catchUp(size_t i, uint64_t sample) {
         if (clockOf[i] < sample) {
@@ -434,10 +569,31 @@ class Engine {
     void advanceSong(double dt, TransportEvents& events);
     void scheduleTrackNow(const TrackPlayback& track, TrackState& state, double prevPlay, double curPlay);
     void playClip(const TrackPlayback& track, TrackState& state, double from, double to);
+    /// A clip read by the track's playheads instead of its own playhead (docs/design/PLAYHEADS.md): `a` and `b`
+    /// are clip ticks since the clip started, `from` the play tick `a` falls on, and each clip tick lasts
+    /// `stretch` play ticks. A playhead reads only between `first` and `last` (clip ticks): where the clip
+    /// begins and ends, so an Offset never reads past either. A timeline clip's `transpose` applies to each
+    /// written note before the playhead shapes it.
+    void playPlayheads(const TrackPlayback& track, TrackState& state, const ClipPlayback& clip, double a, double b,
+                       double from, double stretch = 1, double first = 0, double last = INFINITY, int transpose = 0);
+    /// The timeline clips under song ticks [from, to), read by the track's playheads.
+    void playInstancesByPlayheads(const TrackPlayback& track, TrackState& state, double from, double to,
+                                  double playAtFrom);
+    /// Whether the track's clips are read by playheads.
+    static bool readByPlayheads(const TrackState& state) {
+        return state.readInfo() && state.readInfo()->playheadKnobs >= 0;
+    }
     void playSource(const TrackPlayback& track, TrackState& state, double from, double to);
     void playArrangement(const TrackPlayback& track, TrackState& state, double from, double to);
     void fireArrangement(const TrackPlayback& track, TrackState& state, double from, double to, double playAtFrom);
-    bool followsArrangement(const TrackState& state) const { return mode == PlayMode::Arranger && !state.overridden; }
+    bool followsArrangement(const TrackState& state) const {
+        return mode == PlayMode::Arranger ? !state.overridden : state.onTimeline;
+    }
+    /// Sends a track back to the timeline at play tick `at` (in or just before this sample), in either mode.
+    void toTimeline(const TrackPlayback& track, TrackState& state, double at);
+    /// Sends a track back to the timeline at the next launch line (now while stopped, or with `immediate`), as a
+    /// launch waits for it. Nothing for a track that already plays the timeline with nothing queued.
+    void queueTimeline(const TrackPlayback& track, TrackState& state, bool immediate);
     /// A Replace take is being recorded on this track: the clips it will cut out are not heard.
     bool replacing(const TrackPlayback& track) const { return recordingOn && replaceTakes && track.armed; }
     void backToArrangement(const TrackPlayback& track, TrackState& state);
@@ -450,6 +606,13 @@ class Engine {
     static size_t arrangementIndex(const TrackPlayback& track, double songPos);
     void queueLaunch(const TrackPlayback& track, TrackState& state, int slot, bool immediate);
     void switchTo(const TrackPlayback& track, TrackState& state, int slot, double at);
+    /// When the playing clip's next action is due by play tick `curPlay`: picks where it goes and queues that for the
+    /// end of its count, one launch line ahead, so the editor shows what comes next. Nothing while a launch waits.
+    void decideNextAction(const TrackPlayback& track, TrackState& state, double curPlay);
+    /// The play tick at which the playing clip's next action is picked; INFINITY for none.
+    double nextActionDue(const TrackPlayback& track, const TrackState& state) const;
+    /// A number in [0, 1) for a next action's dice: new on every draw.
+    double drawAction();
     /// Carries out the track's queued launch at play tick `at`, from its queued clip time when it has one.
     void switchQueued(const TrackPlayback& track, TrackState& state, double at);
     /// Carries out every queued launch now (on stop and reset).
@@ -466,14 +629,49 @@ class Engine {
                   Tick loopStart, Tick length, double a, double b, double playAtFrom,
                   const std::vector<NoteExtras>* extras);
     void startNote(const TrackPlayback& track, TrackState& state, const NoteEvent& n, double onPlay, double endPlay,
-                   int64_t pass);
+                   int64_t pass, uint8_t lane = 0);
     /// A note with extras: decides whether it plays on this pass and turns it into hits, now or later.
+    /// A motion group knob as a note on `pass` reads it: the knob table's value, with "Per pass" modulators
+    /// stepped to that pass instead of the bar.
+    float motionKnob(int knob, int64_t pass) const;
+    /// How a Motion device whose knobs start at `knobs` moves its notes on `pass`.
+    struct MovedBy {
+        int steps = 0;
+        bool inKey = true;
+        double delay = 0;
+        double lengthScale = 1;
+        float velocity = 0;
+    };
+    /// After a new layout of a track's voices: what the engine keeps per voice follows each voice to its new place
+    /// (`moved`, -1 for gone).
+    void moveVoiceState(TrackState& state, const std::array<int8_t, kMaxTrackVoices>& moved);
+    MovedBy movedBy(int knobs, int64_t pass) const;
+    // What movedBy worked out lately (by knobs, pass and control block): it is asked on every sample a playhead
+    // reads, for the same few Motion devices.
+    struct MovedCache {
+        int knobs = -1;
+        int64_t pass = 0;
+        uint64_t block = ~uint64_t(0);
+        MovedBy moved;
+    };
+    mutable std::array<MovedCache, 8> movedCache{};
+    mutable size_t movedNext = 0;
+    /// Whether `motion` is a Motion device before the track's playheads (they read its notes moved).
+    static bool readMotion(const ChainPlayback& chain, uint64_t motion);
+    /// Whether the modulator in `slot` is a Steps or Ramp set to "Per pass".
+    bool perPassSlot(int slot) const;
     void startWithOperators(const TrackPlayback& track, TrackState& state, const NoteEvent& n, const NoteExtras& ex,
-                            double onPlay, double endPlay, int64_t pass);
+                            double onPlay, double endPlay, int64_t pass, uint8_t lane = 0);
     void startHit(const TrackPlayback& track, TrackState& state, const TrackState::PendingHit& hit);
     void firePending(const TrackPlayback& track, TrackState& state, double until);
-    static void clearPending(TrackState& state);
+    /// Notes the playheads read ahead are about to be thrown away while the clip plays on: they read again from now
+    /// (their own time wound back with them, so a moving rate stays smooth).
+    void rewindPlayheads(TrackState& state);
+    void clearPending(TrackState& state);
     void hitDrum(const TrackPlayback& track, TrackState& state, const chain::ChainNote& n);
+    /// How fast the playhead `lane` (1..16; 0 = none, 1x) of a track reads its clip now. A note's curves play at
+    /// that pace, so they keep up with the playhead crossing the note, as the editor draws it.
+    double playheadSpeed(const TrackState& state, uint8_t lane) const;
     /// A note-off for a drum pitch: it ends a held "note length" gate. Triggers and fixed gates run their own
     /// length, so a key let go early doesn't shorten them.
     static void releaseDrum(const TrackPlayback& track, TrackState& state, int pitch);
@@ -500,12 +698,22 @@ class Engine {
     static bool takesInput(const TrackPlayback& track, LiveSource source, int channel);
     void writeDrumFrame(const TrackPlayback& track, const TrackState& state, TrackFrame& frame) const;
     void releaseAll(TrackState& state);
+    /// Playhead `lane` (1..16) was turned off: its sounding notes and drum gates stop now, and its waiting notes
+    /// (read ahead, delayed by operators, repeated by an Echo) are dropped. The other playheads play on.
+    void silencePlayhead(TrackState& state, uint8_t lane);
+    /// After a snapshot swap: the playhead numbers on sounding voices and drum lanes follow their playheads by ID.
+    static void renumberReaders(TrackState& state);
 
     // Device chains run on the engine clock (freeTick), which also runs while stopped, so live notes go through
     // them too. Voices end on the same clock.
     struct ChainRuntime {
-        TrackId owner;
+        uint64_t owner = 0; // the track's ID value, or for a clip's own chain the clip's
         uint64_t structure = 0;
+        // The devices the chain ran last, stage by stage, so an edit can carry what each one holds to its new place.
+        // -1: not known yet (a runtime just claimed), then an edit clears the chain instead.
+        std::array<uint64_t, kMaxDevices> ids{};
+        std::array<bool, kMaxDevices> ons{};
+        int idCount = -1;
         chain::Chain chain;
     };
     class ChainSink;
@@ -531,10 +739,22 @@ class Engine {
         return track.audible || (track.busSlot >= 0 && track.busSlot < kMaxTracks && feeds[size_t(track.busSlot)]);
     }
     void runChain(const TrackPlayback& track, TrackState& state, double until);
+    /// Runs one runtime (`runtime`, with the devices of `info`) up to `until`.
+    void runChainOf(const TrackPlayback& track, TrackState& state, int runtime, const ChainPlayback* info,
+                    double until);
+    /// Makes the track's clip notes go through the own chain of clip `clip` (its ID value), or through the track's
+    /// chain for 0. What the old own chain still held is dropped.
+    void useOwnChain(TrackState& state, uint64_t clip);
+    /// A runtime for the chain with key `key` (a track's or a clip's ID value): the one it had, else a free one,
+    /// cleared. -1 when none is free.
+    int claimRuntime(uint64_t key, uint64_t structure);
+    /// The earliest message waiting in either of a track's chains, on the engine clock.
+    double chainDue(const TrackState& state) const;
     void assignChains();
     /// Voices of notes whose end only the chain would have sent (legato, held notes) end now.
     void releaseOpenVoices(TrackState& state);
-    void triggerModulators(const TrackState& state, const chain::ChainNote& note);
+    /// Restarts the modulators of chain `info` that notes restart (envelopes, note followers).
+    void triggerModulators(const ChainPlayback* info, const chain::ChainNote& note);
     void advanceModulation();
     /// What each track's knob lanes set this block (before modulation reads them).
     void advanceKnobLanes();
@@ -542,13 +762,45 @@ class Engine {
     /// playhead from bottom to top (later ones override the lanes they share). Returns how many.
     using LaneClips = std::array<std::pair<const ClipPlayback*, double>, 16>;
     int lanesClips(const TrackPlayback& tp, const TrackState& state, double song, double play, LaneClips& out) const;
+    /// Ticks since the track's clip started at song tick `song` (play tick `play`): the launched clip, or the
+    /// timeline clip under the song position (the latest to start). NaN when none plays. Curves count from here.
+    double sinceClipStart(const TrackPlayback& tp, const TrackState& state, double song, double play) const;
     static void endAudition(TrackState& state, int voice);
     void advanceAuditions(TrackState& state);
 
     const Snapshot* snapshot = nullptr;
     size_t trackCount = 0;
-    std::array<TrackState, kMaxTracks> tracks;
-    std::array<TrackState, kMaxTracks> previous; // scratch for setSnapshot, kept here so it never allocates
+    /// Each playhead's own time (elapsed times its rate, added up as the rate moves), and the clip time and
+    /// restart it was counted to, so a moving Rate changes speed instead of making the playhead jump.
+    struct PlayheadClock {
+        double own = 0;
+        double until = NAN; // how far it has read, in its own clip ticks (its Offset behind or ahead of now)
+        double restart = 0;
+        double readTo = NAN; // how far the track's reading has come (clip ticks), to tell reading on from a jump
+        double shift = 0;    // its Offset in clip ticks: how far `until` runs behind now
+        // Its settings in ticks, worked out once per control block (knobs only change there) for this clip.
+        playheads::Motion motion;
+        playheads::NoteShape shape;
+        std::array<float, playheads::kMaxPlayheadParams> knobs{}; // its settings with its curves applied
+        uint64_t motionBlock = ~uint64_t(0);
+        const ClipPlayback* motionClip = nullptr;
+        // What `motion` and `shape` were last built from: rebuilt only when a setting really changed.
+        std::array<float, playheads::kMaxPlayheadParams> builtFrom{};
+        std::array<float, 4> builtDevice{};
+        const ClipPlayback* builtClip = nullptr;
+        const void* builtSnapshot = nullptr; // a new snapshot may reuse a clip's address; its path points into it
+        // Where its last sweep ended, so the next can tell a jump without working the place out again; NaN after
+        // its own time starts afresh.
+        double lastPos = NAN;
+        // Whether it played when it last read: turning off (a curve or a lane on its On) stops its notes at once.
+        bool heard = true;
+    };
+    /// Per track (by index in `tracks`) and playhead. On the heap: the engine sits on the stack in tests.
+    std::unique_ptr<std::array<std::array<PlayheadClock, playheads::kMaxPlayheads>, kMaxTracks>> playheadClocks;
+    // On the heap too (each track holds up to kMaxTrackVoices voices); `tracks` and `previous` name them.
+    std::unique_ptr<std::array<TrackState, kMaxTracks>> trackStore, previousStore;
+    std::array<TrackState, kMaxTracks>& tracks;
+    std::array<TrackState, kMaxTracks>& previous; // scratch for setSnapshot, kept here so it never allocates
     int retriggerGap = 48;
     std::array<bool, kMaxTracks> slotUsed{};
     // The bus is double buffered: which buffer this sample writes, so each gets every change once.
@@ -578,14 +830,34 @@ class Engine {
     // track until then; -infinity works it out on the next sample. idleUntil: before this sample the track's
     // outputs can't change on their own, so the output loop skips it. clockOf: the sample its voices count to.
     std::array<double, kMaxTracks> wakeAt{};
+    // The soonest of wakeAt and of idleUntil: until then no track has anything to do, and the per-track loops are
+    // skipped whole (most samples, with many tracks).
+    double earliestWake = -INFINITY;
+    uint64_t earliestIdleEnd = 0;
     std::array<uint64_t, kMaxTracks> idleUntil{};
     std::array<uint64_t, kMaxTracks> clockOf{};
     uint64_t clockAt = 0; // the sample events happen at: the one being processed, or else the next one
     bool controlNow = true;
+    // Stopped, a track's lanes hold still: once the slews have had time to arrive (kSettleTicks control ticks with no
+    // wake-up), tracks whose outputs nothing else moves sleep until something wakes them (wakeAll()).
+    static constexpr int kSettleTicks = 256; // about 170 ms at 48 kHz, past the longest slew (100 ms)
+    static constexpr uint64_t kAsleep = ~uint64_t(0);
+    int quietTicks = 0;
+    bool knobSetsLeft = true; // a track may still hold knob sets from playing: cleared by one stopped pass
+    bool anyCvOut = false;    // some modulator sends CV out or turns a Rack knob (set with the snapshot)
+    int skippedMods = 0;      // control ticks the slowed modulators skipped since they last ran
+    /// Whether a stopped track's automation still has to run at each control tick: a modulator sends CV out on it.
+    bool movesWhileStopped(const TrackState& state) const;
     bool loopOn = false;
     Tick clockDivision = kPpq / 4;
 
     bool playing = false;
+    uint32_t roll = 1; // see currentRoll()
+    bool nextActionsOn = true;
+    int pickedScene = 0;
+    /// No track plays or waits for a launched clip.
+    bool nothingLaunched() const;
+    uint64_t actionDraws = 0; // next actions' dice: how many were drawn
     bool resetPending = false;
     double songTick = 0;
     double windowStart = 0; // song tick where the current sample's window begins
@@ -618,17 +890,22 @@ class Engine {
     std::array<std::array<std::array<int8_t, 128>, 16>, 3> livePitch{};
 
     // Devices and modulators. Large tables live on the heap, allocated once.
-    std::unique_ptr<std::array<ChainRuntime, kMaxTracks>> chains;
+    /// A track's chain and the own chain of the clip it plays: at most two runtimes per track.
+    static constexpr int kChainRuntimes = 2 * kMaxTracks;
+    std::unique_ptr<std::array<ChainRuntime, kChainRuntimes>> chains;
     std::unique_ptr<float[]> knobValues; // knob table with modulation, as the devices read it
     std::unique_ptr<std::array<mods::State, kMaxModulatorSlots>> modStates;
     std::unique_ptr<std::atomic<float>[]> liveKnobs;      // for the UI
     std::unique_ptr<std::atomic<float>[]> liveBases;      // for the UI: knob lane values
     std::unique_ptr<std::atomic<float>[]> liveModulators; // for the UI
+    std::array<std::atomic<int64_t>, kMaxArpSlots> liveArpSteps; // for the UI: each Arpeggiator's last step
+    std::array<std::atomic<int>, kMaxArpSlots> liveArpHeld;      // for the UI: how many notes each one holds
     ParamRef overrideRef;
     float overrideValue = 0;
     bool overrideOn = false;
     bool overrideWasOn = false;
     bool knobsDirty = true;
+    uint64_t controlBlock = 0; // counts control blocks and snapshot swaps: cached playhead settings go stale
     bool knobLanesOn = false, knobLanesWereOn = false; // some knob lane set a knob this block, the last one
 };
 

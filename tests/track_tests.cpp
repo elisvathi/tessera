@@ -1,6 +1,8 @@
 #include "doctest.h"
 
 #include "../src/engine/Snapshot.hpp"
+#include "../src/model/DeviceTypes.hpp"
+#include "../src/model/Devices.hpp"
 #include "../src/model/TrackCommands.hpp"
 #include "../src/ui/interaction/TrackRows.hpp"
 #include "RandomSong.hpp"
@@ -145,6 +147,23 @@ TEST_CASE("grouping gathers tracks, moving into and out of groups, ungrouping") 
     CHECK(open[3].track == song.tracks[0].id);
     song.tracks[0].automation.clear();
 
+    // The Master row comes last, after the groups; its lanes follow it when open, with no add-lane row.
+    AutomationEnvelope masterLane;
+    masterLane.id = song.newId<AutomationId>();
+    masterLane.drive = LaneDrive::Volume;
+    song.master.automation.push_back(masterLane);
+    auto withMaster = buildTrackRows(song, {}, {}, true);
+    REQUIRE(withMaster.size() == 6);
+    CHECK(withMaster.back().kind == TrackRow::Kind::Master);
+    CHECK(withMaster.back().track == song.master.id);
+    auto masterOpen = buildTrackRows(song, {}, {song.master.id.value}, true);
+    REQUIRE(masterOpen.size() == 7);
+    CHECK(masterOpen[5].kind == TrackRow::Kind::Master);
+    CHECK(masterOpen[6].kind == TrackRow::Kind::Lane);
+    CHECK(masterOpen[6].lane == masterLane.id);
+    CHECK(buildTrackRows(song, {}, {song.master.id.value}).size() == 5); // no sound: no Master row
+    song.master.automation.clear();
+
     // Drop D onto the group (at its end): it joins.
     CommandPtr join = moveTracks(song, {song.tracks[3].id}, 2, g);
     REQUIRE(join);
@@ -283,6 +302,125 @@ TEST_CASE("auto voices follow the most notes a track's clips play at once") {
     track.slots[0].clip = clip.id;
     CHECK(song.voicesOf(track) == 3);
 
+    // An arpeggiator plays one note at a time, but a Pattern step that lights several notes plays them together.
+    Device arp = devices::makeDevice(DeviceType::Arpeggiator, DeviceId(900));
+    arp.params[chain::knob::kPattern] = devices::normalize(
+        *devices::paramInfo(DeviceType::Arpeggiator, chain::knob::kPattern), float(chain::ArpPattern::Pattern));
+    arp.line = {chain::stepOf(1), chain::stepOf(2)};
+    track.devices = {arp};
+    CHECK(song.voicesOf(track) == 1);
+    track.devices[0].line.push_back(uint8_t(chain::stepOf(1) | chain::stepOf(2)));
+    CHECK(song.voicesOf(track) == 2);
+    track.devices[0].line.push_back(chain::kFullStep); // every row: the whole chord of three
+    CHECK(song.voicesOf(track) == 3);
+    track.devices.clear();
+
     track.polyphony = 5;
     CHECK(song.voicesOf(track) == 5);
+}
+
+TEST_CASE("mix rows: a track opens to its parts, its sends and what it receives; a part opens to its sends") {
+    Song song = fourTracks();
+    TrackId a = song.tracks[0].id, b = song.tracks[1].id, d = song.tracks[3].id;
+    song.tracks[0].sends.push_back({d, -12, false, SendFrom::ofLane(1)}); // A's lane 1 → D
+    song.tracks[0].sends.push_back({d, -6, false, {}});                    // A as a whole → D
+    song.tracks[1].sends.push_back({d, -9, false, {}});                    // B → D
+    MixRowsSpec spec;
+    spec.parts[a.value] = {SendFrom::ofLane(0), SendFrom::ofLane(1)};
+
+    // Folded: just the four tracks, and the folds know what they hide (for their dots).
+    CHECK(buildTrackRows(song, {}, {}, false, &spec).size() == 4);
+    CHECK(mixChildren(song, spec, a) == std::vector<TrackId>{a, a, d});
+    CHECK(mixChildren(song, spec, a, SendFrom::ofLane(1)) == std::vector<TrackId>{d});
+    CHECK(mixChildren(song, spec, d) == std::vector<TrackId>{a, a, b});
+
+    // A open: lane 0, lane 1 (folded), then A's own send, then the add-lane row.
+    spec.open.insert({a.value, 0});
+    auto rows = buildTrackRows(song, {}, {}, false, &spec);
+    REQUIRE(rows.size() == 8);
+    CHECK(rows[4].kind == TrackRow::Kind::AddLane);
+    CHECK(rows[1].kind == TrackRow::Kind::Mix);
+    CHECK(rows[1].mix == TrackRow::Mix::Part);
+    CHECK(rows[1].from == SendFrom::ofLane(0));
+    CHECK(rows[1].depth == 1);
+    CHECK(rows[2].from == SendFrom::ofLane(1));
+    CHECK(rows[3].mix == TrackRow::Mix::Send);
+    CHECK(rows[3].from.whole());
+    CHECK(rows[3].other == d);
+    CHECK(rows[3].isLane());
+
+    // Lane 1 open: its send one step further in, right under it.
+    spec.open.insert({a.value, SendFrom::ofLane(1).key()});
+    rows = buildTrackRows(song, {}, {}, false, &spec);
+    REQUIRE(rows.size() == 9);
+    CHECK(rows[3].mix == TrackRow::Mix::Send);
+    CHECK(rows[3].from == SendFrom::ofLane(1));
+    CHECK(rows[3].depth == 2);
+
+    // D open: one row per send it receives, from whole tracks and parts.
+    spec.open.insert({d.value, 0});
+    rows = buildTrackRows(song, {}, {}, false, &spec);
+    REQUIRE(rows.size() == 13);
+    CHECK(rows[9].mix == TrackRow::Mix::Receive);
+    CHECK(rows[9].track == d);
+    CHECK(rows[9].other == a);
+    CHECK(rows[9].from == SendFrom::ofLane(1));
+    CHECK(rows[11].other == b);
+    CHECK(rows[12].kind == TrackRow::Kind::AddLane);
+}
+
+TEST_CASE("one arrow: a track opens to its own lanes, then its parts with their lanes, then sends with theirs") {
+    Song song = fourTracks();
+    TrackId a = song.tracks[0].id, d = song.tracks[3].id;
+    song.tracks[0].sends.push_back({d, -6, false, {}});                    // A as a whole → D
+    song.tracks[0].sends.push_back({d, -12, false, SendFrom::ofLane(1)}); // A's lane 1 → D
+    auto addLane = [&](uint64_t part, TrackId sendTo) {
+        AutomationEnvelope lane;
+        lane.id = song.newId<AutomationId>();
+        lane.part = part;
+        lane.sendTo = sendTo;
+        song.tracks[0].automation.push_back(lane);
+        return lane.id;
+    };
+    AutomationId own = addLane(0, TrackId());
+    AutomationId partLevel = addLane(SendFrom::ofLane(1).key(), TrackId());
+    AutomationId wholeSend = addLane(0, d);
+    AutomationId partSend = addLane(SendFrom::ofLane(1).key(), d);
+    AutomationId gonePart = addLane(SendFrom::ofLane(5).key(), TrackId()); // a part the track no longer has
+    MixRowsSpec spec;
+    spec.parts[a.value] = {SendFrom::ofLane(0), SendFrom::ofLane(1)};
+
+    // The dots say what each arrow hides: A's own lanes (one, plus the lost part's), its parts, its send.
+    CHECK(mixChildren(song, spec, a) == std::vector<TrackId>{a, a, a, a, d});
+    CHECK(mixChildren(song, spec, a, SendFrom::ofLane(1)) == std::vector<TrackId>{a, d});
+
+    spec.open.insert({a.value, 0});
+    auto rows = buildTrackRows(song, {}, {}, false, &spec);
+    auto laneAt = [&](size_t i) { return rows[i].kind == TrackRow::Kind::Lane ? rows[i].lane : AutomationId(); };
+    REQUIRE(rows.size() == 4 + 7);
+    CHECK(laneAt(1) == own);
+    CHECK(laneAt(2) == gonePart);
+    CHECK(rows[3].from == SendFrom::ofLane(0));
+    CHECK(rows[4].from == SendFrom::ofLane(1)); // folded: its lanes wait under its own arrow
+    CHECK(rows[5].mix == TrackRow::Mix::Send);
+    CHECK(laneAt(6) == wholeSend);
+    CHECK(rows[6].depth == 2);
+    CHECK(rows[7].kind == TrackRow::Kind::AddLane);
+
+    spec.open.insert({a.value, SendFrom::ofLane(1).key()});
+    rows = buildTrackRows(song, {}, {}, false, &spec);
+    REQUIRE(rows.size() == 4 + 10);
+    CHECK(rows[4].from == SendFrom::ofLane(1));
+    CHECK(laneAt(5) == partLevel);
+    CHECK(rows[5].depth == 2);
+    CHECK(rows[6].mix == TrackRow::Mix::Send);
+    CHECK(rows[6].depth == 2);
+    CHECK(laneAt(7) == partSend);
+    CHECK(rows[7].depth == 3);
+
+    // The part's send goes: its lane stays in sight with the part.
+    song.tracks[0].sends.pop_back();
+    rows = buildTrackRows(song, {}, {}, false, &spec);
+    CHECK(laneAt(6) == partSend);
+    CHECK(rows[6].depth == 2);
 }

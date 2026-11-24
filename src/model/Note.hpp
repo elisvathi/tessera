@@ -52,6 +52,13 @@ struct Note {
     NoteOperators ops;
     // Per-note expression curves; empty means flat. Pitch is in semitones (±48, MPE's default range), the others 0..1.
     std::vector<ExprPoint> pitchExpr, timbreExpr, pressureExpr;
+    DeviceId motion; // the Motion device it moves with (docs/design/PLAYHEADS.md §6); none when invalid
+    // Continues the note before it with no new gate (docs/design/TIES_VOICES.md). The glide is the pitch line
+    // across the joint: it starts `glideBefore` ticks before this note (inside the earlier one) and arrives
+    // `glideAfter` ticks into it; both 0 = the pitch jumps. `glideShape` bends it, -1..1.
+    bool tied = false;
+    Tick glideBefore = 0, glideAfter = 0;
+    float glideShape = 0;
 
     Tick end() const { return start + length; }
 
@@ -59,7 +66,8 @@ struct Note {
         return id == o.id && start == o.start && length == o.length && pitch == o.pitch && velocity == o.velocity &&
                releaseVelocity == o.releaseVelocity && microOffset == o.microOffset && muted == o.muted &&
                colorTag == o.colorTag && channel == o.channel && ops == o.ops && pitchExpr == o.pitchExpr &&
-               timbreExpr == o.timbreExpr && pressureExpr == o.pressureExpr;
+               timbreExpr == o.timbreExpr && pressureExpr == o.pressureExpr && motion == o.motion && tied == o.tied &&
+               glideBefore == o.glideBefore && glideAfter == o.glideAfter && glideShape == o.glideShape;
     }
 };
 

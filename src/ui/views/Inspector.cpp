@@ -1,12 +1,24 @@
 #include "Inspector.hpp"
 
+#include "../../model/Sends.hpp"
+#include "../../model/Ties.hpp"
+#include "../editing/SendActions.hpp"
+
+#include "../editing/AudioActions.hpp"
+#include "AudioClipDraw.hpp"
+
 #include "../../model/Arrangement.hpp"
+#include "../../model/DeviceCommands.hpp"
+#include "../../model/DeviceLookup.hpp"
+#include "../../model/DeviceTypes.hpp"
 #include "../../model/TrackColors.hpp"
 #include "../../module/Registry.hpp"
 #include "../../module/TesseraModule.hpp"
 #include "../Theme.hpp"
 #include "../editing/ClipActions.hpp"
+#include "../editing/DeviceActions.hpp"
 #include "../editing/KeyActions.hpp"
+#include "../editing/NextActionMenu.hpp"
 #include "../editing/NoteTarget.hpp"
 #include "../editing/TrackActions.hpp"
 #include "../interaction/ClickOrDrag.hpp"
@@ -216,9 +228,20 @@ void Inspector::layoutRegions() {
     if (drumTrack())
         for (Field f : kHitFields)
             field(f);
-    else
+    else {
         for (Field f : kNoteFields)
             field(f);
+        // The tie switch, and the glide of the tied notes (docs/design/TIES_VOICES.md).
+        regions.push_back({Region::Kind::Tie, Field::Count, 0, Rect(kPad, y, w - 2 * kPad, kChipHeight)});
+        y += kChipHeight + 4;
+        bool anyTied = false;
+        for (const Note& n : editor->notes())
+            anyTied = anyTied || (n.tied && selected.count(n.id));
+        if (anyTied) {
+            field(Field::GlideBefore);
+            field(Field::GlideAfter);
+        }
+    }
     y += kSectionGap / 2;
 
     titles.push_back({y, "OPERATORS"});
@@ -261,7 +284,44 @@ void Inspector::layoutRegions() {
         }
         y += 4;
     }
+
+    // Motion (docs/design/PLAYHEADS.md §6): which Motion device the notes move with; its knobs are on its card.
+    titles.push_back({y, "MOTION"});
+    y += kRowHeight;
+    regions.push_back({Region::Kind::Motion, Field::Count, 0, Rect(kPad, y, w - 2 * kPad, kChipHeight)});
+    y += kChipHeight + 4;
     notesBottom = y;
+}
+
+DeviceId Inspector::sharedMotion(bool* mixed) {
+    if (mixed)
+        *mixed = false;
+    if (!editor)
+        return DeviceId();
+    edits::IdSet ids = editor->selectedIds();
+    DeviceId shared;
+    bool first = true;
+    for (const Note& n : editor->notes())
+        if (ids.count(n.id)) {
+            if (!first && n.motion != shared) {
+                if (mixed)
+                    *mixed = true;
+                return DeviceId();
+            }
+            shared = n.motion;
+            first = false;
+        }
+    return shared;
+}
+
+void Inspector::openMotionMenu() {
+    const Clip* clip = editor ? editor->clip() : nullptr;
+    if (!clip)
+        return;
+    std::vector<NoteId> notes;
+    for (NoteId id : editor->selectedIds())
+        notes.push_back(id);
+    deviceActions::openMotionMenu(ctx, clip->id, notes, sharedMotion());
 }
 
 const Inspector::Region* Inspector::regionAt(Vec pos) const {
@@ -289,6 +349,8 @@ void Inspector::step() {
 }
 
 // ---- Input --------------------------------------------------------------------------------------------------
+
+namespace {} // namespace
 
 std::unique_ptr<DragGesture> Inspector::startGesture(Vec pos, int button, Modifiers mods) {
     const Region* r = regionAt(pos);
@@ -333,7 +395,7 @@ void Inspector::click(Vec pos, int button, Modifiers mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT)
         for (const SettingRow& s : settingRows)
             if (s.rect.contains(Vec(pos.x, pos.y + scroll))) {
-                openSetting(s.which);
+                openSetting(s.which, s.target);
                 return;
             }
     const Region* hit = regionAt(pos);
@@ -345,6 +407,24 @@ void Inspector::click(Vec pos, int button, Modifiers mods) {
     bool left = button == GLFW_MOUSE_BUTTON_LEFT;
     std::string notes = countNotes(ids.size());
     switch (r.kind) {
+    case Region::Kind::Motion:
+        openMotionMenu();
+        break;
+    case Region::Kind::Tie: {
+        if (!left)
+            return;
+        if (ties::allTied(before, ids)) {
+            editor->commit("Untie " + notes, before, ties::untie(before, ids, true));
+        } else {
+            edits::IdSet tied;
+            edits::NoteList after = ties::tie(before, ids, &tied);
+            if (tied.empty())
+                ctx.toast("Nothing to tie: a note ties to the one before it, at most 1/16 apart, on its channel");
+            else
+                editor->commit("Tie " + countNotes(tied.size()), before, after);
+        }
+        break;
+    }
     case Region::Kind::Chip: {
         if (!left)
             return;
@@ -486,7 +566,7 @@ float Inspector::row(NVGcontext* vg, float y, const std::string& label, const st
 }
 
 float Inspector::settingRow(NVGcontext* vg, float y, const std::string& label, const std::string& value,
-                            Setting which) {
+                            Setting which, uint64_t target) {
     const theme::Palette& c = theme::colors();
     draw::TextStyle l{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
     draw::TextStyle v{theme::fonts::ui(), theme::metrics::kTextUi, c.text0, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE};
@@ -505,19 +585,108 @@ float Inspector::settingRow(NVGcontext* vg, float y, const std::string& label, c
     nvgStrokeColor(vg, c.text1);
     nvgStrokeWidth(vg, 1.2f);
     nvgStroke(vg);
-    settingRows.push_back({Rect(kPad, y, box.size.x - 2 * kPad, kRowHeight), which});
+    settingRows.push_back({Rect(kPad, y, box.size.x - 2 * kPad, kRowHeight), which, target});
     return y + kRowHeight;
 }
 
-void Inspector::openSetting(Setting which) {
+float Inspector::diceRow(NVGcontext* vg, float y, const Clip& clip) {
+    const theme::Palette& c = theme::colors();
+    draw::TextStyle l{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
+    draw::text(vg, l, kPad, y + kRowHeight / 2, "Chance");
+    float right = box.size.x - kPad;
+    struct Piece {
+        Setting which;
+        draw::DicePart part;
+        float width;
+    };
+    float x = right - 34 - 30 - 4 - 20;
+    for (Piece p :
+         {Piece{Setting::DiceRoll, draw::DicePart::Roll, 20}, Piece{Setting::DiceFixed, draw::DicePart::Fixed, 30},
+          Piece{Setting::DiceNew, draw::DicePart::New, 34}}) {
+        Rect r(x, y + 2, p.width, kRowHeight - 4);
+        bool hot = hoveredSetting == int(settingRows.size());
+        draw::dice(vg, r, p.part, clip.variation, hot, theme::track(clip.color));
+        settingRows.push_back({r, p.which, clip.id.value});
+        x += p.width + (p.which == Setting::DiceRoll ? 4 : 0);
+    }
+    return y + kRowHeight;
+}
+
+float Inspector::nextActionRows(NVGcontext* vg, float y, const Track& t, const Clip& clip) {
+    if (clipActions::slotOf(t, clip.id) < 0)
+        return y;
+    const theme::Palette& c = theme::colors();
+    const NextActionSettings& n = clip.next;
+    using Part = nextActionMenu::Part;
+    y += kSectionGap;
+    y = section(vg, y, "NEXT ACTION");
+    y = settingRow(vg, y, "Do", nextActionMenu::label(n.action), Setting::NextAction, uint64_t(Part::Do));
+    if (n.action == NextAction::None && n.chance >= 100)
+        return y;
+    y = settingRow(vg, y, "After", nextActionMenu::afterLabel(n), Setting::NextAction, uint64_t(Part::After));
+    y = settingRow(vg, y, "How often", nextActionMenu::howOftenLabel(n), Setting::NextAction,
+                   uint64_t(Part::HowOften));
+    if (n.chance < 100)
+        y = settingRow(vg, y, "Otherwise", nextActionMenu::label(n.otherwise), Setting::NextAction,
+                       uint64_t(Part::Otherwise));
+    y = settingRow(vg, y, "Pick from", nextActionMenu::pickFromLabel(n), Setting::NextAction,
+                   uint64_t(Part::PickFrom));
+    std::string text = nextActionMenu::summary(ctx.module()->song(), t, clip);
+    if (text.empty())
+        return y;
+    draw::TextStyle s{theme::fonts::ui(), theme::metrics::kTextUi, c.text1, NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
+    float width = box.size.x - 2 * kPad;
+    float lines = width > 0 ? std::ceil(draw::textWidth(vg, s, text) / width + 0.15f) : 1;
+    draw::textBox(vg, s, kPad, y + 4, width, text);
+    return y + 6 + std::max(lines, 1.f) * theme::metrics::kTextUi * 1.3f;
+}
+
+void Inspector::openSetting(Setting which, uint64_t target) {
     TesseraModule* m = ctx.module();
+    if (m && (which == Setting::DiceRoll || which == Setting::DiceFixed || which == Setting::DiceNew)) {
+        const Clip* clip = m->song().findClip(ClipId(target));
+        if (!clip)
+            return;
+        int32_t number = variationNumber(clip->variation);
+        int32_t next = which == Setting::DiceNew     ? -number
+                       : which == Setting::DiceFixed ? number
+                                                     : int32_t(1 + (rack::random::u32() % uint32_t(kMaxVariation)));
+        if (CommandPtr command =
+                setClipField(m->song(), clip->id, &Clip::variation, next,
+                             next < 0 ? "Chance: new every play" : "Chance: variation " + std::to_string(next)))
+            m->perform(std::move(command));
+        return;
+    }
     const Track* t = m ? m->song().findTrack(ctx.state().selectedTrack) : nullptr;
     if (!t)
         return;
+    if (which == Setting::Output && audioActions::outputsFor(m, t->id).empty()) {
+        ctx.toast(audioActions::addOutputFor(m, t->id));
+        return;
+    }
+    if (which == Setting::NextAction) {
+        ClipId clip = clipActions::shownClip(ctx, *t);
+        if (!m->song().findClip(clip))
+            return;
+        rack::ui::Menu* menu = rack::createMenu();
+        nextActionMenu::appendItems(menu, ctx, clip, nextActionMenu::Part(target));
+        return;
+    }
     rack::ui::Menu* menu = rack::createMenu();
-    if (which == Setting::Voices) {
+    if (which == Setting::Output) {
+        audioActions::appendOutputItems(menu, ctx, t->id);
+    } else if (which == Setting::Send) {
+        if (target < t->sends.size()) {
+            const Send& send = t->sends[size_t(target)];
+            sendActions::appendSendItems(menu, ctx, t->id, send.to, send.from);
+        }
+    } else if (which == Setting::AddSend) {
+        sendActions::appendAddSendItems(menu, ctx, t->id);
+    } else if (which == Setting::Voices) {
         menu->addChild(rack::createMenuLabel("Voices"));
         trackActions::appendVoicesItems(menu, ctx, {t->id});
+    } else if (which == Setting::Audio) {
+        audioActions::appendAudioClipMenu(menu, ctx, clipActions::shownClip(ctx, *t));
     } else if (which == Setting::Input) {
         trackActions::appendInputItems(menu, ctx, t->id);
     } else {
@@ -632,6 +801,40 @@ void Inspector::drawRegion(NVGcontext* vg, const Region& r, bool hot) {
         centered.color = active || hot ? c.text0 : c.text1;
         draw::text(vg, centered, rect.getCenter().x, rect.getCenter().y,
                    draw::ellipsize(vg, centered, text, rect.size.x - 6));
+        break;
+    }
+    case Region::Kind::Motion: {
+        // "Motion 1 ⌄" in its colour when the notes move with one, else a quiet "Not moving ⌄".
+        bool mixed = false;
+        DeviceId id = sharedMotion(&mixed);
+        const Device* d = id.valid() && ctx.module() ? findDevice(ctx.module()->song(), id) : nullptr;
+        draw::roundedRect(vg, rect, theme::metrics::kRadiusControl, hot ? c.line0 : c.bg2);
+        if (d)
+            draw::roundedRectStroke(vg, rect, theme::metrics::kRadiusControl, theme::playheadColor(d->color), 1);
+        centered.color = d ? c.text0 : c.text1;
+        std::string text = d ? d->name : mixed ? "Several" : "Not moving";
+        draw::text(vg, centered, rect.getCenter().x, rect.getCenter().y, text);
+        // A small arrow at the right end: it opens a list.
+        float ax = rect.getRight() - 10, ay = rect.getCenter().y;
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, ax - 3, ay - 1.5f);
+        nvgLineTo(vg, ax, ay + 1.5f);
+        nvgLineTo(vg, ax + 3, ay - 1.5f);
+        nvgStrokeColor(vg, c.text1);
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+        break;
+    }
+    case Region::Kind::Tie: {
+        size_t on = 0;
+        for (const Note& n : notes)
+            on += n.tied && ids.count(n.id) ? 1 : 0;
+        bool all = on > 0 && on == ids.size(), some = on > 0;
+        NVGcolor fill = all ? c.accent : some ? nvgTransRGBAf(c.accent, 0.3f) : (hot ? c.line0 : c.bg2);
+        draw::roundedRect(vg, rect, theme::metrics::kRadiusControl, fill);
+        centered.color = all ? c.ink : some ? c.text0 : c.text1;
+        draw::text(vg, centered, rect.getCenter().x, rect.getCenter().y,
+                   all ? "Tied: no new gate" : "Tie to the note before");
         break;
     }
     case Region::Kind::Chip: {
@@ -784,6 +987,131 @@ void Inspector::drawView(const DrawArgs& args) {
     nvgRestore(vg);
 }
 
+void Inspector::drawAudioClipFacts(NVGcontext* vg, float y, const Track& t) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    const Clip* clip = song.findClip(clipActions::shownClip(ctx, t));
+    y = section(vg, y, "CLIP");
+    if (!clip || !clip->audio) {
+        row(vg, y, "No clip", "");
+        return;
+    }
+    const AudioContent& a = *clip->audio;
+    int uses = song.clipUses(clip->id);
+    y = row(vg, y, "Name", clip->name.empty() ? "Untitled" : clip->name);
+    if (uses > 1)
+        y = row(vg, y, "Linked", std::to_string(uses) + " copies");
+    static const char* const kFollow[] = {"Stretch", "Repitch", "Off (own speed)"};
+    static const char* const kSound[] = {"Drums", "Melody", "Voice", "Full mix"};
+    char tempo[32];
+    snprintf(tempo, sizeof tempo, "%.4g BPM", a.sourceTempo);
+    y = settingRow(vg, y, "Tempo", tempo, Setting::Audio);
+    y = settingRow(vg, y, "Follow", kFollow[int(a.follow)], Setting::Audio);
+    y = settingRow(vg, y, "Sound", kSound[int(a.sound)], Setting::Audio);
+    // Only a Stretch clip keeps its own pitch: Repitch and Off clips change pitch with their speed.
+    if (a.follow == TempoFollow::Stretch)
+        y = settingRow(vg, y, "Pitch", audioDraw::pitchText(a), Setting::Audio);
+    y = settingRow(vg, y, "Gain", audioDraw::dbText(a.gainDb), Setting::Audio);
+    y = settingRow(vg, y, "Reverse", regions::playsBackwards(a) ? "On" : "Off", Setting::Audio);
+    y = row(vg, y, "Length", bars(clip->length, song.timeSig));
+    y = row(vg, y, "Loop", clip->loopMode == LoopMode::Loop ? "On" : "Off");
+    audioDraw::ClipState state = audioDraw::stateOf(*m, *clip);
+    if (const AudioSource* src = state.source) {
+        char file[96];
+        snprintf(file, sizeof file, "%.1f s · %.1f kHz · %s", src->seconds(), src->sampleRate / 1000,
+                 src->channels == 1 ? "mono" : "stereo");
+        y = row(vg, y, "File", src->name);
+        y = row(vg, y, "", file);
+        if (src->fileChannels > src->channels)
+            y = row(vg, y, "", std::to_string(src->fileChannels) + " channels mixed down to " +
+                                   std::to_string(src->channels));
+    }
+    std::string st = audioDraw::rendering(state) ? audioDraw::renderingText(state) : audioDraw::stateText(state);
+    if (!st.empty())
+        y = row(vg, y, "State", st == "!" ? "Couldn't make the stretched version" : st);
+
+    y = nextActionRows(vg, y, t, *clip);
+
+    const ArrangerClip* instance = nullptr;
+    if (ctx.state().clipSelection.size() == 1)
+        for (const ArrangerClip& i : t.arrangement)
+            if (ctx.state().clipSelection.count(i.id) && i.clip == clip->id)
+                instance = &i;
+    if (instance) {
+        y += kSectionGap;
+        y = section(vg, y, "INSTANCE");
+        y = row(vg, y, "Start", timeline::positionText(double(instance->position), song.timeSig));
+        y = row(vg, y, "Length", bars(instance->length, song.timeSig));
+        y = row(vg, y, "Offset", bars(instance->offset, song.timeSig));
+        double bpm = m->tempo() > 0 ? m->tempo() : 120;
+        auto fade = [&](const Fade& f) {
+            if (f.length == 0)
+                return std::string("None");
+            char text[48];
+            snprintf(text, sizeof text, "%.0f ms · curve %+.0f%%", double(f.length) * secondsPerTick(bpm) * 1000,
+                     double(f.curve) * 100);
+            return std::string(text);
+        };
+        // Where the instance overlaps a neighbour, the crossfade takes that side's fade (§6.3).
+        auto crossfade = [&](bool before) -> std::pair<std::string, std::string> {
+            for (const ArrangerClip& o : t.arrangement) {
+                if (o.id == instance->id || o.muted)
+                    continue;
+                Tick shared = before ? std::min(instanceEnd(o), instanceEnd(*instance)) - instance->position
+                                     : std::min(instanceEnd(o), instanceEnd(*instance)) - o.position;
+                bool side = before ? o.position < instance->position : o.position > instance->position;
+                if (!side || shared <= 0)
+                    continue;
+                const Clip* other = song.findClip(o.clip);
+                char text[48];
+                snprintf(text, sizeof text, "Crossfade · %.0f ms", double(shared) * secondsPerTick(bpm) * 1000);
+                return {text, "with " + (other && !other->name.empty() ? other->name : std::string("a clip"))};
+            }
+            return {};
+        };
+        auto fadeRows = [&](const char* label, bool before, const Fade& f) {
+            auto [cross, with] = crossfade(before);
+            y = row(vg, y, label, cross.empty() ? fade(f) : cross);
+            if (!with.empty())
+                y = row(vg, y, "", with);
+        };
+        fadeRows("Fade in", true, instance->fadeIn);
+        fadeRows("Fade out", false, instance->fadeOut);
+        y = row(vg, y, "Muted", instance->muted ? "Yes" : "No");
+    }
+}
+
+float Inspector::drawSends(NVGcontext* vg, float y, const Track& t) {
+    TesseraModule* m = ctx.module();
+    const Song& song = m->song();
+    std::vector<SendRef> from = sendsInto(song, t.id);
+    // Only tracks that make sound send or receive; the others keep the inspector as it was.
+    if (m->soundIndex(t.id) < 0 && t.sends.empty())
+        return y;
+    y += kSectionGap;
+    y = section(vg, y, "SENDS");
+    for (size_t k = 0; k < t.sends.size(); k++) {
+        const Send& s = t.sends[k];
+        const Track* to = song.findTrack(s.to);
+        if (!to)
+            continue;
+        // A part's send is named after the part too ("Snare → Reverb"); it always goes after the part's own level.
+        std::string part = sendActions::partName(*m, t, s.from);
+        std::string where = !s.from.whole() ? "" : s.preFader ? " · before fader" : " · after fader";
+        y = settingRow(vg, y, part.empty() ? to->name : part + " \xE2\x86\x92 " + to->name,
+                       audioDraw::dbText(s.db) + where, Setting::Send, k);
+    }
+    y = settingRow(vg, y, "Send to", "+", Setting::AddSend);
+    if (!from.empty()) {
+        std::string names;
+        for (const SendRef& ref : from)
+            if (const Track* f = song.findTrack(ref.track))
+                names += (names.empty() ? "" : ", ") + sendActions::senderName(*m, *f, ref.send.from);
+        y = row(vg, y, "Gets sends from", names);
+    }
+    return y;
+}
+
 void Inspector::drawFacts(NVGcontext* vg, float y) {
     settingRows.clear();
     TesseraModule* m = ctx.module();
@@ -796,28 +1124,47 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     // The track's settings you can change here, instead of only from its right-click menu.
     y = section(vg, y, "TRACK");
     y = row(vg, y, "Name", t->name);
+    if (t->type == TrackType::Audio) {
+        // An audio track plays through the mixer to MAIN: no voices, inputs or output modules yet (Phase 2).
+        float volumeDb = t->channel.volumeDb, panValue = t->channel.pan, dragged;
+        if (m->audioPlayer().held(t->id.value, false, dragged))
+            volumeDb = gainToDb(dragged);
+        if (m->audioPlayer().held(t->id.value, true, dragged))
+            panValue = dragged;
+        y = row(vg, y, "Volume", audioDraw::dbText(volumeDb));
+        char pan[24];
+        snprintf(pan, sizeof pan,
+                 panValue == 0  ? "Centre"
+                 : panValue < 0 ? "%.0f%% left"
+                                : "%.0f%% right",
+                 double(std::abs(panValue) * 100));
+        y = row(vg, y, "Pan", pan);
+        y = row(vg, y, "Output", m->mainPatched() ? "MAIN" : "MAIN (not patched)");
+        y = drawSends(vg, y, *t);
+        y += kSectionGap;
+        drawAudioClipFacts(vg, y, *t);
+        return;
+    }
     if (t->type == TrackType::Instrument)
         y = settingRow(vg, y, "Voices", trackActions::voicesLabel(song, *t), Setting::Voices);
-    y = settingRow(vg, y, "Input", trackActions::inputLabel(song, *t), Setting::Input);
+    if (t->type != TrackType::Audio)
+        y = settingRow(vg, y, "Input", trackActions::inputLabel(song, *t), Setting::Input);
     static const char* const inputs[] = {"Any input", "REC CV inputs", "MIDI"};
-    std::string recording = inputs[int(t->recordInput)];
+    std::string recording = t->type == TrackType::Audio ? "" : inputs[int(t->recordInput)];
     if (t->recordInput != RecordInput::Cv)
         recording += t->midiChannel == 0 ? ", all channels" : ", ch " + std::to_string(t->midiChannel);
     if (t->armed)
         recording = "Armed · " + recording;
-    y = settingRow(vg, y, "Recording", recording, Setting::Recording);
-    bool connected = Registry::get().hasOutputFor(m->id, t->id);
-    y = row(vg, y, "Output", connected ? "Connected" : "None");
-    if (!connected) {
-        draw::TextStyle hint{theme::fonts::ui(), theme::metrics::kTextRuler, theme::colors().queue,
-                             NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE};
-        draw::text(vg, hint, kPad, y + kRowHeight / 2 - 3,
-                   draw::ellipsize(vg, hint,
-                                   t->type == TrackType::Drum ? "Add a Drum Out and pick this track"
-                                                              : "Add a Track Out and pick this track",
-                                   box.size.x - 2 * kPad));
-        y += kRowHeight - 4;
-    }
+    if (t->type != TrackType::Audio)
+        y = settingRow(vg, y, "Recording", recording, Setting::Recording);
+    // The Output row names the module that plays the track; with none, it is the button that adds one.
+    std::vector<OutputModuleBase*> outputs = audioActions::outputsFor(m, t->id);
+    std::string output = t->type == TrackType::Drum ? "+ Add Drum Out" : "+ Add Track Out";
+    if (!outputs.empty())
+        output = audioActions::outputName(outputs.front()) +
+                 (outputs.size() > 1 ? " + " + std::to_string(outputs.size() - 1) + " more" : "");
+    y = settingRow(vg, y, "Output", output, Setting::Output);
+    y = drawSends(vg, y, *t);
     y += kSectionGap;
 
     const Clip* clip = song.findClip(clipActions::shownClip(ctx, *t));
@@ -830,7 +1177,8 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
     y = row(vg, y, "Length", bars(clipActions::shownLength(song, *clip), song.timeSig));
     ClipSpan span = clipSpan(*clip, t->type == TrackType::Drum ? &t->drumLanes : nullptr);
     y = row(vg, y, "Loop",
-            !span.looping
+            activePlayheads(*t, clip) ? "Playheads decide"
+            : !span.looping
                 ? "Off"
                 : timeline::positionText(double(span.start), song.timeSig) + " – " +
                       timeline::positionText(double(span.end), song.timeSig) + (span.cycles() ? " (lanes)" : ""));
@@ -838,6 +1186,8 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
         y = row(vg, y, "Key",
                 clip->scaleOverride ? keyActions::keyLabel(song, *clip->scaleOverride)
                                     : "Song (" + keyActions::keyLabel(song, song.scale) + ")");
+    y = diceRow(vg, y, *clip);
+    y = nextActionRows(vg, y, *t, *clip);
 
     // The selected arranger instance of this clip: what it changes on top of the clip.
     const ArrangerClip* instance = nullptr;
@@ -852,7 +1202,6 @@ void Inspector::drawFacts(NVGcontext* vg, float y) {
         y = row(vg, y, "Length", bars(instance->length, song.timeSig));
         y = row(vg, y, "Offset", bars(instance->offset, song.timeSig));
         y = row(vg, y, "Transpose", (instance->transpose > 0 ? "+" : "") + std::to_string(instance->transpose));
-        y = row(vg, y, "Velocity", std::to_string(int(std::lround(instance->velocityScale * 100))) + "%");
         char stretch[16];
         snprintf(stretch, sizeof(stretch), "×%.3g", double(instance->stretch));
         y = row(vg, y, "Stretch", stretch);
