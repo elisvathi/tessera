@@ -4,6 +4,7 @@
 # (test.yml).
 # A tag also makes a GitHub Release with the four .vcvplugin files. The tag must match the version in plugin.json.
 # A tag with a dash (v2.0.12-rc.1) makes a pre-release: testers can download it, and the latest release stays latest.
+# The release notes are the version's section of CHANGELOG.md ("## 2.1.0"); without one, GitHub lists the merged PRs.
 name: Build
 
 on:
@@ -110,4 +111,6 @@ jobs:
         run: |
           prerelease=""
           case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/*.vcvplugin --title "$GITHUB_REF_NAME" --generate-notes $prerelease
+          awk -v h="## ${GITHUB_REF_NAME#v}" '$0 == h { f = 1; next } /^## / { if (f) exit } f' CHANGELOG.md > notes.md
+          if grep -q '[^[:space:]]' notes.md; then notes="--notes-file notes.md"; else notes="--generate-notes"; fi
+          gh release create "$GITHUB_REF_NAME" dist/*.vcvplugin --title "$GITHUB_REF_NAME" $notes $prerelease
