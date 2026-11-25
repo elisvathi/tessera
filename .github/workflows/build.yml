@@ -2,6 +2,8 @@
 # It runs by hand (Actions tab → Build → Run workflow) or on a version tag like v2.0.0, not on every push:
 # Mac minutes count ten times against a private repo's free minutes. The tests alone run on every pull request
 # (test.yml).
+# Each Build step runs the same four make steps as the VCV Library build. Its `make cleandep` deletes dep/, so a
+# file kept there builds here with a plain `make dist` but fails in the Library.
 # A tag also makes a GitHub Release with the four .vcvplugin files. The tag must match the version in plugin.json.
 # A tag with a dash (v2.0.12-rc.1) makes a pre-release: testers can download it, and the latest release stays latest.
 # The release notes are the version's section of CHANGELOG.md ("## 2.1.0"); without one, GitHub lists the merged PRs.
@@ -34,7 +36,11 @@ jobs:
           curl -fsSL "https://vcvrack.com/downloads/Rack-SDK-$RACK_SDK_VERSION-lin-x64.zip" -o sdk.zip
           unzip -q sdk.zip -d ..
       - name: Build
-        run: make -j"$(nproc)" dist RACK_DIR=../Rack-SDK
+        run: |
+          make -j"$(nproc)" clean RACK_DIR=../Rack-SDK
+          make -j"$(nproc)" cleandep RACK_DIR=../Rack-SDK
+          make -j"$(nproc)" dep RACK_DIR=../Rack-SDK
+          make -j"$(nproc)" dist RACK_DIR=../Rack-SDK
       - uses: actions/upload-artifact@v4
         with:
           name: lin-x64
@@ -57,7 +63,11 @@ jobs:
           curl -fsSL "https://vcvrack.com/downloads/Rack-SDK-$RACK_SDK_VERSION-win-x64.zip" -o sdk.zip
           unzip -q sdk.zip -d ..
       - name: Build
-        run: make -j"$(nproc)" dist RACK_DIR=../Rack-SDK
+        run: |
+          make -j"$(nproc)" clean RACK_DIR=../Rack-SDK
+          make -j"$(nproc)" cleandep RACK_DIR=../Rack-SDK
+          make -j"$(nproc)" dep RACK_DIR=../Rack-SDK
+          make -j"$(nproc)" dist RACK_DIR=../Rack-SDK
       - uses: actions/upload-artifact@v4
         with:
           name: win-x64
@@ -80,7 +90,11 @@ jobs:
           unzip -q sdk.zip -d ..
       # The runner is an Apple Silicon Mac; CROSS_COMPILE picks the target, so both builds work on it.
       - name: Build
-        run: make -j"$(sysctl -n hw.ncpu)" dist RACK_DIR=../Rack-SDK CROSS_COMPILE=${{ matrix.target }}
+        run: |
+          make -j"$(sysctl -n hw.ncpu)" clean RACK_DIR=../Rack-SDK CROSS_COMPILE=${{ matrix.target }}
+          make -j"$(sysctl -n hw.ncpu)" cleandep RACK_DIR=../Rack-SDK CROSS_COMPILE=${{ matrix.target }}
+          make -j"$(sysctl -n hw.ncpu)" dep RACK_DIR=../Rack-SDK CROSS_COMPILE=${{ matrix.target }}
+          make -j"$(sysctl -n hw.ncpu)" dist RACK_DIR=../Rack-SDK CROSS_COMPILE=${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: mac-${{ matrix.arch }}

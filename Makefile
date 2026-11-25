@@ -4,8 +4,9 @@ SOURCES += $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 
 # Vendored header-only libraries (docs/design/AUDIO_MIXER.md §9.1): Signalsmith Stretch (MIT) for time stretching,
 # dr_libs (public domain / MIT-0) for decoding. As system headers, their own warnings stay quiet.
-DEP_FLAGS := -isystem dep/signalsmith-stretch -isystem dep/signalsmith-linear/include -isystem dep/dr_libs
-FLAGS += $(DEP_FLAGS)
+# Not in dep/: the Rack SDK's `make cleandep` deletes that whole folder, and the VCV Library build runs it.
+VENDOR_FLAGS := -isystem vendor/signalsmith-stretch -isystem vendor/signalsmith-linear/include -isystem vendor/dr_libs
+FLAGS += $(VENDOR_FLAGS)
 
 DISTRIBUTABLES += res
 DISTRIBUTABLES += $(wildcard LICENSE*)
@@ -110,7 +111,7 @@ $(TEST_INCLUDE)/ghc:
 $(TEST_OBJ_DIR)/%.o: %.cpp | $(TEST_INCLUDE)/GLFW $(TEST_INCLUDE)/ghc
 	@mkdir -p $(dir $@)
 	$(TEST_CXX) $(TEST_FLAGS) -MMD -MP -isystem $(TEST_INCLUDE) $(shell pkg-config --cflags jansson 2>/dev/null) \
-		$(DEP_FLAGS) -c -o $@ $<
+		$(VENDOR_FLAGS) -c -o $@ $<
 
 # The tests themselves are plain calls and checks: optimising them costs more compile time than it saves at run time.
 $(TEST_OBJ_DIR)/tests/%.o: TEST_FLAGS += -O0

@@ -951,8 +951,8 @@ std::unique_ptr<TimeStretcher> makeStretcher(const std::string& id);   // falls 
 std::vector<std::string> availableStretchers();                        // the default ("signalsmith") first
 ```
 
-- The adapter lives in `src/audio/stretch/`, the library under `dep/signalsmith-stretch/` and
-  `dep/signalsmith-linear/` with their licence files. Nothing outside the adapter includes a library header.
+- The adapter lives in `src/audio/stretch/`, the library under `vendor/signalsmith-stretch/` and
+  `vendor/signalsmith-linear/` with their licence files. Nothing outside the adapter includes a library header.
 - There is no engine setting: one library ships.
 - The varispeed reader is Tessera's own code, not part of the interface.
 - A conformance test checks the stretcher: output length; a stretched click track keeps its clicks on the beat
@@ -981,7 +981,7 @@ src/audio/RenderCache.*          renders by (source, ratio, pitch, sound, revers
 src/audio/TimeStretcher.hpp      the swappable interface
 src/audio/stretch/*              one adapter per library
 src/audio/TakeWriter.*           the writer thread
-dep/<library>/                   vendored libraries with their licence files
+vendor/<library>/                vendored libraries with their licence files
 src/module/TrackOutModule.*      OUT/IN, any track kind, live dimming, IN light
 src/ui/views/AudioClipDraw.*     waveform tiles, handles, badges, states
 src/ui/views/AudioEditor.*       lower pane for audio clips

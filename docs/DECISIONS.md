@@ -1446,7 +1446,7 @@ Why: the user found the old jack area messy (two plates of different sizes, inpu
 - **Tessera gets audio tracks, a mixer and a master**, built in phases (P0 decide, P1a a loop in time, P1b editing,
   P2a the rack round trip, P2b sends and sources, P3 record/bounce/export, P4 deeper). The full design is
   `docs/design/AUDIO_MIXER.md` (revision 7); its §12 lists every answer. This replaces DESIGN.md §1's non-goal "No
-  audio recording, no audio clips" and its "no external dependencies": the libraries are in `dep/` with their licences.
+  audio recording, no audio clips" and its "no external dependencies": the libraries are in `vendor/` with their licences.
 - **The first loop in an empty song sets the tempo.** Setup helpers ("Connect to Audio module", "Add a Track Out for
   this track", "Show in the rack") are each one Rack undo step.
 
@@ -1586,7 +1586,7 @@ Choices made while building the first audio phase (docs/design/AUDIO_MIXER.md §
 - **Off clips store their length in clip ticks at the clip tempo.** That is the same as a length in source frames (the
   clip tempo is fixed for the clip), and keeps one representation for every audio clip. The timeline draws and
   hit-tests an Off clip at `length × song tempo ÷ clip tempo`; the engine plays it at its own speed.
-- **Decoding**: dr_wav (WAV and AIFF, with the "acid" tempo chunk), dr_flac, dr_mp3, vendored in `dep/dr_libs`. Files up
+- **Decoding**: dr_wav (WAV and AIFF, with the "acid" tempo chunk), dr_flac, dr_mp3, vendored in `vendor/dr_libs`. Files up
   to a minute are decoded at drop time, so their full tempo guess (onsets, one-shot, sound type) is ready before the
   first sound; longer files load on a worker.
 - **Tempo guess**: the onset curve is 30 ms windows every 5 ms, loudness and brightness rises; an onset counts from
