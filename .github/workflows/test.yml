@@ -1,11 +1,11 @@
-# Runs the unit tests on every pull request and every push to main.
+# Runs the unit tests on every pull request.
 # The Build workflow also calls it, so a release never ships with failing tests.
+# It does not run on a push to main: changes reach main through a pull request (already tested) or come with a
+# version tag (tested by Build), and a push of main and a tag together would otherwise test the same commit twice.
 name: Test
 
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_call:
 
 # A new push to the same pull request cancels the run that is still going for the old one.
